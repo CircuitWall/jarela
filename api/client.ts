@@ -94,6 +94,7 @@ export const api = {
 
   models: {
     list: () => request<ModelConfig[]>("/models"),
+    providers: () => request<string[]>("/providers"),
     catalog: (provider: string) => request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`),
     create: (name: string, data: ModelConfigIn) =>
       request<ModelConfig>("/models", { method: "POST", body: JSON.stringify({ name, ...data }) }),
