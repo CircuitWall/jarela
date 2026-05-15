@@ -33,9 +33,10 @@ export function useModels() {
     return m;
   }, []);
 
-  const remove = useCallback(async (name: string) => {
+  const remove = useCallback(async (name: string): Promise<void> => {
     await api.models.delete(name);
     setModels((p) => p.filter((x) => x.name !== name));
+    setAssignments((p) => p.filter((x) => x.model_config_name !== name));
   }, []);
 
   const assign = useCallback(async (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) => {

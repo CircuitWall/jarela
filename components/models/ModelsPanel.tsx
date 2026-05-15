@@ -13,8 +13,9 @@ const PROVIDER_COLORS: Record<string, string> = {
 };
 
 export function ModelsPanel() {
-  const { models, loading, create, update, remove, refresh } = useModels();
+  const { models, assignments, loading, create, update, remove, refresh } = useModels();
   const [editing, setEditing] = useState<ModelConfig | null | "new">(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   async function handleSave(name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) {
     if (editing === "new") await create(name, data);
@@ -24,6 +25,15 @@ export function ModelsPanel() {
 
   async function handleSetDefault(m: ModelConfig) {
     await update(m.name, { provider: m.provider, model_id: m.model_id, params: m.params, is_default: true });
+  }
+
+  async function handleRemove(name: string) {
+    setDeleteError(null);
+    try {
+      await remove(name);
+    } catch (e) {
+      setDeleteError(`Could not delete "${name}": ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   return (
@@ -41,7 +51,12 @@ export function ModelsPanel() {
         <div className="px-4 py-2">
           {loading && models.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">Loading…</p>}
           {!loading && models.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">No model configs yet</p>}
-          {models.map((m) => (
+          {deleteError && (
+            <p className="text-red-400 text-xs mb-2 px-1">{deleteError}</p>
+          )}
+          {models.map((m) => {
+            const inUse = assignments.some((a) => a.model_config_name === m.name);
+            return (
             <div key={m.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
@@ -62,12 +77,18 @@ export function ModelsPanel() {
                 <button onClick={() => setEditing(m)} className="p-1 text-zinc-400 hover:text-zinc-100 transition-colors" title="Edit">
                   <Pencil size={13} />
                 </button>
-                <button onClick={() => remove(m.name)} className="p-1 text-zinc-400 hover:text-red-400 transition-colors" title="Delete">
+                <button
+                  onClick={() => handleRemove(m.name)}
+                  disabled={inUse}
+                  className="p-1 text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={inUse ? "Unassign from agents first" : "Delete"}
+                >
                   <Trash2 size={13} />
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
       </div>
