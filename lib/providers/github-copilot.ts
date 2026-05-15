@@ -14,6 +14,10 @@ interface SessionToken {
 
 const tokenCache = new Map<string, SessionToken>();
 
+function isLikelyGitHubPat(token: string): boolean {
+  return token.startsWith("ghp_") || token.startsWith("github_pat_") || token.startsWith("gho_");
+}
+
 async function getCopilotToken(pat: string): Promise<string> {
   if (!pat) throw new Error("GitHub Copilot: no API key configured for token exchange.");
   const cached = tokenCache.get(pat);
@@ -60,10 +64,24 @@ const FIXED_HEADERS = {
 };
 
 async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
+  const apiKey = (params.api_key as string | undefined) ?? "";
+  // PATs are supported by GitHub Models REST endpoints, not Copilot chat endpoint.
+  if (apiKey && isLikelyGitHubPat(apiKey)) {
+    return new OpenAI({
+      apiKey,
+      baseURL: params.base_url ?? "https://models.github.ai/inference",
+      defaultHeaders: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+        ...params.extra_headers,
+      },
+    });
+  }
+
   const explicitSessionToken = params.copilot_session_token as string | undefined;
   const token = explicitSessionToken && explicitSessionToken.trim().length > 0
     ? explicitSessionToken
-    : await getCopilotToken(((params.api_key as string | undefined) ?? ""));
+    : await getCopilotToken(apiKey);
   if (!token) throw new Error("GitHub Copilot: no credential configured. Set api_key or copilot_session_token.");
   return new OpenAI({
     apiKey: token,

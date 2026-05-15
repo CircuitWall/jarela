@@ -225,8 +225,9 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
           {showGitHub && (
             <div className="p-2.5 rounded-lg bg-surface-3 border border-border text-xs text-zinc-400">
-              Use a <strong className="text-zinc-300">Copilot session token</strong> for chat access.
-              Personal Access Tokens are not accepted directly by the Copilot chat endpoint.
+              Paste a GitHub token as API Key.
+              <strong className="text-zinc-300"> PATs auto-route to GitHub Models</strong>,
+              and non-PAT credentials use Copilot session-token exchange.
             </div>
           )}
 
