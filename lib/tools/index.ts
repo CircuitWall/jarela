@@ -5,6 +5,7 @@ import { memoryReadTool, memoryWriteTool, memoryListTool } from "./memory";
 import { localExecTool, shellExecTool } from "./exec";
 import { webSearchTool } from "./search";
 import { webFetchTool } from "./fetch";
+import { generateImageTool } from "./generate_image";
 import { scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool } from "./schedule";
 import { proposeConfigChangeTool, checkProposalTool } from "./propose";
 import {
@@ -26,6 +27,7 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   shellExecTool,
   webSearchTool,
   webFetchTool,
+  generateImageTool,
   scheduleTaskTool,
   listScheduledTasksTool,
   cancelScheduledTaskTool,
