@@ -42,7 +42,11 @@ export function useSSE(onDone?: () => void) {
         ]);
       } else if (event.type === "done") {
         setStreaming(false);
-        setStreamingContent("");
+        // Don't clear streamingContent here — it would cause a visual gap
+        // between "stream done" and "refetched messages arrived" where the
+        // assistant bubble disappears for ~100ms. The consumer (ChatView)
+        // calls clearStreamingContent after refetch lands, swapping the
+        // streaming bubble for the persisted message in a single render.
         setThinkingContent("");
         onDone?.();
         break;
@@ -128,5 +132,9 @@ export function useSSE(onDone?: () => void) {
     }
   }, [consume]);
 
-  return { streaming, transport, streamingContent, thinkingContent, toolEvents, error, start, stop, attach };
+  // Called by the consumer after a refetch lands, so the streaming bubble
+  // gets swapped for the persisted assistant message in a single render.
+  const clearStreamingContent = useCallback(() => { setStreamingContent(""); }, []);
+
+  return { streaming, transport, streamingContent, thinkingContent, toolEvents, error, start, stop, attach, clearStreamingContent };
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
@@ -83,17 +83,46 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [profileLoading, setProfileLoading] = useState(true);
   const [agentConfigLoading, setAgentConfigLoading] = useState(false);
 
+  // FIFO queue of messages the user typed while a run was already streaming.
+  // The chat input stays unblocked; we drain this queue after each run finishes.
+  interface QueuedMessage {
+    id: string;
+    text: string;
+    attachments: ContentPart[];
+  }
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  const queueRef = useRef<QueuedMessage[]>([]);
+  queueRef.current = queue;
+
+  // Forward declaration via ref so handleDone (defined first) can dequeue
+  // and call back into the run-launching code (defined later).
+  const drainQueueRef = useRef<() => void>(() => {});
+
+  // Need clearStreamingContent before useSSE returns it. Use a ref so
+  // handleDone (which is a dep of useSSE) isn't itself dependent on the
+  // hook's return value.
+  const clearStreamingRef = useRef<() => void>(() => {});
+
   const handleDone = useCallback(() => {
     if (threadId) {
       api.threads.get(threadId).then((d) => {
+        // setMessages + clearStreamingContent batch into a single render
+        // (React 18 auto-batching in microtasks), so the streaming bubble
+        // and the persisted assistant bubble swap atomically — no gap, no
+        // visual jump-back when the chat content briefly shrinks.
         setMessages(d.messages);
         setHasMore(d.has_more);
-      }).catch(console.error);
+        clearStreamingRef.current();
+      }).catch(console.error)
+        .finally(() => {
+          drainQueueRef.current();
+        });
       onMessageSent();
     }
   }, [threadId, onMessageSent]);
 
-  const { streaming, streamingContent, thinkingContent, toolEvents, error, start, stop, attach } = useSSE(handleDone);
+  const { streaming, streamingContent, thinkingContent, toolEvents, error, start, stop, attach, clearStreamingContent } = useSSE(handleDone);
+  clearStreamingRef.current = clearStreamingContent;
 
   // Surface every long-running task in the top progress bar.
   useTrackLoading(!!sessionLoading);
@@ -165,6 +194,40 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     }
   }
 
+  // Actually fire a run for one message. Used both by direct submit (when
+  // idle) and by drain-from-queue (after a previous run finishes).
+  async function launchRun(text: string, atts: ContentPart[]) {
+    if (!threadId) return;
+    const optimisticContent = atts.length
+      ? JSON.stringify([{ type: "text" as const, text }, ...atts])
+      : text;
+    setMessages((p) => [
+      ...p,
+      { id: `opt-${Date.now()}`, role: "user", content: optimisticContent, created_at: new Date().toISOString() },
+    ]);
+    await start(
+      threadId,
+      text,
+      { filters: { include_tools: showTools, include_thinking: showThinking } },
+      atts.length ? atts : undefined,
+    );
+  }
+
+  // Wire the deferred drain — see drainQueueRef declaration above.
+  drainQueueRef.current = () => {
+    setQueue((q) => {
+      if (q.length === 0) return q;
+      const [next, ...rest] = q;
+      // Fire the next run on a microtask so React's commit settles first.
+      Promise.resolve().then(() => { void launchRun(next.text, next.attachments); });
+      return rest;
+    });
+  };
+
+  function removeQueued(id: string) {
+    setQueue((q) => q.filter((m) => m.id !== id));
+  }
+
   async function handleSubmit() {
     const msg = input.trim();
     if (!msg || !agentId) return;
@@ -179,27 +242,23 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setNotices([{ id: `notice-${Date.now()}`, text: sessionError ? `Session failed to load: ${sessionError}` : "Session is still loading, please try again." }]);
       return;
     }
+
     setInput("");
     const currentAttachments = attachments;
     setAttachments([]);
 
-    // Optimistic message — include attachments so the user immediately sees
-    // their pasted image / file in the bubble. The MessageBubble re-renders
-    // ContentPart[] (the JSON form), so we mirror what gets persisted.
-    const optimisticContent = currentAttachments.length
-      ? JSON.stringify([{ type: "text" as const, text: msg }, ...currentAttachments])
-      : msg;
-    setMessages((p) => [
-      ...p,
-      { id: `opt-${Date.now()}`, role: "user", content: optimisticContent, created_at: new Date().toISOString() },
-    ]);
+    // If a run is already in flight, queue this message instead of blocking.
+    // The current run's handleDone callback will drain the queue.
+    if (streaming || queueRef.current.length > 0) {
+      setQueue((q) => [...q, {
+        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        text: msg,
+        attachments: currentAttachments,
+      }]);
+      return;
+    }
 
-    await start(
-      threadId,
-      msg,
-      { filters: { include_tools: showTools, include_thinking: showThinking } },
-      currentAttachments.length ? currentAttachments : undefined,
-    );
+    await launchRun(msg, currentAttachments);
   }
 
   return (
@@ -209,12 +268,17 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         notices={notices}
         agentConfig={agentConfig}
         userProfile={userProfile}
-        streamingContent={streaming ? streamingContent : undefined}
+        // streamingContent stays visible past `streaming=false` so the bubble
+        // doesn't disappear before the refetch arrives. Cleared atomically in
+        // handleDone via clearStreamingRef once the persisted message lands.
+        streamingContent={streamingContent || undefined}
         thinkingContent={streaming ? thinkingContent : undefined}
         toolEvents={streaming ? toolEvents : undefined}
         hasMore={hasMore}
         loadingMore={loadingMore}
         onLoadMore={loadOlder}
+        queuedMessages={queue.map((q) => ({ id: q.id, text: q.text, attachmentCount: q.attachments.length }))}
+        onRemoveQueued={removeQueued}
       />
 
       {error && (
