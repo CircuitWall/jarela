@@ -6,6 +6,7 @@ import type {
   ProviderStreamEvent,
   InvokeResult,
 } from "./types";
+import { getStoredOAuthToken } from "./github-copilot-auth";
 
 interface SessionToken {
   token: string;
@@ -65,7 +66,33 @@ const FIXED_HEADERS = {
 
 async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
   const apiKey = (params.api_key as string | undefined) ?? "";
-  // PATs are supported by GitHub Models REST endpoints, not Copilot chat endpoint.
+  const explicitSessionToken = (params.copilot_session_token as string | undefined)?.trim();
+
+  // Highest priority: an explicit pre-exchanged Copilot session token.
+  if (explicitSessionToken && explicitSessionToken.length > 0) {
+    return new OpenAI({
+      apiKey: explicitSessionToken,
+      baseURL: params.base_url ?? "https://api.githubcopilot.com",
+      defaultHeaders: { ...FIXED_HEADERS, ...params.extra_headers },
+    });
+  }
+
+  // Next: a device-flow OAuth token persisted by the in-app sign-in. This is
+  // exchangeable for a Copilot session token, so we get full model context.
+  const oauthToken = getStoredOAuthToken();
+  if (oauthToken) {
+    const token = await getCopilotToken(oauthToken);
+    return new OpenAI({
+      apiKey: token,
+      baseURL: params.base_url ?? "https://api.githubcopilot.com",
+      defaultHeaders: { ...FIXED_HEADERS, ...params.extra_headers },
+    });
+  }
+
+  // Fallback: a raw PAT. PATs can't be exchanged for Copilot tokens, so they
+  // route to the GitHub Models REST API (which enforces tight per-request
+  // token caps, e.g. 8000 for gpt-4o). Users who want larger contexts should
+  // sign in via the device flow instead.
   if (apiKey && isLikelyGitHubPat(apiKey)) {
     return new OpenAI({
       apiKey,
@@ -78,11 +105,13 @@ async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
     });
   }
 
-  const explicitSessionToken = params.copilot_session_token as string | undefined;
-  const token = explicitSessionToken && explicitSessionToken.trim().length > 0
-    ? explicitSessionToken
-    : await getCopilotToken(apiKey);
-  if (!token) throw new Error("GitHub Copilot: no credential configured. Set api_key or copilot_session_token.");
+  // Otherwise, treat the credential as an OAuth-capable token and exchange.
+  if (!apiKey) {
+    throw new Error(
+      "GitHub Copilot: not signed in. Use the in-app device-flow login, or set api_key / copilot_session_token.",
+    );
+  }
+  const token = await getCopilotToken(apiKey);
   return new OpenAI({
     apiKey: token,
     baseURL: params.base_url ?? "https://api.githubcopilot.com",

@@ -160,6 +160,17 @@ export const api = {
     cancel: (id: string) =>
       request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
+
+  githubCopilotAuth: {
+    status: () => request<{ signed_in: boolean; stored_at: string | null }>("/providers/github-copilot/auth"),
+    start: () => request<{ device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number }>(
+      "/providers/github-copilot/auth", { method: "POST", body: "{}" },
+    ),
+    poll: (device_code: string) => request<{ status: string; access_token?: string; error?: string }>(
+      "/providers/github-copilot/auth", { method: "PUT", body: JSON.stringify({ device_code }) },
+    ),
+    signOut: () => request<{ deleted: boolean }>("/providers/github-copilot/auth", { method: "DELETE" }),
+  },
 };
 
 let cachedWsUrl: string | null = null;
