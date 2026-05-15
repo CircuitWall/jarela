@@ -1,0 +1,18 @@
+<svg viewBox="0 0 130 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- icon mark with dark pill bg -->
+  <rect x="0" y="2" width="32" height="32" rx="7" fill="#0f172a"/>
+  <!-- spokes -->
+  <line x1="16" y1="17" x2="16" y2="8"  stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="16" y1="17" x2="8"  y2="27" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="16" y1="17" x2="24" y2="27" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- outer nodes -->
+  <circle cx="16" cy="8"  r="2.8" fill="#818cf8"/>
+  <circle cx="8"  cy="27" r="2.8" fill="#818cf8"/>
+  <circle cx="24" cy="27" r="2.8" fill="#818cf8"/>
+  <!-- hub -->
+  <circle cx="16" cy="17" r="4.5" fill="#2563eb"/>
+  <circle cx="16" cy="17" r="2"   fill="white" fill-opacity="0.45"/>
+  <!-- wordmark -->
+  <text x="38" y="24" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="-0.4" fill="#f4f4f5">Lang</text>
+  <text x="72" y="24" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="700" letter-spacing="-0.4" fill="#818cf8">GUI</text>
+</svg>

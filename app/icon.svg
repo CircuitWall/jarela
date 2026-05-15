@@ -1,0 +1,15 @@
+<svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- background -->
+  <rect width="32" height="32" rx="7" fill="#0f172a"/>
+  <!-- spokes -->
+  <line x1="16" y1="15" x2="16" y2="6"  stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="16" y1="15" x2="7"  y2="25" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="16" y1="15" x2="25" y2="25" stroke="#6366f1" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- outer nodes -->
+  <circle cx="16" cy="6"  r="3"   fill="#818cf8"/>
+  <circle cx="7"  cy="25" r="3"   fill="#818cf8"/>
+  <circle cx="25" cy="25" r="3"   fill="#818cf8"/>
+  <!-- hub -->
+  <circle cx="16" cy="15" r="5"   fill="#2563eb"/>
+  <circle cx="16" cy="15" r="2.2" fill="white" fill-opacity="0.45"/>
+</svg>

@@ -1,0 +1,45 @@
+# deps
+node_modules/
+.pnp
+.pnp.js
+
+# next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# build artifacts
+dist/
+build/
+
+# env
+.env
+.env.local
+.env.*.local
+
+# runtime/local state
+*.db
+*.sqlite
+*.sqlite3
+~/.langgui/
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# test
+coverage/
+
+# archived
+backend-archived/
+node_modules
