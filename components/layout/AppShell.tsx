@@ -13,7 +13,11 @@ import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { IntegrationsPanel } from "@/components/integrations/IntegrationsPanel";
+import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { TopProgressBar } from "@/components/ui/TopProgressBar";
+import { NotificationStatus } from "@/components/ui/NotificationStatus";
+import { Toaster } from "@/components/ui/Toaster";
+import { clearUnread, useUnreadCount } from "@/lib/ui/toasts";
 import { GearPanel } from "./GearPanel";
 
 export function AppShell() {
@@ -23,6 +27,8 @@ export function AppShell() {
   const [showGear, setShowGear] = useState(false);
   const [showTools, setShowTools] = useState(true);
   const [showThinking, setShowThinking] = useState(true);
+
+  const unreadCount = useUnreadCount();
 
   // Cache agent id → name for notification titles. Refreshed on agent CRUD.
   const [agents, setAgents] = useState<AgentConfig[]>([]);
@@ -34,14 +40,48 @@ export function AppShell() {
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Click on an OS Web Notification → useEventNotifications fires a custom
+  // event; handle it here to switch to the relevant agent's chat.
+  useEffect(() => {
+    function handler(e: Event) {
+      const detail = (e as CustomEvent<{ agentId?: string }>).detail;
+      if (detail?.agentId) {
+        dispatch({ type: "SET_AGENT", agentId: detail.agentId });
+        dispatch({ type: "SET_TAB", tab: "chat" });
+      }
+    }
+    window.addEventListener("langgui:focus-agent", handler);
+    return () => window.removeEventListener("langgui:focus-agent", handler);
+  }, [dispatch]);
+
   useEventNotifications({
     shouldNotify: (ev) => {
-      const tabHidden = typeof document !== "undefined" && document.hidden;
-      const onChat = stateRef.current.activeTab === "chat";
-      const evAgentId = ev.type === "run_completed" ? ev.agent_id : ev.agent_id;
-      const sameAgent = onChat && evAgentId !== null && evAgentId === stateRef.current.activeAgentId;
-      // Notify when the user is NOT looking at this agent's chat.
-      return tabHidden || !sameAgent;
+      // Scheduled task firings ALWAYS notify. The user explicitly set them up
+      // out-of-band — "remind me at 3pm", "every weekday morning". Even if
+      // they happen to be on that agent's chat, they may not be actively
+      // reading right when the task fires; the whole point is the ping.
+      if (ev.type === "task_completed") return true;
+
+      // For ordinary run completions (the agent finished a turn the user
+      // just sent), suppress only when the user is actively reading that
+      // exact chat — the new message is already on screen.
+      //
+      // Otherwise notify in either of two cases:
+      //   1. The PWA isn't focused (background tab, minimized, focused on
+      //      another app). Detected via document.hidden + !hasFocus().
+      //   2. The PWA IS focused but the user is on a different agent / a
+      //      different tab inside the app (Memory, Tasks, Models, …).
+      const pwaUnfocused =
+        typeof document !== "undefined" &&
+        (document.hidden || !document.hasFocus());
+
+      const evAgentId = ev.agent_id;
+      const onSameAgentChat =
+        stateRef.current.activeTab === "chat" &&
+        evAgentId !== null &&
+        evAgentId === stateRef.current.activeAgentId;
+
+      return pwaUnfocused || !onSameAgentChat;
     },
     resolveAgentName: (agentId) => {
       if (!agentId) return "LangGUI";
@@ -53,15 +93,22 @@ export function AppShell() {
   return (
     <div className="h-screen flex flex-col bg-surface text-zinc-100 overflow-hidden">
       <TopProgressBar />
-      <header className="h-9 flex items-center px-3 border-b border-border bg-surface-2 shrink-0">
+      <NotificationStatus />
+      <Toaster />
+      <header className="h-12 flex items-center px-4 border-b border-border bg-surface-2 shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="LangGUI" className="h-5 select-none" />
+        <img src="/logo.svg" alt="LangGUI" className="h-6 select-none" />
         <button
-          onClick={() => setShowGear((v) => !v)}
-          className={`ml-auto p-1.5 rounded transition-colors ${showGear ? "text-zinc-100 bg-surface-3" : "text-zinc-500 hover:text-zinc-300"}`}
-          title="Menu"
+          onClick={() => { setShowGear((v) => !v); clearUnread(); }}
+          className={`ml-auto relative p-2 rounded transition-colors ${showGear ? "text-zinc-100 bg-surface-3" : "text-zinc-500 hover:text-zinc-300 hover:bg-surface-3/50"}`}
+          title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
-          <Settings size={14} />
+          <Settings size={16} />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 border border-surface-2 text-[9px] font-bold text-white flex items-center justify-center leading-none animate-pulse">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
         </button>
       </header>
 
@@ -84,6 +131,7 @@ export function AppShell() {
         {state.activeTab === "models" && <ModelsPanel />}
         {state.activeTab === "mcp" && <MCPPanel />}
         {state.activeTab === "integrations" && <IntegrationsPanel />}
+        {state.activeTab === "tasks" && <ScheduledTasksPanel />}
         {state.activeTab === "profile" && <ProfilePanel />}
 
         {showGear && (
