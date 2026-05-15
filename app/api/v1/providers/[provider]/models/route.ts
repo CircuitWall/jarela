@@ -82,6 +82,11 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
   if (!cfg) throw new Error("No GitHub Copilot model config found.");
   const params = JSON.parse(cfg.params) as Record<string, unknown>;
   const pat = (params.api_key as string | undefined) ?? process.env.GITHUB_TOKEN;
+
+  if (pat && isLikelyGitHubPat(pat)) {
+    return fetchGitHubModelsCatalog(pat);
+  }
+
   if (!pat) return githubCopilotKnownModels();
 
   try {
@@ -117,6 +122,50 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
     // Keep model selection usable even when account/token cannot query catalog.
     return githubCopilotKnownModels();
   }
+}
+
+function isLikelyGitHubPat(token: string): boolean {
+  return token.startsWith("ghp_") || token.startsWith("github_pat_") || token.startsWith("gho_");
+}
+
+async function fetchGitHubModelsCatalog(token: string): Promise<CatalogModel[]> {
+  const res = await fetch("https://models.github.ai/catalog/models", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2026-03-10",
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`GitHub Models catalog error: ${res.status} ${body}`);
+  }
+
+  const data = await res.json() as Array<{
+    id: string;
+    registry?: string;
+    capabilities?: string[];
+    limits?: { max_input_tokens?: number; max_output_tokens?: number };
+    supported_input_modalities?: string[];
+  }>;
+
+  return data.map((m): CatalogModel => {
+    const caps = new Set((m.capabilities ?? []).map((c) => c.toLowerCase()));
+    const inputs = new Set((m.supported_input_modalities ?? []).map((c) => c.toLowerCase()));
+    return {
+      id: m.id,
+      context_length: m.limits?.max_input_tokens ?? null,
+      max_output_tokens: m.limits?.max_output_tokens ?? null,
+      hosted_on: m.registry ?? "github-models",
+      capabilities: {
+        vision: inputs.has("image"),
+        tools: caps.has("tool-calling") || caps.has("tools"),
+        streaming: caps.has("streaming"),
+        json_mode: caps.has("json-mode") || caps.has("json_mode"),
+        web_search: caps.has("web-search") || caps.has("web_search"),
+      },
+    };
+  });
 }
 
 async function exchangeCopilotSessionToken(pat: string): Promise<string> {
