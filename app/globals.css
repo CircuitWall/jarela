@@ -12,10 +12,21 @@ html, body, #__next {
 .prose-invert pre {
   background: #18181b !important;
   border-radius: 0.5rem;
+  max-width: 100%;
+  overflow-x: auto;          /* long single-line code scrolls within the bubble */
+  white-space: pre-wrap;     /* but normal multi-line code still wraps */
+  word-break: break-word;
 }
-.prose-invert code { color: #a1a1aa; }
-.prose-invert p { margin-top: 0.5em; margin-bottom: 0.5em; }
+.prose-invert code { color: #a1a1aa; word-break: break-all; }
+.prose-invert p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  overflow-wrap: anywhere;   /* break URLs, JWTs, hashes that have no spaces */
+}
 .prose-invert ul, .prose-invert ol { margin-top: 0.25em; margin-bottom: 0.25em; }
+.prose-invert a { word-break: break-all; }
+/* Tables in chat — keep them within bubble width with horizontal scroll. */
+.prose-invert table { display: block; max-width: 100%; overflow-x: auto; }
 
 /* Rich-format tags the agent can use ------------------------------------- */
 .langgui-rich kbd {
@@ -105,4 +116,11 @@ html, body, #__next {
 @keyframes langgui-progress-slide {
   0%   { background-position: 100% 0; }
   100% { background-position: -100% 0; }
+}
+
+/* Toast lifecycle: slide in from the right, then a thin progress bar
+ * underneath shrinks to show time remaining before auto-dismiss. */
+@keyframes langgui-toast-shrink {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
 }

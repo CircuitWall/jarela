@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
+import { pushToast } from "@/lib/ui/toasts";
 
 interface RunCompleted {
   type: "run_completed";
@@ -30,17 +31,22 @@ interface AgentSummary {
 }
 
 interface Options {
-  // Predicate: should we notify for this event? Returning false suppresses.
-  // Used so we don't notify when the user is already viewing the agent that
-  // just completed (the message is right there on screen).
+  // Predicate: should this event surface as a toast / OS notification?
+  // Returning false suppresses both — used when the user is currently
+  // viewing the agent that completed (the message is already on screen).
   shouldNotify: (ev: NotifEvent) => boolean;
-  // Used to title the notification with the agent's display name.
+  // For titling the toast / notification.
   resolveAgentName: (agentId: string | null) => string;
 }
 
-// Browser-side: subscribes to /api/v1/events, requests notification permission
-// on first event arrival, and emits a Web Notification per relevant event.
-// Survives page reloads via the `since` query param (replays missed events).
+// Subscribes to /api/v1/events. Each event:
+//   - Always pushes an in-app toast (Teams-style card, bottom-right of the
+//     LangGUI window). Works whenever the window is visible — including in
+//     the Edge sidebar.
+//   - Additionally fires a Web Notification when the window is NOT focused
+//     (background tab, minimized, focused-on-another-app). The OS surfaces
+//     it even when LangGUI isn't visible. Requires browser permission;
+//     gracefully no-op when not granted.
 export function useEventNotifications(options: Options) {
   const lastTsRef = useRef<number>(Date.now());
   const optsRef = useRef(options);
@@ -71,7 +77,6 @@ export function useEventNotifications(options: Options) {
         es?.close();
         es = null;
         if (cancelled) return;
-        // Reconnect with exponential backoff (max 30s).
         setTimeout(connect, Math.min(backoff, 30_000));
         backoff = Math.min(backoff * 2, 30_000);
       };
@@ -80,43 +85,46 @@ export function useEventNotifications(options: Options) {
     function handleEvent(ev: NotifEvent) {
       if (!optsRef.current.shouldNotify(ev)) return;
 
-      const requestAndShow = () => {
-        if (Notification.permission === "granted") show(ev);
-        else if (Notification.permission === "default") {
-          Notification.requestPermission().then((p) => {
-            if (p === "granted") show(ev);
-          });
-        }
-      };
+      const { title, body, kind } = format(ev, optsRef.current.resolveAgentName);
 
-      requestAndShow();
-    }
+      // 1. Always push an in-app toast. Visible whenever the LangGUI window
+      //    has any pixels on screen.
+      pushToast({
+        kind,
+        title,
+        body,
+        agent_id: ev.type === "run_completed" ? ev.agent_id : ev.agent_id,
+        thread_id: ev.thread_id || null,
+        ttl: 6000,
+      });
 
-    function show(ev: NotifEvent) {
-      try {
-        if (ev.type === "run_completed") {
-          const name = optsRef.current.resolveAgentName(ev.agent_id);
-          const title = ev.status === "error" ? `${name} — error` : `${name} replied`;
-          new Notification(title, {
-            body: ev.preview || (ev.status === "error" ? "Run failed." : "Response ready."),
-            tag: `run:${ev.thread_id}`,
-            icon: "/icon-192.png",
-          });
-        } else if (ev.type === "task_completed") {
-          const name = optsRef.current.resolveAgentName(ev.agent_id);
-          const title = ev.status === "error"
-            ? `${name} — scheduled task failed`
-            : `${name} — scheduled task completed`;
-          const body = ev.status === "error"
-            ? ev.error ?? "Task failed."
-            : `${truncate(ev.prompt, 50)} → ${truncate(ev.preview || "(no output)", 80)}`;
-          new Notification(title, {
+      // 2. ALSO fire a Web Notification when the window isn't in focus, so
+      //    macOS / Windows shows it on top of whatever the user is looking
+      //    at. Quietly skipped if permission isn't granted — the toast is
+      //    enough on its own.
+      const unfocused = document.hidden || !document.hasFocus();
+      if (unfocused && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          const n = new Notification(title, {
             body,
-            tag: `task:${ev.task_id}`,
+            tag: ev.type === "run_completed" ? `run:${ev.thread_id}` : `task:${ev.task_id}`,
             icon: "/icon-192.png",
           });
-        }
-      } catch { /* notification API errored — ignore */ }
+          // Click handler: focus the LangGUI window, switch to the agent the
+          // event belongs to, dismiss the OS notification. Same end state as
+          // clicking the in-app toast card.
+          n.onclick = () => {
+            window.focus();
+            const agentId = ev.agent_id;
+            if (agentId) {
+              window.dispatchEvent(new CustomEvent("langgui:focus-agent", {
+                detail: { agentId },
+              }));
+            }
+            n.close();
+          };
+        } catch { /* OS rejected, ignore */ }
+      }
     }
 
     connect();
@@ -127,21 +135,40 @@ export function useEventNotifications(options: Options) {
   }, []);
 }
 
+function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
+  title: string; body: string; kind: "info" | "success" | "error";
+} {
+  if (ev.type === "run_completed") {
+    const name = resolveName(ev.agent_id);
+    return ev.status === "error"
+      ? { title: `${name} — error`, body: ev.preview || "Run failed.", kind: "error" }
+      : { title: `${name} replied`, body: ev.preview || "Response ready.", kind: "info" };
+  }
+  // task_completed
+  const name = resolveName(ev.agent_id);
+  if (ev.status === "error") {
+    return {
+      title: `${name} — scheduled task failed`,
+      body: ev.error ?? "Task failed.",
+      kind: "error",
+    };
+  }
+  return {
+    title: `${name} — scheduled task completed`,
+    body: `${truncate(ev.prompt, 50)} → ${truncate(ev.preview || "(no output)", 80)}`,
+    kind: "success",
+  };
+}
+
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + "…";
 }
 
-// Helper to expose for AppShell — request permission on a user gesture so we
-// don't get auto-blocked.
 export async function ensureNotificationPermission(): Promise<NotificationPermission> {
   if (typeof Notification === "undefined") return "denied";
   if (Notification.permission !== "default") return Notification.permission;
-  try {
-    return await Notification.requestPermission();
-  } catch {
-    return "denied";
-  }
+  try { return await Notification.requestPermission(); } catch { return "denied"; }
 }
 
 export type { NotifEvent, AgentSummary };
