@@ -56,6 +56,7 @@ export async function prepareThreadRun(
   message: string,
   options?: StreamOptions,
   attachments?: ContentPart[],
+  signal?: AbortSignal,
 ): Promise<PreparedThreadRun> {
   // Lazy-start the scheduler when any agent activity occurs so previously
   // saved scheduled tasks resume firing across server restarts.
@@ -238,7 +239,7 @@ export async function prepareThreadRun(
   };
 
   return {
-    stream: streamWithConfig(thread_id, history, streamOpts),
+    stream: streamWithConfig(thread_id, history, streamOpts, signal),
     thread_id,
   };
 }

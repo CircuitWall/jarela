@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
-import { streamChat, streamChatWS } from "@/api/client";
+import { api, streamChat, streamChatWS } from "@/api/client";
 import type { ContentPart, SSEEventType, StreamOptions } from "@/api/types";
 
 export interface ToolEvent {
@@ -18,6 +18,7 @@ export function useSSE(onDone?: () => void) {
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const threadIdRef = useRef<string | null>(null);
 
   const consume = useCallback(async (
     iterable: AsyncIterable<string>,
@@ -64,6 +65,7 @@ export function useSSE(onDone?: () => void) {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    threadIdRef.current = threadId;
     setStreaming(true);
     setStreamingContent("");
     setThinkingContent("");
@@ -86,7 +88,18 @@ export function useSSE(onDone?: () => void) {
     }
   }, [consume]);
 
-  const stop = useCallback(() => { abortRef.current?.abort(); }, []);
+  // Stop the active run. Two-part: (1) tell the server to abort the agent
+  // stream so the LangGraph loop unwinds and downstream subscribers see a
+  // terminal event; (2) abort the local fetch/WS as a fallback in case the
+  // network request itself is stuck. The server send `error` + `done` so the
+  // ChatView queue-drain still fires after an interrupt.
+  const stop = useCallback(() => {
+    const tid = threadIdRef.current;
+    if (tid) {
+      void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
+    }
+    abortRef.current?.abort();
+  }, []);
 
   // Attach to an in-flight run for the given thread (server-side run kept going
   // because the user switched away). No-ops if no run is active.
@@ -94,6 +107,7 @@ export function useSSE(onDone?: () => void) {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
+    threadIdRef.current = threadId;
     setStreamingContent("");
     setThinkingContent("");
     setToolEvents([]);

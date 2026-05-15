@@ -7,7 +7,7 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, getRun, startRun, subscribe } from "@/lib/agents/run-registry";
+import { broadcast, finishRun, getRun, startRun, subscribe, abortRun } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 
@@ -35,17 +35,17 @@ export async function POST(req: NextRequest, { params }: Params) {
   }
 
   let prepared;
+  const thread = getThread(thread_id);
+  const active = startRun(thread_id, thread?.agent_id ?? null);
   try {
-    prepared = await prepareThreadRun(thread_id, message, stream_options, attachments);
+    prepared = await prepareThreadRun(thread_id, message, stream_options, attachments, active.abort.signal);
   } catch (err) {
+    finishRun(thread_id, "error");
     if (err instanceof RunThreadError) {
       return new Response(JSON.stringify({ error: err.message, code: err.code }), { status: err.status });
     }
     return new Response(JSON.stringify({ error: String(err), code: "run_prepare_error" }), { status: 500 });
   }
-
-  const thread = getThread(thread_id);
-  startRun(thread_id, thread?.agent_id ?? null);
 
   // Drive the agent to completion regardless of client connection. Events go
   // to the registry; subscribers (including this response stream) receive them.
@@ -89,6 +89,19 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const run = getRun(thread_id);
   if (!run) return new Response(null, { status: 404 });
   return attachStream(thread_id);
+}
+
+// DELETE aborts the currently-running agent for this thread. The agent stream
+// loop in llm.ts catches the resulting AbortError and emits a synthetic
+// `error` + `done` event pair so subscribers (and the client's queue-drain
+// hook) finish cleanly.
+export async function DELETE(_req: NextRequest, { params }: Params) {
+  const { thread_id } = await params;
+  const aborted = abortRun(thread_id, "user_interrupted");
+  return new Response(JSON.stringify({ aborted }), {
+    status: aborted ? 200 : 404,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 function attachStream(thread_id: string, stream_options?: StreamOptions): Response {

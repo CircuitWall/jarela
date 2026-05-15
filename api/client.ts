@@ -72,6 +72,11 @@ export const api = {
     },
     delete: (thread_id: string) =>
       request<{ deleted: boolean }>(`/threads/${thread_id}`, { method: "DELETE" }),
+    // Abort the active agent run on this thread. The server's stream loop
+    // catches the resulting AbortError and emits an `error` + `done` so
+    // any UI queue-drain hook (e.g. ChatView) still fires.
+    abortRun: (thread_id: string) =>
+      request<{ aborted: boolean }>(`/threads/${thread_id}/run`, { method: "DELETE" }),
   },
 
   memory: {
