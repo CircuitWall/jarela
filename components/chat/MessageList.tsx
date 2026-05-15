@@ -51,13 +51,29 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
   }
 
   // Streaming chunks fire many times/sec — use instant scroll to keep up.
-  // For new messages (less frequent), smooth feels nicer. The
-  // "instant when streaming" approach also avoids the smooth-scroll animation
-  // getting interrupted and never quite reaching the bottom on long content.
+  // For new messages (less frequent), smooth feels nicer.
+  //
+  // Only scroll when content actually GREW. Without this, any unrelated
+  // re-render of an ancestor (clicking the gear, dispatch in a context, etc.)
+  // would re-fire this effect with the same dep values and yank the chat
+  // back to the bottom. Tracking a "last seen" snapshot in a ref lets us
+  // distinguish genuine growth from "just re-running the effect".
+  const lastSeen = useRef({ msgs: 0, stream: 0, think: 0, tools: 0 });
   useEffect(() => {
-    if (!followingRef.current) return;
-    const isStreaming = !!streamingContent;
-    scrollToBottom(!isStreaming);
+    const cur = {
+      msgs: messages.length,
+      stream: streamingContent?.length ?? 0,
+      think: thinkingContent?.length ?? 0,
+      tools: toolEvents?.length ?? 0,
+    };
+    const grew =
+      cur.msgs > lastSeen.current.msgs ||
+      cur.stream > lastSeen.current.stream ||
+      cur.think > lastSeen.current.think ||
+      cur.tools > lastSeen.current.tools;
+    lastSeen.current = cur;
+    if (!grew || !followingRef.current) return;
+    scrollToBottom(!streamingContent);
   }, [messages.length, streamingContent, thinkingContent, toolEvents?.length]);
 
   // Preserve scroll position when older messages are prepended.
