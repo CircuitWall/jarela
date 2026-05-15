@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { recentSince, subscribe } from "@/lib/notifications/bus";
+import { startScheduler } from "@/lib/scheduler";
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
@@ -8,6 +9,13 @@ const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify
 // The browser subscribes once on app boot and renders Web Notifications.
 // Pass `?since=<unixMs>` to replay events newer than a timestamp on reconnect.
 export function GET(req: NextRequest) {
+  // Wake the scheduler on every SSE subscription. Cheap (idempotent), and
+  // guarantees a freshly-loaded dev server has a ticking scheduler the
+  // moment the UI opens its event stream — before this, the scheduler was
+  // only started lazily on the first agent run, so a server restart could
+  // leave scheduled tasks dormant until you sent a chat message.
+  startScheduler();
+
   const url = new URL(req.url);
   const sinceTs = Number(url.searchParams.get("since")) || 0;
 
