@@ -15,6 +15,10 @@ const PROVIDERS: Record<string, ModelProvider> = {
   langchain: langchainProvider,
 };
 
+export function listProviderNames(): string[] {
+  return Object.keys(PROVIDERS).sort((a, b) => a.localeCompare(b));
+}
+
 export function getProvider(name: string): ModelProvider {
   const p = PROVIDERS[name];
   if (!p) throw new Error(`Unknown provider: "${name}". Available: ${Object.keys(PROVIDERS).join(", ")}`);

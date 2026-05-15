@@ -4,8 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, ModelConfig } from "@/api/types";
 
-const PROVIDERS = ["anthropic", "openai", "github-copilot", "internal"] as const;
-type Provider = (typeof PROVIDERS)[number];
+const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "internal", "deepseek", "langchain"];
 
 const CATALOG_PROVIDERS = new Set<string>(["internal", "openai", "github-copilot", "anthropic"]);
 
@@ -45,7 +44,8 @@ function fmtCtx(n: number | null) {
 export function ModelEditor({ model, onSave, onClose }: Props) {
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
-  const [provider, setProvider] = useState<Provider>((model?.provider as Provider) ?? "anthropic");
+  const [provider, setProvider] = useState(model?.provider ?? "anthropic");
+  const [providers, setProviders] = useState<string[]>(FALLBACK_PROVIDERS);
   const [modelId, setModelId] = useState(model?.model_id ?? "");
   const [apiKey, setApiKey] = useState(model?.params.api_key ?? "");
   const [baseUrl, setBaseUrl] = useState(model?.params.base_url ?? "");
@@ -72,6 +72,21 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    let mounted = true;
+    api.models.providers()
+      .then((names) => {
+        if (!mounted || !Array.isArray(names) || names.length === 0) return;
+        setProviders(names);
+      })
+      .catch(() => {
+        // Keep fallback provider list if endpoint fails.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // Reset catalog when provider changes
   useEffect(() => {
@@ -143,8 +158,8 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             <label className="block">
               <span className="text-xs text-zinc-400 mb-1 block">Provider</span>
               <select className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                value={provider} onChange={(e) => setProvider(e.target.value as Provider)}>
-                {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
+                value={provider} onChange={(e) => setProvider(e.target.value)}>
+                {providers.map((p) => <option key={p} value={p}>{p}</option>)}
               </select>
             </label>
           </div>

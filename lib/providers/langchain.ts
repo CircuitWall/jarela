@@ -71,10 +71,15 @@ async function loadLangChainModel(model_id: string, params: ProviderParams): Pro
       model = new ChatCohere(args as unknown as ConstructorParameters<typeof ChatCohere>[0]);
       break;
     }
+    case "ChatDeepSeek": {
+      const { ChatDeepSeek } = await import("@langchain/deepseek");
+      model = new ChatDeepSeek(args as unknown as ConstructorParameters<typeof ChatDeepSeek>[0]);
+      break;
+    }
     default:
       throw new Error(
         `langchain provider: unknown lc_class "${cls}". ` +
-        `Supported: ChatGoogleGenerativeAI, ChatCohere. ` +
+        `Supported: ChatGoogleGenerativeAI, ChatCohere, ChatDeepSeek. ` +
         `To add another, install @langchain/<vendor> and extend lib/providers/langchain.ts.`
       );
   }
