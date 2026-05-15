@@ -27,6 +27,11 @@ async function getCopilotToken(pat: string): Promise<string> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => res.statusText);
+    if (res.status === 404) {
+      // Some accounts/environments cannot access the exchange endpoint.
+      // Fall back to using the configured token directly.
+      return pat;
+    }
     if (res.status === 401) {
       throw new Error(
         `GitHub Copilot: token exchange failed (401). ` +
