@@ -181,6 +181,23 @@ function ensureTaskAssignmentColumns(db: DatabaseSync): void {
 }
 
 function seedAgentConfigs(db: DatabaseSync): void {
+  // Only seed on first run — once the user has any agents we must not
+  // resurrect ones they've deleted (e.g. the legacy "echo" / "llm" defaults).
+  const count = (db.prepare("SELECT COUNT(*) as n FROM agent_configs").get() as { n: number }).n;
+  if (count > 0) {
+    // Still keep threads pointing at a real agent, in case an agent was deleted.
+    const fallback = (db.prepare(
+      "SELECT id FROM agent_configs ORDER BY is_default DESC, created_at ASC LIMIT 1"
+    ).get() as { id: string } | undefined)?.id;
+    if (fallback) {
+      db.prepare(
+        `UPDATE threads SET agent_id = ?
+         WHERE agent_id NOT IN (SELECT id FROM agent_configs)`
+      ).run(fallback);
+    }
+    return;
+  }
+
   const t = now();
   const insert = db.prepare(
     `INSERT OR IGNORE INTO agent_configs (id, name, icon, identity, instructions, tools, model_config_name, is_default, created_at, updated_at)
