@@ -6,6 +6,7 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
+import { requireAccess } from "@/lib/auth/access";
 
 type WsRunRequest = {
   thread_id: string;
@@ -73,7 +74,25 @@ export function ensureWsServer(): { port: number } {
   }
 
   const preferredPort = Number(process.env.LANGGUI_WS_PORT ?? 3219);
-  const server = new WebSocketServer({ port: preferredPort });
+  const server = new WebSocketServer({
+    port: preferredPort,
+    // Same access policy as HTTP middleware — loopback or whitelisted Tailscale
+    // identity. The actual TCP source IP is available here, so we use it
+    // directly (more reliable than the spoofable Host header).
+    verifyClient: (info, cb) => {
+      const result = requireAccess({
+        headers: info.req.headers,
+        host: info.req.headers.host ?? null,
+        remoteAddress: info.req.socket.remoteAddress ?? null,
+      });
+      if (result.allowed) {
+        (info.req as unknown as { __identity?: string | null }).__identity = result.identity;
+        cb(true);
+      } else {
+        cb(false, 401, "Unauthorized");
+      }
+    },
+  });
 
   server.on("connection", (ws) => {
     sendJson(ws, { type: "ready" });
