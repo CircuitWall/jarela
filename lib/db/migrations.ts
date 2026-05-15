@@ -185,16 +185,7 @@ function seedAgentConfigs(db: DatabaseSync): void {
   // resurrect ones they've deleted (e.g. the legacy "echo" / "llm" defaults).
   const count = (db.prepare("SELECT COUNT(*) as n FROM agent_configs").get() as { n: number }).n;
   if (count > 0) {
-    // Still keep threads pointing at a real agent, in case an agent was deleted.
-    const fallback = (db.prepare(
-      "SELECT id FROM agent_configs ORDER BY is_default DESC, created_at ASC LIMIT 1"
-    ).get() as { id: string } | undefined)?.id;
-    if (fallback) {
-      db.prepare(
-        `UPDATE threads SET agent_id = ?
-         WHERE agent_id NOT IN (SELECT id FROM agent_configs)`
-      ).run(fallback);
-    }
+    reanchorOrphanThreads(db);
     return;
   }
 
@@ -209,16 +200,22 @@ function seedAgentConfigs(db: DatabaseSync): void {
   insert.run("llm", "LLM Agent", null, "You are a helpful assistant.", "", "[]", null, 0, t, t);
   insert.run("echo", "Echo", null, "", "", "[]", null, 0, t, t);
 
-  // Point any threads whose agent_id has no matching agent_config to the default agent
-  const fallback = (db.prepare(
-    "SELECT id FROM agent_configs ORDER BY created_at ASC LIMIT 1"
-  ).get() as { id: string } | undefined)?.id;
-  if (fallback) {
-    db.prepare(
-      `UPDATE threads SET agent_id = ?
-       WHERE agent_id NOT IN (SELECT id FROM agent_configs)`
-    ).run(fallback);
-  }
+  reanchorOrphanThreads(db);
+}
+
+// Threads have a UNIQUE(agent_id) index (one thread per agent), so we can't
+// bulk-repoint orphan threads to a single fallback — that would violate the
+// constraint as soon as there are 2+ orphans. Instead we drop orphan threads
+// (and their messages); the agent they pointed at no longer exists.
+function reanchorOrphanThreads(db: DatabaseSync): void {
+  db.exec(`
+    DELETE FROM messages WHERE thread_id IN (
+      SELECT thread_id FROM threads WHERE agent_id NOT IN (SELECT id FROM agent_configs)
+    )
+  `);
+  db.exec(`
+    DELETE FROM threads WHERE agent_id NOT IN (SELECT id FROM agent_configs)
+  `);
 }
 
 function seedModelConfigs(db: DatabaseSync): void {
