@@ -7,6 +7,11 @@ const nextConfig: NextConfig = {
   // looking for a lockfile and trips over the parent ../package-lock.json,
   // emitting a "multiple lockfiles detected" warning every build.
   outputFileTracingRoot: __dirname,
+  // Emit a self-contained .next/standalone/ tree (server.js + the minimum
+  // node_modules subset Next traced as required). This is what we copy into
+  // %LOCALAPPDATA%\Programs\LangGUI for the installed app — no repo or
+  // `npm install` needed at runtime.
+  output: "standalone",
   webpack(config, { isServer }) {
     if (isServer) {
       // ws native addons (bufferutil, utf-8-validate) must not be bundled by webpack
