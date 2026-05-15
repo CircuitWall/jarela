@@ -135,7 +135,7 @@ export const anthropicProvider: ModelProvider = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function toAnthropicContent(
+export function toAnthropicContent(
   content: string | ContentPart[],
 ): Anthropic.MessageParam["content"] {
   if (typeof content === "string") return content;
