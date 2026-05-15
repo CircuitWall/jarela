@@ -26,6 +26,10 @@ export interface ActiveRun {
   subscribers: Set<Subscriber>;
   // Final assistant text — useful for notification body without replaying every event.
   final_text: string;
+  // Server-side abort: when the user clicks Stop (or the last client
+  // disconnects), we signal this controller so the LangGraph stream cancels
+  // itself instead of running to completion in the background.
+  abort: AbortController;
 }
 
 const runs = new Map<string, ActiveRun>();
@@ -45,6 +49,7 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     events: [],
     subscribers: new Set(),
     final_text: "",
+    abort: new AbortController(),
   };
   runs.set(thread_id, run);
   return run;
@@ -81,6 +86,18 @@ export function finishRun(thread_id: string, status: "done" | "error"): void {
 
 export function getRun(thread_id: string): ActiveRun | null {
   return runs.get(thread_id) ?? null;
+}
+
+// Signal the agent stream to cancel. The stream loop in the route is wired
+// to listen on the AbortController and exit early, emitting an error chunk
+// the client (and the queue-drain hook) can react to. Idempotent.
+export function abortRun(thread_id: string, reason = "user_interrupted"): boolean {
+  const run = runs.get(thread_id);
+  if (!run || run.status !== "running") return false;
+  if (!run.abort.signal.aborted) {
+    try { run.abort.abort(reason); } catch { /* */ }
+  }
+  return true;
 }
 
 // Replays buffered events synchronously, then subscribes for live ones.

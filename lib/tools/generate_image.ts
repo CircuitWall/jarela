@@ -17,6 +17,16 @@ import { writeBinaryFile } from "@/lib/files";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+// Cap any single image-generation HTTP call. Without this, a stuck Gemini
+// connection wedges the agent loop (and the Stop button does nothing useful
+// because fetch hasn't returned yet to check the abort signal).
+const REQUEST_TIMEOUT_MS = Number(process.env.LANGGUI_IMAGE_TIMEOUT_MS) || 60_000;
+
+function timeoutSignal(ms: number): AbortSignal {
+  const c = new AbortController();
+  setTimeout(() => c.abort(new Error(`timeout after ${ms}ms`)), ms).unref?.();
+  return c.signal;
+}
 
 function resolveApiKey(): string | null {
   const raw = getIntegrationRaw("google");
@@ -55,11 +65,17 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
   };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new Error(`Gemini request failed: ${describeError(err)}`);
+  }
   const json = (await res.json()) as GeminiResponse;
   if (!res.ok) {
     throw new Error(`Gemini ${res.status}: ${json.error?.message ?? "request failed"}`);
@@ -81,11 +97,17 @@ async function callImagen(model: string, prompt: string, apiKey: string, n: numb
     instances: [{ prompt }],
     parameters: { sampleCount: Math.max(1, Math.min(4, n)), aspectRatio: aspect },
   };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new Error(`Imagen request failed: ${describeError(err)}`);
+  }
   const json = (await res.json()) as ImagenResponse;
   if (!res.ok) {
     throw new Error(`Imagen ${res.status}: ${json.error?.message ?? "request failed"}`);
@@ -99,6 +121,16 @@ async function callImagen(model: string, prompt: string, apiKey: string, n: numb
   }
   if (out.length === 0) throw new Error("Imagen returned no image");
   return out;
+}
+
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code = (cause as { code?: string }).code;
+    return code ? `${err.message}: ${cause.message} (${code})` : `${err.message}: ${cause.message}`;
+  }
+  return err.message;
 }
 
 function extForMime(mime: string): string {
