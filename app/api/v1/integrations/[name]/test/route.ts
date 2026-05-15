@@ -71,8 +71,20 @@ async function testGoogle() {
     return NextResponse.json({ ok: true, detail: { displayName: "Google AI" } });
   } catch (err) {
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { ok: false, error: describeError(err) },
       { status: 200 },
     );
   }
+}
+
+function describeError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  // undici's fetch wraps the underlying network/TLS/DNS failure in err.cause.
+  // The bare "fetch failed" message is useless on its own.
+  const cause = (err as { cause?: unknown }).cause;
+  if (cause instanceof Error) {
+    const code = (cause as { code?: string }).code;
+    return code ? `${err.message}: ${cause.message} (${code})` : `${err.message}: ${cause.message}`;
+  }
+  return err.message;
 }

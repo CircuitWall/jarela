@@ -6,6 +6,8 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
+import { startRun, finishRun, getRun } from "@/lib/agents/run-registry";
+import { getThread } from "@/lib/stores/threads";
 import { requireAccess } from "@/lib/auth/access";
 
 type WsRunRequest = {
@@ -32,8 +34,26 @@ function sendJson(ws: WebSocket, payload: Record<string, unknown>): void {
 
 async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
   let assistantContent = "";
+  // Refuse if another run is already active for this thread (the HTTP route
+  // enforces this too; the WS path must mirror it so DELETE-abort and the
+  // queue-drain UX behave the same regardless of transport).
+  const existing = getRun(req.thread_id);
+  if (existing && existing.status === "running") {
+    sendJson(ws, { type: "error", message: "A run is already in progress for this thread", code: "run_active" });
+    if (ws.readyState === WebSocket.OPEN) ws.close(1000, "run_active");
+    return;
+  }
+  const thread = getThread(req.thread_id);
+  const active = startRun(req.thread_id, thread?.agent_id ?? null);
+  let terminal: "done" | "error" = "done";
   try {
-    const prepared = await prepareThreadRun(req.thread_id, req.message, req.stream_options);
+    const prepared = await prepareThreadRun(
+      req.thread_id,
+      req.message,
+      req.stream_options,
+      undefined,
+      active.abort.signal,
+    );
     for await (const chunk of prepared.stream) {
       if (chunk.type === "text_delta") {
         assistantContent += String(chunk.data.delta ?? "");
@@ -41,11 +61,13 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
       if (shouldEmitChunk(chunk.type, req.stream_options)) {
         sendJson(ws, { type: chunk.type, ...chunk.data });
       }
+      if (chunk.type === "error") terminal = "error";
       if (chunk.type === "done" || chunk.type === "error") {
         break;
       }
     }
   } catch (err) {
+    terminal = "error";
     if (err instanceof RunThreadError) {
       sendJson(ws, { type: "error", message: err.message, code: err.code });
     } else {
@@ -53,6 +75,7 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
     }
   } finally {
     persistAssistantMessage(req.thread_id, assistantContent);
+    finishRun(req.thread_id, terminal);
     if (ws.readyState === WebSocket.OPEN) {
       ws.close(1000, "completed");
     }
