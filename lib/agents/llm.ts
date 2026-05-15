@@ -25,14 +25,44 @@ function toBaseMessages(
   return [
     ...base,
     ...messages.map((m) => {
-      const text =
-        typeof m.content === "string"
-          ? m.content
-          : m.content
-              .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
-              .map((p) => p.text)
-              .join("\n");
-      return m.role === "user" ? new HumanMessage(text) : new AIMessage(text);
+      // Plain text path — fast & most common.
+      if (typeof m.content === "string") {
+        return m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content);
+      }
+      // Multi-modal path — translate our ContentPart[] into LangChain's
+      // standard content-block array. Images become OpenAI-style
+      // `image_url` blocks (the LangChain idiom that all major providers
+      // accept on input). File attachments fall back to text so they
+      // still reach text-only models. Assistant messages currently never
+      // contain attachments in our flow, so we just flatten to text.
+      if (m.role === "assistant") {
+        const text = m.content
+          .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
+          .map((p) => p.text).join("\n");
+        return new AIMessage(text);
+      }
+      const blocks: Array<Record<string, unknown>> = [];
+      for (const part of m.content) {
+        if (part.type === "text") {
+          if (part.text) blocks.push({ type: "text", text: part.text });
+        } else if (part.type === "image") {
+          blocks.push({
+            type: "image_url",
+            image_url: { url: `data:${part.media_type};base64,${part.data}` },
+          });
+        } else if (part.type === "file") {
+          if (part.media_type.startsWith("text/") || part.media_type === "application/json") {
+            blocks.push({ type: "text", text: `[Attached file: ${part.name}]\n${part.data}` });
+          } else {
+            blocks.push({ type: "text", text: `[Attached file: ${part.name} (${part.media_type})]` });
+          }
+        }
+      }
+      // Cast through unknown — LangChain's strict block-union type rejects our
+      // dynamic shape, but at runtime BaseMessage stores content as-is and
+      // ChatModels consume whatever the provider's API expects (image_url for
+      // OpenAI, image for Anthropic, etc.).
+      return new HumanMessage({ content: blocks as unknown as string });
     }),
   ];
 }
