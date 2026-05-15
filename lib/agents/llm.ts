@@ -71,6 +71,7 @@ export async function* streamWithConfig(
   threadId: string,
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
   options?: StreamOptions,
+  signal?: AbortSignal,
 ): AsyncIterable<StreamChunk> {
   const runCfg = options?.agent_run_config;
 
@@ -138,6 +139,10 @@ export async function* streamWithConfig(
         // while still bounding runaway loops. Configurable via env if a
         // specific deployment needs more or less.
         recursionLimit: Number(process.env.LANGGUI_RECURSION_LIMIT) || 50,
+        // Cancellation: when the user hits Stop (or the last client
+        // disconnects), the route aborts this signal and the LangGraph
+        // pregel loop unwinds, throwing a friendly aborted error below.
+        signal,
       },
     );
 
@@ -189,6 +194,23 @@ export async function* streamWithConfig(
     const name = err instanceof Error ? err.name : "";
     const rawMsg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error && err.stack ? err.stack : "";
+
+    // User-initiated abort (Stop button / client disconnect): emit a
+    // short error chunk and let the route fall through to `done` so the
+    // queued-message drain in the UI fires normally.
+    if (signal?.aborted || name === "AbortError" || /aborted/i.test(rawMsg)) {
+      yield { type: "error", data: { message: "Run interrupted by user.", code: "aborted" } };
+      yield {
+        type: "done",
+        data: {
+          message_id: `llm-${threadId}-${Date.now()}`,
+          usage: { input_tokens: 0, output_tokens: totalOutputTokens },
+          aborted: true,
+        },
+      };
+      return;
+    }
+
     console.error("[agent_error]", stack || rawMsg);
 
     // Translate LangGraph's recursion limit into a friendly explanation —
