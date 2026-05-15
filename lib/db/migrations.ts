@@ -205,6 +205,11 @@ function seedAgentConfigs(db: DatabaseSync): void {
 }
 
 function seedModelConfigs(db: DatabaseSync): void {
+  // Only seed on first run — if any row exists, the user has already managed
+  // their configs and we must not resurrect anything they deleted.
+  const count = (db.prepare("SELECT COUNT(*) as n FROM model_configs").get() as { n: number }).n;
+  if (count > 0) return;
+
   const insert = db.prepare(
     `INSERT OR IGNORE INTO model_configs (name, provider, model_id, params, is_default, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
@@ -214,7 +219,7 @@ function seedModelConfigs(db: DatabaseSync): void {
     ["claude-sonnet",  "anthropic", "claude-sonnet-4-6", "{}", 0, t, t],
     ["gpt-4o",         "openai",    "gpt-4o",            "{}", 0, t, t],
     ["github-copilot", "github-copilot", "gpt-4o",       "{}", 0, t, t],
-    ["visa-default",   "internal",      "claude-sonnet-4-6", "{}", 1, t, t],
+
   ];
   for (const s of seeds) insert.run(...s);
 }

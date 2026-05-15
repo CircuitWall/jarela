@@ -223,13 +223,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
 
 
-          {showGitHub && (
-            <div className="p-2.5 rounded-lg bg-surface-3 border border-border text-xs text-zinc-400">
-              Paste a GitHub token as API Key.
-              <strong className="text-zinc-300"> PATs auto-route to GitHub Models</strong>,
-              and non-PAT credentials use Copilot session-token exchange.
-            </div>
-          )}
+          {showGitHub && <GitHubCopilotAuth />}
 
           <label className="block">
             <span className="text-xs text-zinc-400 mb-1 block">API Key</span>
@@ -276,6 +270,124 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function GitHubCopilotAuth() {
+  const [status, setStatus] = useState<{ signed_in: boolean; stored_at: string | null } | null>(null);
+  const [flow, setFlow] = useState<{ user_code: string; verification_uri: string; device_code: string; interval: number } | null>(null);
+  const [polling, setPolling] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.githubCopilotAuth.status().then(setStatus).catch(() => setStatus({ signed_in: false, stored_at: null }));
+  }, []);
+
+  async function startSignIn() {
+    setError(null); setMessage(null);
+    try {
+      const f = await api.githubCopilotAuth.start();
+      setFlow({ user_code: f.user_code, verification_uri: f.verification_uri, device_code: f.device_code, interval: f.interval || 5 });
+      setPolling(true);
+      pollLoop(f.device_code, f.interval || 5, f.expires_in || 900);
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
+  async function pollLoop(device_code: string, intervalSec: number, expiresInSec: number) {
+    const deadline = Date.now() + expiresInSec * 1000;
+    let interval = intervalSec;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, interval * 1000));
+      try {
+        const res = await api.githubCopilotAuth.poll(device_code);
+        if (res.status === "success") {
+          setMessage("Signed in to GitHub Copilot.");
+          setFlow(null);
+          setPolling(false);
+          const s = await api.githubCopilotAuth.status();
+          setStatus(s);
+          return;
+        }
+        if (res.status === "slow_down") { interval += 5; continue; }
+        if (res.status === "pending") continue;
+        setError(`Sign-in failed: ${res.status}${res.error ? ` (${res.error})` : ""}`);
+        setFlow(null);
+        setPolling(false);
+        return;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        setPolling(false);
+        return;
+      }
+    }
+    setError("Sign-in timed out. Try again.");
+    setFlow(null);
+    setPolling(false);
+  }
+
+  async function signOut() {
+    setError(null); setMessage(null);
+    try {
+      await api.githubCopilotAuth.signOut();
+      const s = await api.githubCopilotAuth.status();
+      setStatus(s);
+      setMessage("Signed out.");
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  }
+
+  async function copyCode(code: string) {
+    try { await navigator.clipboard.writeText(code); } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="p-2.5 rounded-lg bg-surface-3 border border-border text-xs space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-zinc-300">
+          <strong>GitHub Copilot sign-in</strong>
+          <p className="text-zinc-500 mt-0.5">
+            Unlocks full model context windows (vs. the 8k cap on raw PATs via GitHub Models).
+          </p>
+        </div>
+        {status?.signed_in ? (
+          <button onClick={signOut} className="px-2 py-1 text-[11px] bg-surface text-zinc-300 hover:text-red-300 rounded border border-border whitespace-nowrap">
+            Sign out
+          </button>
+        ) : (
+          <button
+            onClick={startSignIn}
+            disabled={polling}
+            className="px-2 py-1 text-[11px] bg-accent hover:bg-accent-hover text-white rounded whitespace-nowrap disabled:opacity-50"
+          >
+            {polling ? "Waiting…" : "Sign in"}
+          </button>
+        )}
+      </div>
+      {status?.signed_in && !flow && (
+        <p className="text-emerald-400">Connected{status.stored_at ? ` · ${new Date(status.stored_at).toLocaleString()}` : ""}</p>
+      )}
+      {flow && (
+        <div className="rounded bg-surface p-2 border border-border space-y-1.5">
+          <p className="text-zinc-400">
+            1. Open{" "}
+            <a href={flow.verification_uri} target="_blank" rel="noreferrer" className="text-accent underline">
+              {flow.verification_uri}
+            </a>
+          </p>
+          <p className="text-zinc-400">2. Enter this code:</p>
+          <div className="flex items-center gap-2">
+            <code className="px-2 py-1 bg-surface-2 rounded font-mono text-zinc-100 text-sm tracking-wider">
+              {flow.user_code}
+            </code>
+            <button onClick={() => copyCode(flow.user_code)} className="text-[10px] text-zinc-400 hover:text-zinc-100">
+              Copy
+            </button>
+          </div>
+        </div>
+      )}
+      {message && <p className="text-emerald-400">{message}</p>}
+      {error && <p className="text-red-400">{error}</p>}
     </div>
   );
 }

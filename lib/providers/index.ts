@@ -2,16 +2,16 @@ import type { ModelProvider } from "./types";
 import { openaiProvider } from "./openai";
 import { anthropicProvider } from "./anthropic";
 import { githubCopilotProvider } from "./github-copilot";
-import { visaProvider } from "./visa";
 import { deepseekProvider } from "./deepseek";
+import { geminiProvider } from "./gemini";
 import { langchainProvider } from "./langchain";
 
 const PROVIDERS: Record<string, ModelProvider> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
   "github-copilot": githubCopilotProvider,
-  visa: visaProvider,
   deepseek: deepseekProvider,
+  gemini: geminiProvider,
   langchain: langchainProvider,
 };
 
