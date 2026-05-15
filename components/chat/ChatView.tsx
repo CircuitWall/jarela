@@ -183,9 +183,15 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     const currentAttachments = attachments;
     setAttachments([]);
 
+    // Optimistic message — include attachments so the user immediately sees
+    // their pasted image / file in the bubble. The MessageBubble re-renders
+    // ContentPart[] (the JSON form), so we mirror what gets persisted.
+    const optimisticContent = currentAttachments.length
+      ? JSON.stringify([{ type: "text" as const, text: msg }, ...currentAttachments])
+      : msg;
     setMessages((p) => [
       ...p,
-      { id: `opt-${Date.now()}`, role: "user", content: msg, created_at: new Date().toISOString() },
+      { id: `opt-${Date.now()}`, role: "user", content: optimisticContent, created_at: new Date().toISOString() },
     ]);
 
     await start(

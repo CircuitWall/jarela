@@ -6,7 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Bot, ChevronRight, Link as LinkIcon, Paperclip, User } from "lucide-react";
+import { Bot, ChevronRight, Link as LinkIcon, Paperclip, User, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 
@@ -148,9 +148,17 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
             const match = /language-(\w+)/.exec(className ?? "");
             const code = String(children).replace(/\n$/, "");
             return match ? (
-              <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div">{code}</SyntaxHighlighter>
+              <SyntaxHighlighter
+                style={oneDark}
+                language={match[1]}
+                PreTag="div"
+                wrapLongLines
+                customStyle={{ maxWidth: "100%", overflowX: "auto" }}
+              >
+                {code}
+              </SyntaxHighlighter>
             ) : (
-              <code className="bg-surface-2 px-1 rounded text-zinc-300">{code}</code>
+              <code className="bg-surface-2 px-1 rounded text-zinc-300 break-all">{code}</code>
             );
           },
         }}
@@ -203,21 +211,74 @@ function ContentPartView({ part, isUser }: { part: ContentPart; isUser: boolean 
       : <MarkdownContent text={part.text} />;
   }
   if (part.type === "image") {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
+    return <ClickableImage media_type={part.media_type} data={part.data} />;
+  }
+  // File attachment — make it clickable too: opens the raw text/PDF in a new tab.
+  const file = part as ContentPart & { type: "file"; name: string; media_type: string; data: string };
+  const dataUrl = `data:${file.media_type};base64,${file.data}`;
+  // For text files our data field is plain text, not base64. Detect and wrap.
+  const href = /^text\/|^application\/json$/.test(file.media_type)
+    ? `data:${file.media_type};charset=utf-8,${encodeURIComponent(file.data)}`
+    : dataUrl;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 hover:bg-surface-3 hover:border-zinc-600 text-[11px] text-zinc-300 transition-colors"
+      title="Open in new tab"
+    >
+      <Paperclip size={11} className="text-zinc-500 shrink-0" />
+      <span className="truncate max-w-[200px]">{file.name}</span>
+    </a>
+  );
+}
+
+// Image attachment — thumbnail in the bubble, click for a full-screen lightbox.
+function ClickableImage({ media_type, data }: { media_type: string; data: string }) {
+  const [open, setOpen] = useState(false);
+  const src = `data:${media_type};base64,${data}`;
+  return (
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={`data:${part.media_type};base64,${part.data}`}
+        src={src}
         alt="attached image"
-        className="max-w-full rounded-xl mt-1 border border-border/40"
+        onClick={() => setOpen(true)}
+        className="max-w-full rounded-xl mt-1 border border-border/40 cursor-zoom-in hover:border-zinc-500 transition-colors"
         style={{ maxHeight: "400px", objectFit: "contain" }}
       />
-    );
-  }
-  return (
-    <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 text-[11px] text-zinc-300">
-      <Paperclip size={11} className="text-zinc-500 shrink-0" />
-      <span className="truncate max-w-[200px]">{(part as ContentPart & { name: string }).name}</span>
-    </div>
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt="attached image"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+            className="absolute top-4 right-4 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white"
+            aria-label="Close"
+          >
+            <X size={16} />
+          </button>
+          <a
+            href={src}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-4 right-4 px-3 py-1.5 rounded-md bg-black/40 hover:bg-black/60 text-white text-xs"
+          >
+            Open in new tab
+          </a>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -251,9 +312,9 @@ export function MessageBubble({ message, agentConfig, userProfile, showAvatar = 
         )}
       </div>
 
-      <div className={`flex flex-col max-w-[75%] ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex flex-col max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
         <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full overflow-hidden ${
             isUser ? "bg-accent text-white rounded-br-sm" : "bg-surface-3 text-zinc-100 rounded-bl-sm"
           }`}
         >
