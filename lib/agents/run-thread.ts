@@ -206,6 +206,7 @@ export async function prepareThreadRun(
     "- For research / news / product summaries, embed a relevant image from the page near the top — it makes the answer feel like a real article instead of a wall of text.",
     "- Sources: `web_fetch` returns an `images` field — `images.og` is usually the publisher-chosen hero shot (best pick), then `images.twitter`, then `images.samples`. Use those URLs verbatim.",
     "- Don't fabricate image URLs. Only use URLs that came from a tool result or the user.",
+    "- To CREATE a new image from a description, call the `generate_image` tool. Embed every URL it returns (use the `markdown` field verbatim, or build `![alt](images[i].url)` yourself).",
     "- One hero image is plenty for most replies; a small inline gallery is fine for comparisons. Don't spam.",
     "",
     "Citations:",
