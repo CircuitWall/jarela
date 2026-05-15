@@ -1,6 +1,6 @@
 "use client";
 import { Settings } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
@@ -39,6 +39,17 @@ export function AppShell() {
   // Track current view so we can suppress notifications for the agent in focus.
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Stable callback references — without these, AppShell re-renders (e.g. on
+  // gear toggle, unread counter clearing) hand ChatView fresh function
+  // identities. ChatView's hooks re-derive cascading useCallbacks (handleDone
+  // → useSSE.consume → useSSE.attach), and effects keyed on `attach` re-fire,
+  // forcing a message refetch + chat-window scroll. Stable refs break the cascade.
+  const onMessageSent = useCallback(() => {}, []);
+  const onSelectAgent = useCallback(
+    (id: string) => { dispatch({ type: "SET_AGENT", agentId: id }); },
+    [dispatch],
+  );
 
   // Click on an OS Web Notification → useEventNotifications fires a custom
   // event; handle it here to switch to the relevant agent's chat.
@@ -122,8 +133,8 @@ export function AppShell() {
             sessionError={sessionError}
             showTools={showTools}
             showThinking={showThinking}
-            onMessageSent={() => {}}
-            onSelectAgent={(id) => dispatch({ type: "SET_AGENT", agentId: id })}
+            onMessageSent={onMessageSent}
+            onSelectAgent={onSelectAgent}
           />
         )}
         {state.activeTab === "agents" && <AgentsPanel />}
