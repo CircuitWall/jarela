@@ -29,6 +29,53 @@ function extractTitle(html: string): string | null {
   return m ? m[1].trim() : null;
 }
 
+// Pull image URLs out of a fetched page so the agent can embed them in its
+// reply via standard markdown `![alt](url)`. We expose three categories:
+//   - og: the page's primary OG image (most useful — chosen by the publisher)
+//   - twitter: the Twitter card image (close second)
+//   - samples: the first few <img src=…> tags (fallback when meta is missing)
+//
+// All URLs are resolved to absolute against the final fetched URL so the
+// agent can use them as-is. Data URIs and tracking pixels are filtered out.
+function extractImages(html: string, baseUrl: string): {
+  og: string | null;
+  twitter: string | null;
+  samples: string[];
+} {
+  const og =
+    /<meta[^>]+property=["']og:image(?::secure_url|:url)?["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1] ??
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i.exec(html)?.[1] ?? null;
+
+  const twitter =
+    /<meta[^>]+name=["']twitter:image(?::src)?["'][^>]+content=["']([^"']+)["']/i.exec(html)?.[1] ??
+    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i.exec(html)?.[1] ?? null;
+
+  const seen = new Set<string>();
+  const samples: string[] = [];
+  for (const m of html.matchAll(/<img[^>]+src=["']([^"']+)["']/gi)) {
+    const src = m[1];
+    if (!src || src.startsWith("data:")) continue;
+    // Skip obvious tracking pixels and tiny svgs.
+    if (/(?:1x1|pixel|spacer)\.(?:gif|png)/i.test(src)) continue;
+    const abs = resolveUrl(src, baseUrl);
+    if (!abs || seen.has(abs)) continue;
+    seen.add(abs);
+    samples.push(abs);
+    if (samples.length >= 6) break;
+  }
+
+  return {
+    og: resolveUrl(og, baseUrl),
+    twitter: resolveUrl(twitter, baseUrl),
+    samples,
+  };
+}
+
+function resolveUrl(u: string | null | undefined, base: string): string | null {
+  if (!u) return null;
+  try { return new URL(u, base).toString(); } catch { return null; }
+}
+
 export const webFetchTool = tool(
   async ({ url, mode, max_chars }) => {
     if (!/^https?:\/\//.test(url)) {
@@ -70,6 +117,7 @@ export const webFetchTool = tool(
       const title = extractTitle(raw);
       const body = wantHtml ? raw : htmlToText(raw);
       const clipped = body.length > cap ? body.slice(0, cap) + "…" : body;
+      const images = extractImages(raw, finalUrl);
 
       return JSON.stringify({
         url: finalUrl,
@@ -80,6 +128,7 @@ export const webFetchTool = tool(
         bytes_read: bytesRead,
         truncated,
         content: clipped,
+        images,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -93,7 +142,10 @@ export const webFetchTool = tool(
     description:
       "Fetch the content of a URL. Default mode='text' returns extracted plain text (good for summarizing articles). " +
       "mode='html' returns raw HTML if you specifically need markup. Truncates after 200KB. " +
-      "Use this when web_search returns a URL but you need the actual page content, or to fetch a specific known page.",
+      "Use this when web_search returns a URL but you need the actual page content, or to fetch a specific known page. " +
+      "The response also includes an `images` object with absolute URLs extracted from the page: " +
+      "`og` (og:image — usually the best hero image), `twitter` (twitter:image), and `samples` (first few <img> tags). " +
+      "Embed these in your reply with markdown `![alt](url)` to produce rich, image-rich answers.",
     schema: z.object({
       url: z.string().describe("Absolute URL starting with http:// or https://"),
       mode: z.enum(["text", "html"]).optional().describe("'text' (default) extracts readable text; 'html' returns raw markup"),
