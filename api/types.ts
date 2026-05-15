@@ -120,6 +120,13 @@ export interface UserProfile {
   updated_at: string;
 }
 
+export interface AccessWhitelistEntry {
+  identity: string;
+  display_name: string | null;
+  added_at: string;
+  last_seen_at: string | null;
+}
+
 export interface ToolInfo {
   name: string;
   description: string;
