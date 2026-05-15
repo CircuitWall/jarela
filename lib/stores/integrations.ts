@@ -24,6 +24,13 @@ export const INTEGRATIONS = {
       { key: "api_token", label: "API token", placeholder: "ATATT3xFfGF0…", secret: true, required: true },
     ],
   },
+  google: {
+    label: "Google AI (Gemini + Imagen)",
+    description: "Used by the generate_image tool (Gemini / Imagen). Get a key at aistudio.google.com → API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
+    ],
+  },
 } as const;
 
 export type IntegrationName = keyof typeof INTEGRATIONS;
