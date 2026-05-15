@@ -15,6 +15,7 @@ interface SessionToken {
 const tokenCache = new Map<string, SessionToken>();
 
 async function getCopilotToken(pat: string): Promise<string> {
+  if (!pat) throw new Error("GitHub Copilot: no API key configured for token exchange.");
   const cached = tokenCache.get(pat);
   if (cached && cached.expiresAt - Date.now() > 60_000) return cached.token;
 
@@ -27,16 +28,18 @@ async function getCopilotToken(pat: string): Promise<string> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => res.statusText);
-    if (res.status === 404) {
-      // Some accounts/environments cannot access the exchange endpoint.
-      // Fall back to using the configured token directly.
-      return pat;
-    }
     if (res.status === 401) {
       throw new Error(
         `GitHub Copilot: token exchange failed (401). ` +
         `Ensure your PAT has the "copilot" scope and that you have an active Copilot subscription. ` +
         `Details: ${body}`,
+      );
+    }
+    if (res.status === 404) {
+      throw new Error(
+        "GitHub Copilot token exchange endpoint was not found for this credential. " +
+        "Personal Access Tokens are not accepted directly by Copilot chat. " +
+        "Use a Copilot session token in params.copilot_session_token, or a credential that supports token exchange.",
       );
     }
     throw new Error(`GitHub Copilot: token exchange failed (${res.status}): ${body}`);
@@ -57,11 +60,13 @@ const FIXED_HEADERS = {
 };
 
 async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
-  const pat = (params.api_key as string | undefined) ?? "";
-  if (!pat) throw new Error("GitHub Copilot: no API key (GitHub PAT) configured.");
-  const sessionToken = await getCopilotToken(pat);
+  const explicitSessionToken = params.copilot_session_token as string | undefined;
+  const token = explicitSessionToken && explicitSessionToken.trim().length > 0
+    ? explicitSessionToken
+    : await getCopilotToken(((params.api_key as string | undefined) ?? ""));
+  if (!token) throw new Error("GitHub Copilot: no credential configured. Set api_key or copilot_session_token.");
   return new OpenAI({
-    apiKey: sessionToken,
+    apiKey: token,
     baseURL: params.base_url ?? "https://api.githubcopilot.com",
     defaultHeaders: { ...FIXED_HEADERS, ...params.extra_headers },
   });

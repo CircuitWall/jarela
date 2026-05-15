@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, ModelConfig } from "@/api/types";
 
-const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "internal", "deepseek", "langchain"];
+const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
-const CATALOG_PROVIDERS = new Set<string>(["internal", "openai", "github-copilot", "anthropic"]);
+const CATALOG_PROVIDERS = new Set<string>(["openai", "github-copilot", "anthropic", "gemini", "deepseek"]);
 
 interface Props {
   model?: ModelConfig;
@@ -49,8 +49,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [modelId, setModelId] = useState(model?.model_id ?? "");
   const [apiKey, setApiKey] = useState(model?.params.api_key ?? "");
   const [baseUrl, setBaseUrl] = useState(model?.params.base_url ?? "");
-  const [username, setUsername] = useState((model?.params.username as string) ?? "");
-  const [password, setPassword] = useState((model?.params.password as string) ?? "");
+
   const [extraHeaders, setExtraHeaders] = useState(
     model?.params.extra_headers ? JSON.stringify(model.params.extra_headers, null, 2) : ""
   );
@@ -123,8 +122,6 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       const params: ModelConfig["params"] = {};
       if (apiKey) params.api_key = apiKey;
       if (baseUrl) params.base_url = baseUrl;
-      if (username) params.username = username;
-      if (password) params.password = password;
       if (parsed_headers) params.extra_headers = parsed_headers;
       if (temperature) params.temperature = Number(temperature);
       if (maxTokens) params.max_tokens = Number(maxTokens);
@@ -134,7 +131,6 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
     finally { setSaving(false); }
   }
 
-  const showInternal = provider === "internal";
   const showGitHub = provider === "github-copilot";
 
   const filteredCatalog = catalog?.filter((m) =>
@@ -225,52 +221,26 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             )}
           </div>
 
-          {showInternal ? (
-            <>
-              <label className="block">
-                <span className="text-xs text-zinc-400 mb-1 block">Base URL</span>
-                <input className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://genai-api.internal.example.com" />
-              </label>
-              <div className="p-2.5 rounded-lg bg-surface-3 border border-border text-xs text-zinc-400">
-                <p className="mb-1 font-medium text-zinc-300">Auth — choose one:</p>
-                <p>A) Paste JWT token in <strong>API Key</strong> below</p>
-                <p>B) Enter CorpDev <strong>Username</strong> + <strong>Password</strong> (auto-fetches token)</p>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-xs text-zinc-400 mb-1 block">Username (CorpDev)</span>
-                  <input className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                    value={username} onChange={(e) => setUsername(e.target.value)} placeholder="corpdev username" />
-                </label>
-                <label className="block">
-                  <span className="text-xs text-zinc-400 mb-1 block">Password (CorpDev)</span>
-                  <input type="password" className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                    value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-                </label>
-              </div>
-            </>
-          ) : null}
+
 
           {showGitHub && (
             <div className="p-2.5 rounded-lg bg-surface-3 border border-border text-xs text-zinc-400">
-              Paste your <strong className="text-zinc-300">GitHub token</strong> as API Key. Needs <code>copilot</code> scope.
+              Use a <strong className="text-zinc-300">Copilot session token</strong> for chat access.
+              Personal Access Tokens are not accepted directly by the Copilot chat endpoint.
             </div>
           )}
 
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">API Key{showInternal ? " (JWT token — or use username/password above)" : ""}</span>
+            <span className="text-xs text-zinc-400 mb-1 block">API Key</span>
             <input type="password" className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
               value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
           </label>
 
-          {!showInternal && (
-            <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Base URL (optional override)</span>
-              <input className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://custom-endpoint" />
-            </label>
-          )}
+          <label className="block">
+            <span className="text-xs text-zinc-400 mb-1 block">Base URL (optional override)</span>
+            <input className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://custom-endpoint" />
+          </label>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
