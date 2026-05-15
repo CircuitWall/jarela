@@ -24,10 +24,24 @@ export type NotificationEvent =
     };
 
 type Listener = (ev: NotificationEvent) => void;
-
-const listeners = new Set<Listener>();
-const recent: NotificationEvent[] = [];
 const RECENT_LIMIT = 50;
+
+// Pin the bus state to globalThis so it survives Next.js dev hot-reload.
+// Without this, edits to ANY file in the dependency graph re-evaluate this
+// module, replacing `listeners` and `recent` with empty containers — but
+// the active SSE connection's closure still references the OLD set, so its
+// listener is gone forever and publishes vanish silently. The globalThis
+// trick is the standard Next pattern for singletons.
+interface BusState {
+  listeners: Set<Listener>;
+  recent: NotificationEvent[];
+}
+const g = globalThis as unknown as { __langgui_notif_bus?: BusState };
+if (!g.__langgui_notif_bus) {
+  g.__langgui_notif_bus = { listeners: new Set<Listener>(), recent: [] };
+}
+const listeners = g.__langgui_notif_bus.listeners;
+const recent = g.__langgui_notif_bus.recent;
 
 export function publish(ev: NotificationEvent): void {
   recent.push(ev);

@@ -6,31 +6,44 @@ import { publish as publishNotification } from "@/lib/notifications/bus";
 
 const POLL_INTERVAL_MS = 30_000;
 
-let started = false;
-let timer: NodeJS.Timeout | null = null;
-let running = false;
+// Pin scheduler state to globalThis so the timer survives Next.js dev hot-
+// reload. Without this, every code edit re-evaluates this module, the
+// `started` flag resets to false, the active setInterval handle is lost
+// (the underlying Node timer keeps running but nothing references it
+// anymore), and the next call to startScheduler() ALSO sees a fresh module
+// scope so it tries to start again — sometimes succeeding, sometimes not,
+// always confusing.
+interface SchedulerState {
+  started: boolean;
+  timer: NodeJS.Timeout | null;
+  running: boolean;
+}
+const g = globalThis as unknown as { __langgui_scheduler?: SchedulerState };
+if (!g.__langgui_scheduler) {
+  g.__langgui_scheduler = { started: false, timer: null, running: false };
+}
+const state = g.__langgui_scheduler;
 
 // Idempotent — call repeatedly; only the first call starts the loop.
 export function startScheduler(): void {
-  if (started) return;
-  started = true;
-  // Run a tick immediately (after the current sync work) and then on interval.
+  if (state.started) return;
+  state.started = true;
   setImmediate(() => { void tick(); });
-  timer = setInterval(() => { void tick(); }, POLL_INTERVAL_MS);
-  if (typeof timer.unref === "function") timer.unref();
+  state.timer = setInterval(() => { void tick(); }, POLL_INTERVAL_MS);
+  if (typeof state.timer.unref === "function") state.timer.unref();
 }
 
 export function stopScheduler(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
+  if (state.timer) {
+    clearInterval(state.timer);
+    state.timer = null;
   }
-  started = false;
+  state.started = false;
 }
 
 async function tick(): Promise<void> {
-  if (running) return;
-  running = true;
+  if (state.running) return;
+  state.running = true;
   try {
     const due = getDueTasks();
     for (const task of due) {
@@ -54,7 +67,7 @@ async function tick(): Promise<void> {
       }
     }
   } finally {
-    running = false;
+    state.running = false;
   }
 }
 
