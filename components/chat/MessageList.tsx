@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, Clock, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ToolEvent } from "@/hooks/useSSE";
 import { MessageBubble } from "./MessageBubble";
@@ -8,6 +8,12 @@ import { MessageBubble } from "./MessageBubble";
 interface SystemNotice {
   id: string;
   text: string;
+}
+
+interface QueuedMessageView {
+  id: string;
+  text: string;
+  attachmentCount: number;
 }
 
 interface Props {
@@ -21,88 +27,32 @@ interface Props {
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
+  queuedMessages?: QueuedMessageView[];
+  onRemoveQueued?: (id: string) => void;
 }
 
-export function MessageList({ messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore }: Props) {
+export function MessageList({ messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const prevFirstId = useRef<string | null>(null);
-  const prevScrollHeight = useRef<number>(0);
+  // Tracks whether the user was at the bottom on the most recent scroll event.
+  // After every render, if true, we snap to bottom — which means: while the
+  // user is at the bottom they "follow" automatically; if they scroll away,
+  // they stay where they are; when they scroll back to the bottom they resume
+  // following. No timers, no growth checks, no programmatic-scroll guards —
+  // the only signal is the user's own scroll position. CSS `overflow-anchor`
+  // (browser-default) handles the pagination case (older content prepended
+  // keeps visible content stable).
+  const atBottomRef = useRef(true);
 
-  // "Following" the bottom: latched by user scroll, NOT by transient distance.
-  //   - Starts true.
-  //   - User scrolls > 200px above bottom → flips false (we stop yanking them).
-  //   - User scrolls back within 80px of bottom → flips true (resumes follow).
-  // Computing "near bottom" per-effect was unreliable: as content streams in,
-  // scrollHeight grows but the just-set scrollTop hasn't, so the check flipped
-  // false mid-stream and auto-scroll silently quit before the message ended.
-  const followingRef = useRef(true);
-  // After we programmatically scroll, the next scroll event is ours, not the
-  // user's — ignore it so we don't immediately latch following=false on long
-  // tables that overshoot during smooth scroll.
-  const programmaticScrollAt = useRef(0);
-
-  function scrollToBottom(smooth: boolean) {
-    const el = scrollRef.current;
-    if (!el) return;
-    programmaticScrollAt.current = Date.now();
-    if (smooth) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    else el.scrollTop = el.scrollHeight;
-  }
-
-  // Streaming chunks fire many times/sec — use instant scroll to keep up.
-  // For new messages (less frequent), smooth feels nicer.
-  //
-  // Only scroll when content actually GREW. Without this, any unrelated
-  // re-render of an ancestor (clicking the gear, dispatch in a context, etc.)
-  // would re-fire this effect with the same dep values and yank the chat
-  // back to the bottom. Tracking a "last seen" snapshot in a ref lets us
-  // distinguish genuine growth from "just re-running the effect".
-  const lastSeen = useRef({ msgs: 0, stream: 0, think: 0, tools: 0 });
   useEffect(() => {
-    const cur = {
-      msgs: messages.length,
-      stream: streamingContent?.length ?? 0,
-      think: thinkingContent?.length ?? 0,
-      tools: toolEvents?.length ?? 0,
-    };
-    const grew =
-      cur.msgs > lastSeen.current.msgs ||
-      cur.stream > lastSeen.current.stream ||
-      cur.think > lastSeen.current.think ||
-      cur.tools > lastSeen.current.tools;
-    lastSeen.current = cur;
-    if (!grew || !followingRef.current) return;
-    scrollToBottom(!streamingContent);
-  }, [messages.length, streamingContent, thinkingContent, toolEvents?.length]);
-
-  // Preserve scroll position when older messages are prepended.
-  useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const firstId = messages[0]?.id ?? null;
-    if (prevFirstId.current && firstId !== prevFirstId.current && prevScrollHeight.current) {
-      el.scrollTop = el.scrollHeight - prevScrollHeight.current;
-    }
-    prevFirstId.current = firstId;
-    prevScrollHeight.current = el.scrollHeight;
-  }, [messages]);
+    if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+  }); // intentionally no deps — runs after every render
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
-    // Pagination: load older when scrolled to the top.
     if (hasMore && !loadingMore && onLoadMore && el.scrollTop < 60) onLoadMore();
-
-    // Skip latching for the brief window after a programmatic scroll — those
-    // events are our own and shouldn't be interpreted as user intent.
-    if (Date.now() - programmaticScrollAt.current < 350) return;
-
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceFromBottom > 200) {
-      followingRef.current = false;
-    } else if (distanceFromBottom < 80) {
-      followingRef.current = true;
-    }
+    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
   }
 
   return (
@@ -135,6 +85,13 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
           showAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
         />
       )}
+      {queuedMessages && queuedMessages.length > 0 && (
+        <div className="flex flex-col gap-1 mt-2 mb-1">
+          {queuedMessages.map((q) => (
+            <QueuedBubble key={q.id} item={q} onRemove={onRemoveQueued} />
+          ))}
+        </div>
+      )}
       {notices?.map((n) => (
         <div key={n.id} className="flex justify-center my-3">
           <span className="text-xs italic text-zinc-500 bg-surface-2 px-3 py-1 rounded-full border border-border">
@@ -142,7 +99,6 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
           </span>
         </div>
       ))}
-      <div ref={bottomRef} />
     </div>
   );
 }
@@ -219,4 +175,42 @@ function isErrorPayload(payload: unknown): boolean {
   if (typeof payload === "string") return /error/i.test(payload);
   if (payload && typeof payload === "object" && "error" in payload) return true;
   return false;
+}
+
+// Ghosted user-bubble shown for messages the user typed while a previous run
+// was still streaming. The chat input doesn't block; submissions stack up here
+// and drain automatically as the agent finishes each turn. Click X to remove
+// before it fires.
+function QueuedBubble({
+  item, onRemove,
+}: {
+  item: { id: string; text: string; attachmentCount: number };
+  onRemove?: (id: string) => void;
+}) {
+  return (
+    <div className="flex flex-row-reverse gap-2 items-end opacity-60 group">
+      <div className="shrink-0 w-7" />
+      <div className="max-w-[75%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed bg-accent/40 border border-accent/40 border-dashed text-zinc-100 relative">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-accent/80 mb-1">
+          <Clock size={10} />
+          <span>queued</span>
+          {item.attachmentCount > 0 && (
+            <span className="text-zinc-300/70 normal-case tracking-normal">
+              · {item.attachmentCount} attachment{item.attachmentCount === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+        <p className="whitespace-pre-wrap break-words">{item.text}</p>
+        {onRemove && (
+          <button
+            onClick={() => onRemove(item.id)}
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-surface-3 border border-border text-zinc-300 hover:text-rose-400 hover:border-rose-700 hidden group-hover:flex items-center justify-center"
+            title="Remove from queue"
+          >
+            <X size={11} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
