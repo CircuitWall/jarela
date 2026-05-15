@@ -9,6 +9,7 @@ import type {
   McpServer,
   McpServerIn,
   PendingAction,
+  ScheduledTask,
   MemoryItem,
   ModelConfig,
   ModelConfigIn,
@@ -150,6 +151,13 @@ export const api = {
       request<PendingAction>(`/pending-actions/${encodeURIComponent(id)}/approve`, { method: "POST", body: "{}" }),
     deny: (id: string) =>
       request<PendingAction>(`/pending-actions/${encodeURIComponent(id)}/deny`, { method: "POST", body: "{}" }),
+  },
+
+  scheduledTasks: {
+    list: (agent_id?: string) =>
+      request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
+    cancel: (id: string) =>
+      request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
   },
 };
 
