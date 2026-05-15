@@ -110,6 +110,16 @@ export const api = {
       request<UserProfile>("/profile", { method: "PUT", body: JSON.stringify(data) }),
   },
 
+  access: {
+    list: () => request<import("./types").AccessWhitelistEntry[]>("/access"),
+    add: (identity: string, display_name?: string | null) =>
+      request<import("./types").AccessWhitelistEntry>("/access", {
+        method: "POST", body: JSON.stringify({ identity, display_name }),
+      }),
+    remove: (identity: string) =>
+      request<{ deleted: boolean }>(`/access/${encodeURIComponent(identity)}`, { method: "DELETE" }),
+  },
+
   tasks: {
     list: () => request<TaskAssignment[]>("/tasks"),
     assign: (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) =>
