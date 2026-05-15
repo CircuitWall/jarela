@@ -30,83 +30,13 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 async function fetchCatalog(provider: string): Promise<CatalogModel[]> {
   switch (provider) {
-    case "internal":    return fetchInternalCatalog();
     case "openai":  return fetchOpenAICatalog();
     case "github-copilot": return fetchGitHubCopilotCatalog();
     case "anthropic": return anthropicKnownModels();
+    case "gemini":  return geminiKnownModels();
+    case "deepseek": return deepseekKnownModels();
     default: return [];
   }
-}
-
-// ── Internal ──────────────────────────────────────────────────────────────────────
-
-async function fetchInternalCatalog(): Promise<CatalogModel[]> {
-  const cfg = listModelConfigs().find((c) => c.provider === "internal");
-  if (!cfg) throw new Error("No custom-provider model config found. Add one in the Models panel first.");
-
-  const params = JSON.parse(cfg.params) as Record<string, unknown>;
-  const token = await resolveInternalToken(params);
-
-  const res = await fetch("https://genai-api.internal.example.com/genai-api/v1/models", {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Internal catalog error: ${res.status}`);
-
-  const data = await res.json() as { models: InternalModel[] };
-
-  return data.models
-    .filter((m) => m.model_type === "chat")
-    .map((m): CatalogModel => {
-      const fs = m.feature_support ?? {};
-      return {
-        id: m.model_name,
-        context_length: m.context_length ?? null,
-        max_output_tokens: m.model_max_tokens ?? null,
-        hosted_on: m.cloud_hosted ?? null,
-        capabilities: {
-          vision:    !!fs.vision,
-          tools:     !!fs.function_calling,
-          streaming: !!fs.streaming,
-          json_mode: !!fs.json_mode,
-          web_search: !!fs.web_search,
-        },
-      };
-    });
-}
-
-async function resolveInternalToken(params: Record<string, unknown>): Promise<string> {
-  const apiKey = params.api_key as string | undefined;
-  if (apiKey?.startsWith("eyJ")) return apiKey;
-
-  const username = params.username as string | undefined;
-  const password = params.password as string | undefined;
-  if (!username || !password) throw new Error("Internal: set api_key (JWT) or username + password");
-
-  const res = await fetch("https://genai-api.internal.example.com/genai-api/v1/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!res.ok) throw new Error(`Internal login failed: ${res.status}`);
-  const json = await res.json() as { access_token?: string; accessToken?: string };
-  const token = json.access_token ?? json.accessToken;
-  if (!token) throw new Error("Internal login: no token in response");
-  return token;
-}
-
-interface InternalModel {
-  model_name: string;
-  model_type: string;
-  context_length?: number;
-  model_max_tokens?: number;
-  cloud_hosted?: string;
-  feature_support?: {
-    vision?: boolean;
-    function_calling?: boolean;
-    streaming?: boolean;
-    json_mode?: boolean;
-    web_search?: boolean;
-  };
 }
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
@@ -151,31 +81,71 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
   const cfg = listModelConfigs().find((c) => c.provider === "github-copilot");
   if (!cfg) throw new Error("No GitHub Copilot model config found.");
   const params = JSON.parse(cfg.params) as Record<string, unknown>;
-  const apiKey = (params.api_key as string | undefined) ?? process.env.GITHUB_TOKEN;
-  if (!apiKey) throw new Error("GitHub Copilot: no api_key configured.");
+  const pat = (params.api_key as string | undefined) ?? process.env.GITHUB_TOKEN;
+  if (!pat) return githubCopilotKnownModels();
 
-  const res = await fetch("https://api.githubcopilot.com/models", {
+  try {
+    const sessionToken = await exchangeCopilotSessionToken(pat);
+    const res = await fetch("https://api.githubcopilot.com/models", {
+      headers: {
+        Authorization: `Bearer ${sessionToken}`,
+        "Editor-Version": "vscode/1.85.0",
+        "Copilot-Integration-Id": "vscode-chat",
+        "openai-intent": "conversation-ai",
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => res.statusText);
+      throw new Error(`GitHub Copilot catalog error: ${res.status} ${body}`);
+    }
+    const data = await res.json() as { data: Array<{ id: string; capabilities?: { supports?: { tool_calls?: boolean; streaming?: boolean; parallel_tool_calls?: boolean } } }> };
+
+    return data.data.map((m): CatalogModel => ({
+      id: m.id,
+      context_length: null,
+      max_output_tokens: null,
+      hosted_on: "github",
+      capabilities: {
+        vision: false,
+        tools: m.capabilities?.supports?.tool_calls ?? false,
+        streaming: m.capabilities?.supports?.streaming ?? true,
+        json_mode: false,
+        web_search: false,
+      },
+    }));
+  } catch {
+    // Keep model selection usable even when account/token cannot query catalog.
+    return githubCopilotKnownModels();
+  }
+}
+
+async function exchangeCopilotSessionToken(pat: string): Promise<string> {
+  const res = await fetch("https://api.github.com/copilot_internal/v2/token", {
     headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Copilot-Integration-Id": "vscode-chat",
+      Authorization: `token ${pat}`,
+      "User-Agent": "LangGUI/1.0",
     },
   });
-  if (!res.ok) throw new Error(`GitHub Copilot catalog error: ${res.status}`);
-  const data = await res.json() as { data: Array<{ id: string; capabilities?: { supports?: { tool_calls?: boolean; streaming?: boolean; parallel_tool_calls?: boolean } } }> };
 
-  return data.data.map((m): CatalogModel => ({
-    id: m.id,
-    context_length: null,
-    max_output_tokens: null,
-    hosted_on: "github",
-    capabilities: {
-      vision:    false,
-      tools:     m.capabilities?.supports?.tool_calls ?? false,
-      streaming: m.capabilities?.supports?.streaming ?? true,
-      json_mode: false,
-      web_search: false,
-    },
-  }));
+  if (!res.ok) {
+    const body = await res.text().catch(() => res.statusText);
+    throw new Error(`GitHub Copilot token exchange failed: ${res.status} ${body}`);
+  }
+
+  const json = await res.json() as { token?: string };
+  if (!json.token) throw new Error("GitHub Copilot token exchange returned no token");
+  return json.token;
+}
+
+function githubCopilotKnownModels(): CatalogModel[] {
+  return [
+    { id: "gpt-4o", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gpt-4.1", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "o3", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: false, tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "claude-sonnet-4", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: false } },
+    { id: "claude-3.7-sonnet", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: false } },
+    { id: "gemini-2.0-flash", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: true, web_search: false } },
+  ];
 }
 
 // ── Anthropic (static) ────────────────────────────────────────────────────────
@@ -185,5 +155,27 @@ function anthropicKnownModels(): CatalogModel[] {
     { id: "claude-opus-4-7",        context_length: 1000000, max_output_tokens: 8192,  hosted_on: "anthropic", capabilities: { vision: true,  tools: true, streaming: true, json_mode: false, web_search: false } },
     { id: "claude-sonnet-4-6",      context_length: 200000,  max_output_tokens: 8192,  hosted_on: "anthropic", capabilities: { vision: true,  tools: true, streaming: true, json_mode: false, web_search: false } },
     { id: "claude-haiku-4-5-20251001", context_length: 200000, max_output_tokens: 4096, hosted_on: "anthropic", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: false } },
+  ];
+}
+
+// ── Gemini (static) ───────────────────────────────────────────────────────────
+
+function geminiKnownModels(): CatalogModel[] {
+  return [
+    { id: "gemini-2.5-pro",          context_length: 1048576, max_output_tokens: 65536,  hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gemini-2.5-flash",        context_length: 1048576, max_output_tokens: 65536,  hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gemini-2.0-flash",        context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gemini-2.0-flash-lite",   context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gemini-1.5-pro",          context_length: 2097152, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gemini-1.5-flash",        context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+  ];
+}
+
+// ── DeepSeek (static) ─────────────────────────────────────────────────────────
+
+function deepseekKnownModels(): CatalogModel[] {
+  return [
+    { id: "deepseek-chat",     context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: true,  streaming: true, json_mode: true,  web_search: false } },
+    { id: "deepseek-reasoner", context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: false, streaming: true, json_mode: false, web_search: false } },
   ];
 }
