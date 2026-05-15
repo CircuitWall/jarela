@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #09090b;
+}
+
+/* Prose overrides for dark theme */
+.prose-invert pre {
+  background: #18181b !important;
+  border-radius: 0.5rem;
+}
+.prose-invert code {
+  color: #a1a1aa;
+}
+.prose-invert p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+.prose-invert ul, .prose-invert ol {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
