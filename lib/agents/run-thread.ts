@@ -123,6 +123,16 @@ export async function prepareThreadRun(
     "",
   ].join("\n") : "";
 
+  const capabilitiesCtx = [
+    "--- Host UI capabilities (LangGUI) ---",
+    "You're running inside LangGUI, a local web app. The surrounding UI provides:",
+    "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
+    "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\".",
+    "- Per-agent thread persistence with checkpointed state.",
+    "Don't tell users you can't notify them or that scheduling has no effect — both are wired and working.",
+    "",
+  ].join("\n");
+
   const planFirstCtx = [
     "--- Acknowledge before acting ---",
     "When your reply will involve tool calls (web_search, web_fetch, memory_*, schedule_task, exec, etc.):",
@@ -135,6 +145,13 @@ export async function prepareThreadRun(
     "- The reply is a direct text answer with no tool calls.",
     "- The task is trivially short (a one-word answer, a yes/no).",
     "- You're already mid-execution from a prior turn (e.g. follow-up tool call after seeing a result).",
+    "",
+    "ANTI-FABRICATION RULES (very important):",
+    "- NEVER report a tool result you didn't actually receive. If you didn't call the tool, you have no result.",
+    "- NEVER invent IDs, UUIDs, timestamps, status fields, or any structured value that should come from a tool's JSON output. If a real call is required to produce that value, you must make the real call.",
+    "- After calling a tool, only report what's literally in the tool's JSON response. Don't paraphrase IDs or restate computed fields you didn't see.",
+    "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.",
+    "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
   ].join("\n");
 
   const selfConfigCtx = [
@@ -197,7 +214,7 @@ export async function prepareThreadRun(
     "- If the response doesn't draw on external sources, omit the block entirely.",
   ].join("\n");
 
-  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, planFirstCtx, presentationCtx, timeCtx, selfConfigCtx, memoryCtx, recallCtx].filter(Boolean);
+  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, capabilitiesCtx, planFirstCtx, presentationCtx, timeCtx, selfConfigCtx, memoryCtx, recallCtx].filter(Boolean);
   let allowedTools: string[] = [];
   try {
     allowedTools = JSON.parse(agentCfg.tools) as string[];
