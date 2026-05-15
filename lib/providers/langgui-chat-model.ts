@@ -14,7 +14,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { Runnable } from "@langchain/core/runnables";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
-import type { InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/types";
+import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/types";
 
 interface Fields {
   provider: ModelProvider;
@@ -207,19 +207,60 @@ function aiMessageFromChunk(chunk: AIMessageChunk): AIMessage {
   });
 }
 
+// LangChain's BaseMessage.content can be a string or a content-block array
+// (text, image_url, etc. — used for multi-modal input). Preserve it through
+// to InvokeMessage so the provider routes can translate properly. Stringifying
+// destroys image attachments — `String([{...}, {...}])` becomes "[object Object],..."
+function lcContentToInvoke(content: BaseMessage["content"]): string | ContentPart[] {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const parts: ContentPart[] = [];
+  for (const block of content) {
+    if (typeof block === "string") {
+      parts.push({ type: "text", text: block });
+      continue;
+    }
+    if (!block || typeof block !== "object") continue;
+    const b = block as Record<string, unknown>;
+    if (b.type === "text" && typeof b.text === "string") {
+      parts.push({ type: "text", text: b.text });
+    } else if (b.type === "image_url") {
+      // OpenAI-style: { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+      const url = (b.image_url as { url?: string } | string | undefined);
+      const dataUrl = typeof url === "string" ? url : url?.url;
+      if (dataUrl?.startsWith("data:")) {
+        const m = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+        if (m) parts.push({ type: "image", media_type: m[1], data: m[2] });
+      }
+    } else if (b.type === "image") {
+      // Anthropic-style: { type: "image", source: { type: "base64", media_type, data } }
+      const src = b.source as { media_type?: string; data?: string } | undefined;
+      if (src?.media_type && src.data) {
+        parts.push({ type: "image", media_type: src.media_type, data: src.data });
+      }
+    }
+  }
+  // If we ended up with only text blocks, collapse to a string so providers
+  // that don't need multi-modal handling don't have to special-case.
+  if (parts.every((p) => p.type === "text")) {
+    return parts.map((p) => (p as { text: string }).text).join("\n");
+  }
+  return parts;
+}
+
 function toInvokeMessages(messages: BaseMessage[]): InvokeMessage[] {
   return messages.map((m): InvokeMessage => {
     if (isHumanMessage(m)) {
-      return { role: "user", content: String(m.content) };
+      return { role: "user", content: lcContentToInvoke(m.content) };
     }
     if (isSystemMessage(m)) {
-      return { role: "system", content: String(m.content) };
+      return { role: "system", content: lcContentToInvoke(m.content) };
     }
     if (isAIMessage(m)) {
       const ai = m as AIMessage;
       const invokeMsg: InvokeMessage = {
         role: "assistant",
-        content: typeof m.content === "string" ? m.content : String(m.content),
+        content: typeof m.content === "string" ? m.content : lcContentToInvoke(m.content),
       };
       if (ai.tool_calls?.length) {
         invokeMsg.tool_calls = ai.tool_calls.map((tc) => ({
@@ -233,10 +274,10 @@ function toInvokeMessages(messages: BaseMessage[]): InvokeMessage[] {
     if (isToolMessage(m)) {
       return {
         role: "tool",
-        content: String(m.content),
+        content: typeof m.content === "string" ? m.content : lcContentToInvoke(m.content),
         tool_call_id: m.tool_call_id,
       };
     }
-    return { role: "user", content: String(m.content) };
+    return { role: "user", content: lcContentToInvoke(m.content) };
   });
 }
