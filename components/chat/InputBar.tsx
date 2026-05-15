@@ -77,7 +77,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
   }
 
   return (
-    <div className="border-t border-border bg-surface-2 px-4 pb-3 pt-2">
+    <div className="border-t border-border bg-surface-2 px-3 sm:px-4 pb-3 pt-2 pb-safe">
       {/* Attachment previews */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">

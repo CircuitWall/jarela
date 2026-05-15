@@ -324,7 +324,7 @@ export function MessageBubble({ message, agentConfig, userProfile, showAvatar = 
         )}
       </div>
 
-      <div className={`flex flex-col max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex flex-col max-w-[88%] sm:max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full overflow-hidden ${
             isUser ? "bg-accent text-white rounded-br-sm" : "bg-surface-3 text-zinc-100 rounded-bl-sm"
