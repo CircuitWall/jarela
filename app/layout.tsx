@@ -1,0 +1,26 @@
+import type { Metadata, Viewport } from "next";
+import { AppProvider } from "@/contexts/AppContext";
+import "./globals.css";
+
+export const metadata: Metadata = {
+  title: "LangGUI",
+  description: "Local chat interface for LangGraph agents",
+  manifest: "/manifest.json",
+};
+
+// Next 15+ requires themeColor (and color-scheme, viewport, etc.) to live in
+// the viewport export, not metadata. The /_not-found warning came from Next
+// inheriting this same layout — moving it here fixes both routes at once.
+export const viewport: Viewport = {
+  themeColor: "#2563eb",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <AppProvider>{children}</AppProvider>
+      </body>
+    </html>
+  );
+}
