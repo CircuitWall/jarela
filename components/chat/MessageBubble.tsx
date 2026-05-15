@@ -144,6 +144,18 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{
+          a({ href, children, ...rest }) {
+            return (
+              <a
+                {...rest}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {children}
+              </a>
+            );
+          },
           code({ className, children }) {
             const match = /language-(\w+)/.exec(className ?? "");
             const code = String(children).replace(/\n$/, "");
