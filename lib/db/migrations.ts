@@ -100,6 +100,12 @@ export function runMigrations(db: DatabaseSync): void {
       decided_at    TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_pending_actions_status ON pending_actions(status, created_at);
+    CREATE TABLE IF NOT EXISTS access_whitelist (
+      identity      TEXT PRIMARY KEY,
+      display_name  TEXT,
+      added_at      TEXT NOT NULL,
+      last_seen_at  TEXT
+    );
   `);
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);
