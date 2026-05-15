@@ -7,7 +7,22 @@ html, body, #__next {
   margin: 0;
   padding: 0;
   background-color: #09090b;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
 }
+
+/* Disable the blue tap flash on iOS / Android; we use explicit :active styles. */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* iOS auto-zooms when an input/textarea has font-size < 16px. Lift form fields
+   to 16px on phones to suppress the zoom, but keep desktop's denser typography. */
+@media (max-width: 640px) {
+  input, textarea, select { font-size: 16px !important; }
+}
+
+/* Safe-area helpers for notched phones and the iOS home indicator. */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
 
 .prose-invert pre {
   background: #18181b !important;
