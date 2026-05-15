@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev -p 4312",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 4312",
     "lint": "next lint",
     "test:live": "node scripts/live-test.mjs",
     "test:live:full": "node scripts/live-test.mjs --llm"
