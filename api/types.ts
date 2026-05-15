@@ -179,6 +179,21 @@ export interface IntegrationsListResponse {
   statuses: IntegrationStatus[];
 }
 
+export interface ScheduledTask {
+  id: string;
+  agent_id: string;
+  prompt: string;
+  description: string | null;
+  kind: "once" | "cron";
+  schedule: string;            // ISO timestamp for "once", cron expr for "cron"
+  next_run_at: string;
+  last_run_at: string | null;
+  last_error: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface PendingAction {
   id: string;
   agent_id: string;

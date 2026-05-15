@@ -1,5 +1,6 @@
 "use client";
-import { Bot, Brain, Cpu, Key, MessageSquare, Plug, User, X } from "lucide-react";
+import { Bot, Brain, Calendar, Cpu, Key, MessageSquare, Plug, User, X } from "lucide-react";
+import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
@@ -24,11 +25,12 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   models: <Cpu size={13} />,
   mcp: <Plug size={13} />,
   integrations: <Key size={13} />,
+  tasks: <Calendar size={13} />,
   profile: <User size={13} />,
 };
 
-// Compact label shown under each icon. "integrations" is too long even at
-// 26rem with 7 tabs, so we abbreviate uniformly to keep visual rhythm.
+// Compact label shown under each icon. With 8 tabs at 26rem panel width,
+// labels need to stay short to fit without truncation.
 const TAB_LABELS: Record<Tab, string> = {
   chat: "Chat",
   agents: "Agents",
@@ -36,6 +38,7 @@ const TAB_LABELS: Record<Tab, string> = {
   models: "Models",
   mcp: "MCP",
   integrations: "Creds",
+  tasks: "Tasks",
   profile: "You",
 };
 
@@ -159,7 +162,7 @@ export function GearPanel({
 
       {/* Navigation tabs — icon + short label; full name shown on hover */}
       <div className="flex gap-0.5 px-2 py-2 border-b border-border shrink-0">
-        {(["chat", "agents", "memory", "models", "mcp", "integrations", "profile"] as Tab[]).map((tab) => (
+        {(["chat", "agents", "memory", "models", "mcp", "integrations", "tasks", "profile"] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => onSetTab(tab)}
@@ -196,6 +199,9 @@ export function GearPanel({
             <input type="checkbox" className="rounded border-border" checked={showThinking} onChange={(e) => onShowThinkingChange(e.target.checked)} />
             Show thinking
           </label>
+          <div className="pt-1.5">
+            <NotificationTestButton />
+          </div>
         </div>
       </div>
     </div>
