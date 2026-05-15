@@ -102,7 +102,7 @@ export function AppShell() {
   });
 
   return (
-    <div className="h-screen flex flex-col bg-surface text-zinc-100 overflow-hidden">
+    <div className="h-screen h-[100dvh] flex flex-col bg-surface text-zinc-100 overflow-hidden">
       <TopProgressBar />
       <NotificationStatus />
       <Toaster />
