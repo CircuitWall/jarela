@@ -88,8 +88,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const defaultModel = models.find((m) => m.is_default);
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-4">
+    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-zinc-100">{isEdit ? "Edit agent" : "New agent"}</h3>

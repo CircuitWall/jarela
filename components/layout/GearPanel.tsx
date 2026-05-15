@@ -150,7 +150,7 @@ export function GearPanel({
   onShowThinkingChange,
 }: Props) {
   return (
-    <div className="absolute right-0 top-0 h-full w-[26rem] bg-surface-2 border-l border-border z-20 flex flex-col shadow-2xl">
+    <div className="absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full bg-surface-2 border-l border-border z-20 flex flex-col shadow-2xl pb-safe">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
