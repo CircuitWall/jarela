@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { _resolveAtlassianAuth } from "@/lib/tools/atlassian";
+import { getIntegrationRaw } from "@/lib/stores/integrations";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -11,6 +12,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const { name } = await params;
   switch (name) {
     case "atlassian": return await testAtlassian();
+    case "google":    return await testGoogle();
     default:          return NextResponse.json({ error: "unknown integration" }, { status: 404 });
   }
 }
@@ -41,6 +43,32 @@ async function testAtlassian() {
         accountId: me.accountId,
       },
     });
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 200 },
+    );
+  }
+}
+
+async function testGoogle() {
+  const raw = getIntegrationRaw("google");
+  const apiKey = raw?.api_key?.trim();
+  if (!apiKey) {
+    return NextResponse.json({ ok: false, error: "API key not configured" }, { status: 400 });
+  }
+  try {
+    // Cheapest auth check: list available models. No quota cost on free tier.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}&pageSize=1`;
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (!res.ok) {
+      const body = await res.text();
+      return NextResponse.json(
+        { ok: false, error: `Google AI ${res.status}: ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    return NextResponse.json({ ok: true, detail: { displayName: "Google AI" } });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: err instanceof Error ? err.message : String(err) },
