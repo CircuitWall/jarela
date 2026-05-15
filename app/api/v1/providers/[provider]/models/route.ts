@@ -177,13 +177,37 @@ async function exchangeCopilotSessionToken(pat: string): Promise<string> {
 }
 
 function githubCopilotKnownModels(): CatalogModel[] {
+  // Curated fallback — mirrors what the VS Code Copilot Chat picker exposes.
+  // Used only when the live /models endpoint isn't reachable (no OAuth token
+  // stored, exchange failed, etc.). Keep in sync with Copilot's current line-up.
+  const v = (id: string, vision = false, tools = true): CatalogModel => ({
+    id,
+    context_length: null,
+    max_output_tokens: null,
+    hosted_on: "github",
+    capabilities: { vision, tools, streaming: true, json_mode: false, web_search: false },
+  });
   return [
-    { id: "gpt-4o", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "gpt-4.1", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "o3", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: false, tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "claude-sonnet-4", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: false } },
-    { id: "claude-3.7-sonnet", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: false } },
-    { id: "gemini-2.0-flash", context_length: null, max_output_tokens: null, hosted_on: "github", capabilities: { vision: true, tools: true, streaming: true, json_mode: true, web_search: false } },
+    // OpenAI family
+    v("gpt-4o", true),
+    v("gpt-4.1", true),
+    v("gpt-4.1-mini", true),
+    v("gpt-5", true),
+    v("gpt-5-mini", true),
+    v("o1", false),
+    v("o3", false),
+    v("o3-mini", false),
+    v("o4-mini", false),
+    // Anthropic family
+    v("claude-opus-4-7", true),
+    v("claude-sonnet-4-6", true),
+    v("claude-sonnet-4", true),
+    v("claude-3.7-sonnet", true),
+    v("claude-haiku-4-5", true),
+    // Google family
+    v("gemini-2.5-pro", true),
+    v("gemini-2.5-flash", true),
+    v("gemini-2.0-flash", true),
   ];
 }
 
