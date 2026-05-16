@@ -1,6 +1,26 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Tailwind v4 theme — colour tokens that the old tailwind.config.ts
+ * exposed as theme.extend.colors. Defining them here makes
+ * `bg-surface-2`, `border-border`, `text-accent`, etc. work as utilities. */
+@theme {
+  --color-surface: #09090b;
+  --color-surface-2: #18181b;
+  --color-surface-3: #27272a;
+  --color-border: #3f3f46;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+}
+
+/* Tailwind v4 changed the default border colour from gray-200 to
+ * currentColor. Restore the v3 behaviour so existing `border` shorthand
+ * (without an explicit colour) keeps rendering as the dark zinc divider
+ * we were using everywhere. */
+@layer base {
+  *, ::after, ::before {
+    border-color: var(--color-border, currentColor);
+  }
+}
 
 html, body, #__next {
   height: 100%;
