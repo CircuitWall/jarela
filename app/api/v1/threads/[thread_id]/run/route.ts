@@ -51,11 +51,15 @@ export async function POST(req: NextRequest, { params }: Params) {
   // to the registry; subscribers (including this response stream) receive them.
   void (async () => {
     let assistantContent = "";
+    const usedTools: string[] = [];
     let terminal: "done" | "error" = "done";
     try {
       for await (const chunk of prepared.stream as AsyncIterable<StreamChunk>) {
         if (chunk.type === "text_delta") {
           assistantContent += (chunk.data.delta as string) ?? "";
+        } else if (chunk.type === "tool_call") {
+          const name = (chunk.data as { name?: string }).name;
+          if (name) usedTools.push(name);
         }
         broadcast(thread_id, chunk);
         if (chunk.type === "error") terminal = "error";
@@ -66,7 +70,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       broadcast(thread_id, { type: "error", data: { message: msg, code: "stream_error" } });
       terminal = "error";
     } finally {
-      persistAssistantMessage(thread_id, assistantContent);
+      persistAssistantMessage(thread_id, assistantContent, usedTools);
       finishRun(thread_id, terminal);
       publishNotification({
         type: "run_completed",

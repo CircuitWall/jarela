@@ -87,13 +87,17 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
   const prepared = await prepareThreadRun(thread.thread_id, task.prompt);
 
   let assistantContent = "";
+  const usedTools: string[] = [];
   for await (const chunk of prepared.stream) {
     if (chunk.type === "text_delta") {
       assistantContent += (chunk.data.delta as string) ?? "";
+    } else if (chunk.type === "tool_call") {
+      const name = (chunk.data as { name?: string }).name;
+      if (name) usedTools.push(name);
     }
     if (chunk.type === "done" || chunk.type === "error") break;
   }
-  persistAssistantMessage(thread.thread_id, assistantContent);
+  persistAssistantMessage(thread.thread_id, assistantContent, usedTools);
   markTaskRan(task.id, task.kind, task.schedule);
   publishNotification({
     type: "task_completed",

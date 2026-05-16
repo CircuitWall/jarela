@@ -277,8 +277,26 @@ export async function prepareThreadRun(
   };
 }
 
-export function persistAssistantMessage(thread_id: string, content: string): void {
-  if (content.trim()) addMessage(thread_id, "assistant", content);
+export function persistAssistantMessage(
+  thread_id: string,
+  content: string,
+  usedTools?: readonly string[],
+): void {
+  const trimmed = content.trim();
+  // Append a small, persistent footer listing which tools actually ran this
+  // turn. Without this, tool_call events are live-only UI — after the stream
+  // ends (or on page reload, or if a mobile client missed the brief render)
+  // the assistant text remains saying "I scheduled X" with no proof a tool
+  // ran, which reads as a hallucination even when the tool did execute.
+  let final = trimmed;
+  if (usedTools && usedTools.length > 0) {
+    const unique = Array.from(new Set(usedTools.filter(Boolean)));
+    if (unique.length > 0) {
+      const footer = `*— used: ${unique.join(", ")}*`;
+      final = final ? `${final}\n\n${footer}` : footer;
+    }
+  }
+  if (final) addMessage(thread_id, "assistant", final);
 }
 
 // Run semantic recall on the user's turn, format the top hits as a system-prompt
