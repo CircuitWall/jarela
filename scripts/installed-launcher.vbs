@@ -7,7 +7,12 @@
 ' the whole subtree stays invisible.
 '
 ' Argument 0 to .Run: window style (0 = hidden).
-' Argument 1: wait for completion (False = fire and forget).
+' Argument 1: wait for completion. MUST be True — otherwise wscript exits
+' immediately, Task Scheduler considers the task "done", and its
+' MultipleInstances=IgnoreNew policy can no longer prevent a second trigger
+' (or Start-ScheduledTask call) from spawning a duplicate launcher.ps1.
+' With True, wscript blocks for the lifetime of the launcher subprocess,
+' keeping Task Scheduler's "running" tracking accurate.
 
 Option Explicit
 
@@ -16,4 +21,4 @@ Set sh = CreateObject("WScript.Shell")
 here = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)
 ps1  = here & "\launcher.ps1"
 
-sh.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & ps1 & """", 0, False
+sh.Run "powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & ps1 & """", 0, True

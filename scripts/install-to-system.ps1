@@ -86,7 +86,38 @@ if (-not (Test-Path $serverJs)) {
   throw "Standalone build missing at $serverJs. Re-run without -SkipBuild."
 }
 
-# â”€â”€ 3. Wipe & recreate install dir â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── 2.5. Stop any existing supervisor + server cleanly ─────────────────────
+# Stop-ScheduledTask only stops *new* triggers; it does not kill the
+# powershell/wscript/node processes the running task already spawned. Without
+# this step a reinstall would race against the still-running supervisor: the
+# new launcher and the old one each spawn a node, one collides on port 4312,
+# rapid-respawns 5x, and the rate limiter trips. The dir wipe below also
+# fails partially because node has handles open in the install tree.
+Step "Stopping existing supervisor + server (if any)"
+Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+$installDirEsc = [Regex]::Escape($InstallDir)
+$victims = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object {
+    $_.CommandLine -and (
+      # Our VBS shim + the PowerShell launcher it spawns.
+      ($_.CommandLine -match "$installDirEsc.*launcher\.(vbs|ps1)") -or
+      # The node server running out of the install dir.
+      ($_.Name -eq 'node.exe' -and $_.CommandLine -match "$installDirEsc.*server\.js")
+    )
+  }
+foreach ($v in $victims) {
+  Info ("  killing PID " + $v.ProcessId + " (" + $v.Name + ")")
+  try { Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+}
+# Also free the port in case some unrelated squatter is on it. Skip our own
+# node — that was just killed above.
+$busy = Get-NetTCPConnection -LocalPort 4312 -State Listen -ErrorAction SilentlyContinue
+foreach ($c in $busy) {
+  try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue } catch {}
+}
+Start-Sleep -Seconds 1
+
+# ── 3. Wipe & recreate install dir ──────────────────────────────────────────
 Step "Replacing install dir at $InstallDir"
 if (Test-Path $InstallDir) {
   Remove-Item -Path $InstallDir -Recurse -Force
