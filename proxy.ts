@@ -14,15 +14,18 @@ import { requireAccess } from "@/lib/auth/access";
 // spoofable from the LAN — see ADR-0007.
 //
 // Runs on Node runtime so we can read the SQLite-backed whitelist.
+// Note: this file was previously `middleware.ts`. Next 16 renamed the
+// convention to `proxy` (the file-level export is `proxy(req)`) and the
+// proxy always runs on the Node runtime, so the `runtime` config option
+// is no longer allowed (and not needed).
 
 export const config = {
-  runtime: "nodejs",
   matcher: [
     "/((?!_next/static|_next/image|_next/data|favicon.ico|manifest.json|sw.js|workbox-.*|icon-.*).*)",
   ],
 };
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const result = requireAccess({
     headers: req.headers,
     host: req.headers.get("host"),

@@ -1,6 +1,6 @@
 "use client";
 import { Settings } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Activity, useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
@@ -132,7 +132,16 @@ export function AppShell() {
       </header>
 
       <div className="flex-1 relative overflow-hidden">
-        {state.activeTab === "chat" && (
+        {/*
+          Each tab is wrapped in <Activity>. While hidden, the panel stays
+          mounted with its DOM tree (so scroll position, expanded rows, and
+          local form/filter state survive tab switches), but its effects
+          unmount until it's shown again \u2014 so data is refreshed on focus
+          rather than left to go stale in the background. ChatView keeps its
+          `key={activeAgentId}` so picking a different agent still
+          forces a clean remount with that agent's thread.
+        */}
+        <Activity mode={state.activeTab === "chat" ? "visible" : "hidden"}>
           <ChatView
             key={state.activeAgentId ?? "no-agent"}
             threadId={threadId}
@@ -144,14 +153,28 @@ export function AppShell() {
             onMessageSent={onMessageSent}
             onSelectAgent={onSelectAgent}
           />
-        )}
-        {state.activeTab === "agents" && <AgentsPanel />}
-        {state.activeTab === "memory" && <MemoryPanel />}
-        {state.activeTab === "models" && <ModelsPanel />}
-        {state.activeTab === "mcp" && <MCPPanel />}
-        {state.activeTab === "integrations" && <IntegrationsPanel />}
-        {state.activeTab === "tasks" && <ScheduledTasksPanel />}
-        {state.activeTab === "profile" && <ProfilePanel />}
+        </Activity>
+        <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
+          <AgentsPanel />
+        </Activity>
+        <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
+          <MemoryPanel />
+        </Activity>
+        <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
+          <ModelsPanel />
+        </Activity>
+        <Activity mode={state.activeTab === "mcp" ? "visible" : "hidden"}>
+          <MCPPanel />
+        </Activity>
+        <Activity mode={state.activeTab === "integrations" ? "visible" : "hidden"}>
+          <IntegrationsPanel />
+        </Activity>
+        <Activity mode={state.activeTab === "tasks" ? "visible" : "hidden"}>
+          <ScheduledTasksPanel />
+        </Activity>
+        <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
+          <ProfilePanel />
+        </Activity>
 
         {showGear && (
           <div className="absolute inset-0 bg-black/40 z-10" onClick={() => setShowGear(false)} />

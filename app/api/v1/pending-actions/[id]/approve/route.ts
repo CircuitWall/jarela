@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getPendingAction, setActionStatus } from "@/lib/stores/pending-actions";
 import { applyAction } from "@/lib/agents/proposals";
 import { publish as publishNotification } from "@/lib/notifications/bus";
@@ -16,15 +16,21 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const result = await applyAction(action.kind, JSON.parse(action.payload));
   const final = setActionStatus(id, result.ok ? "approved" : "failed", result.detail);
 
-  publishNotification({
-    type: "run_completed",
-    thread_id: "",
-    agent_id: action.agent_id,
-    status: result.ok ? "done" : "error",
-    preview: result.ok
-      ? `✅ Approved & applied: ${action.kind}`
-      : `⚠️ Approval failed to apply: ${typeof result.detail === "string" ? result.detail : JSON.stringify(result.detail)}`,
-    ts: Date.now(),
+  // The user's banner already disappears the moment the response lands;
+  // the notification is just for any subscribed clients (other browser
+  // tabs, mobile PWA). Fire it after the response so the approving tab
+  // returns immediately.
+  after(() => {
+    publishNotification({
+      type: "run_completed",
+      thread_id: "",
+      agent_id: action.agent_id,
+      status: result.ok ? "done" : "error",
+      preview: result.ok
+        ? `✅ Approved & applied: ${action.kind}`
+        : `⚠️ Approval failed to apply: ${typeof result.detail === "string" ? result.detail : JSON.stringify(result.detail)}`,
+      ts: Date.now(),
+    });
   });
 
   return NextResponse.json(final);
