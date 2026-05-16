@@ -12,9 +12,6 @@ export interface ProviderParams {
   extra_headers?: Record<string, string>;
   temperature?: number;
   max_tokens?: number;
-  // Internal-specific
-  auth_header_name?: string;
-  auth_header_value?: string;
   // Anthropic extended thinking — pass-through to API body
   thinking?: { type: "enabled"; budget_tokens: number };
   [k: string]: unknown;
