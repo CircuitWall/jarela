@@ -160,7 +160,7 @@ export const githubCopilotProvider: ModelProvider = {
     return {
       text: choice.message.content ?? null,
       tool_calls: (choice.message.tool_calls ?? []).flatMap((tc) => {
-        if (!tc?.function?.name) return [];
+        if (tc?.type !== "function" || !tc.function?.name) return [];
         return [{
           id: tc.id,
           name: tc.function.name,
