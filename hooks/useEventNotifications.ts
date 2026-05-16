@@ -47,8 +47,32 @@ interface Options {
 //     (background tab, minimized, focused-on-another-app). The OS surfaces
 //     it even when LangGUI isn't visible. Requires browser permission;
 //     gracefully no-op when not granted.
+// Persist the last-seen-event timestamp across reloads/relaunches.
+// Without this, mobile users who background the PWA (which suspends SSE on
+// iOS) miss every scheduler/cron event that fires while they were away,
+// because the next mount initialised `lastTs` to Date.now() and the
+// server's recentSince() replay returned nothing.
+const LAST_TS_KEY = "langgui.notif.lastTs";
+function loadLastTs(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(LAST_TS_KEY);
+    const n = raw ? Number(raw) : 0;
+    if (!Number.isFinite(n) || n <= 0) return 0;
+    // Clamp to the bus's RECENT_LIMIT window — older events are gone from
+    // memory anyway, and we don't want to spam the user with day-old toasts
+    // on the first reopen of a long-idle PWA.
+    const MAX_WINDOW_MS = 6 * 60 * 60 * 1000; // 6h
+    return Math.max(n, Date.now() - MAX_WINDOW_MS);
+  } catch { return 0; }
+}
+function saveLastTs(ts: number): void {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(LAST_TS_KEY, String(ts)); } catch { /* quota / privacy mode */ }
+}
+
 export function useEventNotifications(options: Options) {
-  const lastTsRef = useRef<number>(Date.now());
+  const lastTsRef = useRef<number>(loadLastTs());
   const optsRef = useRef(options);
   optsRef.current = options;
 
@@ -70,6 +94,7 @@ export function useEventNotifications(options: Options) {
         try { ev = JSON.parse(msg.data) as NotifEvent; } catch { return; }
         if (!ev.ts) return;
         lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
+        saveLastTs(lastTsRef.current);
         handleEvent(ev);
       };
 
@@ -128,8 +153,20 @@ export function useEventNotifications(options: Options) {
     }
 
     connect();
+    // When the PWA comes back to the foreground (iOS suspends SSE in the
+    // background, often without firing onerror), force a fresh reconnect so
+    // the server's recentSince() replays anything that happened while away.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      try { es?.close(); } catch { /* */ }
+      es = null;
+      backoff = 500;
+      connect();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
       es?.close();
     };
   }, []);
