@@ -11,10 +11,13 @@ const nextConfig: NextConfig = {
   // %LOCALAPPDATA%\Programs\LangGUI for the installed app — no repo or
   // `npm install` needed at runtime.
   output: "standalone",
-  // ws's optional native addons must not be bundled — they're resolved at
-  // runtime against the user's installed node_modules. Works for both
-  // webpack and Turbopack (which is the default builder as of Next 16).
-  serverExternalPackages: ["bufferutil", "utf-8-validate"],
+  // `ws` ships a conditional require of the optional native addons
+  // (bufferutil / utf-8-validate). Webpack-bundling `ws` mangles that
+  // conditional and ends up calling a half-bundled bufferutil at runtime —
+  // throws `b.unmask is not a function` on the first WS frame. Marking the
+  // whole package as external keeps ws resolved at runtime against the
+  // traced node_modules, where its JS fallback works correctly.
+  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate"],
 };
 
 // Serwist replaces the abandoned next-pwa. It compiles app/sw.ts into
