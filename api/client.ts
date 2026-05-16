@@ -175,7 +175,7 @@ export const api = {
     cancel: (id: string) =>
       request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     runNow: (id: string) =>
-      request<{ ran: boolean; task_id: string }>(`/scheduled-tasks/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" }),
+      request<{ accepted: boolean; task_id: string }>(`/scheduled-tasks/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" }),
   },
 
   githubCopilotAuth: {
