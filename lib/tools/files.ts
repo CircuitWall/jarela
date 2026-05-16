@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import os from "os";
 import path from "path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -18,15 +19,29 @@ function clip(text: string, max: number): { value: string; truncated: boolean } 
   return { value: text.slice(0, max), truncated: true };
 }
 
+// Resolve agent-supplied paths against the USER'S HOME directory, not
+// process.cwd(). In production cwd is the LangGUI install dir
+// (%LOCALAPPDATA%\Programs\LangGUI) — if the agent writes "notes.txt"
+// expecting it to land somewhere visible, it lands buried in the install
+// tree and the user concludes the tool didn't run. Home is the natural
+// default for an "assistant on my computer". Absolute paths and ~/ paths
+// are honored verbatim.
 function resolvePath(p: string): string {
   if (!p.trim()) throw new Error("path is required");
-  return path.resolve(p);
+  let s = p.trim();
+  if (s === "~") return os.homedir();
+  if (s.startsWith("~/") || s.startsWith("~\\")) {
+    s = path.join(os.homedir(), s.slice(2));
+    return path.resolve(s);
+  }
+  if (path.isAbsolute(s)) return path.resolve(s);
+  return path.resolve(os.homedir(), s);
 }
 
 // --- read ---------------------------------------------------------------
 
 const readSchema = z.object({
-  path: z.string().describe("Absolute or cwd-relative file path"),
+  path: z.string().describe("File path. Absolute (C:\\... or /...) or ~/foo recommended; bare relative paths resolve against the user's HOME directory."),
   start_line: z.number().int().min(1).optional().describe("1-based first line to include"),
   end_line: z.number().int().min(1).optional().describe("1-based last line to include (inclusive)"),
 });
@@ -69,7 +84,7 @@ export const fileReadTool = tool(
 // --- write --------------------------------------------------------------
 
 const writeSchema = z.object({
-  path: z.string().describe("Absolute or cwd-relative file path"),
+  path: z.string().describe("File path. Absolute (C:\\... or /...) or ~/foo recommended; bare relative paths resolve against the user's HOME directory."),
   content: z.string().describe("Full file content. Overwrites the file if it exists."),
   create_dirs: z
     .boolean()
@@ -115,7 +130,7 @@ export const fileWriteTool = tool(
 // --- edit ---------------------------------------------------------------
 
 const editSchema = z.object({
-  path: z.string().describe("Absolute or cwd-relative file path"),
+  path: z.string().describe("File path. Absolute (C:\\... or /...) or ~/foo recommended; bare relative paths resolve against the user's HOME directory."),
   old_string: z
     .string()
     .min(1)
@@ -170,8 +185,8 @@ export const fileEditTool = tool(
 // --- move / rename ------------------------------------------------------
 
 const moveSchema = z.object({
-  source: z.string().describe("Existing file or directory path"),
-  destination: z.string().describe("New path. If it ends with a separator or is an existing directory, source is moved into it preserving its basename."),
+  source: z.string().describe("Existing file or directory path. Absolute or ~/foo; bare relative paths resolve against HOME."),
+  destination: z.string().describe("New path (absolute or ~/foo; bare relative resolves against HOME). If it ends with a separator or is an existing directory, source is moved into it preserving its basename."),
   overwrite: z
     .boolean()
     .optional()
@@ -269,7 +284,7 @@ const DEFAULT_IGNORE_DIRS = new Set([
 ]);
 
 const listSchema = z.object({
-  path: z.string().describe("Directory path to list"),
+  path: z.string().describe("Directory path. Absolute or ~/foo; bare relative paths resolve against HOME."),
   recursive: z.boolean().optional().describe("Recurse into subdirectories (default false)"),
   max_entries: z
     .number()
@@ -379,7 +394,7 @@ export const fileListTool = tool(
 // --- mkdir --------------------------------------------------------------
 
 const mkdirSchema = z.object({
-  path: z.string().describe("Directory path to create"),
+  path: z.string().describe("Directory path to create. Absolute or ~/foo; bare relative paths resolve against HOME."),
   recursive: z.boolean().optional().describe("Create parent directories as needed (default true)"),
 });
 
@@ -403,7 +418,7 @@ export const fileMkdirTool = tool(
 // --- delete -------------------------------------------------------------
 
 const deleteSchema = z.object({
-  path: z.string().describe("File or directory path to remove"),
+  path: z.string().describe("File or directory path to remove. Absolute or ~/foo; bare relative paths resolve against HOME."),
   recursive: z
     .boolean()
     .optional()
@@ -453,8 +468,8 @@ export const fileDeleteTool = tool(
 // --- copy ---------------------------------------------------------------
 
 const copySchema = z.object({
-  source: z.string().describe("Existing file or directory path"),
-  destination: z.string().describe("New path. If it ends with a separator or is an existing directory, source is copied into it preserving its basename."),
+  source: z.string().describe("Existing file or directory path. Absolute or ~/foo; bare relative paths resolve against HOME."),
+  destination: z.string().describe("New path (absolute or ~/foo; bare relative resolves against HOME). If it ends with a separator or is an existing directory, source is copied into it preserving its basename."),
   overwrite: z.boolean().optional().describe("Allow replacing an existing destination (default false)"),
   recursive: z.boolean().optional().describe("Recurse when copying a directory (default true)"),
 });
@@ -521,7 +536,7 @@ export const fileCopyTool = tool(
 // --- stat ---------------------------------------------------------------
 
 const statSchema = z.object({
-  path: z.string().describe("File or directory path"),
+  path: z.string().describe("File or directory path. Absolute or ~/foo; bare relative paths resolve against HOME."),
 });
 
 export const fileStatTool = tool(

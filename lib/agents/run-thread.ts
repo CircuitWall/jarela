@@ -235,7 +235,8 @@ export async function prepareThreadRun(
       : process.platform === "darwin"
         ? "iCloud Drive on macOS: ~/Library/Mobile Documents/com~apple~CloudDocs"
         : "",
-    "Verify file paths with file_stat or file_list before assuming they exist.",
+    "File-tool path resolution: absolute paths and `~/...` are honored verbatim; BARE RELATIVE paths (e.g. `notes.txt`) resolve against HOME, not cwd. cwd is the LangGUI install directory and should never be used as a default location for user files.",
+    "Verify file paths with file_stat or file_list before assuming they exist. Always echo the resolved absolute path back to the user when you create/move/delete a file so they know where it landed.",
   ].filter(Boolean).join("\n");
 
   // Surface configured integrations so the LLM knows native tools are wired
