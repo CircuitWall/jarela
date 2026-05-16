@@ -8,7 +8,9 @@
     "start": "next start -p 4312",
     "lint": "eslint .",
     "test:live": "node scripts/live-test.mjs",
-    "test:live:full": "node scripts/live-test.mjs --llm"
+    "test:live:full": "node scripts/live-test.mjs --llm",
+    "test:live:isolated": "node scripts/live-test-isolated.mjs",
+    "test:live:isolated:full": "node scripts/live-test-isolated.mjs --llm"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
