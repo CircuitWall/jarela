@@ -152,6 +152,13 @@ export interface PreparedThreadRun {
   thread_id: string;
 }
 
+// Max times we'll auto-retry a single user turn when the model emits a
+// "one moment" stall without firing any tool. One retry is plenty — if the
+// model is *still* stalling after a forceful nudge, looping further just
+// burns tokens and the warning footer on the persisted message gives the
+// user a clear manual recovery path ("continue").
+const MAX_STALL_AUTO_RETRIES = 1;
+
 function parseContent(raw: string): string | ContentPart[] {
   if (!raw.startsWith("[")) return raw;
   try {
@@ -185,6 +192,10 @@ export async function prepareThreadRun(
   options?: StreamOptions,
   attachments?: ContentPart[],
   signal?: AbortSignal,
+  // Internal: tracks how many stall-retries are still allowed in this turn.
+  // Public callers leave this undefined and get the default budget. The
+  // wrapper decrements it when it recursively re-invokes prepareThreadRun.
+  _stallRetriesLeft: number = MAX_STALL_AUTO_RETRIES,
 ): Promise<PreparedThreadRun> {
   // Lazy-start the scheduler when any agent activity occurs so previously
   // saved scheduled tasks resume firing across server restarts.
@@ -306,10 +317,98 @@ export async function prepareThreadRun(
     },
   };
 
+  const rawStream = streamWithConfig(thread_id, history, streamOpts, signal);
   return {
-    stream: streamWithConfig(thread_id, history, streamOpts, signal),
+    stream: stallRetryStream(rawStream, thread_id, options, signal, _stallRetriesLeft),
     thread_id,
   };
+}
+
+// Wraps the raw agent stream with stall-retry logic. If the inner stream
+// finishes with no tool calls AND the accumulated assistant text matches a
+// "one moment"-style stall pattern, we suppress the stalled chunks (so the
+// user doesn't see the dead-end), persist the stalled text directly as a
+// hidden-marker assistant message (preserving the warning footer for honest
+// auditability), inject a forceful nudge as a synthetic user message, and
+// replay the whole prepare-and-stream pipeline once. Result: from the
+// consumer's perspective, a turn that would have dead-ended silently now
+// produces a real follow-through tool call.
+async function* stallRetryStream(
+  inner: AsyncIterable<StreamChunk>,
+  thread_id: string,
+  options: StreamOptions | undefined,
+  signal: AbortSignal | undefined,
+  retriesLeft: number,
+): AsyncGenerator<StreamChunk> {
+  // If no retry budget, just forward everything unchanged. The downstream
+  // persistAssistantMessage will still tag a stall with a warning footer.
+  if (retriesLeft <= 0) {
+    for await (const chunk of inner) yield chunk;
+    return;
+  }
+
+  const buffered: StreamChunk[] = [];
+  let textBuf = "";
+  let toolCount = 0;
+  let sawDone = false;
+  let sawError = false;
+
+  for await (const chunk of inner) {
+    if (chunk.type === "text_delta") {
+      const d = (chunk.data as { delta?: unknown } | undefined)?.delta;
+      if (typeof d === "string") textBuf += d;
+    } else if (chunk.type === "tool_call") {
+      toolCount++;
+    } else if (chunk.type === "done") {
+      sawDone = true;
+      buffered.push(chunk);
+      break;
+    } else if (chunk.type === "error") {
+      sawError = true;
+      // Flush + propagate; never retry on errors.
+      for (const b of buffered) yield b;
+      yield chunk;
+      return;
+    }
+    buffered.push(chunk);
+  }
+
+  const stalled =
+    sawDone &&
+    !sawError &&
+    toolCount === 0 &&
+    textBuf.trim().length > 0 &&
+    looksLikeStall(textBuf.trim());
+
+  if (!stalled) {
+    for (const b of buffered) yield b;
+    return;
+  }
+
+  // Stalled. Persist the dead-end turn directly (skipping the consumer's
+  // own persistAssistantMessage path for this content, since we'll feed it
+  // an empty buffer once the retry stream takes over).
+  persistAssistantMessage(thread_id, textBuf, []);
+
+  // Inject a forceful nudge as a synthetic user message so the model sees
+  // its own stalled reply + an instruction to continue. We surface this in
+  // the chat history on purpose — silent retries that look like the model
+  // "just answered" hide what actually happened and confuse debugging.
+  const nudge =
+    "\u21bb Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize \u2014 just call the tool.";
+
+  const retry = await prepareThreadRun(
+    thread_id,
+    nudge,
+    options,
+    undefined,
+    signal,
+    retriesLeft - 1,
+  );
+  // Forward the retry's chunks transparently to the consumer. The consumer's
+  // text/tool accumulator naturally captures the retry output, and its final
+  // persistAssistantMessage records the *real* follow-through reply.
+  for await (const chunk of retry.stream) yield chunk;
 }
 
 export function persistAssistantMessage(
@@ -348,10 +447,10 @@ const STALL_PATTERNS: RegExp[] = [
   /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
 ];
 
-function looksLikeStall(text: string): boolean {
-  // Inspect the last paragraph / sentence — earlier acknowledgment language
-  // is fine when followed by real work. The stall signal is when the message
-  // ends on a promise.
+export function looksLikeStall(text: string): boolean {
+  // Inspect the last paragraph / sentence \u2014 earlier acknowledgment
+  // language is fine when followed by real work. The stall signal is when
+  // the message ends on a promise.
   const tail = text.split(/\n{2,}|(?<=[.!?])\s+/).filter(Boolean).slice(-2).join(" ");
   return STALL_PATTERNS.some((re) => re.test(tail));
 }
