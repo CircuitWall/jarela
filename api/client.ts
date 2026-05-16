@@ -192,10 +192,42 @@ export const api = {
 
 let cachedWsUrl: string | null = null;
 
+// Persist the ws URL across page reloads so we don't pay an HTTP round-trip
+// to /api/v1/ws on every cold load. Keyed by the current origin so a host
+// flip (loopback ↔ tailscale ↔ different machine) invalidates automatically.
+const WS_URL_STORAGE_KEY = "langgui:ws-url";
+
+function readPersistedWsUrl(): string | null {
+  if (typeof window === "undefined" || !window.sessionStorage) return null;
+  try {
+    const raw = window.sessionStorage.getItem(WS_URL_STORAGE_KEY);
+    if (!raw) return null;
+    const { origin, url } = JSON.parse(raw) as { origin?: string; url?: string };
+    if (origin === window.location.origin && typeof url === "string") return url;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function writePersistedWsUrl(url: string): void {
+  if (typeof window === "undefined" || !window.sessionStorage) return;
+  try {
+    window.sessionStorage.setItem(
+      WS_URL_STORAGE_KEY,
+      JSON.stringify({ origin: window.location.origin, url }),
+    );
+  } catch { /* quota / private-mode — fine, fall back to in-memory cache */ }
+}
+
 async function getWsUrl(): Promise<string> {
   if (cachedWsUrl) return cachedWsUrl;
+  const persisted = readPersistedWsUrl();
+  if (persisted) {
+    cachedWsUrl = persisted;
+    return persisted;
+  }
   const res = await request<{ url: string }>("/ws");
   cachedWsUrl = res.url;
+  writePersistedWsUrl(res.url);
   return res.url;
 }
 
