@@ -28,6 +28,18 @@ export function AppShell() {
   const [showTools, setShowTools] = useState(true);
   const [showThinking, setShowThinking] = useState(true);
 
+  // Lazy-mount tabs on first visit, then keep them mounted via <Activity> so
+  // state survives subsequent switches. Without this, opening the app forces
+  // React to render and commit all 8 panel trees up front — Safari (esp. iOS
+  // PWA) takes long enough on that synchronous commit that the initial
+  // agents fetch in this very component visibly stalls.
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(
+    () => new Set([state.activeTab]),
+  );
+  useEffect(() => {
+    setMountedTabs((prev) => prev.has(state.activeTab) ? prev : new Set(prev).add(state.activeTab));
+  }, [state.activeTab]);
+
   const unreadCount = useUnreadCount();
 
   // Cache agent id → name for notification titles. Refreshed on agent CRUD.
@@ -133,48 +145,68 @@ export function AppShell() {
 
       <div className="flex-1 relative overflow-hidden">
         {/*
-          Each tab is wrapped in <Activity>. While hidden, the panel stays
-          mounted with its DOM tree (so scroll position, expanded rows, and
-          local form/filter state survive tab switches), but its effects
-          unmount until it's shown again \u2014 so data is refreshed on focus
-          rather than left to go stale in the background. ChatView keeps its
-          `key={activeAgentId}` so picking a different agent still
-          forces a clean remount with that agent's thread.
+          Each tab is wrapped in <Activity> on its first visit, then kept
+          mounted so scroll position, expanded rows, and local form/filter
+          state survive tab switches. Background panels stay in the DOM but
+          their effects pause until shown again, so data refreshes on focus
+          rather than going stale. ChatView keeps its `key={activeAgentId}`
+          so picking a different agent still forces a clean remount with
+          that agent's thread.
+
+          We lazy-mount on first visit (not eagerly on app start) because
+          rendering all 8 panel trees up front blocks Safari/iOS PWA long
+          enough to stall the very first paint.
         */}
-        <Activity mode={state.activeTab === "chat" ? "visible" : "hidden"}>
-          <ChatView
-            key={state.activeAgentId ?? "no-agent"}
-            threadId={threadId}
-            agentId={state.activeAgentId}
-            sessionLoading={sessionLoading}
-            sessionError={sessionError}
-            showTools={showTools}
-            showThinking={showThinking}
-            onMessageSent={onMessageSent}
-            onSelectAgent={onSelectAgent}
-          />
-        </Activity>
-        <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
-          <AgentsPanel />
-        </Activity>
-        <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
-          <MemoryPanel />
-        </Activity>
-        <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
-          <ModelsPanel />
-        </Activity>
-        <Activity mode={state.activeTab === "mcp" ? "visible" : "hidden"}>
-          <MCPPanel />
-        </Activity>
-        <Activity mode={state.activeTab === "integrations" ? "visible" : "hidden"}>
-          <IntegrationsPanel />
-        </Activity>
-        <Activity mode={state.activeTab === "tasks" ? "visible" : "hidden"}>
-          <ScheduledTasksPanel />
-        </Activity>
-        <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
-          <ProfilePanel />
-        </Activity>
+        {mountedTabs.has("chat") && (
+          <Activity mode={state.activeTab === "chat" ? "visible" : "hidden"}>
+            <ChatView
+              key={state.activeAgentId ?? "no-agent"}
+              threadId={threadId}
+              agentId={state.activeAgentId}
+              sessionLoading={sessionLoading}
+              sessionError={sessionError}
+              showTools={showTools}
+              showThinking={showThinking}
+              onMessageSent={onMessageSent}
+              onSelectAgent={onSelectAgent}
+            />
+          </Activity>
+        )}
+        {mountedTabs.has("agents") && (
+          <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
+            <AgentsPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("memory") && (
+          <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
+            <MemoryPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("models") && (
+          <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
+            <ModelsPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("mcp") && (
+          <Activity mode={state.activeTab === "mcp" ? "visible" : "hidden"}>
+            <MCPPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("integrations") && (
+          <Activity mode={state.activeTab === "integrations" ? "visible" : "hidden"}>
+            <IntegrationsPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("tasks") && (
+          <Activity mode={state.activeTab === "tasks" ? "visible" : "hidden"}>
+            <ScheduledTasksPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("profile") && (
+          <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
+            <ProfilePanel />
+          </Activity>
+        )}
 
         {showGear && (
           <div className="absolute inset-0 bg-black/40 z-10" onClick={() => setShowGear(false)} />
