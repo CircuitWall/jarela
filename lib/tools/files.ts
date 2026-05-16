@@ -166,3 +166,170 @@ export const fileEditTool = tool(
     schema: editSchema,
   },
 );
+
+// --- move / rename ------------------------------------------------------
+
+const moveSchema = z.object({
+  source: z.string().describe("Existing file or directory path"),
+  destination: z.string().describe("New path. If it ends with a separator or is an existing directory, source is moved into it preserving its basename."),
+  overwrite: z
+    .boolean()
+    .optional()
+    .describe("Allow replacing an existing destination file (default false). Existing directories are never overwritten."),
+  create_dirs: z
+    .boolean()
+    .optional()
+    .describe("Create missing parent directories of the destination (default true)."),
+});
+
+export const fileMoveTool = tool(
+  async ({ source, destination, overwrite, create_dirs }) => {
+    const srcAbs = resolvePath(source);
+    let dstAbs = resolvePath(destination);
+    try {
+      const srcStat = await fs.stat(srcAbs);
+      // If destination is an existing directory, move source INTO it
+      // preserving its basename — matches `mv src dir/` semantics.
+      let dstStat: import("fs").Stats | null = null;
+      try {
+        dstStat = await fs.stat(dstAbs);
+      } catch {
+        // dst missing — fine
+      }
+      if (dstStat?.isDirectory()) {
+        dstAbs = path.join(dstAbs, path.basename(srcAbs));
+        try {
+          dstStat = await fs.stat(dstAbs);
+        } catch {
+          dstStat = null;
+        }
+      }
+      if (dstStat) {
+        if (dstStat.isDirectory()) {
+          return JSON.stringify({
+            ok: false,
+            source: srcAbs,
+            destination: dstAbs,
+            error: "destination is an existing directory; refusing to overwrite",
+          });
+        }
+        if (!overwrite) {
+          return JSON.stringify({
+            ok: false,
+            source: srcAbs,
+            destination: dstAbs,
+            error: "destination exists. Pass overwrite=true to replace it.",
+          });
+        }
+      }
+      if (create_dirs !== false) {
+        await fs.mkdir(path.dirname(dstAbs), { recursive: true });
+      }
+      await fs.rename(srcAbs, dstAbs);
+      return JSON.stringify({
+        ok: true,
+        source: srcAbs,
+        destination: dstAbs,
+        kind: srcStat.isDirectory() ? "directory" : "file",
+      });
+    } catch (err) {
+      // Cross-device rename fails with EXDEV on Linux/macOS. Fall back to
+      // copy+unlink so the agent doesn't need to know about device boundaries.
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === "EXDEV") {
+        try {
+          await fs.cp(srcAbs, dstAbs, { recursive: true, force: overwrite === true, errorOnExist: !overwrite });
+          await fs.rm(srcAbs, { recursive: true, force: true });
+          return JSON.stringify({ ok: true, source: srcAbs, destination: dstAbs, cross_device: true });
+        } catch (err2) {
+          return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err2 as Error).message });
+        }
+      }
+      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message });
+    }
+  },
+  {
+    name: "file_move",
+    description:
+      "Move or rename a file or directory. If destination is an existing directory, source is moved into it. Handles cross-device moves via copy+remove fallback.",
+    schema: moveSchema,
+  },
+);
+
+// --- list ---------------------------------------------------------------
+
+const listSchema = z.object({
+  path: z.string().describe("Directory path to list"),
+  recursive: z.boolean().optional().describe("Recurse into subdirectories (default false)"),
+  max_entries: z.number().int().min(1).max(2000).optional().describe("Cap on returned entries (default 500)"),
+});
+
+export const fileListTool = tool(
+  async ({ path: dirPath, recursive, max_entries }) => {
+    const abs = resolvePath(dirPath);
+    const cap = max_entries ?? 500;
+    const entries: Array<{ path: string; kind: "file" | "directory" | "other"; size?: number }> = [];
+    let truncated = false;
+    async function walk(dir: string): Promise<void> {
+      const items = await fs.readdir(dir, { withFileTypes: true });
+      for (const it of items) {
+        if (entries.length >= cap) {
+          truncated = true;
+          return;
+        }
+        const full = path.join(dir, it.name);
+        const kind: "file" | "directory" | "other" = it.isDirectory()
+          ? "directory"
+          : it.isFile()
+            ? "file"
+            : "other";
+        let size: number | undefined;
+        if (kind === "file") {
+          try {
+            const st = await fs.stat(full);
+            size = st.size;
+          } catch {
+            // ignore
+          }
+        }
+        entries.push({ path: full, kind, size });
+        if (recursive && kind === "directory") await walk(full);
+      }
+    }
+    try {
+      await walk(abs);
+      return JSON.stringify({ ok: true, path: abs, entries, truncated });
+    } catch (err) {
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+    }
+  },
+  {
+    name: "file_list",
+    description: "List directory entries (non-recursive by default). Returns path, kind, and size for files.",
+    schema: listSchema,
+  },
+);
+
+// --- mkdir --------------------------------------------------------------
+
+const mkdirSchema = z.object({
+  path: z.string().describe("Directory path to create"),
+  recursive: z.boolean().optional().describe("Create parent directories as needed (default true)"),
+});
+
+export const fileMkdirTool = tool(
+  async ({ path: dirPath, recursive }) => {
+    const abs = resolvePath(dirPath);
+    try {
+      await fs.mkdir(abs, { recursive: recursive !== false });
+      return JSON.stringify({ ok: true, path: abs });
+    } catch (err) {
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+    }
+  },
+  {
+    name: "file_mkdir",
+    description: "Create a directory. Creates parents by default.",
+    schema: mkdirSchema,
+  },
+);
