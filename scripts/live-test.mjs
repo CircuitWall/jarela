@@ -76,15 +76,20 @@ async function startStream(threadId, message, options = {}) {
 async function drain(res) {
   const events = [];
   let text = "";
+  let errorMessage = null;
   const t0 = Date.now();
   let firstByteAt = null;
   for await (const ev of sseEvents(res)) {
     if (firstByteAt === null) firstByteAt = Date.now() - t0;
     events.push(ev);
     if (ev.type === "text_delta") text += ev.delta ?? "";
-    if (ev.type === "done" || ev.type === "error") break;
+    if (ev.type === "error") {
+      errorMessage = ev.message || ev.error || JSON.stringify(ev);
+      break;
+    }
+    if (ev.type === "done") break;
   }
-  return { text, events, ms: Date.now() - t0, firstByteAt };
+  return { text, events, ms: Date.now() - t0, firstByteAt, errorMessage };
 }
 
 // ── INFRASTRUCTURE TESTS (no LLM) ───────────────────────────────────────────
@@ -217,6 +222,12 @@ test("models: POST creates a new model entry", async () => {
 });
 
 test("models: PUT updates an existing model and toggles is_default", async () => {
+  // Capture whatever model is currently the default so we can restore it
+  // — flipping is_default here would otherwise clobber the prod-seeded
+  // default and break the LLM stream tests below.
+  const before = await api("/api/v1/models");
+  const priorDefault = before.body.find((m) => m.is_default);
+
   const r = await api(`/api/v1/models/${TEST_MODEL}`, {
     method: "PUT",
     body: JSON.stringify({
@@ -234,18 +245,51 @@ test("models: PUT updates an existing model and toggles is_default", async () =>
   const found = list.body.find((m) => m.name === TEST_MODEL);
   assert(found, "model missing from list after PUT");
   assertEqual(found.is_default, true);
+
+  // Restore the previous default so subsequent agent/stream tests use the
+  // properly-credentialed model rather than the stub.
+  if (priorDefault && priorDefault.name !== TEST_MODEL) {
+    await api(`/api/v1/models/${encodeURIComponent(priorDefault.name)}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        provider: priorDefault.provider,
+        model_id: priorDefault.model_id,
+        params: priorDefault.params ?? {},
+        is_default: true,
+      }),
+    });
+    // Re-bind default agent to the restored default.
+    const { body: agents } = await api("/api/v1/agents");
+    const def = agents.find((a) => a.is_default);
+    if (def) {
+      await api(`/api/v1/agents/${def.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ model_config_name: priorDefault.name }),
+      });
+    }
+  }
 });
 
 test("agents: PUT binds default agent to test model", async () => {
   const { body: agents } = await api("/api/v1/agents");
   const def = agents.find((a) => a.is_default);
   assert(def, "no default agent to bind");
+  const prior = def.model_config_name;
+
   const r = await api(`/api/v1/agents/${def.id}`, {
     method: "PUT",
     body: JSON.stringify({ model_config_name: TEST_MODEL }),
   });
   assertEqual(r.status, 200);
   assertEqual(r.body.model_config_name, TEST_MODEL);
+
+  // Restore so subsequent LLM tests use the prod-seeded model with credentials.
+  if (prior && prior !== TEST_MODEL) {
+    await api(`/api/v1/agents/${def.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ model_config_name: prior }),
+    });
+  }
 });
 
 test("agents: POST + PUT + DELETE round-trip", async () => {
@@ -400,25 +444,131 @@ test("tools: each registered tool has name + description", async () => {
 
 // ── SEED (runs once before the suite to populate fresh DBs) ─────────────────
 
+async function seedFromProd() {
+  // Opt-in: copy real provider credentials (api_key etc. inside model_configs.params)
+  // and integrations from the user's production ~/.langgui DB into the running
+  // isolated test server. Required for --llm tests to actually call providers.
+  //
+  // Skipped unless LANGGUI_SEED_FROM_PROD=1.
+  if (process.env.LANGGUI_SEED_FROM_PROD !== "1") return;
+
+  const { homedir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { existsSync } = await import("node:fs");
+
+  let DatabaseSync;
+  try {
+    ({ DatabaseSync } = await import("node:sqlite"));
+  } catch {
+    console.log(`  ${C.yellow}↪ node:sqlite unavailable, skipping prod seed${C.reset}`);
+    return;
+  }
+
+  const prodPath =
+    process.env.LANGGUI_PROD_DB ||
+    join(homedir(), ".langgui", "langgui.db");
+  if (!existsSync(prodPath)) {
+    console.log(`  ${C.yellow}↪ prod DB not found at ${prodPath}, skipping${C.reset}`);
+    return;
+  }
+
+  // Opened read-only so we don't lock or migrate the production writer.
+  // SQLite in WAL mode allows concurrent readers alongside the running prod server.
+  const db = new DatabaseSync(prodPath, { readOnly: true });
+  let modelRows, intRows;
+  try {
+    modelRows = db.prepare(
+      "SELECT name, provider, model_id, params, is_default FROM model_configs"
+    ).all();
+    intRows = db.prepare(
+      "SELECT key, value FROM memory_store WHERE namespace = 'integrations'"
+    ).all();
+  } finally {
+    db.close();
+  }
+
+  let modelsOk = 0;
+  let modelsFail = 0;
+  for (const r of modelRows) {
+    const res = await api("/api/v1/models", {
+      method: "POST",
+      body: JSON.stringify({
+        name: r.name,
+        provider: r.provider,
+        model_id: r.model_id,
+        params: JSON.parse(r.params || "{}"),
+        is_default: Boolean(r.is_default),
+      }),
+    });
+    if (res.ok) modelsOk++;
+    else modelsFail++;
+  }
+  console.log(
+    `  ${C.dim}↪ prod seed: ${modelsOk}/${modelRows.length} model_configs imported` +
+      (modelsFail ? ` (${modelsFail} failed)` : "") +
+      `${C.reset}`,
+  );
+
+  let intsOk = 0;
+  for (const ir of intRows) {
+    let parsed;
+    try { parsed = JSON.parse(ir.value); } catch { continue; }
+    const res = await api("/api/v1/memory", {
+      method: "POST",
+      body: JSON.stringify({ namespace: "integrations", key: ir.key, value: parsed }),
+    });
+    if (res.ok) intsOk++;
+  }
+  if (intRows.length > 0) {
+    console.log(`  ${C.dim}↪ prod seed: ${intsOk}/${intRows.length} integrations imported${C.reset}`);
+  }
+}
+
 async function seed() {
-  // 1. Ensure a default model exists so agents can bind to it.
-  await api("/api/v1/models", {
-    method: "POST",
-    body: JSON.stringify({
-      name: TEST_MODEL,
-      provider: "openai",
-      model_id: "gpt-4o-mini",
-      params: {},
-      is_default: true,
-    }),
-  });
-  // 2. Bind the default agent to the seeded model so existing tests pass.
+  // 1. Try to pull real provider credentials from the user's prod DB.
+  await seedFromProd();
+
+  // 2. Ensure a default model exists so agents can bind to it. If the prod
+  //    seed already populated something, the upsert below picks an existing
+  //    model as default instead of clobbering.
+  const list = await api("/api/v1/models");
+  if (list.ok && list.body.length > 0) {
+    // Prefer a real prod model; mark the first one default if none is.
+    if (!list.body.some((m) => m.is_default)) {
+      const first = list.body[0];
+      await api(`/api/v1/models/${encodeURIComponent(first.name)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          provider: first.provider,
+          model_id: first.model_id,
+          params: first.params ?? {},
+          is_default: true,
+        }),
+      });
+    }
+  } else {
+    // No models at all — create a stub so the rest of the infra tests pass.
+    await api("/api/v1/models", {
+      method: "POST",
+      body: JSON.stringify({
+        name: TEST_MODEL,
+        provider: "openai",
+        model_id: "gpt-4o-mini",
+        params: {},
+        is_default: true,
+      }),
+    });
+  }
+
+  // 3. Bind the default agent to the chosen default model.
+  const { body: models } = await api("/api/v1/models");
+  const defaultModel = models.find((m) => m.is_default) ?? models[0];
   const { body: agents } = await api("/api/v1/agents");
   const def = agents.find((a) => a.is_default);
-  if (def) {
+  if (def && defaultModel) {
     await api(`/api/v1/agents/${def.id}`, {
       method: "PUT",
-      body: JSON.stringify({ model_config_name: TEST_MODEL }),
+      body: JSON.stringify({ model_config_name: defaultModel.name }),
     });
   }
 }
@@ -430,17 +580,21 @@ test("stream: simple message produces text_delta + done", async () => {
   const id = agents.find((a) => a.is_default).id;
   const { body: thread } = await api(`/api/v1/agents/${id}/thread`);
   // Retry once — providers occasionally return an empty stream on the first hit.
+  let lastOut = null;
   for (let attempt = 1; attempt <= 2; attempt++) {
     const res = await startStream(thread.thread_id, "Reply with the single word PONG. Nothing else.");
     assert(res.ok, `stream returned ${res.status}`);
     const out = await drain(res);
+    lastOut = out;
     const types = new Set(out.events.map((e) => e.type));
     if ((types.has("text_delta") || out.text.length > 0) && types.has("done")) {
       assert(out.firstByteAt !== null && out.firstByteAt < 15_000, `first byte too slow: ${out.firstByteAt}ms`);
       return;
     }
     if (attempt === 2) {
-      throw new Error(`empty stream after retry. types=${[...types].join(",")} text="${out.text.slice(0, 80)}"`);
+      const types = new Set(out.events.map((e) => e.type));
+      const errSuffix = out.errorMessage ? ` error="${String(out.errorMessage).slice(0, 200)}"` : "";
+      throw new Error(`empty stream after retry. types=${[...types].join(",")} text="${out.text.slice(0, 80)}"${errSuffix}`);
     }
   }
 }, { llm: true });
@@ -451,9 +605,10 @@ test("stream: response uses markdown formatting when asked to compare", async ()
   const { body: thread } = await api(`/api/v1/agents/${id}/thread`);
   const res = await startStream(thread.thread_id, "Compare Python, Go, and Rust on three attributes (typing, concurrency, perf). Use a markdown table.");
   const out = await drain(res);
+  if (out.errorMessage) throw new Error(`stream errored: ${String(out.errorMessage).slice(0, 200)}`);
   // Look for table syntax — pipes + a separator row
   const hasTable = /\|.*\|.*\|/.test(out.text) && /\|\s*-+\s*\|/.test(out.text);
-  assert(hasTable, "expected markdown table in response");
+  assert(hasTable, `expected markdown table in response; got ${out.text.length} chars`);
 }, { llm: true });
 
 test("memory: agent calls memory_write when asked to remember", async () => {
@@ -578,6 +733,7 @@ test("ux: streaming is incremental for longer responses", async () => {
     "Write a 100-word paragraph about the history of typewriters. Plain prose, no markdown.",
   );
   const out = await drain(res);
+  if (out.errorMessage) throw new Error(`stream errored: ${String(out.errorMessage).slice(0, 200)}`);
   const textEvents = out.events.filter((e) => e.type === "text_delta");
   // For a 100-word response we expect lots of small chunks. If we get 1-2 big
   // ones, streaming has degraded to batch mode somewhere in the chain.
