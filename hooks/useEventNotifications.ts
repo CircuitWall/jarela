@@ -112,23 +112,14 @@ export function useEventNotifications(options: Options) {
 
       const { title, body, kind } = format(ev, optsRef.current.resolveAgentName);
 
-      // 1. Always push an in-app toast. Visible whenever the LangGUI window
-      //    has any pixels on screen.
-      pushToast({
-        kind,
-        title,
-        body,
-        agent_id: ev.type === "run_completed" ? ev.agent_id : ev.agent_id,
-        thread_id: ev.thread_id || null,
-        ttl: 6000,
-      });
+      // Prefer the OS Web Notification when the browser has granted
+      // permission — it surfaces both in foreground and background and the
+      // in-app toast becomes redundant on top of it. Only fall back to the
+      // in-app toast when permission is missing/denied.
+      const canOSNotify =
+        typeof Notification !== "undefined" && Notification.permission === "granted";
 
-      // 2. ALSO fire a Web Notification when the window isn't in focus, so
-      //    macOS / Windows shows it on top of whatever the user is looking
-      //    at. Quietly skipped if permission isn't granted — the toast is
-      //    enough on its own.
-      const unfocused = document.hidden || !document.hasFocus();
-      if (unfocused && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      if (canOSNotify) {
         try {
           const n = new Notification(title, {
             body,
@@ -136,8 +127,7 @@ export function useEventNotifications(options: Options) {
             icon: "/icon-192.png",
           });
           // Click handler: focus the LangGUI window, switch to the agent the
-          // event belongs to, dismiss the OS notification. Same end state as
-          // clicking the in-app toast card.
+          // event belongs to, dismiss the OS notification.
           n.onclick = () => {
             window.focus();
             const agentId = ev.agent_id;
@@ -148,8 +138,20 @@ export function useEventNotifications(options: Options) {
             }
             n.close();
           };
-        } catch { /* OS rejected, ignore */ }
+          return;
+        } catch { /* OS rejected — fall through to in-app toast */ }
       }
+
+      // Fallback: in-app toast (visible whenever the LangGUI window has
+      // any pixels on screen).
+      pushToast({
+        kind,
+        title,
+        body,
+        agent_id: ev.type === "run_completed" ? ev.agent_id : ev.agent_id,
+        thread_id: ev.thread_id || null,
+        ttl: 6000,
+      });
     }
 
     connect();
