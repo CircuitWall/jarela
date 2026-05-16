@@ -216,19 +216,23 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   }
 
   // Wire the deferred drain — see drainQueueRef declaration above.
-  // Single source of truth for queue progression: pops one item and launches
-  // it ONLY if the chat is in a ready state. Multiple callers (handleDone
-  // after a run, handleCompact after compact, the message-load effect after
-  // a session resolves) all funnel through this, but the readiness guard
-  // means out-of-band invocations are safe no-ops.
+  // Single source of truth for queue progression: when the chat is ready,
+  // flush the ENTIRE queue as a single agent turn. Multiple queued user
+  // messages get merged into one prompt (joined by a blank line) with all
+  // their attachments concatenated, so the agent sees one coherent turn
+  // instead of N round-trips. Multiple callers (handleDone after a run,
+  // handleCompact after compact, the message-load effect after a session
+  // resolves) all funnel through this; the readiness guard makes
+  // out-of-band invocations safe no-ops.
   drainQueueRef.current = () => {
     if (streaming || compacting || !threadId) return;
     setQueue((q) => {
       if (q.length === 0) return q;
-      const [next, ...rest] = q;
-      // Fire the next run on a microtask so React's commit settles first.
-      Promise.resolve().then(() => { void launchRun(next.text, next.attachments); });
-      return rest;
+      const text = q.map((m) => m.text).join("\n\n");
+      const atts = q.flatMap((m) => m.attachments);
+      // Fire on a microtask so React's commit settles first.
+      Promise.resolve().then(() => { void launchRun(text, atts); });
+      return [];
     });
   };
 
