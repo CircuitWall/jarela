@@ -72,6 +72,11 @@ export function listScheduledTasks(agentId?: string): ScheduledTaskRow[] {
   return rows as unknown as ScheduledTaskRow[];
 }
 
+export function getScheduledTask(id: string): ScheduledTaskRow | null {
+  const row = getDb().prepare("SELECT * FROM scheduled_tasks WHERE id=?").get(id);
+  return (row as ScheduledTaskRow | undefined) ?? null;
+}
+
 export function getDueTasks(asOf: Date = new Date()): ScheduledTaskRow[] {
   return getDb()
     .prepare("SELECT * FROM scheduled_tasks WHERE enabled=1 AND next_run_at <= ? ORDER BY next_run_at ASC")

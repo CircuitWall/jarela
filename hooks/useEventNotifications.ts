@@ -37,6 +37,10 @@ interface Options {
   shouldNotify: (ev: NotifEvent) => boolean;
   // For titling the toast / notification.
   resolveAgentName: (agentId: string | null) => string;
+  // Optional: return a URL to the agent's avatar so OS notifications show
+  // the agent icon instead of the generic LangGUI logo. Null/undefined →
+  // fall back to /icon-192.png.
+  resolveAgentIcon?: (agentId: string | null) => string | null | undefined;
 }
 
 // Subscribes to /api/v1/events. Each event:
@@ -121,10 +125,11 @@ export function useEventNotifications(options: Options) {
 
       if (canOSNotify) {
         try {
+          const customIcon = optsRef.current.resolveAgentIcon?.(ev.agent_id) ?? null;
           const n = new Notification(title, {
             body,
             tag: ev.type === "run_completed" ? `run:${ev.thread_id}` : `task:${ev.task_id}`,
-            icon: "/icon-192.png",
+            icon: customIcon || "/icon-192.png",
           });
           // Click handler: focus the LangGUI window, switch to the agent the
           // event belongs to, dismiss the OS notification.

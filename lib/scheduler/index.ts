@@ -106,3 +106,27 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
     ts: Date.now(),
   });
 }
+
+// Public wrapper so a "Run now" UI button can trigger the same code path
+// the cron scheduler uses. Catches errors itself so the HTTP layer just
+// awaits and reports completion.
+export async function runScheduledTaskNow(task: ScheduledTaskRow): Promise<void> {
+  try {
+    await runTask(task);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    markTaskRan(task.id, task.kind, task.schedule, msg);
+    publishNotification({
+      type: "task_completed",
+      task_id: task.id,
+      agent_id: task.agent_id,
+      prompt: task.prompt,
+      thread_id: "",
+      status: "error",
+      preview: "",
+      error: msg,
+      ts: Date.now(),
+    });
+    throw err;
+  }
+}
