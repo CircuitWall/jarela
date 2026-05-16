@@ -149,11 +149,12 @@ export async function* streamWithConfig(
         streamMode: ["messages", "updates"],
         configurable: { thread_id: threadId },
         // LangGraph counts EACH node visit (model call + each tool call) as a
-        // step, so 10 was hit on any non-trivial multi-tool task. 50 leaves
-        // headroom for research-style flows (search → fetch → search → etc.)
-        // while still bounding runaway loops. Configurable via env if a
-        // specific deployment needs more or less.
-        recursionLimit: Number(process.env.LANGGUI_RECURSION_LIMIT) || 50,
+        // step. File-organization, multi-search-and-fetch, and any task that
+        // pairs every action with a verify call (file_move + file_stat, etc.)
+        // burns through 50 fast — 25 file moves and you're done. 200 leaves
+        // generous headroom for legitimate multi-step work while still
+        // bounding obvious runaway loops. Configurable via env per deployment.
+        recursionLimit: Number(process.env.LANGGUI_RECURSION_LIMIT) || 200,
         // Cancellation: when the user hits Stop (or the last client
         // disconnects), the route aborts this signal and the LangGraph
         // pregel loop unwinds, throwing a friendly aborted error below.
@@ -235,7 +236,7 @@ export async function* streamWithConfig(
     let friendly = rawMsg;
     let code = "agent_error";
     if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
-      const limit = Number(process.env.LANGGUI_RECURSION_LIMIT) || 50;
+      const limit = Number(process.env.LANGGUI_RECURSION_LIMIT) || 200;
       friendly =
         `The agent took too many tool-calling steps without finishing (hit the ${limit}-step limit). ` +
         `If the task is legitimately deep, raise LANGGUI_RECURSION_LIMIT in the env. ` +
