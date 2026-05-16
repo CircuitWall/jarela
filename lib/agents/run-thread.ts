@@ -7,6 +7,7 @@ import { getUserProfile } from "@/lib/stores/user-profile";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { listIntegrations } from "@/lib/stores/integrations";
+import os from "os";
 
 export class RunThreadError extends Error {
   status: number;
@@ -74,6 +75,12 @@ const PLAN_FIRST_CTX = [
   "- After calling a tool, only report what's literally in the tool's JSON response. Don't paraphrase IDs or restate computed fields you didn't see.",
   "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.",
   "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
+  "",
+  "FOLLOW-THROUGH RULES (very important):",
+  "- NEVER end a turn with a promise to do something next. Phrases like \"give me a moment\", \"let me check\", \"I'll verify\", \"hold on\", \"one sec\" are forbidden as the LAST thing in your reply. The user does NOT get to send another implicit ping — your turn ends and nothing else happens.",
+  "- If you need to check or try something, DO IT IN THIS TURN: call the next tool, observe the result, then respond.",
+  "- When a tool returns a recoverable error (ENOENT path-not-found, 404, 'not found' results), try sensible alternatives in the same turn before responding: list the parent directory, try common siblings, search differently. Only ask the user when you've exhausted the obvious next steps OR you need information they alone have.",
+  "- End every turn with either: (a) a concrete answer / result, (b) a question the user must answer, or (c) a clear statement that the task is blocked and why.",
 ].join("\n");
 
 const SELF_CONFIG_CTX = [
@@ -214,6 +221,23 @@ export async function prepareThreadRun(
 
   const timeCtx = `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
 
+  // Host environment hint so the agent doesn't have to guess platform-specific
+  // paths (e.g. iCloud Drive lives at a different default location on Windows
+  // vs. macOS). Keeps the agent grounded in the actual filesystem it's
+  // operating against.
+  const envCtx = [
+    "--- Host environment ---",
+    `Platform: ${process.platform} (${process.arch})`,
+    `CWD: ${process.cwd()}`,
+    `Home: ${os.homedir()}`,
+    process.platform === "win32"
+      ? "iCloud Drive on Windows (if installed): %USERPROFILE%\\iCloudDrive (a.k.a. ~\\iCloudDrive)"
+      : process.platform === "darwin"
+        ? "iCloud Drive on macOS: ~/Library/Mobile Documents/com~apple~CloudDocs"
+        : "",
+    "Verify file paths with file_stat or file_list before assuming they exist.",
+  ].filter(Boolean).join("\n");
+
   // Surface configured integrations so the LLM knows native tools are wired
   // and ready. Without this, the model defaults to shell-exec'ing CLIs (`jira`,
   // `gh`, etc.) because that's what its training data covers — even though
@@ -256,7 +280,7 @@ export async function prepareThreadRun(
     "",
   );
 
-  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, CAPABILITIES_CTX, PLAN_FIRST_CTX, PRESENTATION_CTX, timeCtx, SELF_CONFIG_CTX, memoryCtx, recallCtx].filter(Boolean);
+  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, CAPABILITIES_CTX, PLAN_FIRST_CTX, PRESENTATION_CTX, timeCtx, envCtx, SELF_CONFIG_CTX, memoryCtx, recallCtx].filter(Boolean);
   let allowedTools: string[] = [];
   try {
     allowedTools = JSON.parse(agentCfg.tools) as string[];
