@@ -88,16 +88,31 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
 
   let assistantContent = "";
   const usedTools: string[] = [];
+  const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
   for await (const chunk of prepared.stream) {
     if (chunk.type === "text_delta") {
       assistantContent += (chunk.data.delta as string) ?? "";
     } else if (chunk.type === "tool_call") {
-      const name = (chunk.data as { name?: string }).name;
-      if (name) usedTools.push(name);
+      const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
+      if (d.name) usedTools.push(d.name);
+      toolEvents.push({
+        id: d.id ?? `call-${toolEvents.length}`,
+        phase: "call",
+        name: d.name ?? "",
+        payload: d.arguments,
+      });
+    } else if (chunk.type === "tool_result") {
+      const d = chunk.data as { id?: string; name?: string; result?: unknown };
+      toolEvents.push({
+        id: d.id ?? `result-${toolEvents.length}`,
+        phase: "result",
+        name: d.name ?? "",
+        payload: d.result,
+      });
     }
     if (chunk.type === "done" || chunk.type === "error") break;
   }
-  persistAssistantMessage(thread.thread_id, assistantContent, usedTools);
+  persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
   markTaskRan(task.id, task.kind, task.schedule);
   publishNotification({
     type: "task_completed",

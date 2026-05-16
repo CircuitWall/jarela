@@ -9,6 +9,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Bot, ChevronRight, Link as LinkIcon, Paperclip, User, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
+import { ToolList } from "@/components/chat/ToolList";
 
 interface ExtractedRef {
   title: string;
@@ -345,6 +346,9 @@ export function MessageBubble({ message, agentConfig, userProfile, showAvatar = 
             </div>
           )}
         </div>
+        {!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
+          <ToolList events={message.tool_events} />
+        )}
         {refs.length > 0 && <RefsFooter refs={refs} />}
       </div>
     </div>
