@@ -228,10 +228,20 @@ async function getWsUrl(): Promise<string> {
     cachedWsUrl = persisted;
     return persisted;
   }
-  const res = await request<{ url: string }>("/ws");
+  // Bypass any SW / HTTP cache layer for the URL discovery hop. This is
+  // small JSON and must reflect the live server config (post-deploy the
+  // path or port may have changed).
+  const res = await request<{ url: string }>("/ws", { cache: "no-store" });
   cachedWsUrl = res.url;
   writePersistedWsUrl(res.url);
   return res.url;
+}
+
+function invalidateWsUrl(): void {
+  cachedWsUrl = null;
+  if (typeof window !== "undefined" && window.sessionStorage) {
+    try { window.sessionStorage.removeItem(WS_URL_STORAGE_KEY); } catch { /* ignore */ }
+  }
 }
 
 export async function* streamChat(
@@ -327,6 +337,11 @@ export async function* streamChatWS(
   ws.onerror = () => {
     streamError = new Error("WebSocket transport failed");
     done = true;
+    // The URL we connected to is probably stale (server moved, proxy path
+    // changed, etc.). Drop the cached entry so the next call re-discovers
+    // it via GET /api/v1/ws, and so the SSE fallback in useSSE works on
+    // the next attempt without a page reload.
+    invalidateWsUrl();
     notify();
   };
 
