@@ -5,7 +5,7 @@
 
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { ExpirationPlugin, NetworkFirst, Serwist } from "serwist";
+import { ExpirationPlugin, NetworkFirst, NetworkOnly, Serwist } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -22,6 +22,15 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
+    // Endpoints that MUST NEVER be cached. /api/v1/ws returns the live WS
+    // upgrade URL — if a stale cached response points at an old port or
+    // proxy path, the client will keep failing to connect even after the
+    // server is reconfigured. Same goes for /api/v1/health (used to verify
+    // the live server is up).
+    {
+      matcher: /^\/api\/v1\/(ws|health)$/,
+      handler: new NetworkOnly(),
+    },
     // Custom API caching — mirrors what next-pwa was configured with so the
     // installed PWA keeps a usable read-only view of recent threads / memory
     // / agents when the local server hasn't started yet.
