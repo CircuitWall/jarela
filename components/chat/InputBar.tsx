@@ -46,7 +46,12 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!streaming && !disabled && (value.trim() || attachments.length)) onSubmit();
+      // NOTE: do NOT gate on `streaming` here. ChatView.handleSubmit
+      // intentionally queues the message when a run is in flight, and the
+      // Send button is hidden during streaming (replaced by Stop). Enter
+      // is the ONLY path to push a message into the queue \u2014 if we block
+      // it here, queueing is unreachable from the UI.
+      if (!disabled && (value.trim() || attachments.length)) onSubmit();
     }
   }
 
