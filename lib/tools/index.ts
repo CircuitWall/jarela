@@ -3,7 +3,7 @@ import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { memoryReadTool, memoryWriteTool, memoryListTool } from "./memory";
 import { localExecTool, shellExecTool } from "./exec";
-import { fileReadTool, fileWriteTool, fileEditTool } from "./files";
+import { fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileListTool, fileMkdirTool } from "./files";
 import { webSearchTool } from "./search";
 import { webFetchTool } from "./fetch";
 import { generateImageTool } from "./generate_image";
@@ -29,6 +29,9 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   fileReadTool,
   fileWriteTool,
   fileEditTool,
+  fileMoveTool,
+  fileListTool,
+  fileMkdirTool,
   webSearchTool,
   webFetchTool,
   generateImageTool,
