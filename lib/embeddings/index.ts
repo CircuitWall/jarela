@@ -6,7 +6,7 @@ import type { ProviderParams } from "@/lib/providers/types";
 // Embedding model resolution:
 // 1. EMBEDDING_MODEL_CONFIG env var → name of a row in model_configs
 // 2. Else: same provider as the default chat model + a sane default model_id
-//    (text-embedding-3-small for OpenAI-compatible providers, including Internal).
+//    (text-embedding-3-small for OpenAI-compatible providers).
 // Embedding generation is best-effort: any failure returns null and the caller
 // falls back to substring search.
 async function resolveEmbeddingClient(): Promise<{

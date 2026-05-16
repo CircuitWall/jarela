@@ -63,7 +63,7 @@ export interface MemoryItem {
 
 export interface ModelConfig {
   name: string;
-  provider: "openai" | "anthropic" | "github-copilot" | "internal" | string;
+  provider: "openai" | "anthropic" | "github-copilot" | string;
   model_id: string;
   params: {
     api_key?: string;
@@ -71,10 +71,6 @@ export interface ModelConfig {
     extra_headers?: Record<string, string>;
     temperature?: number;
     max_tokens?: number;
-    username?: string;
-    password?: string;
-    auth_header_name?: string;
-    auth_header_value?: string;
   };
   is_default: boolean;
   created_at: string;
