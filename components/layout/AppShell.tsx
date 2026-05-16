@@ -106,7 +106,10 @@ export function AppShell() {
       <TopProgressBar />
       <NotificationStatus />
       <Toaster />
-      <header className="h-12 flex items-center px-4 border-b border-border bg-surface-2 shrink-0">
+      <header
+        className="flex items-center px-4 border-b border-border bg-surface-2 shrink-0 pt-safe"
+        style={{ height: "calc(3rem + env(safe-area-inset-top))" }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="LangGUI" className="h-6 select-none" />
         <button
