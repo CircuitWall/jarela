@@ -77,10 +77,20 @@ const PLAN_FIRST_CTX = [
   "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
   "",
   "FOLLOW-THROUGH RULES (very important):",
-  "- NEVER end a turn with a promise to do something next. Phrases like \"give me a moment\", \"let me check\", \"I'll verify\", \"hold on\", \"one sec\" are forbidden as the LAST thing in your reply. The user does NOT get to send another implicit ping — your turn ends and nothing else happens.",
-  "- If you need to check or try something, DO IT IN THIS TURN: call the next tool, observe the result, then respond.",
+  "- NEVER end a turn with a promise to do something next. Forbidden as the LAST sentence of your reply (case-insensitive, in any language):",
+  "    \"give me a moment\" / \"one moment\" / \"one sec\" / \"hold on\" / \"just a moment\" / \"bear with me\"",
+  "    \"let me check\" / \"let me verify\" / \"let me continue\" / \"let me proceed\" / \"let me look\"",
+  "    \"I'll check\" / \"I'll verify\" / \"I'll continue\" / \"I'll proceed\" / \"I'll look into\" / \"I'll keep going\"",
+  "    \"continuing now\" / \"proceeding now\" / \"working on it\"",
+  "  The user does NOT get to send another implicit ping — your turn ends and nothing else happens. Sending two such messages in a row is even worse.",
+  "- If you need to check or try something, DO IT IN THIS TURN: call the next tool, observe the result, then respond. The acknowledgment sentence (PLAN_FIRST rule) is allowed BECAUSE it is immediately followed by tool calls in the same turn.",
   "- When a tool returns a recoverable error (ENOENT path-not-found, 404, 'not found' results), try sensible alternatives in the same turn before responding: list the parent directory, try common siblings, search differently. Only ask the user when you've exhausted the obvious next steps OR you need information they alone have.",
-  "- End every turn with either: (a) a concrete answer / result, (b) a question the user must answer, or (c) a clear statement that the task is blocked and why.",
+  "- End every turn with either: (a) a concrete answer / result, (b) a question the user must answer, or (c) a clear statement that the task is blocked and why. NOT a vibe.",
+  "",
+  "CONCRETE FORBIDDEN EXAMPLE — this exact pattern is NEVER acceptable:",
+  "  > \"Understood! I'll continue with the file organization. One moment while I proceed.\"  ← BAD: ends with a promise, no tool calls.",
+  "  > \"Let me continue the required moves. One sec!\"  ← BAD: same pattern.",
+  "  Correct version: emit ONE short acknowledgment, then CALL file_move (or whatever tool advances the task) in the same turn. Only after the tool returns do you reply.",
 ].join("\n");
 
 const SELF_CONFIG_CTX = [
@@ -314,14 +324,36 @@ export function persistAssistantMessage(
   // the assistant text remains saying "I scheduled X" with no proof a tool
   // ran, which reads as a hallucination even when the tool did execute.
   let final = trimmed;
-  if (usedTools && usedTools.length > 0) {
-    const unique = Array.from(new Set(usedTools.filter(Boolean)));
-    if (unique.length > 0) {
-      const footer = `*— used: ${unique.join(", ")}*`;
-      final = final ? `${final}\n\n${footer}` : footer;
-    }
+  const toolList = usedTools ? Array.from(new Set(usedTools.filter(Boolean))) : [];
+  // Stall detector: model ended its turn with a "one moment" / "let me check"
+  // promise but invoked no tool. The system prompt forbids this, but models
+  // occasionally do it anyway. Marking the message inline gives the user a
+  // concrete next-step ("type continue") instead of staring at silence.
+  if (toolList.length === 0 && trimmed && looksLikeStall(trimmed)) {
+    final = `${trimmed}\n\n*⚠️ Agent stalled — promised a next step but did not invoke any tool. Reply "continue" to retry.*`;
+  } else if (toolList.length > 0) {
+    final = `${trimmed}\n\n*— used: ${toolList.join(", ")}*`;
   }
   if (final) addMessage(thread_id, "assistant", final);
+}
+
+const STALL_PATTERNS: RegExp[] = [
+  /\bone (moment|sec(?:ond)?)\b/i,
+  /\bgive me (a|just a) (moment|sec(?:ond)?|minute)\b/i,
+  /\bhold on\b/i,
+  /\bjust a (moment|sec(?:ond)?|minute)\b/i,
+  /\bbear with me\b/i,
+  /\blet me (check|verify|continue|proceed|look|try|do (?:that|this|it))\b/i,
+  /\bi['’]?ll (check|verify|continue|proceed|look|try|do (?:that|this|it)|keep going|get (?:on|right) (?:on|to))/i,
+  /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
+];
+
+function looksLikeStall(text: string): boolean {
+  // Inspect the last paragraph / sentence — earlier acknowledgment language
+  // is fine when followed by real work. The stall signal is when the message
+  // ends on a promise.
+  const tail = text.split(/\n{2,}|(?<=[.!?])\s+/).filter(Boolean).slice(-2).join(" ");
+  return STALL_PATTERNS.some((re) => re.test(tail));
 }
 
 // Run semantic recall on the user's turn, format the top hits as a system-prompt
