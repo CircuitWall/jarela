@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { AppProvider } from "@/contexts/AppContext";
+import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistration";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AppProvider>{children}</AppProvider>
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );
