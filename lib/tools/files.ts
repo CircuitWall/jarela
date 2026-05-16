@@ -258,54 +258,120 @@ export const fileMoveTool = tool(
 
 // --- list ---------------------------------------------------------------
 
+// Common directories that almost always represent noise for an agent
+// browsing a workspace. Skipping them by default lets recursive listings
+// of a real project return useful results instead of burning the entry
+// budget on node_modules. Override with include_ignored=true.
+const DEFAULT_IGNORE_DIRS = new Set([
+  "node_modules", ".git", ".next", ".turbo", ".cache", ".pnpm-store",
+  "dist", "build", "out", "coverage", ".venv", "venv", "__pycache__",
+  ".mypy_cache", ".pytest_cache", ".idea", ".vscode-test",
+]);
+
 const listSchema = z.object({
   path: z.string().describe("Directory path to list"),
   recursive: z.boolean().optional().describe("Recurse into subdirectories (default false)"),
-  max_entries: z.number().int().min(1).max(2000).optional().describe("Cap on returned entries (default 500)"),
+  max_entries: z
+    .number()
+    .int()
+    .min(1)
+    .max(50_000)
+    .optional()
+    .describe("Cap on returned entries (default 5000, max 50000)"),
+  include_hidden: z
+    .boolean()
+    .optional()
+    .describe("Include dot-prefixed entries (default false)"),
+  include_ignored: z
+    .boolean()
+    .optional()
+    .describe("Recurse into common noise dirs like node_modules, .git, dist (default false)"),
+  pattern: z
+    .string()
+    .optional()
+    .describe("Optional case-insensitive substring filter applied to the basename"),
 });
 
 export const fileListTool = tool(
-  async ({ path: dirPath, recursive, max_entries }) => {
+  async ({ path: dirPath, recursive, max_entries, include_hidden, include_ignored, pattern }) => {
     const abs = resolvePath(dirPath);
-    const cap = max_entries ?? 500;
+    const cap = max_entries ?? 5000;
+    const filter = pattern?.toLowerCase() ?? null;
     const entries: Array<{ path: string; kind: "file" | "directory" | "other"; size?: number }> = [];
     let truncated = false;
+    let skippedDirs = 0;
     async function walk(dir: string): Promise<void> {
-      const items = await fs.readdir(dir, { withFileTypes: true });
+      let items: import("fs").Dirent[];
+      try {
+        items = await fs.readdir(dir, { withFileTypes: true });
+      } catch {
+        // Unreadable subdir (perm denied, symlink loop, etc.) — skip silently.
+        return;
+      }
+      // Stable order so paginated / repeated calls behave predictably.
+      items.sort((a, b) => a.name.localeCompare(b.name));
       for (const it of items) {
         if (entries.length >= cap) {
           truncated = true;
           return;
         }
+        if (!include_hidden && it.name.startsWith(".")) continue;
         const full = path.join(dir, it.name);
         const kind: "file" | "directory" | "other" = it.isDirectory()
           ? "directory"
           : it.isFile()
             ? "file"
             : "other";
-        let size: number | undefined;
-        if (kind === "file") {
-          try {
-            const st = await fs.stat(full);
-            size = st.size;
-          } catch {
-            // ignore
+        const matches = filter ? it.name.toLowerCase().includes(filter) : true;
+        if (matches) {
+          let size: number | undefined;
+          if (kind === "file") {
+            try {
+              const st = await fs.stat(full);
+              size = st.size;
+            } catch {
+              // ignore
+            }
           }
+          entries.push({ path: full, kind, size });
         }
-        entries.push({ path: full, kind, size });
-        if (recursive && kind === "directory") await walk(full);
+        if (recursive && kind === "directory") {
+          if (!include_ignored && DEFAULT_IGNORE_DIRS.has(it.name)) {
+            skippedDirs += 1;
+            continue;
+          }
+          await walk(full);
+        }
       }
     }
     try {
       await walk(abs);
-      return JSON.stringify({ ok: true, path: abs, entries, truncated });
+      return JSON.stringify({
+        ok: true,
+        path: abs,
+        entries,
+        count: entries.length,
+        truncated,
+        truncated_hint: truncated
+          ? "Result hit max_entries. Re-call with a narrower `path`, set `recursive=false`, add a `pattern` filter, or raise `max_entries` (up to 50000)."
+          : undefined,
+        skipped_ignored_dirs: skippedDirs > 0 ? skippedDirs : undefined,
+        filters: {
+          recursive: !!recursive,
+          include_hidden: !!include_hidden,
+          include_ignored: !!include_ignored,
+          pattern: pattern ?? null,
+          max_entries: cap,
+        },
+      });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
     }
   },
   {
     name: "file_list",
-    description: "List directory entries (non-recursive by default). Returns path, kind, and size for files.",
+    description:
+      "List directory entries. Non-recursive by default. Hidden (dot) entries and common noise dirs (node_modules, .git, dist, .next, venv, __pycache__, …) are skipped unless include_hidden / include_ignored are set. Optional substring `pattern` filter on basenames. Default cap 5000 entries (max 50000); if truncated the result includes a hint.",
     schema: listSchema,
   },
 );
