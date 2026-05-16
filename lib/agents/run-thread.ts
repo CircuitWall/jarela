@@ -1,7 +1,7 @@
 import { streamWithConfig } from "@/lib/agents/llm";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
-import { addMessage, getRecentMessagesWindow, getThread, touchThread } from "@/lib/stores/threads";
+import { addMessage, getRecentMessagesWindow, getThread, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { startScheduler } from "@/lib/scheduler";
@@ -415,6 +415,7 @@ export function persistAssistantMessage(
   thread_id: string,
   content: string,
   usedTools?: readonly string[],
+  toolEvents?: readonly PersistedToolEvent[],
 ): void {
   const trimmed = content.trim();
   // Append a small, persistent footer listing which tools actually ran this
@@ -433,7 +434,34 @@ export function persistAssistantMessage(
   } else if (toolList.length > 0) {
     final = `${trimmed}\n\n*— used: ${toolList.join(", ")}*`;
   }
-  if (final) addMessage(thread_id, "assistant", final);
+  // Cap individual tool payloads so a single 64KB file_read result doesn't
+  // make every reload of this thread re-download a giant blob. Keep the
+  // first ~8KB — enough to be useful, small enough to be cheap.
+  const sanitizedEvents = toolEvents && toolEvents.length > 0
+    ? toolEvents.map(capToolEventPayload)
+    : null;
+  if (final || (sanitizedEvents && sanitizedEvents.length > 0)) {
+    addMessage(thread_id, "assistant", final, sanitizedEvents);
+  }
+}
+
+const MAX_PERSISTED_PAYLOAD_BYTES = 8_000;
+
+function capToolEventPayload(ev: PersistedToolEvent): PersistedToolEvent {
+  try {
+    const serialized = JSON.stringify(ev.payload);
+    if (serialized.length <= MAX_PERSISTED_PAYLOAD_BYTES) return ev;
+    return {
+      ...ev,
+      payload: {
+        __truncated: true,
+        preview: serialized.slice(0, MAX_PERSISTED_PAYLOAD_BYTES),
+        original_bytes: serialized.length,
+      },
+    };
+  } catch {
+    return { ...ev, payload: { __truncated: true, error: "unserializable" } };
+  }
 }
 
 const STALL_PATTERNS: RegExp[] = [

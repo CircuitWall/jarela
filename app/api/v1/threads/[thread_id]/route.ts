@@ -18,10 +18,24 @@ export async function GET(req: NextRequest, { params }: Params) {
   return NextResponse.json({
     ...thread,
     messages: messages.map((m) => ({
-      id: m.msg_id, role: m.role, content: m.content, created_at: m.created_at,
+      id: m.msg_id,
+      role: m.role,
+      content: m.content,
+      created_at: m.created_at,
+      tool_events: parseToolEvents(m.tool_events),
     })),
     has_more,
   });
+}
+
+function parseToolEvents(raw: string | null | undefined) {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

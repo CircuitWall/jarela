@@ -41,11 +41,22 @@ export interface ThreadSummary {
   message_count: number;
 }
 
+export interface PersistedToolEvent {
+  id: string;
+  phase: "call" | "result";
+  name: string;
+  payload: unknown;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  // Captured live during the run, persisted with the assistant message.
+  // Lets the chat UI render historical tool invocations the same way it
+  // renders live streaming ones.
+  tool_events?: PersistedToolEvent[];
 }
 
 export interface ThreadDetail extends ThreadSummary {

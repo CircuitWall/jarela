@@ -8,6 +8,7 @@ import {
 } from "@/lib/agents/run-thread";
 import { startRun, finishRun, getRun, broadcast } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
+import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { requireAccess } from "@/lib/auth/access";
 
 type WsRunRequest = {
@@ -35,6 +36,7 @@ function sendJson(ws: WebSocket, payload: Record<string, unknown>): void {
 async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
   let assistantContent = "";
   const usedTools: string[] = [];
+  const toolEvents: PersistedToolEvent[] = [];
   // Refuse if another run is already active for this thread (the HTTP route
   // enforces this too; the WS path must mirror it so DELETE-abort and the
   // queue-drain UX behave the same regardless of transport).
@@ -59,8 +61,22 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
       if (chunk.type === "text_delta") {
         assistantContent += String(chunk.data.delta ?? "");
       } else if (chunk.type === "tool_call") {
-        const name = (chunk.data as { name?: string }).name;
-        if (name) usedTools.push(name);
+        const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
+        if (d.name) usedTools.push(d.name);
+        toolEvents.push({
+          id: d.id ?? `call-${toolEvents.length}`,
+          phase: "call",
+          name: d.name ?? "",
+          payload: d.arguments,
+        });
+      } else if (chunk.type === "tool_result") {
+        const d = chunk.data as { id?: string; name?: string; result?: unknown };
+        toolEvents.push({
+          id: d.id ?? `result-${toolEvents.length}`,
+          phase: "result",
+          name: d.name ?? "",
+          payload: d.result,
+        });
       }
       // Mirror chunks into the run registry so a client that drops mid-stream
       // (common on mobile when the OS suspends the tab) can reattach via SSE
@@ -85,7 +101,7 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
     broadcast(req.thread_id, { type: "error", data: { message, code } });
     sendJson(ws, { type: "error", message, code });
   } finally {
-    persistAssistantMessage(req.thread_id, assistantContent, usedTools);
+    persistAssistantMessage(req.thread_id, assistantContent, usedTools, toolEvents);
     finishRun(req.thread_id, terminal);
     if (ws.readyState === WebSocket.OPEN) {
       ws.close(1000, "completed");
