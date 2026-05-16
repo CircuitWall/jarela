@@ -14,6 +14,7 @@ import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { IntegrationsPanel } from "@/components/integrations/IntegrationsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
+import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { Toaster } from "@/components/ui/Toaster";
@@ -200,6 +201,11 @@ export function AppShell() {
         {mountedTabs.has("tasks") && (
           <Activity mode={state.activeTab === "tasks" ? "visible" : "hidden"}>
             <ScheduledTasksPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("bridges") && (
+          <Activity mode={state.activeTab === "bridges" ? "visible" : "hidden"}>
+            <BridgesPanel />
           </Activity>
         )}
         {mountedTabs.has("profile") && (

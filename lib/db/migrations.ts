@@ -106,6 +106,30 @@ export function runMigrations(db: DatabaseSync): void {
       added_at      TEXT NOT NULL,
       last_seen_at  TEXT
     );
+    CREATE TABLE IF NOT EXISTS bridges (
+      id          TEXT PRIMARY KEY,
+      kind        TEXT NOT NULL,                       -- 'whatsapp' (only kind in v1)
+      name        TEXT NOT NULL,
+      status      TEXT NOT NULL DEFAULT 'disconnected',-- disconnected | pairing | connected | error
+      qr          TEXT,                                -- base64 data URL while status='pairing'
+      last_error  TEXT,
+      paired_id   TEXT,                                -- the remote-account identifier (e.g. WhatsApp phone JID) once paired
+      enabled     INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS bridge_routes (
+      id          TEXT PRIMARY KEY,
+      bridge_id   TEXT NOT NULL,
+      remote_jid  TEXT NOT NULL,                       -- e.g. 5511...@s.whatsapp.net or ...@g.us
+      agent_id    TEXT NOT NULL,
+      label       TEXT,                                -- user-visible name (push_name on first inbound)
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      UNIQUE(bridge_id, remote_jid),
+      UNIQUE(agent_id)                                 -- one route per agent: chats never interleave inside one agent's thread
+    );
+    CREATE INDEX IF NOT EXISTS idx_bridge_routes_bridge ON bridge_routes(bridge_id);
   `);
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);

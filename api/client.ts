@@ -2,6 +2,13 @@ import type {
   AgentConfig,
   AgentConfigIn,
   AgentInfo,
+  Bridge,
+  BridgeIn,
+  BridgeLiveStatus,
+  BridgePatch,
+  BridgeRoute,
+  BridgeRouteIn,
+  BridgeRoutePatch,
   ContentPart,
   IntegrationsListResponse,
   IntegrationStatus,
@@ -187,6 +194,39 @@ export const api = {
       "/providers/github-copilot/auth", { method: "PUT", body: JSON.stringify({ device_code }) },
     ),
     signOut: () => request<{ deleted: boolean }>("/providers/github-copilot/auth", { method: "DELETE" }),
+  },
+
+  bridges: {
+    list: () => request<Bridge[]>("/bridges"),
+    get: (id: string) => request<Bridge>(`/bridges/${encodeURIComponent(id)}`),
+    create: (data: BridgeIn) =>
+      request<Bridge>("/bridges", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, patch: BridgePatch) =>
+      request<Bridge>(`/bridges/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    delete: (id: string) =>
+      request<{ deleted: boolean }>(`/bridges/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    status: (id: string) => request<BridgeLiveStatus>(`/bridges/${encodeURIComponent(id)}/status`),
+    pair: (id: string) =>
+      request<{ accepted: boolean }>(`/bridges/${encodeURIComponent(id)}/pair`, { method: "POST", body: "{}" }),
+
+    routes: {
+      list: (bridge_id: string) =>
+        request<BridgeRoute[]>(`/bridges/${encodeURIComponent(bridge_id)}/routes`),
+      create: (bridge_id: string, data: BridgeRouteIn) =>
+        request<BridgeRoute>(`/bridges/${encodeURIComponent(bridge_id)}/routes`, {
+          method: "POST", body: JSON.stringify(data),
+        }),
+      update: (bridge_id: string, route_id: string, patch: BridgeRoutePatch) =>
+        request<BridgeRoute>(
+          `/bridges/${encodeURIComponent(bridge_id)}/routes/${encodeURIComponent(route_id)}`,
+          { method: "PATCH", body: JSON.stringify(patch) },
+        ),
+      delete: (bridge_id: string, route_id: string) =>
+        request<{ deleted: boolean }>(
+          `/bridges/${encodeURIComponent(bridge_id)}/routes/${encodeURIComponent(route_id)}`,
+          { method: "DELETE" },
+        ),
+    },
   },
 };
 

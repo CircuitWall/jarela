@@ -21,6 +21,41 @@ export type NotificationEvent =
       preview: string;
       error?: string;
       ts: number;
+    }
+  | {
+      // Bridge replied to an inbound message on a configured route.
+      type: "bridge_message_received";
+      bridge_id: string;
+      remote_jid: string;
+      push_name: string | null;
+      is_group: boolean;
+      thread_id: string;
+      agent_id: string;
+      preview: string;       // first ~120 chars of assistant reply
+      ts: number;
+    }
+  | {
+      // Bridge received a message from a chat that has no route configured.
+      // Advisory only — surfaced in the UI as a "Add route" hint so the user
+      // can copy the JID into a new route. The message itself is dropped.
+      type: "bridge_unrouted";
+      bridge_id: string;
+      remote_jid: string;
+      push_name: string | null;
+      is_group: boolean;
+      preview: string;
+      ts: number;
+    }
+  | {
+      // Bridge connection lifecycle: disconnected | pairing | connected | error.
+      // Lets the UI flip status pills and surface QR data URLs live without
+      // polling.
+      type: "bridge_status";
+      bridge_id: string;
+      status: "disconnected" | "pairing" | "connected" | "error";
+      error: string | null;
+      paired_id: string | null;
+      ts: number;
     };
 
 type Listener = (ev: NotificationEvent) => void;
