@@ -194,6 +194,235 @@ test("profile: GET responds (may be empty)", async () => {
   assert(r.status === 200 || r.status === 404, `unexpected status ${r.status}`);
 });
 
+// ── CRUD TESTS (populate DB; safe to run on fresh isolated env) ─────────────
+
+const TEST_MODEL = "live-test-model";
+const TEST_AGENT_PREFIX = "live-test-agent-";
+const TEST_MCP = "live-test-mcp";
+
+test("models: POST creates a new model entry", async () => {
+  const r = await api("/api/v1/models", {
+    method: "POST",
+    body: JSON.stringify({
+      name: TEST_MODEL,
+      provider: "openai",
+      model_id: "gpt-4o-mini",
+      params: { temperature: 0.5 },
+      is_default: false,
+    }),
+  });
+  assertEqual(r.status, 201, `POST returned ${r.status}: ${JSON.stringify(r.body)}`);
+  assertEqual(r.body.name, TEST_MODEL);
+  assertEqual(r.body.provider, "openai");
+});
+
+test("models: PUT updates an existing model and toggles is_default", async () => {
+  const r = await api(`/api/v1/models/${TEST_MODEL}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      provider: "openai",
+      model_id: "gpt-4o-mini",
+      params: { temperature: 0.2 },
+      is_default: true,
+    }),
+  });
+  assertEqual(r.status, 200);
+  assertEqual(r.body.is_default, true);
+  assertEqual(r.body.params.temperature, 0.2);
+
+  const list = await api("/api/v1/models");
+  const found = list.body.find((m) => m.name === TEST_MODEL);
+  assert(found, "model missing from list after PUT");
+  assertEqual(found.is_default, true);
+});
+
+test("agents: PUT binds default agent to test model", async () => {
+  const { body: agents } = await api("/api/v1/agents");
+  const def = agents.find((a) => a.is_default);
+  assert(def, "no default agent to bind");
+  const r = await api(`/api/v1/agents/${def.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ model_config_name: TEST_MODEL }),
+  });
+  assertEqual(r.status, 200);
+  assertEqual(r.body.model_config_name, TEST_MODEL);
+});
+
+test("agents: POST + PUT + DELETE round-trip", async () => {
+  const name = `${TEST_AGENT_PREFIX}${Date.now().toString(36)}`;
+  // Create
+  const created = await api("/api/v1/agents", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      identity: "test bot",
+      instructions: "be terse",
+      tools: ["memory_read"],
+      model_config_name: TEST_MODEL,
+      history_limit: 50,
+      history_window_hours: 24,
+    }),
+  });
+  assertEqual(created.status, 201);
+  assert(created.body.id, "created agent missing id");
+  assertEqual(created.body.name, name);
+  assertEqual(created.body.history_limit, 50);
+  assert(Array.isArray(created.body.tools) && created.body.tools.includes("memory_read"), "tools not persisted");
+
+  // GET by id
+  const got = await api(`/api/v1/agents/${created.body.id}`);
+  assertEqual(got.status, 200);
+  assertEqual(got.body.identity, "test bot");
+
+  // PUT
+  const updated = await api(`/api/v1/agents/${created.body.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ instructions: "be even terser", history_limit: 25 }),
+  });
+  assertEqual(updated.status, 200);
+  assertEqual(updated.body.instructions, "be even terser");
+  assertEqual(updated.body.history_limit, 25);
+
+  // DELETE
+  const del = await api(`/api/v1/agents/${created.body.id}`, { method: "DELETE" });
+  assertEqual(del.status, 200);
+  assertEqual(del.body.deleted, true);
+
+  // GET after delete → 404
+  const gone = await api(`/api/v1/agents/${created.body.id}`);
+  assertEqual(gone.status, 404);
+});
+
+test("agents: POST rejects missing name with 400", async () => {
+  const r = await api("/api/v1/agents", {
+    method: "POST",
+    body: JSON.stringify({ identity: "no name" }),
+  });
+  assertEqual(r.status, 400);
+});
+
+test("models: POST rejects missing required fields with 400", async () => {
+  const r = await api("/api/v1/models", {
+    method: "POST",
+    body: JSON.stringify({ name: "incomplete" }),
+  });
+  assertEqual(r.status, 400);
+});
+
+test("profile: PUT round-trip persists name + about", async () => {
+  const stamp = Date.now().toString(36);
+  const put = await api("/api/v1/profile", {
+    method: "PUT",
+    body: JSON.stringify({ name: `tester-${stamp}`, about: "live-test profile" }),
+  });
+  assertEqual(put.status, 200);
+  assertEqual(put.body.name, `tester-${stamp}`);
+  const got = await api("/api/v1/profile");
+  assertEqual(got.status, 200);
+  assertEqual(got.body.name, `tester-${stamp}`);
+  assertEqual(got.body.about, "live-test profile");
+});
+
+test("mcp-servers: GET responds with an array", async () => {
+  const r = await api("/api/v1/mcp-servers");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+});
+
+test("mcp-servers: POST + PUT + DELETE round-trip (stdio entry, not started)", async () => {
+  // Use a clearly invalid command so the server is never actually launched.
+  const create = await api("/api/v1/mcp-servers", {
+    method: "POST",
+    body: JSON.stringify({
+      name: TEST_MCP,
+      transport: "stdio",
+      spec: { command: "this-binary-does-not-exist", args: [] },
+      enabled: false,
+    }),
+  });
+  assertEqual(create.status, 201);
+  assertEqual(create.body.name, TEST_MCP);
+  assertEqual(create.body.enabled, false);
+
+  const put = await api(`/api/v1/mcp-servers/${TEST_MCP}`, {
+    method: "PUT",
+    body: JSON.stringify({ enabled: false, spec: { command: "still-not-real", args: ["--x"] } }),
+  });
+  assertEqual(put.status, 200);
+  assertEqual(put.body.spec.args[0], "--x");
+
+  const del = await api(`/api/v1/mcp-servers/${TEST_MCP}`, { method: "DELETE" });
+  assertEqual(del.status, 200);
+  assertEqual(del.body.deleted, true);
+});
+
+test("mcp-servers: POST rejects bad transport with 400", async () => {
+  const r = await api("/api/v1/mcp-servers", {
+    method: "POST",
+    body: JSON.stringify({ name: "bad-transport", transport: "carrier-pigeon", spec: {} }),
+  });
+  assertEqual(r.status, 400);
+});
+
+test("scheduled-tasks: GET returns an array", async () => {
+  const r = await api("/api/v1/scheduled-tasks");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+});
+
+test("memory: list returns array shape with namespace+key+value", async () => {
+  const ns = `live_test_shape_${Date.now()}`;
+  await api("/api/v1/memory", {
+    method: "POST",
+    body: JSON.stringify({ namespace: ns, key: "shape", value: { ok: true } }),
+  });
+  const r = await api(`/api/v1/memory?namespace=${ns}`);
+  assertEqual(r.status, 200);
+  assert(r.body.length >= 1, "memory entry not returned");
+  const row = r.body[0];
+  assertEqual(row.namespace, ns);
+  assertEqual(row.key, "shape");
+});
+
+test("health: /api/v1/health responds", async () => {
+  const r = await api("/api/v1/health");
+  // Endpoint may or may not exist on older builds; tolerate 404.
+  assert(r.status === 200 || r.status === 404, `unexpected status ${r.status}`);
+});
+
+test("tools: each registered tool has name + description", async () => {
+  const { body } = await api("/api/v1/tools");
+  for (const t of body) {
+    assert(typeof t.name === "string" && t.name.length > 0, `tool missing name: ${JSON.stringify(t)}`);
+    assert(typeof t.description === "string", `tool ${t.name} missing description`);
+  }
+});
+
+// ── SEED (runs once before the suite to populate fresh DBs) ─────────────────
+
+async function seed() {
+  // 1. Ensure a default model exists so agents can bind to it.
+  await api("/api/v1/models", {
+    method: "POST",
+    body: JSON.stringify({
+      name: TEST_MODEL,
+      provider: "openai",
+      model_id: "gpt-4o-mini",
+      params: {},
+      is_default: true,
+    }),
+  });
+  // 2. Bind the default agent to the seeded model so existing tests pass.
+  const { body: agents } = await api("/api/v1/agents");
+  const def = agents.find((a) => a.is_default);
+  if (def) {
+    await api(`/api/v1/agents/${def.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ model_config_name: TEST_MODEL }),
+    });
+  }
+}
+
 // ── LLM-DRIVEN TESTS (gated by --llm) ───────────────────────────────────────
 
 test("stream: simple message produces text_delta + done", async () => {
@@ -361,6 +590,15 @@ test("ux: streaming is incremental for longer responses", async () => {
 async function run() {
   console.log(`\n${C.bold}LangGUI live test suite${C.reset}  ${C.dim}${BASE}${C.reset}`);
   console.log(`${C.dim}LLM tests: ${RUN_LLM ? "ON" : "OFF (use --llm to enable)"}${C.reset}\n`);
+
+  // Seed the DB so model/agent-dependent tests have something to work with.
+  // Safe to run repeatedly: upsert semantics.
+  try {
+    process.stdout.write(`${C.dim}…${C.reset} seed: populating model + default agent binding\n`);
+    await seed();
+  } catch (err) {
+    console.log(`  ${C.yellow}seed failed (continuing): ${err.message}${C.reset}`);
+  }
 
   const eligible = tests
     .filter((t) => RUN_LLM || !t.llm)
