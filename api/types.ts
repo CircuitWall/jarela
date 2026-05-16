@@ -128,6 +128,8 @@ export interface ToolInfo {
   description: string;
   /** "builtin" = shipped with LangGUI; "mcp" = provided by a connected MCP server. */
   source?: "builtin" | "mcp";
+  /** UI grouping label (e.g. "Files", "Web", "MCP"). */
+  category?: string;
 }
 
 export interface McpServer {

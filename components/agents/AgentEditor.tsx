@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { X, Upload } from "lucide-react";
-import type { AgentConfig, AgentConfigIn, ModelConfig } from "@/api/types";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
+import type { AgentConfig, AgentConfigIn, ModelConfig, ToolInfo } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
 
 interface Props {
@@ -60,6 +60,42 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   function toggleAllTools() {
     setSelectedTools((p) => p.length === tools.length ? [] : tools.map((t) => t.name));
+  }
+
+  // Group tools by category for the sectioned UI. Categories with no tools
+  // are omitted automatically. "MCP" is shown last so the user's own MCP-
+  // provided tools are visually distinct from the built-in capability blocks.
+  const groupedTools = useMemo(() => {
+    const groups = new Map<string, ToolInfo[]>();
+    for (const t of tools) {
+      const cat = t.category ?? "Other";
+      const arr = groups.get(cat) ?? [];
+      arr.push(t);
+      groups.set(cat, arr);
+    }
+    const CATEGORY_ORDER = [
+      "Memory", "Files", "Shell", "Web", "Images",
+      "Schedule", "Atlassian", "Config", "Other", "MCP",
+    ];
+    return [...groups.entries()].sort((a, b) => {
+      const ai = CATEGORY_ORDER.indexOf(a[0]);
+      const bi = CATEGORY_ORDER.indexOf(b[0]);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+  }, [tools]);
+
+  function toggleCategory(category: string, enable: boolean) {
+    const names = groupedTools.find(([c]) => c === category)?.[1].map((t) => t.name) ?? [];
+    if (names.length === 0) return;
+    setSelectedTools((prev) => {
+      if (enable) {
+        const set = new Set(prev);
+        for (const n of names) set.add(n);
+        return [...set];
+      }
+      const remove = new Set(names);
+      return prev.filter((n) => !remove.has(n));
+    });
   }
 
   async function handleSave() {
@@ -200,17 +236,16 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                     {selectedTools.length === tools.length ? "Deselect all" : "Select all"}
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {tools.map((t) => (
-                    <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
-                      <input
-                        type="checkbox"
-                        className="rounded border-border"
-                        checked={selectedTools.includes(t.name)}
-                        onChange={() => toggleTool(t.name)}
-                      />
-                      <span className="font-mono text-[11px] text-zinc-300 truncate">{t.name}</span>
-                    </label>
+                <div className="space-y-1.5">
+                  {groupedTools.map(([category, catTools]) => (
+                    <ToolCategoryBlock
+                      key={category}
+                      category={category}
+                      tools={catTools}
+                      selected={selectedTools}
+                      onToggleTool={toggleTool}
+                      onToggleCategory={toggleCategory}
+                    />
                   ))}
                 </div>
               </>
@@ -244,6 +279,77 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Collapsible per-category block with a tri-state header checkbox. The
+// header toggle flips the entire category on/off; individual tool checkboxes
+// stay available for fine-grained control. Collapsed-by-default when no tool
+// in the category is selected, to keep the editor compact.
+function ToolCategoryBlock({
+  category,
+  tools,
+  selected,
+  onToggleTool,
+  onToggleCategory,
+}: {
+  category: string;
+  tools: ToolInfo[];
+  selected: string[];
+  onToggleTool: (name: string) => void;
+  onToggleCategory: (category: string, enable: boolean) => void;
+}) {
+  const selectedInCat = tools.filter((t) => selected.includes(t.name)).length;
+  const allOn = selectedInCat === tools.length;
+  const someOn = selectedInCat > 0 && !allOn;
+  const [open, setOpen] = useState(selectedInCat > 0);
+  const headerRef = useRef<HTMLInputElement>(null);
+
+  // Render the tri-state indeterminate dash via the DOM property (React
+  // doesn't expose it as a JSX attribute).
+  useEffect(() => {
+    if (headerRef.current) headerRef.current.indeterminate = someOn;
+  }, [someOn]);
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-1/40">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-zinc-400 hover:text-zinc-200 transition-colors"
+          aria-label={open ? "Collapse" : "Expand"}
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <label className="flex items-center gap-1.5 cursor-pointer flex-1 min-w-0">
+          <input
+            ref={headerRef}
+            type="checkbox"
+            className="rounded border-border"
+            checked={allOn}
+            onChange={(e) => onToggleCategory(category, e.target.checked)}
+          />
+          <span className="text-[12px] font-semibold text-zinc-200 truncate">{category}</span>
+        </label>
+        <span className="text-[10px] text-zinc-500 shrink-0">{selectedInCat}/{tools.length}</span>
+      </div>
+      {open && (
+        <div className="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60">
+          {tools.map((t) => (
+            <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={selected.includes(t.name)}
+                onChange={() => onToggleTool(t.name)}
+              />
+              <span className="font-mono text-[11px] text-zinc-300 truncate">{t.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

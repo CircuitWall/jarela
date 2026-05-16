@@ -333,3 +333,157 @@ export const fileMkdirTool = tool(
     schema: mkdirSchema,
   },
 );
+
+// --- delete -------------------------------------------------------------
+
+const deleteSchema = z.object({
+  path: z.string().describe("File or directory path to remove"),
+  recursive: z
+    .boolean()
+    .optional()
+    .describe("Required to delete a non-empty directory (default false)"),
+});
+
+export const fileDeleteTool = tool(
+  async ({ path: targetPath, recursive }) => {
+    const abs = resolvePath(targetPath);
+    try {
+      const st = await fs.stat(abs);
+      if (st.isDirectory()) {
+        if (!recursive) {
+          // Try non-recursive rmdir first — succeeds only if empty.
+          try {
+            await fs.rmdir(abs);
+            return JSON.stringify({ ok: true, path: abs, kind: "directory", removed: "empty" });
+          } catch (err) {
+            const e = err as NodeJS.ErrnoException;
+            if (e.code === "ENOTEMPTY") {
+              return JSON.stringify({
+                ok: false,
+                path: abs,
+                error: "directory is not empty. Pass recursive=true to delete its contents.",
+              });
+            }
+            throw err;
+          }
+        }
+        await fs.rm(abs, { recursive: true, force: false });
+        return JSON.stringify({ ok: true, path: abs, kind: "directory", removed: "recursive" });
+      }
+      await fs.unlink(abs);
+      return JSON.stringify({ ok: true, path: abs, kind: "file" });
+    } catch (err) {
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+    }
+  },
+  {
+    name: "file_delete",
+    description:
+      "Delete a file or directory. Non-empty directories require recursive=true. Symlinks are not followed.",
+    schema: deleteSchema,
+  },
+);
+
+// --- copy ---------------------------------------------------------------
+
+const copySchema = z.object({
+  source: z.string().describe("Existing file or directory path"),
+  destination: z.string().describe("New path. If it ends with a separator or is an existing directory, source is copied into it preserving its basename."),
+  overwrite: z.boolean().optional().describe("Allow replacing an existing destination (default false)"),
+  recursive: z.boolean().optional().describe("Recurse when copying a directory (default true)"),
+});
+
+export const fileCopyTool = tool(
+  async ({ source, destination, overwrite, recursive }) => {
+    const srcAbs = resolvePath(source);
+    let dstAbs = resolvePath(destination);
+    try {
+      const srcStat = await fs.stat(srcAbs);
+      let dstStat: import("fs").Stats | null = null;
+      try {
+        dstStat = await fs.stat(dstAbs);
+      } catch {
+        // missing
+      }
+      if (dstStat?.isDirectory()) {
+        dstAbs = path.join(dstAbs, path.basename(srcAbs));
+        try {
+          dstStat = await fs.stat(dstAbs);
+        } catch {
+          dstStat = null;
+        }
+      }
+      if (dstStat && !overwrite) {
+        return JSON.stringify({
+          ok: false,
+          source: srcAbs,
+          destination: dstAbs,
+          error: "destination exists. Pass overwrite=true to replace it.",
+        });
+      }
+      await fs.mkdir(path.dirname(dstAbs), { recursive: true });
+      if (srcStat.isDirectory()) {
+        if (recursive === false) {
+          return JSON.stringify({
+            ok: false,
+            source: srcAbs,
+            error: "source is a directory but recursive=false",
+          });
+        }
+        await fs.cp(srcAbs, dstAbs, { recursive: true, force: overwrite === true, errorOnExist: !overwrite });
+      } else {
+        await fs.copyFile(srcAbs, dstAbs);
+      }
+      return JSON.stringify({
+        ok: true,
+        source: srcAbs,
+        destination: dstAbs,
+        kind: srcStat.isDirectory() ? "directory" : "file",
+      });
+    } catch (err) {
+      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message });
+    }
+  },
+  {
+    name: "file_copy",
+    description:
+      "Copy a file or directory. If destination is an existing directory, source is copied into it. Directories require recursive=true (default).",
+    schema: copySchema,
+  },
+);
+
+// --- stat ---------------------------------------------------------------
+
+const statSchema = z.object({
+  path: z.string().describe("File or directory path"),
+});
+
+export const fileStatTool = tool(
+  async ({ path: targetPath }) => {
+    const abs = resolvePath(targetPath);
+    try {
+      const st = await fs.stat(abs);
+      return JSON.stringify({
+        ok: true,
+        path: abs,
+        exists: true,
+        kind: st.isDirectory() ? "directory" : st.isFile() ? "file" : "other",
+        size: st.size,
+        modified_ms: st.mtimeMs,
+        created_ms: st.birthtimeMs,
+        mode: st.mode,
+      });
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === "ENOENT") {
+        return JSON.stringify({ ok: true, path: abs, exists: false });
+      }
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+    }
+  },
+  {
+    name: "file_stat",
+    description: "Check whether a path exists and return its kind, size, and timestamps.",
+    schema: statSchema,
+  },
+);
