@@ -77,4 +77,12 @@ export interface BridgeAdapter {
    * adapters that have no out-of-band way to enumerate chats may no-op.
    */
   refreshChats(): Promise<void>;
+  /**
+   * Verify a freeform user input (typically a phone number) maps to a
+   * chat on this channel and return its ChatInfo. Returns null if the
+   * input doesn't resolve to a real account. Used by the UI's "find by
+   * phone" search so users can route to a 1:1 chat that hasn't synced
+   * via history yet.
+   */
+  lookupChat(input: string): Promise<ChatInfo | null>;
 }
