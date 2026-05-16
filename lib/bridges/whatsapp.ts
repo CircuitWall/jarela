@@ -40,6 +40,12 @@ interface UnsafeBaileys {
   useMultiFileAuthState: (dir: string) => Promise<{ state: unknown; saveCreds: () => Promise<void> }>;
   fetchLatestBaileysVersion: () => Promise<{ version: [number, number, number] }>;
   DisconnectReason: Record<string, number>;
+  Browsers: {
+    ubuntu: (browser: string) => [string, string, string];
+    macOS: (browser: string) => [string, string, string];
+    windows: (browser: string) => [string, string, string];
+    appropriate: (browser: string) => [string, string, string];
+  };
 }
 
 export class WhatsAppBridgeAdapter implements BridgeAdapter {
@@ -88,13 +94,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     const sock = baileys.default({
       auth: state,
       version,
-      // We render the QR ourselves in the UI; printing to the server console
-      // would just spam the journalctl log of a deployed install.
-      printQRInTerminal: false,
       // Quiet the embedded pino logger — we surface the meaningful events
       // (status, errors) via our own logging.
       logger: makeSilentLogger(),
-      browser: ["LangGUI", "Chrome", "1.0.0"],
+      // IMPORTANT: WhatsApp validates the browser identifier during link-
+      // device pairing and rejects unrecognized tuples with the misleading
+      // "Check your phone connection and try again" error on the phone
+      // (even though the WS connection itself is fine). The Baileys-shipped
+      // `Browsers` helpers produce identifiers WhatsApp accepts.
+      browser: baileys.Browsers.ubuntu("Chrome"),
       markOnlineOnConnect: false,
       syncFullHistory: false,
     });
