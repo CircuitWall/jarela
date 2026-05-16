@@ -102,6 +102,21 @@ export async function* streamWithConfig(
   const store = new SqliteMemoryStore();
   const checkpointer = getCheckpointer();
 
+  // Wipe prior checkpoint state for this thread BEFORE invoking the agent.
+  // Every turn we rebuild the message history from langgui.db.messages (the
+  // source of truth), so the checkpointer's only job is to buffer in-flight
+  // tool-call state within the current turn. Without this delete, LangGraph's
+  // default messages-state reducer keeps appending — every prior turn's tool
+  // results (plus any inline image data URIs) stay in state forever and get
+  // replayed to the LLM, eventually blowing past the model's context window.
+  // See: thread fb35423b grew to 893 MB / 238 checkpoints because a single
+  // image-attached HumanMessage (~1.2 MB base64) was replayed on every retry.
+  try {
+    await checkpointer.deleteThread(threadId);
+  } catch (err) {
+    console.error("[llm] checkpoint reset failed for thread", threadId, err);
+  }
+
   const agent = createReactAgent({ llm: model, tools, store, checkpointer });
 
   // Track which AIMessageChunk-tool-call-chunks we've already announced (by id).
