@@ -151,12 +151,19 @@ export function useSSE(onDone?: () => void) {
   }, []);
 
   // Attach to an in-flight run for the given thread (server-side run kept going
-  // because the user switched away). No-ops if no run is active.
+  // because the user switched away, or because this is a fresh navigation
+  // into a session whose run is still streaming). Sets `streaming` optimistically
+  // BEFORE the probe fetch resolves so the input bar gates / Stop button
+  // shows / queue drain blocks immediately on session open — otherwise there's
+  // a race window where the UI thinks no run is active, accepts a new POST,
+  // and the server rejects it with "A run is already active".
   const attach = useCallback(async (threadId: string) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     threadIdRef.current = threadId;
+    setStreaming(true);
+    setTransport("sse");
     setStreamingContent("");
     setThinkingContent("");
     setToolEvents([]);
@@ -164,10 +171,13 @@ export function useSSE(onDone?: () => void) {
 
     try {
       const res = await fetch(`/api/v1/threads/${threadId}/run`, { signal: ctrl.signal });
-      if (res.status === 404) return; // no run to attach to
-      if (!res.ok || !res.body) return;
-      setStreaming(true);
-      setTransport("sse");
+      if (res.status === 404 || !res.ok || !res.body) {
+        // No live run — clear the optimistic gate and signal completion so
+        // the consumer drains any messages queued during session load.
+        setStreaming(false);
+        onDone?.();
+        return;
+      }
 
       const iter = (async function* () {
         const reader = res.body!.getReader();
@@ -188,12 +198,14 @@ export function useSSE(onDone?: () => void) {
       })();
       await consume(iter, "sse");
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        // attach failures are non-fatal — silently fall back to "no live run".
-      }
+      // attach failures are non-fatal — clear the gate and let the consumer
+      // drain anything queued during session load.
       setStreaming(false);
+      if ((err as Error).name !== "AbortError") {
+        onDone?.();
+      }
     }
-  }, [consume]);
+  }, [consume, onDone]);
 
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
