@@ -19,7 +19,7 @@
  */
 
 import { ensureBridgeAuthDir, removeBridgeAuthDir } from "@/lib/stores/bridges";
-import type { BridgeAdapter, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
+import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
 // types directly — both modules are loaded via dynamic `import()` inside
@@ -33,6 +33,7 @@ type WASocket = {
   user?: { id?: string };
   sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
   end?: (err: Error | undefined) => void;
+  groupFetchAllParticipating?: () => Promise<Record<string, { id: string; subject?: string }>>;
 };
 
 interface UnsafeBaileys {
@@ -55,6 +56,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   private statusHandler: StatusHandler | null = null;
   private stopping = false;
   private currentStatus: StatusUpdate["status"] = "disconnected";
+  // Chats observed since this adapter connected. Populated from
+  // messaging-history.set (initial sync), chats.upsert/update, contacts
+  // upsert (for display names), and observed messages. Cleared on disconnect.
+  private chats = new Map<string, ChatInfo>();
 
   constructor(bridge_id: string) {
     this.bridge_id = bridge_id;
@@ -137,6 +142,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           error: null,
           paired_id: me,
         });
+        // Kick off a background fetch of group metadata so the picker has
+        // names for joined groups even before any message arrives. Personal
+        // chats trickle in via messaging-history.set + chats.upsert.
+        void this.refreshChats().catch(() => { /* best-effort */ });
       } else if (conn === "close") {
         const code = lastDisconnect?.error?.output?.statusCode;
         const loggedOut = code === baileys.DisconnectReason?.loggedOut;
@@ -180,11 +189,20 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
             conversation?: string;
             extendedTextMessage?: { text?: string };
           };
+          messageTimestamp?: number | { low?: number };
         };
         if (!m.key?.remoteJid || m.key.fromMe) continue;
+        const remote_jid = m.key.remoteJid;
+        // Update the chat cache regardless of whether the body is text —
+        // the chat is "real" the moment we see any message from it, even
+        // a sticker we'll drop.
+        const ts = typeof m.messageTimestamp === "number"
+          ? m.messageTimestamp * 1000
+          : (m.messageTimestamp?.low ?? 0) * 1000 || Date.now();
+        this.observeChat(remote_jid, m.pushName ?? null, ts);
+
         const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? "";
         if (!text) continue; // drop non-text in v1
-        const remote_jid = m.key.remoteJid;
         const inbound: InboundMessage = {
           remote_jid,
           push_name: m.pushName ?? null,
@@ -200,12 +218,70 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         }
       }
     });
+
+    // ---- Chat cache: populated from history sync + live chat/contact events ----
+    //
+    // `messaging-history.set` carries the recent chats Baileys received
+    // during the initial sync. `chats.upsert` / `chats.update` fire for
+    // brand-new chats and metadata changes. `contacts.upsert` gives us
+    // display names for personal contacts.
+    sock.ev.on("messaging-history.set", (...args: unknown[]) => {
+      const payload = (args[0] ?? {}) as { chats?: unknown[]; contacts?: unknown[] };
+      for (const raw of payload.chats ?? []) {
+        const c = raw as { id?: string; name?: string; conversationTimestamp?: number };
+        if (!c.id) continue;
+        const ts = c.conversationTimestamp ? c.conversationTimestamp * 1000 : null;
+        this.observeChat(c.id, c.name ?? null, ts);
+      }
+      for (const raw of payload.contacts ?? []) {
+        const ct = raw as { id?: string; name?: string; notify?: string; verifiedName?: string };
+        if (!ct.id) continue;
+        const name = ct.name ?? ct.verifiedName ?? ct.notify ?? null;
+        // Only register a chat if the contact id looks like a chat JID
+        // (skip the user's own LID/PN noise). @s.whatsapp.net / @g.us only.
+        if (ct.id.endsWith("@s.whatsapp.net") || ct.id.endsWith("@g.us")) {
+          this.observeChat(ct.id, name, null);
+        } else {
+          // Still keep the display name handy in case we see this contact
+          // from a different JID shape later — but don't surface non-chat
+          // JIDs in the picker.
+        }
+      }
+    });
+
+    sock.ev.on("chats.upsert", (...args: unknown[]) => {
+      const list = (args[0] ?? []) as Array<{ id?: string; name?: string; conversationTimestamp?: number }>;
+      for (const c of list) {
+        if (!c.id) continue;
+        const ts = c.conversationTimestamp ? c.conversationTimestamp * 1000 : null;
+        this.observeChat(c.id, c.name ?? null, ts);
+      }
+    });
+
+    sock.ev.on("chats.update", (...args: unknown[]) => {
+      const list = (args[0] ?? []) as Array<{ id?: string; name?: string; conversationTimestamp?: number }>;
+      for (const c of list) {
+        if (!c.id) continue;
+        const ts = c.conversationTimestamp ? c.conversationTimestamp * 1000 : null;
+        this.observeChat(c.id, c.name ?? null, ts);
+      }
+    });
+
+    sock.ev.on("contacts.upsert", (...args: unknown[]) => {
+      const list = (args[0] ?? []) as Array<{ id?: string; name?: string; notify?: string; verifiedName?: string }>;
+      for (const ct of list) {
+        if (!ct.id) continue;
+        if (!(ct.id.endsWith("@s.whatsapp.net") || ct.id.endsWith("@g.us"))) continue;
+        this.observeChat(ct.id, ct.name ?? ct.verifiedName ?? ct.notify ?? null, null);
+      }
+    });
   }
 
   async stop(): Promise<void> {
     this.stopping = true;
     const sock = this.sock;
     this.sock = null;
+    this.chats.clear();
     if (!sock) return;
     try {
       // logout() also wipes server-side auth — we just want to close the
@@ -225,6 +301,60 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   async resetAuth(): Promise<void> {
     await this.stop();
     removeBridgeAuthDir(this.bridge_id);
+  }
+
+  listChats(): ChatInfo[] {
+    // Only chats whose JID is a routable chat (1:1 or group). Status JIDs
+    // (broadcast lists, statuses, "@broadcast", "@lid", "@s.whatsapp.net:0")
+    // are filtered out — none of them are valid sendMessage targets.
+    const out: ChatInfo[] = [];
+    for (const c of this.chats.values()) {
+      if (c.remote_jid.endsWith("@s.whatsapp.net") || c.remote_jid.endsWith("@g.us")) {
+        out.push(c);
+      }
+    }
+    // Newest activity first; chats we've never seen a message from go last,
+    // alphabetically by name so the picker is stable.
+    out.sort((a, b) => {
+      const ta = a.last_message_at ?? 0;
+      const tb = b.last_message_at ?? 0;
+      if (ta !== tb) return tb - ta;
+      return (a.name ?? a.remote_jid).localeCompare(b.name ?? b.remote_jid);
+    });
+    return out;
+  }
+
+  async refreshChats(): Promise<void> {
+    const sock = this.sock;
+    if (!sock?.groupFetchAllParticipating) return;
+    try {
+      const groups = await sock.groupFetchAllParticipating();
+      for (const g of Object.values(groups)) {
+        if (!g?.id) continue;
+        this.observeChat(g.id, g.subject ?? null, null);
+      }
+    } catch (err) {
+      // Group enumeration is best-effort — a transient WS hiccup shouldn't
+      // poison anything.
+      console.warn(`[bridge ${this.bridge_id}] groupFetchAllParticipating failed:`, err);
+    }
+  }
+
+  private observeChat(remote_jid: string, name: string | null, ts: number | null): void {
+    if (!remote_jid) return;
+    const existing = this.chats.get(remote_jid);
+    // Prefer the most recently-observed name (group subjects rename; users
+    // change push names). Don't overwrite a known name with null.
+    const nextName = name ?? existing?.name ?? null;
+    const nextTs = ts && (!existing?.last_message_at || ts > existing.last_message_at)
+      ? ts
+      : existing?.last_message_at ?? null;
+    this.chats.set(remote_jid, {
+      remote_jid,
+      name: nextName,
+      is_group: remote_jid.endsWith("@g.us"),
+      last_message_at: nextTs,
+    });
   }
 
   private pushStatus(u: StatusUpdate): void {
