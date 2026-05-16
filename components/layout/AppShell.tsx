@@ -99,6 +99,11 @@ export function AppShell() {
       const a = agentsRef.current.find((x) => x.id === agentId);
       return a?.name ?? "LangGUI";
     },
+    resolveAgentIcon: (agentId) => {
+      if (!agentId) return null;
+      const a = agentsRef.current.find((x) => x.id === agentId);
+      return a?.icon ?? null;
+    },
   });
 
   return (
