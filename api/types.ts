@@ -319,3 +319,15 @@ export interface BridgeRoutePatch {
   agent_id?: string;
   label?: string | null;
 }
+
+export interface BridgeChat {
+  remote_jid: string;
+  name: string | null;
+  is_group: boolean;
+  last_message_at: number | null;
+}
+
+export interface BridgeChatsResponse {
+  running: boolean;
+  chats: BridgeChat[];
+}

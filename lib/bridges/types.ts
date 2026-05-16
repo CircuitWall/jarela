@@ -39,6 +39,20 @@ export interface StatusUpdate {
 export type InboundHandler = (msg: InboundMessage) => void | Promise<void>;
 export type StatusHandler = (update: StatusUpdate) => void;
 
+/**
+ * One chat known to the adapter. Populated from history sync, observed
+ * inbound messages, and on-demand group metadata fetches. Used to power the
+ * chat-picker in the UI so users don't have to know their JIDs.
+ */
+export interface ChatInfo {
+  remote_jid: string;
+  /** Best-effort name (contact display name, group subject, or push_name fallback). */
+  name: string | null;
+  is_group: boolean;
+  /** Unix ms of last observed activity (for ordering). null = never seen a message. */
+  last_message_at: number | null;
+}
+
 export interface BridgeAdapter {
   /** Bridge row id (so handlers can correlate). */
   readonly bridge_id: string;
@@ -53,4 +67,14 @@ export interface BridgeAdapter {
   /** Register handlers. Must be called BEFORE start(). */
   onInboundMessage(handler: InboundHandler): void;
   onStatusChange(handler: StatusHandler): void;
+  /**
+   * Snapshot of chats the adapter has observed since connecting. Returns
+   * an empty array if the adapter isn't connected or hasn't synced yet.
+   */
+  listChats(): ChatInfo[];
+  /**
+   * Refresh the chat list on demand (e.g. fetch group metadata). Optional —
+   * adapters that have no out-of-band way to enumerate chats may no-op.
+   */
+  refreshChats(): Promise<void>;
 }

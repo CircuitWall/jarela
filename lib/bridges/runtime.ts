@@ -129,6 +129,20 @@ export function isBridgeRunning(bridge_id: string): boolean {
 }
 
 /**
+ * Snapshot of chats the adapter has observed since connecting. Returns []
+ * when the bridge isn't running yet. Triggers a background refresh so that
+ * subsequent calls see newly-fetched group metadata.
+ */
+export function listBridgeChats(bridge_id: string) {
+  const adapter = state.adapters.get(bridge_id);
+  if (!adapter) return [];
+  // Fire-and-forget — refreshChats hits a WS round-trip; HTTP shouldn't
+  // wait. The next poll will pick up any new entries.
+  void adapter.refreshChats().catch(() => { /* logged inside */ });
+  return adapter.listChats();
+}
+
+/**
  * Boot hook. Idempotent — safe to call from a layout module that may be
  * evaluated multiple times in Next.js dev HMR.
  */
