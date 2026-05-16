@@ -6,7 +6,7 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { startRun, finishRun, getRun } from "@/lib/agents/run-registry";
+import { startRun, finishRun, getRun, broadcast } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import { requireAccess } from "@/lib/auth/access";
 
@@ -58,6 +58,12 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
       if (chunk.type === "text_delta") {
         assistantContent += String(chunk.data.delta ?? "");
       }
+      // Mirror chunks into the run registry so a client that drops mid-stream
+      // (common on mobile when the OS suspends the tab) can reattach via SSE
+      // GET /api/v1/threads/{id}/run and replay the buffered events. Without
+      // this the WS path is "fire and forget to one socket" — any drop loses
+      // everything the user hadn't seen yet.
+      broadcast(req.thread_id, chunk);
       if (shouldEmitChunk(chunk.type, req.stream_options)) {
         sendJson(ws, { type: chunk.type, ...chunk.data });
       }
@@ -68,11 +74,12 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
     }
   } catch (err) {
     terminal = "error";
-    if (err instanceof RunThreadError) {
-      sendJson(ws, { type: "error", message: err.message, code: err.code });
-    } else {
-      sendJson(ws, { type: "error", message: String(err), code: "ws_stream_error" });
-    }
+    const code = err instanceof RunThreadError ? err.code : "ws_stream_error";
+    const message = err instanceof RunThreadError ? err.message : String(err);
+    // Broadcast the terminal error so reattached SSE subscribers see it too,
+    // then mirror it to the live WS (if still open).
+    broadcast(req.thread_id, { type: "error", data: { message, code } });
+    sendJson(ws, { type: "error", message, code });
   } finally {
     persistAssistantMessage(req.thread_id, assistantContent);
     finishRun(req.thread_id, terminal);
