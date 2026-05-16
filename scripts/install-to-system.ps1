@@ -108,6 +108,12 @@ Copy-Item -Path $publicSrc -Destination (Join-Path $InstallDir 'public') -Recurs
 # Drop the launcher next to server.js.
 Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.ps1') `
           -Destination (Join-Path $InstallDir 'launcher.ps1') -Force
+# Drop the VBS shim that launches the .ps1 fully hidden (no console at all).
+# `powershell.exe -WindowStyle Hidden` is not reliable when the launcher
+# spawns a child via `Start-Process -NoNewWindow` — the shared console can
+# flash to the foreground. wscript.exe with intWindowStyle=0 avoids that.
+Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.vbs') `
+          -Destination (Join-Path $InstallDir 'launcher.vbs') -Force
 
 # Stamp a version marker so we know which commit produced this install.
 $commit = try { (& git -C $RepoRoot rev-parse --short HEAD).Trim() } catch { 'unknown' }
@@ -124,12 +130,16 @@ Info "files copied:"
 Get-ChildItem $InstallDir | ForEach-Object { Info ("  " + $_.Name) }
 
 # â”€â”€ 5. Re-register scheduled task pointing at the install dir â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Step "Registering scheduled task '$TaskName' -> $InstallDir\launcher.ps1"
-$launcher = Join-Path $InstallDir 'launcher.ps1'
+Step "Registering scheduled task '$TaskName' -> $InstallDir\launcher.vbs"
+$launcherVbs = Join-Path $InstallDir 'launcher.vbs'
 
+# wscript.exe runs the VBS shim with no console window, which in turn launches
+# powershell -File launcher.ps1 detached. Net effect: no flashing terminal in
+# the foreground at logon or restart. `powershell.exe -WindowStyle Hidden` is
+# unreliable when the launcher spawns `node server.js` via -NoNewWindow.
 $action = New-ScheduledTaskAction `
-  -Execute 'powershell.exe' `
-  -Argument ("-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"" + $launcher + "`"") `
+  -Execute 'wscript.exe' `
+  -Argument ("`"" + $launcherVbs + "`"") `
   -WorkingDirectory $InstallDir
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
