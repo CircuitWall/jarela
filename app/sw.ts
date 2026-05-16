@@ -5,7 +5,7 @@
 
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { ExpirationPlugin, NetworkFirst, NetworkOnly, Serwist } from "serwist";
+import { NetworkOnly, Serwist } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -21,8 +21,6 @@ declare const self: ServiceWorkerGlobalScope;
 // the cross-origin-looking full URL (https://host/api/...). Using function
 // matchers against `url.pathname` is unambiguous and works the same on
 // loopback, tailnet, and PWA contexts.
-const startsWith = (prefix: string) => ({ url }: { url: URL }) =>
-  url.pathname.startsWith(prefix);
 const isExactPath = (...paths: string[]) => ({ url }: { url: URL }) =>
   paths.includes(url.pathname);
 
@@ -58,36 +56,17 @@ const serwist = new Serwist({
         url.pathname.endsWith("/run"),
       handler: new NetworkOnly(),
     },
-    // Read-only API GETs we want to keep usable offline for the PWA.
+    // All API GETs go straight to network. We're not building an offline
+    // experience: the app is useless without the local server anyway. The
+    // previous NetworkFirst+5s setup caused Safari PWA (esp. over Tailscale,
+    // where the first request can take >5s) to silently fall back to a
+    // stale cached payload — e.g. an empty agent list pinned for up to 24h
+    // after a transient auth glitch. NetworkOnly removes the whole class
+    // of bug.
     {
-      matcher: startsWith("/api/v1/threads"),
-      handler: new NetworkFirst({
-        cacheName: "threads-cache",
-        networkTimeoutSeconds: 5,
-        plugins: [
-          new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 }),
-        ],
-      }),
-    },
-    {
-      matcher: startsWith("/api/v1/memory"),
-      handler: new NetworkFirst({
-        cacheName: "memory-cache",
-        networkTimeoutSeconds: 5,
-        plugins: [
-          new ExpirationPlugin({ maxEntries: 500, maxAgeSeconds: 7 * 24 * 3600 }),
-        ],
-      }),
-    },
-    {
-      matcher: startsWith("/api/v1/agents"),
-      handler: new NetworkFirst({
-        cacheName: "agents-cache",
-        networkTimeoutSeconds: 5,
-        plugins: [
-          new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 24 * 3600 }),
-        ],
-      }),
+      matcher: ({ request, url }) =>
+        url.pathname.startsWith("/api/") && request.method === "GET",
+      handler: new NetworkOnly(),
     },
     // Serwist defaults handle static assets, Next.js data, fonts, images, etc.
     ...defaultCache,
@@ -96,21 +75,28 @@ const serwist = new Serwist({
 
 serwist.addEventListeners();
 
-// On activate, purge any cached entries for endpoints that should NEVER be
-// cached. Earlier SW versions had a broken regex matcher that let serwist's
-// defaultCache (apis-cache) capture /api/v1/ws responses, which then pinned
-// installed PWAs to a stale WS URL even after redeploys. Iterate every
-// cache once and evict matching entries.
+// On activate, purge stale runtime API caches. Earlier SW versions cached
+// /api/v1/agents, /api/v1/threads, /api/v1/memory etc. with NetworkFirst —
+// which on Safari PWA over Tailscale would pin installed clients to an
+// empty/stale payload for up to 24h after a transient auth glitch. Also
+// purge legacy cached entries for endpoints that should NEVER be cached
+// (/api/v1/ws, /api/v1/health, streaming run endpoints).
+const STALE_RUNTIME_CACHES = ["agents-cache", "threads-cache", "memory-cache"];
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const cacheNames = await caches.keys();
     await Promise.all(cacheNames.map(async (name) => {
+      if (STALE_RUNTIME_CACHES.includes(name)) {
+        await caches.delete(name);
+        return;
+      }
       const cache = await caches.open(name);
       const requests = await cache.keys();
       await Promise.all(requests.map((req) => {
         try {
           const u = new URL(req.url);
           if (
+            u.pathname.startsWith("/api/") ||
             u.pathname === "/api/v1/ws" ||
             u.pathname === "/api/v1/health" ||
             (u.pathname.startsWith("/api/v1/threads/") && u.pathname.endsWith("/run"))
