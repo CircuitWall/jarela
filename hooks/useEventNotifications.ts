@@ -199,14 +199,12 @@ function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
   }
   return {
     title: `${name} — scheduled task completed`,
-    body: `${truncate(ev.prompt, 50)} → ${truncate(ev.preview || "(no output)", 80)}`,
+    // Show only the assistant reply preview — the prompt is what the user
+    // already knows they scheduled, the value of the notification is the
+    // answer that just arrived.
+    body: ev.preview || "(no output)",
     kind: "success",
   };
-}
-
-function truncate(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
 }
 
 export async function ensureNotificationPermission(): Promise<NotificationPermission> {
