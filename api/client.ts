@@ -3,6 +3,7 @@ import type {
   AgentConfigIn,
   AgentInfo,
   Bridge,
+  BridgeChatsResponse,
   BridgeIn,
   BridgeLiveStatus,
   BridgePatch,
@@ -208,6 +209,7 @@ export const api = {
     status: (id: string) => request<BridgeLiveStatus>(`/bridges/${encodeURIComponent(id)}/status`),
     pair: (id: string) =>
       request<{ accepted: boolean }>(`/bridges/${encodeURIComponent(id)}/pair`, { method: "POST", body: "{}" }),
+    chats: (id: string) => request<BridgeChatsResponse>(`/bridges/${encodeURIComponent(id)}/chats`),
 
     routes: {
       list: (bridge_id: string) =>

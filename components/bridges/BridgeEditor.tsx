@@ -1,8 +1,8 @@
 "use client";
-import { ArrowLeft, Plus, QrCode, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, QrCode, RefreshCw, Trash2, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { AgentConfig, Bridge, BridgeLiveStatus, BridgeRoute } from "@/api/types";
+import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute } from "@/api/types";
 import { useBridgeRoutes } from "@/hooks/useBridges";
 import { StatusPill } from "./BridgesPanel";
 
@@ -153,6 +153,10 @@ export function BridgeEditor({
 function RouteTable({ bridge_id }: { bridge_id: string }) {
   const { routes, create, update, remove } = useBridgeRoutes(bridge_id);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [chats, setChats] = useState<BridgeChat[]>([]);
+  const [chatsRunning, setChatsRunning] = useState<boolean>(true);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<{ remote_jid: string; agent_id: string; label: string }>({
     remote_jid: "", agent_id: "", label: "",
@@ -161,18 +165,57 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 
   useEffect(() => { api.agents.list().then(setAgents).catch(() => {}); }, []);
 
+  // Pull chats whenever the Add form opens, then keep polling every 4s
+  // while it stays open so newly-arrived chats appear without the user
+  // needing to close+reopen the dialog. Re-pair / first-time pair often
+  // takes several seconds before history-sync delivers the chat list.
+  useEffect(() => {
+    if (!adding) return;
+    let alive = true;
+    async function load() {
+      setChatsLoading(true);
+      try {
+        const r = await api.bridges.chats(bridge_id);
+        if (!alive) return;
+        setChats(r.chats);
+        setChatsRunning(r.running);
+      } catch { /* ignore — UI shows empty state */ }
+      finally { if (alive) setChatsLoading(false); }
+    }
+    void load();
+    const t = setInterval(() => void load(), 4000);
+    return () => { alive = false; clearInterval(t); };
+  }, [adding, bridge_id]);
+
   // Agents already targeted by other routes are unavailable in the picker.
   const usedAgents = new Set(routes.map((r) => r.agent_id));
   const availableAgents = agents.filter((a) => !usedAgents.has(a.id));
+
+  // Hide chats that already have a route — picking them would just throw
+  // a UNIQUE violation. Sort: groups & named chats first, then the rest.
+  const routedJids = new Set(routes.map((r) => r.remote_jid));
+  const availableChats = chats.filter((c) => !routedJids.has(c.remote_jid));
+
+  function selectChat(jid: string) {
+    const c = chats.find((x) => x.remote_jid === jid);
+    setDraft((d) => ({
+      remote_jid: jid,
+      agent_id: d.agent_id,
+      // Auto-fill the label from the chat name when the user hasn't typed
+      // anything yet — saves typing on the common case.
+      label: d.label.trim() ? d.label : (c?.name ?? d.label),
+    }));
+  }
 
   async function onAdd() {
     setError(null);
     const remote_jid = draft.remote_jid.trim();
     const agent_id = draft.agent_id.trim();
-    if (!remote_jid || !agent_id) { setError("JID and agent are required"); return; }
+    if (!remote_jid || !agent_id) { setError("Pick a chat and an agent"); return; }
     try {
       await create({ remote_jid, agent_id, label: draft.label.trim() || null });
       setAdding(false);
+      setManualMode(false);
       setDraft({ remote_jid: "", agent_id: "", label: "" });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -194,37 +237,124 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 
       {adding && (
         <div className="rounded border border-accent/30 bg-surface-3/30 p-2 space-y-2">
-          <div className="grid grid-cols-1 gap-2">
-            <input
-              autoFocus
-              value={draft.remote_jid}
-              onChange={(e) => setDraft((d) => ({ ...d, remote_jid: e.target.value }))}
-              placeholder="WhatsApp JID — 5511999990000@s.whatsapp.net or <id>@g.us"
-              className="px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none font-mono"
-            />
+          {!manualMode ? (
+            <>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Chat</label>
+                {chatsLoading && <RefreshCw size={10} className="animate-spin text-zinc-500" />}
+                <button
+                  type="button"
+                  onClick={() => setManualMode(true)}
+                  className="ml-auto text-[10px] text-zinc-500 hover:text-accent underline-offset-2 hover:underline"
+                >
+                  Enter JID manually
+                </button>
+              </div>
+              {!chatsRunning && (
+                <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+                  Bridge isn&apos;t running — enable it to load your WhatsApp chats.
+                </p>
+              )}
+              {chatsRunning && availableChats.length === 0 && !chatsLoading && (
+                <p className="text-[11px] text-zinc-500 px-1 py-2 leading-relaxed">
+                  No chats synced yet. WhatsApp delivers your chat list a few seconds after pairing, and any
+                  chat you receive a message in will also appear here. If you can&apos;t wait, you can{" "}
+                  <button
+                    type="button"
+                    onClick={() => setManualMode(true)}
+                    className="text-accent hover:underline"
+                  >
+                    enter the JID manually
+                  </button>.
+                </p>
+              )}
+              {availableChats.length > 0 && (
+                <div className="max-h-56 overflow-y-auto rounded border border-border bg-surface-3/40 divide-y divide-border">
+                  {availableChats.map((c) => (
+                    <button
+                      key={c.remote_jid}
+                      type="button"
+                      onClick={() => selectChat(c.remote_jid)}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ${
+                        draft.remote_jid === c.remote_jid
+                          ? "bg-accent/20 text-zinc-100"
+                          : "hover:bg-surface-3 text-zinc-200"
+                      }`}
+                    >
+                      <span className={`w-5 h-5 rounded shrink-0 flex items-center justify-center ${
+                        c.is_group ? "bg-violet-500/20 text-violet-300" : "bg-emerald-500/20 text-emerald-300"
+                      }`}>
+                        {c.is_group ? <Users size={10} /> : <span className="text-[10px] font-bold">{(c.name ?? "?").charAt(0).toUpperCase()}</span>}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="truncate">{c.name ?? <span className="text-zinc-500 italic">Unnamed</span>}</div>
+                        <div className="text-[10px] text-zinc-500 truncate font-mono">{c.remote_jid}</div>
+                      </div>
+                      {c.last_message_at && (
+                        <span className="text-[9px] text-zinc-500 shrink-0">{formatRelative(c.last_message_at)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">JID</label>
+                <button
+                  type="button"
+                  onClick={() => setManualMode(false)}
+                  className="ml-auto text-[10px] text-zinc-500 hover:text-accent underline-offset-2 hover:underline"
+                >
+                  Pick from chat list
+                </button>
+              </div>
+              <input
+                autoFocus
+                value={draft.remote_jid}
+                onChange={(e) => setDraft((d) => ({ ...d, remote_jid: e.target.value }))}
+                placeholder="5511999990000@s.whatsapp.net or <group-id>@g.us"
+                className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none font-mono"
+              />
+            </>
+          )}
+
+          <div className="space-y-2">
+            <label className="block text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Agent</label>
             <select
               value={draft.agent_id}
               onChange={(e) => setDraft((d) => ({ ...d, agent_id: e.target.value }))}
-              className="px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none"
+              className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none"
             >
               <option value="">Select agent…</option>
               {availableAgents.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
+
+            <label className="block text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Label (optional)</label>
             <input
               value={draft.label}
               onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-              placeholder="Label (optional, e.g. Mom, Support Group)"
-              className="px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none"
+              placeholder="e.g. Mom, Support Group"
+              className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none"
             />
           </div>
+
           {error && <p className="text-[11px] text-rose-300">{error}</p>}
           <div className="flex gap-2">
-            <button onClick={onAdd} className="px-3 py-1 text-xs rounded bg-accent text-white hover:bg-accent/90">
+            <button
+              onClick={onAdd}
+              disabled={!draft.remote_jid || !draft.agent_id}
+              className="px-3 py-1 text-xs rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
               Add route
             </button>
-            <button onClick={() => { setAdding(false); setError(null); }} className="px-3 py-1 text-xs rounded text-zinc-400 hover:bg-surface-3">
+            <button
+              onClick={() => { setAdding(false); setManualMode(false); setError(null); setDraft({ remote_jid: "", agent_id: "", label: "" }); }}
+              className="px-3 py-1 text-xs rounded text-zinc-400 hover:bg-surface-3"
+            >
               Cancel
             </button>
           </div>
@@ -239,6 +369,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
         <RouteRow
           key={r.id}
           route={r}
+          chatName={chats.find((c) => c.remote_jid === r.remote_jid)?.name ?? null}
           agent={agents.find((a) => a.id === r.agent_id) ?? null}
           onChangeAgent={async (agent_id) => {
             try { await update(r.id, { agent_id }); }
@@ -256,19 +387,27 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 }
 
 function RouteRow({
-  route, agent, agents, onChangeAgent, onDelete,
+  route, chatName, agent, agents, onChangeAgent, onDelete,
 }: {
   route: BridgeRoute;
+  chatName: string | null;
   agent: AgentConfig | null;
   agents: AgentConfig[];
   onChangeAgent: (id: string) => Promise<void>;
   onDelete: () => Promise<void> | void;
 }) {
+  // Prefer the route's user-set label, fall back to the live chat name from
+  // the picker, then the JID itself. Always show the JID as the small
+  // monospaced subline so the user can verify the binding.
+  const headline = route.label?.trim() || chatName || route.remote_jid;
+  const showJidSubline = headline !== route.remote_jid;
   return (
     <div className="flex items-center gap-2 py-1.5 border-t border-border first:border-t-0">
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-mono text-zinc-300 truncate">{route.remote_jid}</p>
-        {route.label && <p className="text-[10px] text-zinc-500 truncate">{route.label}</p>}
+        <p className="text-xs text-zinc-200 truncate">{headline}</p>
+        {showJidSubline && (
+          <p className="text-[10px] font-mono text-zinc-500 truncate">{route.remote_jid}</p>
+        )}
       </div>
       <select
         value={agent?.id ?? ""}
@@ -289,4 +428,17 @@ function RouteRow({
       </button>
     </div>
   );
+}
+
+function formatRelative(ms: number): string {
+  const diff = Date.now() - ms;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return "just now";
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 7) return `${d}d`;
+  return new Date(ms).toLocaleDateString();
 }
