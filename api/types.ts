@@ -16,6 +16,7 @@ export interface AgentConfig {
   is_default: boolean;
   history_limit: number;
   history_window_hours: number;
+  never_reply: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -30,6 +31,7 @@ export interface AgentConfigIn {
   is_default?: boolean;
   history_limit?: number;
   history_window_hours?: number;
+  never_reply?: boolean;
 }
 
 export interface ThreadSummary {

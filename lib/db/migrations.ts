@@ -199,6 +199,14 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("history_window_hours")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN history_window_hours INTEGER NOT NULL DEFAULT 8");
   }
+  // never_reply: when 1, the dispatcher records the inbound message and
+  // the agent's response in the thread but doesn't send the reply back
+  // through the bridge. Useful for read-only / observer agents on group
+  // chats where the user wants archival + LLM analysis but no automatic
+  // posting.
+  if (!names.has("never_reply")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN never_reply INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function ensureTaskAssignmentColumns(db: DatabaseSync): void {
