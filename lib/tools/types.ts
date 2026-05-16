@@ -41,6 +41,13 @@ export interface InvokeMessage {
   content: string | ContentPart[];
   tool_call_id?: string; // for role="tool"
   tool_calls?: ToolCallRef[]; // for role="assistant" when tool calls were made
+  // DeepSeek's thinking models (deepseek-reasoner etc.) emit a separate
+  // `reasoning_content` field on assistant messages, and the API REQUIRES
+  // that field to be echoed back on every subsequent turn — otherwise it
+  // returns `400 The reasoning_content in the thinking mode must be passed
+  // back to the API`. Carrying it on the generic InvokeMessage lets the
+  // OpenAI-compat conversion layer pass it through unchanged.
+  reasoning_content?: string;
 }
 
 export interface ToolCall {

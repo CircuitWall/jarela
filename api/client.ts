@@ -195,7 +195,10 @@ let cachedWsUrl: string | null = null;
 // Persist the ws URL across page reloads so we don't pay an HTTP round-trip
 // to /api/v1/ws on every cold load. Keyed by the current origin so a host
 // flip (loopback ↔ tailscale ↔ different machine) invalidates automatically.
-const WS_URL_STORAGE_KEY = "langgui:ws-url";
+// Versioned so older buggy cache entries (e.g. ones pointing at port 3219
+// directly through tailscale, which doesn't expose that port) are ignored
+// after a client deploy that changes the URL shape.
+const WS_URL_STORAGE_KEY = "langgui:ws-url:v2";
 
 function readPersistedWsUrl(): string | null {
   if (typeof window === "undefined" || !window.sessionStorage) return null;

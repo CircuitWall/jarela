@@ -49,11 +49,16 @@ function toOpenAIMessages(
       return { role: "tool", tool_call_id: m.tool_call_id!, content: String(m.content) };
     }
     if (m.role === "assistant") {
-      return {
+      const msg: OpenAI.Chat.ChatCompletionAssistantMessageParam & { reasoning_content?: string } = {
         role: "assistant",
         content: typeof m.content === "string" ? m.content : null,
         tool_calls: m.tool_calls as OpenAI.Chat.ChatCompletionMessageToolCall[] | undefined,
-      } as OpenAI.Chat.ChatCompletionAssistantMessageParam;
+      };
+      // DeepSeek's reasoning models reject follow-up requests that omit the
+      // assistant's prior reasoning_content. The OpenAI SDK's type doesn't
+      // know about this field, but the underlying HTTP body forwards it.
+      if (m.reasoning_content) msg.reasoning_content = m.reasoning_content;
+      return msg as OpenAI.Chat.ChatCompletionAssistantMessageParam;
     }
     return {
       role: m.role as "system" | "user",
