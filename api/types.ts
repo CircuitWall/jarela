@@ -257,3 +257,65 @@ export type SSEEventType =
   | { type: "tool_result"; id: string; name: string; result: unknown }
   | { type: "done"; message_id: string; usage: { input_tokens: number; output_tokens: number } }
   | { type: "error"; message: string; code: string };
+
+// ---------------------------------------------------------------------------
+// Bridges (external comm channels: WhatsApp via Baileys, …)
+// ---------------------------------------------------------------------------
+
+export type BridgeKind = "whatsapp";
+export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
+
+export interface Bridge {
+  id: string;
+  kind: BridgeKind;
+  name: string;
+  status: BridgeStatus;
+  last_error: string | null;
+  paired_id: string | null;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BridgeIn {
+  kind: BridgeKind;
+  name: string;
+}
+
+export interface BridgePatch {
+  name?: string;
+  enabled?: boolean;
+}
+
+export interface BridgeLiveStatus {
+  id: string;
+  status: BridgeStatus;
+  /** Data URL (image/png;base64,…) for the pairing QR, present only while `status==='pairing'`. */
+  qr_data_url: string | null;
+  last_error: string | null;
+  paired_id: string | null;
+  running: boolean;
+  enabled: boolean;
+}
+
+export interface BridgeRoute {
+  id: string;
+  bridge_id: string;
+  remote_jid: string;       // e.g. "5511999990000@s.whatsapp.net" or "<group-id>@g.us"
+  agent_id: string;
+  label: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BridgeRouteIn {
+  remote_jid: string;
+  agent_id: string;
+  label?: string | null;
+}
+
+export interface BridgeRoutePatch {
+  remote_jid?: string;
+  agent_id?: string;
+  label?: string | null;
+}

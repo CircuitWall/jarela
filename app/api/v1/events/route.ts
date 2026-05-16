@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { recentSince, subscribe } from "@/lib/notifications/bus";
 import { startScheduler } from "@/lib/scheduler";
+import { startAllBridges } from "@/lib/bridges/runtime";
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
@@ -15,6 +16,14 @@ export function GET(req: NextRequest) {
   // only started lazily on the first agent run, so a server restart could
   // leave scheduled tasks dormant until you sent a chat message.
   startScheduler();
+
+  // Bring up enabled bridges (WhatsApp adapters). Idempotent — runtime.ts
+  // pins state to globalThis so this is a no-op after the first call.
+  // Fire-and-forget: bridge connect can take seconds, the SSE stream below
+  // mustn't block waiting for WebSocket handshakes.
+  void startAllBridges().catch((err) => {
+    console.error("[bridges] startAllBridges failed:", err);
+  });
 
   const url = new URL(req.url);
   const sinceTs = Number(url.searchParams.get("since")) || 0;
