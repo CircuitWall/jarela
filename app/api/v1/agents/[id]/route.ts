@@ -20,6 +20,7 @@ function toResponse(row: ReturnType<typeof getAgentConfig>) {
     is_default: !!row.is_default,
     history_limit: row.history_limit,
     history_window_hours: row.history_window_hours,
+    never_reply: !!row.never_reply,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -47,6 +48,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     is_default?: boolean;
     history_limit?: number;
     history_window_hours?: number;
+    never_reply?: boolean;
   };
 
   const row = upsertAgentConfig({
@@ -60,6 +62,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     is_default: body.is_default,
     history_limit: body.history_limit,
     history_window_hours: body.history_window_hours,
+    never_reply: body.never_reply,
   });
 
   return NextResponse.json(toResponse(row));

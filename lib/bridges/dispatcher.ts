@@ -81,7 +81,10 @@ export async function handleInboundMessage(
     persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
 
     const reply = assistantContent.trim();
-    if (reply.length > 0) {
+    // never_reply: process the message (records history + runs tools) but
+    // suppress the outbound send. Useful for read-only/observer agents on
+    // group chats where the user wants logging without auto-posting.
+    if (reply.length > 0 && !agent.never_reply) {
       try {
         await adapter.sendText(msg.remote_jid, reply);
       } catch (sendErr) {
