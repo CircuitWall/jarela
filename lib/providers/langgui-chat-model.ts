@@ -269,6 +269,12 @@ function toInvokeMessages(messages: BaseMessage[]): InvokeMessage[] {
           function: { name: tc.name, arguments: JSON.stringify(tc.args) },
         }));
       }
+      // DeepSeek thinking-mode: propagate the reasoning trace back so the
+      // provider can echo it on follow-up turns (required by their API).
+      const reasoning = ai.additional_kwargs?.reasoning_content;
+      if (typeof reasoning === "string" && reasoning) {
+        invokeMsg.reasoning_content = reasoning;
+      }
       return invokeMsg;
     }
     if (isToolMessage(m)) {
