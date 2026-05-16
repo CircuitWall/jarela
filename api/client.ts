@@ -49,7 +49,7 @@ export const api = {
     getThread: (id: string) =>
       request<ThreadSummary>(`/agents/${encodeURIComponent(id)}/thread`),
     compact: (id: string) =>
-      request<{ compacted: boolean; summary?: string; reason?: string }>(
+      request<{ compacted: boolean; summary?: string; reason?: string; message_count?: number; context_chars?: number }>(
         `/agents/${encodeURIComponent(id)}/compact`,
         { method: "POST", body: "{}" },
       ),

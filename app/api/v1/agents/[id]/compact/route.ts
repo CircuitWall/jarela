@@ -7,18 +7,19 @@ import { putMemory } from "@/lib/stores/memory";
 import type { ProviderParams } from "@/lib/providers/types";
 import type { ContentPart } from "@/lib/tools/types";
 
+type Params = { params: Promise<{ id: string }> };
+
 // Messages with attachments are stored as a JSON-stringified ContentPart[]
-// (text + image/file parts with base64 payloads). Feeding that raw into the
-// summarizer dumps multi-MB base64 blobs into the prompt — it blows the
-// context window and the model rejects the request. For compaction we only
-// need the textual narrative; replace image/file parts with a short stub.
+// (text + image/file parts whose `data` is base64). Feeding that raw into
+// the summarizer dumps multi-MB base64 blobs into the prompt and blows the
+// context window. For compaction we only need the textual narrative; replace
+// image/file parts with short stubs so the summary still mentions them.
 function transcriptText(raw: string): string {
   if (!raw.startsWith("[")) return raw;
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return raw;
-    const parts = parsed as ContentPart[];
-    return parts
+    return (parsed as ContentPart[])
       .map((p) => {
         if (p.type === "text") return p.text;
         if (p.type === "image") return `[image attachment: ${p.media_type}]`;
@@ -32,8 +33,6 @@ function transcriptText(raw: string): string {
     return raw;
   }
 }
-
-type Params = { params: Promise<{ id: string }> };
 
 export async function POST(_req: Request, { params }: Params) {
   const { id } = await params;
@@ -63,13 +62,20 @@ export async function POST(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "Invalid model params" }, { status: 500 });
   }
 
-  const provider = getProvider(cfg.provider);
-
-  // Build conversation transcript for summarization
-  const transcript = rows
-    .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${transcriptText(r.content)}`)
+  // Build transcript (text-flattened so base64 image data doesn't poison the
+  // summarization prompt) BEFORE touching the thread. If anything below fails
+  // we don't want to have already wiped the user's history.
+  const flattened = rows.map((r) => ({
+    role: r.role,
+    text: transcriptText(r.content),
+  }));
+  const transcript = flattened
+    .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.text}`)
     .join("\n\n");
+  const contextChars = transcript.length;
+  const messageCount = rows.length;
 
+  const provider = getProvider(cfg.provider);
   const summaryMessages = [
     {
       role: "system" as const,
@@ -81,6 +87,9 @@ export async function POST(_req: Request, { params }: Params) {
     },
   ];
 
+  // Summarize FIRST. Only clear messages once we have a summary safely
+  // persisted to memory — otherwise a model failure would lose history with
+  // no recovery path.
   let summary = "";
   try {
     const { stream } = await provider.chat(cfg.model_id, summaryMessages, providerParams);
@@ -88,21 +97,28 @@ export async function POST(_req: Request, { params }: Params) {
       summary += chunk;
     }
   } catch (err) {
-    return NextResponse.json({ error: `Summarization failed: ${String(err)}` }, { status: 500 });
+    return NextResponse.json(
+      { error: `Summarization failed: ${String(err)}`, code: "summarize_failed" },
+      { status: 502 },
+    );
   }
 
   summary = summary.trim();
 
-  // Save to shared memory under "sessions" namespace
   putMemory("sessions", `${id}/${Date.now()}`, {
     summary,
     agent_id: id,
     agent_name: agent.name,
-    message_count: rows.length,
+    message_count: messageCount,
     compacted_at: new Date().toISOString(),
   });
 
   clearThreadMessages(thread.thread_id);
 
-  return NextResponse.json({ compacted: true, summary });
+  return NextResponse.json({
+    compacted: true,
+    summary,
+    message_count: messageCount,
+    context_chars: contextChars,
+  });
 }
