@@ -295,6 +295,11 @@ export async function* streamChatWS(
   const waiters: Array<() => void> = [];
   let done = false;
   let streamError: Error | null = null;
+  // Track whether we received a terminal event (done/error) BEFORE the socket
+  // closed. iOS Safari aggressively closes background WebSockets — when that
+  // happens mid-stream the server-side run keeps going (broadcasts into the
+  // registry) and we want the caller to reattach via SSE, not silently end.
+  let sawTerminal = false;
 
   const notify = () => {
     while (waiters.length > 0) {
@@ -308,6 +313,7 @@ export async function* streamChatWS(
       const event = JSON.parse(raw) as { type?: string };
       if (event.type === "done" || event.type === "error") {
         done = true;
+        sawTerminal = true;
       }
     } catch {
       // ignore malformed payloads here and let callers surface parse errors
@@ -346,6 +352,14 @@ export async function* streamChatWS(
   };
 
   ws.onclose = () => {
+    if (!sawTerminal && !streamError) {
+      // Mid-stream drop (mobile suspend, network blip). The server-side run
+      // is still going in the registry — flag a recoverable error so the
+      // caller can reattach via SSE GET instead of starting a new POST run.
+      streamError = Object.assign(new Error("ws closed before completion"), {
+        code: "ws_drop_reattach" as const,
+      });
+    }
     done = true;
     notify();
   };

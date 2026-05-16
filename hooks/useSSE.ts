@@ -61,6 +61,50 @@ export function useSSE(onDone?: () => void) {
     }
   }, [onDone]);
 
+  // Subscribe to an already-running server-side run via SSE GET. Used when
+  // the WS dropped mid-stream and the run is still alive in the registry.
+  // Re-uses the provided AbortController so the caller's stop()/teardown
+  // still works without spawning a second controller.
+  const consumeAttach = useCallback(async (threadId: string, signal: AbortSignal) => {
+    const res = await fetch(`/api/v1/threads/${threadId}/run`, { signal });
+    if (res.status === 404) {
+      // Run already finished and was evicted before we could reattach. The
+      // assistant message was persisted in finally{} server-side — surface a
+      // synthetic done so the queue-drain / refetch in ChatView fires.
+      setStreaming(false);
+      setThinkingContent("");
+      onDone?.();
+      return;
+    }
+    if (!res.ok || !res.body) {
+      throw new Error(`reattach failed: ${res.status}`);
+    }
+    const iter = (async function* () {
+      const reader = res.body!.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += dec.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) yield line.slice(6).trim();
+          }
+        }
+      } finally { reader.releaseLock(); }
+    })();
+    // Replay arrives as deltas — but the streaming bubble already shows
+    // whatever the WS managed to render before dropping. Reset so we don't
+    // double-render the prefix.
+    setStreamingContent("");
+    setThinkingContent("");
+    setToolEvents([]);
+    await consume(iter, "sse");
+  }, [consume, onDone]);
+
   const start = useCallback(async (threadId: string, message: string, options?: StreamOptions, attachments?: ContentPart[]) => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
@@ -75,8 +119,17 @@ export function useSSE(onDone?: () => void) {
     try {
       try {
         await consume(streamChatWS(threadId, message, ctrl.signal, options, attachments), "ws");
-      } catch {
-        await consume(streamChat(threadId, message, ctrl.signal, options, attachments), "sse");
+      } catch (innerErr) {
+        // A mid-stream WS drop (iOS suspend, mobile signal blip) means the
+        // server-side run is still alive in the registry — reattach via SSE
+        // GET so we replay buffered events and pick up the terminal `done`.
+        // POSTing a new SSE run here would either 409 or duplicate the turn.
+        const code = (innerErr as { code?: string } | null)?.code;
+        if (code === "ws_drop_reattach") {
+          await consumeAttach(threadId, ctrl.signal);
+        } else {
+          await consume(streamChat(threadId, message, ctrl.signal, options, attachments), "sse");
+        }
       }
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
