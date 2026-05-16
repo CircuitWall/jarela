@@ -5,6 +5,33 @@ import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config
 import { getProvider } from "@/lib/providers";
 import { putMemory } from "@/lib/stores/memory";
 import type { ProviderParams } from "@/lib/providers/types";
+import type { ContentPart } from "@/lib/tools/types";
+
+// Messages with attachments are stored as a JSON-stringified ContentPart[]
+// (text + image/file parts with base64 payloads). Feeding that raw into the
+// summarizer dumps multi-MB base64 blobs into the prompt — it blows the
+// context window and the model rejects the request. For compaction we only
+// need the textual narrative; replace image/file parts with a short stub.
+function transcriptText(raw: string): string {
+  if (!raw.startsWith("[")) return raw;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return raw;
+    const parts = parsed as ContentPart[];
+    return parts
+      .map((p) => {
+        if (p.type === "text") return p.text;
+        if (p.type === "image") return `[image attachment: ${p.media_type}]`;
+        if (p.type === "file") return `[file attachment: ${p.name} (${p.media_type})]`;
+        return "";
+      })
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+  } catch {
+    return raw;
+  }
+}
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -40,7 +67,7 @@ export async function POST(_req: Request, { params }: Params) {
 
   // Build conversation transcript for summarization
   const transcript = rows
-    .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.content}`)
+    .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${transcriptText(r.content)}`)
     .join("\n\n");
 
   const summaryMessages = [
