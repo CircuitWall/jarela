@@ -3,7 +3,10 @@ import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { memoryReadTool, memoryWriteTool, memoryListTool } from "./memory";
 import { localExecTool, shellExecTool } from "./exec";
-import { fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileListTool, fileMkdirTool } from "./files";
+import {
+  fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileListTool,
+  fileMkdirTool, fileDeleteTool, fileCopyTool, fileStatTool,
+} from "./files";
 import { webSearchTool } from "./search";
 import { webFetchTool } from "./fetch";
 import { generateImageTool } from "./generate_image";
@@ -30,8 +33,11 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   fileWriteTool,
   fileEditTool,
   fileMoveTool,
+  fileCopyTool,
+  fileDeleteTool,
   fileListTool,
   fileMkdirTool,
+  fileStatTool,
   webSearchTool,
   webFetchTool,
   generateImageTool,
@@ -48,6 +54,49 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   confluenceSearchTool,
   confluenceGetPageTool,
 ];
+
+// Category assignments. Drives the grouped per-section UI in AgentEditor so
+// the user can flip an entire capability on/off without clicking every tool.
+// MCP tools default to "MCP" (overridable per-server in the future).
+export type ToolCategory =
+  | "Memory" | "Files" | "Shell" | "Web" | "Images"
+  | "Schedule" | "Atlassian" | "Config" | "MCP";
+
+const TOOL_CATEGORY: Record<string, ToolCategory> = {
+  memory_read: "Memory",
+  memory_write: "Memory",
+  memory_list: "Memory",
+  local_exec: "Shell",
+  shell_exec: "Shell",
+  file_read: "Files",
+  file_write: "Files",
+  file_edit: "Files",
+  file_move: "Files",
+  file_copy: "Files",
+  file_delete: "Files",
+  file_list: "Files",
+  file_mkdir: "Files",
+  file_stat: "Files",
+  web_search: "Web",
+  web_fetch: "Web",
+  generate_image: "Images",
+  schedule_task: "Schedule",
+  list_scheduled_tasks: "Schedule",
+  cancel_scheduled_task: "Schedule",
+  propose_config_change: "Config",
+  check_proposal: "Config",
+  jira_search: "Atlassian",
+  jira_get_issue: "Atlassian",
+  jira_create_issue: "Atlassian",
+  jira_add_comment: "Atlassian",
+  jira_transitions: "Atlassian",
+  confluence_search: "Atlassian",
+  confluence_get_page: "Atlassian",
+};
+
+export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
+  return TOOL_CATEGORY[name] ?? (source === "mcp" ? "MCP" : "Config");
+}
 
 const toolMap = new Map<string, StructuredToolInterface>(ALL_TOOLS.map((t) => [t.name, t]));
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAllTools, getAllToolsAsync } from "@/lib/tools";
+import { getAllTools, getAllToolsAsync, getToolCategory } from "@/lib/tools";
 
 export async function GET() {
   try {
@@ -8,11 +8,15 @@ export async function GET() {
     const builtInNames = new Set(getAllTools().map((t) => t.name));
     const all = await getAllToolsAsync();
     return NextResponse.json(
-      all.map((t) => ({
-        name: t.name,
-        description: t.description,
-        source: builtInNames.has(t.name) ? "builtin" : "mcp",
-      })),
+      all.map((t) => {
+        const source: "builtin" | "mcp" = builtInNames.has(t.name) ? "builtin" : "mcp";
+        return {
+          name: t.name,
+          description: t.description,
+          source,
+          category: getToolCategory(t.name, source),
+        };
+      }),
     );
   } catch (err) {
     return NextResponse.json(
