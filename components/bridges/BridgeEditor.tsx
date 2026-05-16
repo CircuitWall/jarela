@@ -1,6 +1,6 @@
 "use client";
-import { ArrowLeft, Plus, QrCode, RefreshCw, Trash2, Users } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowLeft, Plus, QrCode, RefreshCw, Search, Trash2, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute } from "@/api/types";
 import { useBridgeRoutes } from "@/hooks/useBridges";
@@ -163,6 +163,15 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   });
   const [error, setError] = useState<string | null>(null);
 
+  // Inline lookup state — phone number → WhatsApp JID via /lookup.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchMsg, setSearchMsg] = useState<string | null>(null);
+  // Locally-resolved chats (from phone lookups) merged into the picker
+  // alongside the synced list. Keeps a hit visible even if the bridge's
+  // chat cache drops it later.
+  const [extraChats, setExtraChats] = useState<BridgeChat[]>([]);
+
   useEffect(() => { api.agents.list().then(setAgents).catch(() => {}); }, []);
 
   // Pull chats whenever the Add form opens, then keep polling every 4s
@@ -194,10 +203,17 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   // Hide chats that already have a route — picking them would just throw
   // a UNIQUE violation. Sort: groups & named chats first, then the rest.
   const routedJids = new Set(routes.map((r) => r.remote_jid));
-  const availableChats = chats.filter((c) => !routedJids.has(c.remote_jid));
+  const availableChats = useMemo(() => {
+    // Merge synced chats with locally-resolved phone-lookup hits; the
+    // synced entry wins on collision (it has the better metadata).
+    const byJid = new Map<string, BridgeChat>();
+    for (const c of extraChats) byJid.set(c.remote_jid, c);
+    for (const c of chats) byJid.set(c.remote_jid, c);
+    return Array.from(byJid.values()).filter((c) => !routedJids.has(c.remote_jid));
+  }, [chats, extraChats, routedJids]);
 
   function selectChat(jid: string) {
-    const c = chats.find((x) => x.remote_jid === jid);
+    const c = availableChats.find((x) => x.remote_jid === jid);
     setDraft((d) => ({
       remote_jid: jid,
       agent_id: d.agent_id,
@@ -205,6 +221,41 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
       // anything yet — saves typing on the common case.
       label: d.label.trim() ? d.label : (c?.name ?? d.label),
     }));
+  }
+
+  async function onSearch() {
+    setSearchMsg(null);
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    try {
+      const r = await api.bridges.lookup(bridge_id, q);
+      if (!r.chat) {
+        setSearchMsg("That number isn't on WhatsApp.");
+        return;
+      }
+      if (routedJids.has(r.chat.remote_jid)) {
+        setSearchMsg("That chat already has a route.");
+        return;
+      }
+      // Merge into the picker and auto-select. setExtraChats is async, so
+      // we don't rely on availableChats for the selection — set draft
+      // directly from the hit.
+      setExtraChats((prev) => {
+        const exists = prev.some((c) => c.remote_jid === r.chat!.remote_jid);
+        return exists ? prev : [...prev, r.chat!];
+      });
+      setDraft((d) => ({
+        remote_jid: r.chat!.remote_jid,
+        agent_id: d.agent_id,
+        label: d.label.trim() ? d.label : (r.chat!.name ?? d.label),
+      }));
+      setSearchQuery("");
+    } catch (e) {
+      setSearchMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSearching(false);
+    }
   }
 
   async function onAdd() {
@@ -254,6 +305,40 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                 <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
                   Bridge isn&apos;t running — enable it to load your WhatsApp chats.
                 </p>
+              )}
+              {chatsRunning && (
+                <>
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 flex items-center gap-1.5 rounded border border-border bg-surface-3/60 px-2 py-1 focus-within:border-accent/60">
+                      <Search size={11} className="text-zinc-500 shrink-0" />
+                      <input
+                        type="tel"
+                        inputMode="tel"
+                        placeholder="Find by phone (e.g. +1 555 123 4567)"
+                        value={searchQuery}
+                        onChange={(e) => { setSearchQuery(e.target.value); setSearchMsg(null); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onSearch(); } }}
+                        className="flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-600"
+                        disabled={searching}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void onSearch()}
+                      disabled={searching || !searchQuery.trim()}
+                      className="text-[11px] px-2 py-1 rounded border border-border bg-surface-3 hover:bg-surface-2 disabled:opacity-40"
+                    >
+                      {searching ? "…" : "Find"}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 leading-snug">
+                    WhatsApp only auto-syncs your recent chats. Use search to find any contact (including
+                    yourself) by phone number — country code + digits, no spaces required.
+                  </p>
+                  {searchMsg && (
+                    <p className="text-[11px] text-amber-300">{searchMsg}</p>
+                  )}
+                </>
               )}
               {chatsRunning && availableChats.length === 0 && !chatsLoading && (
                 <p className="text-[11px] text-zinc-500 px-1 py-2 leading-relaxed">

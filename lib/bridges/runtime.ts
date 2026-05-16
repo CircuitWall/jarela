@@ -143,6 +143,17 @@ export function listBridgeChats(bridge_id: string) {
 }
 
 /**
+ * Look up a freeform phone number (or other identifier) against the bridge
+ * and return the resolved chat if it exists, else null. Returns null also
+ * if the bridge isn't running.
+ */
+export async function lookupBridgeChat(bridge_id: string, input: string) {
+  const adapter = state.adapters.get(bridge_id);
+  if (!adapter) return null;
+  return adapter.lookupChat(input);
+}
+
+/**
  * Boot hook. Idempotent — safe to call from a layout module that may be
  * evaluated multiple times in Next.js dev HMR.
  */
