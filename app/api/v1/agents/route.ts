@@ -17,6 +17,7 @@ function toResponse(a: ReturnType<typeof listAgentConfigs>[number]) {
     is_default: !!a.is_default,
     history_limit: a.history_limit,
     history_window_hours: a.history_window_hours,
+    never_reply: !!a.never_reply,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
     is_default?: boolean;
     history_limit?: number;
     history_window_hours?: number;
+    never_reply?: boolean;
   };
 
   if (!body.name?.trim()) {
@@ -54,6 +56,7 @@ export async function POST(req: NextRequest) {
     is_default: body.is_default,
     history_limit: body.history_limit,
     history_window_hours: body.history_window_hours,
+    never_reply: body.never_reply,
   });
 
   return NextResponse.json(toResponse(row), { status: 201 });

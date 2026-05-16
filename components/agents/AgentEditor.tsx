@@ -37,6 +37,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
   const [selectedTools, setSelectedTools] = useState<string[]>(agent?.tools ?? []);
   const [isDefault, setIsDefault] = useState<boolean>(agent?.is_default ?? false);
+  const [neverReply, setNeverReply] = useState<boolean>(agent?.never_reply ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +112,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         tools: selectedTools,
         model_config_name: modelConfigName || null,
         is_default: isDefault,
+        never_reply: neverReply,
       });
       onClose();
     } catch (e) {
@@ -256,15 +258,26 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         </div>
 
         <div className="flex items-center justify-between px-4 pb-4">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="rounded border-border"
-              checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-            />
-            <span className="text-xs text-zinc-400">Set as default agent</span>
-          </label>
+          <div className="flex flex-col gap-1.5">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={isDefault}
+                onChange={(e) => setIsDefault(e.target.checked)}
+              />
+              <span className="text-xs text-zinc-400">Set as default agent</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none" title="Agent still processes messages and records history, but won't auto-send replies through bridges (e.g. WhatsApp).">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={neverReply}
+                onChange={(e) => setNeverReply(e.target.checked)}
+              />
+              <span className="text-xs text-zinc-400">Never reply (silent / read-only)</span>
+            </label>
+          </div>
           <div className="flex gap-2">
             <button onClick={onClose} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors">
               Cancel

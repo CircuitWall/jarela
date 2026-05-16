@@ -13,6 +13,7 @@ export interface AgentConfigRow {
   is_default: number;
   history_limit: number;        // 0 = unlimited
   history_window_hours: number; // 0 = no time bound
+  never_reply: number;          // 1 = run the agent but don't auto-send replies via bridges
   created_at: string;
   updated_at: string;
 }
@@ -50,6 +51,7 @@ export interface UpsertAgentInput {
   is_default?: boolean;
   history_limit?: number;
   history_window_hours?: number;
+  never_reply?: boolean;
 }
 
 export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
@@ -61,8 +63,8 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
-         history_limit, history_window_hours, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         history_limit, history_window_hours, never_reply, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -75,6 +77,11 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       input.is_default ? 1 : (existing?.is_default ?? 0),
       input.history_limit ?? existing?.history_limit ?? 50,
       input.history_window_hours ?? existing?.history_window_hours ?? 8,
+      // never_reply is a boolean toggle — explicit `undefined` means "keep existing"
+      // (important for PATCH-style updates that omit the field).
+      input.never_reply === undefined
+        ? (existing?.never_reply ?? 0)
+        : (input.never_reply ? 1 : 0),
       created_at,
       t,
     );
