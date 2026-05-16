@@ -53,16 +53,66 @@ if (-not (Test-Path $serverJs)) {
   exit 1
 }
 
-# Free the port if a stale process is squatting on it.
-$busy = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-if ($busy) {
-  foreach ($c in $busy) {
-    try {
-      Write-Log "Killing stale PID $($c.OwningProcess) holding port $Port"
-      Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue
-    } catch {}
+# Check whether something is already listening on $Port. Two cases:
+#   (a) An older launcher's `node server.js` from THIS install dir is still
+#       serving — adopt it (wait on its PID) instead of killing+respawning.
+#       This is what kept tripping the 5-in-60s rate-limiter: a duplicate
+#       launcher would kill the working node, the surviving launcher's
+#       WaitForExit would return, and both would race to respawn.
+#   (b) Anything else (different cwd, not node, etc.) — that's a true squatter;
+#       kill it.
+function Get-PortOwnerProcess([int]$port) {
+  $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $conn) { return $null }
+  return Get-CimInstance Win32_Process -Filter "ProcessId = $($conn.OwningProcess)" -ErrorAction SilentlyContinue
+}
+
+function Test-IsOurServer($p) {
+  # Detect a node child spawned by a previous launcher.ps1 instance for THIS
+  # install dir. We can't rely on the node CommandLine alone — PowerShell's
+  # Start-Process invokes node as `"node.exe" server.js` with working dir set
+  # separately, so the InstallDir is not part of the command line. Instead,
+  # walk to the parent process and look for our launcher.ps1.
+  if (-not $p) { return $false }
+  if ($p.Name -ne 'node.exe') { return $false }
+  if ("$($p.CommandLine)" -notmatch '\bserver\.js\b') { return $false }
+  $ppid = $p.ParentProcessId
+  if (-not $ppid) { return $false }
+  $parent = Get-CimInstance Win32_Process -Filter "ProcessId = $ppid" -ErrorAction SilentlyContinue
+  if (-not $parent) { return $false }
+  $parentCmd = "$($parent.CommandLine)"
+  $escaped   = [Regex]::Escape($InstallDir)
+  return ($parentCmd -match "$escaped.*launcher\.ps1")
+}
+
+# Poll-based wait on a child PID. The Process object returned by
+# `Start-Process -NoNewWindow -PassThru -RedirectStandardOutput X
+# -RedirectStandardError Y` has a long-standing bug on Windows where
+# WaitForExit() can return *before* the child actually exits — the parent
+# PowerShell disposes the handle eagerly because its stdio redirection is
+# set up, but the child keeps running. Symptom: rapid duplicate node spawns
+# colliding on port 4312, EADDRINUSE, rate-limit trip. Polling Get-Process
+# by PID asks the OS directly and is immune to this quirk. ($pid is a
+# reserved variable in PowerShell, so use $childPid.)
+function Wait-ProcessExit([int]$childPid) {
+  while ($true) {
+    $live = Get-Process -Id $childPid -ErrorAction SilentlyContinue
+    if (-not $live) { return }
+    Start-Sleep -Seconds 3
   }
-  Start-Sleep -Seconds 1
+}
+
+$owner = Get-PortOwnerProcess $Port
+if ($owner) {
+  if (Test-IsOurServer $owner) {
+    Write-Log "Port $Port already served by our node PID $($owner.ProcessId); adopting (no respawn)."
+    Wait-ProcessExit $owner.ProcessId
+    Write-Log "Adopted node PID $($owner.ProcessId) exited; entering supervisor loop."
+  } else {
+    Write-Log "Killing stale PID $($owner.ProcessId) ($($owner.Name)) holding port $Port"
+    try { Stop-Process -Id $owner.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    Start-Sleep -Seconds 1
+  }
 }
 
 # Environment variables Next.js standalone respects.
@@ -96,8 +146,8 @@ while ($true) {
     exit 1
   }
   Write-Log "spawned node PID $($proc.Id)"
-  $proc.WaitForExit()
-  Write-Log "server.js exited with code $($proc.ExitCode)"
+  Wait-ProcessExit $proc.Id
+  Write-Log "server.js exited (PID $($proc.Id))"
 
   if (((Get-Date) - $windowStart).TotalSeconds -gt 60) {
     $restartCount = 0
