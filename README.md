@@ -61,11 +61,6 @@ npm run lint
 
 Currently runs locally. PWA-installable via `next-pwa`. No CI/CD wired yet — deployment story is an open ADR.
 
-## Owner
-
-- **Maintainer:** Andrew Wu (`redacted@example.com`)
-- **On-call / Slack:** N/A (personal project)
-
 ## Decisions
 
 Architecture decisions live in [`docs/adr/`](./docs/adr/). See [ADR-0001](./docs/adr/0001-record-architecture-decisions.md).
