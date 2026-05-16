@@ -43,6 +43,25 @@ export interface RequireAccessArgs {
 }
 
 export function requireAccess({ headers, host, remoteAddress }: RequireAccessArgs): AccessResult {
+  // If tailscaled is proxying this request through `tailscale serve` it
+  // *always* injects the Tailscale-User-Login header — including for the
+  // websocket-sidecar path (`/__langgui_ws__`) which arrives at the node
+  // process over loopback. So whenever the header is present, treat the
+  // request as a tailnet request and enforce the whitelist, regardless of
+  // whether the source IP / Host header looks like loopback. Otherwise a
+  // non-whitelisted tailnet user could chat just because the proxy is local.
+  const identity = readHeader(headers, "tailscale-user-login")?.trim() || null;
+  if (identity) {
+    if (isWhitelisted(identity)) {
+      touchLastSeen(identity);
+      return { allowed: true, identity, reason: "whitelisted" };
+    }
+    return { allowed: false, identity, reason: "not-whitelisted" };
+  }
+
+  // No tailscale identity → only loopback is allowed (the host machine's
+  // own user typing http://localhost:4312).
+
   // 1. WS path: actual TCP source available — most reliable loopback signal.
   if (remoteAddress && LOOPBACK_IP.test(remoteAddress)) {
     return { allowed: true, identity: null, reason: "loopback" };
@@ -54,19 +73,7 @@ export function requireAccess({ headers, host, remoteAddress }: RequireAccessArg
     return { allowed: true, identity: null, reason: "loopback" };
   }
 
-  // 3. Tailscale identity passthrough. Tailscaled sets this header itself when
-  //    proxying through `tailscale serve` — the remote client cannot supply it
-  //    (well, they can try, but with a 127.0.0.1 bind the only path in is via
-  //    tailscale serve, which strips/overrides any client-supplied value).
-  const identity = readHeader(headers, "tailscale-user-login")?.trim() || null;
-  if (!identity) {
-    return { allowed: false, identity: null, reason: "no-identity" };
-  }
-  if (isWhitelisted(identity)) {
-    touchLastSeen(identity);
-    return { allowed: true, identity, reason: "whitelisted" };
-  }
-  return { allowed: false, identity, reason: "not-whitelisted" };
+  return { allowed: false, identity: null, reason: "no-identity" };
 }
 
 // Convenience wrapper for API route handlers — they only have `Request`.

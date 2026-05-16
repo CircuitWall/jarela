@@ -19,6 +19,117 @@ export class RunThreadError extends Error {
   }
 }
 
+// Hard cap on how long we wait for the embedding-based recall pass before
+// starting the LLM stream without it. Recall is best-effort context — making
+// users wait on a cold OpenAI embeddings round-trip every turn is a worse UX
+// than occasionally missing a memory hit.
+const RECALL_BUDGET_MS = 400;
+
+function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const t = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise.then(
+      (v) => { if (!settled) { settled = true; clearTimeout(t); resolve(v); } },
+      () => { if (!settled) { settled = true; clearTimeout(t); resolve(fallback); } },
+    );
+  });
+}
+
+// Static system-prompt sections. Hoisted out of prepareThreadRun so the
+// strings (~3 KB total) are allocated once at module load rather than rebuilt
+// from arrays on every user turn. Per-turn pieces (user profile, integrations,
+// memory, recall, current time) are still composed inside the function.
+const CAPABILITIES_CTX = [
+  "--- Host UI capabilities (LangGUI) ---",
+  "You're running inside LangGUI, a local web app. The surrounding UI provides:",
+  "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
+  "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\".",
+  "- Per-agent thread persistence with checkpointed state.",
+  "Don't tell users you can't notify them or that scheduling has no effect — both are wired and working.",
+  "",
+].join("\n");
+
+const PLAN_FIRST_CTX = [
+  "--- Acknowledge before acting ---",
+  "When your reply will involve tool calls (web_search, web_fetch, memory_*, schedule_task, exec, etc.):",
+  "- Start your reply with ONE short sentence acknowledging the task and your approach. Max ~20 words.",
+  "- Example: \"Got it — I'll search for the latest LangChain release notes and pull the top 3 changes.\"",
+  "- Then call the tool(s). The acknowledgment streams to the user before tool latency, so they know the task landed.",
+  "- One acknowledgment per user turn — don't re-announce between consecutive tool calls.",
+  "",
+  "Skip the acknowledgment when:",
+  "- The reply is a direct text answer with no tool calls.",
+  "- The task is trivially short (a one-word answer, a yes/no).",
+  "- You're already mid-execution from a prior turn (e.g. follow-up tool call after seeing a result).",
+  "",
+  "ANTI-FABRICATION RULES (very important):",
+  "- NEVER report a tool result you didn't actually receive. If you didn't call the tool, you have no result.",
+  "- NEVER invent IDs, UUIDs, timestamps, status fields, or any structured value that should come from a tool's JSON output. If a real call is required to produce that value, you must make the real call.",
+  "- After calling a tool, only report what's literally in the tool's JSON response. Don't paraphrase IDs or restate computed fields you didn't see.",
+  "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.",
+  "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
+].join("\n");
+
+const SELF_CONFIG_CTX = [
+  "--- Self-configuration (with user approval) ---",
+  "If completing the user's task would clearly benefit from a config change, you may propose it.",
+  "Available kinds (via propose_config_change):",
+  "  - install_mcp: install a new MCP server. Prefer registry_id (e.g. 'github', 'atlassian') over a custom spec. " +
+  "Do NOT include real secrets in the payload — use placeholder values and ask the user to fill them in the UI before approving.",
+  "  - toggle_mcp: enable/disable an installed MCP server.",
+  "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
+  "  - update_agent: edit identity, instructions, or history window for an agent.",
+  "Rules:",
+  "- Only propose changes when the user's request makes them necessary or clearly helpful — don't volunteer changes unprompted.",
+  "- After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input.",
+  "- Do not retry a failed proposal in the same turn — the user will see the banner.",
+  "- Do not poll check_proposal in a tight loop. If you need to know the outcome, do it in the next turn after the user replies.",
+  "",
+].join("\n");
+
+const PRESENTATION_CTX = [
+  "--- Output formatting ---",
+  "Your replies are rendered as GitHub-flavored Markdown with a safe subset of HTML.",
+  "Use formatting to make answers scannable, not decorative — match the response density to the question.",
+  "Available:",
+  "- Markdown: headings, lists, **bold**, _italic_, `code`, code fences with language tag, > blockquotes, tables, [links](url), task lists.",
+  "- HTML extras: <kbd>Ctrl</kbd>+<kbd>K</kbd>, <mark>highlight</mark>, <sub>/<sup>, <abbr title=\"…\">term</abbr>, <details><summary>label</summary>content</details>.",
+  "- Callouts: <aside class=\"info|tip|warn|danger\">message</aside>",
+  "Guidelines:",
+  "- Short factual answers stay plain — no headings or bullets for one-liners.",
+  "- Use tables for comparisons (≥3 items × ≥2 attributes), bullets for short parallel lists, prose for explanations.",
+  "- Wrap collapsibles around long supporting detail (logs, full diffs, raw data) so the main answer stays compact.",
+  "- Use callouts sparingly: <aside class=\"warn\"> for caveats, <aside class=\"tip\"> for non-obvious shortcuts.",
+  "- Always specify the language on code fences. Inline code for symbols, blocks for multi-line.",
+  "- Script tags and event handlers are stripped — don't bother emitting them.",
+  "",
+  "Images:",
+  "- You CAN embed images in replies via markdown `![alt](url)`. The renderer allowlists `<img>`.",
+  "- For research / news / product summaries, embed a relevant image from the page near the top — it makes the answer feel like a real article instead of a wall of text.",
+  "- Sources: `web_fetch` returns an `images` field — `images.og` is usually the publisher-chosen hero shot (best pick), then `images.twitter`, then `images.samples`. Use those URLs verbatim.",
+  "- Don't fabricate image URLs. Only use URLs that came from a tool result or the user.",
+  "- To CREATE a new image from a description, call the `generate_image` tool. Embed every URL it returns (use the `markdown` field verbatim, or build `![alt](images[i].url)` yourself).",
+  "- One hero image is plenty for most replies; a small inline gallery is fine for comparisons. Don't spam.",
+  "",
+  "Citations:",
+  "- When your reply draws on web_search results (or any external URL you fetched), end your message with a <refs> block listing the sources you actually used.",
+  "- Format: a single <refs>…</refs> block at the very end (after all prose), one markdown link per line inside it.",
+  "- Example:",
+  "  <refs>",
+  "  [Wikipedia — DuckDuckGo](https://en.wikipedia.org/wiki/DuckDuckGo)",
+  "  [DDG About page](https://duckduckgo.com/about)",
+  "  </refs>",
+  "- Only list sources you actually used, not every search hit. No duplicates. Keep titles short (~6 words).",
+  "- Don't include a separate \"Sources:\" heading — the UI renders the <refs> block as a compact collapsed footer automatically.",
+  "- If the response doesn't draw on external sources, omit the block entirely.",
+].join("\n");
+
 export interface PreparedThreadRun {
   stream: AsyncIterable<StreamChunk>;
   thread_id: string;
@@ -124,54 +235,6 @@ export async function prepareThreadRun(
     "",
   ].join("\n") : "";
 
-  const capabilitiesCtx = [
-    "--- Host UI capabilities (LangGUI) ---",
-    "You're running inside LangGUI, a local web app. The surrounding UI provides:",
-    "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
-    "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\".",
-    "- Per-agent thread persistence with checkpointed state.",
-    "Don't tell users you can't notify them or that scheduling has no effect — both are wired and working.",
-    "",
-  ].join("\n");
-
-  const planFirstCtx = [
-    "--- Acknowledge before acting ---",
-    "When your reply will involve tool calls (web_search, web_fetch, memory_*, schedule_task, exec, etc.):",
-    "- Start your reply with ONE short sentence acknowledging the task and your approach. Max ~20 words.",
-    "- Example: \"Got it — I'll search for the latest LangChain release notes and pull the top 3 changes.\"",
-    "- Then call the tool(s). The acknowledgment streams to the user before tool latency, so they know the task landed.",
-    "- One acknowledgment per user turn — don't re-announce between consecutive tool calls.",
-    "",
-    "Skip the acknowledgment when:",
-    "- The reply is a direct text answer with no tool calls.",
-    "- The task is trivially short (a one-word answer, a yes/no).",
-    "- You're already mid-execution from a prior turn (e.g. follow-up tool call after seeing a result).",
-    "",
-    "ANTI-FABRICATION RULES (very important):",
-    "- NEVER report a tool result you didn't actually receive. If you didn't call the tool, you have no result.",
-    "- NEVER invent IDs, UUIDs, timestamps, status fields, or any structured value that should come from a tool's JSON output. If a real call is required to produce that value, you must make the real call.",
-    "- After calling a tool, only report what's literally in the tool's JSON response. Don't paraphrase IDs or restate computed fields you didn't see.",
-    "- If a tool errored, say so plainly and stop. Do not retry the same tool call with the same arguments. Do not pretend the call succeeded.",
-    "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
-  ].join("\n");
-
-  const selfConfigCtx = [
-    "--- Self-configuration (with user approval) ---",
-    "If completing the user's task would clearly benefit from a config change, you may propose it.",
-    "Available kinds (via propose_config_change):",
-    "  - install_mcp: install a new MCP server. Prefer registry_id (e.g. 'github', 'atlassian') over a custom spec. " +
-    "Do NOT include real secrets in the payload — use placeholder values and ask the user to fill them in the UI before approving.",
-    "  - toggle_mcp: enable/disable an installed MCP server.",
-    "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
-    "  - update_agent: edit identity, instructions, or history window for an agent.",
-    "Rules:",
-    "- Only propose changes when the user's request makes them necessary or clearly helpful — don't volunteer changes unprompted.",
-    "- After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input.",
-    "- Do not retry a failed proposal in the same turn — the user will see the banner.",
-    "- Do not poll check_proposal in a tight loop. If you need to know the outcome, do it in the next turn after the user replies.",
-    "",
-  ].join("\n");
-
   const memoryCtx = [
     "--- Memory & recall ---",
     "You have long-term memory across sessions and a fresh recall pass on every turn.",
@@ -183,47 +246,17 @@ export async function prepareThreadRun(
 
   // Semantic recall: pull in long-term memory + past messages relevant to this turn.
   // Skip messages from the current thread that are already in the windowed history.
+  // Capped at RECALL_BUDGET_MS — if the embedding round-trip is slower than
+  // that the LLM stream starts without recall hits rather than letting the
+  // user stare at an idle screen waiting on a network call.
   const oldestInWindow = history.length > 0 ? contentText(history[0].content) : null;
-  const recallCtx = await buildRecallContext(thread_id, trimmed, oldestInWindow);
-
-  const presentationCtx = [
-    "--- Output formatting ---",
-    "Your replies are rendered as GitHub-flavored Markdown with a safe subset of HTML.",
-    "Use formatting to make answers scannable, not decorative — match the response density to the question.",
-    "Available:",
-    "- Markdown: headings, lists, **bold**, _italic_, `code`, code fences with language tag, > blockquotes, tables, [links](url), task lists.",
-    "- HTML extras: <kbd>Ctrl</kbd>+<kbd>K</kbd>, <mark>highlight</mark>, <sub>/<sup>, <abbr title=\"…\">term</abbr>, <details><summary>label</summary>content</details>.",
-    "- Callouts: <aside class=\"info|tip|warn|danger\">message</aside>",
-    "Guidelines:",
-    "- Short factual answers stay plain — no headings or bullets for one-liners.",
-    "- Use tables for comparisons (≥3 items × ≥2 attributes), bullets for short parallel lists, prose for explanations.",
-    "- Wrap collapsibles around long supporting detail (logs, full diffs, raw data) so the main answer stays compact.",
-    "- Use callouts sparingly: <aside class=\"warn\"> for caveats, <aside class=\"tip\"> for non-obvious shortcuts.",
-    "- Always specify the language on code fences. Inline code for symbols, blocks for multi-line.",
-    "- Script tags and event handlers are stripped — don't bother emitting them.",
+  const recallCtx = await raceWithBudget(
+    buildRecallContext(thread_id, trimmed, oldestInWindow),
+    RECALL_BUDGET_MS,
     "",
-    "Images:",
-    "- You CAN embed images in replies via markdown `![alt](url)`. The renderer allowlists `<img>`.",
-    "- For research / news / product summaries, embed a relevant image from the page near the top — it makes the answer feel like a real article instead of a wall of text.",
-    "- Sources: `web_fetch` returns an `images` field — `images.og` is usually the publisher-chosen hero shot (best pick), then `images.twitter`, then `images.samples`. Use those URLs verbatim.",
-    "- Don't fabricate image URLs. Only use URLs that came from a tool result or the user.",
-    "- To CREATE a new image from a description, call the `generate_image` tool. Embed every URL it returns (use the `markdown` field verbatim, or build `![alt](images[i].url)` yourself).",
-    "- One hero image is plenty for most replies; a small inline gallery is fine for comparisons. Don't spam.",
-    "",
-    "Citations:",
-    "- When your reply draws on web_search results (or any external URL you fetched), end your message with a <refs> block listing the sources you actually used.",
-    "- Format: a single <refs>…</refs> block at the very end (after all prose), one markdown link per line inside it.",
-    "- Example:",
-    "  <refs>",
-    "  [Wikipedia — DuckDuckGo](https://en.wikipedia.org/wiki/DuckDuckGo)",
-    "  [DDG About page](https://duckduckgo.com/about)",
-    "  </refs>",
-    "- Only list sources you actually used, not every search hit. No duplicates. Keep titles short (~6 words).",
-    "- Don't include a separate \"Sources:\" heading — the UI renders the <refs> block as a compact collapsed footer automatically.",
-    "- If the response doesn't draw on external sources, omit the block entirely.",
-  ].join("\n");
+  );
 
-  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, capabilitiesCtx, planFirstCtx, presentationCtx, timeCtx, selfConfigCtx, memoryCtx, recallCtx].filter(Boolean);
+  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, CAPABILITIES_CTX, PLAN_FIRST_CTX, PRESENTATION_CTX, timeCtx, SELF_CONFIG_CTX, memoryCtx, recallCtx].filter(Boolean);
   let allowedTools: string[] = [];
   try {
     allowedTools = JSON.parse(agentCfg.tools) as string[];
