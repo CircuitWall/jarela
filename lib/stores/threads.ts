@@ -10,6 +10,17 @@ export interface ThreadRow {
 }
 export interface MessageRow {
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
+  // JSON-encoded array of PersistedToolEvent. null when no tool work happened
+  // on this turn or for user messages. Read back by the chat UI so historical
+  // bubbles show the same expandable CALL/RESULT entries as live streaming.
+  tool_events?: string | null;
+}
+
+export interface PersistedToolEvent {
+  id: string;
+  phase: "call" | "result";
+  name: string;
+  payload: unknown;
 }
 
 export function listThreads(limit = 50, offset = 0): ThreadRow[] {
@@ -92,12 +103,18 @@ export function getMessagesPage(
   return { messages: rows.slice(0, limit).reverse(), has_more };
 }
 
-export function addMessage(thread_id: string, role: "user" | "assistant", content: string): MessageRow {
+export function addMessage(
+  thread_id: string,
+  role: "user" | "assistant",
+  content: string,
+  toolEvents?: PersistedToolEvent[] | null,
+): MessageRow {
   const msg_id = randomUUID();
   const t = now();
   const db = getDb();
-  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at) VALUES (?,?,?,?,?)")
-    .run(msg_id, thread_id, role, content, t);
+  const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
+  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events) VALUES (?,?,?,?,?,?)")
+    .run(msg_id, thread_id, role, content, t, toolEventsJson);
   db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
   // Best-effort: embed the message so semantic recall can pull it back later.
   // Skip empty / very short content (greetings have no useful signal).
@@ -108,7 +125,7 @@ export function addMessage(thread_id: string, role: "user" | "assistant", conten
       }
     }).catch(() => { /* logged in embeddings module */ });
   }
-  return { msg_id, thread_id, role, content, created_at: t };
+  return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson };
 }
 
 export function getOrCreateAgentThread(agentId: string): ThreadRow {

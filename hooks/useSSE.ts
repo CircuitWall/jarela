@@ -2,13 +2,9 @@
 import { useCallback, useRef, useState } from "react";
 import { api, streamChat, streamChatWS } from "@/api/client";
 import type { ContentPart, SSEEventType, StreamOptions } from "@/api/types";
+import type { ToolEvent } from "@/components/chat/ToolList";
 
-export interface ToolEvent {
-  id: string;
-  phase: "call" | "result";
-  name: string;
-  payload: unknown;
-}
+export type { ToolEvent };
 
 export function useSSE(onDone?: () => void) {
   const [streaming, setStreaming] = useState(false);

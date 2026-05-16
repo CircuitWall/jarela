@@ -52,14 +52,29 @@ export async function POST(req: NextRequest, { params }: Params) {
   void (async () => {
     let assistantContent = "";
     const usedTools: string[] = [];
+    const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
     let terminal: "done" | "error" = "done";
     try {
       for await (const chunk of prepared.stream as AsyncIterable<StreamChunk>) {
         if (chunk.type === "text_delta") {
           assistantContent += (chunk.data.delta as string) ?? "";
         } else if (chunk.type === "tool_call") {
-          const name = (chunk.data as { name?: string }).name;
-          if (name) usedTools.push(name);
+          const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
+          if (d.name) usedTools.push(d.name);
+          toolEvents.push({
+            id: d.id ?? `call-${toolEvents.length}`,
+            phase: "call",
+            name: d.name ?? "",
+            payload: d.arguments,
+          });
+        } else if (chunk.type === "tool_result") {
+          const d = chunk.data as { id?: string; name?: string; result?: unknown };
+          toolEvents.push({
+            id: d.id ?? `result-${toolEvents.length}`,
+            phase: "result",
+            name: d.name ?? "",
+            payload: d.result,
+          });
         }
         broadcast(thread_id, chunk);
         if (chunk.type === "error") terminal = "error";
@@ -70,7 +85,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       broadcast(thread_id, { type: "error", data: { message: msg, code: "stream_error" } });
       terminal = "error";
     } finally {
-      persistAssistantMessage(thread_id, assistantContent, usedTools);
+      persistAssistantMessage(thread_id, assistantContent, usedTools, toolEvents);
       finishRun(thread_id, terminal);
       publishNotification({
         type: "run_completed",

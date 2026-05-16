@@ -123,9 +123,18 @@ function ensureEmbeddingColumns(db: DatabaseSync): void {
   if (!new Set(memCols.map((c) => c.name)).has("embedding")) {
     db.exec("ALTER TABLE memory_store ADD COLUMN embedding TEXT");
   }
-  const msgCols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
-  if (!new Set(msgCols.map((c) => c.name)).has("embedding")) {
+  const msgColSet = new Set(
+    (db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>).map((c) => c.name),
+  );
+  if (!msgColSet.has("embedding")) {
     db.exec("ALTER TABLE messages ADD COLUMN embedding TEXT");
+  }
+  if (!msgColSet.has("tool_events")) {
+    // JSON array of { id, phase: "call"|"result", name, payload } captured at
+    // stream time. Lets the chat UI render historical tool invocations the
+    // same way it renders live ones — instead of only the *— used: x* footer
+    // text, which loses arguments + results on reload.
+    db.exec("ALTER TABLE messages ADD COLUMN tool_events TEXT");
   }
 }
 
