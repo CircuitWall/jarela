@@ -154,10 +154,12 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       .finally(() => {
         if (cancelled) return;
         setMessagesLoading(false);
-        // Attach to any in-flight run for THIS thread (no-op otherwise).
+        // Attach to any in-flight run for THIS thread. attach() now sets
+        // streaming=true optimistically and signals completion via onDone
+        // (which drains the queue), so we MUST NOT fire drainQueueRef here —
+        // doing so would race against attach's optimistic gate and launch
+        // a duplicate run that the server rejects.
         attach(threadId).catch(() => { /* best-effort */ });
-        // Drain anything the user queued while the session was loading.
-        drainQueueRef.current();
       });
     return () => { cancelled = true; };
   }, [threadId, attach]);
