@@ -11,17 +11,10 @@ const nextConfig: NextConfig = {
   // %LOCALAPPDATA%\Programs\LangGUI for the installed app — no repo or
   // `npm install` needed at runtime.
   output: "standalone",
-  webpack(config, { isServer }) {
-    if (isServer) {
-      // ws native addons (bufferutil, utf-8-validate) must not be bundled by webpack
-      config.externals = [
-        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
-        "bufferutil",
-        "utf-8-validate",
-      ];
-    }
-    return config;
-  },
+  // ws's optional native addons must not be bundled — they're resolved at
+  // runtime against the user's installed node_modules. Works for both
+  // webpack and Turbopack (which is the default builder as of Next 16).
+  serverExternalPackages: ["bufferutil", "utf-8-validate"],
 };
 
 // Serwist replaces the abandoned next-pwa. It compiles app/sw.ts into
