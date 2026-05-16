@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Calendar, CheckCircle2, Clock, Repeat, Trash2 } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock, Play, Repeat, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
@@ -36,6 +36,16 @@ export function ScheduledTasksPanel() {
     void load();
   }
 
+  async function runNow(task: ScheduledTask) {
+    try {
+      await api.scheduledTasks.runNow(task.id);
+    } catch (e) {
+      alert(`Run failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      void load();
+    }
+  }
+
   const sorted = useMemo(() => {
     // Pending (next_run_at >= now) first, sorted by next-fire ascending.
     // Then completed (last_run_at set, but for cron these will keep cycling).
@@ -67,7 +77,7 @@ export function ScheduledTasksPanel() {
           </div>
         )}
         {sorted.map((t) => (
-          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} onCancel={() => cancel(t)} />
+          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} />
         ))}
       </div>
     </div>
@@ -75,13 +85,15 @@ export function ScheduledTasksPanel() {
 }
 
 function TaskCard({
-  task, agent, onCancel,
+  task, agent, onCancel, onRunNow,
 }: {
   task: ScheduledTask;
   agent?: AgentConfig;
   onCancel: () => void;
+  onRunNow: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [running, setRunning] = useState(false);
   const isCron = task.kind === "cron";
   const nextRun = formatRelative(task.next_run_at);
   const lastRun = task.last_run_at ? formatRelative(task.last_run_at) : null;
@@ -163,7 +175,19 @@ function TaskCard({
               <pre className="whitespace-pre-wrap break-words text-rose-300/90">{task.last_error}</pre>
             </Row>
           )}
-          <div className="flex justify-end pt-1">
+          <div className="flex justify-end pt-1 gap-2">
+            <button
+              onClick={async () => {
+                if (running) return;
+                setRunning(true);
+                try { await onRunNow(); } finally { setRunning(false); }
+              }}
+              disabled={running}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-zinc-300 hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
+              title="Trigger this task now to preview the notification + content. Cron tasks still continue on their normal schedule."
+            >
+              <Play size={11} /> {running ? "Running…" : "Run now"}
+            </button>
             <button
               onClick={onCancel}
               className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-zinc-400 hover:text-rose-400 hover:border-rose-700"
