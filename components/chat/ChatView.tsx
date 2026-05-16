@@ -156,6 +156,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         setMessagesLoading(false);
         // Attach to any in-flight run for THIS thread (no-op otherwise).
         attach(threadId).catch(() => { /* best-effort */ });
+        // Drain anything the user queued while the session was loading.
+        drainQueueRef.current();
       });
     return () => { cancelled = true; };
   }, [threadId, attach]);
@@ -190,8 +192,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     } catch (err) {
       addNotice(`Compaction failed: ${String(err)}`);
     } finally {
-      setCompacting(false);
-    }
+      setCompacting(false);      // Drain anything queued while compaction was running.
+      drainQueueRef.current();    }
   }
 
   // Actually fire a run for one message. Used both by direct submit (when
@@ -214,7 +216,13 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   }
 
   // Wire the deferred drain — see drainQueueRef declaration above.
+  // Single source of truth for queue progression: pops one item and launches
+  // it ONLY if the chat is in a ready state. Multiple callers (handleDone
+  // after a run, handleCompact after compact, the message-load effect after
+  // a session resolves) all funnel through this, but the readiness guard
+  // means out-of-band invocations are safe no-ops.
   drainQueueRef.current = () => {
+    if (streaming || compacting || !threadId) return;
     setQueue((q) => {
       if (q.length === 0) return q;
       const [next, ...rest] = q;
@@ -238,8 +246,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       return;
     }
 
-    if (!threadId) {
-      setNotices([{ id: `notice-${Date.now()}`, text: sessionError ? `Session failed to load: ${sessionError}` : "Session is still loading, please try again." }]);
+    if (sessionError) {
+      setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
       return;
     }
 
@@ -247,9 +255,15 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     const currentAttachments = attachments;
     setAttachments([]);
 
-    // If a run is already in flight, queue this message instead of blocking.
-    // The current run's handleDone callback will drain the queue.
-    if (streaming || queueRef.current.length > 0) {
+    // Queue when ANY gating condition holds: a run is already in flight,
+    // we're compacting, the session is still loading (no threadId yet), or
+    // there are already items ahead in the queue. The drain triggers
+    // (handleDone, handleCompact, the message-load effect) will fire it
+    // when the gate clears. Sending immediately is reserved for the fully
+    // ready state.
+    const ready =
+      !streaming && !compacting && !!threadId && queueRef.current.length === 0;
+    if (!ready) {
       setQueue((q) => [...q, {
         id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         text: msg,
@@ -357,15 +371,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         streaming={streaming}
         disabled={
           !agentId ||
-          compacting ||
-          !!sessionLoading ||
-          messagesLoading ||
-          agentConfigLoading ||
-          profileLoading
+          !!sessionError
         }
         placeholder={
-          compacting ? "Compacting session…" :
-          sessionLoading ? "Loading session…" :
+          compacting ? "Compacting session\u2026 your messages will queue" :
+          sessionLoading ? "Loading session\u2026 your messages will queue" :
           messagesLoading ? "Loading chat history…" :
           agentConfigLoading ? "Loading agent…" :
           profileLoading ? "Loading profile…" :
