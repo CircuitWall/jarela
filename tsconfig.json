@@ -17,5 +17,5 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules", "backend-archived", "frontend"]
+  "exclude": ["node_modules", "backend-archived", "frontend", "app/sw.ts"]
 }

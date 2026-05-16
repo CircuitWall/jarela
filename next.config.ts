@@ -1,6 +1,5 @@
 import type { NextConfig } from "next";
-// @ts-expect-error next-pwa has no types
-import withPWA from "next-pwa";
+import withSerwistInit from "@serwist/next";
 
 const nextConfig: NextConfig = {
   // Pin the workspace root to *this* project. Without this, Next walks up
@@ -25,39 +24,16 @@ const nextConfig: NextConfig = {
   },
 };
 
-const pwaConfig = withPWA({
-  dest: "public",
-  register: true,
-  skipWaiting: true,
+// Serwist replaces the abandoned next-pwa. It compiles app/sw.ts into
+// public/sw.js as part of `next build` and is compatible with Next 15+ and
+// Turbopack (next-pwa is webpack-only).
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  cacheOnNavigation: true,
+  reloadOnOnline: true,
   disable: process.env.NODE_ENV === "development",
-  runtimeCaching: [
-    {
-      urlPattern: /^\/api\/v1\/threads/,
-      handler: "NetworkFirst",
-      options: {
-        cacheName: "threads-cache",
-        expiration: { maxEntries: 200, maxAgeSeconds: 7 * 24 * 3600 },
-        networkTimeoutSeconds: 5,
-      },
-    },
-    {
-      urlPattern: /^\/api\/v1\/memory/,
-      handler: "NetworkFirst",
-      options: {
-        cacheName: "memory-cache",
-        expiration: { maxEntries: 500, maxAgeSeconds: 7 * 24 * 3600 },
-        networkTimeoutSeconds: 5,
-      },
-    },
-    {
-      urlPattern: /^\/api\/v1\/agents/,
-      handler: "StaleWhileRevalidate",
-      options: {
-        cacheName: "agents-cache",
-        expiration: { maxEntries: 20, maxAgeSeconds: 24 * 3600 },
-      },
-    },
-  ],
 });
 
-export default pwaConfig(nextConfig);
+export default withSerwist(nextConfig);
+
