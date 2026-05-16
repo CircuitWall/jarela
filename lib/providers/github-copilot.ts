@@ -7,7 +7,6 @@ import type {
   InvokeResult,
 } from "./types";
 import { getStoredOAuthToken } from "./github-copilot-auth";
-import { toOpenAIMessages } from "./openai";
 
 interface SessionToken {
   token: string;
@@ -63,9 +62,6 @@ const FIXED_HEADERS = {
   "Editor-Version": "vscode/1.85.0",
   "Copilot-Integration-Id": "vscode-chat",
   "openai-intent": "conversation-ai",
-  // Required by the Copilot proxy to accept image_url content parts. Without
-  // this header the upstream models silently drop attached images (or 400).
-  "Copilot-Vision-Request": "true",
 };
 
 async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
@@ -130,7 +126,7 @@ export const githubCopilotProvider: ModelProvider = {
     const client = await resolvedClient(params);
     const stream = await client.chat.completions.create({
       model: model_id,
-      messages: toOpenAIMessages(messages),
+      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
@@ -149,7 +145,7 @@ export const githubCopilotProvider: ModelProvider = {
     const client = await resolvedClient(params);
     const resp = await client.chat.completions.create({
       model: model_id,
-      messages: toOpenAIMessages(messages),
+      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
       tools: tools as OpenAI.Chat.ChatCompletionTool[],
       tool_choice: "auto",
       stream: false,
@@ -181,7 +177,7 @@ export const githubCopilotProvider: ModelProvider = {
     const client = await resolvedClient(params);
     const stream = await client.chat.completions.create({
       model: model_id,
-      messages: toOpenAIMessages(messages),
+      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
       tools: tools as OpenAI.Chat.ChatCompletionTool[],
       tool_choice: "auto",
       stream: true,

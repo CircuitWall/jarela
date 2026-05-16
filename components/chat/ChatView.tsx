@@ -183,7 +183,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setMessages([]);
       setNotices([]);
       if (result.compacted) {
-        addNotice(`Session saved to memory. Starting fresh.`);
+        addNotice(`Session saved to memory (${result.message_count} msgs, ~${Math.round((result.context_chars||0)/1000)}k chars). Starting fresh.`);
       } else {
         addNotice("Nothing to compact yet — send some messages first.");
       }

@@ -62,11 +62,6 @@ function toOpenAIMessages(
   });
 }
 
-// Re-export so other OpenAI-compatible providers (github-copilot, etc.) can
-// share the same ContentPart -> wire-format conversion instead of casting
-// raw InvokeMessage shapes that the OpenAI SDK then rejects for images/files.
-export { toOpenAIContent, toOpenAIMessages };
-
 export const openaiProvider: ModelProvider = {
   name: "openai",
 
@@ -254,4 +249,4 @@ export function makeOpenAICompatProvider(
   };
 }
 
-
+export { toOpenAIContent };
