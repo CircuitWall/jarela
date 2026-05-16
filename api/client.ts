@@ -210,6 +210,11 @@ export const api = {
     pair: (id: string) =>
       request<{ accepted: boolean }>(`/bridges/${encodeURIComponent(id)}/pair`, { method: "POST", body: "{}" }),
     chats: (id: string) => request<BridgeChatsResponse>(`/bridges/${encodeURIComponent(id)}/chats`),
+    lookup: (id: string, phone: string) =>
+      request<{ chat: import("./types").BridgeChat | null }>(
+        `/bridges/${encodeURIComponent(id)}/lookup`,
+        { method: "POST", body: JSON.stringify({ phone }) },
+      ),
 
     routes: {
       list: (bridge_id: string) =>

@@ -34,6 +34,7 @@ type WASocket = {
   sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
   end?: (err: Error | undefined) => void;
   groupFetchAllParticipating?: () => Promise<Record<string, { id: string; subject?: string }>>;
+  onWhatsApp?: (...jids: string[]) => Promise<Array<{ jid?: string; exists?: boolean; lid?: string }>>;
 };
 
 interface UnsafeBaileys {
@@ -142,6 +143,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           error: null,
           paired_id: me,
         });
+        // Pin the user's own number into the chat cache so "Message yourself"
+        // is always pickable in the route editor — handy for testing a route
+        // without needing a second WhatsApp account. The paired_id we get
+        // from Baileys can include a device suffix (":NN") that's stripped
+        // here to produce a routable @s.whatsapp.net JID.
+        if (me) {
+          const selfJid = normalizeUserJid(me);
+          if (selfJid) this.observeChat(selfJid, "Yourself", null);
+        }
         // Kick off a background fetch of group metadata so the picker has
         // names for joined groups even before any message arrives. Personal
         // chats trickle in via messaging-history.set + chats.upsert.
@@ -340,6 +350,29 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     }
   }
 
+  async lookupChat(input: string): Promise<ChatInfo | null> {
+    const sock = this.sock;
+    if (!sock?.onWhatsApp) return null;
+    const digits = normalizePhoneDigits(input);
+    if (digits.length < 6) return null; // refuse obviously-bogus short numbers
+    try {
+      const results = await sock.onWhatsApp(digits);
+      const hit = results?.find((r) => r?.exists && r.jid);
+      if (!hit?.jid) return null;
+      // Add it to our chat cache so the UI's polling pass picks it up too.
+      this.observeChat(hit.jid, null, null);
+      return {
+        remote_jid: hit.jid,
+        name: null,
+        is_group: hit.jid.endsWith("@g.us"),
+        last_message_at: null,
+      };
+    } catch (err) {
+      console.warn(`[bridge ${this.bridge_id}] onWhatsApp lookup failed:`, err);
+      return null;
+    }
+  }
+
   private observeChat(remote_jid: string, name: string | null, ts: number | null): void {
     if (!remote_jid) return;
     const existing = this.chats.get(remote_jid);
@@ -375,4 +408,32 @@ function makeSilentLogger(): unknown {
   };
   self.child = () => self;
   return self;
+}
+
+/**
+ * Strip everything that isn't a digit. WhatsApp identifies accounts by
+ * country-code + number with no separators, no leading '+'. Accepts the
+ * common human formats: "+1 (555) 123-4567", "5511 99999-0000", etc.
+ */
+function normalizePhoneDigits(input: string): string {
+  return input.replace(/\D+/g, "");
+}
+
+/**
+ * Baileys' paired_id (sock.user.id) sometimes carries a device suffix
+ * like "5511999990000:23@s.whatsapp.net". Strip the suffix so we get a
+ * routable user JID — `sendMessage` won't deliver to a JID with `:NN`.
+ * Returns null if the input is malformed.
+ */
+function normalizeUserJid(id: string): string | null {
+  // Strip any device suffix (":NN") before the '@'.
+  const at = id.indexOf("@");
+  if (at < 0) return null;
+  const user = id.slice(0, at).split(":")[0];
+  const host = id.slice(at + 1);
+  if (!user || !host) return null;
+  // WhatsApp uses @s.whatsapp.net for user accounts; in some contexts
+  // Baileys exposes @c.us as a legacy alias — normalize to @s.whatsapp.net.
+  const normHost = host === "c.us" ? "s.whatsapp.net" : host;
+  return `${user}@${normHost}`;
 }
