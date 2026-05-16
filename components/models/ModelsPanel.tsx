@@ -9,7 +9,6 @@ const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "bg-orange-900/40 text-orange-300 border-orange-700",
   openai: "bg-green-900/40 text-green-300 border-green-700",
   "github-copilot": "bg-purple-900/40 text-purple-300 border-purple-700",
-  custom-provider: "bg-blue-900/40 text-blue-300 border-blue-700",
 };
 
 export function ModelsPanel() {
