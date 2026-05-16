@@ -82,7 +82,12 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
   }
 
   return (
-    <div className="border-t border-border bg-surface-2 px-3 sm:px-4 pb-3 pt-2 pb-safe">
+    // pb-3 + safe-area inset, additively. `pb-safe` alone overrides `pb-3`
+    // and collapses to 0 on devices without a notch (Android Edge, desktop).
+    <div
+      className="border-t border-border bg-surface-2 px-3 sm:px-4 pt-2"
+      style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+    >
       {/* Attachment previews */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
