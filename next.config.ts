@@ -17,7 +17,16 @@ const nextConfig: NextConfig = {
   // throws `b.unmask is not a function` on the first WS frame. Marking the
   // whole package as external keeps ws resolved at runtime against the
   // traced node_modules, where its JS fallback works correctly.
-  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate"],
+  //
+  // `keytar` is invoked from a child node process via `execFileSync` (see
+  // lib/crypto/master-key.ts) with `require('keytar')` inside a script
+  // string that nft cannot see. Marking it external + explicitly tracing
+  // its node_modules directory ensures the standalone bundle ships
+  // keytar's native binding so the installed app can use the OS keychain.
+  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate", "keytar"],
+  outputFileTracingIncludes: {
+    "/**": ["./node_modules/keytar/**/*"],
+  },
 };
 
 // Serwist replaces the abandoned next-pwa. It compiles app/sw.ts into
