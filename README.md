@@ -295,13 +295,19 @@ npm run test:live:full       # extended live test suite
 node scripts/gen-logo.mjs    # regenerate the icon set from public/logo-source.png
 ```
 
-### Windows task runner
+### Task runner
 
-For convenience on Windows there's a Makefile-equivalent
-[make.ps1](./make.ps1) (with a `make.cmd` shim so `make <target>` works from
-cmd / PowerShell without GNU Make):
+A `make <target>` wrapper is provided for both platforms:
 
-```powershell
+- **macOS / Linux:** [Makefile](./Makefile) — uses GNU make (preinstalled on
+  macOS). System install uses launchd (`~/Library/LaunchAgents/com.jarela.app.plist`).
+- **Windows:** [make.ps1](./make.ps1) (with a `make.cmd` shim so `make <target>`
+  works from cmd / PowerShell without GNU Make). System install uses Task
+  Scheduler.
+
+Targets are the same on both:
+
+```bash
 make help            # list targets
 make install         # npm install
 make dev             # dev server
@@ -310,13 +316,23 @@ make start           # serve standalone build
 make lint
 make test            # live smoke tests
 make icons           # regenerate logo / icon set
-make install-task    # register Windows scheduled task
+make install-task    # register auto-start (LaunchAgent on mac, Scheduled Task on Windows)
 make start-task      # / stop-task / restart-task
 make logs            # tail the installed-task log
 make status          # task state + listener on :4312 + data dir
 make push            # git push current branch -> jarela remote
 make clean           # remove .next + caches
 ```
+
+Installed-app paths differ by platform:
+
+| Platform | Install dir                                  | Log file                               |
+|----------|----------------------------------------------|----------------------------------------|
+| macOS    | `~/Library/Application Support/Jarela`       | `~/Library/Logs/Jarela/app.log`        |
+| Windows  | `%LOCALAPPDATA%\Programs\Jarela`             | `%LOCALAPPDATA%\Jarela\logs\app.log`   |
+
+Data dir (`~/.jarela`, configurable via `JARELA_DB_DIR`) is the same on both
+and is shared between the dev repo and the installed copy.
 
 ## Decisions
 
