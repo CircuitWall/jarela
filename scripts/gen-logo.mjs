@@ -7,7 +7,7 @@
 //   public/icon-512.png              512x512, transparent bg     (PWA)
 //   public/icon-192-maskable.png     192x192, brand-blue bg      (PWA maskable)
 //   public/icon-512-maskable.png     512x512, brand-blue bg      (PWA maskable)
-//   public/apple-touch-icon.png      180x180, brand-blue bg      (iOS home screen)
+//   public/apple-touch-icon.png      180x180, white bg           (iOS home screen)
 //   public/favicon-32.png             32x32,  transparent bg     (site icon, modern)
 //   public/favicon-16.png             16x16,  transparent bg     (site icon, legacy)
 //   public/favicon.ico                multi-res ICO (32 + 16)    (browsers)
@@ -117,9 +117,11 @@ async function main() {
     ).toFile(out(`icon-${size}-maskable.png`));
   }
 
-  // 5. Apple touch icon
+  // 5. Apple touch icon (white bg — iOS does not honor transparency and the
+  // dark brand-blue background made the dark "J" mark almost invisible on
+  // the home screen).
   await (
-    await squareIcon({ size: 180, bg: BG, padding: 0.12 })
+    await squareIcon({ size: 180, bg: { r: 255, g: 255, b: 255, alpha: 1 }, padding: 0.12 })
   ).toFile(out("apple-touch-icon.png"));
 
   // 6. Favicons
