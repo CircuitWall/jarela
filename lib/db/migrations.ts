@@ -134,13 +134,13 @@ export function runMigrations(db: DatabaseSync): void {
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);
   ensureEmbeddingColumns(db);
+  ensureUserProfileLocationColumns(db);
   ensureThreadsAgentIdUnique(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
 }
 
-function ensureEmbeddingColumns(db: DatabaseSync): void {
-  // Embeddings stored as JSON-encoded float[] in TEXT to keep migration simple.
+function ensureEmbeddingColumns(db: DatabaseSync): void {  // Embeddings stored as JSON-encoded float[] in TEXT to keep migration simple.
   // For the corpus sizes we expect (thousands of rows), in-memory cosine
   // similarity in JS is fast enough — no need for sqlite-vec or duckdb yet.
   const memCols = db.prepare("PRAGMA table_info(memory_store)").all() as Array<{ name: string }>;
@@ -160,6 +160,22 @@ function ensureEmbeddingColumns(db: DatabaseSync): void {
     // text, which loses arguments + results on reload.
     db.exec("ALTER TABLE messages ADD COLUMN tool_events TEXT");
   }
+}
+
+function ensureUserProfileLocationColumns(db: DatabaseSync): void {
+  // Browser-reported geolocation, opt-in. Lets the agent answer
+  // "what's near me?" / suggest routes / weather / etc. without the user
+  // re-typing their location every turn. `location_consent` is the
+  // explicit opt-in flag — when 0 the client must NOT post coordinates
+  // and the agent must NOT see a stored value.
+  const cols = db.prepare("PRAGMA table_info(user_profile)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("location_lat"))         db.exec("ALTER TABLE user_profile ADD COLUMN location_lat REAL");
+  if (!names.has("location_lng"))         db.exec("ALTER TABLE user_profile ADD COLUMN location_lng REAL");
+  if (!names.has("location_accuracy_m"))  db.exec("ALTER TABLE user_profile ADD COLUMN location_accuracy_m REAL");
+  if (!names.has("location_label"))       db.exec("ALTER TABLE user_profile ADD COLUMN location_label TEXT");
+  if (!names.has("location_updated_at"))  db.exec("ALTER TABLE user_profile ADD COLUMN location_updated_at TEXT");
+  if (!names.has("location_consent"))     db.exec("ALTER TABLE user_profile ADD COLUMN location_consent INTEGER NOT NULL DEFAULT 0");
 }
 
 function ensureThreadsAgentIdUnique(db: DatabaseSync): void {

@@ -1,8 +1,9 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Upload, Plus, Trash2, Shield } from "lucide-react";
+import { Upload, Plus, Trash2, Shield, MapPin } from "lucide-react";
 import { api } from "@/api/client";
 import type { UserProfile, AccessWhitelistEntry } from "@/api/types";
+import { useLocationSharing } from "@/hooks/useLocationSharing";
 
 export function ProfileEditor() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -108,9 +109,120 @@ export function ProfileEditor() {
         {saving ? "Saving…" : saved ? "Saved" : "Save profile"}
       </button>
 
+      <LocationSharing profile={profile} onChange={setProfile} />
+
       <AccessWhitelist />
     </div>
   );
+}
+
+// ─── Location sharing ───────────────────────────────────────────────────────
+// User-facing toggle backed by user_profile.location_consent. When enabled,
+// the useLocationSharing hook acquires a browser geolocation fix and POSTs
+// it to /api/v1/profile/location. The agent sees the latest position in
+// every system prompt and can also call the get_user_location tool.
+
+function LocationSharing({
+  profile,
+  onChange,
+}: {
+  profile: UserProfile | null;
+  onChange: (p: UserProfile) => void;
+}) {
+  const consent = profile?.location_consent === 1;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Drives the browser geolocation request + watcher whenever consent is on.
+  useLocationSharing(consent);
+
+  // Pick up server-side updates (timestamps, accuracy) after the hook POSTs.
+  useEffect(() => {
+    if (!consent) return;
+    const t = setInterval(() => {
+      api.profile.get().then(onChange).catch(() => { /* ignore */ });
+    }, 5000);
+    return () => clearInterval(t);
+  }, [consent, onChange]);
+
+  async function toggle() {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (!consent && typeof navigator !== "undefined" && !navigator.geolocation) {
+        throw new Error("Geolocation is not supported in this browser.");
+      }
+      const updated = await api.profile.setLocationConsent(!consent);
+      onChange(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const hasFix = consent && typeof profile?.location_lat === "number" && typeof profile?.location_lng === "number";
+  const updatedAt = profile?.location_updated_at;
+
+  return (
+    <div className="pt-4 border-t border-border space-y-2">
+      <div className="flex items-center gap-2">
+        <MapPin size={14} className="text-zinc-400" />
+        <h3 className="text-sm font-semibold text-zinc-100 mr-auto">Share my location</h3>
+        <button
+          onClick={toggle}
+          disabled={busy}
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+            consent ? "bg-accent" : "bg-surface-3 border border-border"
+          } disabled:opacity-40`}
+          title={consent ? "Stop sharing" : "Start sharing"}
+          aria-pressed={consent}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+              consent ? "translate-x-5" : "translate-x-1"
+            }`}
+          />
+        </button>
+      </div>
+      <p className="text-[11px] text-zinc-500">
+        When enabled, your browser sends your current coordinates to LangGUI so the agent can answer
+        location-aware questions (weather, nearby places, directions). Stored locally only; never sent
+        to any third party other than the LLM/MCP services you&apos;ve configured.
+      </p>
+
+      {consent && (
+        <div className="text-[11px] text-zinc-400 px-2 py-1.5 rounded bg-surface-3/40 border border-border">
+          {hasFix ? (
+            <>
+              <span className="font-mono">
+                {profile!.location_lat!.toFixed(5)}, {profile!.location_lng!.toFixed(5)}
+              </span>
+              {profile?.location_accuracy_m != null && (
+                <span className="text-zinc-500"> · ±{Math.round(profile.location_accuracy_m)}m</span>
+              )}
+              {updatedAt && (
+                <span className="text-zinc-500"> · {timeAgo(updatedAt)}</span>
+              )}
+            </>
+          ) : (
+            <span className="text-zinc-500">Waiting for browser fix… (allow location when prompted)</span>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-rose-400 text-[11px]">{error}</p>}
+    </div>
+  );
+}
+
+function timeAgo(iso: string): string {
+  const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
 }
 
 function AccessWhitelist() {

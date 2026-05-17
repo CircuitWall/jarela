@@ -16,6 +16,7 @@ import {
   jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
   confluenceSearchTool, confluenceGetPageTool,
 } from "./atlassian";
+import { getUserLocationTool } from "./location";
 import { getMcpTools } from "@/lib/mcp/client";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
@@ -53,6 +54,7 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   jiraTransitionsTool,
   confluenceSearchTool,
   confluenceGetPageTool,
+  getUserLocationTool,
 ];
 
 // Category assignments. Drives the grouped per-section UI in AgentEditor so
@@ -92,6 +94,7 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   jira_transitions: "Atlassian",
   confluence_search: "Atlassian",
   confluence_get_page: "Atlassian",
+  get_user_location: "Web",
 };
 
 export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {

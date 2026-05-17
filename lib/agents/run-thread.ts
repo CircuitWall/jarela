@@ -251,8 +251,31 @@ export async function prepareThreadRun(
 
   // Build agent run config from DB record
   const userProfile = getUserProfile();
-  const userCtx = userProfile && (userProfile.name || userProfile.about)
-    ? `--- User context ---\n${userProfile.name ? `Name: ${userProfile.name}\n` : ""}${userProfile.about ? `About: ${userProfile.about}` : ""}`.trim()
+  const userCtxParts: string[] = [];
+  if (userProfile?.name) userCtxParts.push(`Name: ${userProfile.name}`);
+  if (userProfile?.about) userCtxParts.push(`About: ${userProfile.about}`);
+  if (
+    userProfile?.location_consent === 1 &&
+    typeof userProfile.location_lat === "number" &&
+    typeof userProfile.location_lng === "number"
+  ) {
+    const ageSec = userProfile.location_updated_at
+      ? Math.round((Date.now() - Date.parse(userProfile.location_updated_at)) / 1000)
+      : null;
+    const ageStr = ageSec === null ? "unknown age"
+      : ageSec < 120 ? `${ageSec}s ago`
+      : ageSec < 7200 ? `${Math.round(ageSec / 60)}m ago`
+      : `${Math.round(ageSec / 3600)}h ago`;
+    const acc = userProfile.location_accuracy_m != null
+      ? ` (±${Math.round(userProfile.location_accuracy_m)}m)` : "";
+    const label = userProfile.location_label ? ` — ${userProfile.location_label}` : "";
+    userCtxParts.push(
+      `Location: ${userProfile.location_lat.toFixed(5)}, ${userProfile.location_lng.toFixed(5)}${acc}${label} [updated ${ageStr}]`,
+      "  (User has opted in to share location. Use it for any location-dependent answer — weather, nearby places, directions, local time. Call get_user_location for the freshest values.)",
+    );
+  }
+  const userCtx = userCtxParts.length > 0
+    ? `--- User context ---\n${userCtxParts.join("\n")}`
     : null;
 
   const timeCtx = `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;

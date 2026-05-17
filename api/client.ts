@@ -121,6 +121,12 @@ export const api = {
     get: () => request<UserProfile>("/profile"),
     update: (data: Partial<Pick<UserProfile, "name" | "icon" | "about">>) =>
       request<UserProfile>("/profile", { method: "PUT", body: JSON.stringify(data) }),
+    setLocationConsent: (consent: boolean) =>
+      request<UserProfile>("/profile/location", { method: "PUT", body: JSON.stringify({ consent }) }),
+    updateLocation: (data: { lat: number; lng: number; accuracy_m?: number | null; label?: string | null }) =>
+      request<UserProfile>("/profile/location", { method: "POST", body: JSON.stringify(data) }),
+    clearLocation: () =>
+      request<UserProfile>("/profile/location", { method: "DELETE" }),
   },
 
   access: {
