@@ -187,6 +187,7 @@ function IntegrationCard({
       </div>
 
       <div className="px-3 py-3 space-y-2">
+        {def.name === "gmail" && <GmailSetupGuide />}
         {def.fields.map((f) => (
           <label key={f.key} className="block text-xs text-zinc-400">
             {f.label}{f.required && <span className="text-rose-400 ml-0.5">*</span>}
@@ -263,5 +264,115 @@ function IntegrationCard({
         </div>
       </div>
     </div>
+  );
+}
+
+// Inline walkthrough rendered inside the Gmail integration card. Google's GCP
+// console UI changes often; keep this in sync with reality and prefer linking
+// directly to the right page over screenshots.
+function GmailSetupGuide() {
+  return (
+    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-zinc-300">
+      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-zinc-200 hover:bg-surface-3">
+        Setup guide (first-time only)
+      </summary>
+      <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
+        <p className="text-zinc-400">
+          You only need to do this once per Google account. The end result is a <code className="text-zinc-200">client_id</code>,
+          {" "}<code className="text-zinc-200">client_secret</code> pair you paste below. Then click
+          {" "}<strong className="text-zinc-200">Connect Gmail</strong> to authorize.
+        </p>
+
+        <Step n={1} title="Create or pick a Google Cloud project">
+          Open <Ext href="https://console.cloud.google.com/projectcreate">console.cloud.google.com/projectcreate</Ext>{" "}
+          and create a project (any name). If you already have one, just select it in the top bar.
+        </Step>
+
+        <Step n={2} title="Enable the Gmail API">
+          Go to <Ext href="https://console.cloud.google.com/apis/library/gmail.googleapis.com">APIs &amp; Services → Library → Gmail API</Ext>{" "}
+          and click <strong>Enable</strong>. Wait a few seconds for it to activate.
+        </Step>
+
+        <Step n={3} title="Configure the OAuth consent screen">
+          Go to <Ext href="https://console.cloud.google.com/auth/branding">Auth Platform → Branding</Ext>.
+          Set <strong>User type: External</strong>, fill in an app name and your email, save.
+          Then in <Ext href="https://console.cloud.google.com/auth/scopes">Data Access → Scopes</Ext>{" "}
+          click <strong>Add or remove scopes</strong> and add both:
+          <ul className="list-disc ml-5 mt-1 text-zinc-400">
+            <li><code className="text-zinc-200">.../auth/gmail.modify</code></li>
+            <li><code className="text-zinc-200">.../auth/gmail.compose</code></li>
+          </ul>
+          Finally, in <Ext href="https://console.cloud.google.com/auth/audience">Audience</Ext>{" "}
+          add your own Gmail address as a <strong>Test user</strong>. (Leaving the app in Testing
+          mode is fine — you don't need to publish or verify it for personal use.)
+        </Step>
+
+        <Step n={4} title="Create the OAuth client (Desktop type)">
+          Go to <Ext href="https://console.cloud.google.com/auth/clients">Clients</Ext> →{" "}
+          <strong>Create client</strong>.
+          <ul className="list-disc ml-5 mt-1 text-zinc-400">
+            <li><strong>Application type:</strong> <span className="text-zinc-200">Desktop app</span>{" "}
+              (this matters — Web app types require pre-registering redirect URIs and will fail with
+              <code className="text-zinc-200"> redirect_uri_mismatch</code>).</li>
+            <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">LangGUI</code>.</li>
+          </ul>
+          After it's created, copy the <strong>Client ID</strong> and <strong>Client secret</strong>{" "}
+          shown in the popup (or click the download icon to get the JSON — the values are under{" "}
+          <code className="text-zinc-200">installed.client_id</code> /{" "}
+          <code className="text-zinc-200">installed.client_secret</code>).
+        </Step>
+
+        <Step n={5} title="Paste and connect">
+          Paste them into the two fields below, click <strong>Save</strong>, then{" "}
+          <strong>Connect Gmail</strong>. A Google consent window opens — approve it and the tab
+          will close itself. Hit <strong>Test</strong> to confirm.
+        </Step>
+
+        <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-zinc-500">
+          <strong className="text-zinc-400">Troubleshooting:</strong>
+          <ul className="list-disc ml-5 mt-1 space-y-0.5">
+            <li><code>redirect_uri_mismatch</code> → your client is a <em>Web</em> app. Create a fresh
+              one as <em>Desktop app</em> instead, or add{" "}
+              <code className="text-zinc-300">http://localhost:4312/api/v1/integrations/gmail/oauth/callback</code>{" "}
+              to its Authorized redirect URIs.</li>
+            <li><code>access_denied</code> → your Gmail address isn&apos;t in the Test users list
+              (step 3, last paragraph).</li>
+            <li>&quot;Google did not return a refresh_token&quot; → you previously authorized this
+              client. Revoke it at{" "}
+              <Ext href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</Ext>{" "}
+              and click Connect Gmail again.</li>
+            <li>Token works for ~6 months of inactivity, then Google may revoke it. Just click
+              Connect Gmail again to refresh.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-2">
+      <div className="flex-none w-5 h-5 rounded-full bg-surface-3 border border-border text-[10px] text-zinc-300 flex items-center justify-center font-mono">
+        {n}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-zinc-200 font-medium">{title}</div>
+        <div className="text-zinc-400 mt-0.5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function Ext({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-sky-400 hover:text-sky-300 underline decoration-dotted underline-offset-2"
+    >
+      {children}
+    </a>
   );
 }
