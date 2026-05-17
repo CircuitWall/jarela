@@ -57,6 +57,10 @@ npm run test:live:full   # extended live test suite
 npm run lint
 ```
 
+## External providers
+
+Drop a file into `~/.langgui/providers/` (or `$LANGGUI_DB_DIR/providers/`) to register an additional `ModelProvider` at startup. Each file must `module.exports` an object satisfying `lib/providers/types.ts#ModelProvider` (minimum: `{ name, chat }`). Built-in provider names cannot be overridden. `.js`, `.cjs`, and `.ts` are loaded (`.ts` relies on Node ≥ 22.6 type-stripping); `.mjs`/ESM are not — write CommonJS-style exports.
+
 ## Deploy
 
 Currently runs locally. PWA-installable via `next-pwa`. No CI/CD wired yet — deployment story is an open ADR.
