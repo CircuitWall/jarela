@@ -202,7 +202,10 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 
   // Hide chats that already have a route — picking them would just throw
   // a UNIQUE violation. Sort: groups & named chats first, then the rest.
-  const routedJids = new Set(routes.map((r) => r.remote_jid));
+  const routedJids = useMemo(
+    () => new Set(routes.map((r) => r.remote_jid)),
+    [routes],
+  );
   const availableChats = useMemo(() => {
     // Merge synced chats with locally-resolved phone-lookup hits; the
     // synced entry wins on collision (it has the better metadata).

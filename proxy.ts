@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireAccess } from "@/lib/auth/access";
+import { requireAccess, validateRequestOrigin } from "@/lib/auth/access";
 
 // Tailscale identity passthrough.
 //   - Local loopback (Host = localhost / 127.0.0.1 / [::1]) → allowed, no auth.
@@ -31,21 +31,35 @@ export function proxy(req: NextRequest) {
     host: req.headers.get("host"),
   });
 
-  if (result.allowed) return NextResponse.next();
-
-  if (result.reason === "no-identity") {
+  if (!result.allowed) {
+    if (result.reason === "no-identity") {
+      return new NextResponse(
+        "Jarela: remote access requires Tailscale identity passthrough. " +
+          "Run the host behind `tailscale serve` and add your identity to the whitelist " +
+          "from the Jarela Profile panel (open it on the host machine via http://localhost:4312).\n",
+        { status: 403, headers: { "Content-Type": "text/plain" } },
+      );
+    }
+    // not-whitelisted
     return new NextResponse(
-      "Jarela: remote access requires Tailscale identity passthrough. " +
-        "Run the host behind `tailscale serve` and add your identity to the whitelist " +
-        "from the Jarela Profile panel (open it on the host machine via http://localhost:4312).\n",
+      `Jarela: identity "${result.identity}" is not on the access list. ` +
+        `Ask the host machine's local user to add it from the Profile panel.\n`,
       { status: 403, headers: { "Content-Type": "text/plain" } },
     );
   }
 
-  // not-whitelisted
-  return new NextResponse(
-    `Jarela: identity "${result.identity}" is not on the access list. ` +
-      `Ask the host machine's local user to add it from the Profile panel.\n`,
-    { status: 403, headers: { "Content-Type": "text/plain" } },
-  );
+  // CSRF / DNS-rebinding guard for state-changing requests.
+  const origin = validateRequestOrigin({
+    method: req.method,
+    headers: req.headers,
+    host: req.headers.get("host"),
+  });
+  if (!origin.allowed) {
+    return new NextResponse(
+      `Jarela: cross-origin request rejected (${origin.reason}).\n`,
+      { status: 403, headers: { "Content-Type": "text/plain" } },
+    );
+  }
+
+  return NextResponse.next();
 }

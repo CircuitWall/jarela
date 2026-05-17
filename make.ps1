@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
 .SYNOPSIS
     Windows task runner for Jarela — Makefile-equivalent for PowerShell.
@@ -48,6 +48,10 @@ $Targets = [ordered]@{
     'logs'           = 'Tail the installed-task log file (Ctrl+C to stop).'
     'status'         = 'Show scheduled-task state and listener on :4312.'
     'push'           = 'Push the current branch to the jarela remote.'
+    'scan'           = 'Run npm audit + secret scan over the whole tree.'
+    'scan-staged'    = 'Run the secret scan over staged files only (used by pre-commit hook).'
+    'install-hooks'  = 'Install .git/hooks/pre-commit to run scan-staged.'
+    'backup-key'     = 'Print base64 of the at-rest master keyfile so you can store it in a password manager.'
 }
 
 function Show-Help {
@@ -110,7 +114,23 @@ switch ($Target.ToLowerInvariant()) {
     }
 
     'install-task' {
-        & powershell -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'scripts\install-to-system.ps1') @Rest
+        # The installer (Windows PowerShell 5.1) shells out to `npm run build`,
+        # which writes Next's "Compiled with warnings" to stderr even on a
+        # successful build. PowerShell 7 with $ErrorActionPreference='Stop'
+        # and the default $PSNativeCommandUseErrorActionPreference=$true
+        # treats any stderr line as a terminating error. Suppress both
+        # purely for this child invocation; LASTEXITCODE is still the
+        # source of truth.
+        $prevEAP    = $ErrorActionPreference
+        $prevNative = $PSNativeCommandUseErrorActionPreference
+        try {
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+          & powershell -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'scripts\install-to-system.ps1') @Rest
+        } finally {
+          $ErrorActionPreference = $prevEAP
+          $PSNativeCommandUseErrorActionPreference = $prevNative
+        }
         if ($LASTEXITCODE -ne 0) { throw "installer failed (exit $LASTEXITCODE)" }
     }
 
@@ -161,6 +181,59 @@ switch ($Target.ToLowerInvariant()) {
         $branch = (& git rev-parse --abbrev-ref HEAD).Trim()
         & git push jarela $branch
         if ($LASTEXITCODE -ne 0) { throw "git push failed (exit $LASTEXITCODE)" }
+    }
+
+    'scan' {
+        Write-Host '=== npm audit (production deps, high+) ===' -ForegroundColor Cyan
+        & npm audit --omit=dev --audit-level=high
+        $auditExit = $LASTEXITCODE
+        Write-Host ''
+        Write-Host '=== secret scan (all tracked files) ===' -ForegroundColor Cyan
+        & node scripts/scan-secrets.mjs --all
+        if ($LASTEXITCODE -ne 0) { throw "secret scan failed (exit $LASTEXITCODE)" }
+        if ($auditExit -ne 0) { throw "npm audit reported high/critical issues (exit $auditExit)" }
+    }
+
+    'scan-staged' {
+        & node scripts/scan-secrets.mjs --staged
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    }
+
+    'install-hooks' {
+        $hookDir = Join-Path $RepoRoot '.git\hooks'
+        if (-not (Test-Path $hookDir)) { throw "no .git/hooks dir - is this a git checkout?" }
+        $hookFile = Join-Path $hookDir 'pre-commit'
+        $hookBody = @'
+#!/bin/sh
+# Installed by `make.ps1 install-hooks`. Aborts the commit if any staged
+# file looks like it contains a high-value secret (OpenAI/GitHub/Google
+# tokens, AWS keys, private key blocks). See scripts/scan-secrets.mjs.
+exec node scripts/scan-secrets.mjs --staged
+'@
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($hookFile, $hookBody, $utf8NoBom)
+        Write-Host "installed pre-commit hook -> $hookFile" -ForegroundColor Green
+    }
+
+    'backup-key' {
+        $keyPath = Join-Path $env:LOCALAPPDATA 'Jarela\.secret-key'
+        if (-not (Test-Path $keyPath)) {
+            Write-Host "No keyfile at $keyPath." -ForegroundColor Yellow
+            Write-Host "Either the installed app is using the OS keychain (preferred)," -ForegroundColor DarkGray
+            Write-Host "or it has not booted yet. Start it once, then re-run this." -ForegroundColor DarkGray
+            exit 0
+        }
+        $bytes = [System.IO.File]::ReadAllBytes($keyPath)
+        $b64 = [System.Convert]::ToBase64String($bytes)
+        Write-Host '=== Jarela master keyfile (base64) ===' -ForegroundColor Cyan
+        Write-Host '' 
+        Write-Host $b64
+        Write-Host ''
+        Write-Host 'Save this string in a password manager. Without it you cannot' -ForegroundColor Yellow
+        Write-Host 'decrypt the contents of jarela.db if the host is lost.' -ForegroundColor Yellow
+        Write-Host ''
+        Write-Host "To restore: write the base64-decoded bytes back to $keyPath" -ForegroundColor DarkGray
+        Write-Host '             (32 bytes, mode 0600) and restart the scheduled task.' -ForegroundColor DarkGray
     }
 
     default {

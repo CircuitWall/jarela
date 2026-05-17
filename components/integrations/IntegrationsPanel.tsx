@@ -128,7 +128,9 @@ function IntegrationCard({
   // Re-seed when the status changes (e.g. after save returns updated mask).
   useEffect(() => {
     setValues({ ...(status?.values ?? {}) });
-  }, [status?.updated_at]);
+    // status?.values intentionally omitted — only re-seed on a real save
+    // (signalled by updated_at). Including .values would clobber user edits.
+  }, [status?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save() {
     setError(null);
@@ -304,7 +306,7 @@ function GmailSetupGuide() {
           </ul>
           Finally, in <Ext href="https://console.cloud.google.com/auth/audience">Audience</Ext>{" "}
           add your own Gmail address as a <strong>Test user</strong>. (Leaving the app in Testing
-          mode is fine — you don't need to publish or verify it for personal use.)
+          mode is fine &mdash; you don&apos;t need to publish or verify it for personal use.)
         </Step>
 
         <Step n={4} title="Create the OAuth client (Desktop type)">
@@ -316,7 +318,7 @@ function GmailSetupGuide() {
               <code className="text-zinc-200"> redirect_uri_mismatch</code>).</li>
             <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">Jarela</code>.</li>
           </ul>
-          After it's created, copy the <strong>Client ID</strong> and <strong>Client secret</strong>{" "}
+          After it&apos;s created, copy the <strong>Client ID</strong> and <strong>Client secret</strong>{" "}
           shown in the popup (or click the download icon to get the JSON — the values are under{" "}
           <code className="text-zinc-200">installed.client_id</code> /{" "}
           <code className="text-zinc-200">installed.client_secret</code>).
