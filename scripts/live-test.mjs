@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live integration test suite for LangGUI.
+// Live integration test suite for Jarela.
 // Hits the running dev server (default :4312) and walks through real flows.
 //
 // Usage:
@@ -14,7 +14,7 @@ if (process.env.HTTP_PROXY || process.env.HTTPS_PROXY) {
   setGlobalDispatcher(new EnvHttpProxyAgent());
 }
 
-const BASE = process.env.LANGGUI_URL || "http://localhost:4312";
+const BASE = process.env.JARELA_URL || "http://localhost:4312";
 const RUN_LLM = process.argv.includes("--llm");
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
 
@@ -446,11 +446,11 @@ test("tools: each registered tool has name + description", async () => {
 
 async function seedFromProd() {
   // Opt-in: copy real provider credentials (api_key etc. inside model_configs.params)
-  // and integrations from the user's production ~/.langgui DB into the running
+  // and integrations from the user's production ~/.jarela DB into the running
   // isolated test server. Required for --llm tests to actually call providers.
   //
-  // Skipped unless LANGGUI_SEED_FROM_PROD=1.
-  if (process.env.LANGGUI_SEED_FROM_PROD !== "1") return;
+  // Skipped unless JARELA_SEED_FROM_PROD=1.
+  if (process.env.JARELA_SEED_FROM_PROD !== "1") return;
 
   const { homedir } = await import("node:os");
   const { join } = await import("node:path");
@@ -465,8 +465,8 @@ async function seedFromProd() {
   }
 
   const prodPath =
-    process.env.LANGGUI_PROD_DB ||
-    join(homedir(), ".langgui", "langgui.db");
+    process.env.JARELA_PROD_DB ||
+    join(homedir(), ".jarela", "jarela.db");
   if (!existsSync(prodPath)) {
     console.log(`  ${C.yellow}↪ prod DB not found at ${prodPath}, skipping${C.reset}`);
     return;
@@ -744,7 +744,7 @@ test("ux: streaming is incremental for longer responses", async () => {
 
 // ── runner ───────────────────────────────────────────────────────────────────
 async function run() {
-  console.log(`\n${C.bold}LangGUI live test suite${C.reset}  ${C.dim}${BASE}${C.reset}`);
+  console.log(`\n${C.bold}Jarela live test suite${C.reset}  ${C.dim}${BASE}${C.reset}`);
   console.log(`${C.dim}LLM tests: ${RUN_LLM ? "ON" : "OFF (use --llm to enable)"}${C.reset}\n`);
 
   // Seed the DB so model/agent-dependent tests have something to work with.

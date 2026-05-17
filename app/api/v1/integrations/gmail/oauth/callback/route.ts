@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const flow = state ? getFlow(state) : undefined;
   if (!flow) {
-    return htmlResponse("Authorization session not found or expired. Please retry from LangGUI.", true);
+    return htmlResponse("Authorization session not found or expired. Please retry from Jarela.", true);
   }
 
   if (errParam) {
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
       return htmlResponse(`Failed to save: ${escapeHtml(saved.error)}`, true);
     }
     updateFlow(state, { status: "done" });
-    return htmlResponse("Gmail connected. You can close this tab and return to LangGUI.", false);
+    return htmlResponse("Gmail connected. You can close this tab and return to Jarela.", false);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     updateFlow(state, { status: "error", error: msg });

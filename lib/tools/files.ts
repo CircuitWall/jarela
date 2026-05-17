@@ -24,8 +24,8 @@ function clip(text: string, max: number): { value: string; truncated: boolean } 
 }
 
 // Resolve agent-supplied paths against the USER'S HOME directory, not
-// process.cwd(). In production cwd is the LangGUI install dir
-// (%LOCALAPPDATA%\Programs\LangGUI) — if the agent writes "notes.txt"
+// process.cwd(). In production cwd is the Jarela install dir
+// (%LOCALAPPDATA%\Programs\Jarela) — if the agent writes "notes.txt"
 // expecting it to land somewhere visible, it lands buried in the install
 // tree and the user concludes the tool didn't run. Home is the natural
 // default for an "assistant on my computer". Absolute paths and ~/ paths
