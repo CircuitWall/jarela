@@ -23,7 +23,6 @@ type WsServerState = {
 };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __jarelaWsState: WsServerState | undefined;
 }
 
@@ -130,6 +129,25 @@ export function ensureWsServer(): { port: number } {
     // identity. The actual TCP source IP is available here, so we use it
     // directly (more reliable than the spoofable Host header).
     verifyClient: (info, cb) => {
+      // CSRF / cross-origin defense for the WS handshake. Browsers send the
+      // Origin header reflecting the page that opened the WebSocket; if it
+      // doesn't match Host, the open came from a malicious tab/site and we
+      // refuse. Non-browser callers omit Origin and are gated by the
+      // loopback/identity check below.
+      const originHeader = info.req.headers.origin;
+      const hostHeader = info.req.headers.host;
+      if (originHeader && hostHeader) {
+        try {
+          if (new URL(originHeader).host !== hostHeader) {
+            cb(false, 403, "Cross-origin WebSocket rejected");
+            return;
+          }
+        } catch {
+          cb(false, 403, "Malformed Origin");
+          return;
+        }
+      }
+
       const result = requireAccess({
         headers: info.req.headers,
         host: info.req.headers.host ?? null,
