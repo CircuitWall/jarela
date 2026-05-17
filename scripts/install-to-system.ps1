@@ -110,19 +110,19 @@ foreach ($v in $victims) {
   try { Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
 }
 # Also free the port in case some unrelated squatter is on it. Skip our own
-# node � that was just killed above.
+# node � that was just killed above.
 $busy = Get-NetTCPConnection -LocalPort 4312 -State Listen -ErrorAction SilentlyContinue
 foreach ($c in $busy) {
   try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue } catch {}
 }
 Start-Sleep -Seconds 1
 
-# -- 3. Clear contents of install dir (in place � never delete the dir) -----
+# -- 3. Clear contents of install dir (in place � never delete the dir) -----
 # We used to `Remove-Item $InstallDir -Recurse` + `New-Item`, but that breaks
 # whenever Windows Search Indexer / Defender / Explorer holds a transient
 # handle on the directory itself (the directory contents delete fine, but the
 # empty directory then refuses to be removed). Clearing contents in place is
-# tolerant of that � the dir handle stays valid; we only touch files inside.
+# tolerant of that � the dir handle stays valid; we only touch files inside.
 Step "Clearing install dir contents at $InstallDir"
 if (-not (Test-Path $InstallDir)) {
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
@@ -137,7 +137,7 @@ if ($failed.Count -gt 0) {
   Start-Sleep -Seconds 2
   foreach ($p in $failed) {
     try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop }
-    catch { Info ("  could not remove: $p � $($_.Exception.Message)") }
+    catch { Info ("  could not remove: $p � $($_.Exception.Message)") }
   }
 }
 
@@ -158,7 +158,7 @@ Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.ps1') `
           -Destination (Join-Path $InstallDir 'launcher.ps1') -Force
 # Drop the VBS shim that launches the .ps1 fully hidden (no console at all).
 # `powershell.exe -WindowStyle Hidden` is not reliable when the launcher
-# spawns a child via `Start-Process -NoNewWindow` � the shared console can
+# spawns a child via `Start-Process -NoNewWindow` � the shared console can
 # flash to the foreground. wscript.exe with intWindowStyle=0 avoids that.
 Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.vbs') `
           -Destination (Join-Path $InstallDir 'launcher.vbs') -Force
@@ -171,7 +171,7 @@ $commit = try { (& git -C $RepoRoot rev-parse --short HEAD).Trim() } catch { 'un
   sourceRepo    = $RepoRoot
   node          = $nodeCmd.Source
   port          = 4312
-  dbDir         = (Join-Path $env:USERPROFILE '.jarela')
+  dbDir         = (Join-Path $env:LOCALAPPDATA 'Jarela')
 } | ConvertTo-Json | Set-Content -Path (Join-Path $InstallDir 'install.json') -Encoding UTF8
 
 Info "files copied:"
@@ -222,7 +222,7 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 Register-ScheduledTask -TaskName $TaskName -InputObject $task | Out-Null
 
 # ── 6. Quick verification: data dir + run ──────────────────────────────────
-$dbDir  = Join-Path $env:USERPROFILE '.jarela'
+$dbDir  = Join-Path $env:LOCALAPPDATA 'Jarela'
 $dbFile = Join-Path $dbDir 'jarela.db'
 Step "Verifying data dir"
 if (Test-Path $dbFile) {
@@ -244,7 +244,7 @@ if (-not $NoStart) {
 Write-Host ""
 Write-Host "Installed Jarela commit $commit at $InstallDir" -ForegroundColor Green
 Write-Host "  URL:    http://localhost:4312"
-Write-Host "  Data:   $env:USERPROFILE\.jarela  (shared with this repo)"
+Write-Host "  Data:   $env:LOCALAPPDATA\Jarela  (Windows default, see ADR-0006)"
 Write-Host "  Logs:   $env:LOCALAPPDATA\Jarela\logs\app.log"
 Write-Host "  Stop:   Stop-ScheduledTask  -TaskName Jarela"
 Write-Host "  Start:  Start-ScheduledTask -TaskName Jarela"
