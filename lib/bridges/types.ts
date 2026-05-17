@@ -62,6 +62,12 @@ export interface BridgeAdapter {
   stop(): Promise<void>;
   /** Send a plain-text reply on this channel. Throws on transport error. */
   sendText(remote_jid: string, text: string): Promise<void>;
+  /**
+   * Show/hide a "typing…" indicator on the channel while the agent is
+   * processing the message. Best-effort — adapters whose transports
+   * don't support presence may no-op. Errors are swallowed by the caller.
+   */
+  sendTyping(remote_jid: string, typing: boolean): Promise<void>;
   /** Wipe auth state on disk and force re-pair on next start. */
   resetAuth(): Promise<void>;
   /** Register handlers. Must be called BEFORE start(). */

@@ -51,31 +51,50 @@ export async function handleInboundMessage(
     const thread = getOrCreateAgentThread(agentId);
     const prepared = await prepareThreadRun(thread.thread_id, msg.text);
 
+    // Show the "composing…" presence on the channel while we drain the
+    // LLM stream. Refresh every ~8s because WhatsApp drops the indicator
+    // after ~10s if not renewed. We always send a final "paused" in the
+    // finally block, regardless of success/throw, so we never leave a
+    // stuck typing indicator.
+    let typingActive = true;
+    void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
+    const typingTimer = setInterval(() => {
+      if (!typingActive) return;
+      void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
+    }, 8_000);
+    (typingTimer as unknown as { unref?: () => void }).unref?.();
+
     let assistantContent = "";
     const usedTools: string[] = [];
     const toolEvents: PersistedToolEvent[] = [];
-    for await (const chunk of prepared.stream) {
-      if (chunk.type === "text_delta") {
-        assistantContent += (chunk.data.delta as string) ?? "";
-      } else if (chunk.type === "tool_call") {
-        const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
-        if (d.name) usedTools.push(d.name);
-        toolEvents.push({
-          id: d.id ?? `call-${toolEvents.length}`,
-          phase: "call",
-          name: d.name ?? "",
-          payload: d.arguments,
-        });
-      } else if (chunk.type === "tool_result") {
-        const d = chunk.data as { id?: string; name?: string; result?: unknown };
-        toolEvents.push({
-          id: d.id ?? `result-${toolEvents.length}`,
-          phase: "result",
-          name: d.name ?? "",
-          payload: d.result,
-        });
+    try {
+      for await (const chunk of prepared.stream) {
+        if (chunk.type === "text_delta") {
+          assistantContent += (chunk.data.delta as string) ?? "";
+        } else if (chunk.type === "tool_call") {
+          const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
+          if (d.name) usedTools.push(d.name);
+          toolEvents.push({
+            id: d.id ?? `call-${toolEvents.length}`,
+            phase: "call",
+            name: d.name ?? "",
+            payload: d.arguments,
+          });
+        } else if (chunk.type === "tool_result") {
+          const d = chunk.data as { id?: string; name?: string; result?: unknown };
+          toolEvents.push({
+            id: d.id ?? `result-${toolEvents.length}`,
+            phase: "result",
+            name: d.name ?? "",
+            payload: d.result,
+          });
+        }
+        if (chunk.type === "done" || chunk.type === "error") break;
       }
-      if (chunk.type === "done" || chunk.type === "error") break;
+    } finally {
+      typingActive = false;
+      clearInterval(typingTimer);
+      void adapter.sendTyping(msg.remote_jid, false).catch(() => { /* best-effort */ });
     }
 
     persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
