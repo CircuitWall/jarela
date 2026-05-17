@@ -81,3 +81,86 @@ export function isLoopbackRequest(req: Request): boolean {
   const host = req.headers.get("host");
   return !!host && LOOPBACK_HOST.test(host);
 }
+
+// ---------------------------------------------------------------------------
+// CSRF / cross-origin / DNS-rebinding defense
+// ---------------------------------------------------------------------------
+//
+// The proxy auth above accepts any loopback request — but every page in the
+// user's browser can issue `fetch("http://127.0.0.1:4312/...")`, and a
+// remote DNS-rebinding attacker can make `evil.com` resolve to `127.0.0.1`
+// so the request looks loopback to the kernel. We need to confirm the
+// request *originated* same-origin, not just that the socket terminated on
+// loopback.
+//
+// Defense in depth:
+//   1. `Sec-Fetch-Site` — sent by every modern browser. `same-origin` and
+//      `none` (top-level nav, address-bar) are safe; `cross-site` and
+//      `same-site` are not. Header absent = non-browser caller (curl,
+//      installer scripts) — allow, since those can't be tricked into
+//      attaching cookies/auth.
+//   2. `Origin` — when present, scheme+host+port must match `Host`. Blocks
+//      DNS rebinding because the Origin reflects the URL the attacker's
+//      page was loaded from (`https://evil.com`), not the resolved IP.
+//
+// Read-only methods (GET / HEAD / OPTIONS) skip the check: the legitimate
+// SSE attach uses GET and is intentionally cross-tab in some PWA flows,
+// and these methods shouldn't have side effects anyway.
+
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const SAFE_FETCH_SITES = new Set(["same-origin", "none"]);
+
+export type OriginCheckReason =
+  | "safe-method"
+  | "no-headers"
+  | "same-origin"
+  | "cross-site"
+  | "origin-mismatch";
+
+export interface OriginCheckResult {
+  allowed: boolean;
+  reason: OriginCheckReason;
+}
+
+export interface ValidateRequestOriginArgs {
+  method: string;
+  headers: HeaderBag | NodeHeaders;
+  host: string | null;
+}
+
+export function validateRequestOrigin({
+  method,
+  headers,
+  host,
+}: ValidateRequestOriginArgs): OriginCheckResult {
+  if (SAFE_METHODS.has(method.toUpperCase())) {
+    return { allowed: true, reason: "safe-method" };
+  }
+
+  const secFetchSite = readHeader(headers, "sec-fetch-site");
+  const origin = readHeader(headers, "origin");
+
+  // Neither header → non-browser caller. The loopback bind plus the
+  // tailnet identity check already gate this.
+  if (!secFetchSite && !origin) {
+    return { allowed: true, reason: "no-headers" };
+  }
+
+  if (secFetchSite && !SAFE_FETCH_SITES.has(secFetchSite)) {
+    return { allowed: false, reason: "cross-site" };
+  }
+
+  if (origin && host) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost !== host) {
+        return { allowed: false, reason: "origin-mismatch" };
+      }
+    } catch {
+      // Malformed Origin → reject.
+      return { allowed: false, reason: "origin-mismatch" };
+    }
+  }
+
+  return { allowed: true, reason: "same-origin" };
+}
