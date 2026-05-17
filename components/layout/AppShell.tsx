@@ -125,8 +125,13 @@ export function AppShell() {
       <NotificationStatus />
       <Toaster />
       <header
-        className="flex items-center px-4 border-b border-border bg-surface-2 shrink-0 pt-safe"
-        style={{ height: "calc(3rem + env(safe-area-inset-top))" }}
+        className="flex items-center px-4 border-b border-border bg-surface-2 shrink-0"
+        style={{
+          // Extra 0.5rem above safe-area so the logo doesn't crowd the
+          // Dynamic Island / camera cutout on iPhone Pro models.
+          paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
+          height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)",
+        }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.svg" alt="LangGUI" className="h-6 select-none" />
