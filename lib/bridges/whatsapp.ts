@@ -108,15 +108,11 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       // IMPORTANT: WhatsApp validates the browser identifier during link-
       // device pairing and rejects unrecognized tuples with the misleading
       // "Check your phone connection and try again" error on the phone
-      // (even though the WS connection itself is fine). We piggyback on a
-      // Baileys-shipped helper (`Browsers.ubuntu`) for the platform/version
-      // slots WhatsApp accepts, then swap the middle (client name) slot so
-      // the device appears as "LangGUI" in WhatsApp's linked-devices list
-      // instead of "Chrome".
-      browser: (() => {
-        const b = baileys.Browsers.ubuntu("Chrome");
-        return [b[0], "LangGUI", b[2]] as [string, string, string];
-      })(),
+      // (even though the WS connection itself is fine). The Baileys-shipped
+      // `Browsers` helpers produce identifiers WhatsApp accepts. We tried
+      // swapping the middle slot to "LangGUI" once for branding in the
+      // linked-devices list — WhatsApp rejected pairing. Keep "Chrome".
+      browser: baileys.Browsers.ubuntu("Chrome"),
       markOnlineOnConnect: false,
       syncFullHistory: false,
     });
