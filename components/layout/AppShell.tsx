@@ -17,6 +17,7 @@ import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasks
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
+import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { Toaster } from "@/components/ui/Toaster";
 import { clearUnread, useUnreadCount } from "@/lib/ui/toasts";
 import { GearPanel } from "./GearPanel";
@@ -122,6 +123,7 @@ export function AppShell() {
   return (
     <div className="h-screen h-[100dvh] flex flex-col bg-surface text-zinc-100 overflow-hidden">
       <TopProgressBar />
+      <CryptoFallbackBanner />
       <NotificationStatus />
       <Toaster />
       <header
