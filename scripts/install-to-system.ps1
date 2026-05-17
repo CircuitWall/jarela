@@ -1,9 +1,9 @@
-﻿# install-to-system.ps1 - installs LangGUI as a standalone app into
-# %LOCALAPPDATA%\Programs\LangGUI so it can run without this dev repo.
-# Re-registers the per-user "LangGUI" scheduled task to point at the install dir.
+# install-to-system.ps1 - installs Jarela as a standalone app into
+# %LOCALAPPDATA%\Programs\Jarela so it can run without this dev repo.
+# Re-registers the per-user "Jarela" scheduled task to point at the install dir.
 #
 # Data (SQLite, vector DB, OAuth tokens, memory, agents, models, MCP config,
-# whitelist) lives at %USERPROFILE%\.langgui and is shared between the dev
+# whitelist) lives at %USERPROFILE%\.jarela and is shared between the dev
 # repo and the installed copy - so "migration" is automatic: the same user
 # reads the same database.
 #
@@ -11,11 +11,11 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1
 #
 # To run with a custom install location:
-#   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1 -InstallDir 'D:\Apps\LangGUI'
+#   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1 -InstallDir 'D:\Apps\Jarela'
 
 [CmdletBinding()]
 param(
-  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\LangGUI'),
+  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Jarela'),
   [switch]$SkipBuild,
   [switch]$NoStart
 )
@@ -23,14 +23,14 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$TaskName = 'LangGUI'
+$TaskName = 'Jarela'
 
 function Step([string]$msg) { Write-Host ("==> " + $msg) -ForegroundColor Cyan }
 function Info([string]$msg) { Write-Host ("    " + $msg) -ForegroundColor DarkGray }
 
-# â”€â”€ Sanity checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── Sanity checks ──────────────────────────────────────────────────────────
 if (-not (Test-Path (Join-Path $RepoRoot 'package.json'))) {
-  throw "package.json not found at $RepoRoot - run this from the langGUI repo."
+  throw "package.json not found at $RepoRoot - run this from the jarela repo."
 }
 
 $npmCmd  = Get-Command npm.cmd  -ErrorAction SilentlyContinue
@@ -46,8 +46,8 @@ Info ("npm:  " + $npm)
 Info ("repo: " + $RepoRoot)
 Info ("dest: " + $InstallDir)
 
-# â”€â”€ 1. Stop existing instance so we can overwrite files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Step "Stopping any existing LangGUI instance"
+# ── 1. Stop existing instance so we can overwrite files ────────────────────
+Step "Stopping any existing Jarela instance"
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   try { Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue } catch {}
 }
@@ -60,7 +60,7 @@ foreach ($c in $busy) {
 }
 Start-Sleep -Milliseconds 500
 
-# â”€â”€ 2. Build (standalone) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── 2. Build (standalone) ──────────────────────────────────────────────────
 if (-not $SkipBuild) {
   Push-Location $RepoRoot
   try {
@@ -86,7 +86,7 @@ if (-not (Test-Path $serverJs)) {
   throw "Standalone build missing at $serverJs. Re-run without -SkipBuild."
 }
 
-# ── 2.5. Stop any existing supervisor + server cleanly ─────────────────────
+# -- 2.5. Stop any existing supervisor + server cleanly ---------------------
 # Stop-ScheduledTask only stops *new* triggers; it does not kill the
 # powershell/wscript/node processes the running task already spawned. Without
 # this step a reinstall would race against the still-running supervisor: the
@@ -110,19 +110,19 @@ foreach ($v in $victims) {
   try { Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
 }
 # Also free the port in case some unrelated squatter is on it. Skip our own
-# node — that was just killed above.
+# node � that was just killed above.
 $busy = Get-NetTCPConnection -LocalPort 4312 -State Listen -ErrorAction SilentlyContinue
 foreach ($c in $busy) {
   try { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue } catch {}
 }
 Start-Sleep -Seconds 1
 
-# ── 3. Clear contents of install dir (in place — never delete the dir) ─────
+# -- 3. Clear contents of install dir (in place � never delete the dir) -----
 # We used to `Remove-Item $InstallDir -Recurse` + `New-Item`, but that breaks
 # whenever Windows Search Indexer / Defender / Explorer holds a transient
 # handle on the directory itself (the directory contents delete fine, but the
 # empty directory then refuses to be removed). Clearing contents in place is
-# tolerant of that — the dir handle stays valid; we only touch files inside.
+# tolerant of that � the dir handle stays valid; we only touch files inside.
 Step "Clearing install dir contents at $InstallDir"
 if (-not (Test-Path $InstallDir)) {
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
@@ -137,11 +137,11 @@ if ($failed.Count -gt 0) {
   Start-Sleep -Seconds 2
   foreach ($p in $failed) {
     try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop }
-    catch { Info ("  could not remove: $p — $($_.Exception.Message)") }
+    catch { Info ("  could not remove: $p � $($_.Exception.Message)") }
   }
 }
 
-# â”€â”€ 4. Copy standalone bundle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── 4. Copy standalone bundle ──────────────────────────────────────────────
 # The .next/standalone tree contains: server.js, the minimum node_modules,
 # package.json, and a hollow .next/ directory we need to fill with /static.
 Step "Copying standalone bundle"
@@ -158,7 +158,7 @@ Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.ps1') `
           -Destination (Join-Path $InstallDir 'launcher.ps1') -Force
 # Drop the VBS shim that launches the .ps1 fully hidden (no console at all).
 # `powershell.exe -WindowStyle Hidden` is not reliable when the launcher
-# spawns a child via `Start-Process -NoNewWindow` — the shared console can
+# spawns a child via `Start-Process -NoNewWindow` � the shared console can
 # flash to the foreground. wscript.exe with intWindowStyle=0 avoids that.
 Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.vbs') `
           -Destination (Join-Path $InstallDir 'launcher.vbs') -Force
@@ -171,13 +171,13 @@ $commit = try { (& git -C $RepoRoot rev-parse --short HEAD).Trim() } catch { 'un
   sourceRepo    = $RepoRoot
   node          = $nodeCmd.Source
   port          = 4312
-  dbDir         = (Join-Path $env:USERPROFILE '.langgui')
+  dbDir         = (Join-Path $env:USERPROFILE '.jarela')
 } | ConvertTo-Json | Set-Content -Path (Join-Path $InstallDir 'install.json') -Encoding UTF8
 
 Info "files copied:"
 Get-ChildItem $InstallDir | ForEach-Object { Info ("  " + $_.Name) }
 
-# â”€â”€ 5. Re-register scheduled task pointing at the install dir â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── 5. Re-register scheduled task pointing at the install dir ──────────────
 Step "Registering scheduled task '$TaskName' -> $InstallDir\launcher.ps1"
 $launcherPs1 = Join-Path $InstallDir 'launcher.ps1'
 
@@ -214,16 +214,16 @@ $task = New-ScheduledTask `
   -Trigger $trigger `
   -Principal $principal `
   -Settings $settings `
-  -Description ("LangGUI standalone install at " + $InstallDir + " - auto-start at logon on http://localhost:4312")
+  -Description ("Jarela standalone install at " + $InstallDir + " - auto-start at logon on http://localhost:4312")
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 Register-ScheduledTask -TaskName $TaskName -InputObject $task | Out-Null
 
-# â”€â”€ 6. Quick verification: data dir + run â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-$dbDir  = Join-Path $env:USERPROFILE '.langgui'
-$dbFile = Join-Path $dbDir 'langgui.db'
+# ── 6. Quick verification: data dir + run ──────────────────────────────────
+$dbDir  = Join-Path $env:USERPROFILE '.jarela'
+$dbFile = Join-Path $dbDir 'jarela.db'
 Step "Verifying data dir"
 if (Test-Path $dbFile) {
   $sz = [math]::Round(((Get-Item $dbFile).Length / 1KB), 1)
@@ -234,20 +234,20 @@ if (Test-Path $dbFile) {
 }
 
 if (-not $NoStart) {
-  Step "Starting LangGUI now"
+  Step "Starting Jarela now"
   Start-ScheduledTask -TaskName $TaskName
   Start-Sleep -Seconds 2
   Info "Tail the log to watch boot:"
-  Info ("  Get-Content `"" + (Join-Path $env:LOCALAPPDATA 'LangGUI\logs\app.log') + "`" -Tail 30 -Wait")
+  Info ("  Get-Content `"" + (Join-Path $env:LOCALAPPDATA 'Jarela\logs\app.log') + "`" -Tail 30 -Wait")
 }
 
 Write-Host ""
-Write-Host "Installed LangGUI commit $commit at $InstallDir" -ForegroundColor Green
+Write-Host "Installed Jarela commit $commit at $InstallDir" -ForegroundColor Green
 Write-Host "  URL:    http://localhost:4312"
-Write-Host "  Data:   $env:USERPROFILE\.langgui  (shared with this repo)"
-Write-Host "  Logs:   $env:LOCALAPPDATA\LangGUI\logs\app.log"
-Write-Host "  Stop:   Stop-ScheduledTask  -TaskName LangGUI"
-Write-Host "  Start:  Start-ScheduledTask -TaskName LangGUI"
+Write-Host "  Data:   $env:USERPROFILE\.jarela  (shared with this repo)"
+Write-Host "  Logs:   $env:LOCALAPPDATA\Jarela\logs\app.log"
+Write-Host "  Stop:   Stop-ScheduledTask  -TaskName Jarela"
+Write-Host "  Start:  Start-ScheduledTask -TaskName Jarela"
 Write-Host "  Off:    scripts\uninstall-from-system.ps1"
 Write-Host ""
 Write-Host "The repo at $RepoRoot is now only needed for development / rebuilding." -ForegroundColor DarkGray

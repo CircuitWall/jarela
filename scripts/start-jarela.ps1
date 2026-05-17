@@ -1,6 +1,6 @@
-# start-langgui.ps1 — production launcher for LangGUI on Windows.
-# Invoked by the "LangGUI" scheduled task at user logon. Also safe to run manually:
-#   powershell -ExecutionPolicy Bypass -File scripts\start-langgui.ps1
+# start-jarela.ps1 — production launcher for Jarela on Windows.
+# Invoked by the "Jarela" scheduled task at user logon. Also safe to run manually:
+#   powershell -ExecutionPolicy Bypass -File scripts\start-jarela.ps1
 #
 # Responsibilities:
 #   1. Find the repo root (one level above this script).
@@ -13,7 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$LogDir   = Join-Path $env:LOCALAPPDATA 'LangGUI\logs'
+$LogDir   = Join-Path $env:LOCALAPPDATA 'Jarela\logs'
 $LogFile  = Join-Path $LogDir 'app.log'
 $Port     = 4312
 
@@ -36,7 +36,7 @@ if ((Test-Path $LogFile) -and ((Get-Item $LogFile).Length -gt 5MB)) {
 }
 
 Set-Location $RepoRoot
-Write-Log "=== LangGUI launcher starting (cwd=$RepoRoot) ==="
+Write-Log "=== Jarela launcher starting (cwd=$RepoRoot) ==="
 
 # Locate npm — Task Scheduler may run with a sparse PATH.
 $npmCmd = Get-Command npm.cmd -ErrorAction SilentlyContinue

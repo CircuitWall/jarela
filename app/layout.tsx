@@ -4,9 +4,17 @@ import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistra
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LangGUI",
-  description: "Local chat interface for LangGraph agents",
+  title: "Jarela",
+  description: "Jarela — local chat interface for LangGraph agents",
   manifest: "/manifest.json",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 // Next 15+ requires themeColor (and color-scheme, viewport, etc.) to live in

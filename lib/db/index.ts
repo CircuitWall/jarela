@@ -1,17 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
-import { homedir } from "os";
-import { mkdirSync } from "fs";
 import { join } from "path";
 import { runMigrations } from "./migrations";
+import { getDataDir } from "./data-dir";
 import "@/lib/network"; // configure undici proxy dispatcher from env
 
-const dbDir = process.env.LANGGUI_DB_DIR
-  ? process.env.LANGGUI_DB_DIR.replace("~", homedir())
-  : join(homedir(), ".langgui");
-
-mkdirSync(dbDir, { recursive: true });
-
-export const DB_PATH = join(dbDir, "langgui.db");
+export const DB_PATH = join(getDataDir(), "jarela.db");
 
 let _db: DatabaseSync | null = null;
 

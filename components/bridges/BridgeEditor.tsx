@@ -13,7 +13,7 @@ import { StatusPill } from "./BridgesPanel";
  *
  * Routes have a `UNIQUE(agent_id)` constraint server-side — each agent is
  * the target of at most one route across all bridges. The single-thread-per-
- * agent invariant carries over from the rest of LangGUI: the bridge enqueues
+ * agent invariant carries over from the rest of Jarela: the bridge enqueues
  * inbound text into that agent's existing thread.
  */
 export function BridgeEditor({

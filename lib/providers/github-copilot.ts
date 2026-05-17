@@ -28,7 +28,7 @@ async function getCopilotToken(pat: string): Promise<string> {
   const res = await fetch("https://api.github.com/copilot_internal/v2/token", {
     headers: {
       Authorization: `token ${pat}`,
-      "User-Agent": "LangGUI/1.0",
+      "User-Agent": "Jarela/1.0",
     },
   });
 

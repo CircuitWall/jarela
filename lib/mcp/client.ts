@@ -151,7 +151,7 @@ export function invalidateMcpTools(): void {
 // stdio MCP processes or leak our internal state. Everything else flows.
 const SCRUBBED_VARS = new Set([
   // Our own DB path — irrelevant to MCP servers, and exposes our layout.
-  "LANGGUI_DB_DIR",
+  "JARELA_DB_DIR",
   // Defensive: don't leak npm/yarn auth tokens into a stdio child unless
   // the server explicitly opted in via spec.env. (Most public MCP packages
   // don't need auth to install.)
