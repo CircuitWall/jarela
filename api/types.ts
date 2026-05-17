@@ -127,6 +127,13 @@ export interface UserProfile {
   about: string;
   created_at: string;
   updated_at: string;
+  // Geolocation (opt-in). All null when sharing is off.
+  location_lat?: number | null;
+  location_lng?: number | null;
+  location_accuracy_m?: number | null;
+  location_label?: string | null;
+  location_updated_at?: string | null;
+  location_consent?: number; // 0 | 1
 }
 
 export interface AccessWhitelistEntry {
