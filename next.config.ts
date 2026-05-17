@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: __dirname,
   // Emit a self-contained .next/standalone/ tree (server.js + the minimum
   // node_modules subset Next traced as required). This is what we copy into
-  // %LOCALAPPDATA%\Programs\LangGUI for the installed app — no repo or
+  // %LOCALAPPDATA%\Programs\Jarela for the installed app — no repo or
   // `npm install` needed at runtime.
   output: "standalone",
   // `ws` ships a conditional require of the optional native addons

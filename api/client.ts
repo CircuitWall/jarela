@@ -260,7 +260,7 @@ let cachedWsUrl: string | null = null;
 // Versioned so older buggy cache entries (e.g. ones pointing at port 3219
 // directly through tailscale, which doesn't expose that port) are ignored
 // after a client deploy that changes the URL shape.
-const WS_URL_STORAGE_KEY = "langgui:ws-url:v2";
+const WS_URL_STORAGE_KEY = "jarela:ws-url:v2";
 
 function readPersistedWsUrl(): string | null {
   if (typeof window === "undefined" || !window.sessionStorage) return null;

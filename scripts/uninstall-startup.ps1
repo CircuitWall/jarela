@@ -1,11 +1,11 @@
-# uninstall-startup.ps1 — remove the LangGUI scheduled task and stop the running
-# instance. Does NOT touch the SQLite database under %USERPROFILE%\.langgui or
+# uninstall-startup.ps1 — remove the Jarela scheduled task and stop the running
+# instance. Does NOT touch the SQLite database under %USERPROFILE%\.jarela or
 # the Tailscale serve config.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\uninstall-startup.ps1
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'LangGUI'
+$TaskName = 'Jarela'
 $Port     = 4312
 
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -17,7 +17,7 @@ if ($task) {
   Write-Host "No scheduled task named '$TaskName' was registered."
 }
 
-# Kill anything still listening on the LangGUI port.
+# Kill anything still listening on the Jarela port.
 $busy = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
 foreach ($c in $busy) {
   try {
@@ -26,4 +26,4 @@ foreach ($c in $busy) {
   } catch {}
 }
 
-Write-Host "Done. Your data under $env:USERPROFILE\.langgui was left untouched."
+Write-Host "Done. Your data under $env:USERPROFILE\.jarela was left untouched."

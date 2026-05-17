@@ -1,20 +1,20 @@
-# Architecture — LangGUI
+﻿# Architecture â€” Jarela
 
-## C4 — Container
+## C4 â€” Container
 
 ```mermaid
 C4Container
-    title Containers — LangGUI
+    title Containers â€” Jarela
     Person(user, "Developer", "Browser / installed PWA")
 
-    System_Boundary(b, "LangGUI (Next.js process)") {
+    System_Boundary(b, "Jarela (Next.js process)") {
       Container(ui, "Web UI", "React 19 + Tailwind", "Chat, agents, models, memory, integrations panels")
       Container(routes, "API Routes", "Next.js Route Handlers", "REST + WebSocket endpoints under /api")
       Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools")
       Container(mcp, "MCP Adapter", "@langchain/mcp-adapters", "Discovers & invokes external MCP tool servers")
       Container(sched, "Scheduler", "cron-parser", "Runs background tasks on schedule, persists in DB")
-      Container(stream, "Streaming Layer", "ws + undici", "Token streaming UI ↔ providers")
-      ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite", "Checkpoints, memory, settings, schedules — at ~/.langgui")
+      Container(stream, "Streaming Layer", "ws + undici", "Token streaming UI â†” providers")
+      ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite", "Checkpoints, memory, settings, schedules â€” at ~/.jarela")
     }
 
     System_Ext(anthropic, "Anthropic", "Claude")
@@ -40,7 +40,7 @@ C4Container
     Rel(routes, github, "HTTPS")
 ```
 
-## C4 — Component (Agent Runtime)
+## C4 â€” Component (Agent Runtime)
 
 ```mermaid
 flowchart LR
@@ -52,13 +52,13 @@ flowchart LR
     D --> G[Built-in tools]
     E --> H[(External MCP servers)]
     B --> I[Checkpoint Store<br/>lib/db]
-    I --> J[(SQLite ~/.langgui)]
+    I --> J[(SQLite ~/.jarela)]
     B --> K[Memory Store<br/>lib/stores]
     K --> J
     B --> L[Notifications<br/>lib/notifications]
 ```
 
-## Key Flow — User sends a chat turn
+## Key Flow â€” User sends a chat turn
 
 ```mermaid
 sequenceDiagram
@@ -81,7 +81,7 @@ sequenceDiagram
     AG->>DB: save checkpoint
 ```
 
-## Key Flow — Scheduled background task
+## Key Flow â€” Scheduled background task
 
 ```mermaid
 sequenceDiagram
@@ -105,7 +105,7 @@ sequenceDiagram
 | Cold start (dev) | < 5 s | `npm run dev` |
 | First token latency | < 1.5 s p95 | Network-bound on provider |
 | Local-only operation | required | No telemetry, no required cloud backend |
-| Persistence | survive process restart | All state in `~/.langgui/*.sqlite` |
+| Persistence | survive process restart | All state in `~/.jarela/*.sqlite` |
 | API key handling | never leave the host | Stored in DB or env, not synced |
 
 ## External Dependencies
@@ -115,7 +115,7 @@ sequenceDiagram
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
 | GitHub API | Repo / PR integration | Feature degrades; chat unaffected |
-| SQLite (local) | Persistence | Fatal — startup fails fast with clear error |
+| SQLite (local) | Persistence | Fatal â€” startup fails fast with clear error |
 
 ## Decisions
 

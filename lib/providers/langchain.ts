@@ -1,5 +1,5 @@
 /**
- * Bridge provider: wraps any LangChain `BaseChatModel` so that LangGUI's
+ * Bridge provider: wraps any LangChain `BaseChatModel` so that Jarela's
  * `ModelProvider` interface can surface the entire LangChain ecosystem of
  * model integrations (Gemini, Bedrock, Cohere, Ollama-native, etc.) without
  * us writing a custom adapter for each one.

@@ -155,8 +155,7 @@ export function GearPanel({
     <div className="absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full bg-surface-2 border-l border-border z-20 flex flex-col shadow-2xl pb-safe">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="LangGUI" className="h-5 select-none" />
+        <span className="text-zinc-100 font-semibold tracking-tight select-none">Jarela</span>
         <button onClick={onClose} className="p-1 text-zinc-400 hover:text-zinc-100 transition-colors rounded">
           <X size={15} />
         </button>

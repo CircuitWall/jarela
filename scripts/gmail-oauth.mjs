@@ -11,7 +11,7 @@
 //   2. Opens the Google authorize URL in your default browser.
 //   3. Catches the redirect, exchanges the code for tokens.
 //   4. Prints the refresh_token to stdout. Paste it into
-//      LangGUI → Integrations → Gmail.
+//      Jarela → Integrations → Gmail.
 //
 // Usage:
 //   node scripts/gmail-oauth.mjs --client-id <ID> --client-secret <SECRET>
@@ -179,7 +179,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("\n=== Refresh token (paste into LangGUI → Integrations → Gmail) ===\n");
+  console.log("\n=== Refresh token (paste into Jarela → Integrations → Gmail) ===\n");
   console.log(tok.refresh_token);
   console.log("\nAccess token (short-lived, for sanity check only):");
   console.log("  expires_in:", tok.expires_in, "seconds");

@@ -22,7 +22,7 @@ export function Sidebar({ threads, onNewThread, onDeleteThread }: Props) {
     <aside className="w-64 shrink-0 flex flex-col h-full border-r border-border bg-surface-2">
       {/* Header */}
       <div className="flex items-center px-4 py-3 border-b border-border">
-        <span className="font-semibold text-zinc-100 text-sm">LangGUI</span>
+        <span className="font-semibold text-zinc-100 text-sm">Jarela</span>
       </div>
 
       {/* Tab bar */}

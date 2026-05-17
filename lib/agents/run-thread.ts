@@ -47,8 +47,8 @@ function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promis
 // from arrays on every user turn. Per-turn pieces (user profile, integrations,
 // memory, recall, current time) are still composed inside the function.
 const CAPABILITIES_CTX = [
-  "--- Host UI capabilities (LangGUI) ---",
-  "You're running inside LangGUI, a local web app. The surrounding UI provides:",
+  "--- Host UI capabilities (Jarela) ---",
+  "You're running inside Jarela, a local web app. The surrounding UI provides:",
   "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
   "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\".",
   "- Per-agent thread persistence with checkpointed state.",
@@ -294,7 +294,7 @@ export async function prepareThreadRun(
       : process.platform === "darwin"
         ? "iCloud Drive on macOS: ~/Library/Mobile Documents/com~apple~CloudDocs"
         : "",
-    "File-tool path resolution: absolute paths and `~/...` are honored verbatim; BARE RELATIVE paths (e.g. `notes.txt`) resolve against HOME, not cwd. cwd is the LangGUI install directory and should never be used as a default location for user files.",
+    "File-tool path resolution: absolute paths and `~/...` are honored verbatim; BARE RELATIVE paths (e.g. `notes.txt`) resolve against HOME, not cwd. cwd is the Jarela install directory and should never be used as a default location for user files.",
     "Verify file paths with file_stat or file_list before assuming they exist. Always echo the resolved absolute path back to the user when you create/move/delete a file so they know where it landed.",
   ].filter(Boolean).join("\n");
 
