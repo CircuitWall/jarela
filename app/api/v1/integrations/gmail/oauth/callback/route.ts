@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from "next/server";
+import { exchangeCode, getFlow, updateFlow } from "@/lib/integrations/gmail-oauth";
+import { saveIntegration } from "@/lib/stores/integrations";
+
+// GET /api/v1/integrations/gmail/oauth/callback?code=…&state=…
+//
+// Google redirects the user's browser here after consent. We look up the
+// pending flow by `state`, exchange the auth code for a refresh_token, persist
+// the integration, and return a small HTML page telling the user they can
+// close the tab. The Integrations panel polls /oauth/status separately.
+
+export async function GET(req: NextRequest) {
+  const url = req.nextUrl;
+  const state = url.searchParams.get("state") ?? "";
+  const code = url.searchParams.get("code") ?? "";
+  const errParam = url.searchParams.get("error");
+
+  const flow = state ? getFlow(state) : undefined;
+  if (!flow) {
+    return htmlResponse("Authorization session not found or expired. Please retry from LangGUI.", true);
+  }
+
+  if (errParam) {
+    updateFlow(state, { status: "error", error: errParam });
+    return htmlResponse(`Google reported an error: ${escapeHtml(errParam)}. You can close this tab.`, true);
+  }
+  if (!code) {
+    updateFlow(state, { status: "error", error: "no code returned" });
+    return htmlResponse("Google did not return an authorization code.", true);
+  }
+
+  try {
+    const tok = await exchangeCode({
+      code,
+      clientId: flow.clientId,
+      clientSecret: flow.clientSecret,
+      redirectUri: flow.redirectUri,
+    });
+    if (!tok.refresh_token) {
+      const msg =
+        "Google did not return a refresh_token. This usually means you have previously " +
+        "authorized this client. Revoke it at https://myaccount.google.com/permissions and retry.";
+      updateFlow(state, { status: "error", error: msg });
+      return htmlResponse(msg, true);
+    }
+    const saved = saveIntegration("gmail", {
+      client_id: flow.clientId,
+      client_secret: flow.clientSecret,
+      refresh_token: tok.refresh_token,
+    });
+    if ("error" in saved) {
+      updateFlow(state, { status: "error", error: saved.error });
+      return htmlResponse(`Failed to save: ${escapeHtml(saved.error)}`, true);
+    }
+    updateFlow(state, { status: "done" });
+    return htmlResponse("Gmail connected. You can close this tab and return to LangGUI.", false);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    updateFlow(state, { status: "error", error: msg });
+    return htmlResponse(`Token exchange failed: ${escapeHtml(msg)}`, true);
+  }
+}
+
+function htmlResponse(message: string, isError: boolean): NextResponse {
+  const color = isError ? "#fca5a5" : "#86efac";
+  const title = isError ? "Authorization failed" : "Authorization complete";
+  const body = `<!doctype html>
+<html><head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0a0a0a; color: #e5e5e5;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+  .card { max-width: 32rem; padding: 2rem; border: 1px solid #27272a; border-radius: 0.5rem;
+          background: #18181b; }
+  h1 { font-size: 1.1rem; margin: 0 0 0.75rem; color: ${color}; }
+  p  { margin: 0; line-height: 1.5; font-size: 0.9rem; color: #d4d4d8; }
+</style></head>
+<body><div class="card"><h1>${title}</h1><p>${escapeHtml(message)}</p></div>
+<script>setTimeout(()=>{try{window.close()}catch(_){}}, 2000);</script>
+</body></html>`;
+  return new NextResponse(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+}
