@@ -48,6 +48,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [defaultAgent, setDefaultAgent] = useState<AgentConfig | null>(null);
   const [recentAgents, setRecentAgents] = useState<AgentConfig[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [agentConfigLoading, setAgentConfigLoading] = useState(false);
 
   const addNotice = (text: string) =>
     setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
@@ -76,12 +81,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     setAgentConfigLoading(true);
     api.agents.get(agentId).then(setAgentConfig).catch(console.error).finally(() => setAgentConfigLoading(false));
   }, [agentId]);
-
-  const [hasMore, setHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [messagesLoading, setMessagesLoading] = useState(false);
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [agentConfigLoading, setAgentConfigLoading] = useState(false);
 
   // FIFO queue of messages the user typed while a run was already streaming.
   // The chat input stays unblocked; we drain this queue after each run finishes.
