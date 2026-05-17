@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 
 const now = () => new Date().toISOString();
 
@@ -8,18 +9,27 @@ export interface ModelConfigRow {
   created_at: string; updated_at: string;
 }
 
+// `params` holds the provider API key alongside hyperparameters and is
+// stored encrypted at rest (ADR-0005). Decrypt before returning rows.
+function decryptRow<T extends { params: string }>(row: T): T {
+  return { ...row, params: decryptIfNeeded(row.params) };
+}
+
 export function listModelConfigs(): ModelConfigRow[] {
-  return getDb()
+  const rows = getDb()
     .prepare("SELECT * FROM model_configs ORDER BY is_default DESC, name ASC")
     .all() as unknown as ModelConfigRow[];
+  return rows.map(decryptRow);
 }
 
 export function getModelConfig(name: string): ModelConfigRow | null {
-  return (getDb().prepare("SELECT * FROM model_configs WHERE name=?").get(name) as unknown as ModelConfigRow) ?? null;
+  const row = (getDb().prepare("SELECT * FROM model_configs WHERE name=?").get(name) as unknown as ModelConfigRow) ?? null;
+  return row ? decryptRow(row) : null;
 }
 
 export function getDefaultModelConfig(): ModelConfigRow | null {
-  return (getDb().prepare("SELECT * FROM model_configs WHERE is_default=1 LIMIT 1").get() as unknown as ModelConfigRow) ?? null;
+  const row = (getDb().prepare("SELECT * FROM model_configs WHERE is_default=1 LIMIT 1").get() as unknown as ModelConfigRow) ?? null;
+  return row ? decryptRow(row) : null;
 }
 
 export function upsertModelConfig(
@@ -33,7 +43,7 @@ export function upsertModelConfig(
   if (is_default) db.prepare("UPDATE model_configs SET is_default=0").run();
   db.prepare(
     "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?)"
-  ).run(name, provider, model_id, JSON.stringify(params), is_default ? 1 : 0, created_at, t);
+  ).run(name, provider, model_id, encrypt(JSON.stringify(params)), is_default ? 1 : 0, created_at, t);
   return getModelConfig(name)!;
 }
 
