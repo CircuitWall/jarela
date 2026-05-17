@@ -70,8 +70,19 @@ if (-not $SkipBuild) {
       if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
     }
     Step "Building production bundle (next build, output=standalone)"
-    & $npm run build
-    if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+    # PowerShell 7's $PSNativeCommandUseErrorActionPreference treats any
+    # stderr line from a native command as a terminating error when
+    # $ErrorActionPreference = 'Stop'. Next writes "Compiled with warnings"
+    # to stderr even on a successful build, which would falsely abort us.
+    # Scope a local override around the build invocation.
+    $prevNative = $PSNativeCommandUseErrorActionPreference
+    try {
+      $PSNativeCommandUseErrorActionPreference = $false
+      & $npm run build
+      if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
+    } finally {
+      $PSNativeCommandUseErrorActionPreference = $prevNative
+    }
   } finally {
     Pop-Location
   }
