@@ -51,25 +51,32 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
     }
 
     const { MultiServerMCPClient } = await import("@langchain/mcp-adapters");
-    const mcpServers: Record<string, unknown> = {};
+
+    // Connect each server in its own client so one broken server (e.g. missing
+    // `uvx` on PATH, bad API key) doesn't poison the others. Previously a
+    // single MultiServerMCPClient.getTools() throw would mark ALL enabled
+    // servers with the same error message — confusing because the UI showed
+    // e.g. google-maps tagged with the `time` server's connection error.
+    const tools: StructuredToolInterface[] = [];
+    const subClients: Array<{ close: () => Promise<void> }> = [];
+
     for (const row of enabled) {
+      let serverConfig: Record<string, unknown>;
       try {
         const spec = JSON.parse(row.spec) as McpStdioSpec | McpHttpSpec;
         if (row.transport === "stdio") {
           const s = spec as McpStdioSpec;
-          mcpServers[row.name] = {
+          serverConfig = {
             transport: "stdio",
             command: s.command,
             args: s.args ?? [],
-            // Build a clean env that points uvx/pip/npm at PUBLIC registries
-            // by default, then layer the user's spec.env on top. Without this,
-            // corporate setups (e.g. ~/.config/uv/uv.toml pinned to JFrog) leak
-            // into the subprocess and break installs for off-VPN users.
+            // Inherit host env (PATH, HOME, proxies, registry configs) and
+            // layer spec.env on top. See buildSubprocessEnv below.
             env: buildSubprocessEnv(s.env ?? {}),
           };
         } else {
           const s = spec as McpHttpSpec;
-          mcpServers[row.name] = {
+          serverConfig = {
             transport: "http",
             url: s.url,
             headers: s.headers ?? {},
@@ -77,28 +84,30 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
         }
       } catch (err) {
         setMcpServerError(row.name, `bad spec: ${err instanceof Error ? err.message : String(err)}`);
+        continue;
+      }
+
+      try {
+        const client = new MultiServerMCPClient({
+          mcpServers: { [row.name]: serverConfig },
+          throwOnLoadError: false,
+        } as ConstructorParameters<typeof MultiServerMCPClient>[0]);
+        const serverTools = (await client.getTools()) as unknown as StructuredToolInterface[];
+        tools.push(...serverTools);
+        subClients.push(client as unknown as { close: () => Promise<void> });
+        setMcpServerError(row.name, null);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[mcp] server "${row.name}" failed:`, msg);
+        setMcpServerError(row.name, msg);
       }
     }
 
-    const client = new MultiServerMCPClient({
-      mcpServers,
-      // If one server fails, skip it instead of throwing — we want partial success.
-      throwOnLoadError: false,
-    } as ConstructorParameters<typeof MultiServerMCPClient>[0]);
-
-    let tools: StructuredToolInterface[] = [];
-    try {
-      tools = (await client.getTools()) as unknown as StructuredToolInterface[];
-      // Clear last_error on every server we successfully connected to.
-      for (const row of enabled) setMcpServerError(row.name, null);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("[mcp] getTools failed:", msg);
-      // Couldn't enumerate tools at all — mark all servers as errored so the UI shows it.
-      for (const row of enabled) setMcpServerError(row.name, msg);
-    }
-
-    activeClient = client as unknown as { close: () => Promise<void> };
+    activeClient = {
+      close: async () => {
+        await Promise.allSettled(subClients.map((c) => c.close()));
+      },
+    };
     cachedTools = tools;
     cacheKey = key;
     return tools;
