@@ -1,7 +1,14 @@
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config";
 import { getDb } from "@/lib/db";
+import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import type { ProviderParams } from "@/lib/providers/types";
+
+// Sensitive namespaces (ADR-0005) are never surfaced via recall: their
+// values are encrypted at rest, and credentials should not reach agent
+// context via semantic search regardless.
+const EXCLUDED_NS = [...SENSITIVE_MEMORY_NAMESPACES];
+const EXCLUDED_NS_PLACEHOLDERS = EXCLUDED_NS.map(() => "?").join(",");
 
 // Embedding model resolution:
 // 1. EMBEDDING_MODEL_CONFIG env var → name of a row in model_configs
@@ -89,8 +96,12 @@ export async function recall(query: string, limit = 5): Promise<RecalledMemory[]
   // ── semantic pass ─────────────────────────────────────────────────────────
   if (qVec) {
     const memRows = db.prepare(
-      "SELECT namespace, key, value, embedding, created_at FROM memory_store WHERE embedding IS NOT NULL",
-    ).all() as Array<{ namespace: string; key: string; value: string; embedding: string; created_at: string }>;
+      // Exclude sensitive namespaces (ADR-0005) — encrypted blobs would
+      // surface as enc:v1:… strings and credentials should never reach
+      // the agent context via recall regardless.
+      `SELECT namespace, key, value, embedding, created_at FROM memory_store
+        WHERE embedding IS NOT NULL AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})`,
+    ).all(...EXCLUDED_NS) as Array<{ namespace: string; key: string; value: string; embedding: string; created_at: string }>;
 
     const msgRows = db.prepare(
       "SELECT thread_id, role, content, embedding, created_at FROM messages WHERE embedding IS NOT NULL",
@@ -121,8 +132,10 @@ export async function recall(query: string, limit = 5): Promise<RecalledMemory[]
   const tokens = tokenize(query);
   if (tokens.length > 0) {
     const recentMem = db.prepare(
-      "SELECT namespace, key, value, created_at FROM memory_store WHERE embedding IS NULL ORDER BY updated_at DESC LIMIT 50",
-    ).all() as Array<{ namespace: string; key: string; value: string; created_at: string }>;
+      `SELECT namespace, key, value, created_at FROM memory_store
+        WHERE embedding IS NULL AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})
+        ORDER BY updated_at DESC LIMIT 50`,
+    ).all(...EXCLUDED_NS) as Array<{ namespace: string; key: string; value: string; created_at: string }>;
     const recentMsg = db.prepare(
       "SELECT thread_id, role, content, created_at FROM messages WHERE embedding IS NULL ORDER BY created_at DESC LIMIT 50",
     ).all() as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
