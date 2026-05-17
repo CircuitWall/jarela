@@ -5,14 +5,20 @@ import { githubCopilotProvider } from "./github-copilot";
 import { deepseekProvider } from "./deepseek";
 import { geminiProvider } from "./gemini";
 import { langchainProvider } from "./langchain";
+import { loadExternalProviders } from "./external";
 
-const PROVIDERS: Record<string, ModelProvider> = {
+const BUILTINS: Record<string, ModelProvider> = {
   openai: openaiProvider,
   anthropic: anthropicProvider,
   "github-copilot": githubCopilotProvider,
   deepseek: deepseekProvider,
   gemini: geminiProvider,
   langchain: langchainProvider,
+};
+
+const PROVIDERS: Record<string, ModelProvider> = {
+  ...BUILTINS,
+  ...loadExternalProviders(new Set(Object.keys(BUILTINS))),
 };
 
 export function listProviderNames(): string[] {
