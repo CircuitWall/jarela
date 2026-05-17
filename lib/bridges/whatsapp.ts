@@ -63,6 +63,16 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   // messaging-history.set (initial sync), chats.upsert/update, contacts
   // upsert (for display names), and observed messages. Cleared on disconnect.
   private chats = new Map<string, ChatInfo>();
+  // The paired account's own JID (normalized, no device suffix). Set on
+  // connection — used to recognize the self-chat so messages the user sends
+  // to themselves can route to an agent.
+  private selfJid: string | null = null;
+  // IDs of messages we sent via sendText. WhatsApp echoes these back as
+  // `fromMe` upserts; without this filter we'd loop on our own replies in
+  // the self-chat. Bounded ring (most recent N).
+  private sentIds: string[] = [];
+  private sentIdsSet = new Set<string>();
+  private static readonly SENT_IDS_MAX = 500;
 
   constructor(bridge_id: string) {
     this.bridge_id = bridge_id;
@@ -154,6 +164,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // here to produce a routable @s.whatsapp.net JID.
         if (me) {
           const selfJid = normalizeUserJid(me);
+          this.selfJid = selfJid;
           if (selfJid) this.observeChat(selfJid, "Yourself", null);
         }
         // Kick off a background fetch of group metadata so the picker has
@@ -205,7 +216,17 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           };
           messageTimestamp?: number | { low?: number };
         };
-        if (!m.key?.remoteJid || m.key.fromMe) continue;
+        if (!m.key?.remoteJid) continue;
+        if (m.key.fromMe) {
+          // Allow `fromMe` ONLY in the self-chat (you DMing yourself), so the
+          // "Yourself" route can fire without a second WhatsApp account.
+          // Skip our own bot replies (sendText records their IDs) and any
+          // `fromMe` traffic in other chats (those echoes would loop).
+          const candidate = pickRoutableJid(m.key.remoteJid, m.key.remoteJidAlt);
+          const isSelfChat = !!this.selfJid && candidate === this.selfJid;
+          if (!isSelfChat) continue;
+          if (m.key.id && this.sentIdsSet.has(m.key.id)) continue;
+        }
         // Baileys 7 / modern WhatsApp delivers many personal chats with a
         // `@lid` ("Local IDentifier") remoteJid instead of `@s.whatsapp.net`.
         // The chat picker filters those out (they aren't valid sendMessage
@@ -303,6 +324,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     const sock = this.sock;
     this.sock = null;
     this.chats.clear();
+    this.selfJid = null;
+    this.sentIds = [];
+    this.sentIdsSet.clear();
     if (!sock) return;
     try {
       // logout() also wipes server-side auth — we just want to close the
@@ -315,8 +339,22 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   async sendText(remote_jid: string, text: string): Promise<void> {
     const sock = this.sock;
     if (!sock) throw new Error("Bridge not connected");
-    await (sock as unknown as { sendMessage: (jid: string, content: { text: string }) => Promise<unknown> })
+    const result = await (sock as unknown as { sendMessage: (jid: string, content: { text: string }) => Promise<unknown> })
       .sendMessage(remote_jid, { text });
+    // Record the outgoing message ID so the matching `fromMe` echo from
+    // messages.upsert doesn't re-enter the routing pipeline in the self-chat.
+    const sentId = (result as { key?: { id?: string } } | null | undefined)?.key?.id;
+    if (sentId) this.rememberSentId(sentId);
+  }
+
+  private rememberSentId(id: string): void {
+    if (this.sentIdsSet.has(id)) return;
+    this.sentIds.push(id);
+    this.sentIdsSet.add(id);
+    while (this.sentIds.length > WhatsAppBridgeAdapter.SENT_IDS_MAX) {
+      const evict = this.sentIds.shift();
+      if (evict) this.sentIdsSet.delete(evict);
+    }
   }
 
   async sendTyping(remote_jid: string, typing: boolean): Promise<void> {
