@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { _resolveAtlassianAuth } from "@/lib/tools/atlassian";
+import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 
 type Params = { params: Promise<{ name: string }> };
@@ -13,6 +14,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   switch (name) {
     case "atlassian": return await testAtlassian();
     case "google":    return await testGoogle();
+    case "gmail":     return await testGmail();
     default:          return NextResponse.json({ error: "unknown integration" }, { status: 404 });
   }
 }
@@ -69,6 +71,56 @@ async function testGoogle() {
       );
     }
     return NextResponse.json({ ok: true, detail: { displayName: "Google AI" } });
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, error: describeError(err) },
+      { status: 200 },
+    );
+  }
+}
+
+async function testGmail() {
+  const auth = _resolveGmailAuth();
+  if ("error" in auth) return NextResponse.json({ ok: false, error: auth.error }, { status: 400 });
+  try {
+    // Exchange refresh token for an access token, then call labels.list as
+    // the cheapest end-to-end smoke test.
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: auth.client_id,
+        client_secret: auth.client_secret,
+        refresh_token: auth.refresh_token,
+        grant_type: "refresh_token",
+      }).toString(),
+    });
+    if (!tokenRes.ok) {
+      const body = await tokenRes.text();
+      return NextResponse.json(
+        { ok: false, error: `OAuth refresh failed ${tokenRes.status}: ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    const { access_token } = (await tokenRes.json()) as { access_token?: string };
+    if (!access_token) {
+      return NextResponse.json({ ok: false, error: "OAuth response missing access_token" }, { status: 200 });
+    }
+    const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+      headers: { Authorization: `Bearer ${access_token}`, Accept: "application/json" },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return NextResponse.json(
+        { ok: false, error: `Gmail ${res.status}: ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    const data = (await res.json()) as { labels?: Array<{ id: string; name: string }> };
+    return NextResponse.json({
+      ok: true,
+      detail: { labels: data.labels?.length ?? 0 },
+    });
   } catch (err) {
     return NextResponse.json(
       { ok: false, error: describeError(err) },

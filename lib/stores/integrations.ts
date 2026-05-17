@@ -31,6 +31,20 @@ export const INTEGRATIONS = {
       { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
     ],
   },
+  gmail: {
+    label: "Gmail",
+    description:
+      "Used by the gmail_* tools (search, read, draft, label, archive). Create an OAuth Client ID " +
+      "(Web app) in Google Cloud Console with https://developers.google.com/oauthplayground as a " +
+      "redirect URI, then visit OAuth Playground → gear → \"Use your own OAuth credentials\", select " +
+      "scopes gmail.modify + gmail.compose, authorize, and copy the refresh token here. Drafts only — " +
+      "this integration intentionally cannot send mail.",
+    fields: [
+      { key: "client_id", label: "OAuth client ID", placeholder: "<id>.apps.googleusercontent.com", secret: false, required: true },
+      { key: "client_secret", label: "OAuth client secret", placeholder: "GOCSPX-…", secret: true, required: true },
+      { key: "refresh_token", label: "Refresh token", placeholder: "1//0…", secret: true, required: true },
+    ],
+  },
 } as const;
 
 export type IntegrationName = keyof typeof INTEGRATIONS;

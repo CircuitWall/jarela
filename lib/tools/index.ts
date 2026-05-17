@@ -16,6 +16,10 @@ import {
   jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
   confluenceSearchTool, confluenceGetPageTool,
 } from "./atlassian";
+import {
+  gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
+  gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
+} from "./gmail";
 import { getUserLocationTool } from "./location";
 import { getMcpTools } from "@/lib/mcp/client";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
@@ -54,6 +58,12 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   jiraTransitionsTool,
   confluenceSearchTool,
   confluenceGetPageTool,
+  gmailSearchTool,
+  gmailGetMessageTool,
+  gmailListLabelsTool,
+  gmailModifyMessageTool,
+  gmailCreateDraftTool,
+  gmailTrashMessageTool,
   getUserLocationTool,
 ];
 
@@ -62,7 +72,7 @@ const ALL_TOOLS: StructuredToolInterface[] = [
 // MCP tools default to "MCP" (overridable per-server in the future).
 export type ToolCategory =
   | "Memory" | "Files" | "Shell" | "Web" | "Images"
-  | "Schedule" | "Atlassian" | "Config" | "MCP";
+  | "Schedule" | "Atlassian" | "Mail" | "Config" | "MCP";
 
 const TOOL_CATEGORY: Record<string, ToolCategory> = {
   memory_read: "Memory",
@@ -94,6 +104,12 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   jira_transitions: "Atlassian",
   confluence_search: "Atlassian",
   confluence_get_page: "Atlassian",
+  gmail_search: "Mail",
+  gmail_get_message: "Mail",
+  gmail_list_labels: "Mail",
+  gmail_modify_message: "Mail",
+  gmail_create_draft: "Mail",
+  gmail_trash_message: "Mail",
   get_user_location: "Web",
 };
 
