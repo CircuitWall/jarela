@@ -1,6 +1,6 @@
 "use client";
-import { CheckCircle2, ExternalLink, Key, Loader2, Trash2, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CheckCircle2, ExternalLink, Key, Link as LinkIcon, Loader2, Trash2, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
 
@@ -61,6 +61,69 @@ function IntegrationCard({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
+  const popupRef = useRef<Window | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Stop any in-flight OAuth polling on unmount.
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  async function connectGmail() {
+    setError(null);
+    setTestResult(null);
+    const clientId = values.client_id?.trim();
+    const clientSecret = values.client_secret?.trim();
+    // Allow empty when the user has already saved creds (backend falls back).
+    if (!status?.configured && (!clientId || !clientSecret)) {
+      setError("Enter the OAuth client ID and client secret first.");
+      return;
+    }
+    setConnecting(true);
+    try {
+      const r = await api.integrations.gmailOauthStart({ client_id: clientId, client_secret: clientSecret });
+      popupRef.current = window.open(r.authorize_url, "langgui-gmail-oauth", "width=560,height=720");
+      if (!popupRef.current) {
+        setError("Browser blocked the OAuth popup. Allow popups for this site and retry.");
+        setConnecting(false);
+        return;
+      }
+      const startedAt = Date.now();
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        if (Date.now() - startedAt > 10 * 60_000) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setConnecting(false);
+          setError("Timed out waiting for authorization.");
+          return;
+        }
+        try {
+          const s = await api.integrations.gmailOauthStatus(r.state);
+          if (s.status === "done") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setConnecting(false);
+            setTestResult({ ok: true, message: "Connected. Refresh token saved." });
+            try { popupRef.current?.close(); } catch { /* ignore */ }
+            onChanged();
+          } else if (s.status === "error") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setConnecting(false);
+            setError(s.error ?? "Authorization failed.");
+          } else if (s.status === "unknown") {
+            if (pollRef.current) clearInterval(pollRef.current);
+            setConnecting(false);
+            setError("Authorization session expired.");
+          }
+        } catch (e) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setConnecting(false);
+          setError(e instanceof Error ? e.message : String(e));
+        }
+      }, 1500);
+    } catch (e) {
+      setConnecting(false);
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   // Re-seed when the status changes (e.g. after save returns updated mask).
   useEffect(() => {
@@ -177,6 +240,17 @@ function IntegrationCard({
             {testing ? <Loader2 size={11} className="animate-spin" /> : <ExternalLink size={11} />}
             Test
           </button>
+          {def.name === "gmail" && (
+            <button
+              onClick={connectGmail}
+              disabled={connecting}
+              title="Authorize Gmail via Google OAuth — opens a browser window"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
+              {connecting ? "Waiting…" : "Connect Gmail"}
+            </button>
+          )}
           {configured && (
             <button
               onClick={clear}
