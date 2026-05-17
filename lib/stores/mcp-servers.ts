@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 
 const now = () => new Date().toISOString();
 
@@ -32,16 +33,24 @@ export interface McpServerInput {
   enabled?: boolean;
 }
 
+// `spec` may contain MCP env vars like GITHUB_TOKEN, GOOGLE_MAPS_API_KEY,
+// BRAVE_API_KEY etc. — encrypted at rest (ADR-0005). Decrypt on read.
+function decryptRow<T extends { spec: string }>(row: T): T {
+  return { ...row, spec: decryptIfNeeded(row.spec) };
+}
+
 export function listMcpServers(): McpServerRow[] {
-  return getDb()
+  const rows = getDb()
     .prepare("SELECT * FROM mcp_servers ORDER BY name ASC")
     .all() as unknown as McpServerRow[];
+  return rows.map(decryptRow);
 }
 
 export function getMcpServer(name: string): McpServerRow | null {
-  return (getDb()
+  const row = (getDb()
     .prepare("SELECT * FROM mcp_servers WHERE name=?")
     .get(name) as unknown as McpServerRow) ?? null;
+  return row ? decryptRow(row) : null;
 }
 
 export function upsertMcpServer(input: McpServerInput): McpServerRow {
@@ -54,7 +63,7 @@ export function upsertMcpServer(input: McpServerInput): McpServerRow {
       `INSERT OR REPLACE INTO mcp_servers (name, transport, spec, enabled, last_error, created_at, updated_at)
        VALUES (?, ?, ?, ?, NULL, ?, ?)`,
     )
-    .run(input.name, input.transport, JSON.stringify(input.spec), enabled, created_at, t);
+    .run(input.name, input.transport, encrypt(JSON.stringify(input.spec)), enabled, created_at, t);
   return getMcpServer(input.name)!;
 }
 
