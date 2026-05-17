@@ -27,17 +27,12 @@ export async function handleInboundMessage(
   try {
     const agentId = resolveAgent(adapter.bridge_id, msg.remote_jid);
     if (!agentId) {
-      // Advisory event so the UI can offer a one-click "Add route" hint
-      // without the user having to scrape logs for the JID.
-      publishNotification({
-        type: "bridge_unrouted",
-        bridge_id: adapter.bridge_id,
-        remote_jid: msg.remote_jid,
-        push_name: msg.push_name,
-        is_group: msg.is_group,
-        preview: msg.text.slice(0, 80),
-        ts: Date.now(),
-      });
+      // Unrouted chats are silently dropped. We intentionally do NOT publish
+      // a notification here — the user already declared "this chat isn't
+      // monitored" by not configuring a route, so popping a toast for every
+      // inbound message in an active group would be noise. The console log
+      // remains for debugging; the chat picker in BridgeEditor still shows
+      // observed chats so a route can be added on demand.
       console.log(`[bridge ${adapter.bridge_id}] dropped: no route for ${msg.remote_jid} (${msg.push_name ?? "?"})`);
       return;
     }
