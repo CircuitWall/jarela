@@ -1,4 +1,4 @@
-# CLAUDE.md — LangGUI
+﻿# CLAUDE.md â€” Jarela
 
 Project-specific instructions. Inherits from `~/.claude/CLAUDE.md`.
 
@@ -9,7 +9,7 @@ Project-specific instructions. Inherits from `~/.claude/CLAUDE.md`.
 - **Agents:** LangGraph (`@langchain/langgraph` + sqlite checkpoint)
 - **Providers:** Anthropic, OpenAI, Google GenAI, Cohere
 - **Tools:** MCP via `@langchain/mcp-adapters` + built-ins under `lib/tools/`
-- **Persistence:** SQLite at `~/.langgui` (configurable via `LANGGUI_DB_DIR`)
+- **Persistence:** SQLite at `~/.jarela` (configurable via `JARELA_DB_DIR`)
 - **Validation:** zod
 - **Streaming:** ws + undici
 - **PWA:** next-pwa
@@ -34,7 +34,6 @@ lib/
   notifications/    # Local notifications
 public/             # Static + PWA manifest
 scripts/            # Maintenance / live tests
-backend-archived/   # Old Python backend — gitignored, do not touch
 ```
 
 ## Run / Test
@@ -46,7 +45,7 @@ backend-archived/   # Old Python backend — gitignored, do not touch
 
 ## Conventions specific to this repo
 
-- All persistent state goes through `lib/db` or `lib/stores`. Never write ad-hoc state outside `LANGGUI_DB_DIR`.
+- All persistent state goes through `lib/db` or `lib/stores`. Never write ad-hoc state outside `JARELA_DB_DIR`.
 - New LLM providers: add adapter in `lib/providers/`, register in agent factory, document in README provider list.
 - New tools: add under `lib/tools/<name>.ts`, register in tool registry; if it calls a network/external resource, gate behind a capability flag.
 - Schemas at every API boundary use `zod`.
@@ -56,14 +55,13 @@ backend-archived/   # Old Python backend — gitignored, do not touch
 
 Open a new ADR before:
 - Adding a new LLM/embedding provider.
-- Changing the persistence schema or directory layout under `~/.langgui`.
+- Changing the persistence schema or directory layout under `~/.jarela`.
 - Introducing a second process / daemon (current invariant: single Next.js process).
 - Adding any feature that requires the app to be online.
 
 ## Known constraints
 
 - Repo lives on a OneDrive-synced path. Avoid committing large binaries; `.next/` and `node_modules/` are gitignored.
-- `backend-archived/` is intentionally excluded from git.
 
 ## Architecture diagrams
 

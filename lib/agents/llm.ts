@@ -10,7 +10,7 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config";
 import { getAllToolsAsync } from "@/lib/tools";
-import { LangGuiChatModel } from "@/lib/providers/langgui-chat-model";
+import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import type { ContentPart } from "@/lib/tools/types";
@@ -98,12 +98,12 @@ export async function* streamWithConfig(
     : options?.tool_policy;
   const tools = await getAllToolsAsync(toolPolicy);
 
-  const model = new LangGuiChatModel({ provider, modelId: cfg.model_id, params });
+  const model = new JarelaChatModel({ provider, modelId: cfg.model_id, params });
   const store = new SqliteMemoryStore();
   const checkpointer = getCheckpointer();
 
   // Wipe prior checkpoint state for this thread BEFORE invoking the agent.
-  // Every turn we rebuild the message history from langgui.db.messages (the
+  // Every turn we rebuild the message history from jarela.db.messages (the
   // source of truth), so the checkpointer's only job is to buffer in-flight
   // tool-call state within the current turn. Without this delete, LangGraph's
   // default messages-state reducer keeps appending — every prior turn's tool
@@ -154,7 +154,7 @@ export async function* streamWithConfig(
         // burns through 50 fast — 25 file moves and you're done. 200 leaves
         // generous headroom for legitimate multi-step work while still
         // bounding obvious runaway loops. Configurable via env per deployment.
-        recursionLimit: Number(process.env.LANGGUI_RECURSION_LIMIT) || 200,
+        recursionLimit: Number(process.env.JARELA_RECURSION_LIMIT) || 200,
         // Cancellation: when the user hits Stop (or the last client
         // disconnects), the route aborts this signal and the LangGraph
         // pregel loop unwinds, throwing a friendly aborted error below.
@@ -236,10 +236,10 @@ export async function* streamWithConfig(
     let friendly = rawMsg;
     let code = "agent_error";
     if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
-      const limit = Number(process.env.LANGGUI_RECURSION_LIMIT) || 200;
+      const limit = Number(process.env.JARELA_RECURSION_LIMIT) || 200;
       friendly =
         `The agent took too many tool-calling steps without finishing (hit the ${limit}-step limit). ` +
-        `If the task is legitimately deep, raise LANGGUI_RECURSION_LIMIT in the env. ` +
+        `If the task is legitimately deep, raise JARELA_RECURSION_LIMIT in the env. ` +
         `If the agent looked stuck in a loop (calling the same tool repeatedly), simplify the prompt or ` +
         `try /new to start fresh — long histories of tool results sometimes make the model re-attempt the same step.`;
       code = "recursion_limit";

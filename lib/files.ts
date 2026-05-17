@@ -1,17 +1,13 @@
 // Local file store for binary artifacts produced by tools (generated images,
-// downloads, etc.). Files live under ~/.langgui/files/ and are served by
+// downloads, etc.). Files live under ~/.jarela/files/ and are served by
 // GET /api/v1/files/[name]. The tool returns a relative URL the chat
 // renderer can embed as <img src="/api/v1/files/...">.
 
-import { homedir } from "os";
 import { mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
+import { getDataDir } from "@/lib/db/data-dir";
 
-const baseDir = process.env.LANGGUI_DB_DIR
-  ? process.env.LANGGUI_DB_DIR.replace("~", homedir())
-  : join(homedir(), ".langgui");
-
-export const FILES_DIR = join(baseDir, "files");
+export const FILES_DIR = join(getDataDir(), "files");
 
 mkdirSync(FILES_DIR, { recursive: true });
 

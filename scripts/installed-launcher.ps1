@@ -13,7 +13,7 @@
 $ErrorActionPreference = 'Stop'
 
 $InstallDir = $PSScriptRoot
-$LogDir     = Join-Path $env:LOCALAPPDATA 'LangGUI\logs'
+$LogDir     = Join-Path $env:LOCALAPPDATA 'Jarela\logs'
 $LogFile    = Join-Path $LogDir 'app.log'
 $Port       = 4312
 
@@ -35,7 +35,7 @@ if ((Test-Path $LogFile) -and ((Get-Item $LogFile).Length -gt 5MB)) {
 }
 
 Set-Location $InstallDir
-Write-Log "=== LangGUI launcher starting (install=$InstallDir) ==="
+Write-Log "=== Jarela launcher starting (install=$InstallDir) ==="
 
 # Locate node.exe — Task Scheduler may run with a sparse PATH.
 $nodeCmd = Get-Command node.exe -ErrorAction SilentlyContinue

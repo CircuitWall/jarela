@@ -25,15 +25,15 @@ interface RuntimeState {
   status: Map<string, StatusUpdate>;
   started: boolean;
 }
-const g = globalThis as unknown as { __langgui_bridges?: RuntimeState };
-if (!g.__langgui_bridges) {
-  g.__langgui_bridges = {
+const g = globalThis as unknown as { __jarela_bridges?: RuntimeState };
+if (!g.__jarela_bridges) {
+  g.__jarela_bridges = {
     adapters: new Map(),
     status: new Map(),
     started: false,
   };
 }
-const state = g.__langgui_bridges;
+const state = g.__jarela_bridges;
 
 function makeAdapter(bridge_id: string, kind: string): BridgeAdapter {
   switch (kind) {

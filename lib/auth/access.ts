@@ -1,7 +1,7 @@
 import { isWhitelisted, touchLastSeen } from "@/lib/stores/access";
 
 // Loopback host header signal — only meaningful when the server is bound to
-// 127.0.0.1 (the default). When a reverse proxy fronts LangGUI, the proxy is
+// 127.0.0.1 (the default). When a reverse proxy fronts Jarela, the proxy is
 // expected to preserve the client's original Host header, so this still
 // distinguishes "local user typed localhost" from "tailnet client".
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/;
@@ -45,7 +45,7 @@ export interface RequireAccessArgs {
 export function requireAccess({ headers, host, remoteAddress }: RequireAccessArgs): AccessResult {
   // If tailscaled is proxying this request through `tailscale serve` it
   // *always* injects the Tailscale-User-Login header — including for the
-  // websocket-sidecar path (`/__langgui_ws__`) which arrives at the node
+  // websocket-sidecar path (`/__jarela_ws__`) which arrives at the node
   // process over loopback. So whenever the header is present, treat the
   // request as a tailnet request and enforce the whitelist, regardless of
   // whether the source IP / Host header looks like loopback. Otherwise a

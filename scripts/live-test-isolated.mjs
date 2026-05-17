@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Orchestrator for an isolated live-test run.
 //
-//  1. Picks an isolated DB dir (LANGGUI_DB_DIR -> %TEMP%/langgui-livetest by default).
+//  1. Picks an isolated DB dir (JARELA_DB_DIR -> %TEMP%/jarela-livetest by default).
 //  2. Spawns `next dev --webpack -p <port>` with that dir.
 //  3. Polls until the server is healthy.
-//  4. Runs scripts/live-test.mjs against it, with LANGGUI_SEED_FROM_PROD=1 so
-//     real provider credentials are copied from ~/.langgui (read-only).
+//  4. Runs scripts/live-test.mjs against it, with JARELA_SEED_FROM_PROD=1 so
+//     real provider credentials are copied from ~/.jarela (read-only).
 //  5. Tears the server down on exit.
 //
 // Production data is never written; this only READS from prod via SQLite
@@ -21,8 +21,8 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
-const PORT = Number(process.env.LANGGUI_TEST_PORT || 4313);
-const DB_DIR = process.env.LANGGUI_TEST_DB_DIR || join(tmpdir(), "langgui-livetest");
+const PORT = Number(process.env.JARELA_TEST_PORT || 4313);
+const DB_DIR = process.env.JARELA_TEST_DB_DIR || join(tmpdir(), "jarela-livetest");
 const KEEP_DB = process.argv.includes("--keep-db");
 const PASS_ARGS = process.argv.slice(2).filter((a) => a !== "--keep-db");
 
@@ -42,12 +42,12 @@ mkdirSync(DB_DIR, { recursive: true });
 log(`isolated DB dir: ${DB_DIR}`);
 
 // 2. Start dev server
-log(`starting next dev on :${PORT} (this won't touch ~/.langgui)`);
+log(`starting next dev on :${PORT} (this won't touch ~/.jarela)`);
 const server = spawn(
   process.platform === "win32" ? "npx.cmd" : "npx",
   ["next", "dev", "--webpack", "-p", String(PORT)],
   {
-    env: { ...process.env, LANGGUI_DB_DIR: DB_DIR },
+    env: { ...process.env, JARELA_DB_DIR: DB_DIR },
     stdio: ["ignore", "pipe", "pipe"],
     shell: process.platform === "win32",
   },
@@ -56,11 +56,11 @@ const server = spawn(
 let serverReady = false;
 server.stdout.on("data", (buf) => {
   const s = buf.toString();
-  if (process.env.LANGGUI_VERBOSE) process.stdout.write(`${C.dim}[server]${C.reset} ${s}`);
+  if (process.env.JARELA_VERBOSE) process.stdout.write(`${C.dim}[server]${C.reset} ${s}`);
   if (!serverReady && /Ready in /.test(s)) serverReady = true;
 });
 server.stderr.on("data", (buf) => {
-  if (process.env.LANGGUI_VERBOSE) process.stderr.write(`${C.dim}[server-err]${C.reset} ${buf}`);
+  if (process.env.JARELA_VERBOSE) process.stderr.write(`${C.dim}[server-err]${C.reset} ${buf}`);
 });
 
 function shutdown(code) {
@@ -107,8 +107,8 @@ const runner = spawn(
   {
     env: {
       ...process.env,
-      LANGGUI_URL: BASE,
-      LANGGUI_SEED_FROM_PROD: "1",
+      JARELA_URL: BASE,
+      JARELA_SEED_FROM_PROD: "1",
     },
     stdio: "inherit",
   },

@@ -81,7 +81,7 @@ function IntegrationCard({
     setConnecting(true);
     try {
       const r = await api.integrations.gmailOauthStart({ client_id: clientId, client_secret: clientSecret });
-      popupRef.current = window.open(r.authorize_url, "langgui-gmail-oauth", "width=560,height=720");
+      popupRef.current = window.open(r.authorize_url, "jarela-gmail-oauth", "width=560,height=720");
       if (!popupRef.current) {
         setError("Browser blocked the OAuth popup. Allow popups for this site and retry.");
         setConnecting(false);
@@ -314,7 +314,7 @@ function GmailSetupGuide() {
             <li><strong>Application type:</strong> <span className="text-zinc-200">Desktop app</span>{" "}
               (this matters — Web app types require pre-registering redirect URIs and will fail with
               <code className="text-zinc-200"> redirect_uri_mismatch</code>).</li>
-            <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">LangGUI</code>.</li>
+            <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">Jarela</code>.</li>
           </ul>
           After it's created, copy the <strong>Client ID</strong> and <strong>Client secret</strong>{" "}
           shown in the popup (or click the download icon to get the JSON — the values are under{" "}

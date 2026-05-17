@@ -6,7 +6,7 @@
 // GEMINI_API_KEY env → GOOGLE_API_KEY env. The Integrations panel is the
 // recommended way to set this.
 //
-// Output: PNG bytes written to ~/.langgui/files/<uuid>.png. The tool returns
+// Output: PNG bytes written to ~/.jarela/files/<uuid>.png. The tool returns
 // a relative URL the chat renderer can embed via markdown `![alt](url)`.
 
 import { tool } from "@langchain/core/tools";
@@ -20,7 +20,7 @@ const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 // Cap any single image-generation HTTP call. Without this, a stuck Gemini
 // connection wedges the agent loop (and the Stop button does nothing useful
 // because fetch hasn't returned yet to check the abort signal).
-const REQUEST_TIMEOUT_MS = Number(process.env.LANGGUI_IMAGE_TIMEOUT_MS) || 60_000;
+const REQUEST_TIMEOUT_MS = Number(process.env.JARELA_IMAGE_TIMEOUT_MS) || 60_000;
 
 function timeoutSignal(ms: number): AbortSignal {
   const c = new AbortController();

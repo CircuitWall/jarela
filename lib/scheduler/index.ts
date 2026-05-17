@@ -18,11 +18,11 @@ interface SchedulerState {
   timer: NodeJS.Timeout | null;
   running: boolean;
 }
-const g = globalThis as unknown as { __langgui_scheduler?: SchedulerState };
-if (!g.__langgui_scheduler) {
-  g.__langgui_scheduler = { started: false, timer: null, running: false };
+const g = globalThis as unknown as { __jarela_scheduler?: SchedulerState };
+if (!g.__jarela_scheduler) {
+  g.__jarela_scheduler = { started: false, timer: null, running: false };
 }
-const state = g.__langgui_scheduler;
+const state = g.__jarela_scheduler;
 
 // Idempotent — call repeatedly; only the first call starts the loop.
 export function startScheduler(): void {

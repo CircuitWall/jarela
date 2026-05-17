@@ -71,12 +71,12 @@ interface BusState {
   listeners: Set<Listener>;
   recent: NotificationEvent[];
 }
-const g = globalThis as unknown as { __langgui_notif_bus?: BusState };
-if (!g.__langgui_notif_bus) {
-  g.__langgui_notif_bus = { listeners: new Set<Listener>(), recent: [] };
+const g = globalThis as unknown as { __jarela_notif_bus?: BusState };
+if (!g.__jarela_notif_bus) {
+  g.__jarela_notif_bus = { listeners: new Set<Listener>(), recent: [] };
 }
-const listeners = g.__langgui_notif_bus.listeners;
-const recent = g.__langgui_notif_bus.recent;
+const listeners = g.__jarela_notif_bus.listeners;
+const recent = g.__jarela_notif_bus.recent;
 
 export function publish(ev: NotificationEvent): void {
   recent.push(ev);

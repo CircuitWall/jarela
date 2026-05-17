@@ -26,7 +26,7 @@ export function TopProgressBar() {
       }`}
       aria-hidden={!visible}
     >
-      <div className="langgui-progress h-full w-full" />
+      <div className="jarela-progress h-full w-full" />
     </div>
   );
 }

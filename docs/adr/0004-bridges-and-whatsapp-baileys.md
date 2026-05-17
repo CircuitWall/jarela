@@ -1,4 +1,4 @@
-# 4. Bridges concept and WhatsApp integration via Baileys
+﻿# 4. Bridges concept and WhatsApp integration via Baileys
 
 Date: 2026-05-17
 
@@ -8,9 +8,9 @@ Accepted
 
 ## Context
 
-LangGUI agents are reached today only through the in-app chat (PWA, browser
+Jarela agents are reached today only through the in-app chat (PWA, browser
 session, or local API client). Users want to talk to their agents from
-outside the app — concretely, from WhatsApp on their phone, so that a friend
+outside the app â€” concretely, from WhatsApp on their phone, so that a friend
 or family group can DM "Agent A" and get a reply on the same channel they
 already use for messaging.
 
@@ -18,7 +18,7 @@ Two earlier ADRs constrain the design:
 
 - ADR-0002 picks LangGraph as the agent runtime; every entry into the agent
   goes through `prepareThreadRun`.
-- ADR-0003 commits to SQLite local persistence at `~/.langgui`.
+- ADR-0003 commits to SQLite local persistence at `~/.jarela`.
 
 The repo invariant (`CLAUDE.md`) is **single Next.js process** and **no
 required cloud calls** beyond the LLM/MCP/GitHub providers the user
@@ -28,16 +28,16 @@ breaking the first if we shell out to a sidecar process.
 
 We considered three categories of WhatsApp integration:
 
-1. **Meta Cloud API / Twilio WhatsApp** — official, REST + webhook. Requires
+1. **Meta Cloud API / Twilio WhatsApp** â€” official, REST + webhook. Requires
    a verified business account, a public webhook URL (so the user must run
    a tunnel like Tailscale Funnel or ngrok), and either a paid Twilio plan
    or Meta's free 1k/day tier with business verification. Heavy onboarding
    for a personal-automation use case.
-2. **Puppeteer-based libraries** (whatsapp-web.js, venom-bot, open-wa) —
+2. **Puppeteer-based libraries** (whatsapp-web.js, venom-bot, open-wa) â€”
    wrap WhatsApp Web in a headless Chromium. Heavy memory footprint, brittle
    when WhatsApp ships UI changes, and effectively shelled out (Chromium
    side-process).
-3. **Baileys** (`@whiskeysockets/baileys`) — pure-Node WebSocket client
+3. **Baileys** (`@whiskeysockets/baileys`) â€” pure-Node WebSocket client
    speaking WhatsApp's Multi-Device protocol directly. No Chromium, no
    public URL needed (it's outbound WS), pairs via QR code or pairing code,
    actively maintained, and the de-facto standard for this use case.
@@ -62,7 +62,7 @@ task push to a contact. Outbound is exclusively the agent's reply to an
 inbound message routed through the bridge.
 
 Baileys credentials (multi-device auth state) live under
-`${LANGGUI_DB_DIR}/baileys/<bridge_id>/`, managed by Baileys'
+`${JARELA_DB_DIR}/baileys/<bridge_id>/`, managed by Baileys'
 `useMultiFileAuthState` helper. They never enter the SQLite DB.
 
 ## Consequences
@@ -71,11 +71,11 @@ Baileys credentials (multi-device auth state) live under
 
 - New `BridgeAdapter` interface in `lib/bridges/types.ts` accepts future
   Telegram / Slack / Discord / SMS adapters without further schema changes.
-- No public tunnel required for the WhatsApp adapter — Baileys is an
-  outbound WS connection, so the user can run LangGUI behind NAT.
+- No public tunnel required for the WhatsApp adapter â€” Baileys is an
+  outbound WS connection, so the user can run Jarela behind NAT.
 - Reuses `prepareThreadRun` and the scheduler's drain pattern verbatim; no
   changes to the LangGraph runtime, no new entry-point to maintain.
-- Personal WhatsApp accounts work directly — no business verification, no
+- Personal WhatsApp accounts work directly â€” no business verification, no
   per-message billing.
 
 **Negative**
@@ -83,7 +83,7 @@ Baileys credentials (multi-device auth state) live under
 - **Online requirement when any bridge is enabled.** This is a deliberate
   carve-out from the previously-stated "no required cloud calls" invariant.
   Bridges are opt-in (`enabled=0` by default on create) and the rest of
-  LangGUI continues to work offline when no bridge is enabled.
+  Jarela continues to work offline when no bridge is enabled.
 - **In-process long-lived WS connections.** The Next.js Node process now
   holds one always-on WebSocket per enabled bridge (similar to the existing
   scheduler timer). Memory + connection-reconnect logic live alongside

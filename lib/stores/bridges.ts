@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { homedir } from "os";
 import { join } from "path";
 import { mkdirSync, rmSync } from "fs";
 import { getDb } from "@/lib/db";
@@ -42,12 +41,10 @@ const now = () => new Date().toISOString();
 
 // Mirror lib/db/index.ts so we don't depend on importing it for a directory
 // path — keeps the store free of side-effects on import.
-const baseDir = process.env.LANGGUI_DB_DIR
-  ? process.env.LANGGUI_DB_DIR.replace("~", homedir())
-  : join(homedir(), ".langgui");
+import { getDataDir } from "@/lib/db/data-dir";
 
 export function bridgeAuthDir(bridgeId: string): string {
-  return join(baseDir, "baileys", bridgeId);
+  return join(getDataDir(), "baileys", bridgeId);
 }
 
 export function ensureBridgeAuthDir(bridgeId: string): string {

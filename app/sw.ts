@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-// Service worker source for LangGUI. @serwist/next compiles this to
+// Service worker source for Jarela. @serwist/next compiles this to
 // public/sw.js during `next build`. Replaces the previous next-pwa setup
 // (next-pwa is webpack-only and unmaintained for Next 16+ / Turbopack).
 
