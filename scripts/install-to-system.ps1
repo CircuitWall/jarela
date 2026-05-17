@@ -161,16 +161,18 @@ Info "files copied:"
 Get-ChildItem $InstallDir | ForEach-Object { Info ("  " + $_.Name) }
 
 # â”€â”€ 5. Re-register scheduled task pointing at the install dir â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-Step "Registering scheduled task '$TaskName' -> $InstallDir\launcher.vbs"
-$launcherVbs = Join-Path $InstallDir 'launcher.vbs'
+Step "Registering scheduled task '$TaskName' -> $InstallDir\launcher.ps1"
+$launcherPs1 = Join-Path $InstallDir 'launcher.ps1'
 
-# wscript.exe runs the VBS shim with no console window, which in turn launches
-# powershell -File launcher.ps1 detached. Net effect: no flashing terminal in
-# the foreground at logon or restart. `powershell.exe -WindowStyle Hidden` is
-# unreliable when the launcher spawns `node server.js` via -NoNewWindow.
+# Invoke launcher.ps1 directly with powershell -WindowStyle Hidden. We
+# previously routed through wscript.exe + launcher.vbs to hide the console
+# completely, but on some Windows configurations Task Scheduler's wscript
+# child can sit forever without spawning its powershell child, leaving the
+# task "Running" but the service down. Going straight to powershell is more
+# reliable; a brief console flash at logon is an acceptable trade-off.
 $action = New-ScheduledTaskAction `
-  -Execute 'wscript.exe' `
-  -Argument ("`"" + $launcherVbs + "`"") `
+  -Execute 'powershell.exe' `
+  -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcherPs1 + '"') `
   -WorkingDirectory $InstallDir
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
