@@ -135,7 +135,7 @@ export function useSSE(onDone?: () => void) {
       setStreamingContent("");
       setThinkingContent("");
     }
-  }, [consume]);
+  }, [consume, consumeAttach]);
 
   // Stop the active run. Two-part: (1) tell the server to abort the agent
   // stream so the LangGraph loop unwinds and downstream subscribers see a

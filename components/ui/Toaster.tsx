@@ -43,7 +43,11 @@ function ToastCard({ toast }: { toast: Toast }) {
   const [exiting, setExiting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const remainingRef = useRef<number>(toast.ttl);
-  const startedRef = useRef<number>(Date.now());
+  // Lazy useState init runs during the first render only and is invoked by
+  // React itself, satisfying react-hooks/purity. We capture mount time as a
+  // stable value (effectively a ref) without calling Date.now() inline.
+  const [startedAt] = useState<number>(() => Date.now());
+  const startedRef = useRef<number>(startedAt);
 
   // Auto-dismiss with hover-to-pause. Reset timer on hover-out using the
   // remaining duration so a 6s toast that you hovered for 3s still gets ~3s

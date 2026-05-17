@@ -6,7 +6,10 @@ import { getDataDir } from "@/lib/db/data-dir";
 
 export const PROVIDERS_DIR = join(getDataDir(), "providers");
 
-const req = createRequire(join(process.cwd(), "noop.js"));
+// Static argument so webpack's dependency analysis doesn't warn. The
+// resolution base only matters for relative specifiers, which we never
+// pass — entries are loaded via absolute `path` below.
+const req = createRequire(import.meta.url);
 
 function isValid(p: unknown): p is ModelProvider {
   if (!p || typeof p !== "object") return false;
