@@ -32,6 +32,8 @@ type WASocket = {
   ev: { on: (event: string, handler: (...args: unknown[]) => void) => void };
   user?: { id?: string };
   sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
+  sendPresenceUpdate?: (presence: string, jid?: string) => Promise<unknown>;
+  presenceSubscribe?: (jid: string) => Promise<unknown>;
   end?: (err: Error | undefined) => void;
   groupFetchAllParticipating?: () => Promise<Record<string, { id: string; subject?: string }>>;
   onWhatsApp?: (...jids: string[]) => Promise<Array<{ jid?: string; exists?: boolean; lid?: string }>>;
@@ -193,7 +195,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       if (payload.type !== "notify") return; // ignore history/append
       for (const raw of payload.messages ?? []) {
         const m = raw as {
-          key?: { remoteJid?: string; fromMe?: boolean; id?: string };
+          key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string };
           pushName?: string;
           message?: {
             conversation?: string;
@@ -202,7 +204,14 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           messageTimestamp?: number | { low?: number };
         };
         if (!m.key?.remoteJid || m.key.fromMe) continue;
-        const remote_jid = m.key.remoteJid;
+        // Baileys 7 / modern WhatsApp delivers many personal chats with a
+        // `@lid` ("Local IDentifier") remoteJid instead of `@s.whatsapp.net`.
+        // The chat picker filters those out (they aren't valid sendMessage
+        // targets), so saved routes are keyed on the `@s.whatsapp.net` form.
+        // To make routing actually match, prefer `remoteJidAlt` when it
+        // points at a routable JID — that's the same chat in its
+        // phone-number form.
+        const remote_jid = pickRoutableJid(m.key.remoteJid, m.key.remoteJidAlt);
         // Update the chat cache regardless of whether the body is text —
         // the chat is "real" the moment we see any message from it, even
         // a sticker we'll drop.
@@ -306,6 +315,23 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     if (!sock) throw new Error("Bridge not connected");
     await (sock as unknown as { sendMessage: (jid: string, content: { text: string }) => Promise<unknown> })
       .sendMessage(remote_jid, { text });
+  }
+
+  async sendTyping(remote_jid: string, typing: boolean): Promise<void> {
+    const sock = this.sock;
+    if (!sock?.sendPresenceUpdate) return;
+    // Subscribing makes WhatsApp deliver presence both ways — not strictly
+    // required for sending our composing state, but cheap and keeps the
+    // session consistent. Errors are best-effort.
+    try {
+      if (typing && sock.presenceSubscribe) {
+        await sock.presenceSubscribe(remote_jid).catch(() => { /* best-effort */ });
+      }
+      await sock.sendPresenceUpdate(typing ? "composing" : "paused", remote_jid);
+    } catch (err) {
+      // Don't let presence hiccups break the reply path — just log.
+      console.warn(`[bridge ${this.bridge_id}] sendPresenceUpdate failed:`, err);
+    }
   }
 
   async resetAuth(): Promise<void> {
@@ -417,6 +443,24 @@ function makeSilentLogger(): unknown {
  */
 function normalizePhoneDigits(input: string): string {
   return input.replace(/\D+/g, "");
+}
+
+/**
+ * Prefer the routable JID form (`@s.whatsapp.net` or `@g.us`) over `@lid`.
+ *
+ * WhatsApp's privacy-preserving identifier rollout means inbound messages
+ * frequently arrive with `key.remoteJid = "<id>@lid"` and the actual
+ * phone-number JID in `key.remoteJidAlt`. The chat picker can only show
+ * routable JIDs (you can't sendMessage to an `@lid`), so saved routes use
+ * the `@s.whatsapp.net` form — without this normalization, every inbound
+ * `@lid` message would silently fail to match its route.
+ */
+function pickRoutableJid(primary: string, alt: string | undefined): string {
+  const isRoutable = (j: string | undefined) =>
+    !!j && (j.endsWith("@s.whatsapp.net") || j.endsWith("@g.us"));
+  if (isRoutable(primary)) return primary;
+  if (isRoutable(alt)) return alt!;
+  return primary;
 }
 
 /**
