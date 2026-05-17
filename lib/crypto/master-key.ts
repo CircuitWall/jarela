@@ -33,10 +33,30 @@ let _source: MasterKeySource | null = null;
 // Synchronously read or generate the master key. Idempotent; only does
 // real work on first call. Returns where the key ended up living so
 // callers can warn the user about the keyfile fallback.
+//
+// Resolution order:
+//   1. If ${dataDir}/.secret-key exists, use it. The keyfile is
+//      authoritative once present: the on-disk rows were encrypted
+//      with that key, and silently switching to a different key
+//      source would orphan them. To migrate to the keychain, decrypt
+//      with the keyfile + re-encrypt + delete the keyfile (see
+//      scripts/rekey-to-keychain.mjs — TODO).
+//   2. Otherwise try the OS keychain via keytar (child process).
+//   3. Otherwise generate a fresh keyfile and warn the user.
 export function initMasterKey(dataDir: string): { source: MasterKeySource } {
   if (_key && _source) return { source: _source };
 
-  // 1) Try keychain via a one-shot child process so we can stay sync.
+  const path = join(dataDir, KEYFILE_NAME);
+
+  // 1) Existing keyfile — authoritative.
+  if (existsSync(path)) {
+    _key = readFileSync(path);
+    if (_key.length !== 32) throw new Error(`keyfile wrong length: ${_key.length}`);
+    _source = "keyfile";
+    return { source: "keyfile" };
+  }
+
+  // 2) Try keychain via a one-shot child process so we can stay sync.
   try {
     const keyB64 = loadOrCreateViaKeychain();
     _key = Buffer.from(keyB64, "base64");
@@ -49,18 +69,9 @@ export function initMasterKey(dataDir: string): { source: MasterKeySource } {
     );
   }
 
-  // 2) Fallback: keyfile inside the data dir.
-  const path = join(dataDir, KEYFILE_NAME);
-  if (existsSync(path)) {
-    _key = readFileSync(path);
-    if (_key.length !== 32) throw new Error(`keyfile wrong length: ${_key.length}`);
-  } else {
-    _key = randomBytes(32);
-    writeFileSync(path, _key, { mode: 0o600 });
-  }
-  // Belt-and-braces re-apply the mode in case writeFileSync's mode arg
-  // is ignored on Windows (it is — chmodSync is a no-op there but kept
-  // for parity with the contract).
+  // 3) Fallback: generate a fresh keyfile.
+  _key = randomBytes(32);
+  writeFileSync(path, _key, { mode: 0o600 });
   try { chmodSync(path, 0o600); } catch { /* */ }
 
   _source = "keyfile";
