@@ -20,7 +20,7 @@ const MIME: Record<string, string> = {
 
 // GET /api/v1/files/[name]
 // Serves a file produced by a tool (e.g. generate_image) from
-// ~/.langgui/files/. Path-traversal safe — names must match a strict regex.
+// ~/.jarela/files/. Path-traversal safe — names must match a strict regex.
 //
 // Notes:
 // - We stream from disk (don't buffer the whole image into memory).

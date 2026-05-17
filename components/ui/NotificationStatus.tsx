@@ -15,7 +15,7 @@ function readStatus(): Status {
   return Notification.permission as Status;
 }
 
-const DISMISS_KEY = "langgui:notif-banner-dismissed";
+const DISMISS_KEY = "jarela:notif-banner-dismissed";
 
 export function NotificationStatus() {
   const [status, setStatus] = useState<Status>("default");
@@ -42,10 +42,10 @@ export function NotificationStatus() {
         // and so the OS notification center is "primed" — some macOS setups
         // hide the very first notification until the system center registers
         // the source.
-        new Notification("LangGUI notifications enabled", {
+        new Notification("Jarela notifications enabled", {
           body: "You'll see a ping when an agent finishes a turn while you're away.",
           icon: "/icon-192.png",
-          tag: "langgui-enable",
+          tag: "jarela-enable",
         });
       }
     } catch (err) {
@@ -55,10 +55,10 @@ export function NotificationStatus() {
 
   function testFire() {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification("LangGUI test", {
+    new Notification("Jarela test", {
       body: "If you see this, notifications are wired correctly.",
       icon: "/icon-192.png",
-      tag: "langgui-test",
+      tag: "jarela-test",
     });
     setTestFired(true);
     setTimeout(() => setTestFired(false), 2000);
@@ -85,8 +85,8 @@ export function NotificationStatus() {
           : <Bell size={14} className="text-amber-400 shrink-0" />}
         <p className="text-xs text-zinc-200 mr-auto">
           {status === "denied"
-            ? "OS notifications are blocked. In-app pop-ups still work; for system-level alerts when LangGUI isn't focused, allow Notifications via the lock icon in the URL bar."
-            : "Enable OS notifications to also get pinged when LangGUI isn't focused (in-app pop-ups already work)."}
+            ? "OS notifications are blocked. In-app pop-ups still work; for system-level alerts when Jarela isn't focused, allow Notifications via the lock icon in the URL bar."
+            : "Enable OS notifications to also get pinged when Jarela isn't focused (in-app pop-ups already work)."}
         </p>
         {status === "default" && (
           <button
@@ -128,10 +128,10 @@ export function NotificationTestButton() {
     // 2. OS Web Notification — only works if permission granted.
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
-        new Notification("LangGUI test", {
+        new Notification("Jarela test", {
           body: "If you see this, OS notifications are wired correctly.",
           icon: "/icon-192.png",
-          tag: "langgui-test",
+          tag: "jarela-test",
         });
       } catch { /* OS rejected, ignore */ }
     }

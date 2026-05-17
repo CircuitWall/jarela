@@ -123,7 +123,7 @@ function ToastCard({ toast }: { toast: Toast }) {
           className="absolute bottom-0 left-0 right-0 h-[2px] origin-left rounded-bl-xl"
           style={{
             backgroundColor: isError ? "#fb7185" : "#3b82f6",
-            animation: paused ? "none" : `langgui-toast-shrink ${toast.ttl}ms linear forwards`,
+            animation: paused ? "none" : `jarela-toast-shrink ${toast.ttl}ms linear forwards`,
           }}
         />
       )}

@@ -1,15 +1,15 @@
-# uninstall-from-system.ps1 — remove the installed LangGUI (default
-# %LOCALAPPDATA%\Programs\LangGUI) and its scheduled task. Does NOT touch
-# %USERPROFILE%\.langgui (the SQLite database, OAuth tokens, memory, etc.).
+# uninstall-from-system.ps1 — remove the installed Jarela (default
+# %LOCALAPPDATA%\Programs\Jarela) and its scheduled task. Does NOT touch
+# %USERPROFILE%\.jarela (the SQLite database, OAuth tokens, memory, etc.).
 
 [CmdletBinding()]
 param(
-  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\LangGUI'),
+  [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Jarela'),
   [switch]$PurgeData
 )
 
 $ErrorActionPreference = 'Stop'
-$TaskName = 'LangGUI'
+$TaskName = 'Jarela'
 $Port     = 4312
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -36,12 +36,12 @@ if (Test-Path $InstallDir) {
 }
 
 if ($PurgeData) {
-  $dbDir = Join-Path $env:USERPROFILE '.langgui'
+  $dbDir = Join-Path $env:USERPROFILE '.jarela'
   if (Test-Path $dbDir) {
     Write-Host "Purging data directory $dbDir (because -PurgeData was passed)..."
     Remove-Item -Path $dbDir -Recurse -Force
   }
 } else {
-  Write-Host ("Your data at " + (Join-Path $env:USERPROFILE '.langgui') + " was left untouched.")
+  Write-Host ("Your data at " + (Join-Path $env:USERPROFILE '.jarela') + " was left untouched.")
   Write-Host "Pass -PurgeData to also delete it."
 }

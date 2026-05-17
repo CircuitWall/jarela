@@ -1,5 +1,5 @@
 /**
- * Tool creation template for LangGUI (LangGraph/LangChain.js standard).
+ * Tool creation template for Jarela (LangGraph/LangChain.js standard).
  *
  * To add a new tool:
  *   1. Copy this file to lib/tools/your-tool.ts

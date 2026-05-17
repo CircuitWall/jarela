@@ -33,7 +33,7 @@ build/
 *.db
 *.sqlite
 *.sqlite3
-~/.langgui/
+~/.jarela/
 
 # logs
 *.log

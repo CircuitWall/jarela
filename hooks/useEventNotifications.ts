@@ -38,25 +38,25 @@ interface Options {
   // For titling the toast / notification.
   resolveAgentName: (agentId: string | null) => string;
   // Optional: return a URL to the agent's avatar so OS notifications show
-  // the agent icon instead of the generic LangGUI logo. Null/undefined →
+  // the agent icon instead of the generic Jarela logo. Null/undefined →
   // fall back to /icon-192.png.
   resolveAgentIcon?: (agentId: string | null) => string | null | undefined;
 }
 
 // Subscribes to /api/v1/events. Each event:
 //   - Always pushes an in-app toast (Teams-style card, bottom-right of the
-//     LangGUI window). Works whenever the window is visible — including in
+//     Jarela window). Works whenever the window is visible — including in
 //     the Edge sidebar.
 //   - Additionally fires a Web Notification when the window is NOT focused
 //     (background tab, minimized, focused-on-another-app). The OS surfaces
-//     it even when LangGUI isn't visible. Requires browser permission;
+//     it even when Jarela isn't visible. Requires browser permission;
 //     gracefully no-op when not granted.
 // Persist the last-seen-event timestamp across reloads/relaunches.
 // Without this, mobile users who background the PWA (which suspends SSE on
 // iOS) miss every scheduler/cron event that fires while they were away,
 // because the next mount initialised `lastTs` to Date.now() and the
 // server's recentSince() replay returned nothing.
-const LAST_TS_KEY = "langgui.notif.lastTs";
+const LAST_TS_KEY = "jarela.notif.lastTs";
 function loadLastTs(): number {
   if (typeof window === "undefined") return 0;
   try {
@@ -131,13 +131,13 @@ export function useEventNotifications(options: Options) {
             tag: ev.type === "run_completed" ? `run:${ev.thread_id}` : `task:${ev.task_id}`,
             icon: customIcon || "/icon-192.png",
           });
-          // Click handler: focus the LangGUI window, switch to the agent the
+          // Click handler: focus the Jarela window, switch to the agent the
           // event belongs to, dismiss the OS notification.
           n.onclick = () => {
             window.focus();
             const agentId = ev.agent_id;
             if (agentId) {
-              window.dispatchEvent(new CustomEvent("langgui:focus-agent", {
+              window.dispatchEvent(new CustomEvent("jarela:focus-agent", {
                 detail: { agentId },
               }));
             }
@@ -147,7 +147,7 @@ export function useEventNotifications(options: Options) {
         } catch { /* OS rejected — fall through to in-app toast */ }
       }
 
-      // Fallback: in-app toast (visible whenever the LangGUI window has
+      // Fallback: in-app toast (visible whenever the Jarela window has
       // any pixels on screen).
       pushToast({
         kind,

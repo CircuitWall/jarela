@@ -120,7 +120,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       // "Check your phone connection and try again" error on the phone
       // (even though the WS connection itself is fine). The Baileys-shipped
       // `Browsers` helpers produce identifiers WhatsApp accepts. We tried
-      // swapping the middle slot to "LangGUI" once for branding in the
+      // swapping the middle slot to "Jarela" once for branding in the
       // linked-devices list — WhatsApp rejected pairing. Keep "Chrome".
       browser: baileys.Browsers.ubuntu("Chrome"),
       markOnlineOnConnect: false,

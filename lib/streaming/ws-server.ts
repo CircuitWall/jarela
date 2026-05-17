@@ -24,7 +24,7 @@ type WsServerState = {
 
 declare global {
   // eslint-disable-next-line no-var
-  var __langguiWsState: WsServerState | undefined;
+  var __jarelaWsState: WsServerState | undefined;
 }
 
 function sendJson(ws: WebSocket, payload: Record<string, unknown>): void {
@@ -119,11 +119,11 @@ function parseRunRequest(raw: string): WsRunRequest {
 }
 
 export function ensureWsServer(): { port: number } {
-  if (globalThis.__langguiWsState) {
-    return { port: globalThis.__langguiWsState.port };
+  if (globalThis.__jarelaWsState) {
+    return { port: globalThis.__jarelaWsState.port };
   }
 
-  const preferredPort = Number(process.env.LANGGUI_WS_PORT ?? 3219);
+  const preferredPort = Number(process.env.JARELA_WS_PORT ?? 3219);
   const server = new WebSocketServer({
     port: preferredPort,
     // Same access policy as HTTP middleware — loopback or whitelisted Tailscale
@@ -167,6 +167,6 @@ export function ensureWsServer(): { port: number } {
     });
   });
 
-  globalThis.__langguiWsState = { server, port: preferredPort };
+  globalThis.__jarelaWsState = { server, port: preferredPort };
   return { port: preferredPort };
 }
