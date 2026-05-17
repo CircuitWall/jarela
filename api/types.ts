@@ -146,7 +146,7 @@ export interface AccessWhitelistEntry {
 export interface ToolInfo {
   name: string;
   description: string;
-  /** "builtin" = shipped with LangGUI; "mcp" = provided by a connected MCP server. */
+  /** "builtin" = shipped with Jarela; "mcp" = provided by a connected MCP server. */
   source?: "builtin" | "mcp";
   /** UI grouping label (e.g. "Files", "Web", "MCP"). */
   category?: string;

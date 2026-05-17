@@ -187,7 +187,7 @@ function LocationSharing({
         </button>
       </div>
       <p className="text-[11px] text-zinc-500">
-        When enabled, your browser sends your current coordinates to LangGUI so the agent can answer
+        When enabled, your browser sends your current coordinates to Jarela so the agent can answer
         location-aware questions (weather, nearby places, directions). Stored locally only; never sent
         to any third party other than the LLM/MCP services you&apos;ve configured.
       </p>
@@ -265,7 +265,7 @@ function AccessWhitelist() {
         <h3 className="text-sm font-semibold text-zinc-100">Tailscale access whitelist</h3>
       </div>
       <p className="text-[11px] text-zinc-500">
-        Identities allowed to reach LangGUI through <code className="text-zinc-400">tailscale serve</code>.
+        Identities allowed to reach Jarela through <code className="text-zinc-400">tailscale serve</code>.
         Local access (<code className="text-zinc-400">localhost</code>) is always allowed.
         Tailscale passes the identity via the <code className="text-zinc-400">Tailscale-User-Login</code> header.
       </p>

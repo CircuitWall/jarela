@@ -13,8 +13,6 @@ const config = [
       "public/sw.js",
       "public/swe-worker-*.js",
       "public/workbox-*.js",
-      "backend-archived/**",
-      "frontend/**",
     ],
   },
 ];

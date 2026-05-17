@@ -3,12 +3,12 @@ import { ensureWsServer } from "@/lib/streaming/ws-server";
 
 export const runtime = "nodejs";
 
-// Path that `tailscale serve` proxies to the WS sidecar when LangGUI is
+// Path that `tailscale serve` proxies to the WS sidecar when Jarela is
 // fronted by tailscale. Configure with:
-//   tailscale serve --bg --set-path=/__langgui_ws__ http://127.0.0.1:3219
+//   tailscale serve --bg --set-path=/__jarela_ws__ http://127.0.0.1:3219
 // When the request arrives over loopback (the host machine's browser), we
 // keep the direct `ws://localhost:<port>` URL because no proxy is in the way.
-const TAILSCALE_WS_PATH = "/__langgui_ws__";
+const TAILSCALE_WS_PATH = "/__jarela_ws__";
 const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)/;
 
 export async function GET(req: NextRequest) {

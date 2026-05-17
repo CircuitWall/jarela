@@ -184,7 +184,7 @@ function MapEmbed({ payload }: { payload: string }) {
 }
 
 function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {  return (
-    <div className="prose prose-invert prose-sm max-w-none langgui-rich">
+    <div className="prose prose-invert prose-sm max-w-none jarela-rich">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}

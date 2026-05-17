@@ -23,8 +23,8 @@ interface Fields {
   boundTools?: StructuredToolInterface[];
 }
 
-export class LangGuiChatModel extends BaseChatModel {
-  lc_namespace = ["langgui", "chat_models"];
+export class JarelaChatModel extends BaseChatModel {
+  lc_namespace = ["jarela", "chat_models"];
   lc_serializable = false;
 
   private _provider: ModelProvider;
@@ -41,12 +41,12 @@ export class LangGuiChatModel extends BaseChatModel {
   }
 
   _llmType(): string {
-    return `langgui_${this._provider?.name ?? "chat"}`;
+    return `jarela_${this._provider?.name ?? "chat"}`;
   }
 
   // createReactAgent calls bindTools() to attach the tool list before streaming.
   bindTools(tools: StructuredToolInterface[], _kwargs?: Partial<BaseChatModelCallOptions>): Runnable {
-    return new LangGuiChatModel({
+    return new JarelaChatModel({
       provider: this._provider,
       modelId: this._modelId,
       params: this._params,

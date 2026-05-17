@@ -1,14 +1,10 @@
-import { homedir } from "os";
 import { join } from "path";
 import { existsSync, readdirSync, statSync } from "fs";
 import { createRequire } from "node:module";
 import type { ModelProvider } from "./types";
+import { getDataDir } from "@/lib/db/data-dir";
 
-const baseDir = process.env.LANGGUI_DB_DIR
-  ? process.env.LANGGUI_DB_DIR.replace("~", homedir())
-  : join(homedir(), ".langgui");
-
-export const PROVIDERS_DIR = join(baseDir, "providers");
+export const PROVIDERS_DIR = join(getDataDir(), "providers");
 
 const req = createRequire(join(process.cwd(), "noop.js"));
 

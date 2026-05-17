@@ -41,7 +41,7 @@ export async function startDeviceFlow(): Promise<DeviceCodeResponse> {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "User-Agent": "LangGUI/1.0",
+      "User-Agent": "Jarela/1.0",
     },
     body: JSON.stringify({ client_id: COPILOT_CLIENT_ID, scope: SCOPE }),
   });
@@ -62,7 +62,7 @@ export async function pollDeviceFlow(device_code: string): Promise<PollResult> {
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      "User-Agent": "LangGUI/1.0",
+      "User-Agent": "Jarela/1.0",
     },
     body: JSON.stringify({
       client_id: COPILOT_CLIENT_ID,

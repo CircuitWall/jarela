@@ -35,16 +35,16 @@ export function proxy(req: NextRequest) {
 
   if (result.reason === "no-identity") {
     return new NextResponse(
-      "LangGUI: remote access requires Tailscale identity passthrough. " +
+      "Jarela: remote access requires Tailscale identity passthrough. " +
         "Run the host behind `tailscale serve` and add your identity to the whitelist " +
-        "from the LangGUI Profile panel (open it on the host machine via http://localhost:4312).\n",
+        "from the Jarela Profile panel (open it on the host machine via http://localhost:4312).\n",
       { status: 403, headers: { "Content-Type": "text/plain" } },
     );
   }
 
   // not-whitelisted
   return new NextResponse(
-    `LangGUI: identity "${result.identity}" is not on the access list. ` +
+    `Jarela: identity "${result.identity}" is not on the access list. ` +
       `Ask the host machine's local user to add it from the Profile panel.\n`,
     { status: 403, headers: { "Content-Type": "text/plain" } },
   );

@@ -74,8 +74,8 @@ export function AppShell() {
         dispatch({ type: "SET_TAB", tab: "chat" });
       }
     }
-    window.addEventListener("langgui:focus-agent", handler);
-    return () => window.removeEventListener("langgui:focus-agent", handler);
+    window.addEventListener("jarela:focus-agent", handler);
+    return () => window.removeEventListener("jarela:focus-agent", handler);
   }, [dispatch]);
 
   useEventNotifications({
@@ -108,9 +108,9 @@ export function AppShell() {
       return pwaUnfocused || !onSameAgentChat;
     },
     resolveAgentName: (agentId) => {
-      if (!agentId) return "LangGUI";
+      if (!agentId) return "Jarela";
       const a = agentsRef.current.find((x) => x.id === agentId);
-      return a?.name ?? "LangGUI";
+      return a?.name ?? "Jarela";
     },
     resolveAgentIcon: (agentId) => {
       if (!agentId) return null;
@@ -133,8 +133,11 @@ export function AppShell() {
           height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)",
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="LangGUI" className="h-6 select-none" />
+        <div className="flex items-center gap-2 select-none">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto" />
+          <span className="text-zinc-100 font-semibold tracking-tight">Jarela</span>
+        </div>
         <button
           onClick={() => { setShowGear((v) => !v); clearUnread(); }}
           className={`ml-auto relative p-2 rounded transition-colors ${showGear ? "text-zinc-100 bg-surface-3" : "text-zinc-500 hover:text-zinc-300 hover:bg-surface-3/50"}`}
