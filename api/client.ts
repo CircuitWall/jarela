@@ -172,6 +172,15 @@ export const api = {
       request<{ ok: boolean; error?: string; detail?: Record<string, unknown> }>(
         `/integrations/${encodeURIComponent(name)}/test`, { method: "POST", body: "{}" },
       ),
+    gmailOauthStart: (creds: { client_id?: string; client_secret?: string }) =>
+      request<{ authorize_url: string; state: string; redirect_uri: string }>(
+        `/integrations/gmail/oauth/start`,
+        { method: "POST", body: JSON.stringify(creds) },
+      ),
+    gmailOauthStatus: (state: string) =>
+      request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
+        `/integrations/gmail/oauth/status?state=${encodeURIComponent(state)}`,
+      ),
   },
 
   pending: {

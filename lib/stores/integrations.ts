@@ -34,11 +34,10 @@ export const INTEGRATIONS = {
   gmail: {
     label: "Gmail",
     description:
-      "Used by the gmail_* tools (search, read, draft, label, archive). Create an OAuth Client ID " +
-      "(Web app) in Google Cloud Console with https://developers.google.com/oauthplayground as a " +
-      "redirect URI, then visit OAuth Playground → gear → \"Use your own OAuth credentials\", select " +
-      "scopes gmail.modify + gmail.compose, authorize, and copy the refresh token here. Drafts only — " +
-      "this integration intentionally cannot send mail.",
+      "Used by the gmail_* tools (search, read, draft, label, archive). Create a Desktop-app " +
+      "OAuth Client in Google Cloud Console (no redirect URI to register — loopback is auto-allowed), " +
+      "paste the client ID + secret below, then click Connect Gmail to authorize in your browser. " +
+      "Drafts only — this integration intentionally cannot send mail.",
     fields: [
       { key: "client_id", label: "OAuth client ID", placeholder: "<id>.apps.googleusercontent.com", secret: false, required: true },
       { key: "client_secret", label: "OAuth client secret", placeholder: "GOCSPX-…", secret: true, required: true },
