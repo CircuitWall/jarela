@@ -138,8 +138,52 @@ function parseContent(raw: string): string | ContentPart[] {
   return raw;
 }
 
-function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {
+// Renders a Google Maps Embed inside an iframe whose src points at our
+// server-side proxy (/api/v1/maps/embed). The proxy injects the API key so
+// it never appears in chat HTML. Triggered by ```map fenced blocks emitted
+// by the agent — see PRESENTATION_CTX in lib/agents/run-thread.ts.
+function MapEmbed({ payload }: { payload: string }) {
+  let params: URLSearchParams | null = null;
+  let parseError: string | null = null;
+  try {
+    const obj = JSON.parse(payload) as Record<string, unknown>;
+    const sp = new URLSearchParams();
+    for (const k of ["q", "center", "zoom", "origin", "destination", "search", "mode"] as const) {
+      const v = obj[k];
+      if (typeof v === "string" && v.length > 0) sp.set(k, v);
+      else if (typeof v === "number") sp.set(k, String(v));
+    }
+    if ([...sp.keys()].length === 0) parseError = "no recognized fields (q / center / origin+destination / search)";
+    else params = sp;
+  } catch (e) {
+    parseError = e instanceof Error ? e.message : String(e);
+  }
+
+  if (!params) {
+    return (
+      <div className="my-2 px-3 py-2 rounded border border-rose-800/60 bg-rose-950/30 text-xs text-rose-300">
+        Invalid map block: {parseError}
+      </div>
+    );
+  }
+  const src = `/api/v1/maps/embed?${params.toString()}`;
   return (
+    <div className="my-2 rounded overflow-hidden border border-border bg-surface-2">
+      <iframe
+        src={src}
+        title="Map"
+        width="100%"
+        height="320"
+        loading="lazy"
+        referrerPolicy="no-referrer-when-downgrade"
+        allowFullScreen
+        style={{ border: 0, display: "block" }}
+      />
+    </div>
+  );
+}
+
+function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {  return (
     <div className="prose prose-invert prose-sm max-w-none langgui-rich">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
@@ -160,6 +204,7 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
           code({ className, children }) {
             const match = /language-(\w+)/.exec(className ?? "");
             const code = String(children).replace(/\n$/, "");
+            if (match?.[1] === "map") return <MapEmbed payload={code} />;
             return match ? (
               <SyntaxHighlighter
                 style={oneDark}
