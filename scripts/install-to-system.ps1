@@ -117,12 +117,29 @@ foreach ($c in $busy) {
 }
 Start-Sleep -Seconds 1
 
-# ── 3. Wipe & recreate install dir ──────────────────────────────────────────
-Step "Replacing install dir at $InstallDir"
-if (Test-Path $InstallDir) {
-  Remove-Item -Path $InstallDir -Recurse -Force
+# ── 3. Clear contents of install dir (in place — never delete the dir) ─────
+# We used to `Remove-Item $InstallDir -Recurse` + `New-Item`, but that breaks
+# whenever Windows Search Indexer / Defender / Explorer holds a transient
+# handle on the directory itself (the directory contents delete fine, but the
+# empty directory then refuses to be removed). Clearing contents in place is
+# tolerant of that — the dir handle stays valid; we only touch files inside.
+Step "Clearing install dir contents at $InstallDir"
+if (-not (Test-Path $InstallDir)) {
+  New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
-New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+# Two-pass clear so individual locked files don't abort the whole step.
+$failed = @()
+Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue | ForEach-Object {
+  try { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop }
+  catch { $failed += $_.FullName }
+}
+if ($failed.Count -gt 0) {
+  Start-Sleep -Seconds 2
+  foreach ($p in $failed) {
+    try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop }
+    catch { Info ("  could not remove: $p — $($_.Exception.Message)") }
+  }
+}
 
 # â”€â”€ 4. Copy standalone bundle â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # The .next/standalone tree contains: server.js, the minimum node_modules,

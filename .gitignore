@@ -10,6 +10,16 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
+# next-pwa generated service worker bundles (rebuilt on every `next build`).
+# Keep public/manifest.json, icons, and static assets — only ignore generated JS.
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js
+public/swe-worker-*.js.map
+public/workbox-*.js
+public/workbox-*.js.map
+public/fallback-*.js
+
 # build artifacts
 dist/
 build/
