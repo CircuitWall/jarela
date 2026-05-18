@@ -18,7 +18,7 @@
  *    fall into pairing mode again.
  */
 
-import { ensureBridgeAuthDir, removeBridgeAuthDir } from "@/lib/stores/bridges";
+import { ensureBridgeAuthDir, findRoute, removeBridgeAuthDir } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
@@ -346,6 +346,20 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   }
 
   async sendText(remote_jid: string, text: string): Promise<void> {
+    // Hard guard: refuse to send to any chat whose route is in silent_mode.
+    // The dispatcher already short-circuits before calling sendText, but
+    // we re-check here so that *any* future code path that gets hold of an
+    // adapter instance (agent tools, plugins, debug shells, scheduled jobs)
+    // cannot bypass the user's silent-mode choice. The route table is the
+    // single source of truth — one synchronous SQLite lookup per send is
+    // cheap and avoids stale-cache bugs.
+    const route = findRoute(this.bridge_id, remote_jid);
+    if (route?.silent_mode === 1) {
+      console.warn(
+        `[bridge ${this.bridge_id}] sendText blocked: route ${route.id} (${remote_jid}) is in silent_mode`,
+      );
+      return;
+    }
     const sock = this.sock;
     if (!sock) throw new Error("Bridge not connected");
     const result = await (sock as unknown as { sendMessage: (jid: string, content: { text: string }) => Promise<unknown> })
@@ -367,6 +381,12 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   }
 
   async sendTyping(remote_jid: string, typing: boolean): Promise<void> {
+    // Hard guard: typing/composing is an outbound signal — suppress on
+    // silent_mode routes for the same reason as sendText.
+    if (typing) {
+      const route = findRoute(this.bridge_id, remote_jid);
+      if (route?.silent_mode === 1) return;
+    }
     const sock = this.sock;
     if (!sock?.sendPresenceUpdate) return;
     // Subscribing makes WhatsApp deliver presence both ways — not strictly
