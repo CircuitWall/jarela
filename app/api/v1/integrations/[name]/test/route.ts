@@ -47,7 +47,7 @@ async function testAtlassian() {
     });
   } catch (err) {
     return NextResponse.json(
-      { ok: false, error: err instanceof Error ? err.message : String(err) },
+      { ok: false, error: describeError(err) },
       { status: 200 },
     );
   }
