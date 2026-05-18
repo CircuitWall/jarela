@@ -9,14 +9,59 @@ export interface ToolEvent {
   payload: unknown;
 }
 
+// Above this many events the list collapses to a one-line summary by
+// default. Tool-heavy turns (sprint-report skills, multi-step research)
+// can otherwise eat half a screen with rows the user rarely re-reads.
+const COLLAPSE_THRESHOLD = 3;
+
 // Shared between live-streaming tool events (driven by useSSE) and persisted
 // tool events (loaded with each assistant message from /threads/:id). Kept in
 // its own file to avoid a circular import between MessageList -> MessageBubble
 // when both need to render it.
 export function ToolList({ events }: { events: ToolEvent[] }) {
   const [openId, setOpenId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(events.length <= COLLAPSE_THRESHOLD);
+
+  if (!expanded) {
+    // Compact summary: count + the unique tool names that ran. Clicking
+    // the row expands the full event list (calls + results, payloads).
+    const uniqueNames = Array.from(new Set(events.map((e) => e.name))).filter(Boolean);
+    const callCount = events.filter((e) => e.phase === "call").length;
+    const errorCount = events.filter((e) => e.phase === "result" && isErrorPayload(e.payload)).length;
+    return (
+      <div className="my-1.5 w-full min-w-0 max-w-full overflow-hidden">
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-zinc-800/40 px-1 py-0.5 rounded text-left"
+        >
+          <ChevronRight size={10} className="shrink-0 text-zinc-500" />
+          <span className="font-mono uppercase tracking-wide shrink-0 text-zinc-500">
+            {callCount} tool{callCount === 1 ? "" : "s"}
+          </span>
+          {errorCount > 0 && (
+            <span className="font-mono uppercase tracking-wide shrink-0 text-rose-400/80">
+              · {errorCount} error{errorCount === 1 ? "" : "s"}
+            </span>
+          )}
+          <span className="truncate text-zinc-500 font-normal flex-1 min-w-0">
+            {uniqueNames.join(" · ")}
+          </span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="my-1.5 w-full min-w-0 max-w-full overflow-hidden">
+      {events.length > COLLAPSE_THRESHOLD && (
+        <button
+          onClick={() => setExpanded(false)}
+          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-zinc-800/40 px-1 py-0.5 rounded text-left text-zinc-500"
+        >
+          <ChevronRight size={10} className="shrink-0 rotate-90 transition-transform" />
+          <span className="font-mono uppercase tracking-wide shrink-0">collapse</span>
+        </button>
+      )}
       {events.map((event, idx) => {
         const key = `${event.id}-${event.phase}-${idx}`;
         const open = openId === key;

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { memo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -340,7 +340,13 @@ function ClickableImage({ media_type, data }: { media_type: string; data: string
   );
 }
 
-export function MessageBubble({ message, agentConfig, userProfile, showAvatar = true }: Props) {
+// Memoized: while a run streams, ChatView re-renders on every text_delta to
+// update the live streaming bubble. Without React.memo, every persisted
+// MessageBubble re-renders too — for a 50-message thread that's 50
+// reconciliations per character. Props are pure data (no callbacks), and
+// `messages` array preserves identity for unchanged rows after the
+// `concat` in handleDone, so default shallow-equality is enough.
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true }: Props) {
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
   const parsed = parseContent(message.content);
@@ -398,4 +404,4 @@ export function MessageBubble({ message, agentConfig, userProfile, showAvatar = 
       </div>
     </div>
   );
-}
+});
