@@ -54,3 +54,4 @@ coverage/
 # archived
 backend-archived/
 node_modules
+lint_output.txt
