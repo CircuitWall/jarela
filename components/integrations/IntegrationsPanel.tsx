@@ -431,7 +431,9 @@ function OutlookSetupGuide() {
         </Step>
 
         <Step n={2} title="Create the app registration">
-          Open <Ext href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/quickStartType~/null/isMSAApp~/true">App registrations &rarr; New registration</Ext>.
+          Open <Ext href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade">Microsoft Entra &rarr; App registrations</Ext>
+          {" "}(or the same blade in the <Ext href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade">Azure portal</Ext>),
+          then click <strong>+ New registration</strong> in the toolbar.
           <ul className="list-disc ml-5 mt-1 text-fg-subtle">
             <li><strong>Name:</strong> anything, e.g. <code className="text-fg">Jarela</code>.</li>
             <li><strong>Supported account types:</strong>{" "}
