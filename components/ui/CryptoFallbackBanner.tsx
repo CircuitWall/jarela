@@ -31,7 +31,7 @@ export function CryptoFallbackBanner() {
   if (!show || dismissed) return null;
 
   return (
-    <div className="flex items-start gap-2 border-b border-amber-900/40 bg-amber-950/60 px-3 py-2 text-xs text-amber-200">
+    <div className="flex items-start gap-2 border-b border-amber-900/40 bg-amber-950/60 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
       <ShieldAlert size={14} className="mt-0.5 shrink-0" />
       <div className="flex-1">
         <span className="font-medium">At-rest encryption is using the keyfile fallback.</span>{" "}

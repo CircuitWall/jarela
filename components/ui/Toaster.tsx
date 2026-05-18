@@ -89,7 +89,7 @@ function ToastCard({ toast }: { toast: Toast }) {
     </div>
   ) : (
     <div className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center shrink-0">
-      {isError ? <AlertCircle size={16} className="text-rose-400" /> : <Bot size={16} className="text-fg-muted" />}
+      {isError ? <AlertCircle size={16} className="text-rose-700 dark:text-rose-400" /> : <Bot size={16} className="text-fg-muted" />}
     </div>
   );
 
@@ -113,11 +113,11 @@ function ToastCard({ toast }: { toast: Toast }) {
           </p>
           <p className="text-sm font-medium text-fg truncate">{toast.title}</p>
           {toast.preview ? (
-            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-fg-muted"} line-clamp-2 mt-0.5 italic`}>
+            <p className={`text-xs ${isError ? "text-rose-700 dark:text-rose-300/90" : "text-fg-muted"} line-clamp-2 mt-0.5 italic`}>
               “{toast.preview}”
             </p>
           ) : (
-            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-fg-subtle"} line-clamp-2 mt-0.5`}>
+            <p className={`text-xs ${isError ? "text-rose-700 dark:text-rose-300/90" : "text-fg-subtle"} line-clamp-2 mt-0.5`}>
               {toast.body}
             </p>
           )}

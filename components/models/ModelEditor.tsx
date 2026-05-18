@@ -181,7 +181,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               onChange={(e) => setModelId(e.target.value)}
               placeholder="e.g. claude-sonnet-4-6"
             />
-            {catalogError && <p className="text-red-400 text-xs">{catalogError}</p>}
+            {catalogError && <p className="text-red-700 dark:text-red-400 text-xs">{catalogError}</p>}
 
             {/* Catalog panel */}
             {showCatalog && catalog && (
@@ -261,7 +261,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             <span className="text-xs text-fg-muted">Set as default model</span>
           </label>
 
-          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-4 pb-4">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
@@ -351,7 +351,7 @@ function GitHubCopilotAuth() {
           </p>
         </div>
         {status?.signed_in ? (
-          <button onClick={signOut} className="px-2 py-1 text-[11px] bg-surface text-fg-muted hover:text-red-300 rounded border border-border whitespace-nowrap">
+          <button onClick={signOut} className="px-2 py-1 text-[11px] bg-surface text-fg-muted hover:text-red-700 dark:hover:text-red-300 rounded border border-border whitespace-nowrap">
             Sign out
           </button>
         ) : (
@@ -365,7 +365,7 @@ function GitHubCopilotAuth() {
         )}
       </div>
       {status?.signed_in && !flow && (
-        <p className="text-emerald-400">Connected{status.stored_at ? ` · ${new Date(status.stored_at).toLocaleString()}` : ""}</p>
+        <p className="text-emerald-700 dark:text-emerald-400">Connected{status.stored_at ? ` · ${new Date(status.stored_at).toLocaleString()}` : ""}</p>
       )}
       {flow && (
         <div className="rounded bg-surface p-2 border border-border space-y-1.5">
@@ -386,8 +386,8 @@ function GitHubCopilotAuth() {
           </div>
         </div>
       )}
-      {message && <p className="text-emerald-400">{message}</p>}
-      {error && <p className="text-red-400">{error}</p>}
+      {message && <p className="text-emerald-700 dark:text-emerald-400">{message}</p>}
+      {error && <p className="text-red-700 dark:text-red-400">{error}</p>}
     </div>
   );
 }

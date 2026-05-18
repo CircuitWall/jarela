@@ -70,7 +70,7 @@ export function ProfileEditor() {
           </button>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconFile} />
           {icon && (
-            <button onClick={() => setIcon(null)} className="text-[10px] text-fg-faint hover:text-red-400 mt-0.5 block">
+            <button onClick={() => setIcon(null)} className="text-[10px] text-fg-faint hover:text-red-700 dark:hover:text-red-400 mt-0.5 block">
               Remove
             </button>
           )}
@@ -212,7 +212,7 @@ function LocationSharing({
         </div>
       )}
 
-      {error && <p className="text-rose-400 text-[11px]">{error}</p>}
+      {error && <p className="text-rose-700 dark:text-rose-400 text-[11px]">{error}</p>}
     </div>
   );
 }
@@ -300,7 +300,7 @@ function AccessWhitelist() {
         </button>
       </div>
 
-      {error && <p className="text-red-400 text-xs">{error}</p>}
+      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
 
       <ul className="divide-y divide-border border border-border rounded">
         {entries === null && (
@@ -322,7 +322,7 @@ function AccessWhitelist() {
             <button
               onClick={() => remove(e.identity)}
               disabled={busy}
-              className="p-1 text-fg-faint hover:text-red-400 disabled:opacity-40"
+              className="p-1 text-fg-faint hover:text-red-700 dark:hover:text-red-400 disabled:opacity-40"
               title="Remove"
             >
               <Trash2 size={12} />

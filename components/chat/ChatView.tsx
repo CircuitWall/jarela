@@ -322,7 +322,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       />
 
       {error && (
-        <div className="mx-4 mb-2 px-3 py-2 rounded bg-red-900/40 border border-red-700 text-red-300 text-xs max-h-48 overflow-y-auto">
+        <div className="mx-4 mb-2 px-3 py-2 rounded bg-red-900/40 border border-red-700 text-red-700 dark:text-red-300 text-xs max-h-48 overflow-y-auto">
           <pre className="whitespace-pre-wrap break-all font-mono">{error}</pre>
         </div>
       )}
