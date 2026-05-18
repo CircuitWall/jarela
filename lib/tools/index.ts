@@ -24,6 +24,15 @@ import {
   calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
   calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
 } from "./calendar";
+import {
+  outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
+  outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
+} from "./outlook";
+import {
+  outlookCalendarListCalendarsTool, outlookCalendarListEventsTool,
+  outlookCalendarGetEventTool, outlookCalendarCreateEventTool,
+  outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
+} from "./outlook-calendar";
 import { getUserLocationTool } from "./location";
 import { getMcpTools } from "@/lib/mcp/client";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
@@ -74,6 +83,18 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   calendarCreateEventTool,
   calendarUpdateEventTool,
   calendarDeleteEventTool,
+  outlookSearchTool,
+  outlookGetMessageTool,
+  outlookListFoldersTool,
+  outlookModifyMessageTool,
+  outlookCreateDraftTool,
+  outlookTrashMessageTool,
+  outlookCalendarListCalendarsTool,
+  outlookCalendarListEventsTool,
+  outlookCalendarGetEventTool,
+  outlookCalendarCreateEventTool,
+  outlookCalendarUpdateEventTool,
+  outlookCalendarDeleteEventTool,
   getUserLocationTool,
 ];
 
@@ -126,6 +147,18 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   calendar_create_event: "Calendar",
   calendar_update_event: "Calendar",
   calendar_delete_event: "Calendar",
+  outlook_search: "Mail",
+  outlook_get_message: "Mail",
+  outlook_list_folders: "Mail",
+  outlook_modify_message: "Mail",
+  outlook_create_draft: "Mail",
+  outlook_trash_message: "Mail",
+  outlook_calendar_list_calendars: "Calendar",
+  outlook_calendar_list_events: "Calendar",
+  outlook_calendar_get_event: "Calendar",
+  outlook_calendar_create_event: "Calendar",
+  outlook_calendar_update_event: "Calendar",
+  outlook_calendar_delete_event: "Calendar",
   get_user_location: "Web",
 };
 

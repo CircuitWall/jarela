@@ -185,6 +185,15 @@ export const api = {
       request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
         `/integrations/gmail/oauth/status?state=${encodeURIComponent(state)}`,
       ),
+    outlookOauthStart: (creds: { client_id?: string; client_secret?: string }) =>
+      request<{ authorize_url: string; state: string; redirect_uri: string }>(
+        `/integrations/outlook/oauth/start`,
+        { method: "POST", body: JSON.stringify(creds) },
+      ),
+    outlookOauthStatus: (state: string) =>
+      request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
+        `/integrations/outlook/oauth/status?state=${encodeURIComponent(state)}`,
+      ),
   },
 
   pending: {

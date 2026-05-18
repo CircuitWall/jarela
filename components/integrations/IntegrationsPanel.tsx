@@ -68,7 +68,7 @@ function IntegrationCard({
   // Stop any in-flight OAuth polling on unmount.
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  async function connectGmail() {
+  async function connectOAuth(provider: "gmail" | "outlook") {
     setError(null);
     setTestResult(null);
     const clientId = values.client_id?.trim();
@@ -80,8 +80,16 @@ function IntegrationCard({
     }
     setConnecting(true);
     try {
-      const r = await api.integrations.gmailOauthStart({ client_id: clientId, client_secret: clientSecret });
-      popupRef.current = window.open(r.authorize_url, "jarela-gmail-oauth", "width=560,height=720");
+      const startFn = provider === "gmail"
+        ? api.integrations.gmailOauthStart
+        : api.integrations.outlookOauthStart;
+      const statusFn = provider === "gmail"
+        ? api.integrations.gmailOauthStatus
+        : api.integrations.outlookOauthStatus;
+      const label = provider === "gmail" ? "Gmail" : "Outlook";
+
+      const r = await startFn({ client_id: clientId, client_secret: clientSecret });
+      popupRef.current = window.open(r.authorize_url, `jarela-${provider}-oauth`, "width=560,height=720");
       if (!popupRef.current) {
         setError("Browser blocked the OAuth popup. Allow popups for this site and retry.");
         setConnecting(false);
@@ -97,11 +105,11 @@ function IntegrationCard({
           return;
         }
         try {
-          const s = await api.integrations.gmailOauthStatus(r.state);
+          const s = await statusFn(r.state);
           if (s.status === "done") {
             if (pollRef.current) clearInterval(pollRef.current);
             setConnecting(false);
-            setTestResult({ ok: true, message: "Connected. Refresh token saved." });
+            setTestResult({ ok: true, message: `Connected to ${label}. Refresh token saved.` });
             try { popupRef.current?.close(); } catch { /* ignore */ }
             onChanged();
           } else if (s.status === "error") {
@@ -190,6 +198,7 @@ function IntegrationCard({
 
       <div className="px-3 py-3 space-y-2">
         {def.name === "gmail" && <GmailSetupGuide />}
+        {def.name === "outlook" && <OutlookSetupGuide />}
         {def.fields.map((f) => (
           <label key={f.key} className="block text-xs text-zinc-400">
             {f.label}{f.required && <span className="text-rose-400 ml-0.5">*</span>}
@@ -245,13 +254,24 @@ function IntegrationCard({
           </button>
           {def.name === "gmail" && (
             <button
-              onClick={connectGmail}
+              onClick={() => connectOAuth("gmail")}
               disabled={connecting}
               title="Authorize Gmail + Calendar via Google OAuth — opens a browser window"
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
               {connecting ? "Waiting…" : "Connect Gmail"}
+            </button>
+          )}
+          {def.name === "outlook" && (
+            <button
+              onClick={() => connectOAuth("outlook")}
+              disabled={connecting}
+              title="Authorize Outlook + Calendar via Microsoft OAuth — opens a browser window"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
+              {connecting ? "Waiting…" : "Connect Outlook"}
             </button>
           )}
           {configured && (
@@ -382,5 +402,101 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
     >
       {children}
     </a>
+  );
+}
+
+// Inline walkthrough for the Outlook integration card. The Azure portal UI
+// shifts less than GCP's but still drifts; keep instructions concrete and
+// link to the exact blade rather than describing breadcrumbs.
+function OutlookSetupGuide() {
+  return (
+    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-zinc-300">
+      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-zinc-200 hover:bg-surface-3">
+        Setup guide (first-time only)
+      </summary>
+      <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
+        <p className="text-zinc-400">
+          You only need to do this once per Microsoft account. The end result is an{" "}
+          <code className="text-zinc-200">Application (client) ID</code> +{" "}
+          <code className="text-zinc-200">client secret value</code> pair you paste below. Then click{" "}
+          <strong className="text-zinc-200">Connect Outlook</strong> to authorize Mail + Calendar access.
+          Free &mdash; no Azure subscription required.
+        </p>
+
+        <Step n={1} title="Sign in to the Azure portal">
+          Open <Ext href="https://portal.azure.com">portal.azure.com</Ext> with the Microsoft account
+          whose Outlook data you want to access. If a banner asks you to start a free Azure
+          subscription, <strong>skip it</strong> &mdash; app registrations live under the free
+          identity tier.
+        </Step>
+
+        <Step n={2} title="Create the app registration">
+          Open <Ext href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/quickStartType~/null/isMSAApp~/true">App registrations &rarr; New registration</Ext>.
+          <ul className="list-disc ml-5 mt-1 text-zinc-400">
+            <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">Jarela</code>.</li>
+            <li><strong>Supported account types:</strong>{" "}
+              <span className="text-zinc-200">
+                Accounts in any organizational directory (Any Microsoft Entra ID tenant -
+                Multitenant) and personal Microsoft accounts
+              </span>{" "}
+              &mdash; this is the broadest option and works for both <code>@outlook.com</code> and
+              work/school accounts.</li>
+            <li><strong>Redirect URI:</strong> select <strong>Web</strong> and paste{" "}
+              <code className="text-zinc-200">{typeof window !== "undefined" ? window.location.origin : "http://localhost:4312"}/api/v1/integrations/outlook/oauth/callback</code>.{" "}
+              Microsoft will reject the auth flow with <code>redirect_uri_mismatch</code> if this
+              doesn&apos;t match exactly.</li>
+          </ul>
+          Click <strong>Register</strong>. Copy the <strong>Application (client) ID</strong> from
+          the overview page.
+        </Step>
+
+        <Step n={3} title="Create a client secret">
+          On the app&apos;s page, open <strong>Certificates &amp; secrets</strong> &rarr;{" "}
+          <strong>Client secrets</strong> &rarr; <strong>New client secret</strong>. Pick a
+          description and expiration (24 months is reasonable). Click <strong>Add</strong>.
+          {" "}<strong className="text-zinc-200">Immediately copy the &quot;Value&quot; column</strong>
+          {" "}&mdash; it&apos;s only shown once. (The &quot;Secret ID&quot; column is NOT the secret;
+          ignore it.)
+        </Step>
+
+        <Step n={4} title="Add API permissions">
+          Open <strong>API permissions</strong> &rarr; <strong>Add a permission</strong> &rarr;{" "}
+          <strong>Microsoft Graph</strong> &rarr; <strong>Delegated permissions</strong>. Tick all four:
+          <ul className="list-disc ml-5 mt-1 text-zinc-400">
+            <li><code className="text-zinc-200">offline_access</code> &mdash; required for refresh tokens.</li>
+            <li><code className="text-zinc-200">User.Read</code> &mdash; basic profile for the Test button.</li>
+            <li><code className="text-zinc-200">Mail.ReadWrite</code> &mdash; search/read/draft/move mail.</li>
+            <li><code className="text-zinc-200">Calendars.ReadWrite</code> &mdash; manage calendar events.</li>
+          </ul>
+          Click <strong>Add permissions</strong>. Personal accounts grant these themselves at the
+          consent screen. Work/school accounts may require admin consent &mdash; if you&apos;re not
+          the tenant admin, ask IT.
+        </Step>
+
+        <Step n={5} title="Paste and connect">
+          Paste the <strong>Application (client) ID</strong> and the secret <strong>Value</strong>
+          {" "}from step 3 into the two fields below, click <strong>Save</strong>, then{" "}
+          <strong>Connect Outlook</strong>. A Microsoft consent window opens &mdash; approve it and
+          the tab will close itself. Hit <strong>Test</strong> to confirm.
+        </Step>
+
+        <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-zinc-500">
+          <strong className="text-zinc-400">Troubleshooting:</strong>
+          <ul className="list-disc ml-5 mt-1 space-y-0.5">
+            <li><code>redirect_uri_mismatch</code> / <code>AADSTS50011</code> &rarr; the redirect
+              URI on your Azure app doesn&apos;t exactly match the one Jarela sent. Compare
+              character-for-character (trailing slash, http vs https, port).</li>
+            <li><code>invalid_client</code> / <code>AADSTS7000215</code> &rarr; you pasted the
+              Secret ID instead of the Secret Value. Regenerate the secret and copy the Value
+              column.</li>
+            <li><code>AADSTS65001</code> &rarr; admin consent required. For work/school accounts
+              ask your IT admin to grant tenant consent on your app.</li>
+            <li><code>AADSTS900144</code> &rarr; missing scope on the token call. Update Jarela.</li>
+            <li>Tokens are tied to the client secret&apos;s expiration. When the secret expires,
+              create a new one in Azure and reconnect.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
   );
 }
