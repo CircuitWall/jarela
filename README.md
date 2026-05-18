@@ -345,6 +345,44 @@ Installed-app paths differ by platform:
 Data dir (`~/.jarela`, configurable via `JARELA_DB_DIR`) is the same on both
 and is shared between the dev repo and the installed copy.
 
+## Testing
+
+The integration suite in [scripts/live-test.mjs](./scripts/live-test.mjs)
+boots the API and walks every public surface — agents, models, threads,
+memory, scheduled tasks, bridges, MCP servers, integrations, profile,
+events / SSE, providers, pending actions, health — against a real running
+server. LLM-dependent tests are gated behind `--llm` and skipped by default.
+
+```bash
+npm run test:live           # no LLM keys required
+npm run test:live -- --llm  # also exercise model adapters end-to-end
+npm run test:live:full      # everything, including embedding round-trip
+```
+
+The orchestrator [scripts/live-test-isolated.mjs](./scripts/live-test-isolated.mjs)
+spawns its own `next dev` against a temp `JARELA_DB_DIR` so the suite
+never touches your real `~/.jarela`.
+
+GitHub Actions runs [.github/workflows/ci.yml](./.github/workflows/ci.yml)
+on every push and PR: `lint + tsc --noEmit + next build`, then the same
+live integration suite against the production server output. The build
+badge at the top of this README links straight to the latest run.
+
+## Security
+
+- **CSRF / origin guard** ([lib/auth/access.ts](./lib/auth/access.ts))
+  rejects mutating requests whose `Origin` / `Sec-Fetch-Site` indicates a
+  cross-origin caller. Defends against DNS-rebinding too.
+- **Health redaction** — `/api/v1/health` exposes liveness and a
+  `crypto.source` (`keychain` or `keyfile`), never the master key itself or
+  any provider credential.
+- **Secrets at rest** — sensitive memory namespaces and OAuth tokens are
+  encrypted with an AES-GCM envelope keyed off a master key in the OS
+  keychain (or a fall-back `.secret-key` file). See
+  [ADR-0005](./docs/adr/0005-encrypt-secrets-at-rest.md).
+- **Local secret scanner** ([scripts/scan-secrets.mjs](./scripts/scan-secrets.mjs))
+  refuses to push commits that contain obvious API-key shapes.
+
 ## Decisions
 
 Architecture decisions are recorded under [docs/adr/](./docs/adr/). Start
@@ -353,6 +391,9 @@ ADR before adding a model provider, changing the persistence schema, or
 introducing a second process.
 
 ## License
+
+No license has been published yet — treat the source as "all rights reserved"
+until an explicit `LICENSE` file is added.
 
 No license has been published yet — treat the source as "all rights reserved"
 until an explicit `LICENSE` file is added.
