@@ -54,13 +54,21 @@ export async function handleInboundMessage(
       : "";
     const prepared = await prepareThreadRun(thread.thread_id, senderTag + msg.text);
 
+    // Silent mode: suppress *any* outbound signal — no reply, no typing
+    // indicator. The typing presence itself is a tell that an agent is
+    // listening, so observer-mode routes must stay completely dark on the
+    // wire. The agent still runs and persists history below.
+    const silent = route.silent_mode === 1;
+
     // Show the "composing…" presence on the channel while we drain the
     // LLM stream. Refresh every ~8s because WhatsApp drops the indicator
     // after ~10s if not renewed. We always send a final "paused" in the
     // finally block, regardless of success/throw, so we never leave a
     // stuck typing indicator.
-    let typingActive = true;
-    void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
+    let typingActive = !silent;
+    if (!silent) {
+      void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
+    }
     const typingTimer = setInterval(() => {
       if (!typingActive) return;
       void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
@@ -97,7 +105,9 @@ export async function handleInboundMessage(
     } finally {
       typingActive = false;
       clearInterval(typingTimer);
-      void adapter.sendTyping(msg.remote_jid, false).catch(() => { /* best-effort */ });
+      if (!silent) {
+        void adapter.sendTyping(msg.remote_jid, false).catch(() => { /* best-effort */ });
+      }
     }
 
     persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
@@ -106,7 +116,9 @@ export async function handleInboundMessage(
     // silent_mode (per-route): process the message (records history + runs
     // tools) but suppress the outbound send. Useful for read-only/observer
     // agents on group chats where the user wants logging without auto-posting.
-    const silent = route.silent_mode === 1;
+    // The WhatsApp adapter also re-checks `route.silent_mode` inside its own
+    // sendText as a hard belt-and-suspenders guard, so even if a tool tried
+    // to call adapter.sendText directly the send would still be dropped.
     if (reply.length > 0 && !silent) {
       try {
         await adapter.sendText(msg.remote_jid, reply);
