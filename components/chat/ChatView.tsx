@@ -95,6 +95,12 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const queueRef = useRef<QueuedMessage[]>([]);
   queueRef.current = queue;
 
+  // Mirror messages in a ref so handleDone can read the latest tail
+  // without re-creating itself on every render (which would cascade
+  // into useSSE deps and re-bind the streaming consumer per keystroke).
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+
   // Forward declaration via ref so handleDone (defined first) can dequeue
   // and call back into the run-launching code (defined later).
   const drainQueueRef = useRef<() => void>(() => {});
@@ -105,21 +111,34 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const clearStreamingRef = useRef<() => void>(() => {});
 
   const handleDone = useCallback(() => {
-    if (threadId) {
-      api.threads.get(threadId).then((d) => {
-        // setMessages + clearStreamingContent batch into a single render
-        // (React 18 auto-batching in microtasks), so the streaming bubble
-        // and the persisted assistant bubble swap atomically — no gap, no
-        // visual jump-back when the chat content briefly shrinks.
+    if (!threadId) return;
+    // Forward-fetch only the messages persisted after our newest known one.
+    // Typically two rows (user + assistant) instead of the full 50-row page,
+    // so handleDone is O(turn) instead of O(thread). Falls back to full
+    // reload if we somehow have no anchor (fresh thread, race).
+    const cur = messagesRef.current;
+    const anchor = cur.length > 0 ? cur[cur.length - 1].created_at : undefined;
+    const fetchPromise = anchor
+      ? api.threads.get(threadId, { after: anchor })
+      : api.threads.get(threadId);
+    fetchPromise.then((d) => {
+      // setMessages + clearStreamingContent batch into a single render
+      // (React 18 auto-batching in microtasks), so the streaming bubble
+      // and the persisted assistant bubble swap atomically — no gap, no
+      // visual jump-back when the chat content briefly shrinks.
+      if (anchor) {
+        // Append only — anything older is already on screen.
+        setMessages((prev) => prev.concat(d.messages));
+      } else {
         setMessages(d.messages);
         setHasMore(d.has_more);
-        clearStreamingRef.current();
-      }).catch(console.error)
-        .finally(() => {
-          drainQueueRef.current();
-        });
-      onMessageSent();
-    }
+      }
+      clearStreamingRef.current();
+    }).catch(console.error)
+      .finally(() => {
+        drainQueueRef.current();
+      });
+    onMessageSent();
   }, [threadId, onMessageSent]);
 
   const { streaming, streamingContent, thinkingContent, toolEvents, error, start, stop, attach, clearStreamingContent } = useSSE(handleDone);
