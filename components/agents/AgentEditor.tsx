@@ -75,7 +75,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
     }
     const CATEGORY_ORDER = [
       "Memory", "Files", "Shell", "Web", "Images",
-      "Schedule", "Atlassian", "Config", "Other", "MCP",
+      "Schedule", "Atlassian", "Mail", "Calendar", "Config", "Other", "MCP",
     ];
     return [...groups.entries()].sort((a, b) => {
       const ai = CATEGORY_ORDER.indexOf(a[0]);

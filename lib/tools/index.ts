@@ -20,6 +20,10 @@ import {
   gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
   gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
 } from "./gmail";
+import {
+  calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
+  calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
+} from "./calendar";
 import { getUserLocationTool } from "./location";
 import { getMcpTools } from "@/lib/mcp/client";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
@@ -64,6 +68,12 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   gmailModifyMessageTool,
   gmailCreateDraftTool,
   gmailTrashMessageTool,
+  calendarListCalendarsTool,
+  calendarListEventsTool,
+  calendarGetEventTool,
+  calendarCreateEventTool,
+  calendarUpdateEventTool,
+  calendarDeleteEventTool,
   getUserLocationTool,
 ];
 
@@ -72,7 +82,7 @@ const ALL_TOOLS: StructuredToolInterface[] = [
 // MCP tools default to "MCP" (overridable per-server in the future).
 export type ToolCategory =
   | "Memory" | "Files" | "Shell" | "Web" | "Images"
-  | "Schedule" | "Atlassian" | "Mail" | "Config" | "MCP";
+  | "Schedule" | "Atlassian" | "Mail" | "Calendar" | "Config" | "MCP";
 
 const TOOL_CATEGORY: Record<string, ToolCategory> = {
   memory_read: "Memory",
@@ -110,6 +120,12 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   gmail_modify_message: "Mail",
   gmail_create_draft: "Mail",
   gmail_trash_message: "Mail",
+  calendar_list_calendars: "Calendar",
+  calendar_list_events: "Calendar",
+  calendar_get_event: "Calendar",
+  calendar_create_event: "Calendar",
+  calendar_update_event: "Calendar",
+  calendar_delete_event: "Calendar",
   get_user_location: "Web",
 };
 

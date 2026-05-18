@@ -20,79 +20,19 @@
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getIntegrationRaw } from "@/lib/stores/integrations";
+import {
+  getGoogleAccessToken,
+  resolveGoogleAuth,
+  type GoogleAuth,
+} from "@/lib/integrations/gmail-oauth";
 
-export interface GmailAuth {
-  client_id: string;
-  client_secret: string;
-  refresh_token: string;
-}
+// Re-export under the old name so existing imports (e.g. the integrations
+// test endpoint) keep working unchanged.
+export type GmailAuth = GoogleAuth;
 
 // Exposed for the integrations test endpoint.
 export function _resolveGmailAuth(): GmailAuth | { error: string } {
-  return resolveAuth();
-}
-
-function resolveAuth(): GmailAuth | { error: string } {
-  const envId = process.env.GMAIL_CLIENT_ID;
-  const envSecret = process.env.GMAIL_CLIENT_SECRET;
-  const envRefresh = process.env.GMAIL_REFRESH_TOKEN;
-  if (envId && envSecret && envRefresh) {
-    return { client_id: envId, client_secret: envSecret, refresh_token: envRefresh };
-  }
-  const saved = getIntegrationRaw("gmail");
-  if (saved?.client_id && saved.client_secret && saved.refresh_token) {
-    return {
-      client_id: saved.client_id,
-      client_secret: saved.client_secret,
-      refresh_token: saved.refresh_token,
-    };
-  }
-  return {
-    error:
-      "Gmail not configured. Open the gear menu → Integrations tab and add your OAuth client_id, " +
-      "client_secret, and a refresh token from Google OAuth Playground.",
-  };
-}
-
-// ── Access-token cache ──────────────────────────────────────────────────────
-// Refresh tokens are long-lived; access tokens last ~1 hour. Cache the
-// exchanged access token per refresh-token prefix so a burst of tool calls
-// doesn't slam Google's token endpoint.
-
-interface CachedToken { token: string; expires_at: number }
-const tokenCache = new Map<string, CachedToken>();
-
-async function getAccessToken(auth: GmailAuth): Promise<string | { error: string }> {
-  const key = auth.refresh_token.slice(0, 20);
-  const cached = tokenCache.get(key);
-  if (cached && cached.expires_at > Date.now() + 60_000) return cached.token;
-
-  const body = new URLSearchParams({
-    client_id: auth.client_id,
-    client_secret: auth.client_secret,
-    refresh_token: auth.refresh_token,
-    grant_type: "refresh_token",
-  });
-  try {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: body.toString(),
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return { error: `OAuth token refresh failed (${res.status}): ${text.slice(0, 300)}` };
-    }
-    const parsed = JSON.parse(text) as { access_token?: string; expires_in?: number };
-    if (!parsed.access_token) return { error: "OAuth response missing access_token" };
-    const expires_at = Date.now() + (parsed.expires_in ?? 3000) * 1000;
-    tokenCache.set(key, { token: parsed.access_token, expires_at });
-    return parsed.access_token;
-  } catch (err) {
-    return { error: `OAuth token refresh threw: ${err instanceof Error ? err.message : String(err)}` };
-  }
+  return resolveGoogleAuth();
 }
 
 async function gmailFetch(
@@ -100,7 +40,7 @@ async function gmailFetch(
   path: string,
   init?: RequestInit,
 ): Promise<unknown> {
-  const token = await getAccessToken(auth);
+  const token = await getGoogleAccessToken(auth);
   if (typeof token !== "string") return token;
   const url = path.startsWith("http") ? path : `https://gmail.googleapis.com/gmail/v1/users/me${path}`;
   try {
@@ -226,7 +166,7 @@ function encodeSubject(s: string): string {
 
 export const gmailSearchTool = tool(
   async ({ query, max_results }) => {
-    const auth = resolveAuth();
+    const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const limit = Math.min(Math.max(max_results ?? 25, 1), 100);
     const list = await gmailFetch(
@@ -273,7 +213,7 @@ export const gmailSearchTool = tool(
 
 export const gmailGetMessageTool = tool(
   async ({ id }) => {
-    const auth = resolveAuth();
+    const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const m = await gmailFetch(auth, `/messages/${encodeURIComponent(id)}?format=full`) as {
       id?: string;
@@ -315,7 +255,7 @@ export const gmailGetMessageTool = tool(
 
 export const gmailListLabelsTool = tool(
   async () => {
-    const auth = resolveAuth();
+    const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const data = await gmailFetch(auth, `/labels`) as { labels?: Array<{ id: string; name: string; type: string }>; error?: string };
     if (data.error) return JSON.stringify(data);
@@ -335,7 +275,7 @@ export const gmailListLabelsTool = tool(
 
 export const gmailModifyMessageTool = tool(
   async ({ id, add_labels, remove_labels }) => {
-    const auth = resolveAuth();
+    const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     if (!(add_labels?.length || remove_labels?.length)) {
       return JSON.stringify({ error: "Provide at least one of add_labels / remove_labels" });
@@ -367,7 +307,7 @@ export const gmailModifyMessageTool = tool(
 
 export const gmailCreateDraftTool = tool(
   async ({ to, cc, bcc, subject, body, in_reply_to_id }) => {
-    const auth = resolveAuth();
+    const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
     let in_reply_to: string | null = null;
@@ -425,7 +365,7 @@ export const gmailCreateDraftTool = tool(
 
 export const gmailTrashMessageTool = tool(
   async ({ id }) => {
-    const auth = resolveAuth();
+    const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const data = await gmailFetch(auth, `/messages/${encodeURIComponent(id)}/trash`, {
       method: "POST",
