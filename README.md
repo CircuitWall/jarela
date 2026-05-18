@@ -12,6 +12,7 @@
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#features">Features</a> ·
+  <a href="#productivity-stacks-google--microsoft-at-parity">Google + Microsoft</a> ·
   <a href="#built-in-toolbelt">Tools</a> ·
   <a href="#providers">Providers</a> ·
   <a href="#integrations">Integrations</a> ·
@@ -38,6 +39,11 @@ forget it's there.
 
 It does **not** depend on any hosted backend. The only outbound traffic is to
 the LLM / MCP / GitHub providers you explicitly configure.
+
+> **Dual productivity-stack support.** Jarela treats the **Google**
+> (Gmail + Calendar) and **Microsoft** (Outlook + Calendar) ecosystems as
+> first-class, parity peers — same in-UI OAuth, same tool surface, same
+> safety policy. Pick one, or connect both and let your agents bridge them.
 
 ## Features
 
@@ -74,6 +80,27 @@ the LLM / MCP / GitHub providers you explicitly configure.
 - **Bridges** (`lib/bridges/`) let external transports inject messages into
   agent threads. Built-in: **WhatsApp** via Baileys, with a router that maps
   JIDs to specific agents.
+
+### Productivity stacks (Google + Microsoft, at parity)
+
+Jarela ships matched tool sets for both major consumer/enterprise
+productivity ecosystems. Connect one or both — the agent surface and
+safety policy are identical.
+
+|  | Google | Microsoft |
+| --- | --- | --- |
+| **Mail** | Gmail (`gmail_*` tools) | Outlook (`outlook_*` tools) |
+| **Calendar** | Google Calendar (`calendar_*` tools) | Outlook Calendar (`outlook_calendar_*` tools) |
+| **Meetings** | Auto-attach **Google Meet** links | Auto-attach **Microsoft Teams** links |
+| **Auth** | In-app Google OAuth | In-app Microsoft OAuth (Azure app registration) |
+| **Account types** | Personal + Workspace | Personal (`@outlook.com`) + work/school (Entra ID) |
+| **Mail policy** | Read / search / **draft only** — no auto-send | Read / search / **draft only** — no auto-send |
+| **Calendar policy** | Full read / write / delete | Full read / write / delete |
+| **Setup** | In-app **Connect Gmail** button | In-app **Connect Outlook** button |
+
+Both flows store refresh tokens encrypted at rest under `~/.jarela`. There
+is no preferred stack — an agent with both connected can search Gmail and
+create an Outlook Calendar invite in the same turn.
 
 ### UI
 
