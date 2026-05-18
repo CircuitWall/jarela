@@ -389,7 +389,10 @@ export const MCP_REGISTRY: RegistryEntry[] = [
         key: "REPO_PATH",
         label: "Path to private-mcp-servers checkout",
         placeholder: "/Users/me/code/private-mcp-servers",
-        default: "",
+        // ${HOME} is expanded to the server's homedir() in the registry
+        // route. `npm run install:private-mcps` clones to exactly this path,
+        // so the picker form pre-fills with no user editing required.
+        default: "${HOME}/.jarela/external/private-mcp-servers",
       },
       { key: "SONATYPE_USER", label: "Sonatype username" },
       { key: "SONATYPE_PASSWORD", label: "Sonatype password", secret: true },
@@ -413,7 +416,10 @@ export const MCP_REGISTRY: RegistryEntry[] = [
         key: "REPO_PATH",
         label: "Path to private-mcp-servers checkout",
         placeholder: "/Users/me/code/private-mcp-servers",
-        default: "",
+        // ${HOME} is expanded to the server's homedir() in the registry
+        // route. `npm run install:private-mcps` clones to exactly this path,
+        // so the picker form pre-fills with no user editing required.
+        default: "${HOME}/.jarela/external/private-mcp-servers",
       },
     ],
   },
