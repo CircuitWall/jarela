@@ -49,8 +49,8 @@ the LLM / MCP / GitHub providers you explicitly configure.
   o-series reasoning) over a WebSocket sidecar on the same port as the HTTP
   server.
 - **Tool-policy gating per agent** — agents can be locked to a subset of
-  tool categories (`Memory`, `Files`, `Shell`, `Web`, `Mail`, …) rather than
-  toggling tools one by one.
+  tool categories (`Memory`, `Files`, `Shell`, `Web`, `Mail`, `Calendar`, …)
+  rather than toggling tools one by one.
 - **Human-in-the-loop approvals** — high-risk operations can be routed
   through a `propose_config_change` mechanism that surfaces an in-UI banner
   the user must approve before the agent proceeds.
@@ -168,7 +168,8 @@ that whitelists which categories are usable.
 | **Images** | `generate_image` | Routed through the configured image provider |
 | **Schedule** | `schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task` | Cron strings, computed `next_run_at` |
 | **Atlassian** | `jira_search`, `jira_get_issue`, `jira_create_issue`, `jira_add_comment`, `jira_transitions`, `confluence_search`, `confluence_get_page` | Direct REST; works through corporate proxies |
-| **Mail** | `gmail_search`, `gmail_get_message`, `gmail_list_labels`, `gmail_modify_message`, `gmail_create_draft`, `gmail_trash_message` | OAuth via `scripts/gmail-oauth.mjs` |
+| **Mail** | **Google:** `gmail_search`, `gmail_get_message`, `gmail_list_labels`, `gmail_modify_message`, `gmail_create_draft`, `gmail_trash_message`<br/>**Microsoft:** `outlook_search`, `outlook_get_message`, `outlook_list_folders`, `outlook_modify_message`, `outlook_create_draft`, `outlook_trash_message` | Read/search/draft only on both providers — no auto-send. Gmail via Google OAuth, Outlook via Microsoft Graph. |
+| **Calendar** | **Google:** `calendar_list_calendars`, `calendar_list_events`, `calendar_get_event`, `calendar_create_event`, `calendar_update_event`, `calendar_delete_event`<br/>**Microsoft:** `outlook_calendar_list_calendars`, `outlook_calendar_list_events`, `outlook_calendar_get_event`, `outlook_calendar_create_event`, `outlook_calendar_update_event`, `outlook_calendar_delete_event` | Full read/write on both. Outlook variant can provision Teams meetings; Google variant can provision Google Meet. |
 | **Location** | `get_user_location` | Browser geolocation forwarded by the PWA |
 | **Config** | `propose_config_change`, `check_proposal` | Human-in-the-loop approval flow |
 
@@ -190,12 +191,17 @@ Built-in model providers in [lib/providers/](./lib/providers/):
 
 ## Integrations
 
+Jarela ships first-class support for **both the Google and Microsoft
+productivity stacks** — each with parity coverage for mail + calendar via
+the same in-UI OAuth flow:
+
 | Integration | Where | How |
 | --- | --- | --- |
 | **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters`. private: `npm run install:private-mcps` to clone+build sonatype/mcp-docs into `~/.jarela/external/`, then pick from "Browse popular". |
 | **GitHub** | `Profile` panel | PAT or Copilot OAuth |
 | **Atlassian** (Jira + Confluence) | `Integrations` panel | API token + email |
-| **Gmail** | `Integrations` panel | Run `node scripts/gmail-oauth.mjs` once |
+| **Google** (Gmail + Calendar) | `Integrations` panel | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
+| **Microsoft** (Outlook + Calendar) | `Integrations` panel | In-app Microsoft OAuth via Azure app registration — click **Connect Outlook**, approve, done. Scopes: `Mail.ReadWrite` + `Calendars.ReadWrite` + `offline_access`. Works with personal (`@outlook.com`) and work/school accounts. |
 | **WhatsApp** | `Bridges` panel | Baileys; pairs a phone, routes JIDs to agents |
 
 ## Extension points
