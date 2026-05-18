@@ -43,8 +43,18 @@ export const INTEGRATIONS = {
       { key: "client_secret", label: "OAuth client secret", placeholder: "GOCSPX-…", secret: true, required: true },
       { key: "refresh_token", label: "Refresh token", placeholder: "1//0…", secret: true, required: true },
     ],
-  },
-} as const;
+  },  outlook: {
+    label: "Outlook + Calendar",
+    description:
+      "Used by the outlook_* and outlook_calendar_* tools (search/read/draft/move/trash mail; " +
+      "list/create/update/delete calendar events). Drafts only — this integration intentionally " +
+      "cannot send mail. Requires an Azure app registration. See the Setup guide below.",
+    fields: [
+      { key: "client_id", label: "Application (client) ID", placeholder: "00000000-0000-0000-0000-000000000000", secret: false, required: true },
+      { key: "client_secret", label: "Client secret value", placeholder: "abc~…", secret: true, required: true },
+      { key: "refresh_token", label: "Refresh token", placeholder: "0.AXoA…", secret: true, required: true },
+    ],
+  },} as const;
 
 export type IntegrationName = keyof typeof INTEGRATIONS;
 
