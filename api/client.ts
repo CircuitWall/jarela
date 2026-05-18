@@ -343,6 +343,14 @@ export async function* streamChat(
   }
 }
 
+// Browser WebSocket API doesn't expose ws-level ping/pong frames, so we
+// can't see them to detect liveness. The server pushes an app-level
+// {type:"keepalive"} every ~20s during a run; if we go this long without
+// any message from the server (chunk OR keepalive) we consider the path
+// dead and force-close. The grace must be > the server's keepalive
+// interval but short enough that the user doesn't sit watching nothing.
+const WS_STALL_TIMEOUT_MS = 45_000;
+
 export async function* streamChatWS(
   thread_id: string,
   message: string,
@@ -369,10 +377,28 @@ export async function* streamChatWS(
     }
   };
 
+  // Reset on every server message; if it fires we treat the connection as
+  // dead and tear down so the caller falls into the SSE reattach path.
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetStallTimer = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      // Mark recoverable; the higher layer will GET the run and replay.
+      streamError = Object.assign(new Error("ws stalled — no keepalive"), {
+        code: "ws_drop_reattach" as const,
+      });
+      done = true;
+      try { ws.close(4000, "stall"); } catch { /* */ }
+      notify();
+    }, WS_STALL_TIMEOUT_MS);
+  };
+
   const push = (raw: string) => {
-    queue.push(raw);
+    // Keepalives keep the connection scored as live but never reach the
+    // caller — they would just look like noise in the assistant's output.
     try {
       const event = JSON.parse(raw) as { type?: string };
+      if (event.type === "keepalive") return;
       if (event.type === "done" || event.type === "error") {
         done = true;
         sawTerminal = true;
@@ -380,14 +406,17 @@ export async function* streamChatWS(
     } catch {
       // ignore malformed payloads here and let callers surface parse errors
     }
+    queue.push(raw);
     notify();
   };
 
   ws.onopen = () => {
+    resetStallTimer();
     ws.send(JSON.stringify({ thread_id, message, stream_options, attachments }));
   };
 
   ws.onmessage = (event) => {
+    resetStallTimer();
     if (typeof event.data === "string") {
       push(event.data);
       return;
@@ -413,7 +442,8 @@ export async function* streamChatWS(
     notify();
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
+    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
     if (!sawTerminal && !streamError) {
       // Mid-stream drop (mobile suspend, network blip). The server-side run
       // is still going in the registry — flag a recoverable error so the
@@ -422,9 +452,30 @@ export async function* streamChatWS(
         code: "ws_drop_reattach" as const,
       });
     }
+    // Any non-clean close (e.g. abnormal closure on Wi-Fi switch, or the
+    // server-side heartbeat sweep terminating us) means the cached URL may
+    // no longer be reachable from the new network — re-resolve next time.
+    if (event.code !== 1000) invalidateWsUrl();
     done = true;
     notify();
   };
+
+  // Network-change escape hatch: when the browser flips back online (after a
+  // Wi-Fi swap, VPN attach, etc.) any in-flight WS is almost certainly tied
+  // to a stale TCP path. Force-close so the caller's SSE reattach kicks in
+  // immediately instead of waiting for TCP to time out, which can take
+  // minutes on a hung path.
+  const onOnline = () => {
+    if (done) return;
+    streamError = Object.assign(new Error("network changed mid-stream"), {
+      code: "ws_drop_reattach" as const,
+    });
+    done = true;
+    try { ws.close(4001, "network_change"); } catch { /* */ }
+    invalidateWsUrl();
+    notify();
+  };
+  if (typeof window !== "undefined") window.addEventListener("online", onOnline);
 
   signal.addEventListener("abort", () => {
     done = true;
@@ -432,20 +483,25 @@ export async function* streamChatWS(
     notify();
   }, { once: true });
 
-  while (!done || queue.length > 0) {
-    if (queue.length > 0) {
-      yield queue.shift() as string;
-      continue;
+  try {
+    while (!done || queue.length > 0) {
+      if (queue.length > 0) {
+        yield queue.shift() as string;
+        continue;
+      }
+
+      if (streamError) {
+        throw streamError;
+      }
+
+      await new Promise<void>((resolve) => waiters.push(resolve));
     }
 
     if (streamError) {
       throw streamError;
     }
-
-    await new Promise<void>((resolve) => waiters.push(resolve));
-  }
-
-  if (streamError) {
-    throw streamError;
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
+    if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
   }
 }

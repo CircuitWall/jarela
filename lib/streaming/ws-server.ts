@@ -1,4 +1,17 @@
 import { WebSocket, WebSocketServer } from "ws";
+
+// Heartbeat tuning. Network changes (Wi-Fi switch, VPN attach/detach, NAT
+// rebinding) silently kill the underlying TCP path without firing any WS
+// close. These intervals make the server prove liveness on a regular cadence
+// so dead clients get reaped and live clients see a steady trickle of
+// messages — the latter is what the browser-side stall watchdog keys on,
+// since the WS API doesn't surface ping/pong frames to JS.
+const PING_INTERVAL_MS = 30_000;       // ws-level ping every 30s
+const KEEPALIVE_INTERVAL_MS = 20_000;  // app-level {type:"keepalive"} during a run
+
+interface AliveSocket extends WebSocket {
+  isAlive?: boolean;
+}
 import type { StreamOptions } from "@/lib/agents/base";
 import {
   prepareThreadRun,
@@ -36,6 +49,16 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
   let assistantContent = "";
   const usedTools: string[] = [];
   const toolEvents: PersistedToolEvent[] = [];
+  // App-level keepalive: even if the model is mid-thought and emits no
+  // chunks for a while, push a small heartbeat the client can use to
+  // confirm the path is alive. WebSocket ping frames are auto-handled by
+  // the browser and not visible to JS, so we need a JSON message for the
+  // browser-side stall watchdog to reset.
+  const keepalive = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      sendJson(ws, { type: "keepalive", ts: Date.now() });
+    }
+  }, KEEPALIVE_INTERVAL_MS);
   // Refuse if another run is already active for this thread (the HTTP route
   // enforces this too; the WS path must mirror it so DELETE-abort and the
   // queue-drain UX behave the same regardless of transport).
@@ -100,6 +123,7 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
     broadcast(req.thread_id, { type: "error", data: { message, code } });
     sendJson(ws, { type: "error", message, code });
   } finally {
+    clearInterval(keepalive);
     persistAssistantMessage(req.thread_id, assistantContent, usedTools, toolEvents);
     finishRun(req.thread_id, terminal);
     if (ws.readyState === WebSocket.OPEN) {
@@ -162,7 +186,29 @@ export function ensureWsServer(): { port: number } {
     },
   });
 
+  // Reap broken connections: send ws-level ping every PING_INTERVAL_MS,
+  // terminate any client that didn't pong since the previous tick. This
+  // is the standard `ws` recipe for surviving silent TCP path failures
+  // — the kind that happen when the user's laptop switches networks or
+  // a VPN attaches/detaches mid-stream.
+  const sweepInterval = setInterval(() => {
+    for (const client of server.clients) {
+      const ws = client as AliveSocket;
+      if (ws.isAlive === false) {
+        ws.terminate();
+        continue;
+      }
+      ws.isAlive = false;
+      try { ws.ping(); } catch { /* socket already gone */ }
+    }
+  }, PING_INTERVAL_MS);
+  server.on("close", () => clearInterval(sweepInterval));
+
   server.on("connection", (ws) => {
+    const alive = ws as AliveSocket;
+    alive.isAlive = true;
+    ws.on("pong", () => { alive.isAlive = true; });
+
     sendJson(ws, { type: "ready" });
 
     let started = false;
