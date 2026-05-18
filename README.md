@@ -11,6 +11,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#supported-platforms">Platforms</a> ·
   <a href="#features">Features</a> ·
   <a href="#productivity-stacks-google--microsoft-at-parity">Google + Microsoft</a> ·
   <a href="#built-in-toolbelt">Tools</a> ·
@@ -39,6 +40,11 @@ forget it's there.
 
 It does **not** depend on any hosted backend. The only outbound traffic is to
 the LLM / MCP / GitHub providers you explicitly configure.
+
+> **Runs on Windows, macOS, and Linux.** Everything is plain Node.js +
+> SQLite — no native installer, no platform-locked dependencies. Windows
+> ships with a per-user Scheduled Task supervisor; macOS and Linux run
+> under launchd / systemd (or any process supervisor you prefer).
 
 > **Dual productivity-stack support.** Jarela treats the **Google**
 > (Gmail + Calendar) and **Microsoft** (Outlook + Calendar) ecosystems as
@@ -114,9 +120,13 @@ create an Outlook Calendar invite in the same turn.
 
 ### Operational
 
+- **Cross-platform** — single Node.js process, runs on Windows, macOS, and
+  Linux. Per-OS supervisor recipes below.
 - Runs as a **per-user Windows scheduled task** via
   [scripts/install-to-system.ps1](./scripts/install-to-system.ps1) — auto-starts at logon, logs to
   `%LOCALAPPDATA%\Jarela\logs\app.log`, no admin required.
+- On **macOS** runs cleanly under `launchd` (LaunchAgent plist); on
+  **Linux** under `systemd --user`. Sample units below.
 - Respects standard proxy env vars (`HTTP_PROXY` / `HTTPS_PROXY` /
   `NO_PROXY`) through `undici`'s `EnvHttpProxyAgent`, so it works inside
   corporate networks.
@@ -124,6 +134,10 @@ create an Outlook Calendar invite in the same turn.
 ## Quick start
 
 Prerequisites: **Node.js ≥ 22.6** (Node 25 recommended), npm, git.
+
+Works on **Windows 10/11**, **macOS 12+**, and **Linux** (any modern glibc
+distro). See [Supported platforms](#supported-platforms) for the per-OS
+file layout.
 
 ```bash
 git clone https://github.com/andrew-ge-wu/jarela.git
@@ -153,9 +167,15 @@ copy that directory anywhere you want to run Jarela without the source
 checkout. `npm start` is just a thin wrapper around `node server.js` with
 PORT/HOSTNAME defaults applied.
 
-### Install as a Windows background task (recommended for daily use)
+### Install as a background service
 
-Per-user scheduled task, auto-starts at logon, no admin required:
+Jarela is a single long-running Node process. Use whatever supervisor your
+OS provides; the repo ships a turn-key installer for Windows, and the
+recipes below cover macOS + Linux.
+
+#### Windows — per-user scheduled task (turn-key)
+
+Auto-starts at logon, no admin required:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1
@@ -168,6 +188,84 @@ Get-Content "$env:LOCALAPPDATA\Jarela\logs\app.log" -Tail 30 -Wait
 # uninstall
 powershell -ExecutionPolicy Bypass -File scripts\uninstall-from-system.ps1
 ```
+
+#### macOS — LaunchAgent
+
+Drop a plist at `~/Library/LaunchAgents/com.jarela.plist`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jarela</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/path/to/jarela/.next/standalone/server.js</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PORT</key><string>4312</string>
+    <key>HOSTNAME</key><string>127.0.0.1</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/jarela.log</string>
+  <key>StandardErrorPath</key><string>/tmp/jarela.log</string>
+</dict>
+</plist>
+```
+
+Load it:
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.jarela.plist
+launchctl list | grep jarela
+```
+
+#### Linux — systemd user unit
+
+Drop a unit at `~/.config/systemd/user/jarela.service`:
+
+```ini
+[Unit]
+Description=Jarela
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/jarela
+ExecStart=/usr/bin/node %h/jarela/.next/standalone/server.js
+Environment=PORT=4312 HOSTNAME=127.0.0.1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+```
+
+Enable it:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now jarela.service
+journalctl --user -u jarela -f
+```
+
+### Supported platforms
+
+| OS | Status | Data dir (default) | Supervisor |
+| --- | --- | --- | --- |
+| **Windows 10/11** | first-class | `%LOCALAPPDATA%\Jarela` (ADR-0006, OneDrive-safe) | Scheduled Task (`scripts\install-to-system.ps1`) |
+| **macOS 12+** (Intel + Apple Silicon) | supported | `~/.jarela` | `launchd` LaunchAgent (sample plist above) |
+| **Linux** (Ubuntu / Debian / Fedora / Arch) | supported | `~/.jarela` | `systemd --user` unit (sample above) |
+| **WSL2** | supported | `~/.jarela` inside the distro | `systemd --user` if the distro has it, else any supervisor |
+
+Any OS: override the data directory with `JARELA_DB_DIR=/some/path`.
+Nothing in the codebase shells out to platform-specific binaries at
+runtime — file paths, process spawning, and SQLite all use Node's
+cross-platform APIs.
 
 ### First-run configuration
 
