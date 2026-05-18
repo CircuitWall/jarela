@@ -19,6 +19,12 @@
   <a href="./ARCHITECTURE.md">Architecture</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/andrew-ge-wu/jarela/actions/workflows/ci.yml">
+    <img src="https://github.com/andrew-ge-wu/jarela/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" />
+  </a>
+</p>
+
 ---
 
 ## What is Jarela?
