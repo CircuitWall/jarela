@@ -1,5 +1,24 @@
 @import "tailwindcss";
 
+/* Make Tailwind's `dark:` variant follow our data-theme attribute, so the
+ * built-in `dark:bg-foo` modifiers participate in the manual Light/Dark
+ * picker the same way our semantic tokens do.
+ *   data-theme="dark"   -> dark
+ *   data-theme="system" + @media (prefers-color-scheme: dark) -> dark
+ *   data-theme="light"  -> never dark
+ * Default behaviour (no attribute) treats prefers-color-scheme: dark as
+ * dark for backwards compatibility with SSR / pre-bootstrap markup. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where([data-theme="system"], [data-theme="system"] *) {
+      @slot;
+    }
+  }
+}
+
 /* ----------------------------------------------------------------------
  * Theme tokens.
  *
@@ -16,21 +35,33 @@
  *   (no attribute)         dark (matches the historical look)
  * ---------------------------------------------------------------------- */
 @theme {
-  /* Dark palette (default + the values for explicit data-theme="dark"). */
+  /* Dark palette (default + the values for explicit data-theme="dark").
+   *
+   * Contrast targets (WCAG AA = 4.5:1 normal text, 3:1 UI / large text):
+   *   fg        on surface  ≈ 19:1   AAA
+   *   fg-muted  on surface  ≈ 14:1   AAA
+   *   fg-subtle on surface  ≈ 8.5:1  AAA
+   *   fg-faint  on surface  ≈ 5.5:1  AA   (still readable on surface-3 ≈ 4.6:1) */
   --color-surface: #09090b;
   --color-surface-2: #18181b;
   --color-surface-3: #27272a;
-  --color-border: #3f3f46;
+  --color-border: #52525b;        /* was #3f3f46 — bumped for visible dividers */
   --color-fg: #fafafa;
-  --color-fg-muted: #d4d4d8;
-  --color-fg-subtle: #a1a1aa;
-  --color-fg-faint: #71717a;
+  --color-fg-muted: #e4e4e7;      /* slightly lifted from zinc-300 */
+  --color-fg-subtle: #b4b4bb;     /* lifted from zinc-400 for surface-3 legibility */
+  --color-fg-faint: #8b8b94;      /* was #71717a — failed AA on surface-3 */
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
 }
 
 /* Light palette. Mirrors the dark tokens with inverted lightness so any
- * `bg-surface-2 text-fg-muted border-border` block "just works". */
+ * `bg-surface-2 text-fg-muted border-border` block "just works".
+ *
+ * Contrast targets on the lightest surface (#ffffff):
+ *   fg        ≈ 19:1   AAA
+ *   fg-muted  ≈ 11:1   AAA
+ *   fg-subtle ≈ 8:1    AAA
+ *   fg-faint  ≈ 6.5:1  AA   (still > 5:1 on surface-3) */
 :where([data-theme="light"]),
 :where([data-theme="system"]) {
   color-scheme: light;
@@ -38,19 +69,16 @@
 :where([data-theme="dark"]) {
   color-scheme: dark;
 }
-:where([data-theme]) {
-  /* default for explicit non-light attributes; light block below overrides */
-}
 
 [data-theme="light"] {
   --color-surface: #ffffff;
   --color-surface-2: #f4f4f5;
   --color-surface-3: #e4e4e7;
-  --color-border: #d4d4d8;
+  --color-border: #c4c4c8;        /* was #d4d4d8 — visible against white */
   --color-fg: #09090b;
-  --color-fg-muted: #3f3f46;
-  --color-fg-subtle: #52525b;
-  --color-fg-faint: #71717a;
+  --color-fg-muted: #27272a;      /* was #3f3f46 — stronger primary-secondary */
+  --color-fg-subtle: #4b4b53;     /* was #52525b */
+  --color-fg-faint: #5b5b63;      /* was #71717a — failed AA on surface-2 */
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
 }
@@ -60,11 +88,11 @@
     --color-surface: #ffffff;
     --color-surface-2: #f4f4f5;
     --color-surface-3: #e4e4e7;
-    --color-border: #d4d4d8;
+    --color-border: #c4c4c8;
     --color-fg: #09090b;
-    --color-fg-muted: #3f3f46;
-    --color-fg-subtle: #52525b;
-    --color-fg-faint: #71717a;
+    --color-fg-muted: #27272a;
+    --color-fg-subtle: #4b4b53;
+    --color-fg-faint: #5b5b63;
   }
 }
 
@@ -138,6 +166,11 @@ html, body, #__next {
   padding: 0 0.2em;
   border-radius: 3px;
 }
+[data-theme="light"] .jarela-rich mark,
+[data-theme="system"] .jarela-rich mark { background: #facc15a0; color: #422006; }
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] .jarela-rich mark { background: #facc15a0; color: #422006; }
+}
 .jarela-rich abbr[title] {
   text-decoration: underline dotted;
   cursor: help;
@@ -176,6 +209,29 @@ html, body, #__next {
 .jarela-rich aside.warn,
 .jarela-rich aside.warning { background: #78350f30; border-color: #f59e0b; color: #fde68a; }
 .jarela-rich aside.danger  { background: #7f1d1d30; border-color: #ef4444; color: #fecaca; }
+
+/* Light-mode callouts — dark text on lightly tinted backgrounds.
+ * Same hue, contrast inverted so it actually reads against a white page. */
+[data-theme="light"] .jarela-rich aside.info,
+[data-theme="system"] .jarela-rich aside.info       { background: #dbeafe; border-color: #2563eb; color: #1e3a8a; }
+[data-theme="light"] .jarela-rich aside.tip,
+[data-theme="light"] .jarela-rich aside.success,
+[data-theme="system"] .jarela-rich aside.tip,
+[data-theme="system"] .jarela-rich aside.success    { background: #d1fae5; border-color: #059669; color: #064e3b; }
+[data-theme="light"] .jarela-rich aside.warn,
+[data-theme="light"] .jarela-rich aside.warning,
+[data-theme="system"] .jarela-rich aside.warn,
+[data-theme="system"] .jarela-rich aside.warning    { background: #fef3c7; border-color: #d97706; color: #78350f; }
+[data-theme="light"] .jarela-rich aside.danger,
+[data-theme="system"] .jarela-rich aside.danger     { background: #fee2e2; border-color: #dc2626; color: #7f1d1d; }
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] .jarela-rich aside.info    { background: #1e3a8a30; border-color: #3b82f6; color: #bfdbfe; }
+  [data-theme="system"] .jarela-rich aside.tip,
+  [data-theme="system"] .jarela-rich aside.success { background: #064e3b30; border-color: #10b981; color: #a7f3d0; }
+  [data-theme="system"] .jarela-rich aside.warn,
+  [data-theme="system"] .jarela-rich aside.warning { background: #78350f30; border-color: #f59e0b; color: #fde68a; }
+  [data-theme="system"] .jarela-rich aside.danger  { background: #7f1d1d30; border-color: #ef4444; color: #fecaca; }
+}
 .jarela-rich aside p:first-child { margin-top: 0; }
 .jarela-rich aside p:last-child  { margin-bottom: 0; }
 

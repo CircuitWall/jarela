@@ -161,7 +161,7 @@ function MapEmbed({ payload }: { payload: string }) {
 
   if (!params) {
     return (
-      <div className="my-2 px-3 py-2 rounded border border-rose-800/60 bg-rose-950/30 text-xs text-rose-300">
+      <div className="my-2 px-3 py-2 rounded border border-rose-800/60 bg-rose-950/30 text-xs text-rose-700 dark:text-rose-300">
         Invalid map block: {parseError}
       </div>
     );
@@ -249,7 +249,7 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
                 href={r.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-sky-400 hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
+                className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
                 title={r.url}
               >
                 {r.title || r.url}

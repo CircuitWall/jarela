@@ -110,7 +110,7 @@ export function AgentsPanel() {
               <button
                 onClick={() => void handleDelete(a.id)}
                 disabled={deleting === a.id}
-                className="p-1 text-fg-faint hover:text-red-400 transition-colors disabled:opacity-50"
+                className="p-1 text-fg-faint hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                 title="Delete"
               >
                 <Trash2 size={12} />

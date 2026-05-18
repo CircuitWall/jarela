@@ -67,7 +67,7 @@ export function MCPPanel() {
                 <div className="flex items-center gap-2 mb-0.5">
                   <button
                     onClick={() => toggle(s)}
-                    className={s.enabled ? "text-emerald-400" : "text-fg-faint hover:text-fg-subtle"}
+                    className={s.enabled ? "text-emerald-700 dark:text-emerald-400" : "text-fg-faint hover:text-fg-subtle"}
                     title={s.enabled ? "Disable" : "Enable"}
                   >
                     {s.enabled ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
@@ -83,7 +83,7 @@ export function MCPPanel() {
                     : `${(s.spec as { url?: string }).url ?? "?"}`}
                 </p>
                 {s.last_error && (
-                  <p className="text-xs text-rose-400 mt-0.5 truncate" title={s.last_error}>
+                  <p className="text-xs text-rose-700 dark:text-rose-400 mt-0.5 truncate" title={s.last_error}>
                     error: {s.last_error}
                   </p>
                 )}
@@ -92,7 +92,7 @@ export function MCPPanel() {
                 <button onClick={() => setEditing({ mode: "form", existing: s })} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit">
                   <span className="text-xs">edit</span>
                 </button>
-                <button onClick={() => remove(s.name)} className="p-1 text-fg-subtle hover:text-red-400 transition-colors" title="Delete">
+                <button onClick={() => remove(s.name)} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete">
                   <Trash2 size={13} />
                 </button>
               </div>
@@ -218,7 +218,7 @@ function MCPEditor({
             <div className="px-3 py-2 rounded bg-surface-3/40 border border-border text-[11px] text-fg-subtle">
               {registryEntry.description}
               {registryEntry.url && (
-                <a href={registryEntry.url} target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center gap-0.5 text-sky-400 hover:text-sky-300">
+                <a href={registryEntry.url} target="_blank" rel="noreferrer" className="ml-1 inline-flex items-center gap-0.5 text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300">
                   docs <ExternalLink size={10} />
                 </a>
               )}
@@ -294,7 +294,7 @@ function MCPEditor({
           </label>
 
           {error && (
-            <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-300">
+            <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">
               {error}
             </div>
           )}
@@ -379,7 +379,7 @@ function RegistryPicker({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-4 py-3 border-b border-border flex items-center gap-2">
-          <Sparkles size={14} className="text-amber-400" />
+          <Sparkles size={14} className="text-amber-700 dark:text-amber-400" />
           <h3 className="text-sm font-semibold text-fg mr-auto">Add MCP server</h3>
           <button onClick={onClose} className="p-1 text-fg-subtle hover:text-fg">
             <X size={14} />

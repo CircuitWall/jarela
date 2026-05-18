@@ -6,8 +6,8 @@ import { useModels } from "@/hooks/useModels";
 import { ModelEditor } from "./ModelEditor";
 
 const PROVIDER_COLORS: Record<string, string> = {
-  anthropic: "bg-orange-900/40 text-orange-300 border-orange-700",
-  openai: "bg-green-900/40 text-green-300 border-green-700",
+  anthropic: "bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-700",
+  openai: "bg-green-900/40 text-green-700 dark:text-green-300 border-green-700",
   "github-copilot": "bg-purple-900/40 text-purple-300 border-purple-700",
 };
 
@@ -51,7 +51,7 @@ export function ModelsPanel() {
           {loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
           {!loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No model configs yet</p>}
           {deleteError && (
-            <p className="text-red-400 text-xs mb-2 px-1">{deleteError}</p>
+            <p className="text-red-700 dark:text-red-400 text-xs mb-2 px-1">{deleteError}</p>
           )}
           {models.map((m) => {
             const inUse = assignments.some((a) => a.model_config_name === m.name);
@@ -60,7 +60,7 @@ export function ModelsPanel() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-sm font-medium text-fg">{m.name}</span>
-                  {m.is_default && <Star size={11} className="text-yellow-400 fill-yellow-400 shrink-0" />}
+                  {m.is_default && <Star size={11} className="text-yellow-700 dark:text-yellow-400 fill-yellow-400 shrink-0" />}
                   <span className={`text-xs px-1.5 py-0.5 rounded border ${PROVIDER_COLORS[m.provider] ?? "bg-surface-2 text-fg-muted border-border"}`}>
                     {m.provider}
                   </span>
@@ -69,7 +69,7 @@ export function ModelsPanel() {
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 {!m.is_default && (
-                  <button onClick={() => handleSetDefault(m)} className="p-1 text-fg-subtle hover:text-yellow-400 transition-colors" title="Set as default">
+                  <button onClick={() => handleSetDefault(m)} className="p-1 text-fg-subtle hover:text-yellow-700 dark:hover:text-yellow-400 transition-colors" title="Set as default">
                     <Star size={13} />
                   </button>
                 )}
@@ -79,7 +79,7 @@ export function ModelsPanel() {
                 <button
                   onClick={() => handleRemove(m.name)}
                   disabled={inUse}
-                  className="p-1 text-fg-subtle hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   title={inUse ? "Unassign from agents first" : "Delete"}
                 >
                   <Trash2 size={13} />

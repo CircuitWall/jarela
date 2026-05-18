@@ -201,7 +201,7 @@ function IntegrationCard({
         {def.name === "outlook" && <OutlookSetupGuide />}
         {def.fields.map((f) => (
           <label key={f.key} className="block text-xs text-fg-subtle">
-            {f.label}{f.required && <span className="text-rose-400 ml-0.5">*</span>}
+            {f.label}{f.required && <span className="text-rose-700 dark:text-rose-400 ml-0.5">*</span>}
             <input
               type={f.secret ? "password" : "text"}
               value={values[f.key] ?? ""}
@@ -220,15 +220,15 @@ function IntegrationCard({
         ))}
 
         {error && (
-          <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-300">
+          <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">
             {error}
           </div>
         )}
         {testResult && (
           <div className={`px-2 py-1.5 rounded border text-xs flex items-center gap-1.5 ${
             testResult.ok
-              ? "bg-emerald-950/30 border-emerald-800 text-emerald-300"
-              : "bg-rose-950/30 border-rose-800 text-rose-300"
+              ? "bg-emerald-950/30 border-emerald-800 text-emerald-700 dark:text-emerald-300"
+              : "bg-rose-950/30 border-rose-800 text-rose-700 dark:text-rose-300"
           }`}>
             {testResult.ok ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
             <span className="truncate">{testResult.message}</span>
@@ -277,7 +277,7 @@ function IntegrationCard({
           {configured && (
             <button
               onClick={clear}
-              className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-400"
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-700 dark:hover:text-rose-400"
               title="Remove saved credentials"
             >
               <Trash2 size={11} /> Clear
@@ -299,7 +299,7 @@ function GmailSetupGuide() {
         Setup guide (first-time only)
       </summary>
       <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
-        <p className="text-amber-300/90 text-[11px] border border-amber-400/30 bg-amber-400/5 rounded px-2 py-1.5">
+        <p className="text-amber-700 dark:text-amber-300/90 text-[11px] border border-amber-400/30 bg-amber-400/5 rounded px-2 py-1.5">
           <strong>Upgrading from an earlier version?</strong> Click <strong>Connect Gmail</strong> again so
           Google can grant the new Calendar scope &mdash; otherwise calendar tools will fail with a 403.
         </p>
@@ -398,7 +398,7 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-sky-400 hover:text-sky-300 underline decoration-dotted underline-offset-2"
+      className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 underline decoration-dotted underline-offset-2"
     >
       {children}
     </a>
