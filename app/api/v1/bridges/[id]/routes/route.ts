@@ -12,6 +12,7 @@ function toResponse(r: BridgeRouteRow) {
     remote_jid: r.remote_jid,
     agent_id: r.agent_id,
     label: r.label,
+    silent_mode: r.silent_mode === 1,
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
@@ -27,6 +28,7 @@ const CreateSchema = z.object({
   remote_jid: z.string().trim().min(3),
   agent_id: z.string().trim().min(1),
   label: z.string().trim().max(120).optional().nullable(),
+  silent_mode: z.boolean().optional(),
 });
 
 export async function POST(req: NextRequest, { params }: Params) {
@@ -47,6 +49,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       remote_jid: parsed.data.remote_jid,
       agent_id: parsed.data.agent_id,
       label: parsed.data.label ?? null,
+      silent_mode: parsed.data.silent_mode ?? false,
     });
     return NextResponse.json(toResponse(row), { status: 201 });
   } catch (err) {

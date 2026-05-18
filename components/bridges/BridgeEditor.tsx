@@ -463,6 +463,10 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             try { await update(r.id, { agent_id }); }
             catch (e) { alert(e instanceof Error ? e.message : String(e)); }
           }}
+          onToggleSilent={async (silent_mode) => {
+            try { await update(r.id, { silent_mode }); }
+            catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+          }}
           agents={agents.filter((a) => a.id === r.agent_id || !usedAgents.has(a.id))}
           onDelete={async () => {
             if (!confirm("Delete this route? Incoming messages from this chat will be ignored.")) return;
@@ -475,13 +479,14 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 }
 
 function RouteRow({
-  route, chatName, agent, agents, onChangeAgent, onDelete,
+  route, chatName, agent, agents, onChangeAgent, onToggleSilent, onDelete,
 }: {
   route: BridgeRoute;
   chatName: string | null;
   agent: AgentConfig | null;
   agents: AgentConfig[];
   onChangeAgent: (id: string) => Promise<void>;
+  onToggleSilent: (silent: boolean) => Promise<void>;
   onDelete: () => Promise<void> | void;
 }) {
   // Prefer the route's user-set label, fall back to the live chat name from
@@ -489,31 +494,48 @@ function RouteRow({
   // monospaced subline so the user can verify the binding.
   const headline = route.label?.trim() || chatName || route.remote_jid;
   const showJidSubline = headline !== route.remote_jid;
+  const isGroup = route.remote_jid.endsWith("@g.us");
   return (
-    <div className="flex items-center gap-2 py-1.5 border-t border-border first:border-t-0">
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-zinc-200 truncate">{headline}</p>
-        {showJidSubline && (
-          <p className="text-[10px] font-mono text-zinc-500 truncate">{route.remote_jid}</p>
-        )}
+    <div className="py-1.5 border-t border-border first:border-t-0">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-zinc-200 truncate">{headline}</p>
+          {showJidSubline && (
+            <p className="text-[10px] font-mono text-zinc-500 truncate">{route.remote_jid}</p>
+          )}
+        </div>
+        <select
+          value={agent?.id ?? ""}
+          onChange={(e) => void onChangeAgent(e.target.value)}
+          className="px-1.5 py-0.5 text-[11px] bg-surface-3 rounded border border-border focus:border-accent outline-none max-w-[40%]"
+        >
+          {!agent && <option value="">(missing agent)</option>}
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
+        <button
+          onClick={() => void onDelete()}
+          className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-surface-3"
+          title="Delete route"
+        >
+          <Trash2 size={11} />
+        </button>
       </div>
-      <select
-        value={agent?.id ?? ""}
-        onChange={(e) => void onChangeAgent(e.target.value)}
-        className="px-1.5 py-0.5 text-[11px] bg-surface-3 rounded border border-border focus:border-accent outline-none max-w-[40%]"
-      >
-        {!agent && <option value="">(missing agent)</option>}
-        {agents.map((a) => (
-          <option key={a.id} value={a.id}>{a.name}</option>
-        ))}
-      </select>
-      <button
-        onClick={() => void onDelete()}
-        className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-surface-3"
-        title="Delete route"
-      >
-        <Trash2 size={11} />
-      </button>
+      <label className="mt-1 flex items-start gap-2 cursor-pointer select-none px-0.5">
+        <input
+          type="checkbox"
+          className="mt-0.5 rounded border-border"
+          checked={route.silent_mode}
+          onChange={(e) => void onToggleSilent(e.target.checked)}
+        />
+        <span className="text-[11px] text-zinc-400 leading-snug">
+          <span className="text-zinc-300 font-medium">Silent mode</span> — listen only, never auto-reply.
+          <span className="block text-[10px] text-zinc-500">
+            The agent still receives every message and can run tools / update memory{isGroup ? " (with the sender's name prepended so it can tell group members apart)" : ""}, but nothing is sent back to {isGroup ? "the group" : "this chat"}.
+          </span>
+        </span>
+      </label>
     </div>
   );
 }

@@ -208,7 +208,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       if (payload.type !== "notify") return; // ignore history/append
       for (const raw of payload.messages ?? []) {
         const m = raw as {
-          key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string };
+          key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string; participant?: string };
           pushName?: string;
           message?: {
             conversation?: string;
@@ -245,12 +245,21 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
 
         const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? "";
         if (!text) continue; // drop non-text in v1
+        const is_group = remote_jid.endsWith("@g.us");
+        // In group chats `key.participant` is the actual sender's JID
+        // (the chat-level remote_jid is the group, not the person). In 1:1
+        // chats it's undefined — the sender == remote_jid. Normalize so the
+        // dispatcher gets a routable user JID, not the legacy @c.us form.
+        const participant_jid = is_group && m.key.participant
+          ? normalizeUserJid(m.key.participant)
+          : null;
         const inbound: InboundMessage = {
           remote_jid,
           push_name: m.pushName ?? null,
           text,
           message_id: m.key.id ?? null,
-          is_group: remote_jid.endsWith("@g.us"),
+          is_group,
+          participant_jid,
         };
         if (this.inboundHandler) {
           try { await this.inboundHandler(inbound); }

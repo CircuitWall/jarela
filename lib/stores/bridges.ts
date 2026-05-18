@@ -29,6 +29,10 @@ export interface BridgeRouteRow {
   remote_jid: string;
   agent_id: string;
   label: string | null;
+  // 1 = run the agent on inbound messages but suppress the outbound reply.
+  // Per-route so the same agent can auto-reply in one chat and stay silent
+  // in another (e.g. observer in a busy group, replier in a DM).
+  silent_mode: number;
   created_at: string;
   updated_at: string;
 }
@@ -159,21 +163,24 @@ export function createRoute(input: {
   remote_jid: string;
   agent_id: string;
   label?: string | null;
+  silent_mode?: boolean;
 }): BridgeRouteRow {
   const id = randomUUID();
   const t = now();
+  const silent = input.silent_mode ? 1 : 0;
   getDb()
     .prepare(
-      `INSERT INTO bridge_routes (id, bridge_id, remote_jid, agent_id, label, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO bridge_routes (id, bridge_id, remote_jid, agent_id, label, silent_mode, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.bridge_id, input.remote_jid, input.agent_id, input.label ?? null, t, t);
+    .run(id, input.bridge_id, input.remote_jid, input.agent_id, input.label ?? null, silent, t, t);
   return {
     id,
     bridge_id: input.bridge_id,
     remote_jid: input.remote_jid,
     agent_id: input.agent_id,
     label: input.label ?? null,
+    silent_mode: silent,
     created_at: t,
     updated_at: t,
   };
@@ -181,7 +188,12 @@ export function createRoute(input: {
 
 export function updateRoute(
   id: string,
-  patch: Partial<Pick<BridgeRouteRow, "remote_jid" | "agent_id" | "label">>,
+  patch: {
+    remote_jid?: string;
+    agent_id?: string;
+    label?: string | null;
+    silent_mode?: boolean;
+  },
 ): BridgeRouteRow | null {
   const existing = getRoute(id);
   if (!existing) return null;
@@ -190,11 +202,12 @@ export function updateRoute(
     remote_jid: patch.remote_jid ?? existing.remote_jid,
     agent_id: patch.agent_id ?? existing.agent_id,
     label: patch.label !== undefined ? patch.label : existing.label,
+    silent_mode: patch.silent_mode !== undefined ? (patch.silent_mode ? 1 : 0) : existing.silent_mode,
     updated_at: now(),
   };
   getDb()
-    .prepare("UPDATE bridge_routes SET remote_jid=?, agent_id=?, label=?, updated_at=? WHERE id=?")
-    .run(merged.remote_jid, merged.agent_id, merged.label, merged.updated_at, id);
+    .prepare("UPDATE bridge_routes SET remote_jid=?, agent_id=?, label=?, silent_mode=?, updated_at=? WHERE id=?")
+    .run(merged.remote_jid, merged.agent_id, merged.label, merged.silent_mode, merged.updated_at, id);
   return merged;
 }
 

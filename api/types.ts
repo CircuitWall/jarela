@@ -313,6 +313,11 @@ export interface BridgeRoute {
   remote_jid: string;       // e.g. "5511999990000@s.whatsapp.net" or "<group-id>@g.us"
   agent_id: string;
   label: string | null;
+  // When true, the agent still runs (records history, executes tools) on
+  // every inbound message but the dispatcher suppresses the outbound reply.
+  // Per-route so the same agent can be a replier in one chat and an
+  // observer in another.
+  silent_mode: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -321,12 +326,14 @@ export interface BridgeRouteIn {
   remote_jid: string;
   agent_id: string;
   label?: string | null;
+  silent_mode?: boolean;
 }
 
 export interface BridgeRoutePatch {
   remote_jid?: string;
   agent_id?: string;
   label?: string | null;
+  silent_mode?: boolean;
 }
 
 export interface BridgeChat {

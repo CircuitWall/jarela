@@ -24,6 +24,13 @@ export interface InboundMessage {
   message_id: string | null;
   /** Whether the chat is a group (informational only — routing is by JID either way). */
   is_group: boolean;
+  /**
+   * Sender JID inside a group chat (Baileys `key.participant`, normalized).
+   * Null for 1:1 chats where the sender equals `remote_jid`. The dispatcher
+   * uses this to attribute group messages to specific members in the agent
+   * prompt so the LLM can tell two participants apart.
+   */
+  participant_jid: string | null;
 }
 
 export interface StatusUpdate {

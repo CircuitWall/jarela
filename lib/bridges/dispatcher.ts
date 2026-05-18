@@ -2,7 +2,7 @@ import { getOrCreateAgentThread, type PersistedToolEvent } from "@/lib/stores/th
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
 import { publish as publishNotification } from "@/lib/notifications/bus";
-import { resolveAgent } from "./router";
+import { resolveRoute } from "./router";
 import type { BridgeAdapter, InboundMessage } from "./types";
 
 /**
@@ -25,8 +25,8 @@ export async function handleInboundMessage(
   msg: InboundMessage,
 ): Promise<void> {
   try {
-    const agentId = resolveAgent(adapter.bridge_id, msg.remote_jid);
-    if (!agentId) {
+    const route = resolveRoute(adapter.bridge_id, msg.remote_jid);
+    if (!route) {
       // Unrouted chats are silently dropped. We intentionally do NOT publish
       // a notification here — the user already declared "this chat isn't
       // monitored" by not configuring a route, so popping a toast for every
@@ -36,6 +36,7 @@ export async function handleInboundMessage(
       console.log(`[bridge ${adapter.bridge_id}] dropped: no route for ${msg.remote_jid} (${msg.push_name ?? "?"})`);
       return;
     }
+    const agentId = route.agent_id;
 
     const agent = getAgentConfig(agentId);
     if (!agent) {
@@ -44,7 +45,14 @@ export async function handleInboundMessage(
     }
 
     const thread = getOrCreateAgentThread(agentId);
-    const prepared = await prepareThreadRun(thread.thread_id, msg.text);
+    // For group chats, prepend a sender attribution line so the agent can
+    // tell members apart — the single-thread-per-agent invariant means every
+    // participant's messages land in the same thread. For DMs we leave the
+    // text untouched (the thread itself implies the sender).
+    const senderTag = msg.is_group
+      ? `[from ${msg.push_name ?? msg.participant_jid ?? "unknown"}]\n`
+      : "";
+    const prepared = await prepareThreadRun(thread.thread_id, senderTag + msg.text);
 
     // Show the "composing…" presence on the channel while we drain the
     // LLM stream. Refresh every ~8s because WhatsApp drops the indicator
@@ -95,10 +103,11 @@ export async function handleInboundMessage(
     persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
 
     const reply = assistantContent.trim();
-    // never_reply: process the message (records history + runs tools) but
-    // suppress the outbound send. Useful for read-only/observer agents on
-    // group chats where the user wants logging without auto-posting.
-    if (reply.length > 0 && !agent.never_reply) {
+    // silent_mode (per-route): process the message (records history + runs
+    // tools) but suppress the outbound send. Useful for read-only/observer
+    // agents on group chats where the user wants logging without auto-posting.
+    const silent = route.silent_mode === 1;
+    if (reply.length > 0 && !silent) {
       try {
         await adapter.sendText(msg.remote_jid, reply);
       } catch (sendErr) {
