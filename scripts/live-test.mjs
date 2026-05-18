@@ -442,6 +442,202 @@ test("tools: each registered tool has name + description", async () => {
   }
 });
 
+// ── ADDITIONAL INFRA COVERAGE ───────────────────────────────────────────────
+
+test("providers: GET returns a non-empty list of provider name strings", async () => {
+  const r = await api("/api/v1/providers");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+  assert(r.body.length > 0, "no providers registered");
+  for (const name of r.body) {
+    assert(typeof name === "string" && name.length > 0, `bad provider entry: ${JSON.stringify(name)}`);
+  }
+  // The core providers we ship adapters for must be present even when the
+  // user has no API keys configured — the list is a registry, not a status.
+  for (const expected of ["anthropic", "openai"]) {
+    assert(r.body.includes(expected), `expected provider '${expected}' in list`);
+  }
+});
+
+test("integrations: GET returns {definitions, statuses} shape", async () => {
+  const r = await api("/api/v1/integrations");
+  assertEqual(r.status, 200);
+  assert(r.body && typeof r.body === "object", "expected object");
+  assert(Array.isArray(r.body.definitions), "definitions should be array");
+  assert(Array.isArray(r.body.statuses), "statuses should be array");
+  for (const d of r.body.definitions) {
+    assert(typeof d.name === "string", "definition missing name");
+    assert(typeof d.label === "string", `definition ${d.name} missing label`);
+    assert(Array.isArray(d.fields), `definition ${d.name} missing fields[]`);
+  }
+});
+
+test("pending-actions: GET returns an array", async () => {
+  const r = await api("/api/v1/pending-actions");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+});
+
+test("pending-actions: GET accepts status filter without 500", async () => {
+  const r = await api("/api/v1/pending-actions?status=pending");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+});
+
+test("health: response shape includes status + agents[] + crypto.source", async () => {
+  const r = await api("/api/v1/health");
+  if (r.status === 404) return; // tolerated on older builds
+  assertEqual(r.status, 200);
+  assertEqual(r.body.status, "ok");
+  assert(Array.isArray(r.body.agents), "agents should be array");
+  assert(r.body.crypto && typeof r.body.crypto.source === "string",
+    "crypto.source missing");
+  assert(["keychain", "keyfile"].includes(r.body.crypto.source),
+    `unexpected crypto source: ${r.body.crypto.source}`);
+});
+
+test("bridges: GET returns an array", async () => {
+  const r = await api("/api/v1/bridges");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+});
+
+test("bridges: POST + GET + DELETE round-trip (whatsapp, not started)", async () => {
+  const name = `live-test-bridge-${Date.now()}`;
+  const created = await api("/api/v1/bridges", {
+    method: "POST",
+    body: JSON.stringify({ kind: "whatsapp", name }),
+  });
+  assertEqual(created.status, 201);
+  assertEqual(created.body.kind, "whatsapp");
+  assertEqual(created.body.name, name);
+  assertEqual(created.body.enabled, false);
+  const id = created.body.id;
+  assert(typeof id === "string" && id.length > 0, "bridge id missing");
+
+  try {
+    const fetched = await api(`/api/v1/bridges/${encodeURIComponent(id)}`);
+    assertEqual(fetched.status, 200);
+    assertEqual(fetched.body.id, id);
+
+    // PATCH name without enabling — must NOT spin up Baileys.
+    const renamed = await api(`/api/v1/bridges/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: `${name}-renamed` }),
+    });
+    assertEqual(renamed.status, 200);
+    assertEqual(renamed.body.name, `${name}-renamed`);
+  } finally {
+    const del = await api(`/api/v1/bridges/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+    assertEqual(del.status, 200);
+    assertEqual(del.body.deleted, true);
+  }
+});
+
+test("bridges: POST rejects unknown kind with 400", async () => {
+  const r = await api("/api/v1/bridges", {
+    method: "POST",
+    body: JSON.stringify({ kind: "signal", name: "x" }),
+  });
+  assertEqual(r.status, 400);
+});
+
+test("bridges: GET /:id returns 404 for unknown id", async () => {
+  const r = await api("/api/v1/bridges/does-not-exist");
+  assertEqual(r.status, 404);
+});
+
+test("events: SSE endpoint streams with text/event-stream content-type", async () => {
+  // We can't easily consume an unbounded SSE stream in tests; just confirm
+  // the response handshakes correctly. AbortController kills it immediately.
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 500);
+  try {
+    const res = await fetch(`${BASE}/api/v1/events?since=0`, { signal: ac.signal });
+    assertEqual(res.status, 200);
+    const ct = res.headers.get("content-type") || "";
+    assertContains(ct, "text/event-stream", "missing SSE content-type");
+  } catch (err) {
+    // Abort itself is expected after the 500ms guard.
+    if (err.name !== "AbortError") throw err;
+  } finally {
+    clearTimeout(t);
+  }
+});
+
+test("events: POST /events/test publishes a synthetic event", async () => {
+  const r = await api("/api/v1/events/test", { method: "POST" });
+  assertEqual(r.status, 200);
+  assertEqual(r.body.published, true);
+});
+
+test("scheduled-tasks: POST rejects malformed cron with 400", async () => {
+  const { body: agents } = await api("/api/v1/agents");
+  const def = agents.find((a) => a.is_default) ?? agents[0];
+  if (!def) return; // no default agent — skip
+  const r = await api("/api/v1/scheduled-tasks", {
+    method: "POST",
+    body: JSON.stringify({
+      agent_id: def.id,
+      prompt: "test",
+      kind: "cron",
+      schedule: "this is not a cron",
+    }),
+  });
+  assert(r.status >= 400 && r.status < 500, `expected 4xx, got ${r.status}`);
+});
+
+test("scheduled-tasks: GET with agent_id filter returns array", async () => {
+  const { body: agents } = await api("/api/v1/agents");
+  const def = agents.find((a) => a.is_default) ?? agents[0];
+  if (!def) return;
+  const r = await api(`/api/v1/scheduled-tasks?agent_id=${encodeURIComponent(def.id)}`);
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+});
+
+test("memory: DELETE removes a written entry", async () => {
+  const ns = `livetest-${Date.now()}`;
+  const key = "to-delete";
+  await api("/api/v1/memory", {
+    method: "POST",
+    body: JSON.stringify({ namespace: ns, key, value: { v: 1 } }),
+  });
+  const del = await api(
+    `/api/v1/memory/${encodeURIComponent(ns)}/${encodeURIComponent(key)}`,
+    { method: "DELETE" },
+  );
+  assert(del.status === 200 || del.status === 204, `unexpected status ${del.status}`);
+  const after = await api(`/api/v1/memory?namespace=${encodeURIComponent(ns)}`);
+  assertEqual(after.status, 200);
+  assert(
+    !after.body.some((r) => r.key === key),
+    "deleted memory entry still listed",
+  );
+});
+
+test("mcp-servers/registry: GET returns array of catalog entries", async () => {
+  const r = await api("/api/v1/mcp-servers/registry");
+  assertEqual(r.status, 200);
+  assert(Array.isArray(r.body), "expected array");
+  for (const e of r.body) {
+    assert(typeof e.name === "string" && e.name.length > 0, "registry entry missing name");
+  }
+});
+
+test("threads: GET /agents/:id/thread returns a thread_id", async () => {
+  const { body: agents } = await api("/api/v1/agents");
+  const def = agents.find((a) => a.is_default) ?? agents[0];
+  if (!def) return;
+  const r = await api(`/api/v1/agents/${def.id}/thread`);
+  assertEqual(r.status, 200);
+  assert(typeof r.body.thread_id === "string" && r.body.thread_id.length > 0,
+    "missing thread_id");
+  assertEqual(r.body.agent_id, def.id);
+});
+
 // ── SEED (runs once before the suite to populate fresh DBs) ─────────────────
 
 async function seedFromProd() {
