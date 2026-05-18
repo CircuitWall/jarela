@@ -192,7 +192,7 @@ Built-in model providers in [lib/providers/](./lib/providers/):
 
 | Integration | Where | How |
 | --- | --- | --- |
-| **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters` |
+| **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters`. private: `npm run install:private-mcps` to clone+build sonatype/mcp-docs into `~/.jarela/external/`, then pick from "Browse popular". |
 | **GitHub** | `Profile` panel | PAT or Copilot OAuth |
 | **Atlassian** (Jira + Confluence) | `Integrations` panel | API token + email |
 | **Gmail** | `Integrations` panel | Run `node scripts/gmail-oauth.mjs` once |
