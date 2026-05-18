@@ -19,6 +19,10 @@ export function runMigrations(db: DatabaseSync): void {
       content    TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+    -- thread_id is the dominant filter on every messages query
+    -- (getMessages, getRecentMessagesWindow, getMessagesPage, clear).
+    -- Without this every read full-scans the messages table.
+    CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages(thread_id, created_at);
     CREATE TABLE IF NOT EXISTS memory_store (
       namespace  TEXT NOT NULL,
       key        TEXT NOT NULL,
@@ -100,6 +104,9 @@ export function runMigrations(db: DatabaseSync): void {
       decided_at    TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_pending_actions_status ON pending_actions(status, created_at);
+    -- agent_id is a common filter on listPendingActions; without this every
+    -- per-agent panel render is a full scan of pending_actions.
+    CREATE INDEX IF NOT EXISTS idx_pending_actions_agent_status ON pending_actions(agent_id, status, created_at);
     CREATE TABLE IF NOT EXISTS access_whitelist (
       identity      TEXT PRIMARY KEY,
       display_name  TEXT,

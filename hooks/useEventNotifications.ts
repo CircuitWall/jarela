@@ -98,6 +98,11 @@ export function useEventNotifications(options: Options) {
     let es: EventSource | null = null;
     let cancelled = false;
     let backoff = 500;
+    // Tracked so we can cancel a pending reconnect on unmount; otherwise
+    // the timer fires after the component is gone and the resulting
+    // EventSource leaks (and the cancelled-check doesn't help — we need
+    // to also stop the timer that scheduled it).
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     function connect() {
       if (cancelled) return;
@@ -126,7 +131,7 @@ export function useEventNotifications(options: Options) {
         es?.close();
         es = null;
         if (cancelled) return;
-        setTimeout(connect, Math.min(backoff, 30_000));
+        reconnectTimer = setTimeout(connect, Math.min(backoff, 30_000));
         backoff = Math.min(backoff * 2, 30_000);
       };
     }
@@ -191,6 +196,7 @@ export function useEventNotifications(options: Options) {
     // the server's recentSince() replays anything that happened while away.
     const onVisible = () => {
       if (document.visibilityState !== "visible") return;
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       try { es?.close(); } catch { /* */ }
       es = null;
       backoff = 500;
@@ -199,6 +205,7 @@ export function useEventNotifications(options: Options) {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       document.removeEventListener("visibilitychange", onVisible);
       es?.close();
     };
