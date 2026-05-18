@@ -42,8 +42,8 @@ jobs:
     timeout-minutes: 20
     env:
       # Force an ephemeral data dir so the suite never touches a user's
-      # ~/.jarela. Cleared between runs by the runner anyway.
-      JARELA_DB_DIR: ${{ runner.temp }}/jarela-ci
+      # ~/.jarela. /tmp is writable on ubuntu-latest and wiped between runs.
+      JARELA_DB_DIR: /tmp/jarela-ci
       # Tests target the started server on this port.
       JARELA_URL: http://127.0.0.1:4312
     steps:
