@@ -49,16 +49,6 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
   let assistantContent = "";
   const usedTools: string[] = [];
   const toolEvents: PersistedToolEvent[] = [];
-  // App-level keepalive: even if the model is mid-thought and emits no
-  // chunks for a while, push a small heartbeat the client can use to
-  // confirm the path is alive. WebSocket ping frames are auto-handled by
-  // the browser and not visible to JS, so we need a JSON message for the
-  // browser-side stall watchdog to reset.
-  const keepalive = setInterval(() => {
-    if (ws.readyState === WebSocket.OPEN) {
-      sendJson(ws, { type: "keepalive", ts: Date.now() });
-    }
-  }, KEEPALIVE_INTERVAL_MS);
   // Refuse if another run is already active for this thread (the HTTP route
   // enforces this too; the WS path must mirror it so DELETE-abort and the
   // queue-drain UX behave the same regardless of transport).
@@ -68,6 +58,17 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
     if (ws.readyState === WebSocket.OPEN) ws.close(1000, "run_active");
     return;
   }
+  // App-level keepalive: even if the model is mid-thought and emits no
+  // chunks for a while, push a small heartbeat the client can use to
+  // confirm the path is alive. WebSocket ping frames are auto-handled by
+  // the browser and not visible to JS, so we need a JSON message for the
+  // browser-side stall watchdog to reset. Started AFTER the early-exit
+  // checks so we don't leak the interval on the run_active short-circuit.
+  const keepalive = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) {
+      sendJson(ws, { type: "keepalive", ts: Date.now() });
+    }
+  }, KEEPALIVE_INTERVAL_MS);
   const thread = getThread(req.thread_id);
   const active = startRun(req.thread_id, thread?.agent_id ?? null);
   let terminal: "done" | "error" = "done";

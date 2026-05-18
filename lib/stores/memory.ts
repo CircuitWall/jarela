@@ -43,7 +43,12 @@ export function getMemory(namespace: string, key: string): MemoryRow | null {
 
 export function putMemory(namespace: string, key: string, value: unknown): MemoryRow {
   const t = now();
-  const existing = getMemory(namespace, key);
+  // Only the original created_at is needed to preserve insertion time on
+  // upsert; reading the full row would force an unnecessary AES-GCM
+  // decrypt of an existing sensitive value just to discard it.
+  const existing = getDb()
+    .prepare("SELECT created_at FROM memory_store WHERE namespace=? AND key=?")
+    .get(namespace, key) as { created_at?: string } | undefined;
   const created_at = existing?.created_at ?? t;
   const json = JSON.stringify(value);
   // Encrypt the value column at rest for sensitive namespaces (ADR-0005).
