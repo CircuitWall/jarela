@@ -247,7 +247,7 @@ function IntegrationCard({
             <button
               onClick={connectGmail}
               disabled={connecting}
-              title="Authorize Gmail via Google OAuth — opens a browser window"
+              title="Authorize Gmail + Calendar via Google OAuth — opens a browser window"
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
@@ -279,10 +279,14 @@ function GmailSetupGuide() {
         Setup guide (first-time only)
       </summary>
       <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
+        <p className="text-amber-300/90 text-[11px] border border-amber-400/30 bg-amber-400/5 rounded px-2 py-1.5">
+          <strong>Upgrading from an earlier version?</strong> Click <strong>Connect Gmail</strong> again so
+          Google can grant the new Calendar scope &mdash; otherwise calendar tools will fail with a 403.
+        </p>
         <p className="text-zinc-400">
           You only need to do this once per Google account. The end result is a <code className="text-zinc-200">client_id</code>,
           {" "}<code className="text-zinc-200">client_secret</code> pair you paste below. Then click
-          {" "}<strong className="text-zinc-200">Connect Gmail</strong> to authorize.
+          {" "}<strong className="text-zinc-200">Connect Gmail</strong> to authorize Gmail + Calendar access.
         </p>
 
         <Step n={1} title="Create or pick a Google Cloud project">
@@ -290,19 +294,21 @@ function GmailSetupGuide() {
           and create a project (any name). If you already have one, just select it in the top bar.
         </Step>
 
-        <Step n={2} title="Enable the Gmail API">
-          Go to <Ext href="https://console.cloud.google.com/apis/library/gmail.googleapis.com">APIs &amp; Services → Library → Gmail API</Ext>{" "}
-          and click <strong>Enable</strong>. Wait a few seconds for it to activate.
+        <Step n={2} title="Enable the Gmail and Calendar APIs">
+          Enable <Ext href="https://console.cloud.google.com/apis/library/gmail.googleapis.com">Gmail API</Ext>{" "}
+          <strong>and</strong> <Ext href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com">Google Calendar API</Ext>.
+          Click <strong>Enable</strong> on each and wait a few seconds for them to activate.
         </Step>
 
         <Step n={3} title="Configure the OAuth consent screen">
           Go to <Ext href="https://console.cloud.google.com/auth/branding">Auth Platform → Branding</Ext>.
           Set <strong>User type: External</strong>, fill in an app name and your email, save.
           Then in <Ext href="https://console.cloud.google.com/auth/scopes">Data Access → Scopes</Ext>{" "}
-          click <strong>Add or remove scopes</strong> and add both:
+          click <strong>Add or remove scopes</strong> and add all three:
           <ul className="list-disc ml-5 mt-1 text-zinc-400">
             <li><code className="text-zinc-200">.../auth/gmail.modify</code></li>
             <li><code className="text-zinc-200">.../auth/gmail.compose</code></li>
+            <li><code className="text-zinc-200">.../auth/calendar.events</code></li>
           </ul>
           Finally, in <Ext href="https://console.cloud.google.com/auth/audience">Audience</Ext>{" "}
           add your own Gmail address as a <strong>Test user</strong>. (Leaving the app in Testing
