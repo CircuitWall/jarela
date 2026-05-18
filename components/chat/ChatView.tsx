@@ -7,6 +7,7 @@ import { useTrackLoading } from "@/lib/ui/loading";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
+import { useUnreadByAgent } from "@/lib/ui/toasts";
 
 const GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -48,6 +49,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [defaultAgent, setDefaultAgent] = useState<AgentConfig | null>(null);
   const [recentAgents, setRecentAgents] = useState<AgentConfig[]>([]);
+  const unreadByAgent = useUnreadByAgent();
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -314,11 +316,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
               onClick={() => onSelectAgent?.(defaultAgent.id)}
               className="group flex flex-col items-center gap-2 px-5 py-4 rounded-2xl border border-accent/40 bg-gradient-to-br from-accent/10 to-surface-2 hover:from-accent/15 hover:border-accent/60 transition-all w-[260px] shadow-lg shadow-accent/10"
             >
-              <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradientFor(defaultAgent.id)} flex items-center justify-center text-xl font-bold text-white select-none overflow-hidden ring-2 ring-accent/30 ring-offset-2 ring-offset-surface group-hover:ring-accent/50 transition-all`}>
-                {defaultAgent.icon
-                  // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={defaultAgent.icon} alt={defaultAgent.name} className="w-full h-full object-cover" />
-                  : defaultAgent.name.charAt(0).toUpperCase()}
+              <div className="relative">
+                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradientFor(defaultAgent.id)} flex items-center justify-center text-xl font-bold text-white select-none overflow-hidden ring-2 ring-accent/30 ring-offset-2 ring-offset-surface group-hover:ring-accent/50 transition-all`}>
+                  {defaultAgent.icon
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={defaultAgent.icon} alt={defaultAgent.name} className="w-full h-full object-cover" />
+                    : defaultAgent.name.charAt(0).toUpperCase()}
+                </div>
+                {(unreadByAgent.get(defaultAgent.id) ?? 0) > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1.5 rounded-full bg-rose-500 border-2 border-surface text-[11px] font-bold text-white flex items-center justify-center leading-none">
+                    {(unreadByAgent.get(defaultAgent.id) ?? 0) > 9 ? "9+" : unreadByAgent.get(defaultAgent.id)}
+                  </span>
+                )}
               </div>
               <div className="text-center min-w-0 w-full">
                 <div className="flex items-center justify-center gap-1.5">
@@ -337,22 +346,30 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
             <div className="flex flex-col items-center gap-1.5">
               <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Recent</p>
               <div className="flex gap-1.5 justify-center flex-wrap">
-                {recentAgents.map((a) => (
-                  <button
-                    key={a.id}
-                    onClick={() => onSelectAgent?.(a.id)}
-                    title={a.identity || a.name}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 hover:border-zinc-600 transition-colors text-left max-w-[150px]"
-                  >
-                    <div className={`w-6 h-6 shrink-0 rounded-md bg-gradient-to-br ${gradientFor(a.id)} flex items-center justify-center text-xs font-bold text-white select-none overflow-hidden`}>
-                      {a.icon
-                        // eslint-disable-next-line @next/next/no-img-element
-                        ? <img src={a.icon} alt={a.name} className="w-full h-full object-cover" />
-                        : a.name.charAt(0).toUpperCase()}
-                    </div>
-                    <p className="text-xs text-zinc-300 truncate">{a.name}</p>
-                  </button>
-                ))}
+                {recentAgents.map((a) => {
+                  const n = unreadByAgent.get(a.id) ?? 0;
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => onSelectAgent?.(a.id)}
+                      title={a.identity || a.name}
+                      className="relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 hover:border-zinc-600 transition-colors text-left max-w-[150px]"
+                    >
+                      <div className={`w-6 h-6 shrink-0 rounded-md bg-gradient-to-br ${gradientFor(a.id)} flex items-center justify-center text-xs font-bold text-white select-none overflow-hidden`}>
+                        {a.icon
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={a.icon} alt={a.name} className="w-full h-full object-cover" />
+                          : a.name.charAt(0).toUpperCase()}
+                      </div>
+                      <p className="text-xs text-zinc-300 truncate">{a.name}</p>
+                      {n > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 border border-surface text-[10px] font-bold text-white flex items-center justify-center leading-none">
+                          {n > 9 ? "9+" : n}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}
