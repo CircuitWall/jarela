@@ -176,6 +176,8 @@ export function useEventNotifications(options: Options) {
             tag,
             icon: customIcon || "/icon-192.png",
           });
+          // Click handler: focus the Jarela window, switch to the agent the
+          // event belongs to, dismiss the OS notification.
           n.onclick = () => {
             window.focus();
             const agentId = ev.agent_id;
