@@ -138,6 +138,7 @@ export function runMigrations(db: DatabaseSync): void {
     );
     CREATE INDEX IF NOT EXISTS idx_bridge_routes_bridge ON bridge_routes(bridge_id);
   `);
+  ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);
   ensureEmbeddingColumns(db);
@@ -229,6 +230,30 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   // posting.
   if (!names.has("never_reply")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN never_reply INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
+/**
+ * `silent_mode` is per-route, not per-agent: the same agent can auto-reply
+ * in one chat and stay observer-only in another. Backfills from the legacy
+ * per-agent `never_reply` flag on first migration so behavior is preserved
+ * for existing installs. After backfill, `never_reply` is no longer read by
+ * the dispatcher — the route flag is canonical.
+ */
+function ensureBridgeRouteColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(bridge_routes)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("silent_mode")) {
+    db.exec("ALTER TABLE bridge_routes ADD COLUMN silent_mode INTEGER NOT NULL DEFAULT 0");
+    // Best-effort backfill from the legacy per-agent flag if the column exists.
+    const agentCols = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+    if (agentCols.some((c) => c.name === "never_reply")) {
+      db.exec(`
+        UPDATE bridge_routes
+        SET silent_mode = 1
+        WHERE agent_id IN (SELECT id FROM agent_configs WHERE never_reply = 1)
+      `);
+    }
   }
 }
 
