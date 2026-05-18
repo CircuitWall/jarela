@@ -31,6 +31,7 @@ import fs from "node:fs";
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.compose",
+  "https://www.googleapis.com/auth/calendar.events",
 ];
 
 function parseArgs(argv) {

@@ -32,11 +32,12 @@ export const INTEGRATIONS = {
     ],
   },
   gmail: {
-    label: "Gmail",
+    label: "Gmail + Calendar",
     description:
-      "Used by the gmail_* tools (search, read, draft, label, archive). Drafts only — this " +
-      "integration intentionally cannot send mail. See the Setup guide below for how to create " +
-      "the OAuth client.",
+      "Used by the gmail_* and calendar_* tools (search/read/draft/label/archive mail; " +
+      "list/create/update/delete calendar events). Drafts only \u2014 this integration " +
+      "intentionally cannot send mail. See the Setup guide below for how to create the " +
+      "OAuth client. Existing connections must reconnect to grant the new Calendar scope.",
     fields: [
       { key: "client_id", label: "OAuth client ID", placeholder: "<id>.apps.googleusercontent.com", secret: false, required: true },
       { key: "client_secret", label: "OAuth client secret", placeholder: "GOCSPX-…", secret: true, required: true },

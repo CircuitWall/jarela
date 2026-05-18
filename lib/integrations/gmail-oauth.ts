@@ -10,6 +10,7 @@
 // Pinned to globalThis so HMR in dev doesn't lose pending flows.
 
 import { randomBytes } from "crypto";
+import { getIntegrationRaw } from "@/lib/stores/integrations";
 
 export interface OAuthFlow {
   createdAt: number;
@@ -73,6 +74,11 @@ export function deleteFlow(state: string): void {
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.compose",
+  // Calendar: read/write events on the user's existing calendars. Narrow
+  // scope on purpose — doesn't grant listing of unsubscribed calendars or
+  // create/delete of entire calendars (matches the principle-of-least-
+  // privilege the Gmail scopes already follow).
+  "https://www.googleapis.com/auth/calendar.events",
 ];
 
 export function buildAuthorizeUrl(opts: {
@@ -120,4 +126,81 @@ export async function exchangeCode(opts: {
     throw new Error(err);
   }
   return parsed as { refresh_token?: string; access_token?: string; expires_in?: number; scope?: string };
+}
+
+// ---------------------------------------------------------------------------
+// Shared Google API auth (Gmail + Calendar + any future Google scope)
+// ---------------------------------------------------------------------------
+//
+// The same OAuth client (stored under integration name "gmail" for back-compat)
+// grants every Google scope we ask for. Tools across `lib/tools/` share these
+// helpers so a burst of mixed Gmail+Calendar calls hits Google's token
+// endpoint once per refresh, not once per file.
+
+export interface GoogleAuth {
+  client_id: string;
+  client_secret: string;
+  refresh_token: string;
+}
+
+export function resolveGoogleAuth(): GoogleAuth | { error: string } {
+  const envId = process.env.GMAIL_CLIENT_ID;
+  const envSecret = process.env.GMAIL_CLIENT_SECRET;
+  const envRefresh = process.env.GMAIL_REFRESH_TOKEN;
+  if (envId && envSecret && envRefresh) {
+    return { client_id: envId, client_secret: envSecret, refresh_token: envRefresh };
+  }
+  const saved = getIntegrationRaw("gmail");
+  if (saved?.client_id && saved.client_secret && saved.refresh_token) {
+    return {
+      client_id: saved.client_id,
+      client_secret: saved.client_secret,
+      refresh_token: saved.refresh_token,
+    };
+  }
+  return {
+    error:
+      "Google account not connected. Open the gear menu → Integrations tab → " +
+      "Gmail card and click Connect Gmail to authorize Gmail + Calendar access.",
+  };
+}
+
+interface CachedAccessToken { token: string; expires_at: number }
+const accessTokenCache = new Map<string, CachedAccessToken>();
+
+export async function getGoogleAccessToken(
+  auth: GoogleAuth,
+): Promise<string | { error: string }> {
+  const key = auth.refresh_token.slice(0, 20);
+  const cached = accessTokenCache.get(key);
+  if (cached && cached.expires_at > Date.now() + 60_000) return cached.token;
+
+  const body = new URLSearchParams({
+    client_id: auth.client_id,
+    client_secret: auth.client_secret,
+    refresh_token: auth.refresh_token,
+    grant_type: "refresh_token",
+  });
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      // Drop any stale cached token so a reconnected (broader-scope) refresh
+      // re-exchanges cleanly on the next call.
+      accessTokenCache.delete(key);
+      return { error: `OAuth token refresh failed (${res.status}): ${text.slice(0, 300)}` };
+    }
+    const parsed = JSON.parse(text) as { access_token?: string; expires_in?: number };
+    if (!parsed.access_token) return { error: "OAuth response missing access_token" };
+    const expires_at = Date.now() + (parsed.expires_in ?? 3000) * 1000;
+    accessTokenCache.set(key, { token: parsed.access_token, expires_at });
+    return parsed.access_token;
+  } catch (err) {
+    return { error: `OAuth token refresh threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
 }
