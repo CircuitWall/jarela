@@ -66,8 +66,8 @@ export function BridgesPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Smartphone size={14} className="text-zinc-400" />
-        <h2 className="text-sm font-semibold text-zinc-100 mr-auto">Bridges</h2>
+        <Smartphone size={14} className="text-fg-subtle" />
+        <h2 className="text-sm font-semibold text-fg mr-auto">Bridges</h2>
         <button
           onClick={() => setCreating(true)}
           className="px-2 py-1 text-xs rounded bg-accent/15 hover:bg-accent/25 text-accent flex items-center gap-1"
@@ -79,7 +79,7 @@ export function BridgesPanel() {
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {creating && (
           <div className="mb-3 rounded-lg border border-accent/30 bg-surface-2 p-3 space-y-2">
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-fg-subtle">
               Create a WhatsApp bridge. After creating, enable it and scan the QR with WhatsApp → Linked Devices.
             </p>
             <input
@@ -94,7 +94,7 @@ export function BridgesPanel() {
               <button onClick={onCreate} className="px-3 py-1 text-xs rounded bg-accent hover:bg-accent/90 text-white">
                 Create
               </button>
-              <button onClick={() => { setCreating(false); setNewName(""); }} className="px-3 py-1 text-xs rounded text-zinc-400 hover:bg-surface-3">
+              <button onClick={() => { setCreating(false); setNewName(""); }} className="px-3 py-1 text-xs rounded text-fg-subtle hover:bg-surface-3">
                 Cancel
               </button>
             </div>
@@ -102,12 +102,12 @@ export function BridgesPanel() {
         )}
 
         {loading && bridges.length === 0 && (
-          <p className="text-zinc-500 text-sm py-6 text-center">Loading…</p>
+          <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
         )}
         {!loading && bridges.length === 0 && !creating && (
-          <div className="text-zinc-500 text-sm py-8 text-center space-y-2">
+          <div className="text-fg-faint text-sm py-8 text-center space-y-2">
             <p>No bridges yet.</p>
-            <p className="text-xs text-zinc-600 leading-relaxed">
+            <p className="text-xs text-fg-faint leading-relaxed">
               A bridge connects an external comm channel (WhatsApp) to one of your agents.
               Each WhatsApp chat is routed to exactly one agent — unrouted messages are silently ignored.
             </p>
@@ -144,16 +144,16 @@ function BridgeRow({
         </div>
         <button onClick={onSelect} className="flex-1 min-w-0 text-left">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-zinc-100 truncate">{bridge.name}</span>
+            <span className="text-sm font-medium text-fg truncate">{bridge.name}</span>
             <StatusPill status={bridge.status} />
           </div>
-          <p className="text-[11px] text-zinc-500 truncate mt-0.5">
+          <p className="text-[11px] text-fg-faint truncate mt-0.5">
             {bridge.paired_id ?? "Not paired"}
             {bridge.last_error ? ` · ${bridge.last_error}` : ""}
           </p>
         </button>
 
-        <label className="flex items-center gap-1.5 text-[11px] text-zinc-400 cursor-pointer select-none">
+        <label className="flex items-center gap-1.5 text-[11px] text-fg-subtle cursor-pointer select-none">
           <input
             type="checkbox"
             checked={bridge.enabled}
@@ -165,7 +165,7 @@ function BridgeRow({
 
         <button
           onClick={(e) => { e.stopPropagation(); void onDelete(); }}
-          className="p-1.5 rounded text-zinc-500 hover:text-rose-400 hover:bg-surface-3"
+          className="p-1.5 rounded text-fg-faint hover:text-rose-400 hover:bg-surface-3"
           title="Delete"
         >
           <Trash2 size={13} />
@@ -179,7 +179,7 @@ export function StatusPill({ status }: { status: Bridge["status"] }) {
   const cfg = {
     connected:    { label: "connected",    cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", icon: <CheckCircle2 size={9} /> },
     pairing:      { label: "pairing",      cls: "bg-sky-500/15 text-sky-300 border-sky-500/30",              icon: <Loader2 size={9} className="animate-spin" /> },
-    disconnected: { label: "disconnected", cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",          icon: <RefreshCw size={9} /> },
+    disconnected: { label: "disconnected", cls: "bg-fg-faint/15 text-fg-subtle border-fg-faint/30",          icon: <RefreshCw size={9} /> },
     error:        { label: "error",        cls: "bg-rose-500/15 text-rose-300 border-rose-500/30",          icon: <AlertCircle size={9} /> },
   }[status];
   return (

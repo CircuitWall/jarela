@@ -55,23 +55,23 @@ export function ScheduledTasksPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Calendar size={14} className="text-zinc-400" />
-        <h2 className="text-sm font-semibold text-zinc-100 mr-auto">Scheduled Tasks</h2>
+        <Calendar size={14} className="text-fg-subtle" />
+        <h2 className="text-sm font-semibold text-fg mr-auto">Scheduled Tasks</h2>
         {tasks.length > 0 && (
-          <span className="text-[11px] text-zinc-500">{tasks.length}</span>
+          <span className="text-[11px] text-fg-faint">{tasks.length}</span>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
         {loading && tasks.length === 0 && (
-          <p className="text-zinc-500 text-sm py-6 text-center">Loading…</p>
+          <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
         )}
         {!loading && tasks.length === 0 && (
-          <div className="text-zinc-500 text-sm py-8 text-center space-y-2">
+          <div className="text-fg-faint text-sm py-8 text-center space-y-2">
             <p>No scheduled tasks.</p>
-            <p className="text-xs text-zinc-600 leading-relaxed">
+            <p className="text-xs text-fg-faint leading-relaxed">
               Ask any agent &ldquo;remind me to X in 30 minutes&rdquo; or &ldquo;every weekday at 9am, do Y&rdquo;.
-              The agent will use its <code className="px-1 rounded bg-surface-3 text-zinc-400">schedule_task</code> tool
+              The agent will use its <code className="px-1 rounded bg-surface-3 text-fg-subtle">schedule_task</code> tool
               and the run will appear here.
             </p>
           </div>
@@ -110,8 +110,8 @@ function TaskCard({
             ? <Repeat size={12} className="mt-1 text-violet-400 shrink-0" />
             : <Clock size={12} className="mt-1 text-sky-400 shrink-0" />}
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-zinc-100 truncate">{task.prompt}</p>
-            <div className="flex items-center gap-2 mt-1 text-[11px] text-zinc-500 flex-wrap">
+            <p className="text-sm text-fg truncate">{task.prompt}</p>
+            <div className="flex items-center gap-2 mt-1 text-[11px] text-fg-faint flex-wrap">
               <span className="font-mono">
                 {isCron ? task.schedule : new Date(task.schedule).toLocaleString()}
               </span>
@@ -131,9 +131,9 @@ function TaskCard({
       </button>
 
       {expanded && (
-        <div className="px-3 py-2 border-t border-border/60 text-[11px] text-zinc-400 space-y-2">
+        <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
           <Row label="Prompt">
-            <pre className="whitespace-pre-wrap break-words font-mono text-zinc-300">{task.prompt}</pre>
+            <pre className="whitespace-pre-wrap break-words font-mono text-fg-muted">{task.prompt}</pre>
           </Row>
           {task.description && (
             <Row label="Description">{task.description}</Row>
@@ -144,17 +144,17 @@ function TaskCard({
           <Row label={isCron ? "Cron" : "When"}>
             <span className="font-mono">{task.schedule}</span>
             {!isCron && (
-              <span className="ml-1 text-zinc-500">({new Date(task.schedule).toLocaleString()})</span>
+              <span className="ml-1 text-fg-faint">({new Date(task.schedule).toLocaleString()})</span>
             )}
           </Row>
           <Row label="Next run">
             <span>{new Date(task.next_run_at).toLocaleString()}</span>
-            <span className="ml-1 text-zinc-500">({nextRun})</span>
+            <span className="ml-1 text-fg-faint">({nextRun})</span>
           </Row>
           {lastRun && (
             <Row label="Last run">
               <span>{new Date(task.last_run_at!).toLocaleString()}</span>
-              <span className="ml-1 text-zinc-500">({lastRun})</span>
+              <span className="ml-1 text-fg-faint">({lastRun})</span>
             </Row>
           )}
           <Row label="Status">
@@ -167,7 +167,7 @@ function TaskCard({
                 <CheckCircle2 size={11} /> active
               </span>
             ) : (
-              <span className="text-zinc-500">disabled</span>
+              <span className="text-fg-faint">disabled</span>
             )}
           </Row>
           {task.last_error && (
@@ -183,14 +183,14 @@ function TaskCard({
                 try { await onRunNow(); } finally { setRunning(false); }
               }}
               disabled={running}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-zinc-300 hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
               title="Trigger this task now to preview the notification + content. Cron tasks still continue on their normal schedule."
             >
               <Play size={11} /> {running ? "Running…" : "Run now"}
             </button>
             <button
               onClick={onCancel}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-zinc-400 hover:text-rose-400 hover:border-rose-700"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-400 hover:border-rose-700"
             >
               <Trash2 size={11} /> Cancel task
             </button>
@@ -204,7 +204,7 @@ function TaskCard({
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2">
-      <span className="w-20 shrink-0 text-zinc-500">{label}</span>
+      <span className="w-20 shrink-0 text-fg-faint">{label}</span>
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   );

@@ -101,14 +101,14 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
                   className="h-14 w-14 object-cover rounded-lg border border-border"
                 />
               ) : (
-                <div className="h-10 px-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-surface-3 text-[11px] text-zinc-300 max-w-[140px]">
-                  <Paperclip size={11} className="shrink-0 text-zinc-500" />
+                <div className="h-10 px-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-surface-3 text-[11px] text-fg-muted max-w-[140px]">
+                  <Paperclip size={11} className="shrink-0 text-fg-faint" />
                   <span className="truncate">{(a as ContentPart & { name: string }).name}</span>
                 </div>
               )}
               <button
                 onClick={() => removeAttachment(i)}
-                className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 rounded-full bg-zinc-700 text-zinc-200 items-center justify-center"
+                className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 rounded-full bg-surface-3 text-fg items-center justify-center"
               >
                 <X size={9} />
               </button>
@@ -133,14 +133,14 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || streaming}
-          className="shrink-0 p-2.5 rounded-xl text-zinc-500 hover:text-zinc-200 hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="shrink-0 p-2.5 rounded-xl text-fg-faint hover:text-fg hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           title="Attach file or image"
         >
           <Paperclip size={16} />
         </button>
 
         <textarea
-          className="flex-1 resize-none bg-surface-3 text-zinc-100 text-sm rounded-xl px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-zinc-500 max-h-48 min-h-[44px]"
+          className="flex-1 resize-none bg-surface-3 text-fg text-sm rounded-xl px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-faint max-h-48 min-h-[44px]"
           placeholder={placeholder ?? "Message… or /new to save session to memory"}
           rows={1}
           value={value}

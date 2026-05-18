@@ -86,7 +86,7 @@ export function ApprovalsBanner({
                   <button
                     onClick={() => decide(a, false)}
                     disabled={busy}
-                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg hover:border-fg-faint disabled:opacity-50"
                   >
                     <X size={11} /> Deny
                   </button>

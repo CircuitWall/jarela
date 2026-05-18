@@ -58,12 +58,12 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
   return (
     <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
       {hasMore && (
-        <div className="text-center py-1.5 text-[11px] text-zinc-500 select-none">
+        <div className="text-center py-1.5 text-[11px] text-fg-faint select-none">
           {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
         </div>
       )}
       {messages.length === 0 && !streamingContent && (
-        <div className="flex items-center justify-center h-full text-zinc-500 text-sm select-none">
+        <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
           Send a message to begin
         </div>
       )}
@@ -94,7 +94,7 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
       )}
       {notices?.map((n) => (
         <div key={n.id} className="flex justify-center my-3">
-          <span className="text-xs italic text-zinc-500 bg-surface-2 px-3 py-1 rounded-full border border-border">
+          <span className="text-xs italic text-fg-faint bg-surface-2 px-3 py-1 rounded-full border border-border">
             {n.text}
           </span>
         </div>
@@ -139,12 +139,12 @@ function QueuedBubble({
   return (
     <div className="flex flex-row-reverse gap-2 items-end opacity-60 group">
       <div className="shrink-0 w-7" />
-      <div className="max-w-[75%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed bg-accent/40 border border-accent/40 border-dashed text-zinc-100 relative">
+      <div className="max-w-[75%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed bg-accent/40 border border-accent/40 border-dashed text-fg relative">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-accent/80 mb-1">
           <Clock size={10} />
           <span>queued</span>
           {item.attachmentCount > 0 && (
-            <span className="text-zinc-300/70 normal-case tracking-normal">
+            <span className="text-fg-muted/70 normal-case tracking-normal">
               · {item.attachmentCount} attachment{item.attachmentCount === 1 ? "" : "s"}
             </span>
           )}
@@ -153,7 +153,7 @@ function QueuedBubble({
         {onRemove && (
           <button
             onClick={() => onRemove(item.id)}
-            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-surface-3 border border-border text-zinc-300 hover:text-rose-400 hover:border-rose-700 hidden group-hover:flex items-center justify-center"
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-surface-3 border border-border text-fg-muted hover:text-rose-400 hover:border-rose-700 hidden group-hover:flex items-center justify-center"
             title="Remove from queue"
           >
             <X size={11} />
