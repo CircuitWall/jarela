@@ -4,6 +4,11 @@ import { embedOne } from "@/lib/embeddings";
 
 const now = () => new Date().toISOString();
 
+// Explicit column list for message reads — omits `embedding` (~20KB of
+// JSON-encoded float[] per row) which only the embeddings module reads.
+// Avoids dragging it through the chat-history result set on every call.
+const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_events FROM messages";
+
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
   created_at: string; updated_at: string; message_count: number;
@@ -51,7 +56,7 @@ export function deleteThread(thread_id: string): boolean {
 
 export function getMessages(thread_id: string): MessageRow[] {
   return getDb()
-    .prepare("SELECT * FROM messages WHERE thread_id=? ORDER BY created_at ASC")
+    .prepare(MSG_COLS_SQL + " WHERE thread_id=? ORDER BY created_at ASC")
     .all(thread_id) as unknown as MessageRow[];
 }
 
@@ -67,7 +72,7 @@ export function getRecentMessagesWindow(
 ): MessageRow[] {
   const db = getDb();
   const params: (string | number)[] = [thread_id];
-  let sql = "SELECT * FROM messages WHERE thread_id=?";
+  let sql = MSG_COLS_SQL + " WHERE thread_id=?";
   if (sinceISO) {
     sql += " AND created_at >= ?";
     params.push(sinceISO);
@@ -81,6 +86,23 @@ export function getRecentMessagesWindow(
   return rows.reverse();
 }
 
+// Forward-fetch — return messages strictly newer than `afterISO`, oldest
+// first, capped at `limit`. Used by the chat view to pull only the
+// freshly-persisted user+assistant pair after a run completes, instead of
+// re-fetching the whole most-recent page.
+export function getMessagesAfter(
+  thread_id: string,
+  afterISO: string,
+  limit = 50,
+): MessageRow[] {
+  return getDb()
+    .prepare(
+      MSG_COLS_SQL +
+        " WHERE thread_id=? AND created_at > ? ORDER BY created_at ASC LIMIT ?",
+    )
+    .all(thread_id, afterISO, limit) as unknown as MessageRow[];
+}
+
 // Pagination for the chat UI. Returns the latest N messages strictly older
 // than `beforeISO` (cursor). Caller passes the oldest already-loaded message's
 // created_at as the cursor; first page omits beforeISO.
@@ -91,7 +113,7 @@ export function getMessagesPage(
 ): { messages: MessageRow[]; has_more: boolean } {
   const db = getDb();
   const params: (string | number)[] = [thread_id];
-  let sql = "SELECT * FROM messages WHERE thread_id=?";
+  let sql = MSG_COLS_SQL + " WHERE thread_id=?";
   if (beforeISO) {
     sql += " AND created_at < ?";
     params.push(beforeISO);

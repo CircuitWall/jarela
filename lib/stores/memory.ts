@@ -5,6 +5,11 @@ import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
 
 const now = () => new Date().toISOString();
 
+// Explicit column list for memory reads — omits `embedding` (~20KB of
+// JSON-encoded float[] per row), which only the embeddings module reads.
+// Avoids dragging it through the listMemory / getMemory result set.
+const MEM_COLS_SQL = "SELECT namespace, key, value, created_at, updated_at FROM memory_store";
+
 // Decrypt rows in sensitive namespaces before handing them back to
 // callers. Non-sensitive namespaces pass through untouched (their values
 // are not encrypted at rest, by design — see ADR-0005).
@@ -26,18 +31,23 @@ export interface MemoryRow {
 }
 
 export function listMemory(namespace?: string, search?: string, limit = 50): MemoryRow[] {
-  let sql = "SELECT * FROM memory_store WHERE 1=1";
+  let sql = MEM_COLS_SQL + " WHERE 1=1";
   const params: (string | number)[] = [];
   if (namespace) { sql += " AND namespace=?"; params.push(namespace); }
   if (search) { sql += " AND (key LIKE ? OR value LIKE ?)"; params.push(`%${search}%`, `%${search}%`); }
   sql += " ORDER BY updated_at DESC LIMIT ?";
   params.push(limit);
   const rows = getDb().prepare(sql).all(...params) as unknown as MemoryRow[];
+  // P2.7: when the caller pinned the namespace and it isn't in the
+  // sensitive set, every row's value is plaintext anyway — skip the
+  // per-row decryptRow allocation. The unfiltered case still has to
+  // check each row since namespaces vary.
+  if (namespace && !isSensitiveMemoryNamespace(namespace)) return rows;
   return rows.map(decryptRow);
 }
 
 export function getMemory(namespace: string, key: string): MemoryRow | null {
-  const row = (getDb().prepare("SELECT * FROM memory_store WHERE namespace=? AND key=?").get(namespace, key) as unknown as MemoryRow) ?? null;
+  const row = (getDb().prepare(MEM_COLS_SQL + " WHERE namespace=? AND key=?").get(namespace, key) as unknown as MemoryRow) ?? null;
   return row ? decryptRow(row) : null;
 }
 

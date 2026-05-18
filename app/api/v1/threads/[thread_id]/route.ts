@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteThread, getMessagesPage, getThread } from "@/lib/stores/threads";
+import {
+  deleteThread,
+  getMessagesAfter,
+  getMessagesPage,
+  getThread,
+  type MessageRow,
+} from "@/lib/stores/threads";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -13,8 +19,23 @@ export async function GET(req: NextRequest, { params }: Params) {
   const url = new URL(req.url);
   const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || DEFAULT_PAGE));
   const before = url.searchParams.get("before") ?? undefined;
+  const after  = url.searchParams.get("after")  ?? undefined;
 
-  const { messages, has_more } = getMessagesPage(thread_id, limit, before);
+  // `after` is a forward-fetch shortcut: caller (typically ChatView's
+  // run-completion handler) already has the recent messages and just wants
+  // the freshly-persisted ones. has_more is fixed to false because the
+  // forward window is not paginated — caller already has everything older.
+  let messages: MessageRow[];
+  let has_more: boolean;
+  if (after) {
+    messages = getMessagesAfter(thread_id, after, limit);
+    has_more = false;
+  } else {
+    const page = getMessagesPage(thread_id, limit, before);
+    messages = page.messages;
+    has_more = page.has_more;
+  }
+
   return NextResponse.json({
     ...thread,
     messages: messages.map((m) => ({
