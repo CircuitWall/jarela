@@ -32,10 +32,10 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
       <div className="my-1.5 w-full min-w-0 max-w-full overflow-hidden">
         <button
           onClick={() => setExpanded(true)}
-          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-zinc-800/40 px-1 py-0.5 rounded text-left"
+          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded text-left"
         >
-          <ChevronRight size={10} className="shrink-0 text-zinc-500" />
-          <span className="font-mono uppercase tracking-wide shrink-0 text-zinc-500">
+          <ChevronRight size={10} className="shrink-0 text-fg-faint" />
+          <span className="font-mono uppercase tracking-wide shrink-0 text-fg-faint">
             {callCount} tool{callCount === 1 ? "" : "s"}
           </span>
           {errorCount > 0 && (
@@ -43,7 +43,7 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
               · {errorCount} error{errorCount === 1 ? "" : "s"}
             </span>
           )}
-          <span className="truncate text-zinc-500 font-normal flex-1 min-w-0">
+          <span className="truncate text-fg-faint font-normal flex-1 min-w-0">
             {uniqueNames.join(" · ")}
           </span>
         </button>
@@ -56,7 +56,7 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
       {events.length > COLLAPSE_THRESHOLD && (
         <button
           onClick={() => setExpanded(false)}
-          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-zinc-800/40 px-1 py-0.5 rounded text-left text-zinc-500"
+          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded text-left text-fg-faint"
         >
           <ChevronRight size={10} className="shrink-0 rotate-90 transition-transform" />
           <span className="font-mono uppercase tracking-wide shrink-0">collapse</span>
@@ -74,15 +74,15 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
           <div key={key} className="min-w-0 max-w-full">
             <button
               onClick={() => setOpenId(open ? null : key)}
-              className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-zinc-800/40 px-1 py-0.5 rounded text-left"
+              className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded text-left"
             >
-              <ChevronRight size={10} className={`transition-transform shrink-0 ${open ? "rotate-90" : ""} text-zinc-500`} />
+              <ChevronRight size={10} className={`transition-transform shrink-0 ${open ? "rotate-90" : ""} text-fg-faint`} />
               <span className={`font-mono uppercase tracking-wide shrink-0 ${verbColor}`}>{event.phase}</span>
-              <span className="font-medium text-zinc-300 shrink-0">{event.name}</span>
-              {!open && <span className="truncate text-zinc-500 italic font-normal flex-1 min-w-0">{summary}</span>}
+              <span className="font-medium text-fg-muted shrink-0">{event.name}</span>
+              {!open && <span className="truncate text-fg-faint italic font-normal flex-1 min-w-0">{summary}</span>}
             </button>
             {open && (
-              <pre className="ml-5 mt-1 mb-1 px-2 py-1.5 text-[11px] text-zinc-300 whitespace-pre font-mono bg-zinc-900/60 rounded border border-zinc-800 max-w-[calc(100%-1.25rem)] overflow-x-auto">
+              <pre className="ml-5 mt-1 mb-1 px-2 py-1.5 text-[11px] text-fg-muted whitespace-pre font-mono bg-surface/60 rounded border border-border max-w-[calc(100%-1.25rem)] overflow-x-auto">
                 {JSON.stringify(event.payload, null, 2)}
               </pre>
             )}

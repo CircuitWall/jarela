@@ -89,7 +89,7 @@ function ToastCard({ toast }: { toast: Toast }) {
     </div>
   ) : (
     <div className="w-9 h-9 rounded-lg bg-surface-3 flex items-center justify-center shrink-0">
-      {isError ? <AlertCircle size={16} className="text-rose-400" /> : <Bot size={16} className="text-zinc-300" />}
+      {isError ? <AlertCircle size={16} className="text-rose-400" /> : <Bot size={16} className="text-fg-muted" />}
     </div>
   );
 
@@ -103,21 +103,21 @@ function ToastCard({ toast }: { toast: Toast }) {
       onKeyDown={(e) => { if (e.key === "Enter") open(); }}
       className={`pointer-events-auto group relative cursor-pointer rounded-xl border bg-surface-2/95 backdrop-blur shadow-2xl transition-all duration-200 ${
         exiting ? "opacity-0 translate-x-2" : "opacity-100 translate-x-0"
-      } ${isError ? "border-rose-700/60" : "border-border hover:border-zinc-600"}`}
+      } ${isError ? "border-rose-700/60" : "border-border hover:border-border"}`}
     >
       <div className="flex items-start gap-3 px-3 py-2.5">
         {avatar}
         <div className="flex-1 min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold truncate">
+          <p className="text-[10px] uppercase tracking-wider text-fg-faint font-semibold truncate">
             {toast.sourceLabel}
           </p>
-          <p className="text-sm font-medium text-zinc-100 truncate">{toast.title}</p>
+          <p className="text-sm font-medium text-fg truncate">{toast.title}</p>
           {toast.preview ? (
-            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-zinc-300"} line-clamp-2 mt-0.5 italic`}>
+            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-fg-muted"} line-clamp-2 mt-0.5 italic`}>
               “{toast.preview}”
             </p>
           ) : (
-            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-zinc-400"} line-clamp-2 mt-0.5`}>
+            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-fg-subtle"} line-clamp-2 mt-0.5`}>
               {toast.body}
             </p>
           )}
@@ -127,7 +127,7 @@ function ToastCard({ toast }: { toast: Toast }) {
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); close(); }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 -mr-1 -mt-0.5 text-zinc-500 hover:text-zinc-200"
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
           aria-label="Dismiss"
         >
           <X size={13} />

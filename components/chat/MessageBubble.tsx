@@ -95,7 +95,7 @@ function AgentAvatar({ config }: { config?: AgentConfig | null }) {
   }
   return (
     <div className="w-7 h-7 rounded-lg bg-surface-3 flex items-center justify-center">
-      <Bot size={13} className="text-zinc-500" />
+      <Bot size={13} className="text-fg-faint" />
     </div>
   );
 }
@@ -114,7 +114,7 @@ function UserAvatar({ profile }: { profile?: UserProfile | null }) {
   }
   return (
     <div className="w-7 h-7 rounded-lg bg-surface-3 flex items-center justify-center">
-      <User size={13} className="text-zinc-500" />
+      <User size={13} className="text-fg-faint" />
     </div>
   );
 }
@@ -216,14 +216,14 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
                 {code}
               </SyntaxHighlighter>
             ) : (
-              <code className="bg-surface-2 px-1 rounded text-zinc-300 break-all">{code}</code>
+              <code className="bg-surface-2 px-1 rounded text-fg-muted break-all">{code}</code>
             );
           },
         }}
       >
         {text}
       </ReactMarkdown>
-      {streaming && <span className="inline-block w-2 h-4 bg-zinc-400 animate-pulse ml-0.5 align-middle" />}
+      {streaming && <span className="inline-block w-2 h-4 bg-fg-muted animate-pulse ml-0.5 align-middle" />}
     </div>
   );
 }
@@ -235,7 +235,7 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
     <div className="mt-1.5">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+        className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
       >
         <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
         <LinkIcon size={10} />
@@ -283,10 +283,10 @@ function ContentPartView({ part, isUser }: { part: ContentPart; isUser: boolean 
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 hover:bg-surface-3 hover:border-zinc-600 text-[11px] text-zinc-300 transition-colors"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 hover:bg-surface-3 hover:border-border text-[11px] text-fg-muted transition-colors"
       title="Open in new tab"
     >
-      <Paperclip size={11} className="text-zinc-500 shrink-0" />
+      <Paperclip size={11} className="text-fg-faint shrink-0" />
       <span className="truncate max-w-[200px]">{file.name}</span>
     </a>
   );
@@ -303,7 +303,7 @@ function ClickableImage({ media_type, data }: { media_type: string; data: string
         src={src}
         alt="attached image"
         onClick={() => setOpen(true)}
-        className="max-w-full rounded-xl mt-1 border border-border/40 cursor-zoom-in hover:border-zinc-500 transition-colors"
+        className="max-w-full rounded-xl mt-1 border border-border/40 cursor-zoom-in hover:border-fg-faint transition-colors"
         style={{ maxHeight: "400px", objectFit: "contain" }}
       />
       {open && (
@@ -379,7 +379,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       <div className={`flex flex-col max-w-[88%] sm:max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full overflow-hidden ${
-            isUser ? "bg-accent text-white rounded-br-sm" : "bg-surface-3 text-zinc-100 rounded-bl-sm"
+            isUser ? "bg-accent text-white rounded-br-sm" : "bg-surface-3 text-fg rounded-bl-sm"
           }`}
         >
           {typeof parsed === "string" ? (
@@ -393,7 +393,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               {parsed.map((part, i) => (
                 <ContentPartView key={i} part={part} isUser={isUser} />
               ))}
-              {streaming && <span className="inline-block w-2 h-4 bg-zinc-400 animate-pulse ml-0.5 align-middle" />}
+              {streaming && <span className="inline-block w-2 h-4 bg-fg-muted animate-pulse ml-0.5 align-middle" />}
             </div>
           )}
         </div>

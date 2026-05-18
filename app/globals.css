@@ -1,21 +1,76 @@
 @import "tailwindcss";
 
-/* Tailwind v4 theme — colour tokens that the old tailwind.config.ts
- * exposed as theme.extend.colors. Defining them here makes
- * `bg-surface-2`, `border-border`, `text-accent`, etc. work as utilities. */
+/* ----------------------------------------------------------------------
+ * Theme tokens.
+ *
+ * `@theme` registers them with Tailwind so `bg-surface-2`, `text-fg`,
+ * `border-border`, etc. work as utilities. The defaults below are the
+ * dark palette, then we override the same custom-property names inside
+ * media / attribute selectors for light mode. Tailwind reads the var
+ * once per rule, so any subtree where the var changes flips colour.
+ *
+ * Selector precedence (highest wins):
+ *   [data-theme="light"]   forced light
+ *   [data-theme="dark"]    forced dark
+ *   [data-theme="system"]  follows OS via @media (prefers-color-scheme)
+ *   (no attribute)         dark (matches the historical look)
+ * ---------------------------------------------------------------------- */
 @theme {
+  /* Dark palette (default + the values for explicit data-theme="dark"). */
   --color-surface: #09090b;
   --color-surface-2: #18181b;
   --color-surface-3: #27272a;
   --color-border: #3f3f46;
+  --color-fg: #fafafa;
+  --color-fg-muted: #d4d4d8;
+  --color-fg-subtle: #a1a1aa;
+  --color-fg-faint: #71717a;
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
 }
 
+/* Light palette. Mirrors the dark tokens with inverted lightness so any
+ * `bg-surface-2 text-fg-muted border-border` block "just works". */
+:where([data-theme="light"]),
+:where([data-theme="system"]) {
+  color-scheme: light;
+}
+:where([data-theme="dark"]) {
+  color-scheme: dark;
+}
+:where([data-theme]) {
+  /* default for explicit non-light attributes; light block below overrides */
+}
+
+[data-theme="light"] {
+  --color-surface: #ffffff;
+  --color-surface-2: #f4f4f5;
+  --color-surface-3: #e4e4e7;
+  --color-border: #d4d4d8;
+  --color-fg: #09090b;
+  --color-fg-muted: #3f3f46;
+  --color-fg-subtle: #52525b;
+  --color-fg-faint: #71717a;
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] {
+    --color-surface: #ffffff;
+    --color-surface-2: #f4f4f5;
+    --color-surface-3: #e4e4e7;
+    --color-border: #d4d4d8;
+    --color-fg: #09090b;
+    --color-fg-muted: #3f3f46;
+    --color-fg-subtle: #52525b;
+    --color-fg-faint: #71717a;
+  }
+}
+
 /* Tailwind v4 changed the default border colour from gray-200 to
  * currentColor. Restore the v3 behaviour so existing `border` shorthand
- * (without an explicit colour) keeps rendering as the dark zinc divider
- * we were using everywhere. */
+ * (without an explicit colour) keeps rendering as the themed divider. */
 @layer base {
   *, ::after, ::before {
     border-color: var(--color-border, currentColor);
@@ -26,7 +81,8 @@ html, body, #__next {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #09090b;
+  background-color: var(--color-surface);
+  color: var(--color-fg);
   -webkit-text-size-adjust: 100%;
   overscroll-behavior-y: none;
 }
@@ -45,14 +101,14 @@ html, body, #__next {
 .pt-safe { padding-top: env(safe-area-inset-top); }
 
 .prose-invert pre {
-  background: #18181b !important;
+  background: var(--color-surface-2) !important;
   border-radius: 0.5rem;
   max-width: 100%;
   overflow-x: auto;          /* long single-line code scrolls within the bubble */
   white-space: pre-wrap;     /* but normal multi-line code still wraps */
   word-break: break-word;
 }
-.prose-invert code { color: #a1a1aa; word-break: break-all; }
+.prose-invert code { color: var(--color-fg-subtle); word-break: break-all; }
 .prose-invert p {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
@@ -69,9 +125,9 @@ html, body, #__next {
   padding: 1px 5px;
   font-size: 0.78em;
   font-family: ui-monospace, SFMono-Regular, monospace;
-  color: #e4e4e7;
-  background: #27272a;
-  border: 1px solid #3f3f46;
+  color: var(--color-fg);
+  background: var(--color-surface-3);
+  border: 1px solid var(--color-border);
   border-bottom-width: 2px;
   border-radius: 4px;
   line-height: 1.2;
@@ -89,20 +145,20 @@ html, body, #__next {
 .jarela-rich details {
   margin: 0.5em 0;
   padding: 0.5em 0.75em;
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-surface-3);
   border-radius: 0.5rem;
 }
 .jarela-rich details > summary {
   cursor: pointer;
   font-weight: 500;
-  color: #d4d4d8;
+  color: var(--color-fg-muted);
   list-style: none;
 }
 .jarela-rich details > summary::-webkit-details-marker { display: none; }
 .jarela-rich details > summary::before {
   content: "▸ ";
-  color: #71717a;
+  color: var(--color-fg-faint);
 }
 .jarela-rich details[open] > summary::before { content: "▾ "; }
 
@@ -128,10 +184,10 @@ html, body, #__next {
   font-size: 0.92em;
 }
 .jarela-rich th, .jarela-rich td {
-  border: 1px solid #27272a;
+  border: 1px solid var(--color-surface-3);
   padding: 0.35em 0.6em;
 }
-.jarela-rich th { background: #18181b; font-weight: 600; }
+.jarela-rich th { background: var(--color-surface-2); font-weight: 600; }
 
 /* Indeterminate progress bar — a colored "rider" that loops left-to-right */
 .jarela-progress {

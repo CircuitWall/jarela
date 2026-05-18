@@ -130,7 +130,7 @@ export function AppShell() {
   });
 
   return (
-    <div className="h-screen h-[100dvh] flex flex-col bg-surface text-zinc-100 overflow-hidden">
+    <div className="h-screen h-[100dvh] flex flex-col bg-surface text-fg overflow-hidden">
       <TopProgressBar />
       <CryptoFallbackBanner />
       <NotificationStatus />
@@ -147,11 +147,11 @@ export function AppShell() {
         <div className="flex items-center gap-2 select-none">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto" />
-          <span className="text-zinc-100 font-semibold tracking-tight">Jarela</span>
+          <span className="text-fg font-semibold tracking-tight">Jarela</span>
         </div>
         <button
           onClick={() => { setShowGear((v) => !v); }}
-          className={`ml-auto relative p-2 rounded transition-colors ${showGear ? "text-zinc-100 bg-surface-3" : "text-zinc-500 hover:text-zinc-300 hover:bg-surface-3/50"}`}
+          className={`ml-auto relative p-2 rounded transition-colors ${showGear ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
           <Menu size={18} />

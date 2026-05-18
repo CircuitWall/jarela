@@ -73,7 +73,7 @@ export function BridgeEditor({
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <button onClick={onBack} className="p-1 rounded hover:bg-surface-3 text-zinc-400">
+        <button onClick={onBack} className="p-1 rounded hover:bg-surface-3 text-fg-subtle">
           <ArrowLeft size={14} />
         </button>
         <input
@@ -81,7 +81,7 @@ export function BridgeEditor({
           onChange={(e) => setName(e.target.value)}
           onBlur={saveName}
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-          className="flex-1 bg-transparent text-sm font-semibold text-zinc-100 outline-none border-b border-transparent focus:border-accent"
+          className="flex-1 bg-transparent text-sm font-semibold text-fg outline-none border-b border-transparent focus:border-accent"
           disabled={savingName}
         />
         <StatusPill status={live?.status ?? bridge.status} />
@@ -90,8 +90,8 @@ export function BridgeEditor({
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
         <section className="rounded-lg border border-border bg-surface-2 p-3 space-y-3">
           <header className="flex items-center gap-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Connection</h3>
-            <span className="text-[11px] text-zinc-500 ml-auto">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Connection</h3>
+            <span className="text-[11px] text-fg-faint ml-auto">
               {live?.paired_id ?? bridge.paired_id ?? "Not paired"}
             </span>
           </header>
@@ -102,7 +102,7 @@ export function BridgeEditor({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={live.qr_data_url} alt="WhatsApp pairing QR" className="w-48 h-48 block" />
               </div>
-              <p className="text-[11px] text-zinc-500 text-center max-w-xs">
+              <p className="text-[11px] text-fg-faint text-center max-w-xs">
                 Open WhatsApp on your phone → Settings → Linked Devices → Link a device → scan this code.
               </p>
             </div>
@@ -115,7 +115,7 @@ export function BridgeEditor({
           )}
 
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 text-xs text-fg-muted cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={bridge.enabled}
@@ -127,7 +127,7 @@ export function BridgeEditor({
             <button
               onClick={rePair}
               disabled={repairing}
-              className="ml-auto px-2 py-1 text-xs rounded bg-surface-3 hover:bg-surface-3/70 text-zinc-300 flex items-center gap-1 disabled:opacity-50"
+              className="ml-auto px-2 py-1 text-xs rounded bg-surface-3 hover:bg-surface-3/70 text-fg-muted flex items-center gap-1 disabled:opacity-50"
             >
               {repairing ? <RefreshCw size={11} className="animate-spin" /> : <QrCode size={11} />}
               Re-pair
@@ -137,9 +137,9 @@ export function BridgeEditor({
 
         <RouteTable bridge_id={bridge.id} />
 
-        <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-zinc-500 leading-relaxed">
+        <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-fg-faint leading-relaxed">
           <p>
-            <strong className="text-zinc-300">Unrouted messages are ignored.</strong>{" "}
+            <strong className="text-fg-muted">Unrouted messages are ignored.</strong>{" "}
             If a WhatsApp chat isn&apos;t mapped to an agent below, incoming messages are silently dropped
             (you&apos;ll still see a hint in notifications so you can add a route). Each agent can serve
             only one chat — they keep a single conversation thread.
@@ -279,8 +279,8 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   return (
     <section className="rounded-lg border border-border bg-surface-2 p-3 space-y-2">
       <header className="flex items-center gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Routes</h3>
-        <span className="text-[11px] text-zinc-500">{routes.length}</span>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Routes</h3>
+        <span className="text-[11px] text-fg-faint">{routes.length}</span>
         <button
           onClick={() => { setAdding(true); setError(null); }}
           className="ml-auto px-2 py-0.5 text-[11px] rounded bg-accent/15 hover:bg-accent/25 text-accent flex items-center gap-1"
@@ -294,12 +294,12 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
           {!manualMode ? (
             <>
               <div className="flex items-center gap-2">
-                <label className="text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Chat</label>
-                {chatsLoading && <RefreshCw size={10} className="animate-spin text-zinc-500" />}
+                <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Chat</label>
+                {chatsLoading && <RefreshCw size={10} className="animate-spin text-fg-faint" />}
                 <button
                   type="button"
                   onClick={() => setManualMode(true)}
-                  className="ml-auto text-[10px] text-zinc-500 hover:text-accent underline-offset-2 hover:underline"
+                  className="ml-auto text-[10px] text-fg-faint hover:text-accent underline-offset-2 hover:underline"
                 >
                   Enter JID manually
                 </button>
@@ -313,7 +313,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                 <>
                   <div className="flex items-center gap-1.5">
                     <div className="flex-1 flex items-center gap-1.5 rounded border border-border bg-surface-3/60 px-2 py-1 focus-within:border-accent/60">
-                      <Search size={11} className="text-zinc-500 shrink-0" />
+                      <Search size={11} className="text-fg-faint shrink-0" />
                       <input
                         type="tel"
                         inputMode="tel"
@@ -321,7 +321,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                         value={searchQuery}
                         onChange={(e) => { setSearchQuery(e.target.value); setSearchMsg(null); }}
                         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onSearch(); } }}
-                        className="flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-600"
+                        className="flex-1 bg-transparent text-xs outline-none placeholder:text-fg-faint"
                         disabled={searching}
                       />
                     </div>
@@ -334,7 +334,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                       {searching ? "…" : "Find"}
                     </button>
                   </div>
-                  <p className="text-[10px] text-zinc-500 leading-snug">
+                  <p className="text-[10px] text-fg-faint leading-snug">
                     WhatsApp only auto-syncs your recent chats. Use search to find any contact (including
                     yourself) by phone number — country code + digits, no spaces required.
                   </p>
@@ -344,7 +344,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                 </>
               )}
               {chatsRunning && availableChats.length === 0 && !chatsLoading && (
-                <p className="text-[11px] text-zinc-500 px-1 py-2 leading-relaxed">
+                <p className="text-[11px] text-fg-faint px-1 py-2 leading-relaxed">
                   No chats synced yet. WhatsApp delivers your chat list a few seconds after pairing, and any
                   chat you receive a message in will also appear here. If you can&apos;t wait, you can{" "}
                   <button
@@ -365,8 +365,8 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                       onClick={() => selectChat(c.remote_jid)}
                       className={`w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ${
                         draft.remote_jid === c.remote_jid
-                          ? "bg-accent/20 text-zinc-100"
-                          : "hover:bg-surface-3 text-zinc-200"
+                          ? "bg-accent/20 text-fg"
+                          : "hover:bg-surface-3 text-fg"
                       }`}
                     >
                       <span className={`w-5 h-5 rounded shrink-0 flex items-center justify-center ${
@@ -375,11 +375,11 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                         {c.is_group ? <Users size={10} /> : <span className="text-[10px] font-bold">{(c.name ?? "?").charAt(0).toUpperCase()}</span>}
                       </span>
                       <div className="flex-1 min-w-0">
-                        <div className="truncate">{c.name ?? <span className="text-zinc-500 italic">Unnamed</span>}</div>
-                        <div className="text-[10px] text-zinc-500 truncate font-mono">{c.remote_jid}</div>
+                        <div className="truncate">{c.name ?? <span className="text-fg-faint italic">Unnamed</span>}</div>
+                        <div className="text-[10px] text-fg-faint truncate font-mono">{c.remote_jid}</div>
                       </div>
                       {c.last_message_at && (
-                        <span className="text-[9px] text-zinc-500 shrink-0">{formatRelative(c.last_message_at)}</span>
+                        <span className="text-[9px] text-fg-faint shrink-0">{formatRelative(c.last_message_at)}</span>
                       )}
                     </button>
                   ))}
@@ -389,11 +389,11 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <label className="text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">JID</label>
+                <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">JID</label>
                 <button
                   type="button"
                   onClick={() => setManualMode(false)}
-                  className="ml-auto text-[10px] text-zinc-500 hover:text-accent underline-offset-2 hover:underline"
+                  className="ml-auto text-[10px] text-fg-faint hover:text-accent underline-offset-2 hover:underline"
                 >
                   Pick from chat list
                 </button>
@@ -409,7 +409,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
           )}
 
           <div className="space-y-2">
-            <label className="block text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Agent</label>
+            <label className="block text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Agent</label>
             <select
               value={draft.agent_id}
               onChange={(e) => setDraft((d) => ({ ...d, agent_id: e.target.value }))}
@@ -421,7 +421,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
               ))}
             </select>
 
-            <label className="block text-[10px] uppercase tracking-wide text-zinc-500 font-semibold">Label (optional)</label>
+            <label className="block text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Label (optional)</label>
             <input
               value={draft.label}
               onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
@@ -441,7 +441,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             </button>
             <button
               onClick={() => { setAdding(false); setManualMode(false); setError(null); setDraft({ remote_jid: "", agent_id: "", label: "" }); }}
-              className="px-3 py-1 text-xs rounded text-zinc-400 hover:bg-surface-3"
+              className="px-3 py-1 text-xs rounded text-fg-subtle hover:bg-surface-3"
             >
               Cancel
             </button>
@@ -450,7 +450,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
       )}
 
       {routes.length === 0 && !adding && (
-        <p className="text-[11px] text-zinc-500 py-2">No routes. Inbound messages will be ignored.</p>
+        <p className="text-[11px] text-fg-faint py-2">No routes. Inbound messages will be ignored.</p>
       )}
 
       {routes.map((r) => (
@@ -499,9 +499,9 @@ function RouteRow({
     <div className="py-1.5 border-t border-border first:border-t-0">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-zinc-200 truncate">{headline}</p>
+          <p className="text-xs text-fg truncate">{headline}</p>
           {showJidSubline && (
-            <p className="text-[10px] font-mono text-zinc-500 truncate">{route.remote_jid}</p>
+            <p className="text-[10px] font-mono text-fg-faint truncate">{route.remote_jid}</p>
           )}
         </div>
         <select
@@ -516,7 +516,7 @@ function RouteRow({
         </select>
         <button
           onClick={() => void onDelete()}
-          className="p-1 rounded text-zinc-500 hover:text-rose-400 hover:bg-surface-3"
+          className="p-1 rounded text-fg-faint hover:text-rose-400 hover:bg-surface-3"
           title="Delete route"
         >
           <Trash2 size={11} />
@@ -529,9 +529,9 @@ function RouteRow({
           checked={route.silent_mode}
           onChange={(e) => void onToggleSilent(e.target.checked)}
         />
-        <span className="text-[11px] text-zinc-400 leading-snug">
-          <span className="text-zinc-300 font-medium">Silent mode</span> — listen only, never auto-reply.
-          <span className="block text-[10px] text-zinc-500">
+        <span className="text-[11px] text-fg-subtle leading-snug">
+          <span className="text-fg-muted font-medium">Silent mode</span> — listen only, never auto-reply.
+          <span className="block text-[10px] text-fg-faint">
             The agent still receives every message and can run tools / update memory{isGroup ? " (with the sender's name prepended so it can tell group members apart)" : ""}, but nothing is sent back to {isGroup ? "the group" : "this chat"}.
           </span>
         </span>

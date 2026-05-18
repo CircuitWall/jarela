@@ -68,7 +68,7 @@ export function AgentsPanel() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
-        <span className="text-[11px] text-zinc-500 font-medium uppercase tracking-wide">Agents</span>
+        <span className="text-[11px] text-fg-faint font-medium uppercase tracking-wide">Agents</span>
         <button
           onClick={() => setEditing("new")}
           className="flex items-center gap-1 px-2 py-1 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors"
@@ -80,10 +80,10 @@ export function AgentsPanel() {
       {/* List */}
       <div className="flex-1 overflow-y-auto px-2 pb-2">
         {loading && (
-          <p className="text-zinc-600 text-xs text-center py-4">Loading…</p>
+          <p className="text-fg-faint text-xs text-center py-4">Loading…</p>
         )}
         {!loading && agents.length === 0 && (
-          <p className="text-zinc-600 text-xs text-center py-4 select-none">
+          <p className="text-fg-faint text-xs text-center py-4 select-none">
             No agents yet. Create one to start chatting.
           </p>
         )}
@@ -94,15 +94,15 @@ export function AgentsPanel() {
           >
             <AgentAvatar icon={a.icon} name={a.name} id={a.id} />
             <div className="flex-1 min-w-0">
-              <p className="text-xs text-zinc-100 font-medium truncate">{a.name}</p>
+              <p className="text-xs text-fg font-medium truncate">{a.name}</p>
               {a.identity && (
-                <p className="text-[11px] text-zinc-500 truncate">{a.identity}</p>
+                <p className="text-[11px] text-fg-faint truncate">{a.identity}</p>
               )}
             </div>
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
               <button
                 onClick={() => setEditing(a)}
-                className="p-1 text-zinc-500 hover:text-zinc-200 transition-colors"
+                className="p-1 text-fg-faint hover:text-fg transition-colors"
                 title="Edit"
               >
                 <Pencil size={12} />
@@ -110,7 +110,7 @@ export function AgentsPanel() {
               <button
                 onClick={() => void handleDelete(a.id)}
                 disabled={deleting === a.id}
-                className="p-1 text-zinc-500 hover:text-red-400 transition-colors disabled:opacity-50"
+                className="p-1 text-fg-faint hover:text-red-400 transition-colors disabled:opacity-50"
                 title="Delete"
               >
                 <Trash2 size={12} />

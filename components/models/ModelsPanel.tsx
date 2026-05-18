@@ -38,8 +38,8 @@ export function ModelsPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Cpu size={14} className="text-zinc-400" />
-        <h2 className="text-sm font-semibold text-zinc-100 mr-auto">Model Configs</h2>
+        <Cpu size={14} className="text-fg-subtle" />
+        <h2 className="text-sm font-semibold text-fg mr-auto">Model Configs</h2>
         <button onClick={() => setEditing("new")} className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors">
           <Plus size={14} /> New
         </button>
@@ -48,8 +48,8 @@ export function ModelsPanel() {
       <div className="flex-1 overflow-y-auto">
         {/* Model list */}
         <div className="px-4 py-2">
-          {loading && models.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">Loading…</p>}
-          {!loading && models.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">No model configs yet</p>}
+          {loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
+          {!loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No model configs yet</p>}
           {deleteError && (
             <p className="text-red-400 text-xs mb-2 px-1">{deleteError}</p>
           )}
@@ -59,27 +59,27 @@ export function ModelsPanel() {
             <div key={m.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-sm font-medium text-zinc-100">{m.name}</span>
+                  <span className="text-sm font-medium text-fg">{m.name}</span>
                   {m.is_default && <Star size={11} className="text-yellow-400 fill-yellow-400 shrink-0" />}
-                  <span className={`text-xs px-1.5 py-0.5 rounded border ${PROVIDER_COLORS[m.provider] ?? "bg-zinc-800 text-zinc-300 border-zinc-600"}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded border ${PROVIDER_COLORS[m.provider] ?? "bg-surface-2 text-fg-muted border-border"}`}>
                     {m.provider}
                   </span>
                 </div>
-                <p className="text-xs text-zinc-400 truncate">{m.model_id}</p>
+                <p className="text-xs text-fg-subtle truncate">{m.model_id}</p>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 {!m.is_default && (
-                  <button onClick={() => handleSetDefault(m)} className="p-1 text-zinc-400 hover:text-yellow-400 transition-colors" title="Set as default">
+                  <button onClick={() => handleSetDefault(m)} className="p-1 text-fg-subtle hover:text-yellow-400 transition-colors" title="Set as default">
                     <Star size={13} />
                   </button>
                 )}
-                <button onClick={() => setEditing(m)} className="p-1 text-zinc-400 hover:text-zinc-100 transition-colors" title="Edit">
+                <button onClick={() => setEditing(m)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit">
                   <Pencil size={13} />
                 </button>
                 <button
                   onClick={() => handleRemove(m.name)}
                   disabled={inUse}
-                  className="p-1 text-zinc-400 hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="p-1 text-fg-subtle hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   title={inUse ? "Unassign from agents first" : "Delete"}
                 >
                   <Trash2 size={13} />

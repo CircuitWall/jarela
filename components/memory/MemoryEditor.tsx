@@ -38,15 +38,15 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-md shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-semibold text-zinc-100">{isEdit ? "Edit memory" : "New memory"}</h3>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100 transition-colors"><X size={16} /></button>
+          <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit memory" : "New memory"}</h3>
+          <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
         </div>
         <div className="p-4 space-y-3">
           {(["Namespace", "Key"] as const).map((label) => (
             <label key={label} className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">{label}</span>
+              <span className="text-xs text-fg-subtle mb-1 block">{label}</span>
               <input
-                className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
                 value={label === "Namespace" ? namespace : key}
                 onChange={(e) => label === "Namespace" ? setNamespace(e.target.value) : setKey(e.target.value)}
                 placeholder={label === "Namespace" ? "e.g. user/preferences" : "e.g. theme"}
@@ -55,9 +55,9 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
             </label>
           ))}
           <label className="block">
-            <span className="text-xs text-zinc-400 mb-1 block">Value (JSON)</span>
+            <span className="text-xs text-fg-subtle mb-1 block">Value (JSON)</span>
             <textarea
-              className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-28 resize-none"
+              className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-28 resize-none"
               value={valueStr}
               onChange={(e) => setValueStr(e.target.value)}
               placeholder='{"key": "value"}'
@@ -66,7 +66,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
           {error && <p className="text-red-400 text-xs">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-4 pb-4">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors">Cancel</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50">
             {saving ? "Saving…" : "Save"}
           </button>
