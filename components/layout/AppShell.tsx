@@ -1,5 +1,5 @@
 "use client";
-import { Settings } from "lucide-react";
+import { Menu } from "lucide-react";
 import { Activity, useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
@@ -19,7 +19,7 @@ import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { Toaster } from "@/components/ui/Toaster";
-import { clearUnread, useUnreadCount } from "@/lib/ui/toasts";
+import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { GearPanel } from "./GearPanel";
 
 export function AppShell() {
@@ -78,6 +78,15 @@ export function AppShell() {
     window.addEventListener("jarela:focus-agent", handler);
     return () => window.removeEventListener("jarela:focus-agent", handler);
   }, [dispatch]);
+
+  // When the user is actively viewing an agent's chat, drain that agent's
+  // unread bucket. This keeps the per-agent breakdown honest: badges only
+  // count notifications the user hasn't yet seen in context.
+  useEffect(() => {
+    if (state.activeTab === "chat" && state.activeAgentId) {
+      clearUnreadForAgent(state.activeAgentId);
+    }
+  }, [state.activeTab, state.activeAgentId]);
 
   useEventNotifications({
     shouldNotify: (ev) => {
@@ -141,11 +150,11 @@ export function AppShell() {
           <span className="text-zinc-100 font-semibold tracking-tight">Jarela</span>
         </div>
         <button
-          onClick={() => { setShowGear((v) => !v); clearUnread(); }}
+          onClick={() => { setShowGear((v) => !v); }}
           className={`ml-auto relative p-2 rounded transition-colors ${showGear ? "text-zinc-100 bg-surface-3" : "text-zinc-500 hover:text-zinc-300 hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
-          <Settings size={16} />
+          <Menu size={18} />
           {unreadCount > 0 && (
             <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 border border-surface-2 text-[9px] font-bold text-white flex items-center justify-center leading-none animate-pulse">
               {unreadCount > 9 ? "9+" : unreadCount}

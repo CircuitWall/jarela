@@ -119,6 +119,8 @@ export function NotificationTestButton() {
     // 1. In-app toast — should appear bottom-right immediately.
     pushToast({
       kind: "info",
+      source: "system",
+      sourceLabel: "Test",
       title: "Test notification",
       body: "If you see this card slide in, in-app pop-ups are working.",
       agent_id: null,

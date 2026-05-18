@@ -108,10 +108,22 @@ function ToastCard({ toast }: { toast: Toast }) {
       <div className="flex items-start gap-3 px-3 py-2.5">
         {avatar}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-zinc-100 truncate">{toast.title}</p>
-          <p className={`text-xs ${isError ? "text-rose-300/90" : "text-zinc-400"} line-clamp-2 mt-0.5`}>
-            {toast.body}
+          <p className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold truncate">
+            {toast.sourceLabel}
           </p>
+          <p className="text-sm font-medium text-zinc-100 truncate">{toast.title}</p>
+          {toast.preview ? (
+            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-zinc-300"} line-clamp-2 mt-0.5 italic`}>
+              “{toast.preview}”
+            </p>
+          ) : (
+            <p className={`text-xs ${isError ? "text-rose-300/90" : "text-zinc-400"} line-clamp-2 mt-0.5`}>
+              {toast.body}
+            </p>
+          )}
+          {(toast.agent_id || toast.thread_id) && (
+            <p className="text-[10px] text-accent/80 mt-1">Open chat →</p>
+          )}
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); close(); }}

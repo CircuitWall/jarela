@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
+import { useUnreadByAgent } from "@/lib/ui/toasts";
 
 interface Props {
   activeTab: Tab;
@@ -67,6 +68,7 @@ function AgentSessionList({
   onSelect: (id: string) => void;
 }) {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const unread = useUnreadByAgent();
 
   useEffect(() => {
     api.agents.list().then(setAgents).catch(console.error);
@@ -84,6 +86,7 @@ function AgentSessionList({
     <div className="py-1.5 space-y-0.5 px-2">
       {agents.map((a) => {
         const isActive = a.id === activeAgentId;
+        const n = unread.get(a.id) ?? 0;
         return (
           <button
             key={a.id}
@@ -95,20 +98,27 @@ function AgentSessionList({
             }`}
           >
             {/* Avatar */}
-            {a.icon ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={a.icon}
-                alt={a.name}
-                className="w-9 h-9 rounded-lg object-cover shrink-0"
-              />
-            ) : (
-              <div
-                className={`w-9 h-9 rounded-lg shrink-0 flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br select-none ${avatarGradient(a.id)}`}
-              >
-                {a.name.charAt(0).toUpperCase()}
-              </div>
-            )}
+            <div className="relative shrink-0">
+              {a.icon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={a.icon}
+                  alt={a.name}
+                  className="w-9 h-9 rounded-lg object-cover"
+                />
+              ) : (
+                <div
+                  className={`w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold text-white bg-gradient-to-br select-none ${avatarGradient(a.id)}`}
+                >
+                  {a.name.charAt(0).toUpperCase()}
+                </div>
+              )}
+              {n > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 border border-surface-2 text-[10px] font-bold text-white flex items-center justify-center leading-none">
+                  {n > 9 ? "9+" : n}
+                </span>
+              )}
+            </div>
 
             {/* Info */}
             <div className="flex-1 min-w-0">

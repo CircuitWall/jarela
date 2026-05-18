@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
+import { useUnreadByAgent } from "@/lib/ui/toasts";
 
 const GRADIENTS = [
   "bg-gradient-to-br from-violet-500 to-indigo-600",
@@ -26,6 +27,7 @@ interface Props {
 
 export function AgentSelector({ value, onChange, disabled }: Props) {
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const unread = useUnreadByAgent();
 
   useEffect(() => {
     api.agents
@@ -42,6 +44,13 @@ export function AgentSelector({ value, onChange, disabled }: Props) {
   }, []);
 
   const selected = agents.find((a) => a.id === value);
+  // Aggregate unread for *other* agents — shown as a small pill next to the
+  // selected agent's avatar so the user knows there's pending activity on
+  // a different agent even without opening the menu.
+  let otherUnread = 0;
+  for (const [agentId, n] of unread) {
+    if (agentId && agentId !== value) otherUnread += n;
+  }
 
   return (
     <div className="relative">
@@ -65,12 +74,23 @@ export function AgentSelector({ value, onChange, disabled }: Props) {
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled || agents.length === 0}
         >
-          {agents.map((a) => (
-            <option key={a.id} value={a.id} title={a.identity}>
-              {a.name}
-            </option>
-          ))}
+          {agents.map((a) => {
+            const n = unread.get(a.id) ?? 0;
+            return (
+              <option key={a.id} value={a.id} title={a.identity}>
+                {n > 0 ? `${a.name} (${n > 9 ? "9+" : n})` : a.name}
+              </option>
+            );
+          })}
         </select>
+        {otherUnread > 0 && (
+          <span
+            className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-[10px] font-bold text-white flex items-center justify-center leading-none"
+            title={`${otherUnread} new on other agents`}
+          >
+            {otherUnread > 9 ? "9+" : otherUnread}
+          </span>
+        )}
       </div>
     </div>
   );

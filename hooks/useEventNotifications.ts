@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef } from "react";
-import { pushToast } from "@/lib/ui/toasts";
+import { pushToast, type NotifSource } from "@/lib/ui/toasts";
 
 interface RunCompleted {
   type: "run_completed";
@@ -23,7 +23,19 @@ interface TaskCompleted {
   ts: number;
 }
 
-type NotifEvent = RunCompleted | TaskCompleted;
+interface BridgeMessageReceived {
+  type: "bridge_message_received";
+  bridge_id: string;
+  remote_jid: string;
+  push_name: string | null;
+  is_group: boolean;
+  thread_id: string;
+  agent_id: string;
+  preview: string;
+  ts: number;
+}
+
+type NotifEvent = RunCompleted | TaskCompleted | BridgeMessageReceived;
 
 interface AgentSummary {
   id: string;
@@ -97,6 +109,14 @@ export function useEventNotifications(options: Options) {
         let ev: NotifEvent;
         try { ev = JSON.parse(msg.data) as NotifEvent; } catch { return; }
         if (!ev.ts) return;
+        // Ignore event types this hook doesn't surface (bridge_status,
+        // bridge_unrouted, …). The badge would otherwise increment on every
+        // pairing-state ping.
+        if (
+          ev.type !== "run_completed" &&
+          ev.type !== "task_completed" &&
+          ev.type !== "bridge_message_received"
+        ) return;
         lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
         saveLastTs(lastTsRef.current);
         handleEvent(ev);
@@ -114,25 +134,43 @@ export function useEventNotifications(options: Options) {
     function handleEvent(ev: NotifEvent) {
       if (!optsRef.current.shouldNotify(ev)) return;
 
-      const { title, body, kind } = format(ev, optsRef.current.resolveAgentName);
+      const { title, body, kind, source, sourceLabel } =
+        format(ev, optsRef.current.resolveAgentName);
 
-      // Prefer the OS Web Notification when the browser has granted
-      // permission — it surfaces both in foreground and background and the
-      // in-app toast becomes redundant on top of it. Only fall back to the
-      // in-app toast when permission is missing/denied.
+      // Always push an in-app toast — it is the source of truth for the
+      // per-agent unread badge (header menu icon, gear panel, chat agent
+      // selector). The OS Web Notification is layered on top when permission
+      // is granted so the user still gets a system ping if Jarela isn't
+      // focused.
+      pushToast({
+        kind,
+        source,
+        sourceLabel,
+        title,
+        body,
+        preview: ev.preview || undefined,
+        agent_id: ev.agent_id,
+        thread_id: ev.thread_id || null,
+        ttl: 6000,
+      });
+
       const canOSNotify =
         typeof Notification !== "undefined" && Notification.permission === "granted";
-
       if (canOSNotify) {
         try {
           const customIcon = optsRef.current.resolveAgentIcon?.(ev.agent_id) ?? null;
+          // Tag uniquely per source/identity so a new run replaces the old
+          // run-toast for the same thread, but doesn't collide with a task
+          // or bridge ping that happens to share an id.
+          const tag =
+            ev.type === "run_completed"    ? `run:${ev.thread_id}` :
+            ev.type === "task_completed"   ? `task:${ev.task_id}` :
+            /* bridge_message_received */   `bridge:${ev.bridge_id}:${ev.remote_jid}`;
           const n = new Notification(title, {
-            body,
-            tag: ev.type === "run_completed" ? `run:${ev.thread_id}` : `task:${ev.task_id}`,
+            body: ev.preview ? `${body}\n\n${ev.preview}` : body,
+            tag,
             icon: customIcon || "/icon-192.png",
           });
-          // Click handler: focus the Jarela window, switch to the agent the
-          // event belongs to, dismiss the OS notification.
           n.onclick = () => {
             window.focus();
             const agentId = ev.agent_id;
@@ -143,20 +181,8 @@ export function useEventNotifications(options: Options) {
             }
             n.close();
           };
-          return;
-        } catch { /* OS rejected — fall through to in-app toast */ }
+        } catch { /* OS rejected — toast is already up, nothing else to do */ }
       }
-
-      // Fallback: in-app toast (visible whenever the Jarela window has
-      // any pixels on screen).
-      pushToast({
-        kind,
-        title,
-        body,
-        agent_id: ev.type === "run_completed" ? ev.agent_id : ev.agent_id,
-        thread_id: ev.thread_id || null,
-        ttl: 6000,
-      });
     }
 
     connect();
@@ -181,29 +207,40 @@ export function useEventNotifications(options: Options) {
 
 function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
   title: string; body: string; kind: "info" | "success" | "error";
+  source: NotifSource; sourceLabel: string;
 } {
-  if (ev.type === "run_completed") {
-    const name = resolveName(ev.agent_id);
-    return ev.status === "error"
-      ? { title: `${name} — error`, body: ev.preview || "Run failed.", kind: "error" }
-      : { title: `${name} replied`, body: ev.preview || "Response ready.", kind: "info" };
-  }
-  // task_completed
   const name = resolveName(ev.agent_id);
-  if (ev.status === "error") {
+  if (ev.type === "run_completed") {
+    return ev.status === "error"
+      ? { title: `${name} — error`, body: ev.preview || "Run failed.",
+          kind: "error", source: "run", sourceLabel: "Reply" }
+      : { title: `${name} replied`, body: ev.preview || "Response ready.",
+          kind: "info", source: "run", sourceLabel: "Reply" };
+  }
+  if (ev.type === "task_completed") {
+    if (ev.status === "error") {
+      return {
+        title: `${name} — scheduled task failed`,
+        body: ev.error ?? "Task failed.",
+        kind: "error", source: "task", sourceLabel: "Scheduled task",
+      };
+    }
     return {
-      title: `${name} — scheduled task failed`,
-      body: ev.error ?? "Task failed.",
-      kind: "error",
+      // Show only the assistant reply preview — the prompt is what the user
+      // already knows they scheduled, the value of the notification is the
+      // answer that just arrived.
+      title: `${name} — scheduled task completed`,
+      body: ev.preview || "(no output)",
+      kind: "success", source: "task", sourceLabel: "Scheduled task",
     };
   }
+  // bridge_message_received
+  const who = ev.push_name || ev.remote_jid;
+  const channel = ev.is_group ? "WhatsApp group" : "WhatsApp";
   return {
-    title: `${name} — scheduled task completed`,
-    // Show only the assistant reply preview — the prompt is what the user
-    // already knows they scheduled, the value of the notification is the
-    // answer that just arrived.
-    body: ev.preview || "(no output)",
-    kind: "success",
+    title: `${name} → ${who}`,
+    body: ev.preview || "(no reply)",
+    kind: "info", source: "bridge", sourceLabel: channel,
   };
 }
 
