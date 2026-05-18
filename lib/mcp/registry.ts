@@ -359,6 +359,64 @@ export const MCP_REGISTRY: RegistryEntry[] = [
       args: ["-y", "@cloudflare/mcp-server-cloudflare", "init"],
     },
   },
+
+  // ── private (private-mcp-servers) ──────────────────────────────
+  // These aren't on npm — clone the repo and build locally before use:
+  //   git clone git@github.com:internal/private-mcp-servers.git
+  //   cd private-mcp-servers && pnpm install
+  //   (sonatype) pnpm --filter sonatype-mcp-server run build
+  //   (mcp-docs) cd mcp-docs && npm install && npm run build
+  // Then paste the absolute clone path into REPO_PATH below.
+  {
+    id: "private-sonatype",
+    name: "Sonatype (private)",
+    description:
+      "Vulnerability reports from ae-saas.sonatype.app. private — clone private-mcp-servers and build before use.",
+    category: "Corporate",
+    source: "Vendor",
+    url: "https://github.com/internal/private-mcp-servers/tree/master/sonatype",
+    transport: "stdio",
+    spec: {
+      command: "node",
+      args: ["${REPO_PATH}/sonatype/dist/index.js"],
+      env: {
+        SONATYPE_USER: "${SONATYPE_USER}",
+        SONATYPE_PASSWORD: "${SONATYPE_PASSWORD}",
+      },
+    },
+    variables: [
+      {
+        key: "REPO_PATH",
+        label: "Path to private-mcp-servers checkout",
+        placeholder: "/Users/me/code/private-mcp-servers",
+        default: "",
+      },
+      { key: "SONATYPE_USER", label: "Sonatype username" },
+      { key: "SONATYPE_PASSWORD", label: "Sonatype password", secret: true },
+    ],
+  },
+  {
+    id: "private-mcp-docs",
+    name: "MCP Docs (private)",
+    description:
+      "Fetch and parse llms.txt-style documentation (Stripe, etc.). private — clone private-mcp-servers and build before use.",
+    category: "Productivity",
+    source: "Vendor",
+    url: "https://github.com/internal/private-mcp-servers/tree/master/mcp-docs",
+    transport: "stdio",
+    spec: {
+      command: "node",
+      args: ["${REPO_PATH}/mcp-docs/build/index.js"],
+    },
+    variables: [
+      {
+        key: "REPO_PATH",
+        label: "Path to private-mcp-servers checkout",
+        placeholder: "/Users/me/code/private-mcp-servers",
+        default: "",
+      },
+    ],
+  },
 ];
 
 // Substitute `${var}` placeholders in a spec object using user-supplied values.
