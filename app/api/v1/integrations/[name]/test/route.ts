@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { _resolveAtlassianAuth } from "@/lib/tools/atlassian";
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
+import { _resolveOutlookAuth } from "@/lib/tools/outlook";
+import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 
 type Params = { params: Promise<{ name: string }> };
@@ -15,6 +17,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     case "atlassian": return await testAtlassian();
     case "google":    return await testGoogle();
     case "gmail":     return await testGmail();
+    case "outlook":   return await testOutlook();
     default:          return NextResponse.json({ error: "unknown integration" }, { status: 404 });
   }
 }
@@ -120,6 +123,42 @@ async function testGmail() {
     return NextResponse.json({
       ok: true,
       detail: { labels: data.labels?.length ?? 0 },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, error: describeError(err) },
+      { status: 200 },
+    );
+  }
+}
+
+async function testOutlook() {
+  const auth = _resolveOutlookAuth();
+  if ("error" in auth) return NextResponse.json({ ok: false, error: auth.error }, { status: 400 });
+  try {
+    const token = await getMicrosoftAccessToken(auth);
+    if (typeof token !== "string") {
+      return NextResponse.json({ ok: false, error: token.error }, { status: 200 });
+    }
+    // /me is the canonical "did this token work?" probe. Returns the
+    // signed-in user's displayName + email/UPN.
+    const res = await fetch("https://graph.microsoft.com/v1.0/me", {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return NextResponse.json(
+        { ok: false, error: `Graph ${res.status}: ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    const me = (await res.json()) as { displayName?: string; mail?: string; userPrincipalName?: string };
+    return NextResponse.json({
+      ok: true,
+      detail: {
+        displayName: me.displayName,
+        email: me.mail ?? me.userPrincipalName,
+      },
     });
   } catch (err) {
     return NextResponse.json(
