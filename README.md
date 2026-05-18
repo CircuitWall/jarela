@@ -116,10 +116,15 @@ npm run dev
 ### Production one-shot
 
 ```bash
-npm run build
-npm start
+npm run build   # next build (output=standalone) + hydrate static/public
+npm start       # node .next/standalone/server.js with PORT=4312
 # http://localhost:4312
 ```
+
+`npm run build` writes a self-contained bundle to `.next/standalone/` —
+copy that directory anywhere you want to run Jarela without the source
+checkout. `npm start` is just a thin wrapper around `node server.js` with
+PORT/HOSTNAME defaults applied.
 
 ### Install as a Windows background task (recommended for daily use)
 
