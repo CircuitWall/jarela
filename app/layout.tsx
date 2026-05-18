@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { AppProvider } from "@/contexts/AppContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistration";
 import "./globals.css";
 
@@ -28,11 +29,30 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+// Inline pre-paint script: reads the persisted theme and sets
+// `data-theme` on <html> before the first paint, so light-mode users
+// don't flash dark on every page load. Falls back to "system" which
+// then defers to the prefers-color-scheme media query.
+const themeBootstrap = `(() => {
+  try {
+    var t = localStorage.getItem("jarela-theme");
+    if (t !== "light" && t !== "dark" && t !== "system") t = "system";
+    document.documentElement.setAttribute("data-theme", t);
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "system");
+  }
+})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="system">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+      </head>
       <body>
-        <AppProvider>{children}</AppProvider>
+        <ThemeProvider>
+          <AppProvider>{children}</AppProvider>
+        </ThemeProvider>
         <ServiceWorkerRegistration />
       </body>
     </html>

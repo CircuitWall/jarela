@@ -55,7 +55,7 @@ export function ProfileEditor() {
       {/* Icon + name row */}
       <div className="flex items-end gap-3">
         <div className="shrink-0">
-          <span className="text-xs text-zinc-400 mb-1 block">Icon</span>
+          <span className="text-xs text-fg-subtle mb-1 block">Icon</span>
           <button
             onClick={() => fileRef.current?.click()}
             className="w-14 h-14 rounded-xl border-2 border-dashed border-border bg-surface-3 flex items-center justify-center hover:border-accent transition-colors overflow-hidden group"
@@ -65,20 +65,20 @@ export function ProfileEditor() {
               // eslint-disable-next-line @next/next/no-img-element
               <img src={icon} alt="avatar" className="w-full h-full object-cover" />
             ) : (
-              <Upload size={14} className="text-zinc-500 group-hover:text-accent transition-colors" />
+              <Upload size={14} className="text-fg-faint group-hover:text-accent transition-colors" />
             )}
           </button>
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconFile} />
           {icon && (
-            <button onClick={() => setIcon(null)} className="text-[10px] text-zinc-500 hover:text-red-400 mt-0.5 block">
+            <button onClick={() => setIcon(null)} className="text-[10px] text-fg-faint hover:text-red-400 mt-0.5 block">
               Remove
             </button>
           )}
         </div>
         <label className="flex-1 block">
-          <span className="text-xs text-zinc-400 mb-1 block">Name</span>
+          <span className="text-xs text-fg-subtle mb-1 block">Name</span>
           <input
-            className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
@@ -88,16 +88,16 @@ export function ProfileEditor() {
 
       {/* About */}
       <label className="block">
-        <span className="text-xs text-zinc-400 mb-1 block">About me</span>
+        <span className="text-xs text-fg-subtle mb-1 block">About me</span>
         <textarea
-          className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-28 resize-none"
+          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-28 resize-none"
           value={about}
           onChange={(e) => setAbout(e.target.value)}
           placeholder="Senior engineer at Acme Corp. Prefers concise answers. Working on a payments platform…"
         />
       </label>
 
-      <p className="text-[11px] text-zinc-600">
+      <p className="text-[11px] text-fg-faint">
         This information is appended to every agent&apos;s context so they know who they&apos;re talking to.
       </p>
 
@@ -168,8 +168,8 @@ function LocationSharing({
   return (
     <div className="pt-4 border-t border-border space-y-2">
       <div className="flex items-center gap-2">
-        <MapPin size={14} className="text-zinc-400" />
-        <h3 className="text-sm font-semibold text-zinc-100 mr-auto">Share my location</h3>
+        <MapPin size={14} className="text-fg-subtle" />
+        <h3 className="text-sm font-semibold text-fg mr-auto">Share my location</h3>
         <button
           onClick={toggle}
           disabled={busy}
@@ -186,28 +186,28 @@ function LocationSharing({
           />
         </button>
       </div>
-      <p className="text-[11px] text-zinc-500">
+      <p className="text-[11px] text-fg-faint">
         When enabled, your browser sends your current coordinates to Jarela so the agent can answer
         location-aware questions (weather, nearby places, directions). Stored locally only; never sent
         to any third party other than the LLM/MCP services you&apos;ve configured.
       </p>
 
       {consent && (
-        <div className="text-[11px] text-zinc-400 px-2 py-1.5 rounded bg-surface-3/40 border border-border">
+        <div className="text-[11px] text-fg-subtle px-2 py-1.5 rounded bg-surface-3/40 border border-border">
           {hasFix ? (
             <>
               <span className="font-mono">
                 {profile!.location_lat!.toFixed(5)}, {profile!.location_lng!.toFixed(5)}
               </span>
               {profile?.location_accuracy_m != null && (
-                <span className="text-zinc-500"> · ±{Math.round(profile.location_accuracy_m)}m</span>
+                <span className="text-fg-faint"> · ±{Math.round(profile.location_accuracy_m)}m</span>
               )}
               {updatedAt && (
-                <span className="text-zinc-500"> · {timeAgo(updatedAt)}</span>
+                <span className="text-fg-faint"> · {timeAgo(updatedAt)}</span>
               )}
             </>
           ) : (
-            <span className="text-zinc-500">Waiting for browser fix… (allow location when prompted)</span>
+            <span className="text-fg-faint">Waiting for browser fix… (allow location when prompted)</span>
           )}
         </div>
       )}
@@ -261,20 +261,20 @@ function AccessWhitelist() {
   return (
     <div className="pt-4 border-t border-border space-y-2">
       <div className="flex items-center gap-2">
-        <Shield size={14} className="text-zinc-400" />
-        <h3 className="text-sm font-semibold text-zinc-100">Tailscale access whitelist</h3>
+        <Shield size={14} className="text-fg-subtle" />
+        <h3 className="text-sm font-semibold text-fg">Tailscale access whitelist</h3>
       </div>
-      <p className="text-[11px] text-zinc-500">
-        Identities allowed to reach Jarela through <code className="text-zinc-400">tailscale serve</code>.
-        Local access (<code className="text-zinc-400">localhost</code>) is always allowed.
-        Tailscale passes the identity via the <code className="text-zinc-400">Tailscale-User-Login</code> header.
+      <p className="text-[11px] text-fg-faint">
+        Identities allowed to reach Jarela through <code className="text-fg-subtle">tailscale serve</code>.
+        Local access (<code className="text-fg-subtle">localhost</code>) is always allowed.
+        Tailscale passes the identity via the <code className="text-fg-subtle">Tailscale-User-Login</code> header.
       </p>
 
       <div className="flex gap-2 items-end">
         <label className="flex-1 block">
-          <span className="text-[10px] text-zinc-500 mb-0.5 block">Identity (email)</span>
+          <span className="text-[10px] text-fg-faint mb-0.5 block">Identity (email)</span>
           <input
-            className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
             value={identity}
             onChange={(e) => setIdentity(e.target.value)}
             placeholder="you@example.com"
@@ -282,9 +282,9 @@ function AccessWhitelist() {
           />
         </label>
         <label className="w-32 block">
-          <span className="text-[10px] text-zinc-500 mb-0.5 block">Label (optional)</span>
+          <span className="text-[10px] text-fg-faint mb-0.5 block">Label (optional)</span>
           <input
-            className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="iPhone"
@@ -304,16 +304,16 @@ function AccessWhitelist() {
 
       <ul className="divide-y divide-border border border-border rounded">
         {entries === null && (
-          <li className="px-3 py-2 text-xs text-zinc-500">Loading…</li>
+          <li className="px-3 py-2 text-xs text-fg-faint">Loading…</li>
         )}
         {entries && entries.length === 0 && (
-          <li className="px-3 py-2 text-xs text-zinc-500">No remote identities allowed yet.</li>
+          <li className="px-3 py-2 text-xs text-fg-faint">No remote identities allowed yet.</li>
         )}
         {entries?.map((e) => (
           <li key={e.identity} className="px-3 py-2 flex items-center gap-2 text-xs">
             <div className="flex-1 min-w-0">
-              <div className="font-mono text-zinc-100 truncate">{e.identity}</div>
-              <div className="text-[10px] text-zinc-500">
+              <div className="font-mono text-fg truncate">{e.identity}</div>
+              <div className="text-[10px] text-fg-faint">
                 {e.display_name ? `${e.display_name} · ` : ""}
                 added {new Date(e.added_at).toLocaleString()}
                 {e.last_seen_at ? ` · last seen ${new Date(e.last_seen_at).toLocaleString()}` : " · never seen"}
@@ -322,7 +322,7 @@ function AccessWhitelist() {
             <button
               onClick={() => remove(e.identity)}
               disabled={busy}
-              className="p-1 text-zinc-500 hover:text-red-400 disabled:opacity-40"
+              className="p-1 text-fg-faint hover:text-red-400 disabled:opacity-40"
               title="Remove"
             >
               <Trash2 size={12} />

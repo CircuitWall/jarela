@@ -350,11 +350,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
               </div>
               <div className="text-center min-w-0 w-full">
                 <div className="flex items-center justify-center gap-1.5">
-                  <p className="text-base font-semibold text-zinc-100 truncate">{defaultAgent.name}</p>
+                  <p className="text-base font-semibold text-fg truncate">{defaultAgent.name}</p>
                   <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded text-accent bg-accent/15 border border-accent/30">default</span>
                 </div>
                 {defaultAgent.identity && (
-                  <p className="text-xs text-zinc-400 mt-0.5 line-clamp-2 px-2">{defaultAgent.identity}</p>
+                  <p className="text-xs text-fg-subtle mt-0.5 line-clamp-2 px-2">{defaultAgent.identity}</p>
                 )}
               </div>
             </button>
@@ -363,7 +363,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
           {/* Latest 3 others — small row below */}
           {recentAgents.length > 0 && (
             <div className="flex flex-col items-center gap-1.5">
-              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Recent</p>
+              <p className="text-[10px] text-fg-faint uppercase tracking-wider">Recent</p>
               <div className="flex gap-1.5 justify-center flex-wrap">
                 {recentAgents.map((a) => {
                   const n = unreadByAgent.get(a.id) ?? 0;
@@ -372,7 +372,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
                       key={a.id}
                       onClick={() => onSelectAgent?.(a.id)}
                       title={a.identity || a.name}
-                      className="relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 hover:border-zinc-600 transition-colors text-left max-w-[150px]"
+                      className="relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 hover:border-border transition-colors text-left max-w-[150px]"
                     >
                       <div className={`w-6 h-6 shrink-0 rounded-md bg-gradient-to-br ${gradientFor(a.id)} flex items-center justify-center text-xs font-bold text-white select-none overflow-hidden`}>
                         {a.icon
@@ -380,7 +380,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
                           ? <img src={a.icon} alt={a.name} className="w-full h-full object-cover" />
                           : a.name.charAt(0).toUpperCase()}
                       </div>
-                      <p className="text-xs text-zinc-300 truncate">{a.name}</p>
+                      <p className="text-xs text-fg-muted truncate">{a.name}</p>
                       {n > 0 && (
                         <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 border border-surface text-[10px] font-bold text-white flex items-center justify-center leading-none">
                           {n > 9 ? "9+" : n}
@@ -395,7 +395,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         </div>
       )}
       {!agentId && !defaultAgent && recentAgents.length === 0 && (
-        <div className="mx-4 mb-2 px-3 py-2 rounded bg-surface-3 border border-border text-zinc-400 text-xs text-center">
+        <div className="mx-4 mb-2 px-3 py-2 rounded bg-surface-3 border border-border text-fg-subtle text-xs text-center">
           No agent selected — open the menu and pick an agent to start chatting.
         </div>
       )}

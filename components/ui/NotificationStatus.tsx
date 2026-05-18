@@ -83,7 +83,7 @@ export function NotificationStatus() {
         {status === "denied"
           ? <BellOff size={14} className="text-rose-400 shrink-0" />
           : <Bell size={14} className="text-amber-400 shrink-0" />}
-        <p className="text-xs text-zinc-200 mr-auto">
+        <p className="text-xs text-fg mr-auto">
           {status === "denied"
             ? "OS notifications are blocked. In-app pop-ups still work; for system-level alerts when Jarela isn't focused, allow Notifications via the lock icon in the URL bar."
             : "Enable OS notifications to also get pinged when Jarela isn't focused (in-app pop-ups already work)."}
@@ -99,7 +99,7 @@ export function NotificationStatus() {
         {testFired && (
           <span className="text-[10px] text-emerald-400">test sent</span>
         )}
-        <button onClick={dismiss} className="p-1 text-zinc-400 hover:text-zinc-100" title="Dismiss">
+        <button onClick={dismiss} className="p-1 text-fg-subtle hover:text-fg" title="Dismiss">
           <X size={12} />
         </button>
       </div>
@@ -145,7 +145,7 @@ export function NotificationTestButton() {
       title={status === "granted"
         ? "Fires both an in-app toast and an OS notification"
         : "Fires an in-app toast (OS notifications require permission)"}
-      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-zinc-400 hover:text-zinc-100 hover:bg-surface-3"
+      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg hover:bg-surface-3"
     >
       <Bell size={11} /> Test notification
     </button>

@@ -18,7 +18,7 @@ function Section({ step, title, children }: { step: number; title: string; child
         <span className="w-5 h-5 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center shrink-0">
           {step}
         </span>
-        <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wide">{title}</span>
+        <span className="text-xs font-semibold text-fg-muted uppercase tracking-wide">{title}</span>
       </div>
       <div className="ml-7 space-y-2">{children}</div>
     </div>
@@ -128,8 +128,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
       <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-semibold text-zinc-100">{isEdit ? "Edit agent" : "New agent"}</h3>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100 transition-colors">
+          <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit agent" : "New agent"}</h3>
+          <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors">
             <X size={16} />
           </button>
         </div>
@@ -140,7 +140,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
           <Section step={1} title="Identity">
             <div className="flex items-end gap-3">
               <div className="shrink-0">
-                <span className="text-xs text-zinc-400 mb-1 block">Icon</span>
+                <span className="text-xs text-fg-subtle mb-1 block">Icon</span>
                 <button
                   onClick={() => fileRef.current?.click()}
                   className="w-12 h-12 rounded-lg border-2 border-dashed border-border bg-surface-3 flex items-center justify-center hover:border-accent transition-colors overflow-hidden group"
@@ -150,20 +150,20 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={icon} alt="icon" className="w-full h-full object-cover" />
                   ) : (
-                    <Upload size={14} className="text-zinc-500 group-hover:text-accent transition-colors" />
+                    <Upload size={14} className="text-fg-faint group-hover:text-accent transition-colors" />
                   )}
                 </button>
                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconFile} />
                 {icon && (
-                  <button onClick={() => setIcon(null)} className="text-[10px] text-zinc-500 hover:text-red-400 mt-0.5 block">
+                  <button onClick={() => setIcon(null)} className="text-[10px] text-fg-faint hover:text-red-400 mt-0.5 block">
                     Remove
                   </button>
                 )}
               </div>
               <label className="flex-1 block">
-                <span className="text-xs text-zinc-400 mb-1 block">Name</span>
+                <span className="text-xs text-fg-subtle mb-1 block">Name</span>
                 <input
-                  className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Code Reviewer"
@@ -172,18 +172,18 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               </label>
             </div>
             <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Persona</span>
+              <span className="text-xs text-fg-subtle mb-1 block">Persona</span>
               <textarea
-                className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
                 value={identity}
                 onChange={(e) => setIdentity(e.target.value)}
                 placeholder="You are a senior TypeScript engineer with deep expertise in React and Next.js…"
               />
             </label>
             <label className="block">
-              <span className="text-xs text-zinc-400 mb-1 block">Instructions</span>
+              <span className="text-xs text-fg-subtle mb-1 block">Instructions</span>
               <textarea
-                className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
                 value={instructions}
                 onChange={(e) => setInstructions(e.target.value)}
                 placeholder="Focus on code review, suggest best practices, and explain your reasoning…"
@@ -196,7 +196,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
           {/* Step 2: Model */}
           <Section step={2} title="Model">
             <select
-              className="w-full bg-surface-3 text-zinc-100 text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
               value={modelConfigName}
               onChange={(e) => setModelConfigName(e.target.value)}
             >
@@ -210,8 +210,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               ))}
             </select>
             {selectedModel && (
-              <p className="text-[11px] text-zinc-500">
-                Using <span className="text-zinc-400">{selectedModel.provider}</span> / <span className="font-mono text-zinc-300">{selectedModel.model_id}</span>
+              <p className="text-[11px] text-fg-faint">
+                Using <span className="text-fg-subtle">{selectedModel.provider}</span> / <span className="font-mono text-fg-muted">{selectedModel.model_id}</span>
               </p>
             )}
             {models.length === 0 && (
@@ -224,14 +224,14 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
           {/* Step 3: Tools */}
           <Section step={3} title="Tools">
             {tools.length === 0 ? (
-              <p className="text-xs text-zinc-500">No tools available.</p>
+              <p className="text-xs text-fg-faint">No tools available.</p>
             ) : (
               <>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] text-zinc-500">{selectedTools.length} of {tools.length} enabled</span>
+                  <span className="text-[11px] text-fg-faint">{selectedTools.length} of {tools.length} enabled</span>
                   <button
                     onClick={toggleAllTools}
-                    className="text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors"
+                    className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
                   >
                     {selectedTools.length === tools.length ? "Deselect all" : "Select all"}
                   </button>
@@ -264,11 +264,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 checked={isDefault}
                 onChange={(e) => setIsDefault(e.target.checked)}
               />
-              <span className="text-xs text-zinc-400">Set as default agent</span>
+              <span className="text-xs text-fg-subtle">Set as default agent</span>
             </label>
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 transition-colors">
+            <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">
               Cancel
             </button>
             <button
@@ -320,7 +320,7 @@ function ToolCategoryBlock({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="text-fg-subtle hover:text-fg transition-colors"
           aria-label={open ? "Collapse" : "Expand"}
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -333,9 +333,9 @@ function ToolCategoryBlock({
             checked={allOn}
             onChange={(e) => onToggleCategory(category, e.target.checked)}
           />
-          <span className="text-[12px] font-semibold text-zinc-200 truncate">{category}</span>
+          <span className="text-[12px] font-semibold text-fg truncate">{category}</span>
         </label>
-        <span className="text-[10px] text-zinc-500 shrink-0">{selectedInCat}/{tools.length}</span>
+        <span className="text-[10px] text-fg-faint shrink-0">{selectedInCat}/{tools.length}</span>
       </div>
       {open && (
         <div className="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60">
@@ -347,7 +347,7 @@ function ToolCategoryBlock({
                 checked={selected.includes(t.name)}
                 onChange={() => onToggleTool(t.name)}
               />
-              <span className="font-mono text-[11px] text-zinc-300 truncate">{t.name}</span>
+              <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
             </label>
           ))}
         </div>

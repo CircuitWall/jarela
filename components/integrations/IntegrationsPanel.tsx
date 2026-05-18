@@ -25,13 +25,13 @@ export function IntegrationsPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Key size={14} className="text-zinc-400" />
-        <h2 className="text-sm font-semibold text-zinc-100 mr-auto">Integrations</h2>
+        <Key size={14} className="text-fg-subtle" />
+        <h2 className="text-sm font-semibold text-fg mr-auto">Integrations</h2>
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {loading && defs.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">Loading…</p>}
-        {!loading && defs.length === 0 && <p className="text-zinc-500 text-sm py-6 text-center">No integrations available.</p>}
+        {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
+        {!loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No integrations available.</p>}
         {defs.map((def) => (
           <IntegrationCard
             key={def.name}
@@ -189,10 +189,10 @@ function IntegrationCard({
   return (
     <div className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
       <div className="px-3 py-2.5 border-b border-border/60 flex items-start gap-2">
-        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-zinc-600"}`} />
+        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-zinc-100">{def.label}</h3>
-          <p className="text-[11px] text-zinc-500 mt-0.5 leading-snug">{def.description}</p>
+          <h3 className="text-sm font-medium text-fg">{def.label}</h3>
+          <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">{def.description}</p>
         </div>
       </div>
 
@@ -200,7 +200,7 @@ function IntegrationCard({
         {def.name === "gmail" && <GmailSetupGuide />}
         {def.name === "outlook" && <OutlookSetupGuide />}
         {def.fields.map((f) => (
-          <label key={f.key} className="block text-xs text-zinc-400">
+          <label key={f.key} className="block text-xs text-fg-subtle">
             {f.label}{f.required && <span className="text-rose-400 ml-0.5">*</span>}
             <input
               type={f.secret ? "password" : "text"}
@@ -214,7 +214,7 @@ function IntegrationCard({
                 }
               }}
               placeholder={f.placeholder}
-              className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-zinc-100 font-mono"
+              className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
             />
           </label>
         ))}
@@ -247,7 +247,7 @@ function IntegrationCard({
             onClick={test}
             disabled={testing || !configured}
             title={!configured ? "Save credentials first" : "Test the connection"}
-            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {testing ? <Loader2 size={11} className="animate-spin" /> : <ExternalLink size={11} />}
             Test
@@ -257,7 +257,7 @@ function IntegrationCard({
               onClick={() => connectOAuth("gmail")}
               disabled={connecting}
               title="Authorize Gmail + Calendar via Google OAuth — opens a browser window"
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
               {connecting ? "Waiting…" : "Connect Gmail"}
@@ -268,7 +268,7 @@ function IntegrationCard({
               onClick={() => connectOAuth("outlook")}
               disabled={connecting}
               title="Authorize Outlook + Calendar via Microsoft OAuth — opens a browser window"
-              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-zinc-300 hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
               {connecting ? "Waiting…" : "Connect Outlook"}
@@ -277,7 +277,7 @@ function IntegrationCard({
           {configured && (
             <button
               onClick={clear}
-              className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-zinc-500 hover:text-rose-400"
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-400"
               title="Remove saved credentials"
             >
               <Trash2 size={11} /> Clear
@@ -294,8 +294,8 @@ function IntegrationCard({
 // directly to the right page over screenshots.
 function GmailSetupGuide() {
   return (
-    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-zinc-300">
-      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-zinc-200 hover:bg-surface-3">
+    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-fg-muted">
+      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-fg hover:bg-surface-3">
         Setup guide (first-time only)
       </summary>
       <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
@@ -303,10 +303,10 @@ function GmailSetupGuide() {
           <strong>Upgrading from an earlier version?</strong> Click <strong>Connect Gmail</strong> again so
           Google can grant the new Calendar scope &mdash; otherwise calendar tools will fail with a 403.
         </p>
-        <p className="text-zinc-400">
-          You only need to do this once per Google account. The end result is a <code className="text-zinc-200">client_id</code>,
-          {" "}<code className="text-zinc-200">client_secret</code> pair you paste below. Then click
-          {" "}<strong className="text-zinc-200">Connect Gmail</strong> to authorize Gmail + Calendar access.
+        <p className="text-fg-subtle">
+          You only need to do this once per Google account. The end result is a <code className="text-fg">client_id</code>,
+          {" "}<code className="text-fg">client_secret</code> pair you paste below. Then click
+          {" "}<strong className="text-fg">Connect Gmail</strong> to authorize Gmail + Calendar access.
         </p>
 
         <Step n={1} title="Create or pick a Google Cloud project">
@@ -325,10 +325,10 @@ function GmailSetupGuide() {
           Set <strong>User type: External</strong>, fill in an app name and your email, save.
           Then in <Ext href="https://console.cloud.google.com/auth/scopes">Data Access → Scopes</Ext>{" "}
           click <strong>Add or remove scopes</strong> and add all three:
-          <ul className="list-disc ml-5 mt-1 text-zinc-400">
-            <li><code className="text-zinc-200">.../auth/gmail.modify</code></li>
-            <li><code className="text-zinc-200">.../auth/gmail.compose</code></li>
-            <li><code className="text-zinc-200">.../auth/calendar.events</code></li>
+          <ul className="list-disc ml-5 mt-1 text-fg-subtle">
+            <li><code className="text-fg">.../auth/gmail.modify</code></li>
+            <li><code className="text-fg">.../auth/gmail.compose</code></li>
+            <li><code className="text-fg">.../auth/calendar.events</code></li>
           </ul>
           Finally, in <Ext href="https://console.cloud.google.com/auth/audience">Audience</Ext>{" "}
           add your own Gmail address as a <strong>Test user</strong>. (Leaving the app in Testing
@@ -338,16 +338,16 @@ function GmailSetupGuide() {
         <Step n={4} title="Create the OAuth client (Desktop type)">
           Go to <Ext href="https://console.cloud.google.com/auth/clients">Clients</Ext> →{" "}
           <strong>Create client</strong>.
-          <ul className="list-disc ml-5 mt-1 text-zinc-400">
-            <li><strong>Application type:</strong> <span className="text-zinc-200">Desktop app</span>{" "}
+          <ul className="list-disc ml-5 mt-1 text-fg-subtle">
+            <li><strong>Application type:</strong> <span className="text-fg">Desktop app</span>{" "}
               (this matters — Web app types require pre-registering redirect URIs and will fail with
-              <code className="text-zinc-200"> redirect_uri_mismatch</code>).</li>
-            <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">Jarela</code>.</li>
+              <code className="text-fg"> redirect_uri_mismatch</code>).</li>
+            <li><strong>Name:</strong> anything, e.g. <code className="text-fg">Jarela</code>.</li>
           </ul>
           After it&apos;s created, copy the <strong>Client ID</strong> and <strong>Client secret</strong>{" "}
           shown in the popup (or click the download icon to get the JSON — the values are under{" "}
-          <code className="text-zinc-200">installed.client_id</code> /{" "}
-          <code className="text-zinc-200">installed.client_secret</code>).
+          <code className="text-fg">installed.client_id</code> /{" "}
+          <code className="text-fg">installed.client_secret</code>).
         </Step>
 
         <Step n={5} title="Paste and connect">
@@ -356,12 +356,12 @@ function GmailSetupGuide() {
           will close itself. Hit <strong>Test</strong> to confirm.
         </Step>
 
-        <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-zinc-500">
-          <strong className="text-zinc-400">Troubleshooting:</strong>
+        <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-fg-faint">
+          <strong className="text-fg-subtle">Troubleshooting:</strong>
           <ul className="list-disc ml-5 mt-1 space-y-0.5">
             <li><code>redirect_uri_mismatch</code> → your client is a <em>Web</em> app. Create a fresh
               one as <em>Desktop app</em> instead, or add{" "}
-              <code className="text-zinc-300">http://localhost:4312/api/v1/integrations/gmail/oauth/callback</code>{" "}
+              <code className="text-fg-muted">http://localhost:4312/api/v1/integrations/gmail/oauth/callback</code>{" "}
               to its Authorized redirect URIs.</li>
             <li><code>access_denied</code> → your Gmail address isn&apos;t in the Test users list
               (step 3, last paragraph).</li>
@@ -381,12 +381,12 @@ function GmailSetupGuide() {
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-2">
-      <div className="flex-none w-5 h-5 rounded-full bg-surface-3 border border-border text-[10px] text-zinc-300 flex items-center justify-center font-mono">
+      <div className="flex-none w-5 h-5 rounded-full bg-surface-3 border border-border text-[10px] text-fg-muted flex items-center justify-center font-mono">
         {n}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-zinc-200 font-medium">{title}</div>
-        <div className="text-zinc-400 mt-0.5">{children}</div>
+        <div className="text-fg font-medium">{title}</div>
+        <div className="text-fg-subtle mt-0.5">{children}</div>
       </div>
     </div>
   );
@@ -410,16 +410,16 @@ function Ext({ href, children }: { href: string; children: React.ReactNode }) {
 // link to the exact blade rather than describing breadcrumbs.
 function OutlookSetupGuide() {
   return (
-    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-zinc-300">
-      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-zinc-200 hover:bg-surface-3">
+    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-fg-muted">
+      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-fg hover:bg-surface-3">
         Setup guide (first-time only)
       </summary>
       <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
-        <p className="text-zinc-400">
+        <p className="text-fg-subtle">
           You only need to do this once per Microsoft account. The end result is an{" "}
-          <code className="text-zinc-200">Application (client) ID</code> +{" "}
-          <code className="text-zinc-200">client secret value</code> pair you paste below. Then click{" "}
-          <strong className="text-zinc-200">Connect Outlook</strong> to authorize Mail + Calendar access.
+          <code className="text-fg">Application (client) ID</code> +{" "}
+          <code className="text-fg">client secret value</code> pair you paste below. Then click{" "}
+          <strong className="text-fg">Connect Outlook</strong> to authorize Mail + Calendar access.
           Free &mdash; no Azure subscription required.
         </p>
 
@@ -432,17 +432,17 @@ function OutlookSetupGuide() {
 
         <Step n={2} title="Create the app registration">
           Open <Ext href="https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade/quickStartType~/null/isMSAApp~/true">App registrations &rarr; New registration</Ext>.
-          <ul className="list-disc ml-5 mt-1 text-zinc-400">
-            <li><strong>Name:</strong> anything, e.g. <code className="text-zinc-200">Jarela</code>.</li>
+          <ul className="list-disc ml-5 mt-1 text-fg-subtle">
+            <li><strong>Name:</strong> anything, e.g. <code className="text-fg">Jarela</code>.</li>
             <li><strong>Supported account types:</strong>{" "}
-              <span className="text-zinc-200">
+              <span className="text-fg">
                 Accounts in any organizational directory (Any Microsoft Entra ID tenant -
                 Multitenant) and personal Microsoft accounts
               </span>{" "}
               &mdash; this is the broadest option and works for both <code>@outlook.com</code> and
               work/school accounts.</li>
             <li><strong>Redirect URI:</strong> select <strong>Web</strong> and paste{" "}
-              <code className="text-zinc-200">{typeof window !== "undefined" ? window.location.origin : "http://localhost:4312"}/api/v1/integrations/outlook/oauth/callback</code>.{" "}
+              <code className="text-fg">{typeof window !== "undefined" ? window.location.origin : "http://localhost:4312"}/api/v1/integrations/outlook/oauth/callback</code>.{" "}
               Microsoft will reject the auth flow with <code>redirect_uri_mismatch</code> if this
               doesn&apos;t match exactly.</li>
           </ul>
@@ -454,7 +454,7 @@ function OutlookSetupGuide() {
           On the app&apos;s page, open <strong>Certificates &amp; secrets</strong> &rarr;{" "}
           <strong>Client secrets</strong> &rarr; <strong>New client secret</strong>. Pick a
           description and expiration (24 months is reasonable). Click <strong>Add</strong>.
-          {" "}<strong className="text-zinc-200">Immediately copy the &quot;Value&quot; column</strong>
+          {" "}<strong className="text-fg">Immediately copy the &quot;Value&quot; column</strong>
           {" "}&mdash; it&apos;s only shown once. (The &quot;Secret ID&quot; column is NOT the secret;
           ignore it.)
         </Step>
@@ -462,11 +462,11 @@ function OutlookSetupGuide() {
         <Step n={4} title="Add API permissions">
           Open <strong>API permissions</strong> &rarr; <strong>Add a permission</strong> &rarr;{" "}
           <strong>Microsoft Graph</strong> &rarr; <strong>Delegated permissions</strong>. Tick all four:
-          <ul className="list-disc ml-5 mt-1 text-zinc-400">
-            <li><code className="text-zinc-200">offline_access</code> &mdash; required for refresh tokens.</li>
-            <li><code className="text-zinc-200">User.Read</code> &mdash; basic profile for the Test button.</li>
-            <li><code className="text-zinc-200">Mail.ReadWrite</code> &mdash; search/read/draft/move mail.</li>
-            <li><code className="text-zinc-200">Calendars.ReadWrite</code> &mdash; manage calendar events.</li>
+          <ul className="list-disc ml-5 mt-1 text-fg-subtle">
+            <li><code className="text-fg">offline_access</code> &mdash; required for refresh tokens.</li>
+            <li><code className="text-fg">User.Read</code> &mdash; basic profile for the Test button.</li>
+            <li><code className="text-fg">Mail.ReadWrite</code> &mdash; search/read/draft/move mail.</li>
+            <li><code className="text-fg">Calendars.ReadWrite</code> &mdash; manage calendar events.</li>
           </ul>
           Click <strong>Add permissions</strong>. Personal accounts grant these themselves at the
           consent screen. Work/school accounts may require admin consent &mdash; if you&apos;re not
@@ -480,8 +480,8 @@ function OutlookSetupGuide() {
           the tab will close itself. Hit <strong>Test</strong> to confirm.
         </Step>
 
-        <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-zinc-500">
-          <strong className="text-zinc-400">Troubleshooting:</strong>
+        <div className="mt-2 pt-2 border-t border-border/60 text-[11px] text-fg-faint">
+          <strong className="text-fg-subtle">Troubleshooting:</strong>
           <ul className="list-disc ml-5 mt-1 space-y-0.5">
             <li><code>redirect_uri_mismatch</code> / <code>AADSTS50011</code> &rarr; the redirect
               URI on your Azure app doesn&apos;t exactly match the one Jarela sent. Compare

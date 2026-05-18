@@ -69,7 +69,7 @@ export function AgentSelector({ value, onChange, disabled }: Props) {
           </div>
         ) : null}
         <select
-          className="flex-1 bg-surface-3 text-zinc-100 text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+          className="flex-1 bg-surface-3 text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled || agents.length === 0}
