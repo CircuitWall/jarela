@@ -165,7 +165,7 @@ function BridgeRow({
 
         <button
           onClick={(e) => { e.stopPropagation(); void onDelete(); }}
-          className="p-1.5 rounded text-fg-faint hover:text-rose-400 hover:bg-surface-3"
+          className="p-1.5 rounded text-fg-faint hover:text-rose-700 dark:hover:text-rose-400 hover:bg-surface-3"
           title="Delete"
         >
           <Trash2 size={13} />
@@ -177,10 +177,10 @@ function BridgeRow({
 
 export function StatusPill({ status }: { status: Bridge["status"] }) {
   const cfg = {
-    connected:    { label: "connected",    cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30", icon: <CheckCircle2 size={9} /> },
-    pairing:      { label: "pairing",      cls: "bg-sky-500/15 text-sky-300 border-sky-500/30",              icon: <Loader2 size={9} className="animate-spin" /> },
+    connected:    { label: "connected",    cls: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30", icon: <CheckCircle2 size={9} /> },
+    pairing:      { label: "pairing",      cls: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",              icon: <Loader2 size={9} className="animate-spin" /> },
     disconnected: { label: "disconnected", cls: "bg-fg-faint/15 text-fg-subtle border-fg-faint/30",          icon: <RefreshCw size={9} /> },
-    error:        { label: "error",        cls: "bg-rose-500/15 text-rose-300 border-rose-500/30",          icon: <AlertCircle size={9} /> },
+    error:        { label: "error",        cls: "bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30",          icon: <AlertCircle size={9} /> },
   }[status];
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9px] uppercase tracking-wide font-semibold ${cfg.cls}`}>

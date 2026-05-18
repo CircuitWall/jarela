@@ -60,9 +60,9 @@ export function ApprovalsBanner({
     <div className="mx-4 mb-2 rounded-lg border border-amber-700/60 bg-amber-950/30 overflow-hidden">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-200 hover:bg-amber-900/20 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 hover:bg-amber-900/20 transition-colors"
       >
-        <ShieldAlert size={13} className="text-amber-400 shrink-0" />
+        <ShieldAlert size={13} className="text-amber-700 dark:text-amber-400 shrink-0" />
         <span className="font-medium">
           {pending.length} {pending.length === 1 ? "change" : "changes"} awaiting your approval
         </span>
@@ -76,10 +76,10 @@ export function ApprovalsBanner({
             return (
               <div key={a.id} className="px-3 py-2.5 text-xs">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="font-mono uppercase tracking-wide text-[10px] text-amber-400/80">{a.kind}</span>
+                  <span className="font-mono uppercase tracking-wide text-[10px] text-amber-700 dark:text-amber-400/80">{a.kind}</span>
                   {a.reason && <span className="text-amber-100/90">{a.reason}</span>}
                 </div>
-                <pre className="text-[11px] text-amber-200/70 font-mono whitespace-pre-wrap break-words bg-amber-950/40 rounded p-2 mb-2">
+                <pre className="text-[11px] text-amber-800 dark:text-amber-200/70 font-mono whitespace-pre-wrap break-words bg-amber-950/40 rounded p-2 mb-2">
                   {JSON.stringify(a.payload, null, 2)}
                 </pre>
                 <div className="flex gap-1.5 justify-end">

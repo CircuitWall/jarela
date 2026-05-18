@@ -109,7 +109,7 @@ export function BridgeEditor({
           )}
 
           {(live?.last_error || bridge.last_error) && (
-            <p className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded px-2 py-1">
+            <p className="text-[11px] text-rose-700 dark:text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded px-2 py-1">
               {live?.last_error ?? bridge.last_error}
             </p>
           )}
@@ -305,7 +305,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                 </button>
               </div>
               {!chatsRunning && (
-                <p className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+                <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
                   Bridge isn&apos;t running — enable it to load your WhatsApp chats.
                 </p>
               )}
@@ -339,7 +339,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                     yourself) by phone number — country code + digits, no spaces required.
                   </p>
                   {searchMsg && (
-                    <p className="text-[11px] text-amber-300">{searchMsg}</p>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300">{searchMsg}</p>
                   )}
                 </>
               )}
@@ -370,7 +370,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                       }`}
                     >
                       <span className={`w-5 h-5 rounded shrink-0 flex items-center justify-center ${
-                        c.is_group ? "bg-violet-500/20 text-violet-300" : "bg-emerald-500/20 text-emerald-300"
+                        c.is_group ? "bg-violet-500/20 text-violet-700 dark:text-violet-300" : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
                       }`}>
                         {c.is_group ? <Users size={10} /> : <span className="text-[10px] font-bold">{(c.name ?? "?").charAt(0).toUpperCase()}</span>}
                       </span>
@@ -430,7 +430,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             />
           </div>
 
-          {error && <p className="text-[11px] text-rose-300">{error}</p>}
+          {error && <p className="text-[11px] text-rose-700 dark:text-rose-300">{error}</p>}
           <div className="flex gap-2">
             <button
               onClick={onAdd}
@@ -516,7 +516,7 @@ function RouteRow({
         </select>
         <button
           onClick={() => void onDelete()}
-          className="p-1 rounded text-fg-faint hover:text-rose-400 hover:bg-surface-3"
+          className="p-1 rounded text-fg-faint hover:text-rose-700 dark:hover:text-rose-400 hover:bg-surface-3"
           title="Delete route"
         >
           <Trash2 size={11} />

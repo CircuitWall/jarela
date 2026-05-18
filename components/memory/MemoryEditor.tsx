@@ -63,7 +63,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
               placeholder='{"key": "value"}'
             />
           </label>
-          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 px-4 pb-4">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>

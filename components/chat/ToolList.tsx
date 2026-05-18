@@ -39,7 +39,7 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
             {callCount} tool{callCount === 1 ? "" : "s"}
           </span>
           {errorCount > 0 && (
-            <span className="font-mono uppercase tracking-wide shrink-0 text-rose-400/80">
+            <span className="font-mono uppercase tracking-wide shrink-0 text-rose-700 dark:text-rose-400/80">
               · {errorCount} error{errorCount === 1 ? "" : "s"}
             </span>
           )}
@@ -68,8 +68,8 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
         const summary = previewPayload(event.payload);
         const isError = isErrorPayload(event.payload);
         const verbColor = event.phase === "call"
-          ? "text-sky-400/70"
-          : isError ? "text-rose-400/80" : "text-emerald-400/70";
+          ? "text-sky-700 dark:text-sky-400/70"
+          : isError ? "text-rose-700 dark:text-rose-400/80" : "text-emerald-700 dark:text-emerald-400/70";
         return (
           <div key={key} className="min-w-0 max-w-full">
             <button

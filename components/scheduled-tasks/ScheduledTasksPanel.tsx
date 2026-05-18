@@ -107,8 +107,8 @@ function TaskCard({
       >
         <div className="flex items-start gap-2">
           {isCron
-            ? <Repeat size={12} className="mt-1 text-violet-400 shrink-0" />
-            : <Clock size={12} className="mt-1 text-sky-400 shrink-0" />}
+            ? <Repeat size={12} className="mt-1 text-violet-700 dark:text-violet-400 shrink-0" />
+            : <Clock size={12} className="mt-1 text-sky-700 dark:text-sky-400 shrink-0" />}
           <div className="flex-1 min-w-0">
             <p className="text-sm text-fg truncate">{task.prompt}</p>
             <div className="flex items-center gap-2 mt-1 text-[11px] text-fg-faint flex-wrap">
@@ -116,7 +116,7 @@ function TaskCard({
                 {isCron ? task.schedule : new Date(task.schedule).toLocaleString()}
               </span>
               <span>·</span>
-              <span className={overdue ? "text-amber-400" : ""}>
+              <span className={overdue ? "text-amber-700 dark:text-amber-400" : ""}>
                 {overdue ? "overdue" : `next: ${nextRun}`}
               </span>
               {agent && (
@@ -159,11 +159,11 @@ function TaskCard({
           )}
           <Row label="Status">
             {task.last_error ? (
-              <span className="inline-flex items-center gap-1 text-rose-400">
+              <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-400">
                 <AlertCircle size={11} /> error
               </span>
             ) : task.enabled ? (
-              <span className="inline-flex items-center gap-1 text-emerald-400">
+              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
                 <CheckCircle2 size={11} /> active
               </span>
             ) : (
@@ -172,7 +172,7 @@ function TaskCard({
           </Row>
           {task.last_error && (
             <Row label="Error">
-              <pre className="whitespace-pre-wrap break-words text-rose-300/90">{task.last_error}</pre>
+              <pre className="whitespace-pre-wrap break-words text-rose-700 dark:text-rose-300/90">{task.last_error}</pre>
             </Row>
           )}
           <div className="flex justify-end pt-1 gap-2">
@@ -183,14 +183,14 @@ function TaskCard({
                 try { await onRunNow(); } finally { setRunning(false); }
               }}
               disabled={running}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
               title="Trigger this task now to preview the notification + content. Cron tasks still continue on their normal schedule."
             >
               <Play size={11} /> {running ? "Running…" : "Run now"}
             </button>
             <button
               onClick={onCancel}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-400 hover:border-rose-700"
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-700"
             >
               <Trash2 size={11} /> Cancel task
             </button>

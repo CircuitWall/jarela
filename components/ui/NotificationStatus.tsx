@@ -81,8 +81,8 @@ export function NotificationStatus() {
     <div className="absolute top-9 left-0 right-0 z-30 mx-auto max-w-2xl px-4 mt-2 pointer-events-none">
       <div className="pointer-events-auto rounded-lg border border-amber-700/60 bg-amber-950/40 backdrop-blur px-3 py-2 flex items-center gap-2 shadow-lg">
         {status === "denied"
-          ? <BellOff size={14} className="text-rose-400 shrink-0" />
-          : <Bell size={14} className="text-amber-400 shrink-0" />}
+          ? <BellOff size={14} className="text-rose-700 dark:text-rose-400 shrink-0" />
+          : <Bell size={14} className="text-amber-700 dark:text-amber-400 shrink-0" />}
         <p className="text-xs text-fg mr-auto">
           {status === "denied"
             ? "OS notifications are blocked. In-app pop-ups still work; for system-level alerts when Jarela isn't focused, allow Notifications via the lock icon in the URL bar."
@@ -97,7 +97,7 @@ export function NotificationStatus() {
           </button>
         )}
         {testFired && (
-          <span className="text-[10px] text-emerald-400">test sent</span>
+          <span className="text-[10px] text-emerald-700 dark:text-emerald-400">test sent</span>
         )}
         <button onClick={dismiss} className="p-1 text-fg-subtle hover:text-fg" title="Dismiss">
           <X size={12} />

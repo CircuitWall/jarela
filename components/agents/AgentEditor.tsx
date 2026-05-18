@@ -155,7 +155,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 </button>
                 <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleIconFile} />
                 {icon && (
-                  <button onClick={() => setIcon(null)} className="text-[10px] text-fg-faint hover:text-red-400 mt-0.5 block">
+                  <button onClick={() => setIcon(null)} className="text-[10px] text-fg-faint hover:text-red-700 dark:hover:text-red-400 mt-0.5 block">
                     Remove
                   </button>
                 )}
@@ -215,7 +215,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               </p>
             )}
             {models.length === 0 && (
-              <p className="text-[11px] text-amber-400">No model configs yet — go to the Models panel to add one first.</p>
+              <p className="text-[11px] text-amber-700 dark:text-amber-400">No model configs yet — go to the Models panel to add one first.</p>
             )}
           </Section>
 
@@ -252,7 +252,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
             )}
           </Section>
 
-          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
         </div>
 
         <div className="flex items-center justify-between px-4 pb-4">
