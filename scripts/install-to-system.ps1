@@ -17,7 +17,8 @@
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Jarela'),
   [switch]$SkipBuild,
-  [switch]$NoStart
+  [switch]$NoStart,
+  [switch]$SkipTailscale
 )
 
 $ErrorActionPreference = 'Stop'
@@ -250,6 +251,19 @@ if (-not $NoStart) {
   Start-Sleep -Seconds 2
   Info "Tail the log to watch boot:"
   Info ("  Get-Content `"" + (Join-Path $env:LOCALAPPDATA 'Jarela\logs\app.log') + "`" -Tail 30 -Wait")
+}
+
+# ── 7. Optional: configure tailscale serve for remote access ─────────────────
+if (-not $SkipTailscale) {
+  $tsScript = Join-Path $RepoRoot 'scripts\install-tailscale-serve.ps1'
+  if (Test-Path $tsScript) {
+    Step "Configuring tailscale serve (skip with -SkipTailscale)"
+    try {
+      & powershell -NoProfile -ExecutionPolicy Bypass -File $tsScript -Port 4312
+    } catch {
+      Info ("  tailscale serve setup skipped: " + $_.Exception.Message)
+    }
+  }
 }
 
 Write-Host ""

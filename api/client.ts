@@ -263,6 +263,10 @@ export const api = {
         ),
     },
   },
+
+  tailscale: {
+    status: () => request<import("./types").TailscaleStatus>("/tailscale"),
+  },
 };
 
 

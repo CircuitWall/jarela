@@ -20,13 +20,13 @@ import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { Toaster } from "@/components/ui/Toaster";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
-import { GearPanel } from "./GearPanel";
+import { MenuPanel } from "./MenuPanel";
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(state.activeAgentId);
 
-  const [showGear, setShowGear] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   const [showTools, setShowTools] = useState(true);
   const [showThinking, setShowThinking] = useState(true);
 
@@ -55,7 +55,7 @@ export function AppShell() {
   stateRef.current = state;
 
   // Stable callback references — without these, AppShell re-renders (e.g. on
-  // gear toggle, unread counter clearing) hand ChatView fresh function
+  // menu toggle, unread counter clearing) hand ChatView fresh function
   // identities. ChatView's hooks re-derive cascading useCallbacks (handleDone
   // → useSSE.consume → useSSE.attach), and effects keyed on `attach` re-fire,
   // forcing a message refetch + chat-window scroll. Stable refs break the cascade.
@@ -164,8 +164,8 @@ export function AppShell() {
           <span className="text-fg font-semibold tracking-tight">Jarela</span>
         </div>
         <button
-          onClick={() => { setShowGear((v) => !v); }}
-          className={`ml-auto relative p-2 rounded transition-colors ${showGear ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
+          onClick={() => { setShowMenu((v) => !v); }}
+          className={`ml-auto relative p-2 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
           <Menu size={18} />
@@ -247,21 +247,21 @@ export function AppShell() {
           </Activity>
         )}
 
-        {showGear && (
-          <div className="absolute inset-0 bg-black/40 z-10" onClick={() => setShowGear(false)} />
+        {showMenu && (
+          <div className="absolute inset-0 bg-black/40 z-10" onClick={() => setShowMenu(false)} />
         )}
 
-        {showGear && (
-          <GearPanel
+        {showMenu && (
+          <MenuPanel
             activeTab={state.activeTab}
             agentId={state.activeAgentId}
             showTools={showTools}
             showThinking={showThinking}
-            onClose={() => setShowGear(false)}
+            onClose={() => setShowMenu(false)}
             onAgentChange={(agentId) => dispatch({ type: "SET_AGENT", agentId })}
             onSetTab={(tab) => {
               dispatch({ type: "SET_TAB", tab });
-              setShowGear(false);
+              setShowMenu(false);
             }}
             onShowToolsChange={setShowTools}
             onShowThinkingChange={setShowThinking}
