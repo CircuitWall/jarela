@@ -169,8 +169,13 @@ The `tailscale serve` recipe is now the standard single-port
 HTTPS-passthrough form, with no magic path:
 
 ```sh
-tailscale serve --bg https+insecure://localhost:4312
+tailscale serve --bg http://localhost:4312
 ```
+
+(The backend scheme is `http://` because Jarela's Next.js server speaks
+plain HTTP on loopback. `https+insecure://` is for self-signed HTTPS
+backends and would yield a 502 from `tailscale serve` against an HTTP
+server.)
 
 `JARELA_WS_PORT` is no longer read. Setting it has no effect; the
 variable is dropped from `.env.example` and the README ports table.
