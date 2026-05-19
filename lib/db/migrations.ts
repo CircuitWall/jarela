@@ -137,6 +137,19 @@ export function runMigrations(db: DatabaseSync): void {
       UNIQUE(agent_id)                                 -- one route per agent: chats never interleave inside one agent's thread
     );
     CREATE INDEX IF NOT EXISTS idx_bridge_routes_bridge ON bridge_routes(bridge_id);
+    -- HTTP/HTTPS proxy configuration (ADR-0009). Single-row table; the
+    -- CHECK constraint enforces it. Non-secret fields are plaintext for
+    -- diagnostics; password goes through lib/crypto/envelope.ts.
+    CREATE TABLE IF NOT EXISTS proxy_config (
+      id          INTEGER PRIMARY KEY CHECK (id = 1),
+      mode        TEXT    NOT NULL CHECK (mode IN ('off', 'manual', 'system')),
+      host        TEXT,
+      port        INTEGER,
+      username    TEXT,
+      password    TEXT,                                  -- envelope-encrypted (enc:v1:…)
+      no_proxy    TEXT,
+      updated_at  TEXT    NOT NULL
+    );
   `);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);
