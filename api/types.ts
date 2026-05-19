@@ -354,6 +354,43 @@ export interface BridgeChatsResponse {
   chats: BridgeChat[];
 }
 
+// ---------------------------------------------------------------------------
+// Proxy configuration (ADR-0009)
+// ---------------------------------------------------------------------------
+
+export type ProxyMode = "off" | "manual" | "system";
+
+export interface ProxyConfigStatus {
+  mode: ProxyMode;
+  host: string | null;
+  port: number | null;
+  username: string | null;
+  password: string | null;          // SECRET_MASK ("********") when set, null when unset
+  no_proxy: string | null;
+  updated_at: string | null;
+}
+
+export interface ProxyConfigInput {
+  mode: ProxyMode;
+  host?: string | null;
+  port?: number | null;
+  username?: string | null;
+  password?: string | null;          // omit or send SECRET_MASK to keep existing
+  no_proxy?: string | null;
+}
+
+export interface ProxyApplyResult {
+  source: "env" | "manual" | "system" | "off";
+  proxyUrl: string | null;           // password redacted as "***"
+  note?: string;
+}
+
+export interface ProxyConfigEnvelope {
+  config: ProxyConfigStatus;
+  env_override: boolean;             // true when HTTPS_PROXY env var was set at boot — DB config is ignored
+  applied?: ProxyApplyResult;        // present on PUT/DELETE responses
+}
+
 export interface TailscaleStatus {
   installed: boolean;
   logged_in: boolean;
