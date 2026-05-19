@@ -4,7 +4,7 @@ import { runMigrations } from "./migrations";
 import { getDataDir } from "./data-dir";
 import { initMasterKey } from "@/lib/crypto/master-key";
 import { runCryptoMigration } from "@/lib/crypto/migrate";
-import "@/lib/network"; // configure undici proxy dispatcher from env
+import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var dispatcher applied at module load; DB layer applied below
 
 export const DB_PATH = join(getDataDir(), "jarela.db");
 
@@ -30,6 +30,13 @@ export function getDb(): DatabaseSync {
     // the four secret-bearing surfaces with enc:v1: envelopes. Idempotent.
     runCryptoMigration(db);
     _db = db; // only assign after migrations succeed
+    // Layer DB-backed proxy config on top of the env-var dispatcher
+    // (ADR-0009). Fire-and-forget — keeps getDb() synchronous so existing
+    // call sites stay unchanged. Errors are logged but don't break boot;
+    // worst case we fall back to direct connection.
+    applyProxyConfigFromDb().catch((err) =>
+      console.warn("[jarela/proxy] applyProxyConfigFromDb failed at boot:", err),
+    );
   }
   return _db;
 }
