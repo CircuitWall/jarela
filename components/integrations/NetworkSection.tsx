@@ -1,13 +1,13 @@
 "use client";
 import { Globe, Loader2, Save, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { ProxyApplyResult, ProxyConfigEnvelope, ProxyMode } from "@/api/types";
+import type { ProxyApplyResult, ProxyConfigEnvelope, ProxyMode, ProxyScheme } from "@/api/types";
 
 const SECRET_MASK = "********";
 
-// Network / proxy configuration card (ADR-0009). Lives inside the
-// Integrations tab so all credential-bearing config sits in one place
+// Network / proxy configuration card (ADR-0009, ADR-0012). Lives inside
+// the Integrations tab so all credential-bearing config sits in one place
 // rather than getting its own top-level menu entry.
 export function NetworkSection() {
   const [env, setEnv] = useState<ProxyConfigEnvelope | null>(null);
@@ -18,11 +18,18 @@ export function NetworkSection() {
 
   // Editable form state. Re-seeded from server on load and after save.
   const [mode, setMode] = useState<ProxyMode>("off");
+  const [scheme, setScheme] = useState<ProxyScheme>("http");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [noProxy, setNoProxy] = useState("");
+  // CA bundle: caBundle holds the PEM text (in-memory only between
+  // save/load); caLabel describes its origin so the user can see
+  // "Loaded: corp-ca.pem" or "Saved CA bundle (1.2 KB)" after a reload.
+  const [caBundle, setCaBundle] = useState<string | null>(null);
+  const [caLabel, setCaLabel] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
     setLoading(true);
@@ -40,11 +47,14 @@ export function NetworkSection() {
   function seed(r: ProxyConfigEnvelope) {
     const c = r.config;
     setMode(c.mode);
+    setScheme(c.scheme);
     setHost(c.host ?? "");
     setPort(c.port != null ? String(c.port) : "");
     setUsername(c.username ?? "");
     setPassword(c.password ?? "");
     setNoProxy(c.no_proxy ?? "");
+    setCaBundle(c.ca_bundle ?? null);
+    setCaLabel(c.ca_bundle ? `Saved CA bundle (${humanBytes(c.ca_bundle.length)})` : null);
   }
 
   useEffect(() => { void load(); }, []);
@@ -55,11 +65,13 @@ export function NetworkSection() {
     try {
       const r = await api.proxy.save({
         mode,
+        scheme,
         host: host.trim() || null,
         port: port.trim() ? Number.parseInt(port, 10) : null,
         username: username.trim() || null,
         password: password.length > 0 ? password : null,
         no_proxy: noProxy.trim() || null,
+        ca_bundle: caBundle && caBundle.length > 0 ? caBundle : null,
       });
       setEnv(r);
       seed(r);
@@ -82,6 +94,32 @@ export function NetworkSection() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  async function onCaFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      if (!text.includes("-----BEGIN CERTIFICATE-----")) {
+        setError(`${file.name} does not contain a PEM certificate (no BEGIN CERTIFICATE block).`);
+        return;
+      }
+      setCaBundle(text);
+      setCaLabel(`Loaded: ${file.name}`);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      // Reset the input so the same file can be picked again after removal.
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function removeCa() {
+    setCaBundle(null);
+    setCaLabel(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   const envOverride = env?.env_override ?? false;
@@ -127,7 +165,7 @@ export function NetworkSection() {
 
             {mode === "manual" && (
               <>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <label className="col-span-2 block text-xs text-fg-subtle">
                     Host
                     <input
@@ -147,6 +185,17 @@ export function NetworkSection() {
                       placeholder="8080"
                       className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
                     />
+                  </label>
+                  <label className="block text-xs text-fg-subtle">
+                    Scheme
+                    <select
+                      value={scheme}
+                      onChange={(e) => setScheme(e.target.value as ProxyScheme)}
+                      className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
+                    >
+                      <option value="http">http</option>
+                      <option value="https">https</option>
+                    </select>
                   </label>
                 </div>
 
@@ -182,16 +231,42 @@ export function NetworkSection() {
             )}
 
             {mode !== "off" && (
-              <label className="block text-xs text-fg-subtle">
-                No proxy (comma-separated, optional)
-                <input
-                  type="text"
-                  value={noProxy}
-                  onChange={(e) => setNoProxy(e.target.value)}
-                  placeholder="localhost,127.0.0.1,.internal"
-                  className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-                />
-              </label>
+              <>
+                <label className="block text-xs text-fg-subtle">
+                  No proxy (comma-separated, optional)
+                  <input
+                    type="text"
+                    value={noProxy}
+                    onChange={(e) => setNoProxy(e.target.value)}
+                    placeholder="localhost,127.0.0.1,.internal"
+                    className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+                  />
+                </label>
+
+                <div className="block text-xs text-fg-subtle">
+                  CA bundle (optional — for proxies that intercept TLS with an internal CA)
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pem,.crt,.cer,.cert,application/x-x509-ca-cert,application/x-pem-file"
+                      onChange={onCaFile}
+                      className="text-[11px] text-fg-faint file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-surface-3 file:text-fg file:text-[11px] file:cursor-pointer"
+                    />
+                    {caLabel && (
+                      <span className="inline-flex items-center gap-2 text-[11px] text-fg-muted">
+                        <code className="text-fg">{caLabel}</code>
+                        <button
+                          onClick={removeCa}
+                          className="text-rose-700 dark:text-rose-400 hover:underline"
+                        >
+                          remove
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
 
             {error && (
@@ -232,4 +307,10 @@ export function NetworkSection() {
       </div>
     </div>
   );
+}
+
+function humanBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }

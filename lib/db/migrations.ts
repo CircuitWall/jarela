@@ -143,11 +143,13 @@ export function runMigrations(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS proxy_config (
       id          INTEGER PRIMARY KEY CHECK (id = 1),
       mode        TEXT    NOT NULL CHECK (mode IN ('off', 'manual', 'system')),
+      scheme      TEXT    NOT NULL DEFAULT 'http',         -- 'http' | 'https' (proxy hop scheme, ADR-0012)
       host        TEXT,
       port        INTEGER,
       username    TEXT,
-      password    TEXT,                                  -- envelope-encrypted (enc:v1:…)
+      password    TEXT,                                    -- envelope-encrypted (enc:v1:…)
       no_proxy    TEXT,
+      ca_bundle   TEXT,                                    -- PEM, plaintext (public cert, ADR-0012)
       updated_at  TEXT    NOT NULL
     );
   `);
@@ -156,6 +158,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureTaskAssignmentColumns(db);
   ensureEmbeddingColumns(db);
   ensureUserProfileLocationColumns(db);
+  ensureProxyConfigSchemeAndCaBundle(db);
   ensureThreadsAgentIdUnique(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
@@ -181,6 +184,16 @@ function ensureEmbeddingColumns(db: DatabaseSync): void {  // Embeddings stored 
     // text, which loses arguments + results on reload.
     db.exec("ALTER TABLE messages ADD COLUMN tool_events TEXT");
   }
+}
+
+function ensureProxyConfigSchemeAndCaBundle(db: DatabaseSync): void {
+  // ADR-0012. Adds scheme (http|https for the proxy hop) and ca_bundle
+  // (PEM for proxies that MITM TLS with an internal CA). CA bundle is a
+  // public cert and stored plaintext; password remains envelope-wrapped.
+  const cols = db.prepare("PRAGMA table_info(proxy_config)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("scheme"))    db.exec("ALTER TABLE proxy_config ADD COLUMN scheme TEXT NOT NULL DEFAULT 'http'");
+  if (!names.has("ca_bundle")) db.exec("ALTER TABLE proxy_config ADD COLUMN ca_bundle TEXT");
 }
 
 function ensureUserProfileLocationColumns(db: DatabaseSync): void {
