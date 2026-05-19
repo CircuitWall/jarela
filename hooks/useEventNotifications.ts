@@ -124,6 +124,19 @@ export function useEventNotifications(options: Options) {
         ) return;
         lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
         saveLastTs(lastTsRef.current);
+        // Broadcast a thread-updated event regardless of whether we'll
+        // surface a toast / OS notification. Other tabs / devices that
+        // have the chat open for the same thread need to refetch their
+        // message list even when shouldNotify() suppresses the ping
+        // (e.g. the user is actively viewing this agent on the PC while
+        // sending the message from iOS — without this they had to refresh
+        // the chat window to see what they typed on the phone).
+        const evThreadId = (ev as { thread_id?: string }).thread_id;
+        if (evThreadId && typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+            detail: { thread_id: evThreadId, agent_id: ev.agent_id ?? null },
+          }));
+        }
         handleEvent(ev);
       };
 

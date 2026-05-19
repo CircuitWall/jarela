@@ -132,16 +132,29 @@ export function AppShell() {
   return (
     <div className="h-screen h-[100dvh] flex flex-col bg-surface text-fg overflow-hidden px-safe">
       <TopProgressBar />
-      <CryptoFallbackBanner />
       <NotificationStatus />
       <Toaster />
+      {/*
+        Spacer reserving the slot the floating header visually occupies.
+        Keeps the flex layout intact so panel content doesn't slide under
+        the bar — the bar itself is `fixed` (like TopProgressBar) so it
+        always sits on top of scrolling content with a glassy backdrop.
+      */}
+      <div
+        className="shrink-0"
+        aria-hidden
+        style={{ height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)" }}
+      />
+      <CryptoFallbackBanner />
       <header
-        className="flex items-center px-4 border-b border-border bg-surface-2 shrink-0"
+        className="fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border bg-surface-2/80 backdrop-blur supports-[backdrop-filter]:bg-surface-2/70"
         style={{
           // Extra 0.5rem above safe-area so the logo doesn't crowd the
           // Dynamic Island / camera cutout on iPhone Pro models. The
           // outer shell handles left/right safe-area insets for landscape.
           paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
+          paddingLeft: "calc(env(safe-area-inset-left) + 1rem)",
+          paddingRight: "calc(env(safe-area-inset-right) + 1rem)",
           height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)",
         }}
       >
