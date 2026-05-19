@@ -207,3 +207,50 @@ export async function getGoogleAccessToken(
     return { error: `OAuth token refresh threw: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
+
+/**
+ * Shared bearer-auth fetch for Google REST APIs (Gmail, Calendar, ...).
+ *
+ * Behaviour:
+ *   - Resolves access token from `auth`; if that fails, the error object is
+ *     surfaced unchanged so callers can pass it back to the agent.
+ *   - 204 No Content → `{ ok: true }` (used by DELETE endpoints).
+ *   - Non-2xx response → `{ error: "<service> <status>: <body slice>", url }`.
+ *   - 2xx with body → parsed JSON if possible, raw text otherwise.
+ *   - Fetch throws (DNS, abort, timeout) → `{ error: "<service> fetch threw: ..." }`.
+ *
+ * @param service Short tag used in error messages, e.g. "Gmail" or "Calendar".
+ * @param baseUrl Base for relative `path` (e.g. `https://gmail.googleapis.com/gmail/v1/users/me`).
+ * @param path Either a full URL (starts with `http`) or path appended to baseUrl.
+ */
+export async function googleFetch(
+  auth: GoogleAuth,
+  service: string,
+  baseUrl: string,
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
+  const token = await getGoogleAccessToken(auth);
+  if (typeof token !== "string") return token;
+  const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (res.status === 204) return { ok: true };
+    const text = await res.text();
+    if (!res.ok) {
+      return { error: `${service} ${res.status}: ${text.slice(0, 500)}`, url };
+    }
+    try { return JSON.parse(text); } catch { return text; }
+  } catch (err) {
+    return { error: `${service} fetch threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
