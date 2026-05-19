@@ -16,11 +16,13 @@ import { applyProxyConfigFromDb, envProxyWasSetAtBoot } from "@/lib/proxy/dispat
 
 const InputSchema = z.object({
   mode: z.enum(["off", "manual", "system"]),
+  scheme: z.enum(["http", "https"]).optional().default("http"),
   host: z.string().nullish(),
   port: z.number().int().positive().max(65535).nullish(),
   username: z.string().nullish(),
   password: z.string().nullish(),
   no_proxy: z.string().nullish(),
+  ca_bundle: z.string().nullish(),
 });
 
 export function GET() {
