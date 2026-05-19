@@ -12,6 +12,7 @@ import { webFetchTool } from "./fetch";
 import { generateImageTool } from "./generate_image";
 import { scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool } from "./schedule";
 import { proposeConfigChangeTool, checkProposalTool } from "./propose";
+import { listIntegrationsTool, getIntegrationSetupTool } from "./integrations";
 import {
   jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
   confluenceSearchTool, confluenceGetPageTool,
@@ -64,6 +65,8 @@ const ALL_TOOLS: StructuredToolInterface[] = [
   cancelScheduledTaskTool,
   proposeConfigChangeTool,
   checkProposalTool,
+  listIntegrationsTool,
+  getIntegrationSetupTool,
   jiraSearchTool,
   jiraGetIssueTool,
   jiraCreateIssueTool,
@@ -128,6 +131,8 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   cancel_scheduled_task: "Schedule",
   propose_config_change: "Config",
   check_proposal: "Config",
+  list_integrations: "Config",
+  get_integration_setup: "Config",
   jira_search: "Atlassian",
   jira_get_issue: "Atlassian",
   jira_create_issue: "Atlassian",
