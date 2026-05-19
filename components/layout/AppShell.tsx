@@ -159,8 +159,12 @@ export function AppShell() {
         }}
       >
         <div className="flex items-center gap-2 select-none">
+          {/* Logo is blue-on-transparent. In dark mode the blue gets lost
+              against the dark glass, so we drop the color and lift the
+              alpha to white — `brightness-0` flattens to black, `invert`
+              flips it to white, alpha channel is preserved by both. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto" />
+          <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto dark:brightness-0 dark:invert" />
           <span className="text-fg font-semibold tracking-tight">Jarela</span>
         </div>
         <button
