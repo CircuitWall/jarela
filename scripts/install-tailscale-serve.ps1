@@ -27,14 +27,19 @@ function Info([string]$msg) { Write-Host ("    " + $msg) -ForegroundColor DarkGr
 function Warn([string]$msg) { Write-Host ("    " + $msg) -ForegroundColor Yellow }
 
 # ── 1. Locate tailscale.exe ────────────────────────────────────────────────
-$tailscale = (Get-Command tailscale.exe -ErrorAction SilentlyContinue)?.Source
-if (-not $tailscale) {
+function Find-Tailscale {
+  $cmd = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
   $candidates = @(
     (Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'),
     (Join-Path ${env:ProgramFiles(x86)} 'Tailscale\tailscale.exe')
-  ) | Where-Object { $_ -and (Test-Path $_) }
-  if ($candidates.Count -gt 0) { $tailscale = $candidates[0] }
+  )
+  foreach ($c in $candidates) {
+    if ($c -and (Test-Path $c)) { return $c }
+  }
+  return $null
 }
+$tailscale = Find-Tailscale
 if (-not $tailscale) {
   Write-Host "tailscale.exe not found on PATH or under Program Files." -ForegroundColor Red
   Write-Host "Install Tailscale from https://tailscale.com/download/windows and run" -ForegroundColor Red
@@ -70,6 +75,13 @@ Info ("port:  " + $Port)
 # the tailnet edge (using the magic cert tailscaled provisions for $fqdn) and
 # forwards to plain HTTP on loopback. This is the shape ADR-0008 standardises:
 # no separate WS path, no insecure cert warnings on iOS.
+#
+# Reset first so we leave a clean single-mapping config — earlier LangGUI /
+# Jarela versions registered an extra `/__langgui_ws__` (and later
+# `/__jarela_ws__`) entry for a WebSocket sidecar that no longer exists.
+Step "Clearing any previous tailscale serve config"
+& $tailscale serve reset 2>&1 | ForEach-Object { Info $_ }
+
 Step "Applying tailscale serve config"
 & $tailscale serve --bg ("https+insecure://localhost:" + $Port) 2>&1 | ForEach-Object { Info $_ }
 if ($LASTEXITCODE -ne 0) {
