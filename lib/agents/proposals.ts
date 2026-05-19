@@ -8,19 +8,33 @@ import { invalidateMcpTools } from "@/lib/mcp/client";
 import { applyVariables, MCP_REGISTRY } from "@/lib/mcp/registry";
 import { getAgentConfig, upsertAgentConfig } from "@/lib/stores/agent-configs";
 import type { ActionKind } from "@/lib/stores/pending-actions";
+import { getManifest } from "@/lib/integrations/registry";
+import { saveIntegration, INTEGRATIONS } from "@/lib/stores/integrations";
+import { upsertModelConfig, getModelConfig } from "@/lib/stores/model-config";
 
 export interface ApplyResult {
   ok: boolean;
   detail: unknown;
 }
 
-export async function applyAction(kind: ActionKind, payload: unknown): Promise<ApplyResult> {
+// `extras` is approval-time material collected by the UI rather than sent
+// in the original tool-call payload. ADR-0010 requires this for any action
+// whose payload would otherwise carry a secret (set_provider_key, the
+// credential fields of enable_integration). The agent never sees `extras`.
+export async function applyAction(
+  kind: ActionKind,
+  payload: unknown,
+  extras?: Record<string, unknown>,
+): Promise<ApplyResult> {
   switch (kind) {
-    case "install_mcp":      return await applyInstallMcp(payload);
-    case "toggle_mcp":       return applyToggleMcp(payload);
+    case "install_mcp":        return await applyInstallMcp(payload);
+    case "toggle_mcp":         return applyToggleMcp(payload);
     case "update_agent_tools": return applyUpdateAgentTools(payload);
-    case "update_agent":     return applyUpdateAgent(payload);
-    default:                 return { ok: false, detail: `unknown kind: ${kind}` };
+    case "update_agent":       return applyUpdateAgent(payload);
+    case "start_oauth":        return applyStartOauth(payload);
+    case "set_provider_key":   return applySetProviderKey(payload, extras);
+    case "enable_integration": return applyEnableIntegration(payload, extras);
+    default:                   return { ok: false, detail: `unknown kind: ${kind}` };
   }
 }
 
@@ -116,4 +130,100 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
       instructions_changed: p.instructions !== undefined,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// ADR-0010: agent-led setup actions.
+// ---------------------------------------------------------------------------
+
+// `start_oauth` applies as a no-op on persistent state — the *real* effect is
+// the browser following the authorize URL we return. The approval UI handles
+// the redirect; the apply step exists only to convert the proposal into a
+// concrete authorize_url tied to the integration's vendored scopes.
+function applyStartOauth(payload: unknown): ApplyResult {
+  const p = payload as { integration_id?: string };
+  if (!p.integration_id) return { ok: false, detail: "integration_id required" };
+  const manifest = getManifest(p.integration_id);
+  if (!manifest) return { ok: false, detail: `unknown integration "${p.integration_id}"` };
+  // The /api/v1/integrations/<id>/oauth/start endpoint already exists for
+  // gmail and outlook and computes the URL from the saved client_id/secret.
+  // Surface the relative path; the browser hits it after approval.
+  return {
+    ok: true,
+    detail: {
+      integration_id: manifest.id,
+      kickoff_path: `/api/v1/integrations/${manifest.id}/oauth/start`,
+      authorize_method: "POST",
+    },
+  };
+}
+
+// `set_provider_key` adds (or replaces) a model_configs row. The payload
+// only declares which provider/model is being configured; the actual key
+// arrives in `extras` from the approval secret-input modal. ADR-0010
+// closes the prompt-injection vector this way: a malicious page cannot
+// trick the agent into proposing an attacker key, because the agent never
+// types or sees the key.
+function applySetProviderKey(
+  payload: unknown,
+  extras?: Record<string, unknown>,
+): ApplyResult {
+  const p = payload as {
+    name?: string;
+    provider?: string;
+    model_id?: string;
+    is_default?: boolean;
+  };
+  if (!p.name || !p.provider || !p.model_id) {
+    return { ok: false, detail: "name, provider, and model_id required" };
+  }
+  const apiKey = typeof extras?.api_key === "string" ? extras.api_key.trim() : "";
+  if (!apiKey) {
+    return {
+      ok: false,
+      detail: "api_key was not collected by the approval UI; nothing applied",
+    };
+  }
+  const params: Record<string, unknown> = { api_key: apiKey };
+  if (typeof extras?.base_url === "string" && extras.base_url.trim()) {
+    params.base_url = extras.base_url.trim();
+  }
+  const isDefault = p.is_default ?? !getModelConfig(p.name);
+  const row = upsertModelConfig(p.name, p.provider, p.model_id, params, isDefault);
+  return {
+    ok: true,
+    detail: { name: row.name, provider: row.provider, model_id: row.model_id, is_default: !!row.is_default },
+  };
+}
+
+// `enable_integration` saves credentials for one of the registered
+// integrations and (implicitly) turns its tools on by virtue of the
+// resolveAuth() helpers finding a record. Field values arrive in `extras`
+// for the same reason as set_provider_key — secrets stay out of the agent
+// payload.
+function applyEnableIntegration(
+  payload: unknown,
+  extras?: Record<string, unknown>,
+): ApplyResult {
+  const p = payload as { id?: string };
+  if (!p.id) return { ok: false, detail: "id required" };
+  const manifest = getManifest(p.id);
+  if (!manifest) return { ok: false, detail: `unknown integration "${p.id}"` };
+  const def = (INTEGRATIONS as unknown as Record<string, { fields: ReadonlyArray<{ key: string }> } | undefined>)[p.id];
+  if (!def) {
+    return {
+      ok: false,
+      detail: `integration "${p.id}" has a manifest but no credentials schema in INTEGRATIONS — cannot enable`,
+    };
+  }
+  // Pick only declared fields out of extras, ignore unknowns. Secrets are
+  // strings; everything we declare is a string today.
+  const incoming: Record<string, string> = {};
+  for (const f of def.fields) {
+    const v = extras?.[f.key];
+    if (typeof v === "string") incoming[f.key] = v;
+  }
+  const result = saveIntegration(p.id, incoming);
+  if ("error" in result) return { ok: false, detail: result.error };
+  return { ok: true, detail: { id: p.id, configured: result.configured } };
 }

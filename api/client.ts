@@ -199,8 +199,14 @@ export const api = {
   pending: {
     list: (status?: "pending" | "approved" | "denied" | "failed") =>
       request<PendingAction[]>(`/pending-actions${status ? `?status=${status}` : ""}`),
-    approve: (id: string) =>
-      request<PendingAction>(`/pending-actions/${encodeURIComponent(id)}/approve`, { method: "POST", body: "{}" }),
+    // ADR-0010: `extras` carries approval-time secret material (provider keys,
+    // integration credentials) that the agent never sees. The route forwards
+    // it to applyAction; the agent's pending_actions.payload stays clean.
+    approve: (id: string, extras?: Record<string, unknown>) =>
+      request<PendingAction>(
+        `/pending-actions/${encodeURIComponent(id)}/approve`,
+        { method: "POST", body: JSON.stringify(extras ? { extras } : {}) },
+      ),
     deny: (id: string) =>
       request<PendingAction>(`/pending-actions/${encodeURIComponent(id)}/deny`, { method: "POST", body: "{}" }),
   },
