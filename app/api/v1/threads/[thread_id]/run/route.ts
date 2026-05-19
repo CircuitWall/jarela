@@ -7,7 +7,7 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, getRun, startRun, subscribe, abortRun } from "@/lib/agents/run-registry";
+import { broadcast, finishRun, startRun, subscribe, abortRun, takeOverRun } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 
@@ -24,15 +24,11 @@ export async function POST(req: NextRequest, { params }: Params) {
     stream_options?: StreamOptions;
   };
 
-  // Refuse a second concurrent run on the same thread — the first must finish
-  // (or be abandoned via TTL eviction). Clients can attach via GET instead.
-  const existing = getRun(thread_id);
-  if (existing && existing.status === "running") {
-    return new Response(
-      JSON.stringify({ error: "A run is already in progress for this thread", code: "run_active" }),
-      { status: 409 },
-    );
-  }
+  // Latest-writer-wins arbitration. If a run is already in flight for this
+  // thread (other tab/device, retry after a flaky mobile reconnect, …) abort
+  // it and wait for its finally block to persist + finishRun before starting
+  // ours. Mirrors the WebSocket path so both transports behave the same.
+  await takeOverRun(thread_id);
 
   let prepared;
   const thread = getThread(thread_id);
@@ -40,7 +36,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     prepared = await prepareThreadRun(thread_id, message, stream_options, attachments, active.abort.signal);
   } catch (err) {
-    finishRun(thread_id, "error");
+    finishRun(active, "error");
     if (err instanceof RunThreadError) {
       return new Response(JSON.stringify({ error: err.message, code: err.code }), { status: err.status });
     }
@@ -76,17 +72,17 @@ export async function POST(req: NextRequest, { params }: Params) {
             payload: d.result,
           });
         }
-        broadcast(thread_id, chunk);
+        broadcast(active, chunk);
         if (chunk.type === "error") terminal = "error";
         if (chunk.type === "done" || chunk.type === "error") break;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      broadcast(thread_id, { type: "error", data: { message: msg, code: "stream_error" } });
+      broadcast(active, { type: "error", data: { message: msg, code: "stream_error" } });
       terminal = "error";
     } finally {
       persistAssistantMessage(thread_id, assistantContent, usedTools, toolEvents);
-      finishRun(thread_id, terminal);
+      finishRun(active, terminal);
       publishNotification({
         type: "run_completed",
         thread_id,

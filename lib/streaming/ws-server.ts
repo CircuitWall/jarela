@@ -19,7 +19,7 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { startRun, finishRun, getRun, broadcast } from "@/lib/agents/run-registry";
+import { startRun, finishRun, broadcast, takeOverRun } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { requireAccess } from "@/lib/auth/access";
@@ -49,21 +49,18 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
   let assistantContent = "";
   const usedTools: string[] = [];
   const toolEvents: PersistedToolEvent[] = [];
-  // Refuse if another run is already active for this thread (the HTTP route
-  // enforces this too; the WS path must mirror it so DELETE-abort and the
-  // queue-drain UX behave the same regardless of transport).
-  const existing = getRun(req.thread_id);
-  if (existing && existing.status === "running") {
-    sendJson(ws, { type: "error", message: "A run is already in progress for this thread", code: "run_active" });
-    if (ws.readyState === WebSocket.OPEN) ws.close(1000, "run_active");
-    return;
-  }
+  // Latest-writer-wins: if a run is already in flight for this thread
+  // (another tab, another device, retry after a flaky reconnect), abort it
+  // and wait for its persistAssistantMessage + finishRun to complete before
+  // we start a fresh one. Simpler and more forgiving than the previous
+  // "refuse with run_active" behaviour, which left phantom "already running"
+  // errors after every mobile-suspend / reconnect race.
+  await takeOverRun(req.thread_id);
   // App-level keepalive: even if the model is mid-thought and emits no
   // chunks for a while, push a small heartbeat the client can use to
   // confirm the path is alive. WebSocket ping frames are auto-handled by
   // the browser and not visible to JS, so we need a JSON message for the
-  // browser-side stall watchdog to reset. Started AFTER the early-exit
-  // checks so we don't leak the interval on the run_active short-circuit.
+  // browser-side stall watchdog to reset.
   const keepalive = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) {
       sendJson(ws, { type: "keepalive", ts: Date.now() });
@@ -106,7 +103,7 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
       // GET /api/v1/threads/{id}/run and replay the buffered events. Without
       // this the WS path is "fire and forget to one socket" — any drop loses
       // everything the user hadn't seen yet.
-      broadcast(req.thread_id, chunk);
+      broadcast(active, chunk);
       if (shouldEmitChunk(chunk.type, req.stream_options)) {
         sendJson(ws, { type: chunk.type, ...chunk.data });
       }
@@ -121,12 +118,12 @@ async function runAndStream(ws: WebSocket, req: WsRunRequest): Promise<void> {
     const message = err instanceof RunThreadError ? err.message : String(err);
     // Broadcast the terminal error so reattached SSE subscribers see it too,
     // then mirror it to the live WS (if still open).
-    broadcast(req.thread_id, { type: "error", data: { message, code } });
+    broadcast(active, { type: "error", data: { message, code } });
     sendJson(ws, { type: "error", message, code });
   } finally {
     clearInterval(keepalive);
     persistAssistantMessage(req.thread_id, assistantContent, usedTools, toolEvents);
-    finishRun(req.thread_id, terminal);
+    finishRun(active, terminal);
     if (ws.readyState === WebSocket.OPEN) {
       ws.close(1000, "completed");
     }
