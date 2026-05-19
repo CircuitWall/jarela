@@ -223,7 +223,13 @@ function MarkdownContent({ text, streaming }: { text: string; streaming?: boolea
       >
         {text}
       </ReactMarkdown>
-      {streaming && <span className="inline-block w-2 h-4 bg-fg-muted animate-pulse ml-0.5 align-middle" />}
+      {streaming && (
+        <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
+          <span className="jarela-typing-dot" />
+          <span className="jarela-typing-dot" />
+          <span className="jarela-typing-dot" />
+        </span>
+      )}
     </div>
   );
 }
@@ -366,8 +372,15 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
     }
   }
 
+  // Format created_at for the hover timestamp. Streaming bubbles don't have
+  // one — we show "now" so the hover affordance is still consistent.
+  const createdAt = "created_at" in message ? message.created_at : null;
+  const timeLabel = createdAt
+    ? new Date(createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : null;
+
   return (
-    <div className={`flex ${isUser ? "flex-row-reverse" : "flex-row"} gap-2 mb-1.5 items-end`}>
+    <div className={`group flex ${isUser ? "flex-row-reverse" : "flex-row"} gap-2 mb-1.5 items-end`}>
       {/* Avatar — spacer when not shown to maintain alignment */}
       <div className="shrink-0 w-7">
         {showAvatar && (isUser
@@ -377,9 +390,17 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       </div>
 
       <div className={`flex flex-col max-w-[88%] sm:max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
+        {timeLabel && (
+          <span
+            className="text-[10px] text-fg-faint mb-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-hidden
+          >
+            {timeLabel}
+          </span>
+        )}
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full overflow-hidden ${
-            isUser ? "bg-accent text-white rounded-br-sm" : "bg-surface-3 text-fg rounded-bl-sm"
+            isUser ? "glass-bubble-accent text-white rounded-br-sm" : "glass-bubble text-fg rounded-bl-sm"
           }`}
         >
           {typeof parsed === "string" ? (
@@ -393,7 +414,13 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               {parsed.map((part, i) => (
                 <ContentPartView key={i} part={part} isUser={isUser} />
               ))}
-              {streaming && <span className="inline-block w-2 h-4 bg-fg-muted animate-pulse ml-0.5 align-middle" />}
+              {streaming && (
+        <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
+          <span className="jarela-typing-dot" />
+          <span className="jarela-typing-dot" />
+          <span className="jarela-typing-dot" />
+        </span>
+      )}
             </div>
           )}
         </div>

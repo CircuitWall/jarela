@@ -56,7 +56,20 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
   }
 
   return (
-    <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-4">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex-1 overflow-y-auto px-4 py-4"
+      style={{
+        // Fade the top and bottom 24px of the scroll viewport so messages
+        // dissolve under the glass chrome instead of slamming into a hard
+        // edge. Vendor-prefixed for older WebKit (Safari < 15.4).
+        WebkitMaskImage:
+          "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
+        maskImage:
+          "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
+      }}
+    >
       {hasMore && (
         <div className="text-center py-1.5 text-[11px] text-fg-faint select-none">
           {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
@@ -67,15 +80,19 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
           Send a message to begin
         </div>
       )}
-      {messages.map((msg, i) => (
-        <MessageBubble
-          key={msg.id}
-          message={msg}
-          agentConfig={agentConfig}
-          userProfile={userProfile}
-          showAvatar={i === 0 || messages[i - 1].role !== msg.role}
-        />
-      ))}
+      {messages.map((msg, i) => {
+        const startsTurn = i === 0 || messages[i - 1].role !== msg.role;
+        return (
+          <div key={msg.id} className={startsTurn && i > 0 ? "mt-3" : undefined}>
+            <MessageBubble
+              message={msg}
+              agentConfig={agentConfig}
+              userProfile={userProfile}
+              showAvatar={startsTurn}
+            />
+          </div>
+        );
+      })}
       {thinkingContent && <ThinkingLine text={thinkingContent} />}
       {toolEvents && toolEvents.length > 0 && <ToolList events={toolEvents} />}
       {streamingContent && (
