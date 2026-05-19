@@ -163,7 +163,7 @@ export function MenuPanel({
   onShowThinkingChange,
 }: Props) {
   return (
-    <div className="absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full bg-surface-2 border-l border-border z-20 flex flex-col shadow-2xl pb-safe">
+    <div className="glass-elevated absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full border-l border-border/60 z-20 flex flex-col pb-safe">
       {/* Navigation tabs — icon + short label; full name shown on hover */}
       <div className="flex gap-0.5 px-2 py-2 border-b border-border shrink-0">
         {(["chat", "agents", "memory", "models", "mcp", "integrations", "tasks", "bridges", "profile"] as Tab[]).map((tab) => (
