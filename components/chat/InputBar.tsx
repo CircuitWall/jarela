@@ -1,6 +1,6 @@
 "use client";
 import { Paperclip, Send, Square, X } from "lucide-react";
-import { useRef, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { ContentPart } from "@/api/types";
 
 interface Props {
@@ -16,6 +16,12 @@ interface Props {
 }
 
 const ACCEPT = "image/*,text/*,.ts,.tsx,.js,.jsx,.json,.md,.py,.go,.rs,.yaml,.yml,.toml,.sh,.sql,.pdf";
+
+// Registry of slash-commands. Keep in sync with handlers in ChatView.tsx.
+// To add: append here, then handle the literal in ChatView.handleSubmit.
+const SLASH_COMMANDS: Array<{ name: string; description: string }> = [
+  { name: "/new", description: "save session to memory and start fresh" },
+];
 
 function fileToContentPart(file: File): Promise<ContentPart> {
   return new Promise((resolve, reject) => {
@@ -42,8 +48,51 @@ function fileToContentPart(file: File): Promise<ContentPart> {
 
 export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onStop, streaming, disabled, placeholder }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [hlIdx, setHlIdx] = useState(0);
+
+  // Slash-command autocomplete is active only when the entire trimmed input
+  // is a `/`-prefixed token (no spaces). That keeps the popover from
+  // flashing when the user is mid-sentence and happens to type a slash.
+  const suggestions = useMemo(() => {
+    const trimmed = value.trimStart();
+    if (!trimmed.startsWith("/") || /\s/.test(trimmed)) return [];
+    const q = trimmed.toLowerCase();
+    return SLASH_COMMANDS.filter((c) => c.name.startsWith(q));
+  }, [value]);
+  const showSuggestions = suggestions.length > 0 && !streaming && !disabled;
+  const activeIdx = Math.min(hlIdx, Math.max(suggestions.length - 1, 0));
+
+  function applySuggestion(name: string) {
+    onChange(`${name} `);
+    setHlIdx(0);
+  }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (showSuggestions) {
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        // Tab always completes; Enter completes only when the current input
+        // is not yet a full command (so `/new<Enter>` still submits).
+        const exact = suggestions.find((s) => s.name === value.trim());
+        if (!(e.key === "Enter" && exact)) {
+          e.preventDefault();
+          applySuggestion(suggestions[activeIdx].name);
+          return;
+        }
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setHlIdx((i) => (i + 1) % suggestions.length);
+        return;
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setHlIdx((i) => (i - 1 + suggestions.length) % suggestions.length);
+        return;
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        onChange("");
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       // NOTE: do NOT gate on `streaming` here. ChatView.handleSubmit
@@ -117,7 +166,31 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         </div>
       )}
 
-      <div className="flex gap-2 items-end">
+      <div className="relative flex gap-2 items-end">
+        {/* Slash-command popover. Anchored to the textarea via the relative
+            parent so it floats above the input without affecting layout. */}
+        {showSuggestions && (
+          <div className="absolute left-[52px] right-[52px] bottom-full mb-1 z-10 max-h-48 overflow-y-auto rounded-xl border border-border/60 bg-surface-2/95 shadow-lg backdrop-blur">
+            {suggestions.map((s, i) => (
+              <button
+                key={s.name}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); applySuggestion(s.name); }}
+                onMouseEnter={() => setHlIdx(i)}
+                className={`w-full text-left px-3 py-2 flex items-baseline gap-2 text-sm transition-colors ${
+                  i === activeIdx ? "bg-surface-3 text-fg" : "text-fg-muted hover:bg-surface-3/60"
+                }`}
+              >
+                <span className="font-mono text-accent">{s.name}</span>
+                <span className="text-xs text-fg-faint truncate">{s.description}</span>
+              </button>
+            ))}
+            <div className="px-3 py-1 text-[10px] text-fg-faint border-t border-border/40">
+              Tab to complete · ↑↓ to navigate · Esc to clear
+            </div>
+          </div>
+        )}
+
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
@@ -141,7 +214,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
 
         <textarea
           className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-48 min-h-[44px] transition-colors"
-          placeholder={placeholder ?? "Message… or /new to save session to memory"}
+          placeholder={placeholder ?? "Message…"}
           rows={1}
           value={value}
           onChange={(e) => {
