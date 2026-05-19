@@ -44,12 +44,11 @@ export interface RequireAccessArgs {
 
 export function requireAccess({ headers, host, remoteAddress }: RequireAccessArgs): AccessResult {
   // If tailscaled is proxying this request through `tailscale serve` it
-  // *always* injects the Tailscale-User-Login header — including for the
-  // websocket-sidecar path (`/__jarela_ws__`) which arrives at the node
-  // process over loopback. So whenever the header is present, treat the
-  // request as a tailnet request and enforce the whitelist, regardless of
-  // whether the source IP / Host header looks like loopback. Otherwise a
-  // non-whitelisted tailnet user could chat just because the proxy is local.
+  // *always* injects the Tailscale-User-Login header. Whenever the header
+  // is present, treat the request as a tailnet request and enforce the
+  // whitelist, regardless of whether the source IP / Host header looks
+  // like loopback. Otherwise a non-whitelisted tailnet user could chat
+  // just because the proxy is local.
   const identity = readHeader(headers, "tailscale-user-login")?.trim() || null;
   if (identity) {
     if (isWhitelisted(identity)) {
@@ -62,7 +61,8 @@ export function requireAccess({ headers, host, remoteAddress }: RequireAccessArg
   // No tailscale identity → only loopback is allowed (the host machine's
   // own user typing http://localhost:4312).
 
-  // 1. WS path: actual TCP source available — most reliable loopback signal.
+  // 1. Actual TCP source available — most reliable loopback signal. Used
+  //    by callers that have the raw socket (e.g. raw Node handlers).
   if (remoteAddress && LOOPBACK_IP.test(remoteAddress)) {
     return { allowed: true, identity: null, reason: "loopback" };
   }

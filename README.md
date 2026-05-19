@@ -58,8 +58,9 @@ the LLM / MCP / GitHub providers you explicitly configure.
 - **LangGraph state machine** per agent — message history, tool calls, and
   proposals checkpointed to SQLite, so conversations resume across restarts.
 - **Streaming** with reasoning blocks (Anthropic extended thinking, OpenAI
-  o-series reasoning) over a WebSocket sidecar on the same port as the HTTP
-  server.
+  o-series reasoning) over Server-Sent Events. One POST submits a turn,
+  one EventSource subscribes to the chunk stream — see ADR-0008. The same
+  port serves UI, API, and stream; no WebSocket sidecar.
 - **Tool-policy gating per agent** — agents can be locked to a subset of
   tool categories (`Memory`, `Files`, `Shell`, `Web`, `Mail`, `Calendar`, …)
   rather than toggling tools one by one.
@@ -395,7 +396,6 @@ to `~/.jarela` automatically — see [ADR-0005](./docs/adr/0005-rebrand-jarela.m
 | --- | --- |
 | `npm run dev` | http://localhost:3000 |
 | `npm start` / installed task | http://localhost:4312 |
-| WebSocket sidecar | same port, path `/__jarela_ws__` |
 
 ## Architecture (C4 context)
 
@@ -412,7 +412,7 @@ C4Context
     System_Ext(github, "GitHub API", "Repo / PR integrations")
     SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings")
 
-    Rel(user, jarela, "HTTPS / WebSocket")
+    Rel(user, jarela, "HTTPS / SSE")
     Rel(jarela, anthropic, "HTTPS")
     Rel(jarela, openai, "HTTPS")
     Rel(jarela, google, "HTTPS")

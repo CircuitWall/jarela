@@ -30,14 +30,13 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
-    // Endpoints that MUST NEVER be cached. /api/v1/ws returns the live WS
-    // upgrade URL — a stale cached response can wedge an installed PWA on a
-    // previous deploy's endpoint. /api/v1/health is the liveness probe.
-    // Everything under /api/v1/threads/<id>/run is a streaming response
-    // (SSE POST or attach GET) that absolutely must not be served from
-    // cache, and the per-thread/agents/etc. POSTs aren't cacheable either.
+    // Endpoints that MUST NEVER be cached. /api/v1/health is the liveness
+    // probe. Everything under /api/v1/threads/<id>/run is a streaming
+    // endpoint (POST submit returns 202 JSON, GET returns an SSE stream
+    // consumed via EventSource — see ADR-0008) that must not be served
+    // from cache; the per-thread/agents/etc. POSTs aren't cacheable either.
     {
-      matcher: isExactPath("/api/v1/ws", "/api/v1/health"),
+      matcher: isExactPath("/api/v1/health"),
       handler: new NetworkOnly(),
     },
     {
@@ -49,8 +48,8 @@ const serwist = new Serwist({
       handler: new NetworkOnly(),
     },
     {
-      // Any streaming run endpoint (SSE) — NetworkOnly so the SW does not
-      // try to clone/cache a never-ending response.
+      // The run endpoint's GET path is an SSE stream — NetworkOnly so the
+      // SW does not try to clone/cache a never-ending response.
       matcher: ({ url }) =>
         url.pathname.startsWith("/api/v1/threads/") &&
         url.pathname.endsWith("/run"),
@@ -80,7 +79,8 @@ serwist.addEventListeners();
 // which on Safari PWA over Tailscale would pin installed clients to an
 // empty/stale payload for up to 24h after a transient auth glitch. Also
 // purge legacy cached entries for endpoints that should NEVER be cached
-// (/api/v1/ws, /api/v1/health, streaming run endpoints).
+// (/api/v1/health, streaming run endpoints, and the now-removed
+// /api/v1/ws WS-URL discovery endpoint — ADR-0008).
 const STALE_RUNTIME_CACHES = ["agents-cache", "threads-cache", "memory-cache"];
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
@@ -97,8 +97,8 @@ self.addEventListener("activate", (event) => {
           const u = new URL(req.url);
           if (
             u.pathname.startsWith("/api/") ||
-            u.pathname === "/api/v1/ws" ||
             u.pathname === "/api/v1/health" ||
+            u.pathname === "/api/v1/ws" /* legacy, removed in ADR-0008 */ ||
             (u.pathname.startsWith("/api/v1/threads/") && u.pathname.endsWith("/run"))
           ) {
             return cache.delete(req);
