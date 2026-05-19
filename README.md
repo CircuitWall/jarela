@@ -397,6 +397,38 @@ to `~/.jarela` automatically — see [ADR-0005](./docs/adr/0005-rebrand-jarela.m
 | `npm run dev` | http://localhost:3000 |
 | `npm start` / installed task | http://localhost:4312 |
 
+## Remote access via Tailscale
+
+Jarela is a single-port HTTPS-or-HTTP app — no WebSocket sidecar,
+no separate streaming port (see
+[ADR-0008](./docs/adr/0008-cqrs-run-submit-eventsource.md)). The
+recommended way to reach an installed Jarela from your phone or
+another machine is `tailscale serve`, which terminates HTTPS at
+your tailnet name and forwards to plain HTTP on loopback.
+
+Helper scripts (Windows):
+
+```powershell
+# Configure tailscale serve for the installed Jarela on :4312
+powershell -ExecutionPolicy Bypass -File scripts\install-tailscale-serve.ps1
+
+# Clear it again
+powershell -ExecutionPolicy Bypass -File scripts\uninstall-tailscale-serve.ps1
+```
+
+`scripts\install-to-system.ps1` invokes the install helper automatically
+at the end of an install; pass `-SkipTailscale` to opt out.
+`scripts\uninstall-from-system.ps1` resets the serve config on uninstall;
+pass `-KeepTailscale` to leave it in place.
+
+Live status, the exact recipe, and a copy button are also surfaced in
+**Settings → You → Tailscale serve** in the UI.
+
+Remote tailnet users still need to be whitelisted under
+**Settings → You → Tailscale access whitelist** — local loopback is
+always allowed, but anything reaching the node through the
+`Tailscale-User-Login` header must match an entry.
+
 ## Architecture (C4 context)
 
 ```mermaid

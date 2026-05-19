@@ -151,7 +151,7 @@ function AgentSessionList({
   );
 }
 
-export function GearPanel({
+export function MenuPanel({
   activeTab,
   agentId,
   showTools,

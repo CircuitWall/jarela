@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Upload, Plus, Trash2, Shield, MapPin } from "lucide-react";
+import { Upload, Plus, Trash2, Shield, MapPin, Globe, Check, Copy } from "lucide-react";
 import { api } from "@/api/client";
-import type { UserProfile, AccessWhitelistEntry } from "@/api/types";
+import type { UserProfile, AccessWhitelistEntry, TailscaleStatus } from "@/api/types";
 import { useLocationSharing } from "@/hooks/useLocationSharing";
 
 export function ProfileEditor() {
@@ -93,7 +93,7 @@ export function ProfileEditor() {
           className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-28 resize-none"
           value={about}
           onChange={(e) => setAbout(e.target.value)}
-          placeholder="Senior engineer at Acme Corp. Prefers concise answers. Working on a payments platform…"
+          placeholder="Senior engineer at Acme Corp. Prefers concise answers. Working on a payments platformâ€¦"
         />
       </label>
 
@@ -106,17 +106,19 @@ export function ProfileEditor() {
         disabled={saving || !isDirty}
         className="w-full py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-40"
       >
-        {saving ? "Saving…" : saved ? "Saved" : "Save profile"}
+        {saving ? "Savingâ€¦" : saved ? "Saved" : "Save profile"}
       </button>
 
       <LocationSharing profile={profile} onChange={setProfile} />
+
+      <TailscaleServe />
 
       <AccessWhitelist />
     </div>
   );
 }
 
-// ─── Location sharing ───────────────────────────────────────────────────────
+// â”€â”€â”€ Location sharing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // User-facing toggle backed by user_profile.location_consent. When enabled,
 // the useLocationSharing hook acquires a browser geolocation fix and POSTs
 // it to /api/v1/profile/location. The agent sees the latest position in
@@ -200,14 +202,14 @@ function LocationSharing({
                 {profile!.location_lat!.toFixed(5)}, {profile!.location_lng!.toFixed(5)}
               </span>
               {profile?.location_accuracy_m != null && (
-                <span className="text-fg-faint"> · ±{Math.round(profile.location_accuracy_m)}m</span>
+                <span className="text-fg-faint"> Â· Â±{Math.round(profile.location_accuracy_m)}m</span>
               )}
               {updatedAt && (
-                <span className="text-fg-faint"> · {timeAgo(updatedAt)}</span>
+                <span className="text-fg-faint"> Â· {timeAgo(updatedAt)}</span>
               )}
             </>
           ) : (
-            <span className="text-fg-faint">Waiting for browser fix… (allow location when prompted)</span>
+            <span className="text-fg-faint">Waiting for browser fixâ€¦ (allow location when prompted)</span>
           )}
         </div>
       )}
@@ -304,7 +306,7 @@ function AccessWhitelist() {
 
       <ul className="divide-y divide-border border border-border rounded">
         {entries === null && (
-          <li className="px-3 py-2 text-xs text-fg-faint">Loading…</li>
+          <li className="px-3 py-2 text-xs text-fg-faint">Loadingâ€¦</li>
         )}
         {entries && entries.length === 0 && (
           <li className="px-3 py-2 text-xs text-fg-faint">No remote identities allowed yet.</li>
@@ -314,9 +316,9 @@ function AccessWhitelist() {
             <div className="flex-1 min-w-0">
               <div className="font-mono text-fg truncate">{e.identity}</div>
               <div className="text-[10px] text-fg-faint">
-                {e.display_name ? `${e.display_name} · ` : ""}
+                {e.display_name ? `${e.display_name} Â· ` : ""}
                 added {new Date(e.added_at).toLocaleString()}
-                {e.last_seen_at ? ` · last seen ${new Date(e.last_seen_at).toLocaleString()}` : " · never seen"}
+                {e.last_seen_at ? ` Â· last seen ${new Date(e.last_seen_at).toLocaleString()}` : " Â· never seen"}
               </div>
             </div>
             <button
@@ -333,3 +335,119 @@ function AccessWhitelist() {
     </div>
   );
 }
+
+// â”€â”€â”€ Tailscale serve status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Companion to the access whitelist: surfaces whether `tailscale serve` is
+// currently forwarding to this node, the tailnet FQDN, and a one-click
+// copy of the configuration recipe. See ADR-0008 for the recipe rationale.
+
+function TailscaleServe() {
+  const [status, setStatus] = useState<TailscaleStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    api.tailscale.status()
+      .then(setStatus)
+      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  async function copyRecipe() {
+    if (!status) return;
+    try {
+      await navigator.clipboard.writeText(status.serve_recipe);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  }
+
+  const reachableUrl = status?.fqdn ? `https://${status.fqdn}/` : null;
+
+  return (
+    <div className="pt-4 border-t border-border space-y-2">
+      <div className="flex items-center gap-2">
+        <Globe size={14} className="text-fg-subtle" />
+        <h3 className="text-sm font-semibold text-fg mr-auto">Tailscale serve</h3>
+        {status && (
+          <span
+            className={`text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded ${
+              status.serving
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                : status.installed
+                ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                : "bg-surface-3 text-fg-faint"
+            }`}
+          >
+            {!status.installed ? "not installed" : status.serving ? "serving" : status.logged_in ? "idle" : "logged out"}
+          </span>
+        )}
+      </div>
+
+      <p className="text-[11px] text-fg-faint">
+        Expose this Jarela on your tailnet so phones (iOS PWA included) can reach it over a
+        trusted HTTPS path. Run the recipe once, then add identities to the whitelist below.
+      </p>
+
+      {status?.serving && reachableUrl && (
+        <div className="text-[11px] px-2 py-1.5 rounded bg-surface-3/40 border border-border">
+          <span className="text-fg-faint">Reachable at </span>
+          <a
+            href={reachableUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-accent hover:underline break-all"
+          >
+            {reachableUrl}
+          </a>
+        </div>
+      )}
+
+      {status && (
+        <div className="flex items-stretch gap-1.5">
+          <code className="flex-1 text-[11px] font-mono bg-surface-3 text-fg-muted px-2 py-1.5 rounded border border-border break-all leading-snug">
+            {status.serve_recipe}
+          </code>
+          <button
+            onClick={copyRecipe}
+            className="px-2 text-xs bg-surface-3 hover:bg-surface text-fg-muted border border-border rounded transition-colors flex items-center gap-1"
+            title="Copy recipe"
+          >
+            {copied ? <Check size={12} className="text-emerald-600" /> : <Copy size={12} />}
+          </button>
+        </div>
+      )}
+
+      {status && !status.installed && (
+        <p className="text-[11px] text-fg-faint">
+          Tailscale isn&apos;t installed on this host. Install from{" "}
+          <a href="https://tailscale.com/download/windows" target="_blank" rel="noreferrer" className="text-accent hover:underline">
+            tailscale.com
+          </a>{" "}
+          and run <code className="text-fg-subtle">tailscale up</code> first.
+        </p>
+      )}
+
+      {status?.installed && !status.logged_in && (
+        <p className="text-[11px] text-fg-faint">
+          Tailscale is installed but not logged in. Run <code className="text-fg-subtle">tailscale up</code> in a terminal.
+        </p>
+      )}
+
+      {status && (
+        <p className="text-[11px] text-fg-faint">
+          Or run the helper script:{" "}
+          <code className="text-fg-subtle">{status.install_script}</code>
+          {" â€” "}
+          <code className="text-fg-subtle">{status.uninstall_script}</code> to reverse.
+        </p>
+      )}
+
+      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+    </div>
+  );
+}
+// â”€â”€â”€ Tailscale serve status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Companion to the access whitelist: surfaces whether `tailscale serve` is
+// currently forwarding to this node, the tailnet FQDN, and a one-click
+// copy of the configuration recipe. See ADR-0008 for the recipe rationale.
+
