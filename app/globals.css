@@ -52,6 +52,17 @@
   --color-fg-faint: #8b8b94;      /* was #71717a — failed AA on surface-3 */
   --color-accent: #2563eb;
   --color-accent-hover: #1d4ed8;
+
+  /* Soften the default Tailwind radius scale a notch. Every `rounded-*`
+   * utility in the codebase reads from these tokens, so a single tweak
+   * here de-harshes the whole UI without touching components. Kept
+   * deliberately modest — we want fewer right angles, not pill shapes. */
+  --radius-xs:  0.1875rem;  /*  3px (was 2px)  */
+  --radius-sm:  0.3125rem;  /*  5px (was 4px)  */
+  --radius-md:  0.5rem;     /*  8px (was 6px)  */
+  --radius-lg:  0.6875rem;  /* 11px (was 8px)  */
+  --radius-xl:  0.9375rem;  /* 15px (was 12px) */
+  --radius-2xl: 1.125rem;   /* 18px (was 16px) */
 }
 
 /* Light palette. Mirrors the dark tokens with inverted lightness so any
