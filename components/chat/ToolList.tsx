@@ -32,17 +32,16 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
       <div className="my-1.5 w-full min-w-0 max-w-full overflow-hidden">
         <button
           onClick={() => setExpanded(true)}
-          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded text-left"
+          className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded-md text-left"
         >
           <ChevronRight size={10} className="shrink-0 text-fg-faint" />
-          <span className="font-mono uppercase tracking-wide shrink-0 text-fg-faint">
-            {callCount} tool{callCount === 1 ? "" : "s"}
-          </span>
-          {errorCount > 0 && (
-            <span className="font-mono uppercase tracking-wide shrink-0 text-rose-700 dark:text-rose-400/80">
-              · {errorCount} error{errorCount === 1 ? "" : "s"}
+          <span className="inline-flex items-center gap-1.5 shrink-0 px-2 py-0.5 rounded-full bg-surface-2/60 border border-border/50 text-fg-muted">
+            <span className={`w-1.5 h-1.5 rounded-full ${errorCount > 0 ? "bg-rose-500" : "bg-emerald-500"}`} aria-hidden />
+            <span className="font-medium">
+              {callCount} tool{callCount === 1 ? "" : "s"}
+              {errorCount > 0 && <span className="text-rose-700 dark:text-rose-400/90"> · {errorCount} err</span>}
             </span>
-          )}
+          </span>
           <span className="truncate text-fg-faint font-normal flex-1 min-w-0">
             {uniqueNames.join(" · ")}
           </span>
@@ -67,22 +66,25 @@ export function ToolList({ events }: { events: ToolEvent[] }) {
         const open = openId === key;
         const summary = previewPayload(event.payload);
         const isError = isErrorPayload(event.payload);
-        const verbColor = event.phase === "call"
-          ? "text-sky-700 dark:text-sky-400/70"
-          : isError ? "text-rose-700 dark:text-rose-400/80" : "text-emerald-700 dark:text-emerald-400/70";
+        // Phase-colored dot inside each pill: sky=call, emerald=ok, rose=error.
+        const dotColor = event.phase === "call"
+          ? "bg-sky-500"
+          : isError ? "bg-rose-500" : "bg-emerald-500";
         return (
           <div key={key} className="min-w-0 max-w-full">
             <button
               onClick={() => setOpenId(open ? null : key)}
-              className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded text-left"
+              className="w-full min-w-0 flex items-center gap-1.5 text-[11px] hover:bg-surface-2/40 px-1 py-0.5 rounded-md text-left"
             >
               <ChevronRight size={10} className={`transition-transform shrink-0 ${open ? "rotate-90" : ""} text-fg-faint`} />
-              <span className={`font-mono uppercase tracking-wide shrink-0 ${verbColor}`}>{event.phase}</span>
-              <span className="font-medium text-fg-muted shrink-0">{event.name}</span>
+              <span className="inline-flex items-center gap-1.5 shrink-0 px-2 py-0.5 rounded-full bg-surface-2/60 border border-border/50 text-fg-muted">
+                <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} aria-hidden />
+                <span className="font-medium">{event.name}</span>
+              </span>
               {!open && <span className="truncate text-fg-faint italic font-normal flex-1 min-w-0">{summary}</span>}
             </button>
             {open && (
-              <pre className="ml-5 mt-1 mb-1 px-2 py-1.5 text-[11px] text-fg-muted whitespace-pre font-mono bg-surface/60 rounded border border-border max-w-[calc(100%-1.25rem)] overflow-x-auto">
+              <pre className="ml-5 mt-1 mb-1 px-2 py-1.5 text-[11px] text-fg-muted whitespace-pre font-mono bg-surface/60 rounded-lg border border-border/50 max-w-[calc(100%-1.25rem)] overflow-x-auto">
                 {JSON.stringify(event.payload, null, 2)}
               </pre>
             )}

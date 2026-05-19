@@ -130,7 +130,7 @@ export function AppShell() {
   });
 
   return (
-    <div className="h-screen h-[100dvh] flex flex-col bg-surface text-fg overflow-hidden px-safe">
+    <div className="h-screen h-[100dvh] flex flex-col text-fg overflow-hidden px-safe">
       <TopProgressBar />
       <NotificationStatus />
       <Toaster />
@@ -147,7 +147,7 @@ export function AppShell() {
       />
       <CryptoFallbackBanner />
       <header
-        className="fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border bg-surface-2/80 backdrop-blur supports-[backdrop-filter]:bg-surface-2/70"
+        className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
         style={{
           // Extra 0.5rem above safe-area so the logo doesn't crowd the
           // Dynamic Island / camera cutout on iPhone Pro models. The
@@ -248,7 +248,7 @@ export function AppShell() {
         )}
 
         {showMenu && (
-          <div className="absolute inset-0 bg-black/40 z-10" onClick={() => setShowMenu(false)} />
+          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm z-10" onClick={() => setShowMenu(false)} />
         )}
 
         {showMenu && (
