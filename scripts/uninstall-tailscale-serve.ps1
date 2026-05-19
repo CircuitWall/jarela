@@ -14,14 +14,19 @@ param()
 
 $ErrorActionPreference = 'Continue'
 
-$tailscale = (Get-Command tailscale.exe -ErrorAction SilentlyContinue)?.Source
-if (-not $tailscale) {
+function Find-Tailscale {
+  $cmd = Get-Command tailscale.exe -ErrorAction SilentlyContinue
+  if ($cmd) { return $cmd.Source }
   $candidates = @(
     (Join-Path $env:ProgramFiles 'Tailscale\tailscale.exe'),
     (Join-Path ${env:ProgramFiles(x86)} 'Tailscale\tailscale.exe')
-  ) | Where-Object { $_ -and (Test-Path $_) }
-  if ($candidates.Count -gt 0) { $tailscale = $candidates[0] }
+  )
+  foreach ($c in $candidates) {
+    if ($c -and (Test-Path $c)) { return $c }
+  }
+  return $null
 }
+$tailscale = Find-Tailscale
 if (-not $tailscale) {
   Write-Host "tailscale.exe not found — nothing to do."
   exit 0
