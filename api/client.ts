@@ -267,6 +267,19 @@ export const api = {
   tailscale: {
     status: () => request<import("./types").TailscaleStatus>("/tailscale"),
   },
+
+  proxy: {
+    get: () => request<import("./types").ProxyConfigEnvelope>("/proxy-config"),
+    save: (input: import("./types").ProxyConfigInput) =>
+      request<import("./types").ProxyConfigEnvelope>("/proxy-config", {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    clear: () =>
+      request<import("./types").ProxyConfigEnvelope & { deleted: boolean }>("/proxy-config", {
+        method: "DELETE",
+      }),
+  },
 };
 
 
