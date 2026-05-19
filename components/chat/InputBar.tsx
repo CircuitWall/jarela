@@ -133,7 +133,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || streaming}
-          className="shrink-0 p-2.5 rounded-xl text-fg-faint hover:text-fg hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-fg-faint hover:text-fg hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           title="Attach file or image"
         >
           <Paperclip size={16} />
@@ -157,7 +157,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         {streaming ? (
           <button
             onClick={onStop}
-            className="glass-btn-stop shrink-0 p-2.5 rounded-xl text-white transition-colors"
+            className="glass-btn-stop shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors"
             title="Stop"
           >
             <Square size={16} />
@@ -166,7 +166,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           <button
             onClick={onSubmit}
             disabled={(!value.trim() && !attachments.length) || disabled}
-            className="glass-btn-send shrink-0 p-2.5 rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="glass-btn-send shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title="Send"
           >
             <Send size={16} />
