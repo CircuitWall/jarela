@@ -264,16 +264,33 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     const optimisticContent = atts.length
       ? JSON.stringify([{ type: "text" as const, text }, ...atts])
       : text;
+    const optId = `opt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     setMessages((p) => [
       ...p,
-      { id: `opt-${Date.now()}`, role: "user", content: optimisticContent, created_at: new Date().toISOString() },
+      { id: optId, role: "user", content: optimisticContent, created_at: new Date().toISOString() },
     ]);
-    await start(
+    const { accepted } = await start(
       threadId,
       text,
       { filters: { include_tools: showTools, include_thinking: showThinking } },
       atts.length ? atts : undefined,
     );
+    if (!accepted) {
+      // The server rejected this submission because another run was already
+      // in flight for this thread (second tab, another device). We just
+      // attached to the existing run's broadcast for the live deltas. Roll
+      // back the optimistic user bubble and re-queue this message so the
+      // drain after the in-flight run's `done` resubmits it cleanly.
+      setMessages((p) => p.filter((m) => m.id !== optId));
+      setQueue((q) => [
+        {
+          id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          text,
+          attachments: atts,
+        },
+        ...q,
+      ]);
+    }
   }
 
   // Wire the deferred drain — see drainQueueRef declaration above.

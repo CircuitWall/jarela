@@ -7,7 +7,7 @@ import {
   RunThreadError,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, startRun, subscribe, abortRun, takeOverRun } from "@/lib/agents/run-registry";
+import { broadcast, finishRun, startRun, subscribe, abortRun, getRun } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 
@@ -16,6 +16,17 @@ type Params = { params: Promise<{ thread_id: string }> };
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
 
+// POST is the *command* half of the run lifecycle (ADR-0008). It accepts the
+// new user message, registers a run in the in-memory registry, kicks the
+// agent loop off in a detached async task, and returns 202 immediately. The
+// caller must follow up with a GET on this same path (as an `EventSource`)
+// to subscribe to the chunk stream — see GET below.
+//
+// Splitting submit from subscribe gives us a single reliable streaming
+// primitive across all browsers (EventSource is the only WebKit-native
+// streaming API that survives iOS Safari + Tailscale HTTP/2 proxies). It
+// also collapses what was previously a WS sidecar + SSE-over-POST +
+// SSE-GET-reattach trio into one transport.
 export async function POST(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const { message, attachments, stream_options } = (await req.json()) as {
@@ -24,27 +35,46 @@ export async function POST(req: NextRequest, { params }: Params) {
     stream_options?: StreamOptions;
   };
 
-  // Latest-writer-wins arbitration. If a run is already in flight for this
-  // thread (other tab/device, retry after a flaky mobile reconnect, …) abort
-  // it and wait for its finally block to persist + finishRun before starting
-  // ours. Mirrors the WebSocket path so both transports behave the same.
-  await takeOverRun(thread_id);
+  // Connection-level handoff (NOT a kill). If a run is already in flight
+  // for this thread — second tab, another device, a flaky-mobile retry —
+  // refuse the new submission with 409. The caller is expected to:
+  //   1) roll back any optimistic user bubble it added,
+  //   2) re-queue the message locally to resubmit after the current turn
+  //      finishes,
+  //   3) open the GET subscription so the user still sees the in-flight
+  //      turn's deltas render.
+  const existing = getRun(thread_id);
+  if (existing && existing.status === "running") {
+    return new Response(
+      JSON.stringify({ accepted: false, code: "run_in_flight", thread_id }),
+      { status: 409, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
-  let prepared;
   const thread = getThread(thread_id);
   const active = startRun(thread_id, thread?.agent_id ?? null);
+  let prepared;
   try {
     prepared = await prepareThreadRun(thread_id, message, stream_options, attachments, active.abort.signal);
   } catch (err) {
+    // Prep failure (unknown agent, model misconfig, …) — drop the run we
+    // just registered and surface a synchronous error to the caller.
     finishRun(active, "error");
     if (err instanceof RunThreadError) {
-      return new Response(JSON.stringify({ error: err.message, code: err.code }), { status: err.status });
+      return new Response(
+        JSON.stringify({ accepted: false, error: err.message, code: err.code }),
+        { status: err.status, headers: { "Content-Type": "application/json" } },
+      );
     }
-    return new Response(JSON.stringify({ error: String(err), code: "run_prepare_error" }), { status: 500 });
+    return new Response(
+      JSON.stringify({ accepted: false, error: String(err), code: "run_prepare_error" }),
+      { status: 500, headers: { "Content-Type": "application/json" } },
+    );
   }
 
-  // Drive the agent to completion regardless of client connection. Events go
-  // to the registry; subscribers (including this response stream) receive them.
+  // Drive the agent to completion regardless of client connection. Events
+  // go to the registry; the GET subscriber (and any reattaching clients)
+  // receive them via subscribe().
   void (async () => {
     let assistantContent = "";
     const usedTools: string[] = [];
@@ -94,16 +124,36 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
   })();
 
-  return attachStream(thread_id, stream_options);
+  return new Response(
+    JSON.stringify({ accepted: true, thread_id, started_at: active.started_at }),
+    { status: 202, headers: { "Content-Type": "application/json" } },
+  );
 }
 
-// GET attaches to an active or recently-finished run for this thread.
-// Returns 404 (no body) if there's no run to attach to.
-export async function GET(_req: NextRequest, { params }: Params) {
+// GET is the *query* half of the run lifecycle (ADR-0008). Attaches to an
+// active (or recently-finished, within the registry TTL) run and streams
+// chunks as Server-Sent Events. Always consumed client-side via
+// `EventSource` — never `fetch().body.getReader()`, which is unreliable on
+// iOS Safari for long-lived streaming responses.
+//
+// Returns 404 with no body if there's no run to attach to (run never
+// existed, or it finished + TTL-evicted before the GET arrived).
+//
+// `show_tools` / `show_thinking` query params let the caller suppress
+// chunk types it doesn't want to render. Defaults: both on. The full
+// `StreamOptions` shape is only meaningful on the POST (tool policy &
+// agent run config are run-wide settings, not per-subscriber filters).
+export async function GET(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const run = getRun(thread_id);
   if (!run) return new Response(null, { status: 404 });
-  return attachStream(thread_id);
+
+  const showTools = req.nextUrl.searchParams.get("show_tools") !== "false";
+  const showThinking = req.nextUrl.searchParams.get("show_thinking") !== "false";
+  const stream_options: StreamOptions = {
+    filters: { include_tools: showTools, include_thinking: showThinking },
+  };
+  return attachStream(thread_id, stream_options);
 }
 
 // DELETE aborts the currently-running agent for this thread. The agent stream
@@ -119,7 +169,10 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   });
 }
 
-function attachStream(thread_id: string, stream_options?: StreamOptions): Response {
+function attachStream(
+  thread_id: string,
+  stream_options?: StreamOptions,
+): Response {
   const stream = new ReadableStream({
     start(controller) {
       let clientGone = false;
@@ -145,8 +198,8 @@ function attachStream(thread_id: string, stream_options?: StreamOptions): Respon
         return;
       }
 
-      // When the run finishes (status changes), close our response.
-      // We poll lightly because the run might finish due to other subscribers'
+      // When the run finishes (status changes), close our response. We
+      // poll lightly because the run might finish due to other subscribers'
       // signals; simpler than wiring a second listener channel.
       const poll = setInterval(() => {
         const r = getRun(thread_id);
@@ -170,6 +223,10 @@ function attachStream(thread_id: string, stream_options?: StreamOptions): Respon
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      // Disable proxy buffering (nginx/tailscale-serve sometimes coalesces
+      // small chunks without this; the SSE framing relies on each event
+      // hitting the wire as soon as it's enqueued).
+      "X-Accel-Buffering": "no",
     },
   });
 }

@@ -265,256 +265,142 @@ export const api = {
   },
 };
 
-let cachedWsUrl: string | null = null;
 
-// Persist the ws URL across page reloads so we don't pay an HTTP round-trip
-// to /api/v1/ws on every cold load. Keyed by the current origin so a host
-// flip (loopback ↔ tailscale ↔ different machine) invalidates automatically.
-// Versioned so older buggy cache entries (e.g. ones pointing at port 3219
-// directly through tailscale, which doesn't expose that port) are ignored
-// after a client deploy that changes the URL shape.
-const WS_URL_STORAGE_KEY = "jarela:ws-url:v2";
+// ---------------------------------------------------------------------------
+// Agent run streaming — CQRS transport (ADR-0008)
+// ---------------------------------------------------------------------------
+//
+// One turn = one POST (submit) + one EventSource (subscribe). The previous
+// WS sidecar / SSE-over-POST / SSE-GET-reattach trio is gone; EventSource
+// is the only WebKit-native streaming primitive that survives iOS Safari +
+// HTTP/2 reverse-proxies (Tailscale serve), so we route every browser
+// through it.
 
-function readPersistedWsUrl(): string | null {
-  if (typeof window === "undefined" || !window.sessionStorage) return null;
-  try {
-    const raw = window.sessionStorage.getItem(WS_URL_STORAGE_KEY);
-    if (!raw) return null;
-    const { origin, url } = JSON.parse(raw) as { origin?: string; url?: string };
-    if (origin === window.location.origin && typeof url === "string") return url;
-  } catch { /* ignore */ }
-  return null;
+export interface SubmitResult {
+  /** true iff the server accepted ownership of this turn (HTTP 202). */
+  accepted: boolean;
+  /** Present on non-2xx outcomes. `run_in_flight` = another tab/device
+   *  owns the current turn; caller should re-queue and still subscribe to
+   *  observe live deltas. */
+  code?: "run_in_flight" | string;
+  error?: string;
 }
 
-function writePersistedWsUrl(url: string): void {
-  if (typeof window === "undefined" || !window.sessionStorage) return;
-  try {
-    window.sessionStorage.setItem(
-      WS_URL_STORAGE_KEY,
-      JSON.stringify({ origin: window.location.origin, url }),
-    );
-  } catch { /* quota / private-mode — fine, fall back to in-memory cache */ }
-}
-
-async function getWsUrl(): Promise<string> {
-  if (cachedWsUrl) return cachedWsUrl;
-  const persisted = readPersistedWsUrl();
-  if (persisted) {
-    cachedWsUrl = persisted;
-    return persisted;
-  }
-  // Bypass any SW / HTTP cache layer for the URL discovery hop. This is
-  // small JSON and must reflect the live server config (post-deploy the
-  // path or port may have changed).
-  const res = await request<{ url: string }>("/ws", { cache: "no-store" });
-  cachedWsUrl = res.url;
-  writePersistedWsUrl(res.url);
-  return res.url;
-}
-
-function invalidateWsUrl(): void {
-  cachedWsUrl = null;
-  if (typeof window !== "undefined" && window.sessionStorage) {
-    try { window.sessionStorage.removeItem(WS_URL_STORAGE_KEY); } catch { /* ignore */ }
-  }
-}
-
-export async function* streamChat(
+/** POST /threads/:id/run — registers a run and returns immediately. The
+ *  caller is expected to follow up with `subscribeRun()` to receive the
+ *  chunk stream. Idempotent in the sense that two simultaneous submissions
+ *  for the same thread will see one 202 and one 409 (`run_in_flight`). */
+export async function submitRun(
   thread_id: string,
   message: string,
   signal: AbortSignal,
   stream_options?: StreamOptions,
   attachments?: ContentPart[],
-): AsyncGenerator<string> {
+): Promise<SubmitResult> {
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, stream_options, attachments }),
     signal,
   });
-  if (!res.ok || !res.body) throw new Error(`${res.status} ${await res.text().catch(() => res.statusText)}`);
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const raw = line.slice(6).trim();
-          if (raw && raw !== "[DONE]") yield raw;
-        }
-      }
-    }
-  } finally {
-    reader.releaseLock();
+  // 2xx = accepted (currently always 202); 409 = already running. We treat
+  // every other status as a hard error so the consumer's catch fires.
+  if (res.status === 202) {
+    // Drain the body to free the connection — Next.js sends a small JSON
+    // ack but we don't need anything from it.
+    try { await res.json(); } catch { /* ignore */ }
+    return { accepted: true };
   }
+  let body: { code?: string; error?: string } = {};
+  try { body = (await res.json()) as { code?: string; error?: string }; } catch { /* */ }
+  if (res.status === 409) {
+    return { accepted: false, code: body.code ?? "run_in_flight" };
+  }
+  throw new Error(`${res.status} ${body.error ?? res.statusText}`);
 }
 
-// Browser WebSocket API doesn't expose ws-level ping/pong frames, so we
-// can't see them to detect liveness. The server pushes an app-level
-// {type:"keepalive"} every ~20s during a run; if we go this long without
-// any message from the server (chunk OR keepalive) we consider the path
-// dead and force-close. The grace must be > the server's keepalive
-// interval but short enough that the user doesn't sit watching nothing.
-const WS_STALL_TIMEOUT_MS = 45_000;
-
-export async function* streamChatWS(
+/** GET /threads/:id/run — opens an `EventSource` and yields raw `data:`
+ *  payloads (one JSON event per yield). Closes the source when the consumer
+ *  stops iterating (either via `break` after a terminal `done`/`error`, or
+ *  when the abort signal fires).
+ *
+ *  EventSource handles its own reconnection on transient drops. The
+ *  server-side run keeps publishing into the registry across drops, so a
+ *  resumed connection replays buffered chunks via `subscribe()` and the
+ *  consumer sees the run through to its terminal event.
+ *
+ *  `stream_options` filter flags ride as query params (`show_tools`,
+ *  `show_thinking`); the rest of `StreamOptions` is meaningful only on the
+ *  POST and is ignored here.
+ */
+export function subscribeRun(
   thread_id: string,
-  message: string,
   signal: AbortSignal,
   stream_options?: StreamOptions,
-  attachments?: ContentPart[],
 ): AsyncGenerator<string> {
-  const wsUrl = await getWsUrl();
+  const params = new URLSearchParams();
+  const includeTools = stream_options?.filters?.include_tools;
+  const includeThinking = stream_options?.filters?.include_thinking;
+  if (includeTools === false) params.set("show_tools", "false");
+  if (includeThinking === false) params.set("show_thinking", "false");
+  const qs = params.toString();
+  const url = `${BASE}/threads/${thread_id}/run${qs ? `?${qs}` : ""}`;
 
-  const ws = new WebSocket(wsUrl);
-  const queue: string[] = [];
-  const waiters: Array<() => void> = [];
-  let done = false;
-  let streamError: Error | null = null;
-  // Track whether we received a terminal event (done/error) BEFORE the socket
-  // closed. iOS Safari aggressively closes background WebSockets — when that
-  // happens mid-stream the server-side run keeps going (broadcasts into the
-  // registry) and we want the caller to reattach via SSE, not silently end.
-  let sawTerminal = false;
+  return (async function* () {
+    const queue: string[] = [];
+    const waiters: Array<() => void> = [];
+    let done = false;
+    let streamError: Error | null = null;
+    const notify = () => { while (waiters.length > 0) waiters.shift()?.(); };
 
-  const notify = () => {
-    while (waiters.length > 0) {
-      waiters.shift()?.();
-    }
-  };
-
-  // Reset on every server message; if it fires we treat the connection as
-  // dead and tear down so the caller falls into the SSE reattach path.
-  let stallTimer: ReturnType<typeof setTimeout> | null = null;
-  const resetStallTimer = () => {
-    if (stallTimer) clearTimeout(stallTimer);
-    stallTimer = setTimeout(() => {
-      // Mark recoverable; the higher layer will GET the run and replay.
-      streamError = Object.assign(new Error("ws stalled — no keepalive"), {
-        code: "ws_drop_reattach" as const,
-      });
-      done = true;
-      try { ws.close(4000, "stall"); } catch { /* */ }
-      notify();
-    }, WS_STALL_TIMEOUT_MS);
-  };
-
-  const push = (raw: string) => {
-    // Keepalives keep the connection scored as live but never reach the
-    // caller — they would just look like noise in the assistant's output.
-    try {
-      const event = JSON.parse(raw) as { type?: string };
-      if (event.type === "keepalive") return;
-      if (event.type === "done" || event.type === "error") {
-        done = true;
-        sawTerminal = true;
+    const es = new EventSource(url, { withCredentials: true });
+    es.onmessage = (e) => {
+      if (typeof e.data === "string") {
+        queue.push(e.data);
+        try {
+          const parsed = JSON.parse(e.data) as { type?: string };
+          if (parsed.type === "done" || parsed.type === "error") {
+            done = true;
+          }
+        } catch { /* let consumer surface parse errors */ }
+        notify();
       }
-    } catch {
-      // ignore malformed payloads here and let callers surface parse errors
-    }
-    queue.push(raw);
-    notify();
-  };
-
-  ws.onopen = () => {
-    resetStallTimer();
-    ws.send(JSON.stringify({ thread_id, message, stream_options, attachments }));
-  };
-
-  ws.onmessage = (event) => {
-    resetStallTimer();
-    if (typeof event.data === "string") {
-      push(event.data);
-      return;
-    }
-
-    if (event.data instanceof Blob) {
-      void event.data.text().then(push).catch((err) => {
-        streamError = err as Error;
+    };
+    // EventSource auto-reconnects on transient network drops. We only treat
+    // it as a hard error if the *first* connect attempt fails (no successful
+    // 'open' ever fired) — anything after that is a recoverable drop and
+    // the server's replay buffer will deliver missed chunks on reconnect.
+    let everOpened = false;
+    es.onopen = () => { everOpened = true; };
+    es.onerror = () => {
+      if (!everOpened) {
+        streamError = new Error("EventSource failed to open");
         done = true;
         notify();
-      });
-    }
-  };
-
-  ws.onerror = () => {
-    streamError = new Error("WebSocket transport failed");
-    done = true;
-    // The URL we connected to is probably stale (server moved, proxy path
-    // changed, etc.). Drop the cached entry so the next call re-discovers
-    // it via GET /api/v1/ws, and so the SSE fallback in useSSE works on
-    // the next attempt without a page reload.
-    invalidateWsUrl();
-    notify();
-  };
-
-  ws.onclose = (event) => {
-    if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
-    if (!sawTerminal && !streamError) {
-      // Mid-stream drop (mobile suspend, network blip). The server-side run
-      // is still going in the registry — flag a recoverable error so the
-      // caller can reattach via SSE GET instead of starting a new POST run.
-      streamError = Object.assign(new Error("ws closed before completion"), {
-        code: "ws_drop_reattach" as const,
-      });
-    }
-    // Any non-clean close (e.g. abnormal closure on Wi-Fi switch, or the
-    // server-side heartbeat sweep terminating us) means the cached URL may
-    // no longer be reachable from the new network — re-resolve next time.
-    if (event.code !== 1000) invalidateWsUrl();
-    done = true;
-    notify();
-  };
-
-  // Network-change escape hatch: when the browser flips back online (after a
-  // Wi-Fi swap, VPN attach, etc.) any in-flight WS is almost certainly tied
-  // to a stale TCP path. Force-close so the caller's SSE reattach kicks in
-  // immediately instead of waiting for TCP to time out, which can take
-  // minutes on a hung path.
-  const onOnline = () => {
-    if (done) return;
-    streamError = Object.assign(new Error("network changed mid-stream"), {
-      code: "ws_drop_reattach" as const,
-    });
-    done = true;
-    try { ws.close(4001, "network_change"); } catch { /* */ }
-    invalidateWsUrl();
-    notify();
-  };
-  if (typeof window !== "undefined") window.addEventListener("online", onOnline);
-
-  signal.addEventListener("abort", () => {
-    done = true;
-    ws.close(1000, "aborted");
-    notify();
-  }, { once: true });
-
-  try {
-    while (!done || queue.length > 0) {
-      if (queue.length > 0) {
-        yield queue.shift() as string;
-        continue;
       }
+      // else: ignore — EventSource will try to reconnect.
+    };
 
-      if (streamError) {
-        throw streamError;
+    const onAbort = () => {
+      done = true;
+      try { es.close(); } catch { /* */ }
+      notify();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      while (!done || queue.length > 0) {
+        if (queue.length > 0) {
+          yield queue.shift() as string;
+          continue;
+        }
+        if (streamError) throw streamError;
+        await new Promise<void>((resolve) => waiters.push(resolve));
       }
-
-      await new Promise<void>((resolve) => waiters.push(resolve));
+      if (streamError) throw streamError;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      try { es.close(); } catch { /* */ }
     }
-
-    if (streamError) {
-      throw streamError;
-    }
-  } finally {
-    if (stallTimer) clearTimeout(stallTimer);
-    if (typeof window !== "undefined") window.removeEventListener("online", onOnline);
-  }
+  })();
 }
