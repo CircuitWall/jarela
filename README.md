@@ -146,6 +146,16 @@ cd jarela
 npm install
 ```
 
+### First launch — one key, then chat
+
+The very first time the app starts with no `model_configs` row, it routes
+to a single setup screen asking for **one** LLM provider key. Validate,
+save, done — every subsequent integration (Gmail, Outlook, Atlassian, …)
+is driven by chatting with the agent, which proposes the credential
+collection through the existing approval rail. Secrets are typed into the
+approval modal directly; the agent never sees them. See
+[ADR-0010](./docs/adr/0010-agent-led-setup-and-integration-manifests.md).
+
 Then pick one launch mode:
 
 ### Dev (hot reload)
@@ -329,6 +339,13 @@ the same in-UI OAuth flow:
 | **Google** (Gmail + Calendar) | `Integrations` panel | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
 | **Microsoft** (Outlook + Calendar) | `Integrations` panel | In-app Microsoft OAuth via Azure app registration — click **Connect Outlook**, approve, done. Scopes: `Mail.ReadWrite` + `Calendars.ReadWrite` + `offline_access`. Works with personal (`@outlook.com`) and work/school accounts. |
 | **WhatsApp** | `Bridges` panel | Baileys; pairs a phone, routes JIDs to agents |
+
+Each first-class integration ships a machine-readable manifest at
+`lib/integrations/<id>/manifest.ts` (prerequisites + ordered steps +
+troubleshooting). The agent reads these via the `list_integrations` /
+`get_integration_setup` tools and walks the user through enabling them
+without anyone touching the integrations panel by hand. New integrations
+must include a manifest — `npm run lint` enforces it.
 
 ## Extension points
 

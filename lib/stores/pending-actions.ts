@@ -7,7 +7,11 @@ export type ActionKind =
   | "install_mcp"
   | "toggle_mcp"
   | "update_agent_tools"
-  | "update_agent";
+  | "update_agent"
+  // Added by ADR-0010 (agent-led setup).
+  | "start_oauth"
+  | "set_provider_key"
+  | "enable_integration";
 
 export type ActionStatus = "pending" | "approved" | "denied" | "failed";
 

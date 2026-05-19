@@ -222,7 +222,14 @@ export interface ScheduledTask {
 export interface PendingAction {
   id: string;
   agent_id: string;
-  kind: "install_mcp" | "toggle_mcp" | "update_agent_tools" | "update_agent";
+  kind:
+    | "install_mcp"
+    | "toggle_mcp"
+    | "update_agent_tools"
+    | "update_agent"
+    | "start_oauth"
+    | "set_provider_key"
+    | "enable_integration";
   payload: Record<string, unknown>;
   reason: string | null;
   status: "pending" | "approved" | "denied" | "failed";

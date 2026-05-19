@@ -6,7 +6,7 @@
     "dev": "next dev --webpack -p 4312",
     "build": "next build --webpack && node scripts/postbuild.mjs",
     "start": "node scripts/start-prod.mjs",
-    "lint": "eslint .",
+    "lint": "eslint . && node scripts/check-integration-manifests.mjs",
     "test:live": "node scripts/live-test.mjs",
     "test:live:full": "node scripts/live-test.mjs --llm",
     "test:live:isolated": "node scripts/live-test-isolated.mjs",

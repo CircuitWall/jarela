@@ -41,16 +41,31 @@ export const proposeConfigChangeTool = tool(
       "The proposal is queued and shown to the user; they explicitly approve or deny. " +
       "Don't propose changes the user didn't ask for — only when the current task clearly needs it.",
     schema: z.object({
-      kind: z.enum(["install_mcp", "toggle_mcp", "update_agent_tools", "update_agent"])
+      kind: z
+        .enum([
+          "install_mcp",
+          "toggle_mcp",
+          "update_agent_tools",
+          "update_agent",
+          "start_oauth",
+          "set_provider_key",
+          "enable_integration",
+        ])
         .describe("Type of change being proposed"),
       payload: z.record(z.string(), z.unknown())
         .describe(
-          "Parameters for the change. Examples by kind:\n" +
+          "Parameters for the change. NEVER put secrets, API keys, OAuth tokens, " +
+          "or passwords in this object — those are collected by the approval UI " +
+          "directly. Examples by kind:\n" +
           "- install_mcp: { registry_id: 'github', variables: { GITHUB_TOKEN: 'asks-user-for-it' } } " +
           "  OR { name, transport, spec }\n" +
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
           "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'] }\n" +
-          "- update_agent: { agent_id, identity?, instructions?, history_limit?, history_window_hours? }"
+          "- update_agent: { agent_id, identity?, instructions?, history_limit?, history_window_hours? }\n" +
+          "- start_oauth: { integration_id: 'gmail' } — only after enable_integration saved client_id/secret\n" +
+          "- set_provider_key: { name: 'anthropic-default', provider: 'anthropic', model_id: 'claude-opus-4-7', is_default?: true } " +
+          "  — the user pastes the API key into the approval modal; do NOT include it here\n" +
+          "- enable_integration: { id: 'gmail' } — the user fills credentials in the approval modal"
         ),
       reason: z.string().describe("Short human-readable reason shown to the user (≤100 chars)"),
     }),

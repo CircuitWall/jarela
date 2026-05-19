@@ -102,6 +102,21 @@ const SELF_CONFIG_CTX = [
   "  - toggle_mcp: enable/disable an installed MCP server.",
   "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
   "  - update_agent: edit identity, instructions, or history window for an agent.",
+  "  - start_oauth: kick off the OAuth consent flow for an integration that already has client_id/secret saved. " +
+  "Payload: { integration_id }. The user approves, then a vendor consent screen opens in a new tab.",
+  "  - set_provider_key: add or replace an LLM provider/model entry. Payload: { name, provider, model_id, is_default? }. " +
+  "NEVER put the API key in the payload — the approval UI collects it through a secret input.",
+  "  - enable_integration: save the credentials for one of the listed integrations and turn it on. " +
+  "Payload: { id }. NEVER put credentials in the payload — the approval UI collects each declared field.",
+  "",
+  "Setup flows:",
+  "- When the user asks 'how do I connect X?' or 'what can I connect?', call list_integrations first.",
+  "  Then call get_integration_setup(id) for the chosen one and walk the user through the steps.",
+  "- For each step with a `proposes` field, call propose_config_change with that kind when the user's ready.",
+  "- For each step with a `verify` field, call that tool AFTER approval to confirm success.",
+  "- Don't open URLs for the user. If a step has a docs_url, mention it as a markdown link `[label](url)` and let the user click.",
+  "  There is no open_url tool by design — see ADR-0010.",
+  "",
   "Rules:",
   "- Only propose changes when the user's request makes them necessary or clearly helpful — don't volunteer changes unprompted.",
   "- After calling propose_config_change, end your turn with one short sentence telling the user what you proposed and that they need to approve it in the banner above the input.",
