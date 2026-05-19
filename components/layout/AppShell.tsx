@@ -130,7 +130,7 @@ export function AppShell() {
   });
 
   return (
-    <div className="h-screen h-[100dvh] flex flex-col bg-surface text-fg overflow-hidden">
+    <div className="h-screen h-[100dvh] flex flex-col bg-surface text-fg overflow-hidden px-safe">
       <TopProgressBar />
       <CryptoFallbackBanner />
       <NotificationStatus />
@@ -139,7 +139,8 @@ export function AppShell() {
         className="flex items-center px-4 border-b border-border bg-surface-2 shrink-0"
         style={{
           // Extra 0.5rem above safe-area so the logo doesn't crowd the
-          // Dynamic Island / camera cutout on iPhone Pro models.
+          // Dynamic Island / camera cutout on iPhone Pro models. The
+          // outer shell handles left/right safe-area insets for landscape.
           paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
           height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)",
         }}

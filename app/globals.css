@@ -124,9 +124,18 @@ html, body, #__next {
   input, textarea, select { font-size: 16px !important; }
 }
 
-/* Safe-area helpers for notched phones and the iOS home indicator. */
+/* Safe-area helpers for notched phones and the iOS home indicator.
+ * Horizontal helpers matter in landscape on iPhones with a Dynamic Island
+ * or camera cutout — `safe-area-inset-top` is 0 there but left/right are
+ * non-zero, and without these the UI slips under the cutout. */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
 .pt-safe { padding-top: env(safe-area-inset-top); }
+.pl-safe { padding-left: env(safe-area-inset-left); }
+.pr-safe { padding-right: env(safe-area-inset-right); }
+.px-safe {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
 
 .prose-invert pre {
   background: var(--color-surface-2) !important;
