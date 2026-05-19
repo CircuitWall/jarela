@@ -144,6 +144,45 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const { streaming, streamingContent, thinkingContent, toolEvents, error, start, stop, attach, clearStreamingContent } = useSSE(handleDone);
   clearStreamingRef.current = clearStreamingContent;
 
+  // Mirror `streaming` in a ref so the cross-device sync listener below can
+  // bail out without re-binding on every transport state change.
+  const streamingRef = useRef(false);
+  streamingRef.current = streaming;
+
+  // Cross-device thread sync. When ANOTHER client (iOS PWA, bridge, scheduled
+  // task) appends to this thread, the server publishes a notification on the
+  // events bus. `useEventNotifications` dispatches a `jarela:thread-updated`
+  // window event for every such ping. If it matches the thread we're viewing
+  // and we're not currently the source of the run (no local stream in flight),
+  // forward-fetch new messages so the chat list updates without a manual
+  // page refresh.
+  useEffect(() => {
+    if (!threadId) return;
+    function handler(e: Event) {
+      const detail = (e as CustomEvent<{ thread_id: string }>).detail;
+      if (!detail || detail.thread_id !== threadId) return;
+      // The local run's own handleDone path already refetches — skip to
+      // avoid double-fetching while a turn is mid-stream on this device.
+      if (streamingRef.current) return;
+      const cur = messagesRef.current;
+      const anchor = cur.length > 0 ? cur[cur.length - 1].created_at : undefined;
+      const fetchPromise = anchor
+        ? api.threads.get(threadId, { after: anchor })
+        : api.threads.get(threadId);
+      fetchPromise.then((d) => {
+        if (anchor) {
+          if (d.messages.length === 0) return;
+          setMessages((prev) => prev.concat(d.messages));
+        } else {
+          setMessages(d.messages);
+          setHasMore(d.has_more);
+        }
+      }).catch(console.error);
+    }
+    window.addEventListener("jarela:thread-updated", handler);
+    return () => window.removeEventListener("jarela:thread-updated", handler);
+  }, [threadId]);
+
   // Surface every long-running task in the top progress bar.
   useTrackLoading(!!sessionLoading);
   useTrackLoading(streaming);
