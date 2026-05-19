@@ -29,7 +29,7 @@ import {
   setGlobalDispatcher,
   type Dispatcher,
 } from "undici";
-import { getProxyConfigRaw, type ProxyConfigRaw } from "@/lib/stores/proxy-config";
+import { getProxyConfigRaw, type ProxyConfigRaw, type ProxyScheme } from "@/lib/stores/proxy-config";
 
 const execAsync = promisify(exec);
 
@@ -108,8 +108,8 @@ export async function applyProxyConfigFromDb(): Promise<ApplyResult> {
       resetToBaseline();
       return { source: "off", proxyUrl: null, note: "manual mode missing host/port; reverted to no proxy" };
     }
-    const url = buildProxyUrl(cfg.host, cfg.port, cfg.username, cfg.password);
-    installProxy(url, cfg.no_proxy);
+    const url = buildProxyUrl(cfg.scheme, cfg.host, cfg.port, cfg.username, cfg.password);
+    installProxy(url, cfg.no_proxy, cfg.ca_bundle);
     return { source: "manual", proxyUrl: redactAuth(url) };
   }
 
@@ -126,8 +126,10 @@ export async function applyProxyConfigFromDb(): Promise<ApplyResult> {
             : "system mode is macOS-only in v1; using direct connection",
       };
     }
-    const url = buildProxyUrl(detected.host, detected.port, null, null);
-    installProxy(url, cfg.no_proxy);
+    // scutil only reports host/port — fix the hop scheme to http; the
+    // saved ca_bundle still applies (corporate proxy MITM root cert).
+    const url = buildProxyUrl("http", detected.host, detected.port, null, null);
+    installProxy(url, cfg.no_proxy, cfg.ca_bundle);
     return { source: "system", proxyUrl: redactAuth(url) };
   }
 
@@ -139,17 +141,20 @@ export async function applyProxyConfigFromDb(): Promise<ApplyResult> {
 // Internals
 // ---------------------------------------------------------------------
 
-function buildProxyUrl(host: string, port: number, username: string | null, password: string | null): string {
+function buildProxyUrl(
+  scheme: ProxyScheme,
+  host: string,
+  port: number,
+  username: string | null,
+  password: string | null,
+): string {
   const auth = username
     ? `${encodeURIComponent(username)}${password ? `:${encodeURIComponent(password)}` : ""}@`
     : "";
-  // We default to http:// because corporate proxies overwhelmingly use
-  // plaintext HTTP for the proxy hop itself. Users who run an https://
-  // proxy can still set the env var by hand (which takes precedence).
-  return `http://${auth}${host}:${port}`;
+  return `${scheme}://${auth}${host}:${port}`;
 }
 
-function installProxy(url: string, noProxy: string | null): void {
+function installProxy(url: string, noProxy: string | null, caBundle: string | null): void {
   // Set process.env so EnvHttpProxyAgent honors NO_PROXY semantics
   // (per-host bypass) without us reimplementing the matching logic.
   // We still treat the boot-time env snapshot as authoritative for the
@@ -162,7 +167,16 @@ function installProxy(url: string, noProxy: string | null): void {
   } else {
     delete process.env.NO_PROXY;
   }
-  setGlobalDispatcher(new EnvHttpProxyAgent());
+  // ADR-0012: when the user pasted a corporate root CA, inject it on
+  // both TLS legs — the proxy hop (proxyTls) for https-scheme proxies
+  // signed by the corporate root, and the upstream tunnel (requestTls)
+  // for proxies that MITM outbound HTTPS with the same internal CA.
+  // Same blob is correct: the corporate trust chain typically signs
+  // both ends.
+  const opts = caBundle
+    ? { requestTls: { ca: caBundle }, proxyTls: { ca: caBundle } }
+    : {};
+  setGlobalDispatcher(new EnvHttpProxyAgent(opts));
 }
 
 function resetToBaseline(): void {

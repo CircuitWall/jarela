@@ -366,24 +366,29 @@ export interface BridgeChatsResponse {
 // ---------------------------------------------------------------------------
 
 export type ProxyMode = "off" | "manual" | "system";
+export type ProxyScheme = "http" | "https";        // ADR-0012
 
 export interface ProxyConfigStatus {
   mode: ProxyMode;
+  scheme: ProxyScheme;               // ADR-0012
   host: string | null;
   port: number | null;
   username: string | null;
-  password: string | null;          // SECRET_MASK ("********") when set, null when unset
+  password: string | null;           // SECRET_MASK ("********") when set, null when unset
   no_proxy: string | null;
+  ca_bundle: string | null;          // PEM, plaintext (ADR-0012). Public cert, not masked.
   updated_at: string | null;
 }
 
 export interface ProxyConfigInput {
   mode: ProxyMode;
+  scheme?: ProxyScheme;
   host?: string | null;
   port?: number | null;
   username?: string | null;
   password?: string | null;          // omit or send SECRET_MASK to keep existing
   no_proxy?: string | null;
+  ca_bundle?: string | null;         // null/"" clears; non-empty must be PEM
 }
 
 export interface ProxyApplyResult {
