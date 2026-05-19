@@ -3,6 +3,7 @@ import { CheckCircle2, ExternalLink, Key, Link as LinkIcon, Loader2, Trash2, XCi
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import { NetworkSection } from "./NetworkSection";
 
 const SECRET_MASK = "********";
 
@@ -30,6 +31,7 @@ export function IntegrationsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-4 py-3">
+        <NetworkSection />
         {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
         {!loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No integrations available.</p>}
         {defs.map((def) => (
