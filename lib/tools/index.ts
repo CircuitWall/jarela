@@ -41,134 +41,59 @@ import type { ToolPolicy } from "@/lib/agents/base";
 
 export * from "./types";
 
-// To add a new tool: copy lib/tools/template.ts, implement the func, then append here.
-const ALL_TOOLS: StructuredToolInterface[] = [
-  memoryReadTool,
-  memoryWriteTool,
-  memoryListTool,
-  localExecTool,
-  shellExecTool,
-  fileReadTool,
-  fileWriteTool,
-  fileEditTool,
-  fileMoveTool,
-  fileCopyTool,
-  fileDeleteTool,
-  fileListTool,
-  fileMkdirTool,
-  fileStatTool,
-  webSearchTool,
-  webFetchTool,
-  generateImageTool,
-  scheduleTaskTool,
-  listScheduledTasksTool,
-  cancelScheduledTaskTool,
-  proposeConfigChangeTool,
-  checkProposalTool,
-  listIntegrationsTool,
-  getIntegrationSetupTool,
-  jiraSearchTool,
-  jiraGetIssueTool,
-  jiraCreateIssueTool,
-  jiraAddCommentTool,
-  jiraTransitionsTool,
-  confluenceSearchTool,
-  confluenceGetPageTool,
-  gmailSearchTool,
-  gmailGetMessageTool,
-  gmailListLabelsTool,
-  gmailModifyMessageTool,
-  gmailCreateDraftTool,
-  gmailTrashMessageTool,
-  calendarListCalendarsTool,
-  calendarListEventsTool,
-  calendarGetEventTool,
-  calendarCreateEventTool,
-  calendarUpdateEventTool,
-  calendarDeleteEventTool,
-  outlookSearchTool,
-  outlookGetMessageTool,
-  outlookListFoldersTool,
-  outlookModifyMessageTool,
-  outlookCreateDraftTool,
-  outlookTrashMessageTool,
-  outlookCalendarListCalendarsTool,
-  outlookCalendarListEventsTool,
-  outlookCalendarGetEventTool,
-  outlookCalendarCreateEventTool,
-  outlookCalendarUpdateEventTool,
-  outlookCalendarDeleteEventTool,
-  getUserLocationTool,
-];
-
-// Category assignments. Drives the grouped per-section UI in AgentEditor so
+// Category assignments drive the grouped per-section UI in AgentEditor so
 // the user can flip an entire capability on/off without clicking every tool.
 // MCP tools default to "MCP" (overridable per-server in the future).
+//
+// To add a new tool: copy lib/tools/template.ts, implement the func, then
+// append it under the appropriate category below. A single source of truth
+// — no parallel name→category map to keep in sync.
 export type ToolCategory =
   | "Memory" | "Files" | "Shell" | "Web" | "Images"
   | "Schedule" | "Atlassian" | "Mail" | "Calendar" | "Config" | "MCP";
 
-const TOOL_CATEGORY: Record<string, ToolCategory> = {
-  memory_read: "Memory",
-  memory_write: "Memory",
-  memory_list: "Memory",
-  local_exec: "Shell",
-  shell_exec: "Shell",
-  file_read: "Files",
-  file_write: "Files",
-  file_edit: "Files",
-  file_move: "Files",
-  file_copy: "Files",
-  file_delete: "Files",
-  file_list: "Files",
-  file_mkdir: "Files",
-  file_stat: "Files",
-  web_search: "Web",
-  web_fetch: "Web",
-  generate_image: "Images",
-  schedule_task: "Schedule",
-  list_scheduled_tasks: "Schedule",
-  cancel_scheduled_task: "Schedule",
-  propose_config_change: "Config",
-  check_proposal: "Config",
-  list_integrations: "Config",
-  get_integration_setup: "Config",
-  jira_search: "Atlassian",
-  jira_get_issue: "Atlassian",
-  jira_create_issue: "Atlassian",
-  jira_add_comment: "Atlassian",
-  jira_transitions: "Atlassian",
-  confluence_search: "Atlassian",
-  confluence_get_page: "Atlassian",
-  gmail_search: "Mail",
-  gmail_get_message: "Mail",
-  gmail_list_labels: "Mail",
-  gmail_modify_message: "Mail",
-  gmail_create_draft: "Mail",
-  gmail_trash_message: "Mail",
-  calendar_list_calendars: "Calendar",
-  calendar_list_events: "Calendar",
-  calendar_get_event: "Calendar",
-  calendar_create_event: "Calendar",
-  calendar_update_event: "Calendar",
-  calendar_delete_event: "Calendar",
-  outlook_search: "Mail",
-  outlook_get_message: "Mail",
-  outlook_list_folders: "Mail",
-  outlook_modify_message: "Mail",
-  outlook_create_draft: "Mail",
-  outlook_trash_message: "Mail",
-  outlook_calendar_list_calendars: "Calendar",
-  outlook_calendar_list_events: "Calendar",
-  outlook_calendar_get_event: "Calendar",
-  outlook_calendar_create_event: "Calendar",
-  outlook_calendar_update_event: "Calendar",
-  outlook_calendar_delete_event: "Calendar",
-  get_user_location: "Web",
+const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInterface[]> = {
+  Memory: [memoryReadTool, memoryWriteTool, memoryListTool],
+  Shell: [localExecTool, shellExecTool],
+  Files: [
+    fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool,
+    fileDeleteTool, fileListTool, fileMkdirTool, fileStatTool,
+  ],
+  Web: [webSearchTool, webFetchTool, getUserLocationTool],
+  Images: [generateImageTool],
+  Schedule: [scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool],
+  Config: [
+    proposeConfigChangeTool, checkProposalTool,
+    listIntegrationsTool, getIntegrationSetupTool,
+  ],
+  Atlassian: [
+    jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool,
+    jiraTransitionsTool, confluenceSearchTool, confluenceGetPageTool,
+  ],
+  Mail: [
+    gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
+    gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
+    outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
+    outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
+  ],
+  Calendar: [
+    calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
+    calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
+    outlookCalendarListCalendarsTool, outlookCalendarListEventsTool,
+    outlookCalendarGetEventTool, outlookCalendarCreateEventTool,
+    outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
+  ],
 };
 
+const ALL_TOOLS: StructuredToolInterface[] = Object.values(TOOLS_BY_CATEGORY).flat();
+
+const TOOL_CATEGORY: Map<string, ToolCategory> = new Map(
+  (Object.entries(TOOLS_BY_CATEGORY) as Array<[ToolCategory, StructuredToolInterface[]]>)
+    .flatMap(([cat, tools]) => tools.map((t) => [t.name, cat] as const)),
+);
+
 export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
-  return TOOL_CATEGORY[name] ?? (source === "mcp" ? "MCP" : "Config");
+  return TOOL_CATEGORY.get(name) ?? (source === "mcp" ? "MCP" : "Config");
 }
 
 const toolMap = new Map<string, StructuredToolInterface>(ALL_TOOLS.map((t) => [t.name, t]));
