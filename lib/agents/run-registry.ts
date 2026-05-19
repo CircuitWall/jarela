@@ -30,9 +30,16 @@ export interface ActiveRun {
   // disconnects), we signal this controller so the LangGraph stream cancels
   // itself instead of running to completion in the background.
   abort: AbortController;
+  // Resolves when finishRun() is called for this run. Lets a superseding
+  // request (latest-writer-wins arbitration) await the prior run's finally
+  // block (persistAssistantMessage + finishRun) before starting its own.
+  completion: Promise<void>;
 }
 
 const runs = new Map<string, ActiveRun>();
+// Resolvers for each run's completion promise. Kept in a side map so the
+// ActiveRun shape stays serialisable / inspection-friendly.
+const completionResolvers = new WeakMap<ActiveRun, () => void>();
 
 export function startRun(thread_id: string, agent_id: string | null): ActiveRun {
   // If a stale completed run exists, drop it before starting a new one.
@@ -40,6 +47,8 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
   if (existing && existing.status === "running") {
     throw new Error(`A run is already active for thread ${thread_id}`);
   }
+  let resolveCompletion!: () => void;
+  const completion = new Promise<void>((res) => { resolveCompletion = res; });
   const run: ActiveRun = {
     thread_id,
     agent_id,
@@ -50,14 +59,17 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     subscribers: new Set(),
     final_text: "",
     abort: new AbortController(),
+    completion,
   };
+  completionResolvers.set(run, resolveCompletion);
   runs.set(thread_id, run);
   return run;
 }
 
-export function broadcast(thread_id: string, chunk: StreamChunk): void {
-  const run = runs.get(thread_id);
-  if (!run) return;
+export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
+  // Identity-check: a superseded run (takeOverRun + timeout path) must not
+  // smear its trailing chunks onto the replacement entry in the registry.
+  if (runs.get(run.thread_id) !== run) return;
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
   }
@@ -69,9 +81,13 @@ export function broadcast(thread_id: string, chunk: StreamChunk): void {
   }
 }
 
-export function finishRun(thread_id: string, status: "done" | "error"): void {
-  const run = runs.get(thread_id);
-  if (!run) return;
+export function finishRun(run: ActiveRun, status: "done" | "error"): void {
+  // Always resolve the completion promise so any takeOverRun() waiter
+  // unblocks, even if this run was already superseded.
+  completionResolvers.get(run)?.();
+  // Identity-check: a superseded run finishing late must not flip the
+  // replacement's status or evict it from the registry.
+  if (runs.get(run.thread_id) !== run) return;
   run.status = status;
   run.finished_at = Date.now();
   // Drop subscribers — late attachers should NOT keep getting events on a
@@ -79,8 +95,8 @@ export function finishRun(thread_id: string, status: "done" | "error"): void {
   run.subscribers.clear();
   // Auto-evict after TTL so memory doesn't grow with every conversation.
   setTimeout(() => {
-    const cur = runs.get(thread_id);
-    if (cur === run) runs.delete(thread_id);
+    const cur = runs.get(run.thread_id);
+    if (cur === run) runs.delete(run.thread_id);
   }, RECENT_TTL_MS).unref?.();
 }
 
@@ -98,6 +114,30 @@ export function abortRun(thread_id: string, reason = "user_interrupted"): boolea
     try { run.abort.abort(reason); } catch { /* */ }
   }
   return true;
+}
+
+// Latest-writer-wins arbitration. If a run is already in flight for this
+// thread (because another tab / device started one), abort it and wait for
+// its finally block — persistAssistantMessage + finishRun — to complete,
+// then return. Safe (no-op) when no run is active. The caller can then
+// proceed to startRun() without tripping the "run already active" guard.
+//
+// A timeout guards against a stream that refuses to unwind (a hung tool
+// invocation that ignores AbortSignal); after the timeout we move on and
+// let the new run start. The stale run's eventual finishRun() will then
+// be a no-op against the new run because we re-key by thread_id and the
+// guard inside finishRun matches on the registry entry, not the old run.
+export async function takeOverRun(thread_id: string, timeoutMs = 5000): Promise<void> {
+  const cur = runs.get(thread_id);
+  if (!cur || cur.status !== "running") return;
+  abortRun(thread_id, "superseded");
+  await Promise.race([
+    cur.completion,
+    new Promise<void>((res) => {
+      const t = setTimeout(res, timeoutMs);
+      t.unref?.();
+    }),
+  ]);
 }
 
 // Replays buffered events synchronously, then subscribes for live ones.
