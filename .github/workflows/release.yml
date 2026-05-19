@@ -1,0 +1,186 @@
+name: Release
+
+# ADR-0011: per-OS portable archives + npm package, fired on tag push.
+# CI (.github/workflows/ci.yml) still gates merges on lint/typecheck/build.
+# This workflow only runs on tags so a normal push never publishes.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # softprops/action-gh-release attaches archives to the Release
+  id-token: write   # npm provenance
+
+jobs:
+  bundle:
+    name: Bundle (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: darwin
+            archive: tar.gz
+          - os: ubuntu-latest
+            target: linux
+            archive: tar.gz
+          - os: windows-latest
+            target: win
+            archive: zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (next build → standalone)
+        run: npm run build
+
+      - name: Resolve version + bundle name
+        id: meta
+        shell: bash
+        run: |
+          # Strip leading "v" from the tag → version. Falls back to package.json
+          # if for some reason the tag does not match (shouldn't happen — the
+          # workflow trigger is `v*`).
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          if [ -z "$version" ]; then
+            version="$(node -p "require('./package.json').version")"
+          fi
+          name="jarela-${version}-${{ matrix.target }}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Stage bundle (POSIX)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="dist/${{ steps.meta.outputs.name }}"
+          mkdir -p "$dest/.next" "$dest/scripts"
+          cp -R .next/standalone "$dest/.next/standalone"
+          cp -R .next/static     "$dest/.next/static"
+          cp -R public           "$dest/public"
+          cp package.json        "$dest/package.json"
+          cp scripts/install-to-system.sh "$dest/scripts/"
+          cp INSTALL.md          "$dest/INSTALL.md"
+          chmod +x "$dest/scripts/install-to-system.sh"
+
+      - name: Stage bundle (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dest = "dist/${{ steps.meta.outputs.name }}"
+          New-Item -ItemType Directory -Force -Path "$dest/.next" | Out-Null
+          New-Item -ItemType Directory -Force -Path "$dest/scripts" | Out-Null
+          Copy-Item -Recurse -Force .next/standalone "$dest/.next/standalone"
+          Copy-Item -Recurse -Force .next/static     "$dest/.next/static"
+          Copy-Item -Recurse -Force public           "$dest/public"
+          Copy-Item              -Force package.json "$dest/package.json"
+          Copy-Item -Force INSTALL.md                "$dest/INSTALL.md"
+          $winScripts = @(
+            'install-to-system.ps1',
+            'installed-launcher.ps1',
+            'installed-launcher.vbs',
+            'install-tailscale-serve.ps1',
+            'uninstall-tailscale-serve.ps1',
+            'uninstall-from-system.ps1'
+          )
+          foreach ($s in $winScripts) {
+            Copy-Item -Force "scripts/$s" "$dest/scripts/$s"
+          }
+
+      - name: Archive (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -czf "dist/${{ steps.meta.outputs.name }}.tar.gz" \
+              -C dist "${{ steps.meta.outputs.name }}"
+
+      - name: Archive (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Compress-Archive -Path "dist/${{ steps.meta.outputs.name }}/*" `
+                           -DestinationPath "dist/${{ steps.meta.outputs.name }}.zip" `
+                           -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.name }}
+          path: dist/${{ steps.meta.outputs.name }}.${{ matrix.archive }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Attach archives to GitHub Release
+    runs-on: ubuntu-latest
+    needs: bundle
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/jarela-*.tar.gz
+            dist/jarela-*.zip
+          draft: false
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+  npm-publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: bundle
+    # Only attempt to publish if NPM_TOKEN is configured. The expression below
+    # short-circuits to false on a fork or before the secret is added, leaving
+    # the GitHub Release path fully usable on its own.
+    if: ${{ vars.JARELA_NPM_PUBLISH == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match package.json version $pkg" >&2
+            exit 1
+          fi
+
+      - name: Publish (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
