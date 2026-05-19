@@ -25,43 +25,14 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import {
-  getGoogleAccessToken,
+  googleFetch,
   resolveGoogleAuth,
   type GoogleAuth,
 } from "@/lib/integrations/gmail-oauth";
 
-async function calendarFetch(
-  auth: GoogleAuth,
-  path: string,
-  init?: RequestInit,
-): Promise<unknown> {
-  const token = await getGoogleAccessToken(auth);
-  if (typeof token !== "string") return token;
-  const url = path.startsWith("http")
-    ? path
-    : `https://www.googleapis.com/calendar/v3${path}`;
-  try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
-    // 204 No Content (e.g. successful DELETE) has no body to parse.
-    if (res.status === 204) return { ok: true };
-    const text = await res.text();
-    if (!res.ok) {
-      return { error: `Calendar ${res.status}: ${text.slice(0, 500)}`, url };
-    }
-    try { return JSON.parse(text); } catch { return text; }
-  } catch (err) {
-    return { error: `Calendar fetch threw: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
+const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
+const calendarFetch = (auth: GoogleAuth, path: string, init?: RequestInit) =>
+  googleFetch(auth, "Calendar", CALENDAR_BASE, path, init);
 
 // ── Type shapes (minimal — only what we read back) ──────────────────────────
 

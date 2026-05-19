@@ -1,6 +1,7 @@
 import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
+import { collectStream } from "@/lib/agents/stream-collector";
 import { getDueTasks, markTaskRan, type ScheduledTaskRow } from "@/lib/stores/scheduled-tasks";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 
@@ -86,33 +87,8 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
 
   const prepared = await prepareThreadRun(thread.thread_id, task.prompt);
 
-  let assistantContent = "";
-  const usedTools: string[] = [];
-  const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
-  for await (const chunk of prepared.stream) {
-    if (chunk.type === "text_delta") {
-      assistantContent += (chunk.data.delta as string) ?? "";
-    } else if (chunk.type === "tool_call") {
-      const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
-      if (d.name) usedTools.push(d.name);
-      toolEvents.push({
-        id: d.id ?? `call-${toolEvents.length}`,
-        phase: "call",
-        name: d.name ?? "",
-        payload: d.arguments,
-      });
-    } else if (chunk.type === "tool_result") {
-      const d = chunk.data as { id?: string; name?: string; result?: unknown };
-      toolEvents.push({
-        id: d.id ?? `result-${toolEvents.length}`,
-        phase: "result",
-        name: d.name ?? "",
-        payload: d.result,
-      });
-    }
-    if (chunk.type === "done" || chunk.type === "error") break;
-  }
-  persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
+  const collected = await collectStream(prepared.stream);
+  persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents);
   markTaskRan(task.id, task.kind, task.schedule);
   publishNotification({
     type: "task_completed",
@@ -121,7 +97,7 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
     prompt: task.prompt,
     thread_id: thread.thread_id,
     status: "done",
-    preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+    preview: collected.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
     ts: Date.now(),
   });
 }
