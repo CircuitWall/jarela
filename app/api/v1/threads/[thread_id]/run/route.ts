@@ -8,6 +8,7 @@ import {
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
 import { broadcast, finishRun, startRun, subscribe, abortRun, getRun } from "@/lib/agents/run-registry";
+import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 
@@ -76,52 +77,27 @@ export async function POST(req: NextRequest, { params }: Params) {
   // go to the registry; the GET subscriber (and any reattaching clients)
   // receive them via subscribe().
   void (async () => {
-    let assistantContent = "";
-    const usedTools: string[] = [];
-    const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
-    let terminal: "done" | "error" = "done";
-    try {
-      for await (const chunk of prepared.stream as AsyncIterable<StreamChunk>) {
-        if (chunk.type === "text_delta") {
-          assistantContent += (chunk.data.delta as string) ?? "";
-        } else if (chunk.type === "tool_call") {
-          const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
-          if (d.name) usedTools.push(d.name);
-          toolEvents.push({
-            id: d.id ?? `call-${toolEvents.length}`,
-            phase: "call",
-            name: d.name ?? "",
-            payload: d.arguments,
-          });
-        } else if (chunk.type === "tool_result") {
-          const d = chunk.data as { id?: string; name?: string; result?: unknown };
-          toolEvents.push({
-            id: d.id ?? `result-${toolEvents.length}`,
-            phase: "result",
-            name: d.name ?? "",
-            payload: d.result,
-          });
-        }
-        broadcast(active, chunk);
-        if (chunk.type === "error") terminal = "error";
-        if (chunk.type === "done" || chunk.type === "error") break;
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      broadcast(active, { type: "error", data: { message: msg, code: "stream_error" } });
-      terminal = "error";
-    } finally {
-      persistAssistantMessage(thread_id, assistantContent, usedTools, toolEvents);
-      finishRun(active, terminal);
-      publishNotification({
-        type: "run_completed",
-        thread_id,
-        agent_id: thread?.agent_id ?? null,
-        status: terminal,
-        preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
-        ts: Date.now(),
+    const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
+      onChunk: (chunk) => broadcast(active, chunk),
+    });
+    // If the stream threw mid-iteration, collectStream returns terminal="error"
+    // but no `error` chunk was broadcast — surface one to subscribers.
+    if (collected.terminal === "error" && collected.errorMessage) {
+      broadcast(active, {
+        type: "error",
+        data: { message: collected.errorMessage, code: "stream_error" },
       });
     }
+    persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents);
+    finishRun(active, collected.terminal);
+    publishNotification({
+      type: "run_completed",
+      thread_id,
+      agent_id: thread?.agent_id ?? null,
+      status: collected.terminal,
+      preview: collected.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+      ts: Date.now(),
+    });
   })();
 
   return new Response(

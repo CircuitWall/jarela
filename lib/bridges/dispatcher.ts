@@ -1,6 +1,7 @@
-import { getOrCreateAgentThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
+import { collectStream } from "@/lib/agents/stream-collector";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { resolveRoute } from "./router";
 import type { BridgeAdapter, InboundMessage } from "./types";
@@ -77,31 +78,12 @@ export async function handleInboundMessage(
 
     let assistantContent = "";
     const usedTools: string[] = [];
-    const toolEvents: PersistedToolEvent[] = [];
+    const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
     try {
-      for await (const chunk of prepared.stream) {
-        if (chunk.type === "text_delta") {
-          assistantContent += (chunk.data.delta as string) ?? "";
-        } else if (chunk.type === "tool_call") {
-          const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
-          if (d.name) usedTools.push(d.name);
-          toolEvents.push({
-            id: d.id ?? `call-${toolEvents.length}`,
-            phase: "call",
-            name: d.name ?? "",
-            payload: d.arguments,
-          });
-        } else if (chunk.type === "tool_result") {
-          const d = chunk.data as { id?: string; name?: string; result?: unknown };
-          toolEvents.push({
-            id: d.id ?? `result-${toolEvents.length}`,
-            phase: "result",
-            name: d.name ?? "",
-            payload: d.result,
-          });
-        }
-        if (chunk.type === "done" || chunk.type === "error") break;
-      }
+      const collected = await collectStream(prepared.stream);
+      assistantContent = collected.assistantContent;
+      usedTools.push(...collected.usedTools);
+      toolEvents.push(...collected.toolEvents);
     } finally {
       typingActive = false;
       clearInterval(typingTimer);

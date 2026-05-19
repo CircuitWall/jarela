@@ -21,7 +21,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import {
-  getGoogleAccessToken,
+  googleFetch,
   resolveGoogleAuth,
   type GoogleAuth,
 } from "@/lib/integrations/gmail-oauth";
@@ -35,34 +35,9 @@ export function _resolveGmailAuth(): GmailAuth | { error: string } {
   return resolveGoogleAuth();
 }
 
-async function gmailFetch(
-  auth: GmailAuth,
-  path: string,
-  init?: RequestInit,
-): Promise<unknown> {
-  const token = await getGoogleAccessToken(auth);
-  if (typeof token !== "string") return token;
-  const url = path.startsWith("http") ? path : `https://gmail.googleapis.com/gmail/v1/users/me${path}`;
-  try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
-    const text = await res.text();
-    if (!res.ok) {
-      return { error: `Gmail ${res.status}: ${text.slice(0, 500)}`, url };
-    }
-    try { return JSON.parse(text); } catch { return text; }
-  } catch (err) {
-    return { error: `Gmail fetch threw: ${err instanceof Error ? err.message : String(err)}` };
-  }
-}
+const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
+const gmailFetch = (auth: GmailAuth, path: string, init?: RequestInit) =>
+  googleFetch(auth, "Gmail", GMAIL_BASE, path, init);
 
 // ── Decoders / helpers ──────────────────────────────────────────────────────
 
