@@ -71,10 +71,13 @@ Info ("host:  " + $fqdn)
 Info ("port:  " + $Port)
 
 # ── 3. Apply the serve config ──────────────────────────────────────────────
-# `tailscale serve --bg https+insecure://localhost:<port>` terminates HTTPS at
-# the tailnet edge (using the magic cert tailscaled provisions for $fqdn) and
-# forwards to plain HTTP on loopback. This is the shape ADR-0008 standardises:
-# no separate WS path, no insecure cert warnings on iOS.
+# `tailscale serve --bg http://localhost:<port>` terminates HTTPS at the
+# tailnet edge (using the magic cert tailscaled provisions for $fqdn) and
+# forwards to plain HTTP on loopback. Jarela's Next.js server speaks plain
+# HTTP on $Port, so the backend scheme is `http://`, not `https+insecure://`
+# (the latter is for self-signed HTTPS backends and yields 502 against an
+# HTTP server). This is the shape ADR-0008 standardises: single port, no
+# separate WS path, no cert warnings on iOS.
 #
 # Reset first so we leave a clean single-mapping config — earlier LangGUI /
 # Jarela versions registered an extra `/__langgui_ws__` (and later
@@ -83,7 +86,7 @@ Step "Clearing any previous tailscale serve config"
 & $tailscale serve reset 2>&1 | ForEach-Object { Info $_ }
 
 Step "Applying tailscale serve config"
-& $tailscale serve --bg ("https+insecure://localhost:" + $Port) 2>&1 | ForEach-Object { Info $_ }
+& $tailscale serve --bg ("http://localhost:" + $Port) 2>&1 | ForEach-Object { Info $_ }
 if ($LASTEXITCODE -ne 0) {
   Write-Host "tailscale serve failed (exit $LASTEXITCODE)." -ForegroundColor Red
   exit $LASTEXITCODE

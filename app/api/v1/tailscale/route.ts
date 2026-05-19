@@ -65,7 +65,7 @@ function runTailscale(bin: string, args: string[], timeoutMs = 3000): Promise<{ 
 export async function GET(): Promise<NextResponse<TailscaleStatus>> {
   const bin = findTailscale();
   const port = Number(process.env.PORT ?? 4312);
-  const recipe = `tailscale serve --bg https+insecure://localhost:${port}`;
+  const recipe = `tailscale serve --bg http://localhost:${port}`;
   const installScript = "scripts/install-tailscale-serve.ps1";
   const uninstallScript = "scripts/uninstall-tailscale-serve.ps1";
 
