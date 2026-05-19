@@ -18,6 +18,7 @@ C4Container
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
       Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
+      Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
     }
 
@@ -52,6 +53,9 @@ C4Container
     Rel(agents, cohere, "embed")
     Rel(mcp, mcps, "stdio / SSE")
     Rel(routes, github, "HTTPS")
+    Rel(proxy, db, "read proxy_config (via crypto)")
+    Rel(stream, proxy, "outbound via GlobalDispatcher")
+    Rel(routes, proxy, "outbound via GlobalDispatcher")
 ```
 
 ## C4 — Component (Agent Runtime)
@@ -158,6 +162,7 @@ sequenceDiagram
 | API key handling | never leave the host | Stored in DB or env, not synced |
 | Same-origin enforcement | required | CSRF / DNS-rebinding guard in `lib/auth/access.ts` |
 | Secrets at rest | required for sensitive namespaces | AES-GCM envelope, master key in OS keychain or `.secret-key` fallback |
+| Outbound proxy support | required on corporate networks | env vars or in-app `proxy_config` row, applied via undici `setGlobalDispatcher` (ADR-0009); env wins over DB |
 | Stream resilience | reattach within seconds of network change | EventSource auto-reconnect + 4000-event replay buffer in `lib/agents/run-registry.ts` (ADR-0008) |
 | CI on every push | required | `.github/workflows/ci.yml`: lint + tsc + build + live integration suite |
 
