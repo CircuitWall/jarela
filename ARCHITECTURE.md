@@ -134,6 +134,35 @@ sequenceDiagram
     AG->>N: SSE push to any open UI
 ```
 
+## Key Flow — Agent-led integration setup (ADR-0010)
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant UI as Web UI
+    participant AG as Agent Runtime
+    participant REG as Manifest Registry
+    participant PA as pending_actions
+    participant API as /api/v1
+    participant DB as SQLite
+
+    U->>AG: "connect my gmail"
+    AG->>REG: list_integrations / get_integration_setup("gmail")
+    REG-->>AG: manifest (steps + proposes kinds)
+    AG->>PA: propose_config_change(enable_integration, payload)
+    PA-->>UI: ApprovalsBanner shows pending row
+    U->>UI: Approve → secret-collection modal
+    UI->>API: POST /pending-actions/:id/approve { extras: { client_id, client_secret } }
+    API->>DB: applyEnableIntegration(payload, extras)
+    AG->>PA: propose_config_change(start_oauth, { integration_id })
+    U->>UI: Approve
+    UI->>API: POST /pending-actions/:id/approve
+    UI->>API: POST /integrations/gmail/oauth/start
+    API-->>UI: { authorize_url }
+    UI->>U: window.open(authorize_url)
+    Note over AG,DB: Agent never sees secrets — collected by approval UI directly
+```
+
 ## Key Flow — Scheduled background task
 
 ```mermaid
