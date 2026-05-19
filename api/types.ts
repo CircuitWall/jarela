@@ -353,3 +353,13 @@ export interface BridgeChatsResponse {
   running: boolean;
   chats: BridgeChat[];
 }
+
+export interface TailscaleStatus {
+  installed: boolean;
+  logged_in: boolean;
+  fqdn: string | null;
+  serving: boolean;
+  serve_recipe: string;
+  install_script: string;
+  uninstall_script: string;
+}

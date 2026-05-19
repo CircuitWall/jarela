@@ -5,7 +5,8 @@
 [CmdletBinding()]
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Jarela'),
-  [switch]$PurgeData
+  [switch]$PurgeData,
+  [switch]$KeepTailscale
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,4 +45,13 @@ if ($PurgeData) {
 } else {
   Write-Host ("Your data at " + (Join-Path $env:USERPROFILE '.jarela') + " was left untouched.")
   Write-Host "Pass -PurgeData to also delete it."
+}
+
+if (-not $KeepTailscale) {
+  $tsScript = Join-Path $PSScriptRoot 'uninstall-tailscale-serve.ps1'
+  if (Test-Path $tsScript) {
+    Write-Host ""
+    Write-Host "Resetting tailscale serve config (skip with -KeepTailscale)..."
+    try { & powershell -NoProfile -ExecutionPolicy Bypass -File $tsScript } catch {}
+  }
 }
