@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Brain, Calendar, Cpu, Key, MessageSquare, Monitor, Moon, Plug, Smartphone, Sun, User, X } from "lucide-react";
+import { Bot, Brain, Calendar, Cpu, Key, MessageSquare, Monitor, Moon, Plug, Smartphone, Sun, User } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
@@ -164,14 +164,6 @@ export function MenuPanel({
 }: Props) {
   return (
     <div className="absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full bg-surface-2 border-l border-border z-20 flex flex-col shadow-2xl pb-safe">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <span className="text-fg font-semibold tracking-tight select-none">Jarela</span>
-        <button onClick={onClose} className="p-1 text-fg-subtle hover:text-fg transition-colors rounded">
-          <X size={15} />
-        </button>
-      </div>
-
       {/* Navigation tabs — icon + short label; full name shown on hover */}
       <div className="flex gap-0.5 px-2 py-2 border-b border-border shrink-0">
         {(["chat", "agents", "memory", "models", "mcp", "integrations", "tasks", "bridges", "profile"] as Tab[]).map((tab) => (
