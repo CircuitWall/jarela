@@ -362,7 +362,7 @@ the same in-UI OAuth flow:
 
 | Integration | Where | How |
 | --- | --- | --- |
-| **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters`. private: `npm run install:private-mcps` to clone+build sonatype/mcp-docs into `~/.jarela/external/`, then pick from "Browse popular". |
+| **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters`. Browse popular registry or paste a custom command. |
 | **GitHub** | `Profile` panel | PAT or Copilot OAuth |
 | **Atlassian** (Jira + Confluence) | `Integrations` panel | API token + email |
 | **Google** (Gmail + Calendar) | `Integrations` panel | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
