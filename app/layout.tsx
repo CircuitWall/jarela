@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { AppProvider } from "@/contexts/AppContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistration";
@@ -29,10 +30,13 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-// Inline pre-paint script: reads the persisted theme and sets
-// `data-theme` on <html> before the first paint, so light-mode users
-// don't flash dark on every page load. Falls back to "system" which
-// then defers to the prefers-color-scheme media query.
+// Pre-paint script: reads the persisted theme and sets `data-theme` on
+// <html> before the first paint, so light-mode users don't flash dark on
+// every page load. Routed through next/script with `beforeInteractive`
+// because raw <script> elements inside JSX are rejected by React 19's
+// client renderer (Next 16 upgrade) and trip a cascading "Element type is
+// invalid" error on the next sibling. Falls back to "system", which then
+// defers to the prefers-color-scheme media query.
 const themeBootstrap = `(() => {
   try {
     var t = localStorage.getItem("jarela-theme");
@@ -45,11 +49,11 @@ const themeBootstrap = `(() => {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="system">
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
-      </head>
+    <html lang="en" data-theme="system" suppressHydrationWarning>
       <body>
+        <Script id="theme-bootstrap" strategy="beforeInteractive">
+          {themeBootstrap}
+        </Script>
         <ThemeProvider>
           <AppProvider>{children}</AppProvider>
         </ThemeProvider>
