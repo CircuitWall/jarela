@@ -10,13 +10,13 @@ C4Container
 
     System_Boundary(b, "Jarela (Next.js process)") {
       Container(ui, "Web UI", "React 19 + Tailwind", "Chat, agents, models, memory, integrations panels")
-      Container(guard, "Origin / CSRF Guard", "lib/auth", "Rejects cross-origin mutating requests; same-port WS upgrade gating")
+      Container(guard, "Origin / CSRF Guard", "lib/auth", "Rejects cross-origin mutating requests; same-origin enforcement")
       Container(routes, "API Routes", "Next.js Route Handlers", "REST + SSE endpoints under /api/v1")
       Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools")
       Container(mcp, "MCP Adapter", "@langchain/mcp-adapters", "Discovers & invokes external MCP tool servers")
       Container(sched, "Scheduler", "cron-parser", "Runs background tasks on schedule, persists in DB")
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
-      Container(stream, "Streaming Layer", "ws + undici", "WS sidecar on same port; heartbeat + stall watchdog; token streaming UI ↔ providers")
+      Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
     }
@@ -31,11 +31,12 @@ C4Container
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
 
     Rel(user, ui, "HTTPS")
-    Rel(ui, guard, "fetch / WS upgrade")
+    Rel(ui, guard, "fetch + EventSource")
     Rel(guard, routes, "allow same-origin")
     Rel(routes, agents, "invoke")
     Rel(agents, mcp, "tool calls")
-    Rel(agents, stream, "token stream")
+    Rel(agents, registry, "broadcast chunks")
+    Rel(routes, registry, "subscribe (GET SSE) / submit (POST 202)")
     Rel(routes, sched, "register / trigger")
     Rel(sched, agents, "run scheduled job")
     Rel(wa_user, whatsapp, "message")
@@ -74,7 +75,7 @@ flowchart LR
     B --> L[Notifications<br/>lib/notifications]
     BR[Bridges<br/>lib/bridges] --> B
     SC[Scheduler<br/>lib/scheduler] --> B
-    WS[WS Sidecar<br/>lib/streaming] -.heartbeat + stall watchdog.-> A
+    RR[Run Registry<br/>lib/agents/run-registry] -.pub/sub + replay buffer.-> A
 ```
 
 ## Key Flow — User sends a chat turn
@@ -84,21 +85,23 @@ sequenceDiagram
     actor U as User
     participant UI as Web UI
     participant G as Origin Guard
-    participant API as /api/v1/agents/:id/stream
+    participant API as /api/v1/threads/:id/run
     participant AG as Agent Runtime
     participant DB as SQLite
     participant LLM as LLM Provider
 
     U->>UI: types message
-    UI->>G: POST + WS upgrade
+    UI->>G: POST /threads/:id/run (submit)
     G->>G: check Origin / Sec-Fetch-Site
     G->>API: forward if same-origin
-    API->>AG: invoke(threadId, msg)
+    API->>AG: startRun + invoke(threadId, msg)
+    API-->>UI: 202 Accepted
+    UI->>API: GET /threads/:id/run (EventSource subscribe)
     AG->>DB: load checkpoint
     AG->>LLM: stream completion
     LLM-->>AG: tokens
-    AG-->>API: token stream
-    API-->>UI: SSE / WS tokens
+    AG-->>API: broadcast chunks (run-registry)
+    API-->>UI: SSE: text_delta / tool_call / done
     UI-->>U: render
     AG->>DB: save checkpoint
 ```
@@ -155,7 +158,7 @@ sequenceDiagram
 | API key handling | never leave the host | Stored in DB or env, not synced |
 | Same-origin enforcement | required | CSRF / DNS-rebinding guard in `lib/auth/access.ts` |
 | Secrets at rest | required for sensitive namespaces | AES-GCM envelope, master key in OS keychain or `.secret-key` fallback |
-| WS resilience | reconnect within seconds of network change | Heartbeat + stall watchdog in `lib/streaming/` |
+| Stream resilience | reattach within seconds of network change | EventSource auto-reconnect + 4000-event replay buffer in `lib/agents/run-registry.ts` (ADR-0008) |
 | CI on every push | required | `.github/workflows/ci.yml`: lint + tsc + build + live integration suite |
 
 ## External Dependencies
