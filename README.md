@@ -134,11 +134,40 @@ create an Outlook Calendar invite in the same turn.
 
 ## Quick start
 
-Prerequisites: **Node.js ≥ 22.6** (Node 25 recommended), npm, git.
-
 Works on **Windows 10/11**, **macOS 12+**, and **Linux** (any modern glibc
 distro). See [Supported platforms](#supported-platforms) for the per-OS
 file layout.
+
+### Install (no source checkout needed)
+
+Two pre-built paths — pick one. Both end at the same place: a local Next.js
+process on `http://127.0.0.1:4312`, all state in `~/.jarela`. See
+[INSTALL.md](./INSTALL.md) for first-launch warnings and uninstall steps,
+and [ADR-0011](./docs/adr/0011-distribute-via-portable-archives-and-npm.md)
+for why both paths exist.
+
+**A. Download a release archive** (no Node required to install — bundle is
+self-contained):
+
+| OS      | Asset                                |
+|---------|--------------------------------------|
+| macOS   | `jarela-<version>-darwin.tar.gz`     |
+| Windows | `jarela-<version>-win.zip`           |
+| Linux   | `jarela-<version>-linux.tar.gz`      |
+
+Extract, then run the install script with `--skip-build` / `-SkipBuild` —
+the bundle ships a pre-built `.next/standalone/` tree.
+
+**B. From npm** (Node ≥ 22 required):
+
+```bash
+npm install -g jarela
+jarela        # first run builds (~30–60 s), subsequent runs start instantly
+```
+
+### Or from source (developers)
+
+Prerequisites: **Node.js ≥ 22.6** (Node 25 recommended), npm, git.
 
 ```bash
 git clone https://github.com/andrew-ge-wu/jarela.git
