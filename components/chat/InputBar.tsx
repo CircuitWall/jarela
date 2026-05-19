@@ -85,7 +85,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
     // pb-3 + safe-area inset, additively. `pb-safe` alone overrides `pb-3`
     // and collapses to 0 on devices without a notch (Android Edge, desktop).
     <div
-      className="border-t border-border bg-surface-2 px-3 sm:px-4 pt-2"
+      className="glass border-t border-border/60 px-3 sm:px-4 pt-2"
       style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
     >
       {/* Attachment previews */}
@@ -140,7 +140,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         </button>
 
         <textarea
-          className="flex-1 resize-none bg-surface-3 text-fg text-sm rounded-xl px-3 py-2 border border-border focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-fg-faint max-h-48 min-h-[44px]"
+          className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-48 min-h-[44px] transition-colors"
           placeholder={placeholder ?? "Message… or /new to save session to memory"}
           rows={1}
           value={value}
@@ -157,7 +157,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         {streaming ? (
           <button
             onClick={onStop}
-            className="shrink-0 p-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-colors"
+            className="glass-btn-stop shrink-0 p-2.5 rounded-xl text-white transition-colors"
             title="Stop"
           >
             <Square size={16} />
@@ -166,7 +166,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           <button
             onClick={onSubmit}
             disabled={(!value.trim() && !attachments.length) || disabled}
-            className="shrink-0 p-2.5 rounded-xl bg-accent hover:bg-accent-hover text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="glass-btn-send shrink-0 p-2.5 rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             title="Send"
           >
             <Send size={16} />

@@ -126,6 +126,168 @@ html, body, #__next {
   overscroll-behavior-y: none;
 }
 
+/* Ambient gradient wash — two centered, fixed color-fields behind every
+ * glass surface. One soft cool wash above (light from the top) and one
+ * subtle warm wash below (a quiet underglow). Two sources read as a calm
+ * lit space; three felt like a marketing site. Alphas kept low — enough
+ * to give the blur something to chew on, not enough to compete with
+ * content. Fixed attachment anchors the gradient to the viewport so
+ * scrolling content slides over it rather than dragging it along. */
+body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%,  rgba(99, 102, 241, 0.28), transparent 65%),
+    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(56, 189, 248, 0.22), transparent 65%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.14), transparent 65%),
+    radial-gradient(ellipse 90% 50% at 50% 110%, rgba(56, 189, 248, 0.12), transparent 65%);
+}
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] body {
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99, 102, 241, 0.14), transparent 65%),
+      radial-gradient(ellipse 90% 50% at 50% 110%, rgba(56, 189, 248, 0.12), transparent 65%);
+  }
+}
+
+/* ---------------------------------------------------------------------- *
+ * Liquid glass surfaces                                                  *
+ *                                                                        *
+ * Every glass panel in this app meets a solid boundary along its top     *
+ * edge — the header sits flush with the screen edge, the menu slides     *
+ * out from under the header, the input bar caps the message scroll, and  *
+ * each bubble's top kisses either the previous bubble or the header      *
+ * glass. We turn that boundary into a feature: a 1px specular rim on the *
+ * top edge plus a brighter→dimmer vertical wash makes the panel read as  *
+ * a piece of physical glass catching light from above.                   *
+ *                                                                        *
+ *   .glass           — chrome (header, menu, input bar). Tinted          *
+ *                      surface-2, blur, top rim-light, soft inner edge.  *
+ *   .glass-elevated  — floating overlays (drop shadow added).            *
+ *   .glass-bubble    — assistant message bubbles. Lighter tint than      *
+ *                      chrome so they feel like a layer above it.        *
+ *   .glass-bubble-accent — user bubbles. Accent-tinted with a            *
+ *                      pronounced top sheen.                             *
+ * ---------------------------------------------------------------------- */
+.glass {
+  background-color: rgba(24, 24, 27, 0.45);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.06) 0%,
+    transparent 65%
+  );
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.glass-elevated {
+  background-color: rgba(24, 24, 27, 0.55);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    transparent 60%
+  );
+  backdrop-filter: blur(28px) saturate(1.9);
+  -webkit-backdrop-filter: blur(28px) saturate(1.9);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 24px 60px -12px rgba(0, 0, 0, 0.5);
+}
+.glass-bubble {
+  background-color: rgba(39, 39, 42, 0.50);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.07) 0%,
+    transparent 70%
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+.glass-bubble-accent {
+  background-color: color-mix(in srgb, var(--color-accent) 65%, transparent);
+  background-image: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.25) 0%,
+    transparent 65%
+  );
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+/* Light-mode glass: lighter tint, white rim still on top (light from above),
+ * inner edge flips to a hairline of slate so the glass reads as raised
+ * rather than dissolved into the page. */
+[data-theme="light"] .glass {
+  background-color: rgba(255, 255, 255, 0.55);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, transparent 65%);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+}
+[data-theme="light"] .glass-elevated {
+  background-color: rgba(255, 255, 255, 0.65);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 60%);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.07),
+    0 24px 60px -12px rgba(15, 23, 42, 0.2);
+}
+[data-theme="light"] .glass-bubble {
+  background-color: rgba(244, 244, 245, 0.6);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 70%);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+}
+@media (prefers-color-scheme: light) {
+  [data-theme="system"] .glass {
+    background-color: rgba(255, 255, 255, 0.55);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.4) 0%, transparent 65%);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+      inset 0 0 0 1px rgba(15, 23, 42, 0.07);
+  }
+  [data-theme="system"] .glass-elevated {
+    background-color: rgba(255, 255, 255, 0.65);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 60%);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+      inset 0 0 0 1px rgba(15, 23, 42, 0.07),
+      0 24px 60px -12px rgba(15, 23, 42, 0.2);
+  }
+  [data-theme="system"] .glass-bubble {
+    background-color: rgba(244, 244, 245, 0.6);
+    background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.5) 0%, transparent 70%);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+      inset 0 0 0 1px rgba(15, 23, 42, 0.06);
+  }
+}
+
+/* Browsers without backdrop-filter (older Firefox without the flag) get a
+ * solid fallback so the chrome doesn't bleed messages through it. */
+@supports not (backdrop-filter: blur(1px)) {
+  .glass, .glass-elevated, .glass-bubble {
+    background-color: var(--color-surface-2);
+  }
+  .glass-bubble-accent {
+    background-color: var(--color-accent);
+  }
+}
+
 /* Disable the blue tap flash on iOS / Android; we use explicit :active styles. */
 * { -webkit-tap-highlight-color: transparent; }
 
@@ -290,4 +452,52 @@ html, body, #__next {
 @keyframes jarela-toast-shrink {
   from { transform: scaleX(1); }
   to   { transform: scaleX(0); }
+}
+
+/* Glass send/stop buttons. Same rim-light + vertical wash as the chrome,
+ * tinted with the action color so they read as "live" controls. Hover
+ * brightens the wash; active (pressed) flattens it for tactile feel. */
+.glass-btn-send,
+.glass-btn-stop {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, transparent 70%);
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.30),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.10),
+    0 4px 12px -2px rgba(0, 0, 0, 0.25);
+}
+.glass-btn-send {
+  background-color: color-mix(in srgb, var(--color-accent) 85%, white 0%);
+}
+.glass-btn-send:hover:not(:disabled) {
+  background-color: var(--color-accent-hover);
+}
+.glass-btn-send:active:not(:disabled) {
+  background-image: linear-gradient(180deg, rgba(0, 0, 0, 0.10) 0%, transparent 70%);
+}
+.glass-btn-stop {
+  background-color: rgba(220, 38, 38, 0.85);
+}
+.glass-btn-stop:hover {
+  background-color: rgba(239, 68, 68, 0.95);
+}
+
+/* Streaming typing indicator: three dots that wave in sequence. Used in
+ * place of a blinking pipe cursor while the agent is composing a reply.
+ * Each dot's animation is offset by 160ms — the wave reads as "typing"
+ * rather than "loading". */
+.jarela-typing-dot {
+  display: inline-block;
+  width: 0.32rem;
+  height: 0.32rem;
+  margin: 0 0.10rem;
+  border-radius: 9999px;
+  background-color: var(--color-fg-faint);
+  vertical-align: middle;
+  animation: jarela-typing-bounce 1.2s ease-in-out infinite;
+}
+.jarela-typing-dot:nth-child(2) { animation-delay: 0.16s; }
+.jarela-typing-dot:nth-child(3) { animation-delay: 0.32s; }
+@keyframes jarela-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30%           { transform: translateY(-3px); opacity: 1; }
 }
