@@ -329,6 +329,7 @@ function GmailSetupGuide() {
             <li><code className="text-fg">.../auth/gmail.modify</code></li>
             <li><code className="text-fg">.../auth/gmail.compose</code></li>
             <li><code className="text-fg">.../auth/calendar.events</code></li>
+            <li><code className="text-fg">.../auth/calendar.readonly</code></li>
           </ul>
           Finally, in <Ext href="https://console.cloud.google.com/auth/audience">Audience</Ext>{" "}
           add your own Gmail address as a <strong>Test user</strong>. (Leaving the app in Testing

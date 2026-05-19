@@ -75,10 +75,13 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
   "https://www.googleapis.com/auth/gmail.compose",
   // Calendar: read/write events on the user's existing calendars. Narrow
-  // scope on purpose — doesn't grant listing of unsubscribed calendars or
-  // create/delete of entire calendars (matches the principle-of-least-
-  // privilege the Gmail scopes already follow).
+  // scope on purpose — doesn't grant create/delete of entire calendars
+  // (matches the principle-of-least-privilege the Gmail scopes follow).
   "https://www.googleapis.com/auth/calendar.events",
+  // Read-only metadata of the user's calendar list. Required for the
+  // calendarList.list endpoint that powers calendarListCalendarsTool —
+  // calendar.events alone returns 403 there.
+  "https://www.googleapis.com/auth/calendar.readonly",
 ];
 
 export function buildAuthorizeUrl(opts: {
