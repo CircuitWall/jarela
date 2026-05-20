@@ -208,6 +208,7 @@ sequenceDiagram
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
 | External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |
+| User shell rc (`~/.zshrc`/`~/.bashrc`) on macOS/Linux, User-scope env on Windows | Source for credential env vars (ADR-0016); probed at boot + on demand | Probe failure surfaces a warning, app falls back to whatever is already in `process.env`; tools surface "not configured" via the existing env-then-DB resolver |
 | GitHub API (`api.github.com`) | Native `github_*` tools — issues, PRs, repos (ADR-0015); Copilot OAuth for the model provider | Tool call returns the API error; agent can recover or skip |
 | SQLite (local) | Persistence | Fatal — startup fails fast with clear error |
 
