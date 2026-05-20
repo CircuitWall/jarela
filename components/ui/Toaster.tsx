@@ -3,6 +3,7 @@ import { AlertCircle, Bot, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { dismissToast, type Toast, useToasts } from "@/lib/ui/toasts";
 import { useAppContext } from "@/contexts/AppContext";
+import { parseHref } from "@/lib/ui/navigate";
 
 const GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -73,7 +74,21 @@ function ToastCard({ toast }: { toast: Toast }) {
   }
 
   function open() {
-    if (toast.agent_id) {
+    if (toast.href) {
+      const parsed = parseHref(toast.href);
+      if (parsed.tab) {
+        dispatch({ type: "SET_TAB", tab: parsed.tab });
+        dispatch({ type: "SET_SELECTION", tab: parsed.tab, itemId: parsed.item ?? null });
+      }
+      if (parsed.hash && typeof window !== "undefined") {
+        window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#${parsed.hash}`);
+        window.dispatchEvent(new HashChangeEvent("hashchange"));
+      }
+    } else if (toast.thread_id && toast.agent_id) {
+      // Reply / scheduled-task / bridge-message toasts — land on the exact
+      // thread the event happened in, not just the agent's last-active one.
+      dispatch({ type: "SELECT_THREAD", threadId: toast.thread_id, agentId: toast.agent_id });
+    } else if (toast.agent_id) {
       dispatch({ type: "SET_AGENT", agentId: toast.agent_id });
       dispatch({ type: "SET_TAB", tab: "chat" });
     }
@@ -121,9 +136,11 @@ function ToastCard({ toast }: { toast: Toast }) {
               {toast.body}
             </p>
           )}
-          {(toast.agent_id || toast.thread_id) && (
+          {toast.href ? (
+            <p className="text-[10px] text-accent/80 mt-1">{toast.hrefLabel ?? "Open →"}</p>
+          ) : (toast.agent_id || toast.thread_id) ? (
             <p className="text-[10px] text-accent/80 mt-1">Open chat →</p>
-          )}
+          ) : null}
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); close(); }}

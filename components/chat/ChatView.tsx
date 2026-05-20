@@ -360,6 +360,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   return (
     <div className="flex flex-col h-full">
       <MessageList
+        threadId={threadId}
         messages={messages}
         notices={notices}
         agentConfig={agentConfig}

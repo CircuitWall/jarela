@@ -454,6 +454,18 @@ body {
   to   { transform: scaleX(0); }
 }
 
+/* Deep-link landing flash: a brief glow ring on the row a user just navigated
+ * to from a toast or a chat-message link. Removed by JS after ~1.6s. */
+.jarela-deep-link-flash {
+  animation: jarela-deep-link-flash 1.6s ease-out;
+  border-radius: 0.5rem;
+}
+@keyframes jarela-deep-link-flash {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 80%, transparent); }
+  20%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 35%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 0%, transparent); }
+}
+
 /* Glass send/stop buttons. Same rim-light + vertical wash as the chrome,
  * tinted with the action color so they read as "live" controls. Hover
  * brightens the wash; active (pressed) flattens it for tactile feel. */

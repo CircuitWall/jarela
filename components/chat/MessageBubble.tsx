@@ -1,15 +1,18 @@
 "use client";
-import { memo, useState } from "react";
+import { memo, useCallback, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Bot, ChevronRight, Link as LinkIcon, Paperclip, User, X } from "lucide-react";
+import { Bot, ChevronRight, Link as LinkIcon, Link2, Paperclip, User, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
+import { useAppContext } from "@/contexts/AppContext";
+import { parseHref } from "@/lib/ui/navigate";
+import { pushToast } from "@/lib/ui/toasts";
 
 interface ExtractedRef {
   title: string;
@@ -64,6 +67,7 @@ type Props = {
   agentConfig?: AgentConfig | null;
   userProfile?: UserProfile | null;
   showAvatar?: boolean;
+  threadId?: string | null;
 };
 
 const GRADIENTS = [
@@ -183,13 +187,26 @@ function MapEmbed({ payload }: { payload: string }) {
   );
 }
 
-function MarkdownContent({ text, streaming }: { text: string; streaming?: boolean }) {  return (
+function MarkdownContent({ text, streaming, onInAppLink }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void }) {  return (
     <div className="prose prose-invert prose-sm max-w-none jarela-rich">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
         components={{
           a({ href, children, ...rest }) {
+            const parsed = href ? parseHref(href) : undefined;
+            const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash);
+            if (inApp && href && onInAppLink) {
+              return (
+                <a
+                  {...rest}
+                  href={href}
+                  onClick={(e) => { e.preventDefault(); onInAppLink(href); }}
+                >
+                  {children}
+                </a>
+              );
+            }
             return (
               <a
                 {...rest}
@@ -268,11 +285,11 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
   );
 }
 
-function ContentPartView({ part, isUser }: { part: ContentPart; isUser: boolean }) {
+function ContentPartView({ part, isUser, onInAppLink }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void }) {
   if (part.type === "text") {
     return isUser
       ? <p className="whitespace-pre-wrap">{part.text}</p>
-      : <MarkdownContent text={part.text} />;
+      : <MarkdownContent text={part.text} onInAppLink={onInAppLink} />;
   }
   if (part.type === "image") {
     return <ClickableImage media_type={part.media_type} data={part.data} />;
@@ -352,10 +369,50 @@ function ClickableImage({ media_type, data }: { media_type: string; data: string
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null }: Props) {
+  const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
   const parsed = parseContent(message.content);
+  const messageId = "id" in message ? message.id : null;
+
+  const handleInAppLink = useCallback((href: string) => {
+    const p = parseHref(href);
+    if (p.tab) {
+      dispatch({ type: "SET_TAB", tab: p.tab });
+      dispatch({ type: "SET_SELECTION", tab: p.tab, itemId: p.item ?? null });
+    }
+    if (p.hash && typeof window !== "undefined") {
+      const samePath = `${window.location.pathname}${window.location.search}`;
+      // Force a hashchange even if the hash matches the current value so the
+      // in-thread anchor scrolls again on repeat clicks.
+      if (window.location.hash === `#${p.hash}`) {
+        window.history.replaceState(null, "", samePath);
+      }
+      window.history.replaceState(null, "", `${samePath}#${p.hash}`);
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    }
+  }, [dispatch]);
+
+  const copyLink = useCallback(() => {
+    if (!messageId || typeof window === "undefined") return;
+    const params = new URLSearchParams();
+    if (threadId) params.set("thread", threadId);
+    const qs = params.toString();
+    const url = `${window.location.origin}/${qs ? `?${qs}` : ""}#msg-${messageId}`;
+    void navigator.clipboard.writeText(url).then(() => {
+      pushToast({
+        kind: "success",
+        source: "system",
+        sourceLabel: "Chat",
+        title: "Link copied",
+        body: "Paste anywhere to jump back to this message.",
+        agent_id: null,
+        thread_id: threadId,
+        ttl: 2200,
+      });
+    }).catch(console.error);
+  }, [messageId, threadId]);
 
   // Extract <refs> from assistant messages so they render as a compact footer
   // under the bubble instead of inline. While streaming, only show them after
@@ -390,13 +447,22 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       </div>
 
       <div className={`flex flex-col max-w-[88%] sm:max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
-        {timeLabel && (
-          <span
-            className="text-[10px] text-fg-faint mb-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
-            aria-hidden
-          >
-            {timeLabel}
-          </span>
+        {(timeLabel || messageId) && (
+          <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
+            {timeLabel && (
+              <span className="text-[10px] text-fg-faint" aria-hidden>{timeLabel}</span>
+            )}
+            {messageId && (
+              <button
+                onClick={copyLink}
+                className="text-fg-faint hover:text-fg p-0.5 rounded"
+                title="Copy link to this message"
+                aria-label="Copy link to this message"
+              >
+                <Link2 size={11} />
+              </button>
+            )}
+          </div>
         )}
         <div
           className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full overflow-hidden ${
@@ -407,12 +473,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             isUser ? (
               <p className="whitespace-pre-wrap">{parsed}</p>
             ) : (
-              <MarkdownContent text={renderedString ?? parsed} streaming={streaming} />
+              <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} />
             )
           ) : (
             <div className="flex flex-col gap-1.5">
               {parsed.map((part, i) => (
-                <ContentPartView key={i} part={part} isUser={isUser} />
+                <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
               ))}
               {streaming && (
         <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
