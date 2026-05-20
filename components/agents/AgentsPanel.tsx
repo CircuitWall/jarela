@@ -1,9 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { useAgents } from "@/hooks/useAgents";
 import { useModels } from "@/hooks/useModels";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { AgentEditor } from "./AgentEditor";
 
 const AVATAR_GRADIENTS = [
@@ -46,6 +47,8 @@ export function AgentsPanel() {
   const { models } = useModels();
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("agents", "agent", containerRef);
 
   async function handleSave(data: AgentConfigIn) {
     if (editing === "new") {
@@ -78,7 +81,7 @@ export function AgentsPanel() {
       </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-2 pb-2">
         {loading && (
           <p className="text-fg-faint text-xs text-center py-4">Loading…</p>
         )}
@@ -90,6 +93,7 @@ export function AgentsPanel() {
         {agents.map((a) => (
           <div
             key={a.id}
+            data-deep-link-id={a.id}
             className="group flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-surface-3 transition-colors"
           >
             <AgentAvatar icon={a.icon} name={a.name} id={a.id} />
