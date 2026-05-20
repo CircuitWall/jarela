@@ -191,7 +191,7 @@ export function AppShell() {
       />
       <CryptoFallbackBanner />
       <header
-        className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60 relative"
+        className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
         style={{
           // Top safe-area is mobile-scoped via --app-safe-top so desktop
           // windows stay flush to the edge.
@@ -201,7 +201,7 @@ export function AppShell() {
           height: "calc(3rem + var(--app-safe-top))",
         }}
       >
-        <div className="flex items-center gap-2 select-none" ref={agentPickerRef}>
+        <div className="relative flex items-center gap-2 select-none" ref={agentPickerRef}>
           {/* Logo is blue-on-transparent. In dark mode the blue gets lost
               against the dark glass, so we drop the color and lift the
               alpha to white — `brightness-0` flattens to black, `invert`
