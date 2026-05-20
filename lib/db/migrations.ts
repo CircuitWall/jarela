@@ -134,7 +134,7 @@ export function runMigrations(db: DatabaseSync): void {
       created_at  TEXT NOT NULL,
       updated_at  TEXT NOT NULL,
       UNIQUE(bridge_id, remote_jid),
-      UNIQUE(agent_id)                                 -- one route per agent: chats never interleave inside one agent's thread
+      UNIQUE(agent_id)                                 -- one route per agent (catch-all may intentionally multiplex chats)
     );
     CREATE INDEX IF NOT EXISTS idx_bridge_routes_bridge ON bridge_routes(bridge_id);
     -- HTTP/HTTPS proxy configuration (ADR-0009). Single-row table; the

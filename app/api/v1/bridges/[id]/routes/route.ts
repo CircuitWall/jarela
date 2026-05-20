@@ -24,8 +24,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
   return NextResponse.json(listRoutes(id).map(toResponse));
 }
 
+const RouteJidSchema = z.union([z.literal("*"), z.string().trim().min(3)]);
+
 const CreateSchema = z.object({
-  remote_jid: z.string().trim().min(3),
+  remote_jid: RouteJidSchema,
   agent_id: z.string().trim().min(1),
   label: z.string().trim().max(120).optional().nullable(),
   silent_mode: z.boolean().optional(),

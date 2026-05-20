@@ -26,7 +26,7 @@ export interface BridgeRow {
 export interface BridgeRouteRow {
   id: string;
   bridge_id: string;
-  remote_jid: string;
+  remote_jid: string; // Specific JID or '*' catch-all for unmatched chats on this bridge
   agent_id: string;
   label: string | null;
   // 1 = run the agent on inbound messages but suppress the outbound reply.
@@ -160,7 +160,7 @@ export function findRoute(bridgeId: string, remoteJid: string): BridgeRouteRow |
 
 export function createRoute(input: {
   bridge_id: string;
-  remote_jid: string;
+  remote_jid: string; // Specific JID or '*' catch-all
   agent_id: string;
   label?: string | null;
   silent_mode?: boolean;

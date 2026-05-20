@@ -378,7 +378,7 @@ export interface BridgeLiveStatus {
 export interface BridgeRoute {
   id: string;
   bridge_id: string;
-  remote_jid: string;       // e.g. "5511999990000@s.whatsapp.net" or "<group-id>@g.us"
+  remote_jid: string;       // "*" (catch-all) or e.g. "5511999990000@s.whatsapp.net" / "<group-id>@g.us"
   agent_id: string;
   label: string | null;
   // When true, the agent still runs (records history, executes tools) on
@@ -391,7 +391,7 @@ export interface BridgeRoute {
 }
 
 export interface BridgeRouteIn {
-  remote_jid: string;
+  remote_jid: string;       // "*" enables fallback routing for otherwise-unmatched chats
   agent_id: string;
   label?: string | null;
   silent_mode?: boolean;
