@@ -187,19 +187,18 @@ export function AppShell() {
       <div
         className="shrink-0"
         aria-hidden
-        style={{ height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)" }}
+        style={{ height: "calc(3rem + var(--app-safe-top))" }}
       />
       <CryptoFallbackBanner />
       <header
         className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60 relative"
         style={{
-          // Extra 0.5rem above safe-area so the logo doesn't crowd the
-          // Dynamic Island / camera cutout on iPhone Pro models. The
-          // outer shell handles left/right safe-area insets for landscape.
-          paddingTop: "calc(env(safe-area-inset-top) + 0.5rem)",
+          // Top safe-area is mobile-scoped via --app-safe-top so desktop
+          // windows stay flush to the edge.
+          paddingTop: "var(--app-safe-top)",
           paddingLeft: "calc(env(safe-area-inset-left) + 1rem)",
           paddingRight: "calc(env(safe-area-inset-right) + 1rem)",
-          height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)",
+          height: "calc(3rem + var(--app-safe-top))",
         }}
       >
         <div className="flex items-center gap-2 select-none" ref={agentPickerRef}>

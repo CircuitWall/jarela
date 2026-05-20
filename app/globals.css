@@ -310,6 +310,29 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+/* Some desktop PWAs report a non-zero safe-area top (titlebar overlay),
+ * which creates an unwanted top gap. Apply top safe-area only on narrow
+ * mobile layouts. */
+:root {
+  --app-safe-top: 0px;
+}
+
+@media (max-width: 768px) {
+  :root {
+    --app-safe-top: env(safe-area-inset-top);
+  }
+}
+
+/* Hide scrollbar chrome while keeping scroll/swipe behavior intact. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .prose-invert pre {
   background: var(--color-surface-2) !important;
   border-radius: 0.5rem;
