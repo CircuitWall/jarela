@@ -12,9 +12,9 @@ import { StatusPill } from "./BridgesPanel";
  * binds WhatsApp chats (JIDs) to agents.
  *
  * Routes have a `UNIQUE(agent_id)` constraint server-side — each agent is
- * the target of at most one route across all bridges. The single-thread-per-
- * agent invariant carries over from the rest of Jarela: the bridge enqueues
- * inbound text into that agent's existing thread.
+ * the target of at most one route across all bridges. A route can be a
+ * specific chat JID or `*` (catch-all for otherwise-unrouted chats). In both
+ * cases inbound text is enqueued into that agent's existing thread.
  */
 export function BridgeEditor({
   bridge, onBack, onRename, onToggleEnabled,
@@ -139,10 +139,10 @@ export function BridgeEditor({
 
         <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-fg-faint leading-relaxed">
           <p>
-            <strong className="text-fg-muted">Unrouted messages are ignored.</strong>{" "}
+            <strong className="text-fg-muted">Unrouted messages are ignored (unless catch-all exists).</strong>{" "}
             If a WhatsApp chat isn&apos;t mapped to an agent below, incoming messages are silently dropped
-            (you&apos;ll still see a hint in notifications so you can add a route). Each agent can serve
-            only one chat — they keep a single conversation thread.
+            unless you add a <em>catch-all</em> route (`*`). Each agent can still have only one route,
+            but a catch-all route can intentionally aggregate many chats into one agent thread.
           </p>
         </section>
       </div>
@@ -199,6 +199,8 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   // Agents already targeted by other routes are unavailable in the picker.
   const usedAgents = new Set(routes.map((r) => r.agent_id));
   const availableAgents = agents.filter((a) => !usedAgents.has(a.id));
+  const hasCatchAll = routes.some((r) => r.remote_jid === "*");
+  const creatingCatchAll = draft.remote_jid === "*";
 
   // Hide chats that already have a route — picking them would just throw
   // a UNIQUE violation. Sort: groups & named chats first, then the rest.
@@ -291,8 +293,42 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 
       {adding && (
         <div className="rounded border border-accent/30 bg-surface-3/30 p-2 space-y-2">
-          {!manualMode ? (
-            <>
+          <div className="flex items-center justify-between">
+            <label className="text-[11px] text-fg-subtle flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={creatingCatchAll}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setDraft((d) => ({
+                    ...d,
+                    remote_jid: on ? "*" : "",
+                    label: on ? (d.label.trim() ? d.label : "Catch-all") : d.label,
+                  }));
+                  if (on) {
+                    setManualMode(false);
+                    setError(null);
+                  }
+                }}
+                disabled={hasCatchAll && !creatingCatchAll}
+              />
+              Catch everything else (fallback route)
+            </label>
+            {hasCatchAll && !creatingCatchAll && (
+              <span className="text-[10px] text-fg-faint">Catch-all already exists</span>
+            )}
+          </div>
+
+          {creatingCatchAll && (
+            <p className="text-[11px] text-fg-faint leading-snug">
+              This route matches any inbound chat without an explicit route. The agent will receive
+              chat metadata (name + JID) in each message so it can distinguish sources.
+            </p>
+          )}
+
+          {!creatingCatchAll && (
+            !manualMode ? (
+              <>
               <div className="flex items-center gap-2">
                 <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Chat</label>
                 {chatsLoading && <RefreshCw size={10} className="animate-spin text-fg-faint" />}
@@ -385,9 +421,9 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                   ))}
                 </div>
               )}
-            </>
-          ) : (
-            <>
+              </>
+            ) : (
+              <>
               <div className="flex items-center gap-2">
                 <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">JID</label>
                 <button
@@ -405,7 +441,8 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                 placeholder="5511999990000@s.whatsapp.net or <group-id>@g.us"
                 className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none font-mono"
               />
-            </>
+              </>
+            )
           )}
 
           <div className="space-y-2">
@@ -425,7 +462,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             <input
               value={draft.label}
               onChange={(e) => setDraft((d) => ({ ...d, label: e.target.value }))}
-              placeholder="e.g. Mom, Support Group"
+              placeholder={creatingCatchAll ? "e.g. Catch-all triage" : "e.g. Mom, Support Group"}
               className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none"
             />
           </div>
@@ -450,7 +487,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
       )}
 
       {routes.length === 0 && !adding && (
-        <p className="text-[11px] text-fg-faint py-2">No routes. Inbound messages will be ignored.</p>
+        <p className="text-[11px] text-fg-faint py-2">No routes. Inbound messages will be ignored unless you add a catch-all route.</p>
       )}
 
       {routes.map((r) => (
@@ -493,15 +530,21 @@ function RouteRow({
   // the picker, then the JID itself. Always show the JID as the small
   // monospaced subline so the user can verify the binding.
   const headline = route.label?.trim() || chatName || route.remote_jid;
+  const isCatchAll = route.remote_jid === "*";
   const showJidSubline = headline !== route.remote_jid;
   const isGroup = route.remote_jid.endsWith("@g.us");
   return (
     <div className="py-1.5 border-t border-border first:border-t-0">
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-xs text-fg truncate">{headline}</p>
+          <p className="text-xs text-fg truncate">
+            {isCatchAll ? "Catch-all (everything else)" : headline}
+          </p>
           {showJidSubline && (
             <p className="text-[10px] font-mono text-fg-faint truncate">{route.remote_jid}</p>
+          )}
+          {isCatchAll && (
+            <p className="text-[10px] text-fg-faint">Matches any chat without an explicit route.</p>
           )}
         </div>
         <select

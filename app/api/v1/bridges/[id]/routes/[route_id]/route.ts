@@ -18,8 +18,10 @@ function toResponse(r: BridgeRouteRow) {
   };
 }
 
+const RouteJidSchema = z.union([z.literal("*"), z.string().trim().min(3)]);
+
 const PatchSchema = z.object({
-  remote_jid: z.string().trim().min(3).optional(),
+  remote_jid: RouteJidSchema.optional(),
   agent_id: z.string().trim().min(1).optional(),
   label: z.string().trim().max(120).nullable().optional(),
   silent_mode: z.boolean().optional(),

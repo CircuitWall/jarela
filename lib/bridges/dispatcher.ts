@@ -46,14 +46,23 @@ export async function handleInboundMessage(
     }
 
     const thread = getOrCreateAgentThread(agentId);
-    // For group chats, prepend a sender attribution line so the agent can
-    // tell members apart — the single-thread-per-agent invariant means every
-    // participant's messages land in the same thread. For DMs we leave the
-    // text untouched (the thread itself implies the sender).
-    const senderTag = msg.is_group
-      ? `[from ${msg.push_name ?? msg.participant_jid ?? "unknown"}]\n`
-      : "";
-    const prepared = await prepareThreadRun(thread.thread_id, senderTag + msg.text);
+    // Always stamp bridge/chat provenance onto inbound text so agents can
+    // distinguish sources when a route aggregates multiple chats (catch-all)
+    // and when group participants share one agent thread.
+    const contextLines = [
+      `[bridge:${adapter.bridge_id}]`,
+      `[chat_jid:${msg.remote_jid}]`,
+      `[chat_name:${msg.push_name ?? "unknown"}]`,
+      `[chat_type:${msg.is_group ? "group" : "dm"}]`,
+    ];
+    if (msg.is_group) {
+      contextLines.push(`[participant_jid:${msg.participant_jid ?? "unknown"}]`);
+      contextLines.push(`[participant_name:${msg.push_name ?? msg.participant_jid ?? "unknown"}]`);
+    }
+    const prepared = await prepareThreadRun(
+      thread.thread_id,
+      `${contextLines.join("\n")}\n\n${msg.text}`,
+    );
 
     // Silent mode: suppress *any* outbound signal — no reply, no typing
     // indicator. The typing presence itself is a tell that an agent is
