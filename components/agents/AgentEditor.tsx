@@ -65,27 +65,72 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   // Group tools by category for the sectioned UI. Categories with no tools
   // are omitted automatically. "MCP" is shown last so the user's own MCP-
   // provided tools are visually distinct from the built-in capability blocks.
+  // Categories are then bucketed into optional parent groups (e.g. "Work"
+  // wraps Atlassian + GitHub) — the API tags each tool with `group` so the
+  // UI doesn't need to know which categories live where.
   const groupedTools = useMemo(() => {
-    const groups = new Map<string, ToolInfo[]>();
+    const byCat = new Map<string, ToolInfo[]>();
+    const catGroup = new Map<string, string | null>();
     for (const t of tools) {
       const cat = t.category ?? "Other";
-      const arr = groups.get(cat) ?? [];
+      const arr = byCat.get(cat) ?? [];
       arr.push(t);
-      groups.set(cat, arr);
+      byCat.set(cat, arr);
+      // First tool wins; categories shouldn't span multiple groups in practice.
+      if (!catGroup.has(cat)) catGroup.set(cat, t.group ?? null);
     }
     const CATEGORY_ORDER = [
       "Memory", "Files", "Shell", "Web", "Images",
-      "Schedule", "Atlassian", "Mail", "Calendar", "Config", "Other", "MCP",
+      "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Config", "Other", "MCP",
     ];
-    return [...groups.entries()].sort((a, b) => {
-      const ai = CATEGORY_ORDER.indexOf(a[0]);
-      const bi = CATEGORY_ORDER.indexOf(b[0]);
-      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-    });
+    const orderOf = (c: string) => {
+      const i = CATEGORY_ORDER.indexOf(c);
+      return i === -1 ? 999 : i;
+    };
+
+    // Bucket categories by group while preserving the per-category sort order.
+    const buckets = new Map<string | null, Array<[string, ToolInfo[]]>>();
+    const groupOrder = new Map<string | null, number>();
+    for (const [cat, ts] of byCat) {
+      const g = catGroup.get(cat) ?? null;
+      const arr = buckets.get(g) ?? [];
+      arr.push([cat, ts]);
+      buckets.set(g, arr);
+      // The group's overall sort key is the smallest order value among its
+      // categories — so "Work" lands wherever Atlassian/GitHub would have.
+      const prev = groupOrder.get(g);
+      const here = orderOf(cat);
+      if (prev === undefined || here < prev) groupOrder.set(g, here);
+    }
+    for (const arr of buckets.values()) arr.sort((a, b) => orderOf(a[0]) - orderOf(b[0]));
+
+    return [...buckets.entries()]
+      .sort((a, b) => (groupOrder.get(a[0]) ?? 999) - (groupOrder.get(b[0]) ?? 999))
+      .map(([group, categories]) => ({ group, categories }));
   }, [tools]);
 
+  const allGroupedCategories = useMemo(
+    () => groupedTools.flatMap((g) => g.categories),
+    [groupedTools],
+  );
+
   function toggleCategory(category: string, enable: boolean) {
-    const names = groupedTools.find(([c]) => c === category)?.[1].map((t) => t.name) ?? [];
+    const names = allGroupedCategories.find(([c]) => c === category)?.[1].map((t) => t.name) ?? [];
+    if (names.length === 0) return;
+    setSelectedTools((prev) => {
+      if (enable) {
+        const set = new Set(prev);
+        for (const n of names) set.add(n);
+        return [...set];
+      }
+      const remove = new Set(names);
+      return prev.filter((n) => !remove.has(n));
+    });
+  }
+
+  function toggleGroup(group: string, enable: boolean) {
+    const names = (groupedTools.find((g) => g.group === group)?.categories ?? [])
+      .flatMap(([, ts]) => ts.map((t) => t.name));
     if (names.length === 0) return;
     setSelectedTools((prev) => {
       if (enable) {
@@ -237,16 +282,30 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                   </button>
                 </div>
                 <div className="space-y-1.5">
-                  {groupedTools.map(([category, catTools]) => (
-                    <ToolCategoryBlock
-                      key={category}
-                      category={category}
-                      tools={catTools}
-                      selected={selectedTools}
-                      onToggleTool={toggleTool}
-                      onToggleCategory={toggleCategory}
-                    />
-                  ))}
+                  {groupedTools.map(({ group, categories }) =>
+                    group ? (
+                      <ToolGroupBlock
+                        key={group}
+                        group={group}
+                        categories={categories}
+                        selected={selectedTools}
+                        onToggleTool={toggleTool}
+                        onToggleCategory={toggleCategory}
+                        onToggleGroup={toggleGroup}
+                      />
+                    ) : (
+                      categories.map(([category, catTools]) => (
+                        <ToolCategoryBlock
+                          key={category}
+                          category={category}
+                          tools={catTools}
+                          selected={selectedTools}
+                          onToggleTool={toggleTool}
+                          onToggleCategory={toggleCategory}
+                        />
+                      ))
+                    ),
+                  )}
                 </div>
               </>
             )}
@@ -281,6 +340,77 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Collapsible parent group wrapping multiple ToolCategoryBlocks. Used today
+// for the "Work" header that gathers vendor-native tool categories (Atlassian,
+// GitHub) under one collapsible. Header tri-state flips every tool in every
+// child category on/off; the per-category blocks remain individually toggleable.
+function ToolGroupBlock({
+  group,
+  categories,
+  selected,
+  onToggleTool,
+  onToggleCategory,
+  onToggleGroup,
+}: {
+  group: string;
+  categories: Array<[string, ToolInfo[]]>;
+  selected: string[];
+  onToggleTool: (name: string) => void;
+  onToggleCategory: (category: string, enable: boolean) => void;
+  onToggleGroup: (group: string, enable: boolean) => void;
+}) {
+  const allTools = categories.flatMap(([, ts]) => ts);
+  const selectedInGroup = allTools.filter((t) => selected.includes(t.name)).length;
+  const allOn = selectedInGroup === allTools.length;
+  const someOn = selectedInGroup > 0 && !allOn;
+  const [open, setOpen] = useState(selectedInGroup > 0);
+  const headerRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (headerRef.current) headerRef.current.indeterminate = someOn;
+  }, [someOn]);
+
+  return (
+    <div className="rounded-lg border border-border bg-surface-1/40">
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="text-fg-subtle hover:text-fg transition-colors"
+          aria-label={open ? "Collapse" : "Expand"}
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <label className="flex items-center gap-1.5 cursor-pointer flex-1 min-w-0">
+          <input
+            ref={headerRef}
+            type="checkbox"
+            className="rounded border-border"
+            checked={allOn}
+            onChange={(e) => onToggleGroup(group, e.target.checked)}
+          />
+          <span className="text-[12px] font-semibold text-fg truncate">{group}</span>
+        </label>
+        <span className="text-[10px] text-fg-faint shrink-0">{selectedInGroup}/{allTools.length}</span>
+      </div>
+      {open && (
+        <div className="space-y-1.5 px-2 pb-2 pt-0.5 border-t border-border/60">
+          {categories.map(([category, catTools]) => (
+            <ToolCategoryBlock
+              key={category}
+              category={category}
+              tools={catTools}
+              selected={selected}
+              onToggleTool={onToggleTool}
+              onToggleCategory={onToggleCategory}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

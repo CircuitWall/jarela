@@ -43,7 +43,17 @@ export const INTEGRATIONS = {
       { key: "client_secret", label: "OAuth client secret", placeholder: "GOCSPX-…", secret: true, required: true },
       { key: "refresh_token", label: "Refresh token", placeholder: "1//0…", secret: true, required: true },
     ],
-  },  outlook: {
+  },  github: {
+    label: "GitHub",
+    description:
+      "Used by github_* tools (search/read/create/comment on issues + PRs, list PRs, get repo info). " +
+      "Create a Personal Access Token at github.com/settings/tokens. Scopes: `repo` (private repos) or " +
+      "`public_repo` (public only); add `read:org` if you target org repos.",
+    fields: [
+      { key: "token", label: "Personal Access Token", placeholder: "ghp_… or github_pat_…", secret: true, required: true },
+    ],
+  },
+  outlook: {
     label: "Outlook + Calendar",
     description:
       "Used by the outlook_* and outlook_calendar_* tools (search/read/draft/move/trash mail; " +
