@@ -1,0 +1,52 @@
+// Example external LLM provider for Jarela.
+//
+// To use: copy this file to ~/.jarela/providers/<your-name>.cjs (rename
+// .example to nothing), edit the contents, save. Hot-reload is per-call —
+// the next chat picks up your changes without restarting Jarela.
+//
+// Contract (see lib/providers/types.ts and docs/adr/0013-external-extension-contract.md):
+//
+//   module.exports = {
+//     name: string,                     // provider id (e.g. "myco-llm")
+//
+//     // Streaming text completion. Required.
+//     async chat(model_id, messages, params) {
+//       return { stream: AsyncIterable<string> };
+//     }
+//
+//     // Non-streaming structured call with tools. Optional.
+//     async invoke?(model_id, messages, params, tools) { ... }
+//
+//     // Streaming structured call. Optional but recommended for tool-using agents.
+//     streamInvoke?(model_id, messages, params, tools) { ... }  // AsyncIterable<event>
+//
+//     // Embeddings. Optional.
+//     async embed?(model_id, inputs, params) { return number[][]; }
+//   }
+//
+// Notes:
+// - No need to vendor an SDK — make plain `fetch()` calls.
+// - The same name as a built-in provider is ignored (built-in wins).
+// - Errors thrown from chat() bubble up to the user as an error message.
+
+module.exports = {
+  name: "example-echo",
+
+  async chat(model_id, messages, params) {
+    // Echo the last user message back, one word per chunk, as a fake stream.
+    void model_id;
+    void params;
+    const last = [...messages].reverse().find((m) => m.role === "user");
+    const reply = last ? `Echo: ${last.content}` : "Hello from example-echo.";
+    const words = reply.split(/(\s+)/);
+
+    async function* gen() {
+      for (const w of words) {
+        await new Promise((r) => setTimeout(r, 20));
+        yield w;
+      }
+    }
+
+    return { stream: gen() };
+  },
+};

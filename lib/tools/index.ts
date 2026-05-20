@@ -36,10 +36,12 @@ import {
 } from "./outlook-calendar";
 import { getUserLocationTool } from "./location";
 import { getMcpTools } from "@/lib/mcp/client";
+import { loadExternalTools, type ExtensionLoadError } from "./external";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 
 export * from "./types";
+export { TOOLS_DIR, type ExtensionLoadError } from "./external";
 
 // Category assignments drive the grouped per-section UI in AgentEditor so
 // the user can flip an entire capability on/off without clicking every tool.
@@ -86,17 +88,26 @@ const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInte
 };
 
 const ALL_TOOLS: StructuredToolInterface[] = Object.values(TOOLS_BY_CATEGORY).flat();
+export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set(ALL_TOOLS.map((t) => t.name));
 
 const TOOL_CATEGORY: Map<string, ToolCategory> = new Map(
   (Object.entries(TOOLS_BY_CATEGORY) as Array<[ToolCategory, StructuredToolInterface[]]>)
     .flatMap(([cat, tools]) => tools.map((t) => [t.name, cat] as const)),
 );
 
-export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
-  return TOOL_CATEGORY.get(name) ?? (source === "mcp" ? "MCP" : "Config");
+// Per-call recompute so files dropped in ~/.jarela/tools/ are picked up
+// without restart. loadExternalTools cache-busts require() per file.
+function loadExternal() {
+  return loadExternalTools(BUILTIN_TOOL_NAMES);
 }
 
-const toolMap = new Map<string, StructuredToolInterface>(ALL_TOOLS.map((t) => [t.name, t]));
+export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
+  const builtin = TOOL_CATEGORY.get(name);
+  if (builtin) return builtin;
+  const ext = loadExternal().categories.get(name);
+  if (ext) return ext;
+  return source === "mcp" ? "MCP" : "Config";
+}
 
 function applyPolicy(
   tools: StructuredToolInterface[],
@@ -111,16 +122,16 @@ function applyPolicy(
   });
 }
 
-// Synchronous: built-in tools only. Used by GET /api/v1/tools and any code
-// path that can't await (rare).
+// Synchronous: built-in + external tools (no MCP). Used by GET /api/v1/tools
+// and any code path that can't await.
 export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
-  return applyPolicy(ALL_TOOLS, policy);
+  return applyPolicy([...ALL_TOOLS, ...loadExternal().tools], policy);
 }
 
-// Async: built-in tools + tools from connected MCP servers.
+// Async: built-in + external + MCP tools.
 // Use this anywhere the agent might invoke tools (createReactAgent input).
-// MCP tools are cached by lib/mcp/client.ts and only re-resolved when the
-// mcp_servers table changes.
+// External tools are loaded per-call (hot-reload). MCP tools are cached by
+// lib/mcp/client.ts and only re-resolved when the mcp_servers table changes.
 export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredToolInterface[]> {
   let mcpTools: StructuredToolInterface[] = [];
   try {
@@ -128,7 +139,7 @@ export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredT
   } catch (err) {
     console.error("[tools] MCP load failed, continuing with built-ins only:", err);
   }
-  return applyPolicy([...ALL_TOOLS, ...mcpTools], policy);
+  return applyPolicy([...ALL_TOOLS, ...loadExternal().tools, ...mcpTools], policy);
 }
 
 export function toOpenAITools(tools: StructuredToolInterface[]): OpenAITool[] {
@@ -150,7 +161,10 @@ export async function executeTool(
   args: Record<string, unknown>,
   context: ToolContext = {},
 ): Promise<unknown> {
-  const t = toolMap.get(name);
+  let t = ALL_TOOLS.find((x) => x.name === name);
+  if (!t) {
+    t = loadExternal().tools.find((x) => x.name === name);
+  }
   if (!t) throw new Error(`Unknown tool: ${name}`);
 
   const config: RunnableConfig = context.thread_id
