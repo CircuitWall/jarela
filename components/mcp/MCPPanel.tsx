@@ -1,6 +1,6 @@
 "use client";
 import { AlertCircle, CheckCircle2, ChevronLeft, ExternalLink, Plug, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
 
@@ -332,8 +332,9 @@ function substituteVars(node: unknown, values: Record<string, string>): Record<s
   }
 }
 
-// Browse-and-install picker. Shows popular MCP servers grouped by category;
-// user clicks one to jump into the form pre-filled with its template.
+// Browse-and-install picker backed by the official MCP registry. Search
+// queries hit registry.modelcontextprotocol.io via /api/v1/mcp-servers/registry;
+// results are paginated with a cursor.
 function RegistryPicker({
   existingNames, onPick, onCustom, onClose,
 }: {
@@ -342,35 +343,48 @@ function RegistryPicker({
   onCustom: () => void;
   onClose: () => void;
 }) {
-  const [entries, setEntries] = useState<McpRegistryEntry[]>([]);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [entries, setEntries] = useState<McpRegistryEntry[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.mcp.registry()
-      .then(setEntries)
-      .catch((e) => console.error(e))
-      .finally(() => setLoading(false));
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const runSearch = useCallback(async (q: string, fresh = false) => {
+    setLoading(true); setError(null);
+    try {
+      const res = await api.mcp.registry({ q: q || undefined, fresh });
+      setEntries(res.entries);
+      setNextCursor(res.nextCursor);
+    } catch (e) {
+      setEntries([]); setNextCursor(undefined);
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return entries;
-    return entries.filter((e) =>
-      e.name.toLowerCase().includes(q) ||
-      e.description.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q)
-    );
-  }, [entries, query]);
+  useEffect(() => { void runSearch(debouncedQuery); }, [debouncedQuery, runSearch]);
 
-  const grouped = useMemo(() => {
-    const m = new Map<string, McpRegistryEntry[]>();
-    for (const e of filtered) {
-      if (!m.has(e.category)) m.set(e.category, []);
-      m.get(e.category)!.push(e);
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const res = await api.mcp.registry({ q: debouncedQuery || undefined, cursor: nextCursor });
+      setEntries((prev) => [...prev, ...res.entries]);
+      setNextCursor(res.nextCursor);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingMore(false);
     }
-    return Array.from(m.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [filtered]);
+  }
 
   return (
     <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center p-4" onClick={onClose}>
@@ -390,50 +404,70 @@ function RegistryPicker({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search popular servers…"
+            placeholder="Search the MCP registry…"
             className="w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
             autoFocus
           />
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-2">
-          {loading && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
-          {!loading && grouped.length === 0 && (
+          {loading && entries.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
+          {error && (
+            <div className="my-3 px-3 py-2 rounded border border-rose-800 bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300">
+              <p className="mb-1">Couldn’t reach registry.modelcontextprotocol.io.</p>
+              <button
+                onClick={() => void runSearch(debouncedQuery, true)}
+                className="underline hover:text-rose-200"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          {!loading && !error && entries.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">No matches.</p>
           )}
-          {grouped.map(([cat, items]) => (
-            <div key={cat} className="mb-3">
-              <p className="text-[10px] uppercase tracking-wider text-fg-faint mb-1.5 mt-1">{cat}</p>
-              <div className="space-y-1">
-                {items.map((e) => {
-                  const installed = existingNames.has(e.id);
-                  return (
-                    <button
-                      key={e.id}
-                      onClick={() => onPick(e)}
-                      disabled={installed}
-                      className={`w-full text-left px-3 py-2 rounded-lg border transition-colors group ${
-                        installed
-                          ? "bg-surface-3/30 border-border/40 cursor-not-allowed"
-                          : "bg-surface-3/60 hover:bg-surface-3 border-border hover:border-border"
-                      }`}
-                    >
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className={`text-sm font-medium ${installed ? "text-fg-faint" : "text-fg"}`}>{e.name}</span>
-                        <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded border border-border text-fg-faint">
-                          {e.source}
-                        </span>
-                        {installed && (
-                          <span className="text-[10px] text-emerald-500 ml-auto">installed</span>
-                        )}
-                      </div>
-                      <p className={`text-xs ${installed ? "text-fg-faint" : "text-fg-subtle"}`}>{e.description}</p>
-                    </button>
-                  );
-                })}
-              </div>
+          <div className="space-y-1">
+            {entries.map((e) => {
+              const installed = existingNames.has(e.id);
+              return (
+                <button
+                  key={`${e.id}-${e.name}`}
+                  onClick={() => onPick(e)}
+                  disabled={installed}
+                  className={`w-full text-left px-3 py-2 rounded-lg border transition-colors group ${
+                    installed
+                      ? "bg-surface-3/30 border-border/40 cursor-not-allowed"
+                      : "bg-surface-3/60 hover:bg-surface-3 border-border hover:border-border"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <span className={`text-sm font-medium ${installed ? "text-fg-faint" : "text-fg"}`}>{e.name}</span>
+                    <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded border border-border text-fg-faint">
+                      {e.transport}
+                    </span>
+                    <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded border border-border text-fg-faint">
+                      {e.source}
+                    </span>
+                    {installed && (
+                      <span className="text-[10px] text-emerald-500 ml-auto">installed</span>
+                    )}
+                  </div>
+                  <p className={`text-xs ${installed ? "text-fg-faint" : "text-fg-subtle"}`}>{e.description}</p>
+                </button>
+              );
+            })}
+          </div>
+          {nextCursor && !error && (
+            <div className="text-center my-3">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="text-xs text-fg-subtle hover:text-fg disabled:opacity-50"
+              >
+                {loadingMore ? "Loading…" : "Load more"}
+              </button>
             </div>
-          ))}
+          )}
         </div>
 
         <div className="px-4 py-3 border-t border-border flex items-center justify-between">

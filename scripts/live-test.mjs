@@ -618,12 +618,16 @@ test("memory: DELETE removes a written entry", async () => {
   );
 });
 
-test("mcp-servers/registry: GET returns array of catalog entries", async () => {
-  const r = await api("/api/v1/mcp-servers/registry");
+test("mcp-servers/registry: GET proxies official MCP registry", async () => {
+  // Picker proxies to registry.modelcontextprotocol.io. Tolerate 503 in offline
+  // CI; on success the response is { entries: RegistryEntry[], nextCursor? }.
+  const r = await api("/api/v1/mcp-servers/registry?limit=5");
+  if (r.status === 503) return;
   assertEqual(r.status, 200);
-  assert(Array.isArray(r.body), "expected array");
-  for (const e of r.body) {
+  assert(Array.isArray(r.body?.entries), "expected entries[]");
+  for (const e of r.body.entries) {
     assert(typeof e.name === "string" && e.name.length > 0, "registry entry missing name");
+    assert(e.transport === "stdio" || e.transport === "http", "registry entry missing transport");
   }
 });
 

@@ -5,7 +5,8 @@
 
 import { getMcpServer, upsertMcpServer, type McpHttpSpec, type McpServerInput, type McpStdioSpec } from "@/lib/stores/mcp-servers";
 import { invalidateMcpTools } from "@/lib/mcp/client";
-import { applyVariables, MCP_REGISTRY } from "@/lib/mcp/registry";
+import { applyVariables } from "@/lib/mcp/registry";
+import { getUpstreamByName } from "@/lib/mcp/upstream-registry";
 import { getAgentConfig, upsertAgentConfig } from "@/lib/stores/agent-configs";
 import type { ActionKind } from "@/lib/stores/pending-actions";
 import { getManifest } from "@/lib/integrations/registry";
@@ -43,8 +44,10 @@ async function applyInstallMcp(payload: unknown): Promise<ApplyResult> {
                         transport?: "stdio" | "http"; variables?: Record<string, string> };
   // Two install modes: from a registry entry (preferred) or full custom spec.
   if (p.registry_id) {
-    const entry = MCP_REGISTRY.find((e) => e.id === p.registry_id);
-    if (!entry) return { ok: false, detail: `registry id "${p.registry_id}" not found` };
+    // `registry_id` is the fully-qualified upstream name (e.g.
+    // `io.github.github/github-mcp-server`). See ADR-0013.
+    const entry = await getUpstreamByName(p.registry_id);
+    if (!entry) return { ok: false, detail: `registry name "${p.registry_id}" not found in registry.modelcontextprotocol.io` };
     const missing = (entry.variables ?? []).filter((v) => !p.variables?.[v.key]?.toString().trim());
     if (missing.length > 0) {
       return { ok: false, detail: `missing variables: ${missing.map((m) => m.key).join(", ")}` };

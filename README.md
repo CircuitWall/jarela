@@ -362,7 +362,7 @@ the same in-UI OAuth flow:
 
 | Integration | Where | How |
 | --- | --- | --- |
-| **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters`. Browse popular registry or paste a custom command. |
+| **MCP servers** | `MCP` panel | stdio / SSE via `@langchain/mcp-adapters`. Search the official [MCP Registry](https://registry.modelcontextprotocol.io/) or paste a custom command. |
 | **GitHub** | `Profile` panel | PAT or Copilot OAuth |
 | **Atlassian** (Jira + Confluence) | `Integrations` panel | API token + email |
 | **Google** (Gmail + Calendar) | `Integrations` panel | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
@@ -378,40 +378,77 @@ must include a manifest — `npm run lint` enforces it.
 
 ## Extension points
 
+External providers and tools are **hot-loaded**: drop a `.cjs` file in the
+right directory, save, and the next chat picks it up — no restart. Loaded
+extensions and any validation errors show up under the **Extensions** tab in
+the menu (also at `GET /api/v1/extensions`). Contract is pinned in
+[ADR-0013](./docs/adr/0013-external-extension-contract.md).
+
 ### Add an external model provider
 
-Drop a file into `~/.jarela/providers/` (or `$JARELA_DB_DIR/providers/`).
-It must `module.exports` an object matching
-[lib/providers/types.ts#ModelProvider](./lib/providers/types.ts) — at
-minimum:
+Copy [lib/providers/template-external.cjs.example](./lib/providers/template-external.cjs.example)
+to `~/.jarela/providers/<name>.cjs` (or `$JARELA_DB_DIR/providers/<name>.cjs`).
+Must `module.exports` an object matching
+[lib/providers/types.ts#ModelProvider](./lib/providers/types.ts) — at minimum:
 
 ```js
-// ~/.jarela/providers/my-provider.js
+// ~/.jarela/providers/my-provider.cjs
 module.exports = {
   name: "my-provider",
-  async chat({ model, messages, tools, signal }) {
-    // return { stream: AsyncIterable<string> } or a final message
+  async chat(model_id, messages, params) {
+    // return { stream: AsyncIterable<string> }
   },
 };
 ```
 
-`.js`, `.cjs`, and `.ts` are loaded at startup (`.ts` uses Node ≥ 22.6
-type-stripping). ESM `.mjs` files are not — use CommonJS-style exports.
-Built-in provider names cannot be overridden.
+`.js`, `.cjs`, and `.ts` are accepted (`.ts` uses Node ≥ 22.6 type-stripping).
+ESM `.mjs` files are not — use CommonJS exports. Built-in provider names cannot
+be overridden.
 
-### Add a built-in tool
+### Add an external tool
+
+Copy [lib/tools/template-external.cjs.example](./lib/tools/template-external.cjs.example)
+to `~/.jarela/tools/<name>.cjs`. No `langchain` or `zod` imports — Jarela wraps
+your plain object:
+
+```js
+// ~/.jarela/tools/weather.cjs
+module.exports = {
+  name: "weather",
+  description: "Get weather for a city.",
+  category: "Web",
+  schema: {
+    type: "object",
+    properties: { city: { type: "string" } },
+    required: ["city"],
+  },
+  async run({ city }, _ctx) {
+    const r = await fetch(`https://wttr.in/${city}?format=j1`);
+    return await r.json();
+  },
+};
+```
+
+Names that collide with built-in tools are rejected (built-in wins). Throw an
+`Error` to signal failure — the agent receives the message.
+
+### Add a built-in tool (in-tree)
 
 1. Copy [lib/tools/template.ts](./lib/tools/template.ts) to `lib/tools/<name>.ts`.
 2. Implement with `tool(...)` from `@langchain/core/tools` + a Zod schema.
-3. Append the export to `ALL_TOOLS` in [lib/tools/index.ts](./lib/tools/index.ts).
+3. Add the export under the right category in `TOOLS_BY_CATEGORY` in
+   [lib/tools/index.ts](./lib/tools/index.ts).
 4. If it calls a network or external resource, document the env vars and gate
    it behind a category the user can toggle off.
 
 ### Add an MCP server
 
-Use the **MCP** panel in the UI. The config is stored in
-`~/.jarela/jarela.db` and reconnected on startup. Tools exposed by the server
-appear automatically under the `MCP` category for any agent's tool policy.
+Use the **MCP** panel in the UI. The picker searches the official
+[MCP Registry](https://registry.modelcontextprotocol.io/) live (ADR-0014);
+results are translated into install templates with prompts for any required
+env vars or tokens. The config is stored in `~/.jarela/jarela.db` and
+reconnected on startup. Tools exposed by the server appear automatically
+under the `MCP` category for any agent's tool policy.
 
 ### Add a bridge
 
@@ -421,6 +458,12 @@ Implement a transport in `lib/bridges/<name>.ts` that produces normalized
 implementation in [lib/bridges/whatsapp.ts](./lib/bridges/whatsapp.ts) is a
 working reference.
 
+### Trust model for external code
+
+External providers and tools run **in-process** with the same Node privileges
+as the rest of the app — same trust level as a locally-spawned MCP server.
+Only drop in code you wrote or trust. There is no sandbox.
+
 ## Where your data lives
 
 | Path | Contents |
@@ -429,7 +472,8 @@ working reference.
 | `~/.jarela/checkpoints.db` | LangGraph state checkpoints |
 | `~/.jarela/files/` | Files written by the `file_*` tools |
 | `~/.jarela/baileys/` | WhatsApp Baileys auth state |
-| `~/.jarela/providers/` | External provider plugins (optional) |
+| `~/.jarela/providers/` | External provider plugins, hot-loaded (optional) |
+| `~/.jarela/tools/` | External tool plugins, hot-loaded (optional) |
 | `%LOCALAPPDATA%\Jarela\logs\app.log` | Installed-task stdout/stderr |
 
 Override the location with `JARELA_DB_DIR=/path/to/dir`. On first launch
@@ -487,8 +531,10 @@ C4Context
     System_Ext(google, "Google GenAI", "Gemini models")
     System_Ext(cohere, "Cohere API", "Embeddings / models")
     System_Ext(mcp, "MCP Servers", "Tool providers via @langchain/mcp-adapters")
+    System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
     System_Ext(github, "GitHub API", "Repo / PR integrations")
     SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings")
+    SystemDb_Ext(extdir, "~/.jarela/{providers,tools}/", "Drop-in .cjs extension files (hot-loaded)")
 
     Rel(user, jarela, "HTTPS / SSE")
     Rel(jarela, anthropic, "HTTPS")
@@ -496,8 +542,10 @@ C4Context
     Rel(jarela, google, "HTTPS")
     Rel(jarela, cohere, "HTTPS")
     Rel(jarela, mcp, "stdio / SSE")
+    Rel(jarela, mcpreg, "HTTPS (picker search)")
     Rel(jarela, github, "HTTPS")
     Rel(jarela, sqlite, "reads/writes")
+    Rel(jarela, extdir, "scans per request")
 ```
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for container, component, and
