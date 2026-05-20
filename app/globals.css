@@ -311,13 +311,13 @@ body {
 }
 
 /* Some desktop PWAs report a non-zero safe-area top (titlebar overlay),
- * which creates an unwanted top gap. Apply top safe-area only on narrow
- * mobile layouts. */
+ * which creates an unwanted top gap. Apply top safe-area only on
+ * touch/mobile environments, not based on viewport width. */
 :root {
   --app-safe-top: 0px;
 }
 
-@media (max-width: 768px) {
+@media (hover: none) and (pointer: coarse) {
   :root {
     --app-safe-top: env(safe-area-inset-top);
   }
