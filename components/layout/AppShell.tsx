@@ -4,6 +4,7 @@ import { Activity, useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
+import { useUrlSync } from "@/hooks/useUrlSync";
 import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
@@ -25,6 +26,7 @@ import { MenuPanel } from "./MenuPanel";
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
+  useUrlSync();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(state.activeAgentId);
 
   const [showMenu, setShowMenu] = useState(false);
@@ -67,11 +69,17 @@ export function AppShell() {
   );
 
   // Click on an OS Web Notification → useEventNotifications fires a custom
-  // event; handle it here to switch to the relevant agent's chat.
+  // event; handle it here to switch to the relevant agent's chat. Prefers
+  // landing on the exact thread the event happened in (run reply, scheduled
+  // task, bridge message) so the user sees the originating message, not just
+  // the agent's last-active thread.
   useEffect(() => {
     function handler(e: Event) {
-      const detail = (e as CustomEvent<{ agentId?: string }>).detail;
-      if (detail?.agentId) {
+      const detail = (e as CustomEvent<{ agentId?: string; threadId?: string | null }>).detail;
+      if (!detail?.agentId) return;
+      if (detail.threadId) {
+        dispatch({ type: "SELECT_THREAD", threadId: detail.threadId, agentId: detail.agentId });
+      } else {
         dispatch({ type: "SET_AGENT", agentId: detail.agentId });
         dispatch({ type: "SET_TAB", tab: "chat" });
       }
