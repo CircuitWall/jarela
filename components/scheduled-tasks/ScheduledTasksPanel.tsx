@@ -1,13 +1,16 @@
 "use client";
 import { AlertCircle, Calendar, CheckCircle2, Clock, Play, Repeat, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [agents, setAgents] = useState<Record<string, AgentConfig>>({});
   const [loading, setLoading] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("tasks", "task", containerRef);
 
   async function load() {
     setLoading(true);
@@ -62,7 +65,7 @@ export function ScheduledTasksPanel() {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3">
         {loading && tasks.length === 0 && (
           <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
         )}
@@ -100,7 +103,7 @@ function TaskCard({
   const overdue = !task.last_error && new Date(task.next_run_at).getTime() < Date.now() - 60_000;
 
   return (
-    <div className="mb-2 rounded-lg border border-border bg-surface-2 overflow-hidden">
+    <div data-deep-link-id={task.id} className="mb-2 rounded-lg border border-border bg-surface-2 overflow-hidden">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="w-full text-left px-3 py-2 hover:bg-surface-3/40 transition-colors"

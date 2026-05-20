@@ -1,8 +1,9 @@
 "use client";
 import { AlertCircle, CheckCircle2, ChevronLeft, ExternalLink, Plug, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 
 // `editing` value when the user clicked New: starts on the picker step;
 // once they pick a registry entry (or click "custom") it transitions to a form.
@@ -15,6 +16,8 @@ export function MCPPanel() {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<EditState>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("mcp", "mcp", containerRef);
 
   async function load() {
     setLoading(true);
@@ -48,7 +51,7 @@ export function MCPPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="flex-1 overflow-y-auto">
         <div className="px-4 py-2">
           {loading && servers.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
@@ -62,7 +65,7 @@ export function MCPPanel() {
             </div>
           )}
           {servers.map((s) => (
-            <div key={s.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
+            <div key={s.name} data-deep-link-id={s.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <button
