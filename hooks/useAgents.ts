@@ -16,7 +16,12 @@ export function useAgents() {
     }
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    function onAgentsChanged() { void refresh(); }
+    window.addEventListener("jarela:agents-changed", onAgentsChanged);
+    return () => window.removeEventListener("jarela:agents-changed", onAgentsChanged);
+  }, [refresh]);
 
   const create = useCallback(async (data: AgentConfigIn) => {
     const a = await api.agents.create(data);
