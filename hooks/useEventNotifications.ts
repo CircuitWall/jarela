@@ -189,14 +189,16 @@ export function useEventNotifications(options: Options) {
             tag,
             icon: customIcon || "/icon-192.png",
           });
-          // Click handler: focus the Jarela window, switch to the agent the
-          // event belongs to, dismiss the OS notification.
+          // Click handler: focus the Jarela window, jump to the exact thread
+          // the event happened in (or fall back to just the agent), dismiss
+          // the OS notification.
           n.onclick = () => {
             window.focus();
             const agentId = ev.agent_id;
+            const threadId = (ev as { thread_id?: string }).thread_id ?? null;
             if (agentId) {
               window.dispatchEvent(new CustomEvent("jarela:focus-agent", {
-                detail: { agentId },
+                detail: { agentId, threadId },
               }));
             }
             n.close();
