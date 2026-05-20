@@ -271,10 +271,10 @@ export function AppShell() {
         </div>
         <button
           onClick={() => { setShowMenu((v) => !v); }}
-          className={`ml-auto relative p-2 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
+          className={`ml-auto relative p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
-          <Menu size={18} />
+          <Menu size={21} />
           {unreadCount > 0 && (
             <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-1 rounded-full bg-rose-500 border border-surface-2 text-[9px] font-bold text-white flex items-center justify-center leading-none animate-pulse">
               {unreadCount > 9 ? "9+" : unreadCount}
