@@ -1,5 +1,5 @@
 "use client";
-import { Menu } from "lucide-react";
+import { Check, ChevronDown, Menu } from "lucide-react";
 import { Activity, useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
@@ -30,8 +30,10 @@ export function AppShell() {
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(state.activeAgentId);
 
   const [showMenu, setShowMenu] = useState(false);
+  const [showAgentPicker, setShowAgentPicker] = useState(false);
   const [showTools, setShowTools] = useState(true);
   const [showThinking, setShowThinking] = useState(true);
+  const agentPickerRef = useRef<HTMLDivElement | null>(null);
 
   // Lazy-mount tabs on first visit, then keep them mounted via <Activity> so
   // state survives subsequent switches. Without this, opening the app forces
@@ -49,7 +51,17 @@ export function AppShell() {
 
   // Cache agent id → name for notification titles. Refreshed on agent CRUD.
   const [agents, setAgents] = useState<AgentConfig[]>([]);
-  useEffect(() => { api.agents.list().then(setAgents).catch(() => {}); }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => api.agents.list().then((rows) => { if (!cancelled) setAgents(rows); }).catch(() => {});
+    void load();
+    function onAgentsChanged() { void load(); }
+    window.addEventListener("jarela:agents-changed", onAgentsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("jarela:agents-changed", onAgentsChanged);
+    };
+  }, []);
   const agentsRef = useRef<AgentConfig[]>([]);
   agentsRef.current = agents;
 
@@ -138,6 +150,29 @@ export function AppShell() {
     },
   });
 
+  // Dismiss the logo-anchored agent picker when tapping outside it.
+  useEffect(() => {
+    if (!showAgentPicker) return;
+    function onPointerDown(e: MouseEvent) {
+      const root = agentPickerRef.current;
+      if (!root) return;
+      if (!root.contains(e.target as Node)) setShowAgentPicker(false);
+    }
+    function onEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowAgentPicker(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onEscape);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onEscape);
+    };
+  }, [showAgentPicker]);
+
+  const activeAgent = state.activeAgentId
+    ? agents.find((a) => a.id === state.activeAgentId) ?? null
+    : null;
+
   return (
     <div className="h-screen h-[100dvh] flex flex-col text-fg overflow-hidden px-safe">
       <TopProgressBar />
@@ -156,7 +191,7 @@ export function AppShell() {
       />
       <CryptoFallbackBanner />
       <header
-        className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
+        className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60 relative"
         style={{
           // Extra 0.5rem above safe-area so the logo doesn't crowd the
           // Dynamic Island / camera cutout on iPhone Pro models. The
@@ -167,14 +202,72 @@ export function AppShell() {
           height: "calc(3rem + env(safe-area-inset-top) + 0.5rem)",
         }}
       >
-        <div className="flex items-center gap-2 select-none">
+        <div className="flex items-center gap-2 select-none" ref={agentPickerRef}>
           {/* Logo is blue-on-transparent. In dark mode the blue gets lost
               against the dark glass, so we drop the color and lift the
               alpha to white — `brightness-0` flattens to black, `invert`
               flips it to white, alpha channel is preserved by both. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto dark:brightness-0 dark:invert" />
-          <span className="text-fg font-semibold tracking-tight">Jarela</span>
+          <button
+            type="button"
+            onClick={() => setShowAgentPicker((v) => !v)}
+            className="inline-flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-3/60 transition-colors"
+            title="Select active agent"
+            aria-haspopup="menu"
+            aria-expanded={showAgentPicker}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto dark:brightness-0 dark:invert" />
+            <span className="text-fg font-semibold tracking-tight">Jarela</span>
+            <span className="text-xs text-fg-faint max-w-[11rem] truncate hidden sm:inline">
+              {activeAgent?.name ?? "select agent"}
+            </span>
+            <ChevronDown size={14} className={`text-fg-faint transition-transform ${showAgentPicker ? "rotate-180" : ""}`} />
+          </button>
+          {showAgentPicker && (
+            <div
+              role="menu"
+              className="absolute top-full left-0 mt-2 w-[min(24rem,calc(100vw-2rem))] max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-surface-2/95 backdrop-blur-md shadow-2xl p-1.5"
+            >
+              {agents.length === 0 ? (
+                <p className="text-xs text-fg-faint px-2 py-2">No agents available yet.</p>
+              ) : (
+                agents.map((a) => {
+                  const selected = a.id === state.activeAgentId;
+                  return (
+                    <button
+                      key={a.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        dispatch({ type: "SET_AGENT", agentId: a.id });
+                        dispatch({ type: "SET_TAB", tab: "chat" });
+                        setShowAgentPicker(false);
+                      }}
+                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm transition-colors ${
+                        selected
+                          ? "bg-surface-3 text-fg"
+                          : "text-fg-muted hover:bg-surface-3/60 hover:text-fg"
+                      }`}
+                    >
+                      <span className="w-4 h-4 shrink-0 inline-flex items-center justify-center text-accent">
+                        {selected ? <Check size={14} /> : null}
+                      </span>
+                      {a.icon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={a.icon} alt="" className="w-5 h-5 rounded-md object-cover shrink-0" />
+                      ) : (
+                        <span className="w-5 h-5 rounded-md bg-surface-3 text-[10px] font-semibold text-fg-subtle inline-flex items-center justify-center shrink-0">
+                          {a.name.charAt(0).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="truncate flex-1">{a.name}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
         <button
           onClick={() => { setShowMenu((v) => !v); }}

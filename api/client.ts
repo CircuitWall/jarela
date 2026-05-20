@@ -34,6 +34,27 @@ import type {
 
 const BASE = "/api/v1";
 
+const AGENT_LIST_TTL_MS = 30_000;
+
+let agentListCache: { data: AgentConfig[] | null; fetchedAt: number; inflight: Promise<AgentConfig[]> | null } = {
+  data: null,
+  fetchedAt: 0,
+  inflight: null,
+};
+
+function cloneAgents(rows: AgentConfig[]): AgentConfig[] {
+  return rows.map((row) => ({ ...row }));
+}
+
+function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
+  const snap = cloneAgents(rows);
+  agentListCache = { data: snap, fetchedAt: Date.now(), inflight: null };
+  if (notify && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+  }
+  return cloneAgents(snap);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     headers: { "Content-Type": "application/json", ...init?.headers },
@@ -48,14 +69,38 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   agents: {
-    list: () => request<AgentConfig[]>("/agents"),
+    list: (opts?: { force?: boolean }) => {
+      const force = opts?.force === true;
+      const now = Date.now();
+      if (!force && agentListCache.data && now - agentListCache.fetchedAt < AGENT_LIST_TTL_MS) {
+        return Promise.resolve(cloneAgents(agentListCache.data));
+      }
+      if (!force && agentListCache.inflight) return agentListCache.inflight;
+      const req = request<AgentConfig[]>("/agents").then((rows) => setAgentListCache(rows, false));
+      agentListCache = { ...agentListCache, inflight: req };
+      return req;
+    },
     get: (id: string) => request<AgentConfig>(`/agents/${encodeURIComponent(id)}`),
-    create: (data: AgentConfigIn) =>
-      request<AgentConfig>("/agents", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, data: AgentConfigIn) =>
-      request<AgentConfig>(`/agents/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (id: string) =>
-      request<{ deleted: boolean }>(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    create: async (data: AgentConfigIn) => {
+      const created = await request<AgentConfig>("/agents", { method: "POST", body: JSON.stringify(data) });
+      if (agentListCache.data) setAgentListCache([...agentListCache.data, created]);
+      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+      return created;
+    },
+    update: async (id: string, data: AgentConfigIn) => {
+      const updated = await request<AgentConfig>(`/agents/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) });
+      if (agentListCache.data) setAgentListCache(agentListCache.data.map((a) => (a.id === id ? updated : a)));
+      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+      return updated;
+    },
+    delete: async (id: string) => {
+      const res = await request<{ deleted: boolean }>(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.deleted) {
+        if (agentListCache.data) setAgentListCache(agentListCache.data.filter((a) => a.id !== id));
+        else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+      }
+      return res;
+    },
     getThread: (id: string) =>
       request<ThreadSummary>(`/agents/${encodeURIComponent(id)}/thread`),
     compact: (id: string) =>
