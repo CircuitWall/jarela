@@ -1,8 +1,9 @@
 "use client";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MemoryItem } from "@/api/types";
 import { useMemory } from "@/hooks/useMemory";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { MemoryEditor } from "./MemoryEditor";
 
 function useDebounce<T>(value: T, ms: number): T {
@@ -17,6 +18,8 @@ export function MemoryPanel() {
   const search = useDebounce(searchInput, 300);
   const { items, loading, create, update, remove, refresh } = useMemory(nsFilter || undefined, search || undefined);
   const [editing, setEditing] = useState<MemoryItem | null | "new">(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("memory", "memory", containerRef);
 
   const handleSave = useCallback(async (namespace: string, key: string, value: unknown) => {
     if (editing === "new") await create(namespace, key, value);
@@ -47,11 +50,11 @@ export function MemoryPanel() {
           </select>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto px-4 py-2">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">
         {loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">Loading…</p>}
         {!loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">No memory items yet</p>}
         {items.map((item) => (
-          <div key={`${item.namespace}/${item.key}`} className="flex items-start gap-2 py-2.5 border-b border-border/60 group">
+          <div key={`${item.namespace}/${item.key}`} data-deep-link-id={`${item.namespace}/${item.key}`} className="flex items-start gap-2 py-2.5 border-b border-border/60 group">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className="text-xs text-fg-faint">{item.namespace}</span>

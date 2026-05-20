@@ -3,6 +3,58 @@ import { Check, ChevronDown, ChevronUp, ShieldAlert, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, PendingAction } from "@/api/types";
+import { pushToast } from "@/lib/ui/toasts";
+
+// Compute the deep-link URL + label for a successfully-approved action so
+// the resulting toast lets the user jump to the row that just changed.
+// Returns null for kinds without a sensible settings target.
+function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: string; title: string } | null {
+  const p = action.payload as Record<string, unknown>;
+  const str = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : undefined);
+  switch (action.kind) {
+    case "enable_integration": {
+      const id = str("id");
+      return id ? { href: `?tab=integrations&item=${encodeURIComponent(id)}`, hrefLabel: "Open in Settings →", title: `${id} enabled` } : null;
+    }
+    case "start_oauth": {
+      const id = str("integration_id");
+      return id ? { href: `?tab=integrations&item=${encodeURIComponent(id)}`, hrefLabel: "Open in Settings →", title: `${id} authorized` } : null;
+    }
+    case "set_provider_key": {
+      const name = str("name") ?? str("provider");
+      return name ? { href: `?tab=models&item=${encodeURIComponent(name)}`, hrefLabel: "Open in Models →", title: `${name} key saved` } : null;
+    }
+    case "install_mcp":
+    case "toggle_mcp": {
+      const name = str("name") ?? str("registry_id");
+      return name ? { href: `?tab=mcp&item=${encodeURIComponent(name)}`, hrefLabel: "Open in MCP →", title: `MCP server ${action.kind === "install_mcp" ? "installed" : "updated"}` } : null;
+    }
+    case "update_agent":
+    case "update_agent_tools": {
+      const id = str("agent_id");
+      return id ? { href: `?tab=agents&item=${encodeURIComponent(id)}`, hrefLabel: "Open agent →", title: "Agent updated" } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function pushApprovalToast(action: PendingAction) {
+  const t = approvalToastTarget(action);
+  if (!t) return;
+  pushToast({
+    kind: "success",
+    source: "system",
+    sourceLabel: "Setup",
+    title: t.title,
+    body: action.reason ?? "Change applied.",
+    agent_id: action.agent_id ?? null,
+    thread_id: null,
+    href: t.href,
+    hrefLabel: t.hrefLabel,
+    ttl: 8000,
+  });
+}
 
 // A small banner that appears above the input bar whenever the agent has
 // queued one or more proposals for the user's approval. Each row shows
@@ -67,6 +119,7 @@ export function ApprovalsBanner({
     markBusy(action.id, true);
     try {
       await api.pending.approve(action.id);
+      pushApprovalToast(action);
       await refresh();
       onChange?.();
     } catch (e) { console.error(e); }
@@ -97,6 +150,7 @@ export function ApprovalsBanner({
       if (integrationId === "gmail") resp = await api.integrations.gmailOauthStart({});
       else if (integrationId === "outlook") resp = await api.integrations.outlookOauthStart({});
       if (resp?.authorize_url) window.open(resp.authorize_url, "_blank", "noopener,noreferrer");
+      pushApprovalToast(action);
       await refresh();
       onChange?.();
     } catch (e) { console.error(e); }
@@ -167,6 +221,7 @@ export function ApprovalsBanner({
         if (typeof v === "string" && v.trim()) extras[k] = v.trim();
       }
       await api.pending.approve(secretForm.action.id, extras);
+      pushApprovalToast(secretForm.action);
       setSecretForm(null);
       await refresh();
       onChange?.();
