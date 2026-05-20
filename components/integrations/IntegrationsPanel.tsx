@@ -1,8 +1,9 @@
 "use client";
-import { CheckCircle2, ExternalLink, Key, Link as LinkIcon, Loader2, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, Key, Link as LinkIcon, Loader2, RefreshCw, Terminal, Trash2, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { NetworkSection } from "./NetworkSection";
 
 const SECRET_MASK = "********";
@@ -11,6 +12,10 @@ export function IntegrationsPanel() {
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("integrations", "integration", containerRef);
 
   async function load() {
     setLoading(true);
@@ -23,14 +28,64 @@ export function IntegrationsPanel() {
   }
   useEffect(() => { void load(); }, []);
 
+  async function syncFromEnv() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.envSync.apply();
+      const sourceLabel = r.discovered.source === "shell-rc"
+        ? `your ${r.discovered.shell ?? "shell"} rc`
+        : r.discovered.source === "windows-registry"
+          ? "your Windows User env"
+          : "the process env";
+      if (r.applied_count > 0) {
+        setSyncMsg(`Synced ${r.applied_count} field(s) from ${sourceLabel}.`);
+      } else {
+        const userSkipped = r.candidates.filter((c) => c.action === "skipped-user").length;
+        const equal = r.candidates.filter((c) => c.action === "skipped-equal").length;
+        const absent = r.candidates.filter((c) => c.action === "absent").length;
+        if (userSkipped > 0) {
+          setSyncMsg(`Nothing to write — ${userSkipped} field(s) were edited here and won't be overwritten.`);
+        } else if (equal > 0 && absent === r.candidates.length - equal) {
+          setSyncMsg(`Already up to date with ${sourceLabel}.`);
+        } else {
+          setSyncMsg(`No matching env vars set in ${sourceLabel}.`);
+        }
+      }
+      await load();
+    } catch (e) {
+      setSyncMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
         <Key size={14} className="text-fg-subtle" />
         <h2 className="text-sm font-semibold text-fg mr-auto">Credentials</h2>
+        <button
+          onClick={syncFromEnv}
+          disabled={syncing}
+          title="Pull standard credential env vars (GITHUB_TOKEN, ATLASSIAN_API_TOKEN, …) from your shell rc / Windows User env. Fields you've edited here are never overwritten."
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-50"
+        >
+          {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+          Sync from environment
+        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3">
+        {syncMsg && (
+          <div className="mb-3 px-3 py-2 rounded border border-border bg-surface-2 text-[11px] text-fg-muted flex items-start gap-2">
+            <Terminal size={12} className="mt-0.5 text-fg-subtle shrink-0" />
+            <span className="flex-1">{syncMsg}</span>
+            <button onClick={() => setSyncMsg(null)} className="text-fg-faint hover:text-fg">
+              <XCircle size={12} />
+            </button>
+          </div>
+        )}
         <NetworkSection />
         {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
         {!loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No integrations available.</p>}
@@ -189,7 +244,7 @@ function IntegrationCard({
   const configured = status?.configured;
 
   return (
-    <div className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
+    <div data-deep-link-id={def.name} className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
       <div className="px-3 py-2.5 border-b border-border/60 flex items-start gap-2">
         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
         <div className="flex-1 min-w-0">
@@ -201,25 +256,38 @@ function IntegrationCard({
       <div className="px-3 py-3 space-y-2">
         {def.name === "gmail" && <GmailSetupGuide />}
         {def.name === "outlook" && <OutlookSetupGuide />}
-        {def.fields.map((f) => (
-          <label key={f.key} className="block text-xs text-fg-subtle">
-            {f.label}{f.required && <span className="text-rose-700 dark:text-rose-400 ml-0.5">*</span>}
-            <input
-              type={f.secret ? "password" : "text"}
-              value={values[f.key] ?? ""}
-              onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
-              onFocus={(e) => {
-                // Clicking a masked secret field clears it so the user can type a new value
-                // without manually selecting and replacing the dots.
-                if (f.secret && e.target.value === SECRET_MASK) {
-                  setValues((p) => ({ ...p, [f.key]: "" }));
-                }
-              }}
-              placeholder={f.placeholder}
-              className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-            />
-          </label>
-        ))}
+        {def.fields.map((f) => {
+          const fieldSource = status?.source?.[f.key];
+          return (
+            <label key={f.key} className="block text-xs text-fg-subtle">
+              <span className="flex items-center gap-1.5">
+                {f.label}{f.required && <span className="text-rose-700 dark:text-rose-400 ml-0.5">*</span>}
+                {fieldSource === "rc" && (
+                  <span
+                    title="Value pulled from your shell rc / Windows User env. Editing here will switch this field to manual mode."
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/30"
+                  >
+                    <Terminal size={9} /> from shell
+                  </span>
+                )}
+              </span>
+              <input
+                type={f.secret ? "password" : "text"}
+                value={values[f.key] ?? ""}
+                onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                onFocus={(e) => {
+                  // Clicking a masked secret field clears it so the user can type a new value
+                  // without manually selecting and replacing the dots.
+                  if (f.secret && e.target.value === SECRET_MASK) {
+                    setValues((p) => ({ ...p, [f.key]: "" }));
+                  }
+                }}
+                placeholder={f.placeholder}
+                className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+              />
+            </label>
+          );
+        })}
 
         {error && (
           <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">

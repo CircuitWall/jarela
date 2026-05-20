@@ -5,6 +5,7 @@ import { getDataDir } from "./data-dir";
 import { initMasterKey } from "@/lib/crypto/master-key";
 import { runCryptoMigration } from "@/lib/crypto/migrate";
 import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var dispatcher applied at module load; DB layer applied below
+import { runEnvSyncOnce } from "@/lib/env/sync";
 
 export const DB_PATH = join(getDataDir(), "jarela.db");
 
@@ -37,6 +38,17 @@ export function getDb(): DatabaseSync {
     applyProxyConfigFromDb().catch((err) =>
       console.warn("[jarela/proxy] applyProxyConfigFromDb failed at boot:", err),
     );
+    // Pull rc-defined credential env vars into the encrypted integration
+    // store so installed launchers (LaunchAgent / systemd-user) — which
+    // never source the user's shell rc — pick up tokens automatically
+    // and survive rotation. Best-effort; never blocks boot.
+    runEnvSyncOnce().then((r) => {
+      if (r && r.applied_count > 0) {
+        console.log(
+          `[jarela/env-sync] applied ${r.applied_count} field(s) from ${r.discovered.source}`,
+        );
+      }
+    });
   }
   return _db;
 }

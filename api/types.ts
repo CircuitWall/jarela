@@ -203,11 +203,60 @@ export interface IntegrationStatus {
   configured: boolean;
   values: Record<string, string>; // secrets masked as "********"
   updated_at: string | null;
+  /**
+   * Per-field provenance flags. `"rc"` = pulled from a shell-rc /
+   * Windows-registry env var by the env-syncer. `"user"` = the user
+   * typed it into the panel. Drives the "from your shell" badge.
+   */
+  source?: Record<string, "rc" | "user">;
+  /** ISO timestamp of the last successful rc-sync write. */
+  rc_synced_at?: string | null;
 }
 
 export interface IntegrationsListResponse {
   definitions: IntegrationDefinition[];
   statuses: IntegrationStatus[];
+}
+
+// ---------------------------------------------------------------------------
+// Env-sync — auto-pickup of standard credential env vars from shell rc
+// (macOS / Linux) or User-scope registry (Windows). See lib/env/sync.ts.
+// ---------------------------------------------------------------------------
+
+export type EnvSyncDiscoverySource =
+  | "process"
+  | "shell-rc"
+  | "windows-registry"
+  | "unavailable";
+
+export type EnvSyncAction =
+  | "would-write"
+  | "skipped-user"
+  | "skipped-equal"
+  | "skipped-empty"
+  | "absent";
+
+export interface EnvSyncCandidate {
+  envVar: string | null;
+  integration: string;
+  field: string;
+  current_source: "rc" | "user" | "absent";
+  current_value_present: boolean;
+  rc_value_preview: string | null;
+  action: EnvSyncAction;
+}
+
+export interface EnvSyncResult {
+  discovered: {
+    values: Record<string, string>;       // raw values; UI should not display these directly
+    source: EnvSyncDiscoverySource;
+    shell: string | null;
+    warnings: string[];
+    elapsed_ms: number;
+  };
+  candidates: EnvSyncCandidate[];
+  applied_count: number;
+  ts: string;
 }
 
 export interface ScheduledTask {
