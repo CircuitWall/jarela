@@ -7,13 +7,18 @@ interface AppState {
   activeThreadId: string | null;
   activeAgentId: string | null;
   activeTab: Tab;
+  // Per-tab sub-selection (gmail in integrations, an mcp server name, an
+  // agent uuid, a profile subsection slug, …). Settings panels read their
+  // slot to scroll-to + highlight; the URL mirrors this via `?item=<id>`.
+  selectedItem: Partial<Record<Tab, string>>;
 }
 
 type Action =
   | { type: "SELECT_THREAD"; threadId: string; agentId: string }
   | { type: "NEW_CHAT" }
   | { type: "SET_AGENT"; agentId: string }
-  | { type: "SET_TAB"; tab: Tab };
+  | { type: "SET_TAB"; tab: Tab }
+  | { type: "SET_SELECTION"; tab: Tab; itemId: string | null };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -25,13 +30,19 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, activeAgentId: action.agentId };
     case "SET_TAB":
       return { ...state, activeTab: action.tab };
+    case "SET_SELECTION": {
+      const next = { ...state.selectedItem };
+      if (action.itemId == null) delete next[action.tab];
+      else next[action.tab] = action.itemId;
+      return { ...state, selectedItem: next };
+    }
   }
 }
 
 const AppContext = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, { activeThreadId: null, activeAgentId: null, activeTab: "chat" });
+  const [state, dispatch] = useReducer(reducer, { activeThreadId: null, activeAgentId: null, activeTab: "chat", selectedItem: {} });
   return <AppContext.Provider value={{ state, dispatch }}>{children}</AppContext.Provider>;
 }
 

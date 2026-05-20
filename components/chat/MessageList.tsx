@@ -17,6 +17,7 @@ interface QueuedMessageView {
 }
 
 interface Props {
+  threadId?: string | null;
   messages: Message[];
   notices?: SystemNotice[];
   agentConfig?: AgentConfig | null;
@@ -31,7 +32,7 @@ interface Props {
   onRemoveQueued?: (id: string) => void;
 }
 
-export function MessageList({ messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Tracks whether the user was at the bottom on the most recent scroll event.
   // After every render, if true, we snap to bottom — which means: while the
@@ -54,6 +55,34 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
     if (hasMore && !loadingMore && onLoadMore && el.scrollTop < 60) onLoadMore();
     atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
   }
+
+  // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
+  // flash the same highlight ring used by settings deep links. Re-runs when
+  // the message list grows (so a fresh-loaded page that contained the target
+  // resolves once it's in the DOM) and on every `hashchange` so the same
+  // in-thread link can be clicked twice.
+  useEffect(() => {
+    function scrollToHashTarget() {
+      if (typeof window === "undefined") return;
+      const hash = window.location.hash;
+      if (!hash.startsWith("#msg-")) return;
+      const id = decodeURIComponent(hash.slice(5));
+      const root = scrollRef.current;
+      if (!root) return;
+      requestAnimationFrame(() => {
+        const safe = id.replace(/"/g, '\\"');
+        const el = root.querySelector(`[data-message-id="${safe}"]`) as HTMLElement | null;
+        if (!el) return;
+        atBottomRef.current = false;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("jarela-deep-link-flash");
+        setTimeout(() => el.classList.remove("jarela-deep-link-flash"), 1600);
+      });
+    }
+    scrollToHashTarget();
+    window.addEventListener("hashchange", scrollToHashTarget);
+    return () => window.removeEventListener("hashchange", scrollToHashTarget);
+  }, [messages.length]);
 
   return (
     <div
@@ -83,9 +112,15 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
       {messages.map((msg, i) => {
         const startsTurn = i === 0 || messages[i - 1].role !== msg.role;
         return (
-          <div key={msg.id} className={startsTurn && i > 0 ? "mt-3" : undefined}>
+          <div
+            key={msg.id}
+            id={`msg-${msg.id}`}
+            data-message-id={msg.id}
+            className={startsTurn && i > 0 ? "mt-3" : undefined}
+          >
             <MessageBubble
               message={msg}
+              threadId={threadId ?? null}
               agentConfig={agentConfig}
               userProfile={userProfile}
               showAvatar={startsTurn}
@@ -98,6 +133,7 @@ export function MessageList({ messages, notices, agentConfig, userProfile, strea
       {streamingContent && (
         <MessageBubble
           message={{ role: "assistant", content: streamingContent, streaming: true }}
+          threadId={threadId ?? null}
           agentConfig={agentConfig}
           showAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
         />

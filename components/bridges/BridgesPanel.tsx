@@ -1,9 +1,10 @@
 "use client";
 import { AlertCircle, CheckCircle2, Loader2, MessageSquareText, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Bridge, BridgeLiveStatus } from "@/api/types";
 import { useBridges } from "@/hooks/useBridges";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { BridgeEditor } from "./BridgeEditor";
 
 /**
@@ -22,6 +23,8 @@ export function BridgesPanel() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("bridges", "bridge", containerRef);
 
   // Poll the list every 5s so status pills flip from pairing → connected as
   // Baileys' connection.update events drive the runtime status writeback.
@@ -76,7 +79,7 @@ export function BridgesPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3">
         {creating && (
           <div className="mb-3 rounded-lg border border-accent/30 bg-surface-2 p-3 space-y-2">
             <p className="text-xs text-fg-subtle">
@@ -137,7 +140,7 @@ function BridgeRow({
   onDelete: () => void | Promise<void>;
 }) {
   return (
-    <div className="mb-2 rounded-lg border border-border bg-surface-2 hover:bg-surface-2/70 transition-colors">
+    <div data-deep-link-id={bridge.id} className="mb-2 rounded-lg border border-border bg-surface-2 hover:bg-surface-2/70 transition-colors">
       <div className="flex items-center gap-3 px-3 py-2.5">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
           <MessageSquareText size={16} className="text-white" />

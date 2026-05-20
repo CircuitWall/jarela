@@ -26,6 +26,10 @@ export interface Toast {
   // For click-to-navigate
   agent_id: string | null;
   thread_id: string | null;
+  // Optional in-app deep link rendered as an action button on the toast
+  // (e.g. "Open in Settings →" after an approval). Parsed by lib/ui/navigate.
+  href?: string;
+  hrefLabel?: string;
   // For unread charm tracking
   created_at: number;
   // Auto-dismiss timeout in ms (0 = sticky)

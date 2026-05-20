@@ -1,8 +1,9 @@
 "use client";
 import { Cpu, Pencil, Plus, Star, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ModelConfig } from "@/api/types";
 import { useModels } from "@/hooks/useModels";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { ModelEditor } from "./ModelEditor";
 
 const PROVIDER_COLORS: Record<string, string> = {
@@ -15,6 +16,8 @@ export function ModelsPanel() {
   const { models, assignments, loading, create, update, remove, refresh } = useModels();
   const [editing, setEditing] = useState<ModelConfig | null | "new">(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("models", "model", containerRef);
 
   async function handleSave(name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) {
     if (editing === "new") await create(name, data);
@@ -45,7 +48,7 @@ export function ModelsPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="flex-1 overflow-y-auto">
         {/* Model list */}
         <div className="px-4 py-2">
           {loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
@@ -56,7 +59,7 @@ export function ModelsPanel() {
           {models.map((m) => {
             const inUse = assignments.some((a) => a.model_config_name === m.name);
             return (
-            <div key={m.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
+            <div key={m.name} data-deep-link-id={m.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-sm font-medium text-fg">{m.name}</span>
