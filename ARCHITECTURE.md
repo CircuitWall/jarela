@@ -30,7 +30,7 @@ C4Container
     System_Ext(cohere, "Cohere", "Embeddings")
     System_Ext(mcps, "MCP Servers", "External tool providers (stdio / SSE)")
     System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
-    System_Ext(github, "GitHub API", "Repo / PR / Copilot OAuth")
+    System_Ext(github, "GitHub API", "Issues / PRs / Repos (native github_* tools, ADR-0015) + Copilot OAuth (model provider)")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
 
     Rel(user, ui, "HTTPS")
@@ -208,7 +208,7 @@ sequenceDiagram
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
 | External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |
-| GitHub API | Repo / PR integration | Feature degrades; chat unaffected |
+| GitHub API (`api.github.com`) | Native `github_*` tools — issues, PRs, repos (ADR-0015); Copilot OAuth for the model provider | Tool call returns the API error; agent can recover or skip |
 | SQLite (local) | Persistence | Fatal — startup fails fast with clear error |
 
 ## Decisions
