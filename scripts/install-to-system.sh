@@ -64,7 +64,11 @@ info "dest: $INSTALL_DIR"
 
 # ── 1. Stop existing service ──────────────────────────────────────────────
 step "Stopping existing LaunchAgent (if loaded)"
-launchctl unload "$PLIST" 2>/dev/null || true
+# Use modern bootout API. Legacy `launchctl unload` routes through
+# bootstrap internally and returns EIO (error 5) on Darwin 25+ even
+# when the plist is valid. bootout itself may exit non-zero if the
+# service isn't currently loaded — that's fine, we proceed anyway.
+launchctl bootout "gui/$(id -u)" "$PLIST" 2>/dev/null || true
 # Belt-and-braces: kill anything still on :4312.
 if lsof -nP -iTCP:$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
   info "killing process on :$PORT"
@@ -222,7 +226,9 @@ plutil -lint "$PLIST" >/dev/null
 # ── 9. Load + start ───────────────────────────────────────────────────────
 if [[ $NO_START -eq 0 ]]; then
   step "Loading LaunchAgent"
-  launchctl load "$PLIST"
+  # Modern bootstrap API; the legacy `launchctl load` is flaky on
+  # Darwin 25+ (returns EIO even with a valid plist).
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
   sleep 2
   if launchctl list | grep -q "$LABEL"; then
     info "OK — LaunchAgent loaded"
