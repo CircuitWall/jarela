@@ -150,6 +150,12 @@ export interface ToolInfo {
   source?: "builtin" | "mcp";
   /** UI grouping label (e.g. "Files", "Web", "MCP"). */
   category?: string;
+  /**
+   * Optional parent group rendered above the category in the Agent editor.
+   * Currently used to collapse vendor-native categories (Atlassian, GitHub)
+   * under a single "Work" header. `null` (or absent) means render flat.
+   */
+  group?: string | null;
 }
 
 export interface McpServer {

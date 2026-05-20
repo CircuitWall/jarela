@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAllTools, getAllToolsAsync, getToolCategory } from "@/lib/tools";
+import { getAllTools, getAllToolsAsync, getToolCategory, getToolGroup } from "@/lib/tools";
 
 export async function GET() {
   try {
@@ -15,6 +15,7 @@ export async function GET() {
           description: t.description,
           source,
           category: getToolCategory(t.name, source),
+          group: getToolGroup(t.name, source),
         };
       }),
     );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { _resolveAtlassianAuth } from "@/lib/tools/atlassian";
+import { _resolveGithubAuth } from "@/lib/tools/github";
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
@@ -15,6 +16,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const { name } = await params;
   switch (name) {
     case "atlassian": return await testAtlassian();
+    case "github":    return await testGithub();
     case "google":    return await testGoogle();
     case "gmail":     return await testGmail();
     case "outlook":   return await testOutlook();
@@ -47,6 +49,38 @@ async function testAtlassian() {
         email: me.emailAddress,
         accountId: me.accountId,
       },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, error: describeError(err) },
+      { status: 200 },
+    );
+  }
+}
+
+async function testGithub() {
+  const auth = _resolveGithubAuth();
+  if ("error" in auth) return NextResponse.json({ ok: false, error: auth.error }, { status: 400 });
+  try {
+    const res = await fetch("https://api.github.com/user", {
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Jarela",
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return NextResponse.json(
+        { ok: false, error: `GitHub ${res.status}: ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    const me = (await res.json()) as { login?: string; name?: string | null; type?: string };
+    return NextResponse.json({
+      ok: true,
+      detail: { login: me.login, name: me.name ?? null, type: me.type },
     });
   } catch (err) {
     return NextResponse.json(

@@ -131,6 +131,21 @@ test("tools: schedule_task, web_search, memory_* are registered", async () => {
   }
 });
 
+test("tools: github_* registered under the Work group (ADR-0015)", async () => {
+  const { body } = await api("/api/v1/tools");
+  const required = [
+    "github_search_issues", "github_get_issue", "github_create_issue", "github_add_comment",
+    "github_list_pulls", "github_get_pull", "github_get_repo",
+  ];
+  const byName = new Map(body.map((t) => [t.name, t]));
+  for (const name of required) {
+    const t = byName.get(name);
+    assert(t, `missing tool: ${name}`);
+    assertEqual(t.category, "GitHub", `${name} should be in the GitHub category`);
+    assertEqual(t.group, "Work", `${name} should be in the Work group`);
+  }
+});
+
 test("threads: agent thread creation is idempotent", async () => {
   const { body: agents } = await api("/api/v1/agents");
   const id = agents.find((a) => a.is_default).id;

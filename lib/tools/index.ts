@@ -18,6 +18,10 @@ import {
   confluenceSearchTool, confluenceGetPageTool,
 } from "./atlassian";
 import {
+  githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
+  githubListPullsTool, githubGetPullTool, githubGetRepoTool,
+} from "./github";
+import {
   gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
   gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
 } from "./gmail";
@@ -52,7 +56,18 @@ export { TOOLS_DIR, type ExtensionLoadError } from "./external";
 // — no parallel name→category map to keep in sync.
 export type ToolCategory =
   | "Memory" | "Files" | "Shell" | "Web" | "Images"
-  | "Schedule" | "Atlassian" | "Mail" | "Calendar" | "Config" | "MCP";
+  | "Schedule" | "Atlassian" | "GitHub" | "Mail" | "Calendar" | "Config" | "MCP";
+
+// Optional parent group rendered above categories in the Agent editor. The
+// idea is that "Atlassian" and "GitHub" are both Work tools that share an
+// auth model (corporate PAT/OAuth) — collapsing them under a single header
+// keeps the editor scannable as we add more vendor-native tools. Null = flat.
+export type ToolGroup = "Work" | null;
+const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
+  Memory: null, Files: null, Shell: null, Web: null, Images: null,
+  Schedule: null, Config: null, Mail: null, Calendar: null,
+  Atlassian: "Work", GitHub: "Work",
+};
 
 const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInterface[]> = {
   Memory: [memoryReadTool, memoryWriteTool, memoryListTool],
@@ -71,6 +86,10 @@ const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInte
   Atlassian: [
     jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool,
     jiraTransitionsTool, confluenceSearchTool, confluenceGetPageTool,
+  ],
+  GitHub: [
+    githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
+    githubListPullsTool, githubGetPullTool, githubGetRepoTool,
   ],
   Mail: [
     gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
@@ -107,6 +126,12 @@ export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCa
   const ext = loadExternal().categories.get(name);
   if (ext) return ext;
   return source === "mcp" ? "MCP" : "Config";
+}
+
+export function getToolGroup(name: string, source: "builtin" | "mcp"): ToolGroup {
+  const cat = getToolCategory(name, source);
+  if (cat === "MCP") return null;
+  return CATEGORY_GROUPS[cat] ?? null;
 }
 
 function applyPolicy(
