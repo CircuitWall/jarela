@@ -11,6 +11,7 @@ import type {
   BridgeRouteIn,
   BridgeRoutePatch,
   ContentPart,
+  ExtensionsListResponse,
   IntegrationsListResponse,
   IntegrationStatus,
   McpRegistryEntry,
@@ -65,6 +66,10 @@ export const api = {
 
   tools: {
     list: () => request<ToolInfo[]>("/tools"),
+  },
+
+  extensions: {
+    list: () => request<ExtensionsListResponse>("/extensions"),
   },
 
   threads: {
@@ -161,7 +166,14 @@ export const api = {
       request<McpServer>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (name: string) =>
       request<{ deleted: boolean }>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "DELETE" }),
-    registry: () => request<McpRegistryEntry[]>("/mcp-servers/registry"),
+    registry: (params?: { q?: string; cursor?: string; fresh?: boolean }) => {
+      const qs = new URLSearchParams();
+      if (params?.q) qs.set("q", params.q);
+      if (params?.cursor) qs.set("cursor", params.cursor);
+      if (params?.fresh) qs.set("fresh", "1");
+      const suffix = qs.toString() ? `?${qs}` : "";
+      return request<{ entries: McpRegistryEntry[]; nextCursor?: string }>(`/mcp-servers/registry${suffix}`);
+    },
   },
 
   integrations: {

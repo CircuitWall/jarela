@@ -20,6 +20,7 @@ C4Container
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
+      ContainerDb(extdir, "Extension dirs", "filesystem (~/.jarela/{providers,tools}/)", "Drop-in .cjs files for external providers + tools, hot-loaded per request (ADR-0013)")
     }
 
     System_Ext(anthropic, "Anthropic", "Claude")
@@ -28,6 +29,7 @@ C4Container
     System_Ext(deepseek, "DeepSeek", "OpenAI-compatible")
     System_Ext(cohere, "Cohere", "Embeddings")
     System_Ext(mcps, "MCP Servers", "External tool providers (stdio / SSE)")
+    System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
     System_Ext(github, "GitHub API", "Repo / PR / Copilot OAuth")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
 
@@ -52,7 +54,9 @@ C4Container
     Rel(stream, deepseek, "HTTPS")
     Rel(agents, cohere, "embed")
     Rel(mcp, mcps, "stdio / SSE")
+    Rel(routes, mcpreg, "HTTPS (picker search)")
     Rel(routes, github, "HTTPS")
+    Rel(agents, extdir, "scan per request (cache-busted require)")
     Rel(proxy, db, "read proxy_config (via crypto)")
     Rel(stream, proxy, "outbound via GlobalDispatcher")
     Rel(routes, proxy, "outbound via GlobalDispatcher")
@@ -68,7 +72,9 @@ flowchart LR
     B --> D[Tool Registry<br/>lib/tools]
     B --> E[MCP Client<br/>lib/mcp]
     C --> F[(LLM Provider)]
+    C --> XP[External providers<br/>~/.jarela/providers/*.cjs<br/>hot-loaded]
     D --> G[Built-in tools]
+    D --> XT[External tools<br/>~/.jarela/tools/*.cjs<br/>hot-loaded]
     E --> H[(External MCP servers)]
     B --> I[Checkpoint Store<br/>lib/db]
     I --> J[(SQLite ~/.jarela)]
@@ -201,6 +207,7 @@ sequenceDiagram
 |---|---|---|
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
+| External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |
 | GitHub API | Repo / PR integration | Feature degrades; chat unaffected |
 | SQLite (local) | Persistence | Fatal — startup fails fast with clear error |
 
