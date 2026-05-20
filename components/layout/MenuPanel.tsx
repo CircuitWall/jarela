@@ -86,7 +86,15 @@ function AgentSessionList({
   const unread = useUnreadByAgent();
 
   useEffect(() => {
-    api.agents.list().then(setAgents).catch(console.error);
+    let cancelled = false;
+    const load = () => api.agents.list().then((rows) => { if (!cancelled) setAgents(rows); }).catch(console.error);
+    void load();
+    function onAgentsChanged() { void load(); }
+    window.addEventListener("jarela:agents-changed", onAgentsChanged);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("jarela:agents-changed", onAgentsChanged);
+    };
   }, []);
 
   if (agents.length === 0) {
@@ -178,21 +186,22 @@ export function MenuPanel({
 }: Props) {
   return (
     <div className="glass-elevated absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full border-l border-border/60 z-20 flex flex-col pb-safe">
-      {/* Navigation tabs as a compact icon tray. */}
-      <div className="flex gap-1 px-2 py-2 border-b border-border shrink-0 overflow-x-auto no-scrollbar">
+      {/* Navigation tabs as a labeled icon grid. */}
+      <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 px-2 py-2 border-b border-border shrink-0">
         {TAB_ORDER.map((tab) => (
           <button
             key={tab}
             onClick={() => onSetTab(tab)}
             title={TAB_TITLES[tab]}
             aria-label={TAB_TITLES[tab]}
-            className={`shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-lg transition-colors ${
+            className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-lg py-2 px-1 transition-colors ${
               activeTab === tab
                 ? "bg-surface-3 text-fg ring-1 ring-border"
                 : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
             }`}
           >
             <span className="shrink-0">{TAB_ICONS[tab]}</span>
+            <span className="text-[10px] leading-none truncate max-w-full">{TAB_TITLES[tab]}</span>
           </button>
         ))}
       </div>
