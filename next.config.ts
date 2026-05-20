@@ -36,7 +36,11 @@ const withSerwist = withSerwistInit({
   swSrc: "app/sw.ts",
   swDest: "public/sw.js",
   cacheOnNavigation: true,
-  reloadOnOnline: true,
+  // Hard-reload on the browser's `online` event flaps when the network
+  // does — Tailscale/VPN reconnects, Wi-Fi suspend/resume, captive portals.
+  // Our SW serves all /api/* with NetworkOnly so a reload buys nothing
+  // here; leaving it on caused the installed app to refresh repeatedly.
+  reloadOnOnline: false,
   disable: process.env.NODE_ENV === "development",
 });
 
