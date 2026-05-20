@@ -16,18 +16,23 @@ const BUILTINS: Record<string, ModelProvider> = {
   langchain: langchainProvider,
 };
 
-const PROVIDERS: Record<string, ModelProvider> = {
-  ...BUILTINS,
-  ...loadExternalProviders(new Set(Object.keys(BUILTINS))),
-};
+export const BUILTIN_PROVIDER_NAMES: ReadonlySet<string> = new Set(Object.keys(BUILTINS));
+
+// Recompute on every call so external providers dropped into ~/.jarela/providers/
+// are picked up without a process restart. loadExternalProviders cache-busts
+// require() per file, so edits are reflected immediately too.
+function getProviders(): Record<string, ModelProvider> {
+  return { ...BUILTINS, ...loadExternalProviders(BUILTIN_PROVIDER_NAMES) };
+}
 
 export function listProviderNames(): string[] {
-  return Object.keys(PROVIDERS).sort((a, b) => a.localeCompare(b));
+  return Object.keys(getProviders()).sort((a, b) => a.localeCompare(b));
 }
 
 export function getProvider(name: string): ModelProvider {
-  const p = PROVIDERS[name];
-  if (!p) throw new Error(`Unknown provider: "${name}". Available: ${Object.keys(PROVIDERS).join(", ")}`);
+  const all = getProviders();
+  const p = all[name];
+  if (!p) throw new Error(`Unknown provider: "${name}". Available: ${Object.keys(all).join(", ")}`);
   return p;
 }
 

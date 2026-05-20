@@ -1,0 +1,51 @@
+// Example external tool for Jarela.
+//
+// To use: copy this file to ~/.jarela/tools/<your-name>.cjs (rename .example
+// to nothing), edit the contents, save. Hot-reload is per-call — the next
+// agent message picks up your changes without restarting Jarela.
+//
+// Contract (see docs/adr/0013-external-extension-contract.md):
+//   module.exports = {
+//     name: string,           // tool id (must not collide with a built-in)
+//     description: string,    // shown to the LLM — be specific about WHEN to use it
+//     schema: object,         // JSON Schema 7 for the input args
+//     category?: string,      // optional UI grouping; one of:
+//                             //   "Memory" "Files" "Shell" "Web" "Images"
+//                             //   "Schedule" "Atlassian" "Mail" "Calendar" "Config"
+//     async run(args, ctx) {  // ctx = { thread_id?: string }
+//       return any;           // return value JSON-serialized for the agent
+//     }
+//   }
+//
+// Notes:
+// - No need to import langchain or zod — Jarela wraps your plain object.
+// - Throw an Error to signal failure; the agent receives the message.
+// - Keep handlers pure-Node (fetch, fs, etc.) so dependencies don't matter.
+
+module.exports = {
+  name: "echo",
+  description:
+    "Echo a message back to the agent. Useful as a smoke test that external tools are wired up.",
+  category: "Config",
+  schema: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        description: "Text to echo back.",
+      },
+      uppercase: {
+        type: "boolean",
+        description: "If true, echo in upper case.",
+      },
+    },
+    required: ["message"],
+    additionalProperties: false,
+  },
+  async run({ message, uppercase }, _ctx) {
+    if (typeof message !== "string" || !message.trim()) {
+      throw new Error("message is required and must be non-empty");
+    }
+    return { echoed: uppercase ? message.toUpperCase() : message };
+  },
+};

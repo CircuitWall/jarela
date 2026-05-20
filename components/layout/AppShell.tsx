@@ -12,6 +12,7 @@ import { ModelsPanel } from "@/components/models/ModelsPanel";
 import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
+import { ExtensionsPanel } from "@/components/extensions/ExtensionsPanel";
 import { IntegrationsPanel } from "@/components/integrations/IntegrationsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
@@ -228,6 +229,11 @@ export function AppShell() {
         {mountedTabs.has("mcp") && (
           <Activity mode={state.activeTab === "mcp" ? "visible" : "hidden"}>
             <MCPPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("extensions") && (
+          <Activity mode={state.activeTab === "extensions" ? "visible" : "hidden"}>
+            <ExtensionsPanel />
           </Activity>
         )}
         {mountedTabs.has("integrations") && (
