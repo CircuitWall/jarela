@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Brain, Calendar, Cpu, Key, MessageSquare, Monitor, Moon, Plug, Smartphone, Sun, User } from "lucide-react";
+import { Bot, Brain, Calendar, Cpu, Key, MessageSquare, Monitor, Moon, Plug, Puzzle, Smartphone, Sun, User } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
@@ -26,6 +26,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   memory: <Brain size={13} />,
   models: <Cpu size={13} />,
   mcp: <Plug size={13} />,
+  extensions: <Puzzle size={13} />,
   integrations: <Key size={13} />,
   tasks: <Calendar size={13} />,
   bridges: <Smartphone size={13} />,
@@ -40,6 +41,7 @@ const TAB_LABELS: Record<Tab, string> = {
   memory: "Memory",
   models: "Models",
   mcp: "MCP",
+  extensions: "Ext",
   integrations: "Creds",
   tasks: "Tasks",
   bridges: "Bridges",
@@ -166,7 +168,7 @@ export function MenuPanel({
     <div className="glass-elevated absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full border-l border-border/60 z-20 flex flex-col pb-safe">
       {/* Navigation tabs — icon + short label; full name shown on hover */}
       <div className="flex gap-0.5 px-2 py-2 border-b border-border shrink-0">
-        {(["chat", "agents", "memory", "models", "mcp", "integrations", "tasks", "bridges", "profile"] as Tab[]).map((tab) => (
+        {(["chat", "agents", "memory", "models", "mcp", "extensions", "integrations", "tasks", "bridges", "profile"] as Tab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => onSetTab(tab)}

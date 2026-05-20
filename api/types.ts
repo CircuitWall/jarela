@@ -412,3 +412,26 @@ export interface TailscaleStatus {
   install_script: string;
   uninstall_script: string;
 }
+
+export interface ExtensionInfo {
+  name: string;
+  file: string | null;
+}
+
+export interface ExternalToolInfo extends ExtensionInfo {
+  description: string;
+  category: string | null;
+}
+
+export interface ExtensionLoadError {
+  kind: "provider" | "tool";
+  file: string;
+  error: string;
+}
+
+export interface ExtensionsListResponse {
+  directories: { providers: string; tools: string };
+  providers: ExtensionInfo[];
+  tools: ExternalToolInfo[];
+  errors: ExtensionLoadError[];
+}

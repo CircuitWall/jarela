@@ -5,17 +5,30 @@ import { getDataDir } from "@/lib/db/data-dir";
 
 export const PROVIDERS_DIR = join(getDataDir(), "providers");
 
+export interface ExtensionLoadError {
+  file: string;
+  error: string;
+}
+
+export interface ExternalProvidersResult {
+  providers: Record<string, ModelProvider>;
+  files: Map<string, string>;
+  errors: ExtensionLoadError[];
+}
+
 function isValid(p: unknown): p is ModelProvider {
   if (!p || typeof p !== "object") return false;
   const o = p as Record<string, unknown>;
   return typeof o.name === "string" && typeof o.chat === "function";
 }
 
-export function loadExternalProviders(
+export function loadExternalProvidersDetailed(
   builtins: ReadonlySet<string>,
-): Record<string, ModelProvider> {
-  const out: Record<string, ModelProvider> = {};
-  if (!existsSync(PROVIDERS_DIR)) return out;
+): ExternalProvidersResult {
+  const providers: Record<string, ModelProvider> = {};
+  const files = new Map<string, string>();
+  const errors: ExtensionLoadError[] = [];
+  if (!existsSync(PROVIDERS_DIR)) return { providers, files, errors };
 
   // Reach for node:module via process.getBuiltinModule so webpack cannot
   // see the dependency and tree-shake it. With a normal `import { createRequire }
@@ -34,7 +47,7 @@ export function loadExternalProviders(
   try {
     entries = readdirSync(PROVIDERS_DIR);
   } catch {
-    return out;
+    return { providers, files, errors };
   }
 
   for (const entry of entries) {
@@ -51,6 +64,8 @@ export function loadExternalProviders(
       delete req.cache[req.resolve(path)];
       mod = req(path);
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      errors.push({ file: entry, error: message });
       console.error(`[providers] failed to load ${entry}:`, err);
       continue;
     }
@@ -58,27 +73,36 @@ export function loadExternalProviders(
     const candidate =
       (mod as { default?: unknown })?.default ?? (mod as unknown);
     if (!isValid(candidate)) {
-      console.error(
-        `[providers] ${entry} does not export a valid ModelProvider (need { name, chat })`,
-      );
+      const msg = "does not export a valid ModelProvider (need { name, chat })";
+      errors.push({ file: entry, error: msg });
+      console.error(`[providers] ${entry} ${msg}`);
       continue;
     }
 
     const name = candidate.name;
     if (builtins.has(name)) {
-      console.warn(
-        `[providers] external "${name}" from ${entry} ignored — built-in takes precedence`,
-      );
+      const msg = `name "${name}" collides with a built-in provider — built-in takes precedence`;
+      errors.push({ file: entry, error: msg });
+      console.warn(`[providers] external ${entry}: ${msg}`);
       continue;
     }
-    if (out[name]) {
-      console.warn(
-        `[providers] duplicate external provider "${name}" in ${entry} ignored`,
-      );
+    if (providers[name]) {
+      const msg = `duplicate external provider "${name}"`;
+      errors.push({ file: entry, error: msg });
+      console.warn(`[providers] ${entry}: ${msg}`);
       continue;
     }
-    out[name] = candidate;
+    providers[name] = candidate;
+    files.set(name, entry);
   }
 
-  return out;
+  return { providers, files, errors };
+}
+
+// Convenience for callers that only need the provider map (the existing
+// pattern in lib/providers/index.ts).
+export function loadExternalProviders(
+  builtins: ReadonlySet<string>,
+): Record<string, ModelProvider> {
+  return loadExternalProvidersDetailed(builtins).providers;
 }
