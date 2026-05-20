@@ -33,20 +33,32 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   profile: <User size={13} />,
 };
 
-// Compact label shown under each icon. With 8 tabs at 26rem panel width,
-// labels need to stay short to fit without truncation.
-const TAB_LABELS: Record<Tab, string> = {
+const TAB_TITLES: Record<Tab, string> = {
   chat: "Chat",
   agents: "Agents",
   memory: "Memory",
   models: "Models",
   mcp: "MCP",
-  extensions: "Ext",
-  integrations: "Creds",
+  extensions: "Extensions",
+  integrations: "Credentials",
   tasks: "Tasks",
   bridges: "Bridges",
-  profile: "You",
+  profile: "Profile",
 };
+
+// Ordered by expected day-to-day usage frequency (most to least).
+const TAB_ORDER: Tab[] = [
+  "chat",
+  "agents",
+  "memory",
+  "tasks",
+  "models",
+  "mcp",
+  "extensions",
+  "bridges",
+  "profile",
+  "integrations",
+];
 
 const GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -166,21 +178,21 @@ export function MenuPanel({
 }: Props) {
   return (
     <div className="glass-elevated absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full border-l border-border/60 z-20 flex flex-col pb-safe">
-      {/* Navigation tabs — icon + short label; full name shown on hover */}
-      <div className="flex gap-0.5 px-2 py-2 border-b border-border shrink-0">
-        {(["chat", "agents", "memory", "models", "mcp", "extensions", "integrations", "tasks", "bridges", "profile"] as Tab[]).map((tab) => (
+      {/* Navigation tabs as a compact icon tray. */}
+      <div className="flex gap-1 px-2 py-2 border-b border-border shrink-0 overflow-x-auto no-scrollbar">
+        {TAB_ORDER.map((tab) => (
           <button
             key={tab}
             onClick={() => onSetTab(tab)}
-            title={tab.charAt(0).toUpperCase() + tab.slice(1)}
-            className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-0.5 py-1.5 px-0.5 text-[10px] rounded-md font-medium transition-colors whitespace-nowrap ${
+            title={TAB_TITLES[tab]}
+            aria-label={TAB_TITLES[tab]}
+            className={`shrink-0 w-9 h-9 inline-flex items-center justify-center rounded-lg transition-colors ${
               activeTab === tab
-                ? "bg-surface-3 text-fg"
+                ? "bg-surface-3 text-fg ring-1 ring-border"
                 : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
             }`}
           >
             <span className="shrink-0">{TAB_ICONS[tab]}</span>
-            <span>{TAB_LABELS[tab]}</span>
           </button>
         ))}
       </div>
