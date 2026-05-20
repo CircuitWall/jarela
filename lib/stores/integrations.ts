@@ -7,6 +7,7 @@
 // nothing sensitive ends up in the UI / network logs / browser inspector.
 
 import { getMemory, putMemory, deleteMemory, listMemory } from "@/lib/stores/memory";
+import { getIntegrationMeta, markFieldsAsUserTouched } from "@/lib/stores/integration_meta";
 
 export const SECRET_MASK = "********";
 const NAMESPACE = "integrations";
@@ -77,6 +78,15 @@ export interface IntegrationStatus {
   configured: boolean;
   values: Record<string, string>; // secrets masked
   updated_at: string | null;
+  /**
+   * Per-field provenance. `"rc"` = pulled from a shell rc / Windows
+   * registry env var by the env-syncer. `"user"` = the user typed it
+   * into the panel. Absent fields haven't been seen by either path.
+   * Drives the "from your shell" badge in the IntegrationsPanel.
+   */
+  source?: Record<string, "rc" | "user">;
+  /** Last successful rc-sync write time, ISO. Null until the first sync. */
+  rc_synced_at?: string | null;
 }
 
 export function listIntegrations(): IntegrationStatus[] {
@@ -84,12 +94,24 @@ export function listIntegrations(): IntegrationStatus[] {
   const byKey = new Map(rows.map((r) => [r.key, r]));
   return Object.keys(INTEGRATIONS).map((name) => {
     const row = byKey.get(name);
-    if (!row) return { name, configured: false, values: {}, updated_at: null };
+    const meta = getIntegrationMeta(name);
+    if (!row) {
+      return {
+        name,
+        configured: false,
+        values: {},
+        updated_at: null,
+        source: meta.source,
+        rc_synced_at: meta.rc_synced_at,
+      };
+    }
     return {
       name,
       configured: true,
       values: maskSecrets(name as IntegrationName, parseValue(row.value)),
       updated_at: row.updated_at,
+      source: meta.source,
+      rc_synced_at: meta.rc_synced_at,
     };
   });
 }
@@ -97,12 +119,24 @@ export function listIntegrations(): IntegrationStatus[] {
 export function getIntegrationStatus(name: string): IntegrationStatus | null {
   if (!isKnownIntegration(name)) return null;
   const row = getMemory(NAMESPACE, name);
-  if (!row) return { name, configured: false, values: {}, updated_at: null };
+  const meta = getIntegrationMeta(name);
+  if (!row) {
+    return {
+      name,
+      configured: false,
+      values: {},
+      updated_at: null,
+      source: meta.source,
+      rc_synced_at: meta.rc_synced_at,
+    };
+  }
   return {
     name,
     configured: true,
     values: maskSecrets(name, parseValue(row.value)),
     updated_at: row.updated_at,
+    source: meta.source,
+    rc_synced_at: meta.rc_synced_at,
   };
 }
 
@@ -122,6 +156,10 @@ export function saveIntegration(name: string, incoming: Record<string, string>):
   const def = INTEGRATIONS[name];
   const existing = getIntegrationRaw(name) ?? {};
   const merged: Record<string, string> = {};
+  // Track which fields the user actually changed (vs preserved via SECRET_MASK).
+  // Only changed fields flip source to "user" — if they re-saved without
+  // touching the secret, it stays whatever it was (rc or user).
+  const touched: string[] = [];
   for (const f of def.fields) {
     const v = incoming[f.key];
     if (v === undefined) {
@@ -136,9 +174,11 @@ export function saveIntegration(name: string, incoming: Record<string, string>):
     } else {
       if (f.required && !v.trim()) return { error: `"${f.key}" cannot be empty` };
       merged[f.key] = v;
+      if (existing[f.key] !== v) touched.push(f.key);
     }
   }
   putMemory(NAMESPACE, name, merged);
+  if (touched.length > 0) markFieldsAsUserTouched(name, touched);
   return getIntegrationStatus(name)!;
 }
 

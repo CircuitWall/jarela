@@ -11,6 +11,7 @@ import type {
   BridgeRouteIn,
   BridgeRoutePatch,
   ContentPart,
+  EnvSyncResult,
   ExtensionsListResponse,
   IntegrationsListResponse,
   IntegrationStatus,
@@ -206,6 +207,11 @@ export const api = {
       request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
         `/integrations/outlook/oauth/status?state=${encodeURIComponent(state)}`,
       ),
+  },
+
+  envSync: {
+    preview: () => request<EnvSyncResult>("/env-sync"),
+    apply: () => request<EnvSyncResult>("/env-sync", { method: "POST", body: "{}" }),
   },
 
   pending: {
