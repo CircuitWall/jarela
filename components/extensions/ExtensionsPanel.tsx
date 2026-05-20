@@ -1,12 +1,15 @@
 "use client";
 import { AlertCircle, Puzzle, RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ExtensionsListResponse } from "@/api/types";
+import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 
 export function ExtensionsPanel() {
   const [data, setData] = useState<ExtensionsListResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useDeepLinkScroll("extensions", "extension", containerRef);
 
   async function load() {
     setLoading(true);
@@ -37,7 +40,7 @@ export function ExtensionsPanel() {
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
         {loading && !data && (
           <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
         )}
@@ -152,7 +155,7 @@ function Row({
   sub?: string;
 }) {
   return (
-    <div className="flex items-center gap-3 py-2 border-b border-border/60">
+    <div data-deep-link-id={name} className="flex items-center gap-3 py-2 border-b border-border/60">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-fg">{name}</span>
