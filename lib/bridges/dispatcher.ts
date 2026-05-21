@@ -49,15 +49,21 @@ export async function handleInboundMessage(
     // Always stamp bridge/chat provenance onto inbound text so agents can
     // distinguish sources when a route aggregates multiple chats (catch-all)
     // and when group participants share one agent thread.
+    const chatName = msg.chat_name ?? msg.push_name ?? "unknown";
+    const senderJid = msg.participant_jid ?? msg.remote_jid;
+    const senderName = msg.sender_name ?? msg.push_name ?? senderJid;
     const contextLines = [
       `[bridge:${adapter.bridge_id}]`,
       `[chat_jid:${msg.remote_jid}]`,
-      `[chat_name:${msg.push_name ?? "unknown"}]`,
+      `[chat_name:${chatName}]`,
       `[chat_type:${msg.is_group ? "group" : "dm"}]`,
+      `[sender_jid:${senderJid}]`,
+      `[sender_name:${senderName}]`,
     ];
     if (msg.is_group) {
-      contextLines.push(`[participant_jid:${msg.participant_jid ?? "unknown"}]`);
-      contextLines.push(`[participant_name:${msg.push_name ?? msg.participant_jid ?? "unknown"}]`);
+      contextLines.push(`[group_name:${chatName}]`);
+      contextLines.push(`[participant_jid:${senderJid}]`);
+      contextLines.push(`[participant_name:${senderName}]`);
     }
     const prepared = await prepareThreadRun(
       thread.thread_id,

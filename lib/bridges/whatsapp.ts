@@ -235,17 +235,19 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // points at a routable JID — that's the same chat in its
         // phone-number form.
         const remote_jid = pickRoutableJid(m.key.remoteJid, m.key.remoteJidAlt);
+        const is_group = remote_jid.endsWith("@g.us");
         // Update the chat cache regardless of whether the body is text —
         // the chat is "real" the moment we see any message from it, even
         // a sticker we'll drop.
         const ts = typeof m.messageTimestamp === "number"
           ? m.messageTimestamp * 1000
           : (m.messageTimestamp?.low ?? 0) * 1000 || Date.now();
-        this.observeChat(remote_jid, m.pushName ?? null, ts);
+        // In groups, pushName is typically the participant's display name,
+        // not the group subject. Avoid poisoning the group chat label.
+        this.observeChat(remote_jid, is_group ? null : (m.pushName ?? null), ts);
 
         const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? "";
         if (!text) continue; // drop non-text in v1
-        const is_group = remote_jid.endsWith("@g.us");
         // In group chats `key.participant` is the actual sender's JID
         // (the chat-level remote_jid is the group, not the person). In 1:1
         // chats it's undefined — the sender == remote_jid. Normalize so the
@@ -253,9 +255,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         const participant_jid = is_group && m.key.participant
           ? normalizeUserJid(m.key.participant)
           : null;
+        const chat_name = this.chats.get(remote_jid)?.name ?? m.pushName ?? null;
+        const sender_name = participant_jid
+          ? (this.chats.get(participant_jid)?.name ?? m.pushName ?? participant_jid)
+          : (m.pushName ?? chat_name);
         const inbound: InboundMessage = {
           remote_jid,
           push_name: m.pushName ?? null,
+          chat_name,
+          sender_name,
           text,
           message_id: m.key.id ?? null,
           is_group,
