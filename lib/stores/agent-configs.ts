@@ -1,4 +1,5 @@
 import { getDb } from "@/lib/db";
+import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 
 const now = () => new Date().toISOString();
 
@@ -14,6 +15,12 @@ export interface AgentConfigRow {
   history_limit: number;        // 0 = unlimited
   history_window_hours: number; // 0 = no time bound
   never_reply: number;          // 1 = run the agent but don't auto-send replies via bridges
+  adaptive_persona_enabled: number;  // 1 = use runtime mood/tone adaptation hints
+  adaptive_persona_strength: number; // 0..100, how strongly to adapt to cues
+  adaptive_empathy: number;          // 0..100, baseline empathetic tone
+  adaptive_expressiveness: number;   // 0..100, restrained -> energetic
+  adaptive_verbosity: number;        // 0..100, concise -> detailed
+  adaptive_mbti: string;             // one of 16 MBTI types
   created_at: string;
   updated_at: string;
 }
@@ -52,6 +59,12 @@ export interface UpsertAgentInput {
   history_limit?: number;
   history_window_hours?: number;
   never_reply?: boolean;
+  adaptive_persona_enabled?: boolean;
+  adaptive_persona_strength?: number;
+  adaptive_empathy?: number;
+  adaptive_expressiveness?: number;
+  adaptive_verbosity?: number;
+  adaptive_mbti?: MbtiType;
 }
 
 export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
@@ -59,12 +72,20 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
   const db = getDb();
   const existing = getAgentConfig(input.id);
   const created_at = existing?.created_at ?? t;
+  const mbti = input.adaptive_mbti ?? toMbti(existing?.adaptive_mbti) ?? "INTJ";
+  const preset = MBTI_PRESETS[mbti];
+  const strength = input.adaptive_persona_strength ?? preset.strength;
+  const empathy = input.adaptive_empathy ?? preset.empathy;
+  const expressiveness = input.adaptive_expressiveness ?? preset.expressiveness;
+  const verbosity = input.adaptive_verbosity ?? preset.verbosity;
   if (input.is_default) db.prepare("UPDATE agent_configs SET is_default=0").run();
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
-         history_limit, history_window_hours, never_reply, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         history_limit, history_window_hours, never_reply,
+         adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
+         created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -82,10 +103,28 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       input.never_reply === undefined
         ? (existing?.never_reply ?? 0)
         : (input.never_reply ? 1 : 0),
+      input.adaptive_persona_enabled === undefined
+        ? (existing?.adaptive_persona_enabled ?? 0)
+        : (input.adaptive_persona_enabled ? 1 : 0),
+      clampPercent(strength, existing?.adaptive_persona_strength ?? 50),
+      clampPercent(empathy, existing?.adaptive_empathy ?? 50),
+      clampPercent(expressiveness, existing?.adaptive_expressiveness ?? 50),
+      clampPercent(verbosity, existing?.adaptive_verbosity ?? 50),
+      mbti,
       created_at,
       t,
     );
   return getAgentConfig(input.id)!;
+}
+
+function clampPercent(next: number | undefined, fallback: number): number {
+  const n = Number.isFinite(next) ? Number(next) : fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function toMbti(v: string | null | undefined): MbtiType | null {
+  if (!v) return null;
+  return (v in MBTI_PRESETS ? v : null) as MbtiType | null;
 }
 
 export function deleteAgentConfig(id: string): boolean {

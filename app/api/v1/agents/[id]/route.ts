@@ -4,6 +4,7 @@ import {
   upsertAgentConfig,
   deleteAgentConfig,
 } from "@/lib/stores/agent-configs";
+import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,6 +22,12 @@ function toResponse(row: ReturnType<typeof getAgentConfig>) {
     history_limit: row.history_limit,
     history_window_hours: row.history_window_hours,
     never_reply: !!row.never_reply,
+    adaptive_persona_enabled: !!row.adaptive_persona_enabled,
+    adaptive_persona_strength: row.adaptive_persona_strength,
+    adaptive_empathy: row.adaptive_empathy,
+    adaptive_expressiveness: row.adaptive_expressiveness,
+    adaptive_verbosity: row.adaptive_verbosity,
+    adaptive_mbti: row.adaptive_mbti,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -49,6 +56,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     history_limit?: number;
     history_window_hours?: number;
     never_reply?: boolean;
+    adaptive_persona_enabled?: boolean;
+    adaptive_persona_strength?: number;
+    adaptive_empathy?: number;
+    adaptive_expressiveness?: number;
+    adaptive_verbosity?: number;
+    adaptive_mbti?: string;
   };
 
   const row = upsertAgentConfig({
@@ -63,6 +76,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
     history_limit: body.history_limit,
     history_window_hours: body.history_window_hours,
     never_reply: body.never_reply,
+    adaptive_persona_enabled: body.adaptive_persona_enabled,
+    adaptive_persona_strength: body.adaptive_persona_strength,
+    adaptive_empathy: body.adaptive_empathy,
+    adaptive_expressiveness: body.adaptive_expressiveness,
+    adaptive_verbosity: body.adaptive_verbosity,
+    adaptive_mbti: body.adaptive_mbti as MbtiType | undefined,
   });
 
   return NextResponse.json(toResponse(row));

@@ -65,6 +65,12 @@ export function runMigrations(db: DatabaseSync): void {
       tools             TEXT NOT NULL DEFAULT '[]',
       model_config_name TEXT,
       is_default        INTEGER NOT NULL DEFAULT 0,
+      adaptive_persona_enabled  INTEGER NOT NULL DEFAULT 0,
+      adaptive_persona_strength INTEGER NOT NULL DEFAULT 50,
+      adaptive_empathy          INTEGER NOT NULL DEFAULT 50,
+      adaptive_expressiveness   INTEGER NOT NULL DEFAULT 50,
+      adaptive_verbosity        INTEGER NOT NULL DEFAULT 50,
+      adaptive_mbti            TEXT NOT NULL DEFAULT 'INTJ',
       created_at        TEXT NOT NULL,
       updated_at        TEXT NOT NULL
     );
@@ -257,6 +263,24 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("never_reply")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN never_reply INTEGER NOT NULL DEFAULT 0");
   }
+  if (!names.has("adaptive_persona_enabled")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_persona_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!names.has("adaptive_persona_strength")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_persona_strength INTEGER NOT NULL DEFAULT 50");
+  }
+  if (!names.has("adaptive_empathy")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_empathy INTEGER NOT NULL DEFAULT 50");
+  }
+  if (!names.has("adaptive_expressiveness")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_expressiveness INTEGER NOT NULL DEFAULT 50");
+  }
+  if (!names.has("adaptive_verbosity")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_verbosity INTEGER NOT NULL DEFAULT 50");
+  }
+  if (!names.has("adaptive_mbti")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_mbti TEXT NOT NULL DEFAULT 'INTJ'");
+  }
 }
 
 /**
@@ -306,14 +330,18 @@ function seedAgentConfigs(db: DatabaseSync): void {
 
   const t = now();
   const insert = db.prepare(
-    `INSERT OR IGNORE INTO agent_configs (id, name, icon, identity, instructions, tools, model_config_name, is_default, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO agent_configs (
+      id, name, icon, identity, instructions, tools, model_config_name, is_default,
+      adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
+      created_at, updated_at
+    )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   // Default agent for new installs
-  insert.run("assistant", "Assistant", null, "You are a helpful assistant.", "", "[]", null, 1, t, t);
+    insert.run("assistant", "Assistant", null, "You are a helpful assistant.", "", "[]", null, 1, 0, 50, 50, 50, 50, "INTJ", t, t);
   // Backward-compat: pre-migration threads used agent_id="llm" or "echo"
-  insert.run("llm", "LLM Agent", null, "You are a helpful assistant.", "", "[]", null, 0, t, t);
-  insert.run("echo", "Echo", null, "", "", "[]", null, 0, t, t);
+    insert.run("llm", "LLM Agent", null, "You are a helpful assistant.", "", "[]", null, 0, 0, 50, 50, 50, 50, "INTJ", t, t);
+    insert.run("echo", "Echo", null, "", "", "[]", null, 0, 0, 50, 50, 50, 50, "INTJ", t, t);
 
   reanchorOrphanThreads(db);
 }
