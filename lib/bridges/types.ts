@@ -18,6 +18,10 @@ export interface InboundMessage {
   remote_jid: string;
   /** Best-effort human-readable label captured at receive time (push_name, contact display, etc.). */
   push_name: string | null;
+  /** Best-effort chat label (group subject for groups, contact/display name for DMs). */
+  chat_name: string | null;
+  /** Best-effort sender display name for this specific inbound message. */
+  sender_name: string | null;
   /** Plain text body. Adapters drop non-text messages (media, voice) silently in v1. */
   text: string;
   /** Adapter-specific message id (used for de-dup on adapter restart). */
