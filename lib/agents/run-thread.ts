@@ -7,6 +7,7 @@ import { getUserProfile } from "@/lib/stores/user-profile";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { listIntegrations } from "@/lib/stores/integrations";
+import { buildAdaptivePersonaContext } from "@/lib/agents/adaptive-persona";
 import os from "os";
 
 export class RunThreadError extends Error {
@@ -354,8 +355,23 @@ export async function prepareThreadRun(
     RECALL_BUDGET_MS,
     "",
   );
+  const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmed);
 
-  const systemParts = [agentCfg.identity, agentCfg.instructions, userCtx, integrationsCtx, CAPABILITIES_CTX, PLAN_FIRST_CTX, PRESENTATION_CTX, timeCtx, envCtx, SELF_CONFIG_CTX, memoryCtx, recallCtx].filter(Boolean);
+  const systemParts = [
+    agentCfg.identity,
+    agentCfg.instructions,
+    adaptivePersonaCtx,
+    userCtx,
+    integrationsCtx,
+    CAPABILITIES_CTX,
+    PLAN_FIRST_CTX,
+    PRESENTATION_CTX,
+    timeCtx,
+    envCtx,
+    SELF_CONFIG_CTX,
+    memoryCtx,
+    recallCtx,
+  ].filter(Boolean);
   let allowedTools: string[] = [];
   try {
     allowedTools = JSON.parse(agentCfg.tools) as string[];
