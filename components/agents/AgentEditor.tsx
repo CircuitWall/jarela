@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
 import type { AgentConfig, AgentConfigIn, ModelConfig, ToolInfo } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
-import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/gemini";
+import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
 
 interface Props {
   agent?: AgentConfig;
