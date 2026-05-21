@@ -145,11 +145,11 @@ function parseContent(raw: string): string | ContentPart[] {
 // Markdown image renderer with a one-time automatic retry. If both attempts
 // fail (common on transient local-network/SW races), show a compact fallback
 // with explicit actions instead of a broken image icon.
-function ResilientMarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: string }) {
   const [retryNonce, setRetryNonce] = useState(0);
   const [failed, setFailed] = useState(false);
 
-  const normalizedSrc = typeof src === "string" ? src : "";
+  const normalizedSrc = typeof src === "string" ? src : src instanceof Blob ? URL.createObjectURL(src) : "";
   const effectiveSrc = normalizedSrc
     ? `${normalizedSrc}${normalizedSrc.includes("?") ? "&" : "?"}retry=${retryNonce}`
     : "";
