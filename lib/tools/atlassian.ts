@@ -18,6 +18,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
+import { parseJsonSafe } from "@/lib/utils/json";
 
 export interface AtlassianAuth {
   url: string;        // e.g. "https://your-team.atlassian.net"
@@ -75,7 +76,7 @@ async function atlassianFetch(
   if (!res.ok) {
     return { error: `Atlassian ${res.status}: ${text.slice(0, 500)}`, url };
   }
-  try { return JSON.parse(text); } catch { return text; }
+  return parseJsonSafe<unknown>(text, text);
 }
 
 // ── Jira tools ──────────────────────────────────────────────────────────────

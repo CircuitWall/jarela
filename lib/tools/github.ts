@@ -18,6 +18,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
+import { parseJsonSafe } from "@/lib/utils/json";
 
 export interface GitHubAuth {
   token: string;
@@ -64,7 +65,7 @@ async function ghFetch(
     return { error: `GitHub ${res.status}: ${text.slice(0, 500)}`, url };
   }
   if (!text) return {};
-  try { return JSON.parse(text); } catch { return text; }
+  return parseJsonSafe<unknown>(text, text);
 }
 
 // Trim repo URLs on issue/PR responses to user-facing html_urls (the API

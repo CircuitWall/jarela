@@ -58,25 +58,21 @@ export type NotificationEvent =
       ts: number;
     };
 
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
+
 type Listener = (ev: NotificationEvent) => void;
 const RECENT_LIMIT = 50;
 
-// Pin the bus state to globalThis so it survives Next.js dev hot-reload.
-// Without this, edits to ANY file in the dependency graph re-evaluate this
-// module, replacing `listeners` and `recent` with empty containers — but
-// the active SSE connection's closure still references the OLD set, so its
-// listener is gone forever and publishes vanish silently. The globalThis
-// trick is the standard Next pattern for singletons.
 interface BusState {
   listeners: Set<Listener>;
   recent: NotificationEvent[];
 }
-const g = globalThis as unknown as { __jarela_notif_bus?: BusState };
-if (!g.__jarela_notif_bus) {
-  g.__jarela_notif_bus = { listeners: new Set<Listener>(), recent: [] };
-}
-const listeners = g.__jarela_notif_bus.listeners;
-const recent = g.__jarela_notif_bus.recent;
+const busState = getOrCreateGlobal<BusState>("__jarela_notif_bus", () => ({
+  listeners: new Set<Listener>(),
+  recent: [],
+}));
+const listeners = busState.listeners;
+const recent = busState.recent;
 
 export function publish(ev: NotificationEvent): void {
   recent.push(ev);

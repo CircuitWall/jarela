@@ -1,28 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { stripHtml } from "@/lib/utils/html";
 
 const MAX_BYTES = 200_000;
 const TIMEOUT_MS = 15_000;
-
-// Strip script/style blocks and tags, collapse whitespace. Cheap text-only
-// extraction — enough for the agent to summarize a page without needing a
-// full HTML parser.
-function htmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 function extractTitle(html: string): string | null {
   const m = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
@@ -115,7 +96,7 @@ export const webFetchTool = tool(
       const cap = max_chars ?? 8000;
       const wantHtml = mode === "html";
       const title = extractTitle(raw);
-      const body = wantHtml ? raw : htmlToText(raw);
+      const body = wantHtml ? raw : stripHtml(raw);
       const clipped = body.length > cap ? body.slice(0, cap) + "…" : body;
       const images = extractImages(raw, finalUrl);
 

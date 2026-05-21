@@ -9,67 +9,18 @@
 //
 // Pinned to globalThis so HMR in dev doesn't lose pending flows.
 
-import { randomBytes } from "crypto";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
+import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-store";
+import { parseJsonSafe } from "@/lib/utils/json";
 
-export interface OAuthFlow {
-  createdAt: number;
-  clientId: string;
-  clientSecret: string;
-  redirectUri: string;
-  status: "pending" | "done" | "error";
-  error?: string;
-}
+export type { OAuthFlow };
 
-const FLOW_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const MAX_FLOWS = 32;
+const flowStore = createOAuthFlowStore({ globalKey: "__ggOauthFlows" });
 
-type Store = Map<string, OAuthFlow>;
-
-const g = globalThis as unknown as { __ggOauthFlows?: Store };
-if (!g.__ggOauthFlows) g.__ggOauthFlows = new Map();
-const flows: Store = g.__ggOauthFlows;
-
-function gc() {
-  const now = Date.now();
-  for (const [k, v] of flows) {
-    if (now - v.createdAt > FLOW_TTL_MS) flows.delete(k);
-  }
-  // Hard cap so a stuck UI can't grow this unbounded.
-  if (flows.size > MAX_FLOWS) {
-    const oldest = [...flows.entries()].sort((a, b) => a[1].createdAt - b[1].createdAt);
-    for (let i = 0; i < oldest.length - MAX_FLOWS; i++) flows.delete(oldest[i][0]);
-  }
-}
-
-export function createFlow(input: { clientId: string; clientSecret: string; redirectUri: string }): {
-  state: string;
-  flow: OAuthFlow;
-} {
-  gc();
-  const state = randomBytes(16).toString("hex");
-  const flow: OAuthFlow = {
-    createdAt: Date.now(),
-    status: "pending",
-    ...input,
-  };
-  flows.set(state, flow);
-  return { state, flow };
-}
-
-export function getFlow(state: string): OAuthFlow | undefined {
-  gc();
-  return flows.get(state);
-}
-
-export function updateFlow(state: string, patch: Partial<OAuthFlow>): void {
-  const f = flows.get(state);
-  if (f) Object.assign(f, patch);
-}
-
-export function deleteFlow(state: string): void {
-  flows.delete(state);
-}
+export const createFlow = flowStore.create;
+export const getFlow = flowStore.get;
+export const updateFlow = flowStore.update;
+export const deleteFlow = flowStore.delete;
 
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
@@ -122,8 +73,7 @@ export async function exchangeCode(opts: {
     signal: AbortSignal.timeout(30_000),
   });
   const text = await res.text();
-  let parsed: Record<string, unknown> = {};
-  try { parsed = JSON.parse(text); } catch { /* leave empty */ }
+  const parsed = parseJsonSafe<Record<string, unknown>>(text, {});
   if (!res.ok) {
     const err = (parsed["error_description"] || parsed["error"] || text || `HTTP ${res.status}`) as string;
     throw new Error(err);
