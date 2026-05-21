@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Calendar, CheckCircle2, Clock, Play, Repeat, Trash2 } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock, Pencil, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
@@ -80,7 +80,7 @@ export function ScheduledTasksPanel() {
           </div>
         )}
         {sorted.map((t) => (
-          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} />
+          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} onChanged={() => void load()} />
         ))}
       </div>
     </div>
@@ -88,15 +88,17 @@ export function ScheduledTasksPanel() {
 }
 
 function TaskCard({
-  task, agent, onCancel, onRunNow,
+  task, agent, onCancel, onRunNow, onChanged,
 }: {
   task: ScheduledTask;
   agent?: AgentConfig;
   onCancel: () => void;
   onRunNow: () => void;
+  onChanged: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [running, setRunning] = useState(false);
+  const [editing, setEditing] = useState(false);
   const isCron = task.kind === "cron";
   const nextRun = formatRelative(task.next_run_at);
   const lastRun = task.last_run_at ? formatRelative(task.last_run_at) : null;
@@ -135,6 +137,10 @@ function TaskCard({
 
       {expanded && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
+          {editing ? (
+            <TaskEditor task={task} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
+          ) : (
+            <>
           <Row label="Prompt">
             <pre className="whitespace-pre-wrap break-words font-mono text-fg-muted">{task.prompt}</pre>
           </Row>
@@ -181,6 +187,26 @@ function TaskCard({
           <div className="flex justify-end pt-1 gap-2">
             <button
               onClick={async () => {
+                try {
+                  await api.scheduledTasks.update(task.id, { enabled: !task.enabled });
+                  onChanged();
+                } catch (e) {
+                  alert(`Toggle failed: ${e instanceof Error ? e.message : String(e)}`);
+                }
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted"
+              title={task.enabled ? "Pause this task (scheduler will skip it)" : "Resume this task"}
+            >
+              <Power size={11} /> {task.enabled ? "Pause" : "Resume"}
+            </button>
+            <button
+              onClick={() => setEditing(true)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-sky-700 dark:hover:text-sky-400 hover:border-sky-700"
+            >
+              <Pencil size={11} /> Edit
+            </button>
+            <button
+              onClick={async () => {
                 if (running) return;
                 setRunning(true);
                 try { await onRunNow(); } finally { setRunning(false); }
@@ -198,6 +224,8 @@ function TaskCard({
               <Trash2 size={11} /> Cancel task
             </button>
           </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -226,4 +254,153 @@ function formatRelative(iso: string): string {
   else if (hr < 48) txt = `${hr}h`;
   else txt = `${day}d`;
   return past ? `${txt} ago` : `in ${txt}`;
+}
+
+// Editable form for an existing task. Keeps inline within the expanded
+// card. For "once" tasks the schedule field is a datetime-local input
+// (ISO conversion happens on save); for "cron" it's a free-text cron expr
+// the server validates with cron-parser.
+function TaskEditor({
+  task, onCancel, onSaved,
+}: {
+  task: ScheduledTask;
+  onCancel: () => void;
+  onSaved: () => void;
+}) {
+  const [prompt, setPrompt] = useState(task.prompt);
+  const [description, setDescription] = useState(task.description ?? "");
+  const [kind, setKind] = useState<"once" | "cron">(task.kind);
+  const [schedule, setSchedule] = useState(() =>
+    task.kind === "once" ? isoToLocalInput(task.schedule) : task.schedule,
+  );
+  const [enabled, setEnabled] = useState(task.enabled);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (saving) return;
+    setError(null);
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt) { setError("Prompt cannot be empty."); return; }
+    const trimmedSchedule = schedule.trim();
+    if (!trimmedSchedule) { setError("Schedule cannot be empty."); return; }
+    let scheduleOut = trimmedSchedule;
+    if (kind === "once") {
+      const ts = new Date(trimmedSchedule);
+      if (Number.isNaN(ts.getTime())) { setError("Invalid date/time."); return; }
+      scheduleOut = ts.toISOString();
+    }
+    setSaving(true);
+    try {
+      await api.scheduledTasks.update(task.id, {
+        prompt: trimmedPrompt,
+        description: description.trim() ? description.trim() : null,
+        kind,
+        schedule: scheduleOut,
+        enabled,
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <Row label="Prompt">
+        <textarea
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          rows={3}
+          className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg font-mono"
+        />
+      </Row>
+      <Row label="Description">
+        <input
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="optional"
+          className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg"
+        />
+      </Row>
+      <Row label="Kind">
+        <div className="inline-flex rounded border border-border overflow-hidden">
+          {(["once", "cron"] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => {
+                setKind(k);
+                // Reset the schedule field to a sane default when switching kinds.
+                if (k === "once" && task.kind !== "once") setSchedule(isoToLocalInput(new Date(Date.now() + 60 * 60_000).toISOString()));
+                if (k === "cron" && task.kind !== "cron") setSchedule("0 9 * * *");
+              }}
+              className={`px-2 py-0.5 text-[11px] ${kind === k ? "bg-surface-3 text-fg" : "text-fg-faint hover:text-fg"}`}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label={kind === "cron" ? "Cron" : "When"}>
+        {kind === "cron" ? (
+          <input
+            value={schedule}
+            onChange={(e) => setSchedule(e.target.value)}
+            placeholder="0 9 * * *"
+            className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg font-mono"
+          />
+        ) : (
+          <input
+            type="datetime-local"
+            value={schedule}
+            onChange={(e) => setSchedule(e.target.value)}
+            className="rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg"
+          />
+        )}
+      </Row>
+      <Row label="Enabled">
+        <label className="inline-flex items-center gap-1 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className="accent-emerald-600"
+          />
+          <span className="text-[11px]">{enabled ? "active" : "paused"}</span>
+        </label>
+      </Row>
+      {error && (
+        <p className="text-[11px] text-rose-700 dark:text-rose-400">{error}</p>
+      )}
+      <div className="flex justify-end gap-2 pt-1">
+        <button
+          onClick={onCancel}
+          disabled={saving}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg disabled:opacity-50"
+        >
+          <X size={11} /> Cancel
+        </button>
+        <button
+          onClick={() => void save()}
+          disabled={saving}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-emerald-700 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-700/10 disabled:opacity-50"
+        >
+          <Save size={11} /> {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Convert an ISO timestamp ("2026-05-21T14:00:00.000Z") to the value
+// expected by <input type="datetime-local"> ("2026-05-21T22:00", in
+// local time). Browsers don't accept the trailing Z.
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
