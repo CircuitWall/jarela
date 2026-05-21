@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
 import type { AgentConfig, AgentConfigIn, ModelConfig, ToolInfo } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
+import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 
 interface Props {
   agent?: AgentConfig;
@@ -37,6 +38,10 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
   const [selectedTools, setSelectedTools] = useState<string[]>(agent?.tools ?? []);
   const [isDefault, setIsDefault] = useState<boolean>(agent?.is_default ?? false);
+  const [adaptivePersonaEnabled, setAdaptivePersonaEnabled] = useState<boolean>(agent?.adaptive_persona_enabled ?? false);
+  const [adaptiveMbti, setAdaptiveMbti] = useState<MbtiType>(((agent?.adaptive_mbti ?? "INTJ") in MBTI_PRESETS
+    ? (agent?.adaptive_mbti ?? "INTJ")
+    : "INTJ") as MbtiType);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,6 +161,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         tools: selectedTools,
         model_config_name: modelConfigName || null,
         is_default: isDefault,
+        adaptive_persona_enabled: adaptivePersonaEnabled,
+        adaptive_mbti: adaptiveMbti,
       });
       onClose();
     } catch (e) {
@@ -167,6 +174,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   const selectedModel = models.find((m) => m.name === modelConfigName);
   const defaultModel = models.find((m) => m.is_default);
+  const mbtiPreset = MBTI_PRESETS[adaptiveMbti];
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
@@ -309,6 +317,41 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 </div>
               </>
             )}
+          </Section>
+
+          <hr className="border-border" />
+
+          {/* Step 4: Advanced */}
+          <Section step={4} title="Advanced settings">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={adaptivePersonaEnabled}
+                onChange={(e) => setAdaptivePersonaEnabled(e.target.checked)}
+              />
+              <span className="text-xs text-fg-subtle">Enable adaptive personality and emotion mirroring</span>
+            </label>
+
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">MBTI preset</span>
+              <select
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={adaptiveMbti}
+                onChange={(e) => setAdaptiveMbti(e.target.value as MbtiType)}
+                disabled={!adaptivePersonaEnabled}
+              >
+                {MBTI_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t} - {MBTI_PRESETS[t].label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <p className="text-[11px] text-fg-faint">
+              Hidden preset values: strength {mbtiPreset.strength}, empathy {mbtiPreset.empathy}, expressiveness {mbtiPreset.expressiveness}, verbosity {mbtiPreset.verbosity}.
+            </p>
           </Section>
 
           {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
