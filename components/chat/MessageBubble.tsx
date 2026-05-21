@@ -142,11 +142,79 @@ function parseContent(raw: string): string | ContentPart[] {
   return raw;
 }
 
+// Markdown image renderer with a one-time automatic retry. If both attempts
+// fail (common on transient local-network/SW races), show a compact fallback
+// with explicit actions instead of a broken image icon.
+function ResilientMarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [failed, setFailed] = useState(false);
+
+  const normalizedSrc = typeof src === "string" ? src : "";
+  const effectiveSrc = normalizedSrc
+    ? `${normalizedSrc}${normalizedSrc.includes("?") ? "&" : "?"}retry=${retryNonce}`
+    : "";
+
+  if (!normalizedSrc) {
+    return (
+      <div className="my-2 px-3 py-2 rounded border border-rose-800/60 bg-rose-950/30 text-xs text-rose-700 dark:text-rose-300">
+        Invalid image URL in markdown.
+      </div>
+    );
+  }
+
+  if (failed) {
+    return (
+      <div className="my-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-300">
+        <div>Image failed to load.</div>
+        <div className="mt-1 flex items-center gap-2">
+          <button
+            type="button"
+            className="px-2 py-1 rounded border border-amber-500/60 hover:bg-amber-900/30"
+            onClick={() => {
+              setFailed(false);
+              setRetryNonce((n) => n + 1);
+            }}
+          >
+            Retry
+          </button>
+          <a
+            href={normalizedSrc}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-dotted hover:decoration-solid break-all"
+          >
+            Open image
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={effectiveSrc}
+      alt={alt ?? "image"}
+      loading="lazy"
+      className="rounded-lg border border-border/50"
+      onError={() => {
+        if (retryNonce === 0) {
+          setRetryNonce(1);
+          return;
+        }
+        setFailed(true);
+      }}
+    />
+  );
+}
+
 // Renders a Google Maps Embed inside an iframe whose src points at our
 // server-side proxy (/api/v1/maps/embed). The proxy injects the API key so
 // it never appears in chat HTML. Triggered by ```map fenced blocks emitted
 // by the agent — see PRESENTATION_CTX in lib/agents/run-thread.ts.
 function MapEmbed({ payload }: { payload: string }) {
+  const [retryNonce, setRetryNonce] = useState(0);
+  const [failed, setFailed] = useState(false);
   let params: URLSearchParams | null = null;
   let parseError: string | null = null;
   try {
@@ -170,7 +238,40 @@ function MapEmbed({ payload }: { payload: string }) {
       </div>
     );
   }
-  const src = `/api/v1/maps/embed?${params.toString()}`;
+  const src = `/api/v1/maps/embed?${params.toString()}${retryNonce > 0 ? `&retry=${retryNonce}` : ""}`;
+
+  if (failed) {
+    const q = params.get("q") ?? params.get("search") ?? params.get("center") ?? "";
+    const direct = q
+      ? `https://www.google.com/maps?q=${encodeURIComponent(q)}`
+      : "https://www.google.com/maps";
+    return (
+      <div className="my-2 px-3 py-2 rounded border border-amber-700/50 bg-amber-900/20 text-xs text-amber-300">
+        <div>Map failed to load.</div>
+        <div className="mt-1 flex items-center gap-2">
+          <button
+            type="button"
+            className="px-2 py-1 rounded border border-amber-500/60 hover:bg-amber-900/30"
+            onClick={() => {
+              setFailed(false);
+              setRetryNonce((n) => n + 1);
+            }}
+          >
+            Retry
+          </button>
+          <a
+            href={direct}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline decoration-dotted hover:decoration-solid"
+          >
+            Open in Google Maps
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="my-2 rounded overflow-hidden border border-border bg-surface-2">
       <iframe
@@ -182,6 +283,13 @@ function MapEmbed({ payload }: { payload: string }) {
         referrerPolicy="no-referrer-when-downgrade"
         allowFullScreen
         style={{ border: 0, display: "block" }}
+        onError={() => {
+          if (retryNonce === 0) {
+            setRetryNonce(1);
+            return;
+          }
+          setFailed(true);
+        }}
       />
     </div>
   );
@@ -235,6 +343,9 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
             ) : (
               <code className="bg-surface-2 px-1 rounded text-fg-muted break-all">{code}</code>
             );
+          },
+          img({ src, alt }) {
+            return <ResilientMarkdownImage src={src} alt={alt} />;
           },
         }}
       >
