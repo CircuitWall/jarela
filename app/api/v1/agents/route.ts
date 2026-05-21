@@ -25,6 +25,11 @@ function toResponse(a: ReturnType<typeof listAgentConfigs>[number]) {
     adaptive_expressiveness: a.adaptive_expressiveness,
     adaptive_verbosity: a.adaptive_verbosity,
     adaptive_mbti: a.adaptive_mbti,
+    voice_enabled: !!a.voice_enabled,
+    voice_model: a.voice_model,
+    voice_name: a.voice_name,
+    voice_stt_model: a.voice_stt_model,
+    voice_auto_speak: !!a.voice_auto_speak,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };
@@ -52,6 +57,11 @@ export async function POST(req: NextRequest) {
     adaptive_expressiveness?: number;
     adaptive_verbosity?: number;
     adaptive_mbti?: string;
+    voice_enabled?: boolean;
+    voice_model?: string;
+    voice_name?: string;
+    voice_stt_model?: string;
+    voice_auto_speak?: boolean;
   };
 
   if (!body.name?.trim()) {
@@ -76,6 +86,11 @@ export async function POST(req: NextRequest) {
     adaptive_expressiveness: body.adaptive_expressiveness,
     adaptive_verbosity: body.adaptive_verbosity,
     adaptive_mbti: body.adaptive_mbti as MbtiType | undefined,
+    voice_enabled: body.voice_enabled,
+    voice_model: body.voice_model,
+    voice_name: body.voice_name,
+    voice_stt_model: body.voice_stt_model,
+    voice_auto_speak: body.voice_auto_speak,
   });
 
   return NextResponse.json(toResponse(row), { status: 201 });

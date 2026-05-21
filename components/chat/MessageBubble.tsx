@@ -1,12 +1,12 @@
 "use client";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Bot, ChevronRight, Link as LinkIcon, Link2, Paperclip, User, X } from "lucide-react";
+import { Bot, ChevronRight, Link as LinkIcon, Link2, Loader2, Paperclip, Pause, Play, User, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -17,6 +17,34 @@ import { pushToast } from "@/lib/ui/toasts";
 interface ExtractedRef {
   title: string;
   url: string;
+}
+
+// Best-effort plain-text projection of a (possibly structured) message body
+// for the TTS endpoint. Strips markdown noise, code fences, refs blocks,
+// and structured content parts so the spoken output doesn't read aloud
+// asterisks, backticks, or URLs. The string is also cropped to keep TTS
+// requests cheap — voices read about 150wpm so 5000 chars is several minutes.
+function plainTextForTts(content: unknown): string {
+  let text = "";
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content)) {
+    for (const part of content) {
+      if (part && typeof part === "object" && "type" in part) {
+        const p = part as { type: string; text?: string };
+        if (p.type === "text" && typeof p.text === "string") text += `${p.text}\n`;
+      }
+    }
+  }
+  text = text
+    .replace(/<refs>[\s\S]*?<\/refs>/gi, " ")
+    .replace(/```[\s\S]*?```/g, " [code] ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[#>*_~]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 5000 ? text.slice(0, 5000) : text;
 }
 
 // Splits "<refs>…</refs>" off the end of a message, returning the parsed refs
@@ -525,6 +553,87 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
     }).catch(console.error);
   }, [messageId, threadId]);
 
+  // —— TTS playback ——
+  // The Play button is rendered for assistant bubbles whose agent has
+  // voice_enabled. We don't pre-generate audio — the first click POSTs the
+  // plain-text body to /api/v1/voice/tts and plays the returned WAV. The
+  // <audio> element is created lazily and the object URL is revoked on
+  // unmount to avoid leaks. Auto-speak listens for a window event keyed by
+  // messageId so ChatView can arm it from outside the bubble.
+  const voiceEnabled = !isUser && !!agentConfig?.voice_enabled;
+  const ttsAbleText = !isUser ? plainTextForTts(message.content) : "";
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const [audioState, setAudioState] = useState<"idle" | "loading" | "playing" | "paused" | "error">("idle");
+  const [audioError, setAudioError] = useState<string | null>(null);
+
+  const releaseAudio = useCallback(() => {
+    const a = audioRef.current;
+    if (a) {
+      try { a.pause(); } catch { /* ignore */ }
+      a.src = "";
+      audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => releaseAudio(), [releaseAudio]);
+
+  const speak = useCallback(async () => {
+    if (!voiceEnabled || !agentConfig || streaming) return;
+    if (!ttsAbleText.trim()) return;
+    // Resume an existing buffer instead of re-fetching.
+    if (audioRef.current && audioUrlRef.current) {
+      if (audioState === "playing") {
+        audioRef.current.pause();
+        setAudioState("paused");
+      } else {
+        try { await audioRef.current.play(); setAudioState("playing"); }
+        catch (err) { setAudioError(err instanceof Error ? err.message : String(err)); setAudioState("error"); }
+      }
+      return;
+    }
+    setAudioError(null);
+    setAudioState("loading");
+    try {
+      const res = await fetch("/api/v1/voice/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent_id: agentConfig.id, text: ttsAbleText }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({} as { error?: string }));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      audioUrlRef.current = url;
+      const audio = new Audio(url);
+      audio.onended = () => setAudioState("idle");
+      audio.onpause = () => setAudioState((s) => (s === "playing" ? "paused" : s));
+      audio.onerror = () => { setAudioState("error"); setAudioError("playback failed"); };
+      audioRef.current = audio;
+      await audio.play();
+      setAudioState("playing");
+    } catch (err) {
+      setAudioError(err instanceof Error ? err.message : String(err));
+      setAudioState("error");
+    }
+  }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState]);
+
+  useEffect(() => {
+    if (!voiceEnabled || !messageId) return;
+    function onSpeak(e: Event) {
+      const detail = (e as CustomEvent<{ messageId?: string }>).detail;
+      if (detail?.messageId === messageId) void speak();
+    }
+    window.addEventListener("jarela:speak-message", onSpeak as EventListener);
+    return () => window.removeEventListener("jarela:speak-message", onSpeak as EventListener);
+  }, [voiceEnabled, messageId, speak]);
+
   // Extract <refs> from assistant messages so they render as a compact footer
   // under the bubble instead of inline. While streaming, only show them after
   // the closing </refs> tag has arrived (otherwise we'd flicker partial refs).
@@ -571,6 +680,19 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 aria-label="Copy link to this message"
               >
                 <Link2 size={11} />
+              </button>
+            )}
+            {voiceEnabled && !streaming && ttsAbleText.trim() && (
+              <button
+                onClick={() => void speak()}
+                className={`p-0.5 rounded ${audioState === "error" ? "text-rose-500" : "text-fg-faint hover:text-fg"}`}
+                title={audioError ?? (audioState === "playing" ? "Pause" : audioState === "loading" ? "Loading…" : "Play voice")}
+                aria-label={audioState === "playing" ? "Pause voice" : "Play voice"}
+                disabled={audioState === "loading"}
+              >
+                {audioState === "loading" ? <Loader2 size={11} className="animate-spin" />
+                  : audioState === "playing" ? <Pause size={11} />
+                  : <Play size={11} />}
               </button>
             )}
           </div>
