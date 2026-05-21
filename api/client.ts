@@ -277,6 +277,8 @@ export const api = {
   scheduledTasks: {
     list: (agent_id?: string) =>
       request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
+    update: (id: string, patch: Partial<Pick<ScheduledTask, "prompt" | "description" | "kind" | "schedule" | "enabled">>) =>
+      request<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
     cancel: (id: string) =>
       request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     runNow: (id: string) =>

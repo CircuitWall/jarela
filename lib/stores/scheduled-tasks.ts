@@ -88,6 +88,52 @@ export function deleteScheduledTask(id: string): boolean {
   return r.changes > 0;
 }
 
+export interface UpdateScheduledTaskInput {
+  prompt?: string;
+  description?: string | null;
+  kind?: ScheduleKind;
+  schedule?: string;
+  enabled?: boolean;
+}
+
+// Patch an existing task. Only the supplied fields are touched; the rest
+// stay as-is. Changing `kind` or `schedule` recomputes `next_run_at`
+// against the new value so the scheduler picks the right next firing.
+export function updateScheduledTask(id: string, patch: UpdateScheduledTaskInput): ScheduledTaskRow | null {
+  const existing = getScheduledTask(id);
+  if (!existing) return null;
+  const nextKind = patch.kind ?? existing.kind;
+  const nextSchedule = patch.schedule ?? existing.schedule;
+  const t = now();
+  // If the schedule (kind or expression) changed, validate + recompute. If
+  // it didn't change we keep the existing next_run_at so a simple prompt
+  // edit doesn't accidentally re-arm an already-overdue task.
+  let nextRunAt = existing.next_run_at;
+  if (patch.kind !== undefined || patch.schedule !== undefined) {
+    nextRunAt = computeNextRun(nextKind, nextSchedule, new Date(t)).toISOString();
+  }
+  getDb()
+    .prepare(
+      `UPDATE scheduled_tasks SET
+         prompt=?, description=?, kind=?, schedule=?, next_run_at=?, enabled=?, last_error=?, updated_at=?
+       WHERE id=?`,
+    )
+    .run(
+      patch.prompt ?? existing.prompt,
+      patch.description === undefined ? existing.description : patch.description,
+      nextKind,
+      nextSchedule,
+      nextRunAt,
+      patch.enabled === undefined ? existing.enabled : (patch.enabled ? 1 : 0),
+      // Clear the last error whenever the user touches the task — they've
+      // presumably fixed whatever caused it.
+      null,
+      t,
+      id,
+    );
+  return getScheduledTask(id);
+}
+
 export function markTaskRan(id: string, kind: ScheduleKind, schedule: string, error?: string): void {
   const t = now();
   if (kind === "once") {
