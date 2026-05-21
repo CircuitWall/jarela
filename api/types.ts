@@ -17,6 +17,12 @@ export interface AgentConfig {
   history_limit: number;
   history_window_hours: number;
   never_reply: boolean;
+  adaptive_persona_enabled: boolean;
+  adaptive_persona_strength: number;
+  adaptive_empathy: number;
+  adaptive_expressiveness: number;
+  adaptive_verbosity: number;
+  adaptive_mbti: string;
   created_at: string;
   updated_at: string;
 }
@@ -32,6 +38,12 @@ export interface AgentConfigIn {
   history_limit?: number;
   history_window_hours?: number;
   never_reply?: boolean;
+  adaptive_persona_enabled?: boolean;
+  adaptive_persona_strength?: number;
+  adaptive_empathy?: number;
+  adaptive_expressiveness?: number;
+  adaptive_verbosity?: number;
+  adaptive_mbti?: string;
 }
 
 export interface ThreadSummary {
