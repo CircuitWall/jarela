@@ -334,6 +334,24 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
         components={{
           a({ href, children, ...rest }) {
             const parsed = href ? parseHref(href) : undefined;
+            // Inline audio: any link to a local /api/v1/files/*.{wav,mp3,ogg,webm,m4a}
+            // becomes a native <audio controls> player. The original anchor
+            // text is dropped — the player IS the answer. An `?autoplay=1`
+            // query string lets the agent (via generate_voice) ask the
+            // browser to start playback immediately.
+            if (href && /^\/api\/v1\/files\/[^?#]+\.(wav|mp3|ogg|webm|m4a)(\?|#|$)/i.test(href)) {
+              const auto = /[?&]autoplay=1\b/.test(href);
+              return (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <audio
+                  controls
+                  preload="metadata"
+                  autoPlay={auto}
+                  src={href}
+                  className="my-2 w-full max-w-md"
+                />
+              );
+            }
             const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash);
             if (inApp && href && onInAppLink) {
               return (
