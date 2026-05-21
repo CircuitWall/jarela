@@ -110,6 +110,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   // hook's return value.
   const clearStreamingRef = useRef<() => void>(() => {});
 
+  // When the next user turn came from a voice transcription, we arm this
+  // flag so handleDone can fire a `jarela:speak-message` event at the new
+  // assistant message id and the bubble auto-plays the TTS reply once.
+  const pendingAutoSpeakRef = useRef(false);
+
   const handleDone = useCallback(() => {
     if (!threadId) return;
     // Forward-fetch only the messages persisted after our newest known one.
@@ -134,6 +139,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         setHasMore(d.has_more);
       }
       clearStreamingRef.current();
+      if (pendingAutoSpeakRef.current) {
+        pendingAutoSpeakRef.current = false;
+        // Find the newest assistant message and dispatch a speak event.
+        // MessageBubble listens for its own id and triggers TTS play.
+        const latest = [...d.messages].reverse().find((m) => m.role === "assistant" && m.id);
+        if (latest?.id && typeof window !== "undefined") {
+          // Defer to after the next render so the bubble exists in the DOM.
+          requestAnimationFrame(() => {
+            window.dispatchEvent(new CustomEvent("jarela:speak-message", { detail: { messageId: latest.id } }));
+          });
+        }
+      }
     }).catch(console.error)
       .finally(() => {
         drainQueueRef.current();
@@ -467,6 +484,28 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         onSubmit={handleSubmit}
         onStop={stop}
         streaming={streaming}
+        voiceEnabled={!!agentConfig?.voice_enabled}
+        agentId={agentId}
+        onVoiceTranscript={(text) => {
+          const msg = text.trim();
+          if (!msg || !agentId) return;
+          if (agentConfig?.voice_auto_speak !== false) {
+            pendingAutoSpeakRef.current = true;
+          }
+          // Same gating as handleSubmit \u2014 queue when a run is in flight or
+          // the session isn't fully loaded; otherwise launch immediately.
+          const ready =
+            !streaming && !compacting && !!threadId && queueRef.current.length === 0;
+          if (!ready) {
+            setQueue((q) => [...q, {
+              id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              text: msg,
+              attachments: [],
+            }]);
+          } else {
+            void launchRun(msg, []);
+          }
+        }}
         disabled={
           !agentId ||
           !!sessionError
