@@ -13,6 +13,8 @@
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { stripHtml } from "@/lib/utils/html";
+import { truncateBytes } from "@/lib/utils/text";
 import {
   graphFetch,
   resolveMicrosoftAuth,
@@ -85,31 +87,7 @@ function summarizeMessage(m: GraphMessage): Record<string, unknown> {
   };
 }
 
-// Strip HTML when Graph hands us an html-typed body and a plain dump is
-// what the agent actually needs. Graph's text-only stripping is partial;
-// roll our own basic version (same heuristic as gmail.ts's html→text).
-function htmlToText(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 const BODY_CAP = 30_000;
-function capBody(s: string): { body: string; truncated: boolean } {
-  if (s.length <= BODY_CAP) return { body: s, truncated: false };
-  return { body: s.slice(0, BODY_CAP), truncated: true };
-}
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -162,8 +140,10 @@ export const outlookGetMessageTool = tool(
     if (m.error) return JSON.stringify(m);
     const summary = summarizeMessage(m);
     const rawBody = m.body?.content ?? "";
-    const plain = m.body?.contentType === "html" ? htmlToText(rawBody) : rawBody;
-    const { body, truncated } = capBody(plain);
+    const plain = m.body?.contentType === "html"
+      ? stripHtml(rawBody, { preserveParagraphs: true })
+      : rawBody;
+    const { text: body, truncated } = truncateBytes(plain, BODY_CAP);
     return JSON.stringify({ ...summary, body, truncated });
   },
   {
