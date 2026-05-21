@@ -10,6 +10,7 @@ import {
 import { webSearchTool } from "./search";
 import { webFetchTool } from "./fetch";
 import { generateImageTool } from "./generate_image";
+import { generateVoiceTool } from "./generate_voice";
 import { scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool } from "./schedule";
 import { proposeConfigChangeTool, checkProposalTool } from "./propose";
 import { listIntegrationsTool, getIntegrationSetupTool } from "./integrations";
@@ -55,7 +56,7 @@ export { TOOLS_DIR, type ExtensionLoadError } from "./external";
 // append it under the appropriate category below. A single source of truth
 // — no parallel name→category map to keep in sync.
 export type ToolCategory =
-  | "Memory" | "Files" | "Shell" | "Web" | "Images"
+  | "Memory" | "Files" | "Shell" | "Web" | "Images" | "Voice"
   | "Schedule" | "Atlassian" | "GitHub" | "Mail" | "Calendar" | "Config" | "MCP";
 
 // Optional parent group rendered above categories in the Agent editor. The
@@ -64,7 +65,7 @@ export type ToolCategory =
 // keeps the editor scannable as we add more vendor-native tools. Null = flat.
 export type ToolGroup = "Work" | null;
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
-  Memory: null, Files: null, Shell: null, Web: null, Images: null,
+  Memory: null, Files: null, Shell: null, Web: null, Images: null, Voice: null,
   Schedule: null, Config: null, Mail: null, Calendar: null,
   Atlassian: "Work", GitHub: "Work",
 };
@@ -78,6 +79,7 @@ const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInte
   ],
   Web: [webSearchTool, webFetchTool, getUserLocationTool],
   Images: [generateImageTool],
+  Voice: [generateVoiceTool],
   Schedule: [scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool],
   Config: [
     proposeConfigChangeTool, checkProposalTool,
