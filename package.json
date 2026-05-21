@@ -38,6 +38,9 @@
     "build": "next build --webpack && node scripts/postbuild.mjs",
     "start": "node scripts/start-prod.mjs",
     "lint": "eslint . && node scripts/check-integration-manifests.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:live": "node scripts/live-test.mjs",
     "test:live:full": "node scripts/live-test.mjs --llm",
     "test:live:isolated": "node scripts/live-test-isolated.mjs",
@@ -85,7 +88,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.7",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.6"
+    "eslint-config-next": "^16.2.6",
+    "vitest": "^4.1.7"
   }
 }
