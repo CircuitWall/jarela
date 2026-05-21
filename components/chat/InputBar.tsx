@@ -1,6 +1,6 @@
 "use client";
-import { Paperclip, Send, Square, X } from "lucide-react";
-import { useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { Mic, Paperclip, Send, Square, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { ContentPart } from "@/api/types";
 
 interface Props {
@@ -13,6 +13,14 @@ interface Props {
   streaming: boolean;
   disabled?: boolean;
   placeholder?: string;
+  // Voice push-to-talk — only rendered when the active agent has
+  // voice_enabled. Tapping mic records via MediaRecorder; on stop the audio
+  // is POSTed to /api/v1/voice/transcribe and the transcript is handed back
+  // to the parent (which is responsible for submitting it and arming the
+  // auto-speak-on-reply flag).
+  voiceEnabled?: boolean;
+  agentId?: string | null;
+  onVoiceTranscript?: (text: string) => void;
 }
 
 const ACCEPT = "image/*,text/*,.ts,.tsx,.js,.jsx,.json,.md,.py,.go,.rs,.yaml,.yml,.toml,.sh,.sql,.pdf";
@@ -46,9 +54,78 @@ function fileToContentPart(file: File): Promise<ContentPart> {
   });
 }
 
-export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onStop, streaming, disabled, placeholder }: Props) {
+export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hlIdx, setHlIdx] = useState(0);
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    return () => {
+      const r = recorderRef.current;
+      if (r && r.state !== "inactive") {
+        try { r.stop(); } catch { /* ignore */ }
+      }
+      r?.stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  async function startRecording() {
+    if (!voiceEnabled || !agentId || recording || transcribing) return;
+    setVoiceError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Prefer webm/opus when available — universally supported by Chromium
+      // and Firefox. Safari only ships mp4/aac; the empty-string fallback
+      // lets the browser pick whatever it can encode.
+      const mime =
+        MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus"
+          : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
+          : MediaRecorder.isTypeSupported("audio/mp4") ? "audio/mp4"
+          : "";
+      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      rec.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        chunksRef.current = [];
+        if (blob.size === 0) { setRecording(false); return; }
+        setRecording(false);
+        setTranscribing(true);
+        try {
+          const fd = new FormData();
+          fd.append("agent_id", agentId);
+          fd.append("audio", blob, `voice.${(rec.mimeType || "audio/webm").includes("mp4") ? "mp4" : "webm"}`);
+          const res = await fetch("/api/v1/voice/transcribe", { method: "POST", body: fd });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`);
+          const { text } = (await res.json()) as { text: string };
+          const trimmed = text.trim();
+          if (trimmed) onVoiceTranscript?.(trimmed);
+        } catch (err) {
+          setVoiceError(err instanceof Error ? err.message : String(err));
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      rec.start();
+      recorderRef.current = rec;
+      setRecording(true);
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : String(err));
+      setRecording(false);
+    }
+  }
+
+  function stopRecording() {
+    const r = recorderRef.current;
+    if (r && r.state !== "inactive") {
+      try { r.stop(); } catch { /* ignore */ }
+    }
+  }
 
   // Slash-command autocomplete is active only when the entire trimmed input
   // is a `/`-prefixed token (no spaces). That keeps the popover from
@@ -212,6 +289,22 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           <Paperclip size={16} />
         </button>
 
+        {voiceEnabled && agentId && (
+          <button
+            onClick={recording ? stopRecording : startRecording}
+            disabled={disabled || streaming || transcribing}
+            className={`shrink-0 h-11 w-11 flex items-center justify-center rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              recording
+                ? "bg-rose-500 text-white animate-pulse"
+                : "text-fg-faint hover:text-fg hover:bg-surface-3"
+            }`}
+            title={recording ? "Stop recording" : transcribing ? "Transcribing…" : "Record voice message"}
+            aria-label={recording ? "Stop recording" : "Record voice message"}
+          >
+            {recording ? <Square size={14} /> : <Mic size={16} />}
+          </button>
+        )}
+
         <textarea
           className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-48 min-h-[44px] transition-colors"
           placeholder={placeholder ?? "Message…"}
@@ -246,6 +339,12 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           </button>
         )}
       </div>
+      {voiceError && (
+        <p className="mt-1 text-[11px] text-rose-500" role="alert">{voiceError}</p>
+      )}
+      {transcribing && !voiceError && (
+        <p className="mt-1 text-[11px] text-fg-faint" aria-live="polite">Transcribing…</p>
+      )}
     </div>
   );
 }

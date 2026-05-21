@@ -1,0 +1,204 @@
+// Gemini voice helpers — TTS via the *-preview-tts models and STT by
+// feeding inline audio bytes to a multimodal Gemini model. Both call the
+// native REST API (the OpenAI-compat proxy doesn't expose AUDIO modality
+// or inline_data parts). API key is resolved from the "google" integration,
+// same source as lib/tools/generate_image.ts.
+
+import { getIntegrationRaw } from "@/lib/stores/integrations";
+
+const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
+const REQUEST_TIMEOUT_MS = Number(process.env.JARELA_VOICE_TIMEOUT_MS) || 60_000;
+
+function timeoutSignal(ms: number): AbortSignal {
+  const c = new AbortController();
+  setTimeout(() => c.abort(new Error(`timeout after ${ms}ms`)), ms).unref?.();
+  return c.signal;
+}
+
+export function resolveGoogleApiKey(): string | null {
+  const raw = getIntegrationRaw("google");
+  const fromStore = raw?.api_key?.trim();
+  if (fromStore) return fromStore;
+  return (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim() || null;
+}
+
+interface InlineData {
+  mimeType?: string;
+  mime_type?: string;
+  data?: string;
+}
+interface GeminiPart {
+  text?: string;
+  inlineData?: InlineData;
+  inline_data?: InlineData;
+}
+interface GeminiResponse {
+  candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
+  error?: { message?: string };
+}
+
+/**
+ * Synthesize speech with Gemini TTS. Gemini returns PCM L16 (raw 16-bit
+ * little-endian, 24 kHz mono); we wrap it with a WAV header so any
+ * <audio> element can play it.
+ */
+export async function geminiTts(opts: {
+  apiKey: string;
+  model: string;
+  voiceName: string;
+  text: string;
+}): Promise<{ wav: Buffer; mime: "audio/wav" }> {
+  const url = `${ENDPOINT}/${encodeURIComponent(opts.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const body = {
+    contents: [{ role: "user", parts: [{ text: opts.text }] }],
+    generationConfig: {
+      responseModalities: ["AUDIO"],
+      speechConfig: {
+        voiceConfig: {
+          prebuiltVoiceConfig: { voiceName: opts.voiceName },
+        },
+      },
+    },
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+  });
+  const json = (await res.json()) as GeminiResponse;
+  if (!res.ok) {
+    throw new Error(`Gemini TTS ${res.status}: ${json.error?.message ?? "request failed"}`);
+  }
+  const parts = json.candidates?.[0]?.content?.parts ?? [];
+  for (const p of parts) {
+    const inline = p.inlineData ?? p.inline_data;
+    const data = inline?.data;
+    const mime = inline?.mimeType ?? inline?.mime_type ?? "";
+    if (data) {
+      const pcm = Buffer.from(data, "base64");
+      const rate = parseSampleRate(mime) ?? 24000;
+      return { wav: pcmToWav(pcm, rate, 1, 16), mime: "audio/wav" };
+    }
+  }
+  const text = parts.map((p) => p.text).filter(Boolean).join(" ").trim();
+  throw new Error(text ? `Gemini TTS returned no audio: ${text}` : "Gemini TTS returned no audio");
+}
+
+/**
+ * Transcribe audio via a Gemini multimodal model. Returns the verbatim
+ * transcript, preserving the speaker's original language (including code-
+ * switched English/Chinese).
+ */
+export async function geminiStt(opts: {
+  apiKey: string;
+  model: string;
+  audio: Buffer;
+  mimeType: string;
+}): Promise<{ text: string }> {
+  const url = `${ENDPOINT}/${encodeURIComponent(opts.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const body = {
+    contents: [{
+      role: "user",
+      parts: [
+        {
+          text:
+            "Transcribe the following audio verbatim. Preserve the speaker's " +
+            "original language, including mixed English and Chinese. Output ONLY " +
+            "the transcript text — no quotes, no commentary, no language tags.",
+        },
+        { inline_data: { mime_type: opts.mimeType, data: opts.audio.toString("base64") } },
+      ],
+    }],
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+  });
+  const json = (await res.json()) as GeminiResponse;
+  if (!res.ok) {
+    throw new Error(`Gemini STT ${res.status}: ${json.error?.message ?? "request failed"}`);
+  }
+  const parts = json.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.map((p) => p.text).filter(Boolean).join("").trim();
+  if (!text) throw new Error("Gemini STT returned no transcript");
+  return { text };
+}
+
+// `audio/L16;codec=pcm;rate=24000` → 24000
+function parseSampleRate(mime: string): number | null {
+  const m = /rate=(\d+)/i.exec(mime);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Build a RIFF/WAVE header for raw PCM. Standard 16-bit, mono unless told
+// otherwise. No fancy chunks — just enough to satisfy browser audio.
+function pcmToWav(pcm: Buffer, sampleRate: number, channels: number, bitsPerSample: number): Buffer {
+  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
+  const blockAlign = (channels * bitsPerSample) / 8;
+  const dataSize = pcm.length;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + dataSize, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);          // fmt chunk size
+  header.writeUInt16LE(1, 20);            // PCM
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(dataSize, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+// Convenience list for the AgentEditor voice picker. Gemini supports many
+// more; this is the common subset documented in the AI Studio TTS preview.
+export const GEMINI_VOICES: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "Zephyr",      label: "Zephyr · bright" },
+  { id: "Puck",        label: "Puck · upbeat" },
+  { id: "Charon",      label: "Charon · informative" },
+  { id: "Kore",        label: "Kore · firm" },
+  { id: "Fenrir",      label: "Fenrir · excitable" },
+  { id: "Leda",        label: "Leda · youthful" },
+  { id: "Orus",        label: "Orus · firm" },
+  { id: "Aoede",       label: "Aoede · breezy" },
+  { id: "Callirrhoe",  label: "Callirrhoe · easy-going" },
+  { id: "Autonoe",     label: "Autonoe · bright" },
+  { id: "Enceladus",   label: "Enceladus · breathy" },
+  { id: "Iapetus",     label: "Iapetus · clear" },
+  { id: "Umbriel",     label: "Umbriel · easy-going" },
+  { id: "Algieba",     label: "Algieba · smooth" },
+  { id: "Despina",     label: "Despina · smooth" },
+  { id: "Erinome",     label: "Erinome · clear" },
+  { id: "Algenib",     label: "Algenib · gravelly" },
+  { id: "Rasalgethi",  label: "Rasalgethi · informative" },
+  { id: "Laomedeia",   label: "Laomedeia · upbeat" },
+  { id: "Achernar",    label: "Achernar · soft" },
+  { id: "Alnilam",     label: "Alnilam · firm" },
+  { id: "Schedar",     label: "Schedar · even" },
+  { id: "Gacrux",      label: "Gacrux · mature" },
+  { id: "Pulcherrima", label: "Pulcherrima · forward" },
+  { id: "Achird",      label: "Achird · friendly" },
+  { id: "Zubenelgenubi", label: "Zubenelgenubi · casual" },
+  { id: "Vindemiatrix", label: "Vindemiatrix · gentle" },
+  { id: "Sadachbia",   label: "Sadachbia · lively" },
+  { id: "Sadaltager",  label: "Sadaltager · knowledgeable" },
+  { id: "Sulafat",     label: "Sulafat · warm" },
+];
+
+export const GEMINI_TTS_MODELS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "gemini-2.5-flash-preview-tts", label: "Flash TTS (fast, cheap)" },
+  { id: "gemini-2.5-pro-preview-tts",   label: "Pro TTS (higher quality)" },
+];
+
+export const GEMINI_STT_MODELS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: "gemini-2.5-flash", label: "Flash (fast, multilingual)" },
+  { id: "gemini-2.5-pro",   label: "Pro (slower, more accurate)" },
+];

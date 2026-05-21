@@ -281,6 +281,26 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("adaptive_mbti")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN adaptive_mbti TEXT NOT NULL DEFAULT 'INTJ'");
   }
+  // Per-agent voice config. When voice_enabled=0 the chat UI hides the
+  // mic + play controls for this agent entirely; STT/TTS endpoints reject
+  // requests targeting it. Provider/model/voice are TTS-side; stt_model is
+  // STT-side. Defaults pick Gemini flash-tier so a fresh agent with voice
+  // turned on works against the existing "google" integration api_key.
+  if (!names.has("voice_enabled")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN voice_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!names.has("voice_model")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN voice_model TEXT NOT NULL DEFAULT 'gemini-2.5-flash-preview-tts'");
+  }
+  if (!names.has("voice_name")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN voice_name TEXT NOT NULL DEFAULT 'Kore'");
+  }
+  if (!names.has("voice_stt_model")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN voice_stt_model TEXT NOT NULL DEFAULT 'gemini-2.5-flash'");
+  }
+  if (!names.has("voice_auto_speak")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN voice_auto_speak INTEGER NOT NULL DEFAULT 1");
+  }
 }
 
 /**

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
 import type { AgentConfig, AgentConfigIn, ModelConfig, ToolInfo } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
+import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/gemini";
 
 interface Props {
   agent?: AgentConfig;
@@ -42,6 +43,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [adaptiveMbti, setAdaptiveMbti] = useState<MbtiType>(((agent?.adaptive_mbti ?? "INTJ") in MBTI_PRESETS
     ? (agent?.adaptive_mbti ?? "INTJ")
     : "INTJ") as MbtiType);
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(agent?.voice_enabled ?? false);
+  const [voiceModel, setVoiceModel] = useState<string>(agent?.voice_model ?? "gemini-2.5-flash-preview-tts");
+  const [voiceName, setVoiceName] = useState<string>(agent?.voice_name ?? "Kore");
+  const [voiceSttModel, setVoiceSttModel] = useState<string>(agent?.voice_stt_model ?? "gemini-2.5-flash");
+  const [voiceAutoSpeak, setVoiceAutoSpeak] = useState<boolean>(agent?.voice_auto_speak ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -163,6 +169,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         is_default: isDefault,
         adaptive_persona_enabled: adaptivePersonaEnabled,
         adaptive_mbti: adaptiveMbti,
+        voice_enabled: voiceEnabled,
+        voice_model: voiceModel,
+        voice_name: voiceName,
+        voice_stt_model: voiceSttModel,
+        voice_auto_speak: voiceAutoSpeak,
       });
       onClose();
     } catch (e) {
@@ -352,6 +363,71 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
             <p className="text-[11px] text-fg-faint">
               Hidden preset values: strength {mbtiPreset.strength}, empathy {mbtiPreset.empathy}, expressiveness {mbtiPreset.expressiveness}, verbosity {mbtiPreset.verbosity}.
             </p>
+
+            <hr className="border-border/60 my-2" />
+
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={voiceEnabled}
+                onChange={(e) => setVoiceEnabled(e.target.checked)}
+              />
+              <span className="text-xs text-fg-subtle">Enable voice (Gemini TTS + STT)</span>
+            </label>
+            <p className="text-[11px] text-fg-faint">
+              When on, the chat input shows a microphone and assistant replies show a play button.
+              Requires the Google integration api_key.
+            </p>
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">TTS model</span>
+              <select
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={voiceModel}
+                onChange={(e) => setVoiceModel(e.target.value)}
+                disabled={!voiceEnabled}
+              >
+                {GEMINI_TTS_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.id} — {m.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Voice</span>
+              <select
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={voiceName}
+                onChange={(e) => setVoiceName(e.target.value)}
+                disabled={!voiceEnabled}
+              >
+                {GEMINI_VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>{v.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Transcription model</span>
+              <select
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={voiceSttModel}
+                onChange={(e) => setVoiceSttModel(e.target.value)}
+                disabled={!voiceEnabled}
+              >
+                {GEMINI_STT_MODELS.map((m) => (
+                  <option key={m.id} value={m.id}>{m.id} — {m.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={voiceAutoSpeak}
+                onChange={(e) => setVoiceAutoSpeak(e.target.checked)}
+                disabled={!voiceEnabled}
+              />
+              <span className="text-xs text-fg-subtle">Auto-speak reply when I send a voice message</span>
+            </label>
           </Section>
 
           {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}

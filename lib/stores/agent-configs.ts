@@ -21,6 +21,11 @@ export interface AgentConfigRow {
   adaptive_expressiveness: number;   // 0..100, restrained -> energetic
   adaptive_verbosity: number;        // 0..100, concise -> detailed
   adaptive_mbti: string;             // one of 16 MBTI types
+  voice_enabled: number;             // 1 = expose mic/play UI for this agent
+  voice_model: string;               // Gemini TTS model id
+  voice_name: string;                // Gemini prebuilt voice name (Kore, Puck, …)
+  voice_stt_model: string;           // Gemini multimodal model used for transcription
+  voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
   created_at: string;
   updated_at: string;
 }
@@ -65,6 +70,11 @@ export interface UpsertAgentInput {
   adaptive_expressiveness?: number;
   adaptive_verbosity?: number;
   adaptive_mbti?: MbtiType;
+  voice_enabled?: boolean;
+  voice_model?: string;
+  voice_name?: string;
+  voice_stt_model?: string;
+  voice_auto_speak?: boolean;
 }
 
 export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
@@ -84,8 +94,9 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
          history_limit, history_window_hours, never_reply,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
+         voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -111,6 +122,17 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       clampPercent(expressiveness, existing?.adaptive_expressiveness ?? 50),
       clampPercent(verbosity, existing?.adaptive_verbosity ?? 50),
       mbti,
+      input.voice_enabled === undefined
+        ? (existing?.voice_enabled ?? 0)
+        : (input.voice_enabled ? 1 : 0),
+      (input.voice_model ?? existing?.voice_model ?? "gemini-2.5-flash-preview-tts").trim() ||
+        "gemini-2.5-flash-preview-tts",
+      (input.voice_name ?? existing?.voice_name ?? "Kore").trim() || "Kore",
+      (input.voice_stt_model ?? existing?.voice_stt_model ?? "gemini-2.5-flash").trim() ||
+        "gemini-2.5-flash",
+      input.voice_auto_speak === undefined
+        ? (existing?.voice_auto_speak ?? 1)
+        : (input.voice_auto_speak ? 1 : 0),
       created_at,
       t,
     );
