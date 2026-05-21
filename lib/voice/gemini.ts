@@ -41,23 +41,45 @@ interface GeminiResponse {
  * Synthesize speech with Gemini TTS. Gemini returns PCM L16 (raw 16-bit
  * little-endian, 24 kHz mono); we wrap it with a WAV header so any
  * <audio> element can play it.
+ *
+ * Style/tone is steered by prepending a natural-language instruction to
+ * the spoken text (Gemini's recommended pattern), e.g. style="Say warmly
+ * and slowly" produces "Say warmly and slowly: <text>". For multi-speaker
+ * scenes, pass `speakers` with up to 2 entries and write the text as
+ * `Name: line ...` per turn — Gemini will switch voices accordingly.
  */
 export async function geminiTts(opts: {
   apiKey: string;
   model: string;
   voiceName: string;
   text: string;
+  style?: string;
+  speakers?: Array<{ name: string; voiceName: string }>;
 }): Promise<{ wav: Buffer; mime: "audio/wav" }> {
   const url = `${ENDPOINT}/${encodeURIComponent(opts.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`;
+  const style = opts.style?.trim();
+  const spoken = style ? `${style.replace(/:\s*$/, "")}: ${opts.text}` : opts.text;
+  const speakers = (opts.speakers ?? []).filter((s) => s.name && s.voiceName).slice(0, 2);
+  const speechConfig: Record<string, unknown> =
+    speakers.length >= 2
+      ? {
+          multiSpeakerVoiceConfig: {
+            speakerVoiceConfigs: speakers.map((s) => ({
+              speaker: s.name,
+              voiceConfig: { prebuiltVoiceConfig: { voiceName: s.voiceName } },
+            })),
+          },
+        }
+      : {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: opts.voiceName },
+          },
+        };
   const body = {
-    contents: [{ role: "user", parts: [{ text: opts.text }] }],
+    contents: [{ role: "user", parts: [{ text: spoken }] }],
     generationConfig: {
       responseModalities: ["AUDIO"],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: opts.voiceName },
-        },
-      },
+      speechConfig,
     },
   };
   const res = await fetch(url, {

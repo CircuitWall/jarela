@@ -80,6 +80,7 @@ const sanitizeSchema = {
     ...(defaultSchema.tagNames ?? []),
     "details", "summary", "mark", "kbd", "sub", "sup", "abbr", "small",
     "aside", "figure", "figcaption", "dl", "dt", "dd",
+    "audio", "source",
   ],
   attributes: {
     ...(defaultSchema.attributes ?? {}),
@@ -87,6 +88,8 @@ const sanitizeSchema = {
     aside: ["className"],
     abbr: ["title"],
     details: ["open"],
+    audio: ["src", "controls", "preload", "loop", "autoplay", "muted"],
+    source: ["src", "type"],
   },
 };
 

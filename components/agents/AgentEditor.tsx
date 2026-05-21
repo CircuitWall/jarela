@@ -91,7 +91,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
       if (!catGroup.has(cat)) catGroup.set(cat, t.group ?? null);
     }
     const CATEGORY_ORDER = [
-      "Memory", "Files", "Shell", "Web", "Images",
+      "Memory", "Files", "Shell", "Web", "Images", "Voice",
       "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Config", "Other", "MCP",
     ];
     const orderOf = (c: string) => {
