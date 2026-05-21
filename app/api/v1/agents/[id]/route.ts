@@ -28,6 +28,11 @@ function toResponse(row: ReturnType<typeof getAgentConfig>) {
     adaptive_expressiveness: row.adaptive_expressiveness,
     adaptive_verbosity: row.adaptive_verbosity,
     adaptive_mbti: row.adaptive_mbti,
+    voice_enabled: !!row.voice_enabled,
+    voice_model: row.voice_model,
+    voice_name: row.voice_name,
+    voice_stt_model: row.voice_stt_model,
+    voice_auto_speak: !!row.voice_auto_speak,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -62,6 +67,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     adaptive_expressiveness?: number;
     adaptive_verbosity?: number;
     adaptive_mbti?: string;
+    voice_enabled?: boolean;
+    voice_model?: string;
+    voice_name?: string;
+    voice_stt_model?: string;
+    voice_auto_speak?: boolean;
   };
 
   const row = upsertAgentConfig({
@@ -82,6 +92,11 @@ export async function PUT(req: NextRequest, { params }: Params) {
     adaptive_expressiveness: body.adaptive_expressiveness,
     adaptive_verbosity: body.adaptive_verbosity,
     adaptive_mbti: body.adaptive_mbti as MbtiType | undefined,
+    voice_enabled: body.voice_enabled,
+    voice_model: body.voice_model,
+    voice_name: body.voice_name,
+    voice_stt_model: body.voice_stt_model,
+    voice_auto_speak: body.voice_auto_speak,
   });
 
   return NextResponse.json(toResponse(row));

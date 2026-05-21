@@ -23,6 +23,11 @@ export interface AgentConfig {
   adaptive_expressiveness: number;
   adaptive_verbosity: number;
   adaptive_mbti: string;
+  voice_enabled: boolean;
+  voice_model: string;
+  voice_name: string;
+  voice_stt_model: string;
+  voice_auto_speak: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +49,11 @@ export interface AgentConfigIn {
   adaptive_expressiveness?: number;
   adaptive_verbosity?: number;
   adaptive_mbti?: string;
+  voice_enabled?: boolean;
+  voice_model?: string;
+  voice_name?: string;
+  voice_stt_model?: string;
+  voice_auto_speak?: boolean;
 }
 
 export interface ThreadSummary {
