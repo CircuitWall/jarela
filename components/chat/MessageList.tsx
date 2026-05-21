@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Clock, X } from "lucide-react";
+import { ChevronRight, Clock, X, ArrowDown } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
@@ -43,6 +43,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   // (browser-default) handles the pagination case (older content prepended
   // keeps visible content stable).
   const atBottomRef = useRef(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -53,7 +54,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     if (hasMore && !loadingMore && onLoadMore && el.scrollTop < 60) onLoadMore();
-    atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    atBottomRef.current = isAtBottom;
+    setShowScrollButton(!isAtBottom && messages.length > 0);
   }
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
@@ -83,6 +86,31 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     window.addEventListener("hashchange", scrollToHashTarget);
     return () => window.removeEventListener("hashchange", scrollToHashTarget);
   }, [messages.length]);
+
+  // Handle orientation changes and resizes to maintain scroll position
+  useEffect(() => {
+    function handleResize() {
+      const el = scrollRef.current;
+      if (!el || !atBottomRef.current) return;
+      // Re-snap to bottom on resize/orientation change if user was already at bottom
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("orientationchange", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("orientationchange", handleResize);
+    };
+  }, []);
+
+  function scrollToBottom() {
+    const el = scrollRef.current;
+    if (!el) return;
+    atBottomRef.current = true;
+    el.scrollTop = el.scrollHeight;
+  }
 
   return (
     <div
@@ -150,6 +178,16 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           <span className="text-xs italic text-fg-faint bg-surface-2 px-3 py-1 rounded-full border border-border">
             {n.text}
           </span>
+              {showScrollButton && (
+                <button
+                  onClick={scrollToBottom}
+                  className="fixed bottom-20 right-6 p-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2 duration-200 z-30"
+                  title="Scroll to latest message"
+                  aria-label="Scroll to latest message"
+                >
+                  <ArrowDown size={18} />
+                </button>
+              )}
         </div>
       ))}
     </div>
