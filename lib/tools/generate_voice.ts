@@ -1,19 +1,20 @@
 // generate_voice: synthesize spoken audio from text using Gemini TTS and
 // return a /api/v1/files/ URL the assistant should embed in its reply.
 //
-// Supports natural-language style steering ("Say cheerfully:") and an
-// optional 2-speaker mode for dialogues. The chat renderer recognises the
-// <audio controls> tag (sanitizeSchema allows it explicitly).
-//
-// API key resolution piggy-backs on the existing "google" integration —
-// same source as generate_image.
+// Voice/model are NOT exposed to the agent — they're locked to the
+// active agent's per-agent voice config (set by the user in AgentEditor).
+// The agent only controls *what* to say, *how* to say it (style), and
+// whether to autoplay. Multi-speaker scenes still allow per-speaker
+// voice selection because that's compositional, not preference.
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import type { RunnableConfig } from "@langchain/core/runnables";
 import { writeBinaryFile } from "@/lib/files";
 import { geminiTts, resolveGoogleApiKey } from "@/lib/voice/gemini";
-import { GEMINI_TTS_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
+import { getThread } from "@/lib/stores/threads";
+import { getAgentConfig } from "@/lib/stores/agent-configs";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-preview-tts";
 const DEFAULT_VOICE = "Kore";
@@ -24,8 +25,20 @@ const SpeakerSchema = z.object({
   voice_name: z.string().min(1).describe("Gemini prebuilt voice for this speaker (e.g. 'Kore', 'Puck')."),
 });
 
+function resolveAgentVoice(config?: RunnableConfig): { model: string; voice: string } {
+  const threadId = config?.configurable?.thread_id as string | undefined;
+  if (!threadId) return { model: DEFAULT_MODEL, voice: DEFAULT_VOICE };
+  const thread = getThread(threadId);
+  if (!thread?.agent_id) return { model: DEFAULT_MODEL, voice: DEFAULT_VOICE };
+  const agent = getAgentConfig(thread.agent_id);
+  return {
+    model: agent?.voice_model?.trim() || DEFAULT_MODEL,
+    voice: agent?.voice_name?.trim() || DEFAULT_VOICE,
+  };
+}
+
 export const generateVoiceTool = tool(
-  async ({ text, voice_name, model, style, speakers, autoplay }) => {
+  async ({ text, style, speakers, autoplay }, config) => {
     const trimmed = (text ?? "").trim();
     if (!trimmed) throw new Error("text is required and must be non-empty");
     if (trimmed.length > MAX_TEXT_CHARS) {
@@ -39,15 +52,14 @@ export const generateVoiceTool = tool(
       );
     }
 
-    const m = (model ?? DEFAULT_MODEL).trim() || DEFAULT_MODEL;
-    const voice = (voice_name ?? DEFAULT_VOICE).trim() || DEFAULT_VOICE;
+    const { model, voice } = resolveAgentVoice(config);
     const speakerList = (speakers ?? [])
       .map((s) => ({ name: s.name.trim(), voiceName: s.voice_name.trim() }))
       .filter((s) => s.name && s.voiceName);
 
     const { wav } = await geminiTts({
       apiKey,
-      model: m,
+      model,
       voiceName: voice,
       text: trimmed,
       style: style?.trim() || undefined,
@@ -60,8 +72,6 @@ export const generateVoiceTool = tool(
     const url = autoplay ? `${baseUrl}?autoplay=1` : baseUrl;
 
     return JSON.stringify({
-      model: m,
-      voice_name: voice,
       style: style ?? null,
       speakers: speakerList.length >= 2 ? speakerList : null,
       autoplay: !!autoplay,
@@ -74,7 +84,7 @@ export const generateVoiceTool = tool(
   {
     name: "generate_voice",
     description:
-      "Synthesize speech with Google's Gemini TTS and return a local audio URL the assistant must embed via the returned `markdown` (an <audio controls> tag). Use the `style` arg to steer tone/emotion (e.g. 'Say cheerfully', 'Whisper conspiratorially'). For dialogues, pass up to 2 `speakers` and prefix each line in `text` with `Name: ` — Gemini switches voices automatically. Requires the Google integration (api_key).",
+      "Synthesize speech with Google's Gemini TTS using the agent's configured voice, and return a local audio URL the assistant must embed via the returned `markdown`. Use the `style` arg to steer tone/emotion (e.g. 'Say cheerfully', 'Whisper conspiratorially'). For dialogues, pass up to 2 `speakers` (with explicit voice names per speaker) and prefix each line in `text` with `Name: `. Requires the Google integration (api_key). The voice and model are picked by the user in the agent's settings and cannot be overridden here.",
     schema: z.object({
       text: z
         .string()
@@ -82,14 +92,6 @@ export const generateVoiceTool = tool(
         .describe(
           "The text to speak. For dialogues, write one turn per line as `Name: line` matching the `speakers` labels. Max 5000 chars.",
         ),
-      voice_name: z
-        .enum(GEMINI_VOICES.map((v) => v.id) as [string, ...string[]])
-        .optional()
-        .describe(`Prebuilt Gemini voice. Defaults to ${DEFAULT_VOICE}.`),
-      model: z
-        .enum(GEMINI_TTS_MODELS.map((m) => m.id) as [string, ...string[]])
-        .optional()
-        .describe(`Gemini TTS model. Defaults to ${DEFAULT_MODEL}.`),
       style: z
         .string()
         .optional()
@@ -102,7 +104,7 @@ export const generateVoiceTool = tool(
         .max(2)
         .optional()
         .describe(
-          "Optional 2-speaker setup for dialogues. When set, `voice_name` is ignored and each line in `text` should start with one of the speaker `name`s followed by ': '.",
+          "Optional 2-speaker setup for dialogues. When set, the agent's default voice is ignored and each line in `text` should start with one of the speaker `name`s followed by ': '. Use this only when composing a scripted dialogue with two distinct characters.",
         ),
       autoplay: z
         .boolean()
