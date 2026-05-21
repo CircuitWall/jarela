@@ -25,7 +25,7 @@ const SpeakerSchema = z.object({
 });
 
 export const generateVoiceTool = tool(
-  async ({ text, voice_name, model, style, speakers }) => {
+  async ({ text, voice_name, model, style, speakers, autoplay }) => {
     const trimmed = (text ?? "").trim();
     if (!trimmed) throw new Error("text is required and must be non-empty");
     if (trimmed.length > MAX_TEXT_CHARS) {
@@ -56,17 +56,19 @@ export const generateVoiceTool = tool(
 
     const name = `voice-${randomUUID()}.wav`;
     writeBinaryFile(name, wav);
-    const url = `/api/v1/files/${name}`;
+    const baseUrl = `/api/v1/files/${name}`;
+    const url = autoplay ? `${baseUrl}?autoplay=1` : baseUrl;
 
     return JSON.stringify({
       model: m,
       voice_name: voice,
       style: style ?? null,
       speakers: speakerList.length >= 2 ? speakerList : null,
+      autoplay: !!autoplay,
       bytes: wav.length,
       url,
-      markdown: `<audio controls preload="metadata" src="${url}"></audio>`,
-      hint: "Embed the `markdown` field verbatim in your reply so the user gets an inline player. Do not transcribe the audio in the reply — the player is the answer.",
+      markdown: `[\u{1F50A} Voice clip${autoplay ? " (auto)" : ""}](${url})`,
+      hint: "Embed the `markdown` field verbatim in your reply on its own line; the chat renderer will turn that link into an inline audio player. Set autoplay=true only when the user asked you to speak (e.g. they sent voice input or explicitly asked you to talk). Do NOT wrap it in a code fence and do NOT transcribe the audio in the reply \u2014 the player is the answer.",
     });
   },
   {
@@ -101,6 +103,12 @@ export const generateVoiceTool = tool(
         .optional()
         .describe(
           "Optional 2-speaker setup for dialogues. When set, `voice_name` is ignored and each line in `text` should start with one of the speaker `name`s followed by ': '.",
+        ),
+      autoplay: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, the audio plays automatically when the message renders. Use this ONLY when the user clearly wants you to speak back (they sent voice input, said 'say it out loud', etc.). Default false \u2014 user clicks play.",
         ),
     }),
   },
