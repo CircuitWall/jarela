@@ -20,6 +20,8 @@
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { stripHtml } from "@/lib/utils/html";
+import { truncateBytes } from "@/lib/utils/text";
 import {
   googleFetch,
   resolveGoogleAuth,
@@ -64,7 +66,7 @@ function extractBody(payload: MessagePart | undefined): string {
   const plain = findPart(payload, "text/plain");
   if (plain?.body?.data) return decodeBase64Url(plain.body.data);
   const html = findPart(payload, "text/html");
-  if (html?.body?.data) return stripHtml(decodeBase64Url(html.body.data));
+  if (html?.body?.data) return stripHtml(decodeBase64Url(html.body.data), { preserveParagraphs: true });
   return "";
 }
 
@@ -78,27 +80,7 @@ function findPart(part: MessagePart, mime: string): MessagePart | null {
   return null;
 }
 
-function stripHtml(html: string): string {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<\/?[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 const MAX_BODY_BYTES = 30_000;
-function truncateBody(s: string): { body: string; truncated: boolean } {
-  if (s.length <= MAX_BODY_BYTES) return { body: s, truncated: false };
-  return { body: s.slice(0, MAX_BODY_BYTES), truncated: true };
-}
 
 interface Header { name?: string; value?: string }
 function header(headers: Header[] | undefined, name: string): string | null {
@@ -200,7 +182,7 @@ export const gmailGetMessageTool = tool(
     };
     if (m.error) return JSON.stringify(m);
     const body = extractBody(m.payload);
-    const { body: capped, truncated } = truncateBody(body);
+    const { text: capped, truncated } = truncateBytes(body, MAX_BODY_BYTES);
     return JSON.stringify({
       id: m.id,
       thread_id: m.threadId,
