@@ -5,38 +5,11 @@ import {
   generateAgentId,
 } from "@/lib/stores/agent-configs";
 import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
-
-function toResponse(a: ReturnType<typeof listAgentConfigs>[number]) {
-  return {
-    id: a.id,
-    name: a.name,
-    icon: a.icon,
-    identity: a.identity,
-    instructions: a.instructions,
-    tools: JSON.parse(a.tools) as string[],
-    model_config_name: a.model_config_name,
-    is_default: !!a.is_default,
-    history_limit: a.history_limit,
-    history_window_hours: a.history_window_hours,
-    never_reply: !!a.never_reply,
-    adaptive_persona_enabled: !!a.adaptive_persona_enabled,
-    adaptive_persona_strength: a.adaptive_persona_strength,
-    adaptive_empathy: a.adaptive_empathy,
-    adaptive_expressiveness: a.adaptive_expressiveness,
-    adaptive_verbosity: a.adaptive_verbosity,
-    adaptive_mbti: a.adaptive_mbti,
-    voice_enabled: !!a.voice_enabled,
-    voice_model: a.voice_model,
-    voice_name: a.voice_name,
-    voice_stt_model: a.voice_stt_model,
-    voice_auto_speak: !!a.voice_auto_speak,
-    created_at: a.created_at,
-    updated_at: a.updated_at,
-  };
-}
+import { agentToResponse } from "@/lib/api/serializers";
+import { errorResponse, createdResponse } from "@/lib/api/responses";
 
 export function GET() {
-  return NextResponse.json(listAgentConfigs().map(toResponse));
+  return NextResponse.json(listAgentConfigs().map(agentToResponse));
 }
 
 export async function POST(req: NextRequest) {
@@ -65,7 +38,7 @@ export async function POST(req: NextRequest) {
   };
 
   if (!body.name?.trim()) {
-    return NextResponse.json({ error: "name is required" }, { status: 400 });
+    return errorResponse("name is required");
   }
 
   const row = upsertAgentConfig({
@@ -93,5 +66,5 @@ export async function POST(req: NextRequest) {
     voice_auto_speak: body.voice_auto_speak,
   });
 
-  return NextResponse.json(toResponse(row), { status: 201 });
+  return createdResponse(agentToResponse(row));
 }

@@ -4,26 +4,20 @@ import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thre
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getDueTasks, markTaskRan, type ScheduledTaskRow } from "@/lib/stores/scheduled-tasks";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
 
 const POLL_INTERVAL_MS = 30_000;
 
-// Pin scheduler state to globalThis so the timer survives Next.js dev hot-
-// reload. Without this, every code edit re-evaluates this module, the
-// `started` flag resets to false, the active setInterval handle is lost
-// (the underlying Node timer keeps running but nothing references it
-// anymore), and the next call to startScheduler() ALSO sees a fresh module
-// scope so it tries to start again — sometimes succeeding, sometimes not,
-// always confusing.
 interface SchedulerState {
   started: boolean;
   timer: NodeJS.Timeout | null;
   running: boolean;
 }
-const g = globalThis as unknown as { __jarela_scheduler?: SchedulerState };
-if (!g.__jarela_scheduler) {
-  g.__jarela_scheduler = { started: false, timer: null, running: false };
-}
-const state = g.__jarela_scheduler;
+const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
+  started: false,
+  timer: null,
+  running: false,
+}));
 
 // Idempotent — call repeatedly; only the first call starts the loop.
 export function startScheduler(): void {

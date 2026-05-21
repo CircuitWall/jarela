@@ -16,6 +16,7 @@
 
 import { getBridge, listBridges, updateBridge } from "@/lib/stores/bridges";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { handleInboundMessage } from "./dispatcher";
 import { WhatsAppBridgeAdapter } from "./whatsapp";
 import type { BridgeAdapter, StatusUpdate } from "./types";
@@ -25,15 +26,11 @@ interface RuntimeState {
   status: Map<string, StatusUpdate>;
   started: boolean;
 }
-const g = globalThis as unknown as { __jarela_bridges?: RuntimeState };
-if (!g.__jarela_bridges) {
-  g.__jarela_bridges = {
-    adapters: new Map(),
-    status: new Map(),
-    started: false,
-  };
-}
-const state = g.__jarela_bridges;
+const state = getOrCreateGlobal<RuntimeState>("__jarela_bridges", () => ({
+  adapters: new Map(),
+  status: new Map(),
+  started: false,
+}));
 
 function makeAdapter(bridge_id: string, kind: string): BridgeAdapter {
   switch (kind) {
