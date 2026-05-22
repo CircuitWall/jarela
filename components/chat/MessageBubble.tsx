@@ -99,6 +99,169 @@ function InlineAudio({ href }: { href: string }) {
   );
 }
 
+// Detects messages produced by the page-capture endpoint (composeBody in
+// lib/api/page-capture.ts) so the chat UI can render them as a collapsed
+// card instead of dumping ~100KB of page text into the bubble. The format
+// is fixed by composeBody; if either side changes, update both.
+interface CapturedContext {
+  title: string;
+  url: string;
+  selector: string | null;
+  truncated: boolean;
+  originalBytes: number | null;
+  body: string;
+}
+
+function parseCapturedContext(raw: string): CapturedContext | null {
+  if (!raw.startsWith("📎 Captured from ")) return null;
+  const linkRe = /^📎 Captured from \[([^\]]+)\]\((https?:\/\/[^)]+)\)\s*\n?/;
+  const bareRe = /^📎 Captured from <(https?:\/\/[^>]+)>\s*\n?/;
+  let title = "";
+  let url = "";
+  let rest = raw;
+  const lm = linkRe.exec(raw);
+  if (lm) { title = lm[1]; url = lm[2]; rest = raw.slice(lm[0].length); }
+  else {
+    const bm = bareRe.exec(raw);
+    if (!bm) return null;
+    url = bm[1]; title = url; rest = raw.slice(bm[0].length);
+  }
+  const out: CapturedContext = { title, url, selector: null, truncated: false, originalBytes: null, body: "" };
+  const sm = /^Element: `([^`]+)`\s*\n?/.exec(rest);
+  if (sm) { out.selector = sm[1]; rest = rest.slice(sm[0].length); }
+  const tm = /^>\s*⚠[^\n]*?\(original was ([\d,]+) bytes\)[^\n]*\n?/.exec(rest);
+  if (tm) {
+    out.truncated = true;
+    out.originalBytes = Number(tm[1].replace(/,/g, ""));
+    rest = rest.slice(tm[0].length);
+  }
+  rest = rest.replace(/^\s*\n/, "").replace(/^---\s*\n?/, "").replace(/^\n+/, "");
+  out.body = rest;
+  return out;
+}
+
+// Header-always-visible card for page captures. Body collapsed by default;
+// the user can expand to read the captured page text inline. The agent
+// already has the full text in the thread regardless of expand state — this
+// is purely a UI affordance to keep ~100KB blobs from blowing the chat layout.
+function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: boolean }) {
+  const [open, setOpen] = useState(false);
+  const hostname = (() => { try { return new URL(ctx.url).hostname; } catch { return ctx.url; } })();
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-2 text-left min-w-0 ${accent ? "text-white/95 hover:text-white" : "text-fg hover:text-fg-muted"}`}
+        aria-expanded={open}
+        title={open ? "Hide captured content" : "Show captured content"}
+      >
+        <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <Paperclip size={12} className="shrink-0" />
+        <span className="text-[13px] font-medium truncate min-w-0">{ctx.title || hostname}</span>
+      </button>
+      <div className={`flex flex-wrap items-center gap-1.5 text-[10px] pl-5 ${accent ? "text-white/75" : "text-fg-faint"}`}>
+        <a
+          href={ctx.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 underline decoration-dotted hover:decoration-solid truncate max-w-[18rem]"
+          title={ctx.url}
+        >
+          <LinkIcon size={9} className="shrink-0" />
+          <span className="truncate">{hostname}</span>
+        </a>
+        {ctx.selector && (
+          <span
+            className={`px-1.5 py-0.5 rounded font-mono ${accent ? "bg-white/15" : "bg-surface-3"}`}
+            title={ctx.selector}
+          >
+            {ctx.selector.length > 36 ? `…${ctx.selector.slice(-33)}` : ctx.selector}
+          </span>
+        )}
+        {ctx.truncated && (
+          <span
+            className={`px-1.5 py-0.5 rounded ${accent ? "bg-amber-300/25 text-amber-50" : "bg-amber-900/30 text-amber-300"}`}
+            title={ctx.originalBytes ? `Original was ${ctx.originalBytes.toLocaleString()} bytes` : undefined}
+          >
+            truncated to 100KB
+          </span>
+        )}
+      </div>
+      {open && ctx.body && (
+        <div className={`mt-1 pt-2 pl-5 border-t ${accent ? "border-white/20" : "border-border/60"}`}>
+          <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.body}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Auto-collapses any bubble whose rendered content would exceed `threshold`
+// pixels. Applied to long user/assistant text so a captured-and-pasted code
+// block or a multi-screen agent answer doesn't push the rest of the
+// conversation off-screen. Detection is observation-based (ResizeObserver on
+// scrollHeight) so it works for markdown, code blocks, images, and embeds
+// uniformly without needing a per-content-type heuristic.
+function CollapsibleLong({
+  children,
+  threshold = 480,
+  accent,
+}: {
+  children: React.ReactNode;
+  threshold?: number;
+  accent: boolean;
+}) {
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const el = innerRef.current;
+    if (!el) return;
+    const check = () => setOverflows(el.scrollHeight > threshold + 24);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [threshold]);
+
+  const collapsed = overflows && !open;
+
+  return (
+    <div className="flex flex-col">
+      <div
+        ref={innerRef}
+        className={collapsed ? "relative overflow-hidden" : ""}
+        style={collapsed ? { maxHeight: threshold } : undefined}
+      >
+        {children}
+        {collapsed && (
+          <div
+            className={`pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t ${
+              accent ? "from-black/30" : "from-surface-1/90"
+            } to-transparent`}
+          />
+        )}
+      </div>
+      {overflows && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={`mt-1.5 self-start inline-flex items-center gap-1 text-[11px] ${
+            accent ? "text-white/85 hover:text-white" : "text-fg-faint hover:text-fg-muted"
+          }`}
+          aria-expanded={open}
+        >
+          <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Sanitizer schema = GitHub default + extras the agent is told it can use.
 // Anything not listed here gets stripped (scripts, event handlers, javascript: URLs).
 const sanitizeSchema = {
@@ -742,9 +905,19 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         >
           {typeof parsed === "string" ? (
             isUser ? (
-              <p className="whitespace-pre-wrap">{parsed}</p>
+              (() => {
+                const ctx = parseCapturedContext(parsed);
+                if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
+                return (
+                  <CollapsibleLong accent={true}>
+                    <p className="whitespace-pre-wrap">{parsed}</p>
+                  </CollapsibleLong>
+                );
+              })()
             ) : (
-              <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} />
+              <CollapsibleLong accent={false}>
+                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} />
+              </CollapsibleLong>
             )
           ) : (
             <div className="flex flex-col gap-1.5">
