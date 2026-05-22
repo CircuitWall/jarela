@@ -66,5 +66,5 @@ Open a new ADR before:
 ## Architecture diagrams
 
 - C4-Context in `README.md`.
-- C4-Container + Component + sequence flows in `ARCHITECTURE.md`.
+- C4-Container + Component + sequence flows in `docs/ARCHITECTURE.md`.
 - Update both whenever component boundaries or external dependencies change.

@@ -31,7 +31,7 @@
     "next.config.ts",
     "tsconfig.json",
     "postcss.config.mjs",
-    "INSTALL.md"
+    "docs/INSTALL.md"
   ],
   "scripts": {
     "dev": "next dev --webpack -p 4312",
