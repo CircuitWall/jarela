@@ -124,13 +124,60 @@ export const jiraSearchTool = tool(
 );
 
 export const jiraGetIssueTool = tool(
-  async ({ issue_key, expand }) => {
+  async ({ issue_key, expand, custom_fields }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const expandStr = expand?.length ? `?expand=${expand.join(",")}` : "";
-    const data = await atlassianFetch(auth, `/rest/api/3/issue/${encodeURIComponent(issue_key)}${expandStr}`) as Record<string, unknown> & { error?: string };
+
+    let resolvedCustom: Array<{ input: string; id: string; name: string }> = [];
+    if (custom_fields?.length) {
+      const fieldList = await loadJiraFields(auth);
+      if (!Array.isArray(fieldList)) return JSON.stringify(fieldList);
+      const r = resolveCustomFieldNames(custom_fields, fieldList);
+      if (r.unresolved.length) {
+        const candidates = fieldList
+          .filter((f) => f.custom)
+          .slice(0, 25)
+          .map((f) => `${f.name} (${f.id})`)
+          .join("; ");
+        return JSON.stringify({
+          error: `unresolved custom_fields: ${r.unresolved.join(", ")}. Pass either the customfield_NNNNN id or the exact display name.`,
+          hint_first_25_custom_fields: candidates,
+        });
+      }
+      resolvedCustom = r.resolved;
+    }
+
+    const expandSet = new Set(expand ?? []);
+    if (resolvedCustom.length) {
+      expandSet.add("names");
+      expandSet.add("renderedFields");
+    }
+    const params: string[] = [];
+    if (expandSet.size) params.push(`expand=${[...expandSet].join(",")}`);
+    if (resolvedCustom.length) {
+      const baseFields = [
+        "summary", "description", "status", "issuetype", "priority",
+        "assignee", "reporter", "created", "updated", "labels", "components", "comment",
+      ];
+      const all = [...baseFields, ...resolvedCustom.map((c) => c.id)];
+      params.push(`fields=${all.join(",")}`);
+    }
+    const qs = params.length ? `?${params.join("&")}` : "";
+
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}${qs}`,
+    ) as Record<string, unknown> & { error?: string };
     if (data.error) return JSON.stringify(data);
+
     const f = (data.fields ?? {}) as Record<string, unknown>;
+    const rendered = (data.renderedFields ?? {}) as Record<string, unknown>;
+
+    const customOut: Record<string, unknown> = {};
+    for (const c of resolvedCustom) {
+      customOut[c.name] = extractFieldValue(f[c.id], rendered[c.id]);
+    }
+
     return JSON.stringify({
       key: data.key,
       url: `${auth.url}/browse/${data.key}`,
@@ -146,16 +193,22 @@ export const jiraGetIssueTool = tool(
       labels: f.labels,
       components: ((f.components as Array<Record<string, unknown>>) ?? []).map((c) => c.name),
       comments_count: ((f.comment as Record<string, unknown>)?.total) ?? 0,
+      ...(resolvedCustom.length ? { custom_fields: customOut } : {}),
     });
   },
   {
     name: "jira_get_issue",
     description:
       "Fetch a single Jira issue by key (e.g. 'PROJ-123'). Returns full detail including description. " +
+      "Pass `custom_fields` (display names like 'Vulnerability Description', or `customfield_NNNNN` ids) " +
+      "to include them in the response under a `custom_fields` map. ADF/rich-text is auto-flattened. " +
       "**PREFER THIS over shell-exec'ing the jira CLI.**",
     schema: z.object({
       issue_key: z.string().describe("Issue key like PROJ-123"),
       expand: z.array(z.string()).optional().describe("Fields to expand (e.g. ['changelog', 'transitions'])"),
+      custom_fields: z.array(z.string()).optional().describe(
+        "Custom field display names ('Vulnerability Description') or ids ('customfield_10473') to include",
+      ),
     }),
   },
 );
@@ -455,6 +508,97 @@ export const confluenceGetPageTool = tool(
 );
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
+
+// Per-site cache of /rest/api/3/field. Custom field IDs are stable per site,
+// but display names can be edited; 1h TTL keeps us fresh without thrashing.
+export interface JiraFieldDef { id: string; name: string; custom: boolean }
+const FIELD_CACHE_TTL_MS = 60 * 60 * 1000;
+const fieldCache = new Map<string, { fields: JiraFieldDef[]; loaded: number }>();
+
+async function loadJiraFields(auth: AtlassianAuth): Promise<JiraFieldDef[] | { error: string }> {
+  const cached = fieldCache.get(auth.url);
+  if (cached && Date.now() - cached.loaded < FIELD_CACHE_TTL_MS) return cached.fields;
+  const data = await atlassianFetch(auth, `/rest/api/3/field`) as
+    | Array<{ id: string; name: string; custom: boolean }>
+    | { error?: string };
+  if (!Array.isArray(data)) return data as { error: string };
+  const fields = data.map((f) => ({ id: f.id, name: f.name, custom: f.custom }));
+  fieldCache.set(auth.url, { fields, loaded: Date.now() });
+  return fields;
+}
+
+// Pure helper — exported for unit testing. Given a list of caller inputs and
+// the site's field definitions, partition into resolved (matched by id or
+// case-insensitive display name) and unresolved.
+export function resolveCustomFieldNames(
+  inputs: string[],
+  fields: JiraFieldDef[],
+): { resolved: Array<{ input: string; id: string; name: string }>; unresolved: string[] } {
+  const byId = new Map<string, JiraFieldDef>();
+  const byName = new Map<string, JiraFieldDef>();
+  for (const f of fields) {
+    byId.set(f.id, f);
+    byName.set(f.name.toLowerCase(), f);
+  }
+  const resolved: Array<{ input: string; id: string; name: string }> = [];
+  const unresolved: string[] = [];
+  for (const input of inputs) {
+    const trimmed = input.trim();
+    const hit = byId.get(trimmed) ?? byName.get(trimmed.toLowerCase());
+    if (hit) resolved.push({ input, id: hit.id, name: hit.name });
+    else unresolved.push(input);
+  }
+  return { resolved, unresolved };
+}
+
+// Coerce a Jira field value (which can be string, number, ADF doc, option
+// object, user object, array of those) into something an LLM can read. When
+// Jira returns a renderedFields HTML version, prefer that — it's the author's
+// formatting, flattened.
+export function extractFieldValue(raw: unknown, renderedHTML: unknown): unknown {
+  if (typeof renderedHTML === "string" && renderedHTML.length > 0) {
+    return stripHtml(renderedHTML);
+  }
+  if (raw == null) return null;
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") return raw;
+  if (Array.isArray(raw)) return raw.map(coerceItem);
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if (obj.type === "doc" && Array.isArray(obj.content)) return simplifyADF(obj);
+    if (typeof obj.value === "string") return obj.value;
+    if (typeof obj.displayName === "string") return obj.displayName;
+    if (typeof obj.name === "string") return obj.name;
+    return obj;
+  }
+  return raw;
+}
+
+function coerceItem(item: unknown): unknown {
+  if (!item || typeof item !== "object") return item;
+  const obj = item as Record<string, unknown>;
+  if (typeof obj.value === "string") return obj.value;
+  if (typeof obj.name === "string") return obj.name;
+  if (typeof obj.displayName === "string") return obj.displayName;
+  return obj;
+}
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 // Atlassian's REST API takes ADF (Atlassian Document Format), not plain text.
 // This wraps a plain string so the agent doesn't have to know the schema.
