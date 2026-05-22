@@ -18,7 +18,7 @@
   <a href="#providers">Providers</a> ·
   <a href="#integrations">Integrations</a> ·
   <a href="#extension-points">Extending</a> ·
-  <a href="./ARCHITECTURE.md">Architecture</a>
+  <a href="./docs/ARCHITECTURE.md">Architecture</a>
 </p>
 
 <p align="center">
@@ -149,7 +149,7 @@ file layout.
 
 Two pre-built paths — pick one. Both end at the same place: a local Next.js
 process on `http://127.0.0.1:4312`, all state in `~/.jarela`. See
-[INSTALL.md](./INSTALL.md) for first-launch warnings and uninstall steps,
+[INSTALL.md](./docs/INSTALL.md) for first-launch warnings and uninstall steps,
 and [ADR-0011](./docs/adr/0011-distribute-via-portable-archives-and-npm.md)
 for why both paths exist.
 
@@ -557,7 +557,7 @@ C4Context
     Rel(jarela, extdir, "scans per request")
 ```
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for container, component, and
+See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for container, component, and
 sequence diagrams.
 
 ## Development

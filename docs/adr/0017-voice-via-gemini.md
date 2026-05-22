@@ -137,7 +137,7 @@ and are served by `GET /api/v1/files/[name]`, the same path used by
   directions.
 * [lib/tools/generate_voice.ts](../../lib/tools/generate_voice.ts) — tool
   schema and per-agent voice resolution.
-* [ARCHITECTURE.md](../../ARCHITECTURE.md) — Voice container in the
+* [ARCHITECTURE.md](../ARCHITECTURE.md) — Voice container in the
   C4-Container diagram and the Gemini STT/TTS row in External Dependencies.
 * Related: [ADR-0010 — Agent-led integration setup](./0010-agent-led-setup-and-integration-manifests.md)
   (the `google` integration manifest the voice surface depends on).
