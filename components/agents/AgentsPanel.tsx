@@ -58,10 +58,11 @@ export function AgentsPanel() {
     }
   }
 
-  async function handleDelete(id: string) {
-    setDeleting(id);
+  async function handleDelete(agent: AgentConfig) {
+    if (!confirm(`Delete agent "${agent.name}"? This cannot be undone.`)) return;
+    setDeleting(agent.id);
     try {
-      await remove(id);
+      await remove(agent.id);
     } finally {
       setDeleting(null);
     }
@@ -103,18 +104,18 @@ export function AgentsPanel() {
                 <p className="text-[11px] text-fg-faint truncate">{a.identity}</p>
               )}
             </div>
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
               <button
                 onClick={() => setEditing(a)}
-                className="p-1 text-fg-faint hover:text-fg transition-colors"
+                className="p-1 text-fg-muted hover:text-fg transition-colors"
                 title="Edit"
               >
                 <Pencil size={12} />
               </button>
               <button
-                onClick={() => void handleDelete(a.id)}
+                onClick={() => void handleDelete(a)}
                 disabled={deleting === a.id}
-                className="p-1 text-fg-faint hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+                className="p-1 text-fg-muted hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                 title="Delete"
               >
                 <Trash2 size={12} />
