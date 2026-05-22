@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: superseded by [ADR-0021](0021-jira-align-type-aware-routing.md)
 date: 2026-05-22
 deciders: andwu
 consulted:
@@ -7,6 +7,13 @@ informed:
 ---
 
 # Native Jira Align tool (REST, sibling to Atlassian Cloud)
+
+> **Superseded 2026-05-22** — this ADR assumed a generic
+> `/rest/align/api/2/items/{id}` endpoint that does not exist in the
+> public Jira Align REST v2 surface. Every work-item call therefore 404s.
+> See [ADR-0021](0021-jira-align-type-aware-routing.md) for the
+> type-aware replacement (per-type collections: `/epics`, `/features`,
+> `/stories`, …) which is the design actually shipping.
 
 ## Context and Problem Statement
 
