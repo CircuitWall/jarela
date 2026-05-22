@@ -72,6 +72,33 @@ function extractRefs(text: string): { body: string; refs: ExtractedRef[] } {
   return { body, refs };
 }
 
+// Tracks which TTS clips have started auto-playing this session so a clip
+// only autoplays once. Re-renders of the same <audio> (message refetched,
+// scroll into view, list re-render) won't trigger a replay. Keyed by the
+// full href (including any `?autoplay=1`). Cleared on hard refresh — exactly
+// the "session" semantics we want.
+const playedAutoplayHrefs = new Set<string>();
+
+function InlineAudio({ href }: { href: string }) {
+  // Decide autoPlay at mount time: opt in only if the URL asked for it AND
+  // we haven't already auto-played this exact clip in this session.
+  const wantsAuto = /[?&]autoplay=1\b/.test(href);
+  const [auto] = useState(() => wantsAuto && !playedAutoplayHrefs.has(href));
+  return (
+    // eslint-disable-next-line jsx-a11y/media-has-caption
+    <audio
+      controls
+      preload="metadata"
+      autoPlay={auto}
+      src={href}
+      className="my-2 w-full max-w-md"
+      onPlay={() => {
+        if (wantsAuto) playedAutoplayHrefs.add(href);
+      }}
+    />
+  );
+}
+
 // Sanitizer schema = GitHub default + extras the agent is told it can use.
 // Anything not listed here gets stripped (scripts, event handlers, javascript: URLs).
 const sanitizeSchema = {
@@ -340,17 +367,7 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
             // query string lets the agent (via generate_voice) ask the
             // browser to start playback immediately.
             if (href && /^\/api\/v1\/files\/[^?#]+\.(wav|mp3|ogg|webm|m4a)(\?|#|$)/i.test(href)) {
-              const auto = /[?&]autoplay=1\b/.test(href);
-              return (
-                // eslint-disable-next-line jsx-a11y/media-has-caption
-                <audio
-                  controls
-                  preload="metadata"
-                  autoPlay={auto}
-                  src={href}
-                  className="my-2 w-full max-w-md"
-                />
-              );
+              return <InlineAudio href={href} />;
             }
             const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash);
             if (inApp && href && onInAppLink) {
