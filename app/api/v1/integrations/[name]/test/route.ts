@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { _resolveAtlassianAuth } from "@/lib/tools/atlassian";
+import { _resolveJiraAlignAuth } from "@/lib/tools/jira-align";
 import { _resolveGithubAuth } from "@/lib/tools/github";
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
@@ -15,8 +16,9 @@ type Params = { params: Promise<{ name: string }> };
 export async function POST(_req: NextRequest, { params }: Params) {
   const { name } = await params;
   switch (name) {
-    case "atlassian": return await testAtlassian();
-    case "github":    return await testGithub();
+    case "atlassian":  return await testAtlassian();
+    case "jira_align": return await testJiraAlign();
+    case "github":     return await testGithub();
     case "google":    return await testGoogle();
     case "gmail":     return await testGmail();
     case "outlook":   return await testOutlook();
@@ -48,6 +50,59 @@ async function testAtlassian() {
         displayName: me.displayName,
         email: me.emailAddress,
         accountId: me.accountId,
+      },
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { ok: false, error: describeError(err) },
+      { status: 200 },
+    );
+  }
+}
+
+// Jira Align doesn't expose a single canonical /me probe across instances —
+// the 2.0 surface varies. We use programs?limit=1 as a cheap auth check:
+// any 200 confirms the bearer is valid (it's one of the most commonly
+// readable resources). 401/403 distinguishes wrong-token vs no-permission;
+// for the latter we still report "auth ok, but token has no read scope".
+async function testJiraAlign() {
+  const auth = _resolveJiraAlignAuth();
+  if ("error" in auth) return NextResponse.json({ ok: false, error: auth.error }, { status: 400 });
+  try {
+    const res = await fetch(`${auth.url}/rest/align/api/2/programs?limit=1`, {
+      headers: {
+        Authorization: `Bearer ${auth.apiToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (res.status === 401) {
+      const body = await res.text();
+      return NextResponse.json(
+        { ok: false, error: `Jira Align rejected the token (401): ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    if (res.status === 403) {
+      // Token is valid (server identified it) but lacks read scope on
+      // /programs. Auth succeeded as far as JA is concerned.
+      return NextResponse.json({
+        ok: true,
+        detail: { note: "token authenticated but has no read access on /programs — agent may still work for other endpoints" },
+      });
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      return NextResponse.json(
+        { ok: false, error: `Jira Align ${res.status}: ${body.slice(0, 200)}` },
+        { status: 200 },
+      );
+    }
+    const data = (await res.json()) as { items?: unknown[]; total?: number };
+    return NextResponse.json({
+      ok: true,
+      detail: {
+        url: auth.url,
+        sample_programs: Array.isArray(data.items) ? data.items.length : 0,
       },
     });
   } catch (err) {
