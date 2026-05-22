@@ -1,5 +1,5 @@
 "use client";
-import { Globe, Loader2, Save, Trash2 } from "lucide-react";
+import { Globe, Loader2, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ProxyApplyResult, ProxyConfigEnvelope, ProxyMode, ProxyScheme } from "@/api/types";
@@ -243,29 +243,41 @@ export function NetworkSection() {
                   />
                 </label>
 
-                <div className="block text-xs text-fg-subtle">
-                  CA bundle (optional — for proxies that intercept TLS with an internal CA)
-                  <div className="mt-1 flex items-center gap-2 flex-wrap">
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pem,.crt,.cer,.cert,application/x-x509-ca-cert,application/x-pem-file"
-                      onChange={onCaFile}
-                      className="text-[11px] text-fg-faint file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-surface-3 file:text-fg file:text-[11px] file:cursor-pointer"
-                    />
-                    {caLabel && (
-                      <span className="inline-flex items-center gap-2 text-[11px] text-fg-muted">
-                        <code className="text-fg">{caLabel}</code>
-                        <button
-                          onClick={removeCa}
-                          className="text-rose-700 dark:text-rose-400 hover:underline"
-                        >
-                          remove
-                        </button>
-                      </span>
-                    )}
+                {/* In system mode the keychain extraction is the trust source — the
+                    user-paste textarea would conflict with it (ADR-0020). Hide it. */}
+                {mode !== "system" && (
+                  <div className="block text-xs text-fg-subtle">
+                    CA bundle (optional — for proxies that intercept TLS with an internal CA)
+                    <div className="mt-1 flex items-center gap-2 flex-wrap">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pem,.crt,.cer,.cert,application/x-x509-ca-cert,application/x-pem-file"
+                        onChange={onCaFile}
+                        className="text-[11px] text-fg-faint file:mr-2 file:px-2 file:py-1 file:rounded file:border-0 file:bg-surface-3 file:text-fg file:text-[11px] file:cursor-pointer"
+                      />
+                      {caLabel && (
+                        <span className="inline-flex items-center gap-2 text-[11px] text-fg-muted">
+                          <code className="text-fg">{caLabel}</code>
+                          <button
+                            onClick={removeCa}
+                            className="text-rose-700 dark:text-rose-400 hover:underline"
+                          >
+                            remove
+                          </button>
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
+
+                {mode === "system" && (
+                  <p className="text-[11px] text-fg-faint leading-snug">
+                    Trust store comes from the macOS keychain (System + login). MDM-pushed
+                    corporate roots are picked up automatically. Use “Refresh trust store”
+                    after a cert rotation.
+                  </p>
+                )}
               </>
             )}
 
@@ -283,6 +295,17 @@ export function NetworkSection() {
               </div>
             )}
 
+            {result?.caBundlePath && (
+              <div className="px-2 py-1.5 rounded bg-emerald-950/30 border border-emerald-800 text-[11px] text-emerald-700 dark:text-emerald-300 inline-flex items-start gap-1.5">
+                <ShieldCheck size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  System trust: <strong>{result.caBundleCertCount}</strong> certs from the macOS
+                  keychain →{" "}
+                  <code className="text-emerald-700 dark:text-emerald-200">{result.caBundlePath}</code>
+                </span>
+              </div>
+            )}
+
             <div className="flex items-center gap-2 pt-1">
               <button
                 onClick={save}
@@ -292,6 +315,16 @@ export function NetworkSection() {
                 {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
                 {saving ? "Saving…" : "Save & apply"}
               </button>
+              {mode === "system" && (
+                <button
+                  onClick={save}
+                  disabled={saving}
+                  className="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded border border-border text-fg-muted hover:text-fg disabled:opacity-50"
+                  title="Re-extract the macOS keychain trust store"
+                >
+                  <RefreshCw size={11} /> Refresh trust store
+                </button>
+              )}
               {configured && (
                 <button
                   onClick={clear}
