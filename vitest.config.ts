@@ -28,7 +28,6 @@ export default defineConfig({
         "lib/mcp/**",
         "lib/agents/**",
         "lib/voice/**",
-        "lib/streaming/**",
         "lib/embeddings/**",
         "lib/integrations/gmail-oauth.ts",
         "lib/integrations/microsoft-oauth.ts",

@@ -67,6 +67,13 @@ the LLM / MCP / GitHub providers you explicitly configure.
 - **Human-in-the-loop approvals** — high-risk operations can be routed
   through a `propose_config_change` mechanism that surfaces an in-UI banner
   the user must approve before the agent proceeds.
+- **Adaptive persona** — per-agent MBTI preset (Architect, Campaigner, …)
+  combined with empathy / expressiveness / verbosity sliders, mixed with a
+  per-turn signal detector (frustrated / rushed / positive) to shape the
+  system prompt deterministically. Off by default.
+- **Voice** — per-agent push-to-talk via Gemini STT, plus a
+  `generate_voice` tool that produces audio clips (rendered inline in the
+  chat). Requires a Google API key; chat works without it. See ADR-0017.
 
 ### Persistence & memory
 
@@ -530,7 +537,7 @@ C4Context
     System(jarela, "Jarela", "Next.js app: UI + API + agent runtime")
     System_Ext(anthropic, "Anthropic API", "Claude models")
     System_Ext(openai, "OpenAI API", "GPT models")
-    System_Ext(google, "Google GenAI", "Gemini models")
+    System_Ext(google, "Google GenAI", "Gemini models + STT/TTS for voice (ADR-0017)")
     System_Ext(cohere, "Cohere API", "Embeddings / models")
     System_Ext(mcp, "MCP Servers", "Tool providers via @langchain/mcp-adapters")
     System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
