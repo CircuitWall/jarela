@@ -18,13 +18,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
 
       - name: Install dependencies
-        # keytar ships a prebuilt for linux-x64 so no native libsecret dev
-        # headers are required on ubuntu-latest, but skip optional native
-        # rebuilds anyway to keep this fast.
-        run: npm ci
+        # package-lock.json is gitignored (see ADR / commit history) so we
+        # cannot use `npm ci`. `npm install` resolves fresh against the
+        # public registry on every run.
+        run: npm install --no-audit --no-fund
 
       - name: Lint
         run: npm run lint
@@ -53,10 +52,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build
         run: npm run build
