@@ -12,32 +12,40 @@ C4Container
       Container(ui, "Web UI", "React 19 + Tailwind", "Chat, agents, models, memory, integrations panels")
       Container(guard, "Origin / CSRF Guard", "lib/auth", "Rejects cross-origin mutating requests; same-origin enforcement")
       Container(routes, "API Routes", "Next.js Route Handlers", "REST + SSE endpoints under /api/v1")
-      Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools")
+      Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools; streams completions through providers")
+      Container(providers, "Provider Adapters", "lib/providers", "Per-vendor SDK glue (Anthropic, OpenAI, Google, Cohere, DeepSeek)")
+      Container(embed, "Embeddings", "lib/embeddings", "Vector embedding generator for semantic memory recall")
+      Container(voice, "Voice", "lib/voice", "Gemini STT (push-to-talk) + TTS for the generate_voice tool (ADR-0017)")
       Container(mcp, "MCP Adapter", "@langchain/mcp-adapters", "Discovers & invokes external MCP tool servers")
       Container(sched, "Scheduler", "cron-parser", "Runs background tasks on schedule, persists in DB")
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
       Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
+      Container(envsync, "Env Sync", "lib/env", "Probes user shell rc / Windows User-scope env for credential vars on boot (ADR-0016)")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
+      ContainerDb(filestore, "File Store", "lib/files + ~/.jarela/files/", "Binary artifacts produced by tools (generated images, voice clips); served by /api/v1/files/[name]")
       ContainerDb(extdir, "Extension dirs", "filesystem (~/.jarela/{providers,tools}/)", "Drop-in .cjs files for external providers + tools, hot-loaded per request (ADR-0013)")
     }
 
     System_Ext(anthropic, "Anthropic", "Claude")
     System_Ext(openai, "OpenAI", "GPT")
-    System_Ext(google, "Google GenAI", "Gemini")
+    System_Ext(google, "Google GenAI", "Gemini (LLM + STT/TTS)")
     System_Ext(deepseek, "DeepSeek", "OpenAI-compatible")
     System_Ext(cohere, "Cohere", "Embeddings")
     System_Ext(mcps, "MCP Servers", "External tool providers (stdio / SSE)")
     System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
     System_Ext(github, "GitHub API", "Issues / PRs / Repos (native github_* tools, ADR-0015) + Copilot OAuth (model provider)")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
+    System_Ext(usershell, "User shell rc / Windows User env", "Source for credential env vars (ADR-0016)")
 
     Rel(user, ui, "HTTPS")
     Rel(ui, guard, "fetch + EventSource")
     Rel(guard, routes, "allow same-origin")
     Rel(routes, agents, "invoke")
+    Rel(routes, voice, "STT/TTS + generate_voice")
     Rel(agents, mcp, "tool calls")
+    Rel(agents, providers, "stream completion")
     Rel(agents, registry, "broadcast chunks")
     Rel(routes, registry, "subscribe (GET SSE) / submit (POST 202)")
     Rel(routes, sched, "register / trigger")
@@ -47,20 +55,41 @@ C4Container
     Rel(bridges, agents, "deliver as user turn")
     Rel(agents, db, "checkpoint / memory (via crypto)")
     Rel(agents, crypto, "encrypt sensitive at rest")
+    Rel(agents, embed, "embed memory writes")
+    Rel(agents, filestore, "write binary artifacts (image / voice tools)")
+    Rel(routes, filestore, "GET /api/v1/files/[name]")
     Rel(crypto, db, "store ciphertext")
-    Rel(stream, anthropic, "HTTPS")
-    Rel(stream, openai, "HTTPS")
-    Rel(stream, google, "HTTPS")
-    Rel(stream, deepseek, "HTTPS")
-    Rel(agents, cohere, "embed")
+    Rel(providers, anthropic, "HTTPS")
+    Rel(providers, openai, "HTTPS")
+    Rel(providers, google, "HTTPS")
+    Rel(providers, deepseek, "HTTPS")
+    Rel(voice, google, "HTTPS (Gemini STT/TTS)")
+    Rel(embed, cohere, "HTTPS (embed)")
     Rel(mcp, mcps, "stdio / SSE")
     Rel(routes, mcpreg, "HTTPS (picker search)")
     Rel(routes, github, "HTTPS")
     Rel(agents, extdir, "scan per request (cache-busted require)")
+    Rel(envsync, usershell, "read on boot")
+    Rel(envsync, db, "write encrypted via crypto")
     Rel(proxy, db, "read proxy_config (via crypto)")
-    Rel(stream, proxy, "outbound via GlobalDispatcher")
+    Rel(providers, proxy, "outbound via GlobalDispatcher")
     Rel(routes, proxy, "outbound via GlobalDispatcher")
 ```
+
+### Shared utilities
+
+Two cross-cutting helper layers sit underneath every container above. They
+are not their own boundary on the diagram — every container reaches into
+them — but they are load-bearing:
+
+- **`lib/utils/`** — `getOrCreateGlobal` (singleton pinning across HMR),
+  `parseJsonSafe`, `stripHtml`, `truncateBytes`, `createOAuthFlowStore`.
+  Replaces ~13 duplication patterns surfaced by the audit.
+- **`lib/api/`** — `errorResponse` / `notFoundResponse` / `createdResponse`
+  / `validateBody` and the per-resource `*ToResponse` row→JSON serializers
+  shared between list and `[id]` route handlers.
+
+Both layers are pure-logic and 100% line-covered by Vitest.
 
 ## C4 — Component (Agent Runtime)
 
@@ -75,6 +104,11 @@ flowchart LR
     C --> XP[External providers<br/>~/.jarela/providers/*.cjs<br/>hot-loaded]
     D --> G[Built-in tools]
     D --> XT[External tools<br/>~/.jarela/tools/*.cjs<br/>hot-loaded]
+    D --> EM[Embeddings<br/>lib/embeddings]
+    D --> FS[File Store<br/>lib/files<br/>~/.jarela/files/]
+    A --> V[Voice<br/>lib/voice<br/>STT + TTS]
+    V --> F
+    EM --> F
     E --> H[(External MCP servers)]
     B --> I[Checkpoint Store<br/>lib/db]
     I --> J[(SQLite ~/.jarela)]
@@ -85,6 +119,7 @@ flowchart LR
     B --> L[Notifications<br/>lib/notifications]
     BR[Bridges<br/>lib/bridges] --> B
     SC[Scheduler<br/>lib/scheduler] --> B
+    EN[Env Sync<br/>lib/env<br/>boot probe] --> K
     RR[Run Registry<br/>lib/agents/run-registry] -.pub/sub + replay buffer.-> A
 ```
 
@@ -206,6 +241,7 @@ sequenceDiagram
 | Dependency | Purpose | Failure mode |
 |---|---|---|
 | Anthropic / OpenAI / Google / Cohere | LLM inference | Surface provider error to UI; allow model switch |
+| Google GenAI (Gemini) — STT + TTS endpoints | Push-to-talk voice input + `generate_voice` tool (ADR-0017) | Voice surface degrades to text-only; chat continues |
 | MCP servers | External tools | Tool call returns error; agent can recover or skip |
 | External provider/tool `.cjs` files (~/.jarela/{providers,tools}/) | User-authored extensions, hot-loaded | Validation errors surfaced in `GET /api/v1/extensions` and the Extensions tab; loader skips invalid files (ADR-0013) |
 | User shell rc (`~/.zshrc`/`~/.bashrc`) on macOS/Linux, User-scope env on Windows | Source for credential env vars (ADR-0016); probed at boot + on demand | Probe failure surfaces a warning, app falls back to whatever is already in `process.env`; tools surface "not configured" via the existing env-then-DB resolver |
