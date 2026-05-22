@@ -170,7 +170,8 @@ the bundle ships a pre-built `.next/standalone/` tree.
 
 ```bash
 npm install -g jarela
-jarela        # first run builds (~30–60 s), subsequent runs start instantly
+jarela                # first run builds (~30–60 s), subsequent runs start instantly
+jarela install-service   # optional: register OS-native autostart (per-user, no admin)
 ```
 
 ### Or from source (developers)

@@ -18,6 +18,7 @@
     "api",
     "public",
     "scripts/jarela-bin.mjs",
+    "scripts/service-install.mjs",
     "scripts/start-prod.mjs",
     "scripts/postbuild.mjs",
     "scripts/check-integration-manifests.mjs",
