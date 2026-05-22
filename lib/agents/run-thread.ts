@@ -503,9 +503,31 @@ export function persistAssistantMessage(
   const sanitizedEvents = toolEvents && toolEvents.length > 0
     ? toolEvents.map(capToolEventPayload)
     : null;
-  if (final || (sanitizedEvents && sanitizedEvents.length > 0)) {
-    addMessage(thread_id, "assistant", final, sanitizedEvents);
+  // Strip the `?autoplay=1` hint that generate_voice embeds in /api/v1/files
+  // URLs before persistence. Autoplay is a transient signal for the live
+  // streaming client only — reloading the thread, scrolling back, or opening
+  // the conversation from another browser must not replay TTS clips the user
+  // has already heard.
+  const persisted = stripAutoplayHints(final);
+  if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
+    addMessage(thread_id, "assistant", persisted, sanitizedEvents);
   }
+}
+
+// Removes `autoplay=1` from /api/v1/files/*.{wav,mp3,...} URLs that appear in
+// the assistant text. Handles it as the sole query param (`?autoplay=1`) or
+// combined with others (`?foo=bar&autoplay=1`, `?autoplay=1&foo=bar`).
+function stripAutoplayHints(text: string): string {
+  if (!text || !text.includes("autoplay=1")) return text;
+  return text.replace(
+    /(\/api\/v1\/files\/[^\s)"']+?\.(?:wav|mp3|ogg|webm|m4a))(\?[^\s)"']*)/gi,
+    (_full, base: string, query: string) => {
+      const cleaned = query
+        .replace(/[?&]autoplay=1\b/g, "")
+        .replace(/^&/, "?");
+      return cleaned === "?" || cleaned === "" ? base : `${base}${cleaned}`;
+    },
+  );
 }
 
 const MAX_PERSISTED_PAYLOAD_BYTES = 8_000;
