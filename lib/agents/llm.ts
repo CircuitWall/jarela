@@ -208,8 +208,27 @@ export async function* streamWithConfig(
     yield* flushPendingToolCalls();
   } catch (err) {
     const name = err instanceof Error ? err.name : "";
-    const rawMsg = err instanceof Error ? err.message : String(err);
+    const baseMsg = err instanceof Error ? err.message : String(err);
     const stack = err instanceof Error && err.stack ? err.stack : "";
+    // undici surfaces network failures as a bare "fetch failed" with the
+    // real reason (ECONNREFUSED, EAI_AGAIN, UND_ERR_SOCKET, cert issues,
+    // proxy CONNECT rejects, …) hidden under err.cause. Walk the chain so
+    // operators get a useful log line and the UI shows something actionable.
+    const causeChain: string[] = [];
+    let cur: unknown = err;
+    let depth = 0;
+    while (cur && typeof cur === "object" && "cause" in cur && depth < 4) {
+      const c = (cur as { cause?: unknown }).cause;
+      if (!c) break;
+      const cMsg = c instanceof Error ? `${c.name}: ${c.message}` : String(c);
+      const cCode = c && typeof c === "object" && "code" in c ? ` [${(c as { code?: string }).code}]` : "";
+      causeChain.push(`${cMsg}${cCode}`);
+      cur = c;
+      depth += 1;
+    }
+    const rawMsg = causeChain.length > 0
+      ? `${baseMsg} (cause: ${causeChain.join(" → ")})`
+      : baseMsg;
 
     // User-initiated abort (Stop button / client disconnect): emit a
     // short error chunk and let the route fall through to `done` so the
