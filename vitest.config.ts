@@ -10,7 +10,11 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
-    include: ["lib/**/*.test.ts", "api/**/*.test.ts"],
+    include: [
+      "lib/**/*.test.ts",
+      "api/**/*.test.ts",
+      "browser-extension/lib/**/*.test.mjs",
+    ],
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
