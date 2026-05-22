@@ -20,6 +20,7 @@ import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
+import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { MenuPanel } from "./MenuPanel";
@@ -178,6 +179,7 @@ export function AppShell() {
       <TopProgressBar />
       <NotificationStatus />
       <Toaster />
+      <ServerStatus />
       {/*
         Spacer reserving the slot the floating header visually occupies.
         Keeps the flex layout intact so panel content doesn't slide under
