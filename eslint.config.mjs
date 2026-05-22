@@ -13,6 +13,12 @@ const config = [
       "public/sw.js",
       "public/swe-worker-*.js",
       "public/workbox-*.js",
+      // The browser extension is a separate artifact loaded unpacked into
+      // Chrome — it is not part of the Next.js TypeScript project. It uses
+      // chrome.* globals and module syntax (.mjs) that the Next eslint
+      // config doesn't know about. Vitest covers the pure helpers; the
+      // extension itself is exercised in the browser.
+      "browser-extension/**",
     ],
   },
   {

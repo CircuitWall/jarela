@@ -1,0 +1,75 @@
+/* Picker overlay — sits above page content; pointer-events none so the
+   mouse passes through to the element underneath, which is what we
+   actually want to pick. */
+#__jarela-overlay {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2147483646;
+  border: 2px dashed #3b82f6;
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: 4px;
+  box-sizing: border-box;
+  transition: top 60ms linear, left 60ms linear, width 60ms linear, height 60ms linear;
+}
+
+/* Top banner — pinned center-top, dark pill explaining the mode. */
+#__jarela-banner {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483647;
+  background: #0f172a;
+  color: #f8fafc;
+  font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 10px 18px;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  animation: jarela-banner-in 200ms ease-out;
+  max-width: calc(100vw - 40px);
+  text-align: center;
+}
+#__jarela-banner.jarela-sending { background: #1e3a8a; }
+#__jarela-banner.jarela-success { background: #14532d; }
+#__jarela-banner.jarela-error   { background: #7f1d1d; }
+
+@keyframes jarela-banner-in {
+  from { transform: translate(-50%, -120%); opacity: 0; }
+  to   { transform: translate(-50%,    0); opacity: 1; }
+}
+
+/* Picked-element flash on send. */
+.jarela-flash-pulse {
+  animation: jarela-flash 600ms ease-in-out 2;
+  outline: 2px solid #3b82f6 !important;
+  outline-offset: 2px;
+}
+@keyframes jarela-flash {
+  0%, 100% { background-color: transparent; }
+  50%      { background-color: rgba(59, 130, 246, 0.35); }
+}
+
+/* "✈ Sent" pill that flies toward the toolbar icon. */
+.jarela-send-pill {
+  position: absolute;
+  z-index: 2147483647;
+  background: #3b82f6;
+  color: white;
+  font: 600 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 6px 12px;
+  border-radius: 999px;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --dx: 0px;
+  --dy: 0px;
+  transform: translate(0, 0) scale(1);
+  opacity: 1;
+}
+.jarela-send-pill.jarela-send-pill-fly {
+  animation: jarela-fly 800ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes jarela-fly {
+  0%   { transform: translate(0, 0) scale(1); opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translate(var(--dx), var(--dy)) scale(0.5); opacity: 0; }
+}
