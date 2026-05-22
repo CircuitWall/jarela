@@ -59,6 +59,24 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const addNotice = (text: string) =>
     setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
 
+  // Append-with-dedupe. After a run finishes, two independent code paths can
+  // both fetch the freshly-persisted user+assistant rows and append them:
+  //   1) handleDone (driven by the SSE `done` event for the local run), and
+  //   2) the `jarela:thread-updated` window listener (driven by the
+  //      cross-device events bus notification for the same run).
+  // The streaming-ref guard in (2) bails while a local run is in flight, but
+  // the notification can arrive in the same micro-window where streaming has
+  // just flipped to false, slipping past the guard. Without dedupe, both
+  // appends land and every newly-persisted message gets a duplicate React
+  // key. Dedupe by id at the append site so either ordering converges to the
+  // same list.
+  function appendUnique(prev: Message[], incoming: Message[]): Message[] {
+    if (incoming.length === 0) return prev;
+    const seen = new Set(prev.map((m) => m.id));
+    const fresh = incoming.filter((m) => !seen.has(m.id));
+    return fresh.length === 0 ? prev : prev.concat(fresh);
+  }
+
   useEffect(() => {
     setProfileLoading(true);
     api.profile.get().then(setUserProfile).catch(console.error).finally(() => setProfileLoading(false));
@@ -133,7 +151,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       // visual jump-back when the chat content briefly shrinks.
       if (anchor) {
         // Append only — anything older is already on screen.
-        setMessages((prev) => prev.concat(d.messages));
+        setMessages((prev) => appendUnique(prev, d.messages));
       } else {
         setMessages(d.messages);
         setHasMore(d.has_more);
@@ -189,7 +207,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       fetchPromise.then((d) => {
         if (anchor) {
           if (d.messages.length === 0) return;
-          setMessages((prev) => prev.concat(d.messages));
+          setMessages((prev) => appendUnique(prev, d.messages));
         } else {
           setMessages(d.messages);
           setHasMore(d.has_more);
