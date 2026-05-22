@@ -34,6 +34,12 @@ export function listThreads(limit = 50, offset = 0): ThreadRow[] {
     .all(limit, offset) as unknown as ThreadRow[];
 }
 
+export function listThreadsByAgent(agent_id: string, limit = 50): ThreadRow[] {
+  return getDb()
+    .prepare("SELECT * FROM threads WHERE agent_id=? ORDER BY updated_at DESC LIMIT ?")
+    .all(agent_id, limit) as unknown as ThreadRow[];
+}
+
 export function getThread(thread_id: string): ThreadRow | null {
   return (getDb().prepare("SELECT * FROM threads WHERE thread_id=?").get(thread_id) as unknown as ThreadRow) ?? null;
 }

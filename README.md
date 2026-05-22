@@ -126,6 +126,10 @@ create an Outlook Calendar invite in the same turn.
 - Panels for **Agents**, **Models**, **MCP servers**, **Integrations**,
   **Memory**, **Profile**, **Bridges**, **Scheduled tasks**, and **Pending
   approvals**.
+- **Browser extension** ([`browser-extension/`](./browser-extension)) —
+  Chrome MV3, click an element on any page and POST it to your local
+  Jarela as a new user message (ADR-0018). Loopback only; toolbar icon
+  greys out when Jarela isn't running.
 
 ### Operational
 
@@ -546,8 +550,11 @@ C4Context
     System_Ext(github, "GitHub API", "Repo / PR integrations")
     SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings")
     SystemDb_Ext(extdir, "~/.jarela/{providers,tools}/", "Drop-in .cjs extension files (hot-loaded)")
+    System_Ext(browserext, "Jarela Browser Extension", "MV3 — element picker → loopback POST (ADR-0018)")
 
     Rel(user, jarela, "HTTPS / SSE")
+    Rel(user, browserext, "Pick an element on any page")
+    Rel(browserext, jarela, "POST /api/v1/page-capture (loopback only)")
     Rel(jarela, anthropic, "HTTPS")
     Rel(jarela, openai, "HTTPS")
     Rel(jarela, google, "HTTPS")
