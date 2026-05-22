@@ -142,7 +142,12 @@ create an Outlook Calendar invite in the same turn.
   **Linux** under `systemd --user`. Sample units below.
 - Respects standard proxy env vars (`HTTP_PROXY` / `HTTPS_PROXY` /
   `NO_PROXY`) through `undici`'s `EnvHttpProxyAgent`, so it works inside
-  corporate networks.
+  corporate networks. **On macOS**, set proxy mode to **System** in
+  Settings → Integrations → Network and Jarela auto-discovers the proxy
+  (via `scutil --proxy`) and trust store (via `security
+  find-certificate` against System + login keychains, written to
+  `~/.jarela/system-ca.pem`) — zero shell-config or manual CA paste
+  required for MDM-managed Macs (ADR-0020).
 
 ## Quick start
 
