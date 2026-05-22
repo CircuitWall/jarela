@@ -5,11 +5,17 @@
  * Atlassian product with its own API surface, hostname, and auth model:
  *   - URL:  https://<instance>.jiraalign.com
  *   - Auth: Bearer token (NOT email + API token like Jira Cloud)
- *   - API:  /rest/align/api/2/...   (work items, teams, programs, …)
+ *   - API:  /rest/align/api/2/<collection>   per-type collections, no /items
  *
- * Each CRUD operation is exported as its own tool so users can flip
- * read-only / write / delete permissions independently in the AgentEditor
- * — see ToolPolicy in lib/agents/base.ts. To revoke writes, uncheck the
+ * IMPORTANT — v2 has no generic `/items` endpoint. Work items are split by
+ * type, each at its own collection: /epics, /capabilities, /features,
+ * /stories, /themes, /tasks, /defects. Every tool here therefore requires
+ * a `type` argument so we can route to the right collection. See ADR-0021
+ * for why; ADR-0019 (which assumed /items) is superseded.
+ *
+ * Each CRUD operation is a separate tool so users can flip read-only /
+ * write / delete permissions independently in the AgentEditor — see
+ * ToolPolicy in lib/agents/base.ts. To revoke writes, uncheck the
  * `jira_align_create_*` / `jira_align_update_*` / `jira_align_delete_*`
  * tools while leaving the read tools enabled.
  *
@@ -18,11 +24,9 @@
  *   2. Memory store: namespace="integrations", key="jira_align",
  *      value={ url, api_token }   (set via the Integrations panel UI)
  *
- * NOTE — endpoint shapes follow the JA REST API v2 conventions but JA
- * instances vary (custom fields, work-item-type IDs, hierarchy depth).
- * Verify the exact paths your instance exposes via its Swagger UI at
- * `<instance>.jiraalign.com/swagger` before relying on these in
- * production. This is the v1 draft surface (ADR-0019).
+ * Field shapes still vary by instance (custom fields, workflow names,
+ * type-specific attributes). Verify exact field names against your
+ * instance's Swagger at `<instance>.jiraalign.com/rest/align/api/docs/`.
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -32,6 +36,32 @@ import { parseJsonSafe } from "@/lib/utils/json";
 export interface JiraAlignAuth {
   url: string;        // e.g. "https://acme.jiraalign.com"
   apiToken: string;
+}
+
+// Logical type → URL collection segment. JA pluralization isn't a regex —
+// "capability" → "capabilities", "story" → "stories" — so map explicitly
+// and reject unknown types up front rather than constructing dead URLs.
+const TYPE_TO_COLLECTION: Record<string, string> = {
+  epic: "epics",
+  capability: "capabilities",
+  feature: "features",
+  story: "stories",
+  theme: "themes",
+  task: "tasks",
+  defect: "defects",
+  objective: "objectives",
+};
+const KNOWN_TYPES = Object.keys(TYPE_TO_COLLECTION) as ReadonlyArray<keyof typeof TYPE_TO_COLLECTION>;
+const TYPE_ENUM = z.enum(KNOWN_TYPES as [string, ...string[]]);
+
+function collectionFor(type: string): string | { error: string } {
+  const seg = TYPE_TO_COLLECTION[type.toLowerCase()];
+  if (!seg) {
+    return {
+      error: `unknown Jira Align work-item type "${type}". Expected one of: ${KNOWN_TYPES.join(", ")}.`,
+    };
+  }
+  return seg;
 }
 
 export function _resolveJiraAlignAuth(): JiraAlignAuth | { error: string } {
@@ -80,63 +110,90 @@ async function jaFetch(
   return parseJsonSafe<unknown>(text, text);
 }
 
+// Shape an item payload back into a stable, typeless summary so the agent
+// gets the same fields regardless of which /<type>s endpoint we hit. Field
+// casing varies across JA endpoints (parentId vs parentID etc.), so we
+// fall back through the known variants.
+function summarizeItem(
+  type: string,
+  data: Record<string, unknown>,
+  baseUrl: string,
+): Record<string, unknown> {
+  return {
+    id: data.id,
+    type,
+    url: `${baseUrl}/Item/${data.id}`,
+    title: data.title ?? data.name ?? null,
+    state: data.state ?? data.status ?? null,
+    description: data.description ?? null,
+    parent_id: data.parentId ?? data.parentID ?? null,
+    program_id: data.programId ?? data.programID ?? null,
+    team_id: data.teamId ?? data.teamID ?? null,
+    release_id: data.releaseId ?? data.releaseID ?? null,
+    sprint_id: data.sprintId ?? data.sprintID ?? null,
+    owner: data.owner ?? data.ownerEmail ?? null,
+    created_at: data.createDate ?? data.createdAt ?? null,
+    updated_at: data.lastUpdated ?? data.updatedAt ?? null,
+  };
+}
+
 // ── Read tools ──────────────────────────────────────────────────────────────
 
 export const jiraAlignGetItemTool = tool(
-  async ({ item_id }) => {
+  async ({ type, item_id }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const data = await jaFetch(auth, `/rest/align/api/2/items/${encodeURIComponent(item_id)}`) as Record<string, unknown> & { error?: string };
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}`) as Record<string, unknown> & { error?: string };
     if (data.error) return JSON.stringify(data);
-    return JSON.stringify({
-      id: data.id,
-      url: `${auth.url}/Item/${data.id}`,
-      type: data.type,
-      title: data.title,
-      state: data.state,
-      description: data.description,
-      parent_id: data.parentId ?? null,
-      program_id: data.programId ?? null,
-      team_id: data.teamId ?? null,
-      release_id: data.releaseId ?? null,
-      sprint_id: data.sprintId ?? null,
-      owner: data.owner ?? null,
-      created_at: data.createDate ?? null,
-      updated_at: data.lastUpdated ?? null,
-    });
+    return JSON.stringify(summarizeItem(type, data, auth.url));
   },
   {
     name: "jira_align_get_item",
     description:
-      "Fetch a Jira Align work item by id (epic, capability, feature, story, …). " +
-      "Returns title, state, hierarchy refs (parent/program/team/release/sprint), " +
-      "owner, and timestamps. Use jira_align_get_item_children to walk the tree.",
+      "Fetch a Jira Align work item by id. **Must specify `type`** — Jira Align v2 has no " +
+      "generic /items endpoint, so the type tells us which collection to hit (epic|capability|" +
+      "feature|story|theme|task|defect|objective). Returns title, state, hierarchy refs " +
+      "(parent/program/team/release/sprint), owner, and timestamps. Use jira_align_list_children " +
+      "to walk the tree.",
     schema: z.object({
+      type: TYPE_ENUM.describe("Work-item type — required to route to the right /<type>s collection"),
       item_id: z.string().describe("Numeric Jira Align item id (e.g. '12345')"),
     }),
   },
 );
 
 export const jiraAlignSearchItemsTool = tool(
-  async ({ type, state, owner, program_id, team_id, updated_since, max_results }) => {
+  async ({ type, state, owner, program_id, team_id, updated_since, max_results, filter }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+
     const params = new URLSearchParams();
-    if (type) params.set("type", type);
-    if (state) params.set("state", state);
-    if (owner) params.set("owner", owner);
-    if (program_id) params.set("programId", program_id);
-    if (team_id) params.set("teamId", team_id);
-    if (updated_since) params.set("lastUpdatedSince", updated_since);
+    // JA v2 uses OData-style $filter for predicates. Build a conjunction
+    // from the structured args; let callers append via `filter` for things
+    // we don't model (custom fields etc.).
+    const clauses: string[] = [];
+    if (state) clauses.push(`state eq '${escapeOData(state)}'`);
+    if (owner) clauses.push(`owner eq '${escapeOData(owner)}'`);
+    if (program_id) clauses.push(`programId eq ${Number.isFinite(Number(program_id)) ? program_id : `'${escapeOData(program_id)}'`}`);
+    if (team_id) clauses.push(`teamId eq ${Number.isFinite(Number(team_id)) ? team_id : `'${escapeOData(team_id)}'`}`);
+    if (updated_since) clauses.push(`lastUpdated ge ${normalizeDate(updated_since)}`);
+    if (filter) clauses.push(`(${filter})`);
+    if (clauses.length) params.set("$filter", clauses.join(" and "));
     params.set("limit", String(Math.min(max_results ?? 25, 100)));
-    const data = await jaFetch(auth, `/rest/align/api/2/items?${params.toString()}`) as { items?: Array<Record<string, unknown>>; nextPageToken?: string; error?: string };
+
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}?${params.toString()}`) as { items?: Array<Record<string, unknown>>; nextPageToken?: string; error?: string };
     if (data.error) return JSON.stringify(data);
     return JSON.stringify({
       items: (data.items ?? []).map((i) => ({
         id: i.id,
-        type: i.type,
-        title: i.title,
-        state: i.state,
+        type,
+        title: i.title ?? i.name ?? null,
+        state: i.state ?? null,
         owner: i.owner ?? null,
         url: `${auth.url}/Item/${i.id}`,
       })),
@@ -146,59 +203,62 @@ export const jiraAlignSearchItemsTool = tool(
   {
     name: "jira_align_search_items",
     description:
-      "Search Jira Align work items by type/state/owner/program/team/recent updates. " +
-      "Returns a compact list (id, type, title, state, owner). Pass updated_since='-7d' " +
-      "or an ISO date for recency. **Prefer this over jira_align_get_item when listing.**",
+      "Search Jira Align work items of a given type, with optional state/owner/program/team " +
+      "filters. **`type` is required** — JA v2 has no cross-type item collection, so each " +
+      "search hits one /<type>s endpoint. Use `filter` to pass an OData expression for fields " +
+      "this tool doesn't model (e.g. custom fields). Returns a compact list (id, title, state, " +
+      "owner). Pass updated_since='-7d' or an ISO date for recency.",
     schema: z.object({
-      type: z.string().optional().describe("Item type: 'epic' | 'capability' | 'feature' | 'story' | 'theme' | 'objective' | …"),
+      type: TYPE_ENUM.describe("Work-item type to search"),
       state: z.string().optional().describe("Workflow state name (e.g. 'In Progress', 'Done')"),
       owner: z.string().optional().describe("Owner email or username"),
       program_id: z.string().optional(),
       team_id: z.string().optional(),
       updated_since: z.string().optional().describe("ISO timestamp or relative (e.g. '-7d')"),
+      filter: z.string().optional().describe("Raw OData $filter expression appended to the structured filters (advanced)"),
       max_results: z.number().optional().describe("Default 25, max 100"),
     }),
   },
 );
 
-export const jiraAlignGetItemChildrenTool = tool(
-  async ({ item_id, depth }) => {
+export const jiraAlignListChildrenTool = tool(
+  async ({ child_type, parent_id, max_results }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const a: JiraAlignAuth = auth;  // narrowed for closure capture
-    const maxDepth = Math.min(depth ?? 1, 4);
+    const collection = collectionFor(child_type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
 
-    interface Node { id: string; type?: string; title?: string; state?: string; children: Node[] }
-    async function fetchChildren(id: string): Promise<Array<Record<string, unknown>>> {
-      const data = await jaFetch(a, `/rest/align/api/2/items/${encodeURIComponent(id)}/children`) as { items?: Array<Record<string, unknown>>; error?: string };
-      if (data.error) return [];
-      return data.items ?? [];
-    }
-    async function walk(id: string, d: number): Promise<Node> {
-      const kids = d < maxDepth ? await fetchChildren(id) : [];
-      const children = await Promise.all(
-        kids.map(async (k) => walk(String(k.id), d + 1)),
-      );
-      return { id, children };
-    }
-    const tree = await walk(item_id, 0);
-
+    // JA hierarchy is implicit: get children by querying the child collection
+    // with $filter=parentId eq {id}. There is no /<type>/{id}/children sub-route.
+    const params = new URLSearchParams();
+    params.set("$filter", `parentId eq ${parent_id}`);
+    params.set("limit", String(Math.min(max_results ?? 50, 100)));
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}?${params.toString()}`) as { items?: Array<Record<string, unknown>>; error?: string };
+    if (data.error) return JSON.stringify(data);
     return JSON.stringify({
-      root_id: item_id,
-      depth: maxDepth,
-      tree,
-      note: "Each node carries `id` + `children`. Call jira_align_get_item for full details on any node.",
+      parent_id,
+      child_type,
+      items: (data.items ?? []).map((i) => ({
+        id: i.id,
+        type: child_type,
+        title: i.title ?? i.name ?? null,
+        state: i.state ?? null,
+        url: `${auth.url}/Item/${i.id}`,
+      })),
     });
   },
   {
-    name: "jira_align_get_item_children",
+    name: "jira_align_list_children",
     description:
-      "Walk a Jira Align item's children to a given depth (default 1, max 4). Returns a " +
-      "tree of `{id, children}` so the agent can summarize portfolio → epic → feature → story " +
-      "structure without N round-trips. For full item details, follow up with jira_align_get_item.",
+      "List the direct children of a Jira Align work item. **Both `parent_id` and `child_type` " +
+      "are required** — the API has no generic `/items/{id}/children` route, so we query the " +
+      "child collection with a parentId filter. Use the standard hierarchy: theme → epic → " +
+      "capability → feature → story (instances may differ; check your portfolio config). For " +
+      "deeper trees, call this once per level.",
     schema: z.object({
-      item_id: z.string().describe("Root item id to walk from"),
-      depth: z.number().optional().describe("Levels to descend (default 1, max 4)"),
+      parent_id: z.string().describe("Numeric id of the parent item"),
+      child_type: TYPE_ENUM.describe("Type of children to fetch — must match your hierarchy level"),
+      max_results: z.number().optional().describe("Default 50, max 100"),
     }),
   },
 );
@@ -209,13 +269,16 @@ export const jiraAlignCreateItemTool = tool(
   async ({ type, title, description, parent_id, program_id, team_id, owner }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const body: Record<string, unknown> = { type, title };
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+
+    const body: Record<string, unknown> = { title };
     if (description) body.description = description;
     if (parent_id) body.parentId = parent_id;
     if (program_id) body.programId = program_id;
     if (team_id) body.teamId = team_id;
     if (owner) body.owner = owner;
-    const data = await jaFetch(auth, `/rest/align/api/2/items`, {
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}`, {
       method: "POST",
       body: JSON.stringify(body),
     }) as { id?: string; error?: string };
@@ -223,17 +286,18 @@ export const jiraAlignCreateItemTool = tool(
     return JSON.stringify({
       ok: true,
       id: data.id,
+      type,
       url: data.id ? `${auth.url}/Item/${data.id}` : null,
     });
   },
   {
     name: "jira_align_create_item",
     description:
-      "Create a Jira Align work item. Set `type` to 'epic' | 'capability' | 'feature' | " +
-      "'story' (or whatever your instance's workflow defines). Pass `parent_id` to attach " +
+      "Create a Jira Align work item in a given type's collection. Set `type` to one of " +
+      "epic|capability|feature|story|theme|task|defect|objective. Pass `parent_id` to attach " +
       "to an existing hierarchy. **Disable this tool to make the agent read-only.**",
     schema: z.object({
-      type: z.string().describe("Work item type"),
+      type: TYPE_ENUM.describe("Work-item type — selects which /<type>s collection receives the POST"),
       title: z.string().describe("Item title"),
       description: z.string().optional(),
       parent_id: z.string().optional().describe("Attach under this parent item"),
@@ -245,13 +309,15 @@ export const jiraAlignCreateItemTool = tool(
 );
 
 export const jiraAlignUpdateItemTool = tool(
-  async ({ item_id, fields }) => {
+  async ({ type, item_id, fields }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
     if (!fields || Object.keys(fields).length === 0) {
       return JSON.stringify({ error: "fields object must contain at least one field to update" });
     }
-    const data = await jaFetch(auth, `/rest/align/api/2/items/${encodeURIComponent(item_id)}`, {
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}`, {
       method: "PATCH",
       body: JSON.stringify(fields),
     }) as { error?: string };
@@ -259,6 +325,7 @@ export const jiraAlignUpdateItemTool = tool(
     return JSON.stringify({
       ok: true,
       id: item_id,
+      type,
       url: `${auth.url}/Item/${item_id}`,
       updated_fields: Object.keys(fields),
     });
@@ -267,9 +334,11 @@ export const jiraAlignUpdateItemTool = tool(
     name: "jira_align_update_item",
     description:
       "Patch fields on a Jira Align item (title, description, owner, programId, teamId, " +
-      "parentId, custom fields, …). Only the listed fields are touched. **Disable this " +
-      "tool to make the agent read-only.**",
+      "parentId, custom fields, …). Only the listed fields are touched. **`type` is required** " +
+      "to route the PATCH to the correct /<type>s/{id} resource. **Disable this tool to make " +
+      "the agent read-only.**",
     schema: z.object({
+      type: TYPE_ENUM,
       item_id: z.string(),
       fields: z.record(z.string(), z.unknown()).describe(
         "Map of field name → new value. Use the camelCase JA REST field names.",
@@ -279,34 +348,35 @@ export const jiraAlignUpdateItemTool = tool(
 );
 
 export const jiraAlignTransitionItemTool = tool(
-  async ({ item_id, state }) => {
+  async ({ type, item_id, state }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
     if (!state) {
       // List available states for the item type if the agent didn't pass one.
-      const item = await jaFetch(auth, `/rest/align/api/2/items/${encodeURIComponent(item_id)}`) as { type?: string; error?: string };
-      if (item && typeof item === "object" && "error" in item) return JSON.stringify(item);
-      const wf = await jaFetch(auth, `/rest/align/api/2/workflows?itemType=${encodeURIComponent(item.type ?? "")}`) as { states?: Array<{ name: string }>; error?: string };
+      const wf = await jaFetch(auth, `/rest/align/api/2/workflows?itemType=${encodeURIComponent(type)}`) as { states?: Array<{ name: string }>; error?: string };
       if (wf && typeof wf === "object" && "error" in wf) return JSON.stringify(wf);
       return JSON.stringify({
         item_id,
-        item_type: item.type,
+        item_type: type,
         available_states: (wf.states ?? []).map((s) => s.name),
       });
     }
-    const data = await jaFetch(auth, `/rest/align/api/2/items/${encodeURIComponent(item_id)}`, {
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}`, {
       method: "PATCH",
       body: JSON.stringify({ state }),
     }) as { error?: string };
     if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
-    return JSON.stringify({ ok: true, id: item_id, state });
+    return JSON.stringify({ ok: true, id: item_id, type, state });
   },
   {
     name: "jira_align_transition_item",
     description:
       "Move a Jira Align work item to a new workflow state (e.g. 'In Progress' → 'Done'). " +
-      "Call without `state` to list valid transitions for the item's type.",
+      "Call without `state` to list valid transitions for the item's type. **`type` is required.**",
     schema: z.object({
+      type: TYPE_ENUM,
       item_id: z.string(),
       state: z.string().optional().describe("Target state name. Omit to list available states."),
     }),
@@ -314,9 +384,11 @@ export const jiraAlignTransitionItemTool = tool(
 );
 
 export const jiraAlignDeleteItemTool = tool(
-  async ({ item_id, confirm }) => {
+  async ({ type, item_id, confirm }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
     // Refuse without explicit confirm — the agent has to opt in per call,
     // not just because the tool is enabled. Mirrors the pattern in
     // exec.ts where destructive shell calls are gated by an extra arg.
@@ -327,20 +399,21 @@ export const jiraAlignDeleteItemTool = tool(
           `Deletes are not undoable in Jira Align — verify with the user first.`,
       });
     }
-    const data = await jaFetch(auth, `/rest/align/api/2/items/${encodeURIComponent(item_id)}`, {
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}`, {
       method: "DELETE",
     }) as { error?: string };
     if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
-    return JSON.stringify({ ok: true, deleted_id: item_id });
+    return JSON.stringify({ ok: true, deleted_id: item_id, type });
   },
   {
     name: "jira_align_delete_item",
     description:
-      "Permanently delete a Jira Align work item. **Irreversible.** The agent must pass " +
-      "`confirm` set to the same `item_id` — a deliberate two-arg gate so a mis-issued " +
-      "tool call can't wipe an item. **Leave this tool disabled unless the user explicitly " +
-      "wants delete capability.**",
+      "Permanently delete a Jira Align work item. **Irreversible.** **`type` is required** to " +
+      "route to the correct collection. The agent must also pass `confirm` set to the same " +
+      "`item_id` — a deliberate two-arg gate so a mis-issued tool call can't wipe an item. " +
+      "**Leave this tool disabled unless the user explicitly wants delete capability.**",
     schema: z.object({
+      type: TYPE_ENUM,
       item_id: z.string(),
       confirm: z.string().describe("Must equal `item_id` for the delete to proceed."),
     }),
@@ -350,22 +423,48 @@ export const jiraAlignDeleteItemTool = tool(
 // ── Comments / discussion (read-write but lower blast-radius than item edits) ──
 
 export const jiraAlignAddCommentTool = tool(
-  async ({ item_id, body }) => {
+  async ({ type, item_id, body }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const data = await jaFetch(auth, `/rest/align/api/2/items/${encodeURIComponent(item_id)}/comments`, {
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}/comments`, {
       method: "POST",
       body: JSON.stringify({ body }),
     }) as { id?: string; error?: string };
     if (data.error) return JSON.stringify(data);
-    return JSON.stringify({ ok: true, comment_id: data.id });
+    return JSON.stringify({ ok: true, comment_id: data.id, type });
   },
   {
     name: "jira_align_add_comment",
-    description: "Post a comment on a Jira Align work item. Plain text body.",
+    description:
+      "Post a comment on a Jira Align work item. **`type` is required** to route to the " +
+      "correct /<type>s/{id}/comments resource. Plain text body. Note: not all instances " +
+      "expose comments as a sub-resource on every type — check your Swagger if this 404s.",
     schema: z.object({
+      type: TYPE_ENUM,
       item_id: z.string(),
       body: z.string().describe("Comment text"),
     }),
   },
 );
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+// JA's $filter accepts ISO-8601 date literals without quotes. Map a small set
+// of relative shorthands so callers can pass "-7d" the same way they do for
+// the Jira Cloud tool, without knowing OData.
+function normalizeDate(input: string): string {
+  const m = /^-(\d+)([dhm])$/.exec(input);
+  if (!m) return input;  // assume caller passed an ISO string
+  const n = Number(m[1]);
+  const unitMs = m[2] === "d" ? 86_400_000 : m[2] === "h" ? 3_600_000 : 60_000;
+  return new Date(Date.now() - n * unitMs).toISOString();
+}
+
+// OData string literals double single quotes for escaping. We don't get fancy
+// — JA usernames and state names don't contain backslashes — but we do need
+// to make sure a quote in the input doesn't break the filter.
+function escapeOData(s: string): string {
+  return s.replace(/'/g, "''");
+}

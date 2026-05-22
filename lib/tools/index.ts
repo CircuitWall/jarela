@@ -20,7 +20,7 @@ import {
   confluenceSearchTool, confluenceGetPageTool,
 } from "./atlassian";
 import {
-  jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignGetItemChildrenTool,
+  jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
   jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
   jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
 } from "./jira-align";
@@ -97,7 +97,7 @@ const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInte
     confluenceSearchTool, confluenceGetPageTool,
   ],
   JiraAlign: [
-    jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignGetItemChildrenTool,
+    jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
     jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
     jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
   ],
