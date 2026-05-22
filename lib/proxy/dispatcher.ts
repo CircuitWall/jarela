@@ -21,8 +21,10 @@
 // servers).
 
 import { exec } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import {
+  Agent,
   EnvHttpProxyAgent,
   ProxyAgent,
   getGlobalDispatcher,
@@ -30,6 +32,7 @@ import {
   type Dispatcher,
 } from "undici";
 import { getProxyConfigRaw, type ProxyConfigRaw, type ProxyScheme } from "@/lib/stores/proxy-config";
+import { extractSystemKeychainCAs } from "@/lib/proxy/keychain";
 
 const execAsync = promisify(exec);
 
@@ -75,6 +78,12 @@ export interface ApplyResult {
   source: "env" | "manual" | "system" | "off";
   proxyUrl: string | null;
   note?: string;
+  // ADR-0020: system mode also auto-extracts the macOS keychain trust
+  // store into a managed PEM file. Surfaced so the UI can show
+  // "System trust: 187 certs from ~/.jarela/system-ca.pem".
+  caBundlePath?: string;
+  caBundleCertCount?: number;
+  caBundleSource?: "macos-keychain";
 }
 
 // Reads the DB row and reconciles with env vars. Idempotent and safe to
@@ -114,8 +123,52 @@ export async function applyProxyConfigFromDb(): Promise<ApplyResult> {
   }
 
   if (cfg.mode === "system") {
+    // ADR-0020: in `system` mode the OS is the source of truth for both
+    // proxy URL (System Preferences → Network → Proxies, via scutil) AND
+    // trust store (System + Login keychains, via `security`). Extract
+    // the keychain bundle every apply so MDM-pushed cert rotations land
+    // without manual intervention.
+    const trust = extractSystemKeychainCAs();
+    let caBundleText: string | null = cfg.ca_bundle;       // user-pasted override, if any
+    let caBundlePath: string | undefined;
+    let caBundleCertCount: number | undefined;
+    let caBundleSource: "macos-keychain" | undefined;
+    if (!("error" in trust)) {
+      try {
+        caBundleText = readFileSync(trust.pemPath, "utf8");
+        caBundlePath = trust.pemPath;
+        caBundleCertCount = trust.certCount;
+        caBundleSource = trust.source;
+      } catch (err) {
+        console.warn("[jarela/proxy] could not read extracted keychain bundle:", err);
+      }
+    } else {
+      // Non-fatal: fall back to whatever the user pasted into the UI,
+      // or to no bundle if they didn't.
+      console.info(`[jarela/proxy] keychain extraction skipped: ${trust.error}`);
+    }
+
     const detected = await detectSystemProxy();
     if (!detected) {
+      // No HTTPS proxy at the OS level (common when macOS uses a PAC URL
+      // — scutil reports ProxyAutoConfigEnable=1 but HTTPSEnable=0 — or
+      // when an on-host steering agent like Zscaler/Netskope handles
+      // egress transparently). If we extracted a keychain bundle, apply
+      // it to a direct-egress dispatcher so TLS interception by the
+      // on-host agent still validates against the corporate root.
+      if (caBundleText) {
+        installDirectWithCa(caBundleText);
+        return {
+          source: "off",
+          proxyUrl: null,
+          note: caBundleSource
+            ? `scutil --proxy reported no HTTPS proxy (likely PAC or on-host agent); applied ${caBundleCertCount} keychain CAs to direct-egress TLS so on-host MITM validates.`
+            : "scutil --proxy reported no HTTPS proxy; using direct connection",
+          caBundlePath,
+          caBundleCertCount,
+          caBundleSource,
+        };
+      }
       resetToBaseline();
       return {
         source: "off",
@@ -124,13 +177,24 @@ export async function applyProxyConfigFromDb(): Promise<ApplyResult> {
           process.platform === "darwin"
             ? "scutil --proxy reported no HTTPS proxy; using direct connection"
             : "system mode is macOS-only in v1; using direct connection",
+        caBundlePath,
+        caBundleCertCount,
+        caBundleSource,
       };
     }
-    // scutil only reports host/port — fix the hop scheme to http; the
-    // saved ca_bundle still applies (corporate proxy MITM root cert).
+    // scutil only reports host/port — the proxy hop is plain http.
     const url = buildProxyUrl("http", detected.host, detected.port, null, null);
-    installProxy(url, cfg.no_proxy, cfg.ca_bundle);
-    return { source: "system", proxyUrl: redactAuth(url) };
+    installProxy(url, cfg.no_proxy, caBundleText);
+    return {
+      source: "system",
+      proxyUrl: redactAuth(url),
+      note: caBundleSource
+        ? `Imported ${caBundleCertCount} CAs from macOS keychain → ${caBundlePath}. Restart the service for non-undici code paths to pick up the new trust store.`
+        : undefined,
+      caBundlePath,
+      caBundleCertCount,
+      caBundleSource,
+    };
   }
 
   resetToBaseline();
@@ -185,6 +249,23 @@ function resetToBaseline(): void {
   delete process.env.HTTPS_PROXY;
   delete process.env.NO_PROXY;
   if (baselineDispatcher) setGlobalDispatcher(baselineDispatcher);
+}
+
+// ADR-0020 follow-up: install a direct-egress dispatcher whose TLS trust
+// store includes the supplied CA bundle. Used when the OS reports no
+// HTTPS proxy (e.g. macOS PAC, or no proxy at all) but on-host agents
+// (Zscaler ZIA, Netskope SteeringAgent, Cisco Umbrella, GlobalProtect)
+// still intercept and re-sign outbound TLS with an internal root.
+// Without this, `mode=system` extracts a useful bundle but never applies
+// it to direct-egress code paths and the user gets
+// UNABLE_TO_GET_ISSUER_CERT_LOCALLY despite a green "242 certs" status.
+function installDirectWithCa(caBundle: string): void {
+  // Clear proxy env so EnvHttpProxyAgent isn't re-summoned by some other
+  // import path; we want unambiguous direct egress with custom trust.
+  delete process.env.HTTP_PROXY;
+  delete process.env.HTTPS_PROXY;
+  delete process.env.NO_PROXY;
+  setGlobalDispatcher(new Agent({ connect: { ca: caBundle } }));
 }
 
 function redactAuth(url: string): string {
