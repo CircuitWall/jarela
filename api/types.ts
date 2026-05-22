@@ -472,6 +472,13 @@ export interface ProxyApplyResult {
   source: "env" | "manual" | "system" | "off";
   proxyUrl: string | null;           // password redacted as "***"
   note?: string;
+  // ADR-0020: in `system` mode on macOS the dispatcher auto-extracts the
+  // System + login keychain trust stores into a PEM bundle and uses it
+  // as the per-request CA. Surfaced so the UI can show
+  // "System trust: 187 certs from ~/.jarela/system-ca.pem".
+  caBundlePath?: string;
+  caBundleCertCount?: number;
+  caBundleSource?: "macos-keychain";
 }
 
 export interface ProxyConfigEnvelope {
