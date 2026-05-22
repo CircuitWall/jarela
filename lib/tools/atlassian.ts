@@ -218,6 +218,142 @@ export const jiraAddCommentTool = tool(
   },
 );
 
+export const jiraFindUserTool = tool(
+  async ({ query }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/user/search?query=${encodeURIComponent(query)}`,
+    ) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      users: data.map((u) => ({
+        account_id: u.accountId,
+        display_name: u.displayName,
+        email: u.emailAddress ?? null,
+        active: u.active,
+      })),
+    });
+  },
+  {
+    name: "jira_find_user",
+    description:
+      "Look up Jira Cloud users by email or display-name fragment. Returns accountId values " +
+      "you can pass to jira_update_issue's assignee_account_id. Use when you only have an email.",
+    schema: z.object({
+      query: z.string().describe("Email address or partial display name"),
+    }),
+  },
+);
+
+export const jiraUpdateIssueTool = tool(
+  async ({
+    issue_key, summary, priority, assignee_account_id, assignee_email,
+    fix_versions, labels, labels_add, labels_remove,
+  }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+
+    const fields: Record<string, unknown> = {};
+    const update: Record<string, Array<Record<string, unknown>>> = {};
+
+    if (typeof summary === "string") fields.summary = summary;
+    if (typeof priority === "string") fields.priority = { name: priority };
+    if (Array.isArray(fix_versions)) fields.fixVersions = fix_versions.map((name) => ({ name }));
+    if (Array.isArray(labels)) fields.labels = labels;
+
+    if (Array.isArray(labels_add) || Array.isArray(labels_remove)) {
+      const ops: Array<Record<string, string>> = [];
+      for (const l of labels_add ?? []) ops.push({ add: l });
+      for (const l of labels_remove ?? []) ops.push({ remove: l });
+      if (ops.length) update.labels = ops;
+    }
+
+    // Assignee: explicit accountId wins; otherwise resolve email; "unassigned" / null clears.
+    if (assignee_account_id !== undefined) {
+      const v = assignee_account_id;
+      if (v === null || v === "" || v === "unassigned") {
+        fields.assignee = { accountId: null };
+      } else {
+        fields.assignee = { accountId: v };
+      }
+    } else if (typeof assignee_email === "string" && assignee_email.length > 0) {
+      if (assignee_email === "unassigned") {
+        fields.assignee = { accountId: null };
+      } else {
+        const users = await atlassianFetch(
+          auth,
+          `/rest/api/3/user/search?query=${encodeURIComponent(assignee_email)}`,
+        ) as Array<{ accountId?: string; emailAddress?: string }> | { error?: string };
+        if (!Array.isArray(users)) return JSON.stringify(users);
+        // Prefer exact email match (case-insensitive); fall back to single result.
+        const exact = users.find(
+          (u) => (u.emailAddress ?? "").toLowerCase() === assignee_email.toLowerCase(),
+        );
+        const picked = exact ?? (users.length === 1 ? users[0] : undefined);
+        if (!picked?.accountId) {
+          return JSON.stringify({
+            error: `could not resolve assignee_email "${assignee_email}" — got ${users.length} matches; ` +
+              `pass assignee_account_id explicitly`,
+            candidates: users.map((u) => ({ email: u.emailAddress, account_id: u.accountId })),
+          });
+        }
+        fields.assignee = { accountId: picked.accountId };
+      }
+    }
+
+    if (Object.keys(fields).length === 0 && Object.keys(update).length === 0) {
+      return JSON.stringify({ error: "no fields to update — pass at least one of summary, priority, assignee_*, fix_versions, labels, labels_add, labels_remove" });
+    }
+
+    const body: Record<string, unknown> = {};
+    if (Object.keys(fields).length) body.fields = fields;
+    if (Object.keys(update).length) body.update = update;
+
+    const data = await atlassianFetch(auth, `/rest/api/3/issue/${encodeURIComponent(issue_key)}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }) as { error?: string } | string;
+    // Successful PUT returns 204 No Content → atlassianFetch returns "" (parsed as string).
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      key: issue_key,
+      url: `${auth.url}/browse/${issue_key}`,
+      updated_fields: [...Object.keys(fields), ...Object.keys(update).map((k) => `${k}(±)`)],
+    });
+  },
+  {
+    name: "jira_update_issue",
+    description:
+      "Edit fields on an existing Jira issue: summary, priority, assignee, fix versions, labels. " +
+      "Pass only the fields you want to change. Labels support either full replace (`labels`) or " +
+      "incremental `labels_add`/`labels_remove`. Assignee can be set by `assignee_account_id` or by " +
+      "`assignee_email` (auto-resolved); pass null/\"unassigned\" to clear. **PREFER THIS over " +
+      "shell-exec'ing the jira CLI.** Disable to make the agent read-only.",
+    schema: z.object({
+      issue_key: z.string().describe("Issue key like PROJ-123"),
+      summary: z.string().optional().describe("New issue title"),
+      priority: z.string().optional().describe("Priority name (e.g. 'High', 'Medium', 'Low')"),
+      assignee_account_id: z.string().nullable().optional().describe(
+        "Jira Cloud accountId; null or 'unassigned' clears assignee",
+      ),
+      assignee_email: z.string().optional().describe(
+        "Email to resolve via /user/search; alternative to assignee_account_id",
+      ),
+      fix_versions: z.array(z.string()).optional().describe(
+        "Replace fix versions with these names (empty array clears all)",
+      ),
+      labels: z.array(z.string()).optional().describe(
+        "Replace labels entirely with this set (empty array clears all)",
+      ),
+      labels_add: z.array(z.string()).optional().describe("Labels to add (incremental)"),
+      labels_remove: z.array(z.string()).optional().describe("Labels to remove (incremental)"),
+    }),
+  },
+);
+
 export const jiraTransitionsTool = tool(
   async ({ issue_key, transition_name }) => {
     const auth = resolveAuth();
