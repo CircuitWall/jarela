@@ -16,6 +16,7 @@ import { proposeConfigChangeTool, checkProposalTool } from "./propose";
 import { listIntegrationsTool, getIntegrationSetupTool } from "./integrations";
 import {
   jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
+  jiraUpdateIssueTool, jiraFindUserTool,
   confluenceSearchTool, confluenceGetPageTool,
 } from "./atlassian";
 import {
@@ -91,8 +92,9 @@ const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInte
     listIntegrationsTool, getIntegrationSetupTool,
   ],
   Atlassian: [
-    jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool,
-    jiraTransitionsTool, confluenceSearchTool, confluenceGetPageTool,
+    jiraSearchTool, jiraGetIssueTool, jiraFindUserTool,
+    jiraCreateIssueTool, jiraUpdateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
+    confluenceSearchTool, confluenceGetPageTool,
   ],
   JiraAlign: [
     jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignGetItemChildrenTool,
