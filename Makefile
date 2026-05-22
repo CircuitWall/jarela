@@ -91,6 +91,19 @@ install-task: build
 	  printf "$(RED)Standalone build missing at .next/standalone/server.js$(RST)\n"; exit 1; \
 	fi
 	@launchctl bootout gui/$$(id -u)/$(LABEL) 2>/dev/null || true
+	@# Free port $(PORT) before bootstrap. launchd spawns the child under
+	@# RunAtLoad immediately; if anything else (a stray `next dev`, a
+	@# previous unmanaged install, etc.) is holding the socket, the child
+	@# fails with EADDRINUSE and bootstrap surfaces that as the cryptic
+	@# "Bootstrap failed: 5: Input/output error".
+	@for pid in $$(lsof -nP -iTCP:$(PORT) -sTCP:LISTEN -t 2>/dev/null); do \
+	  printf "$(YEL)stopping process $$pid holding port $(PORT)$(RST)\n"; \
+	  kill -TERM "$$pid" 2>/dev/null || true; \
+	done
+	@# Brief settle so launchd doesn't see the just-killed socket in TIME_WAIT.
+	@sleep 1
+	@# Clear any "disabled" flag a prior failed bootstrap may have left behind.
+	@launchctl enable "gui/$$(id -u)/$(LABEL)" 2>/dev/null || true
 	@mkdir -p "$(INSTALL_DIR)" "$(LOG_DIR)" "$(HOME)/Library/LaunchAgents"
 	@find "$(INSTALL_DIR)" -mindepth 1 -delete 2>/dev/null || true
 	@cp -R .next/standalone/. "$(INSTALL_DIR)/"
@@ -128,7 +141,13 @@ install-task: build
 	  echo '  <key>StandardErrorPath</key><string>$(LOG_FILE)</string>'; \
 	  echo '</dict></plist>'; \
 	} > "$(PLIST)"
-	@launchctl bootstrap gui/$$(id -u) "$(PLIST)"
+	@if ! launchctl bootstrap gui/$$(id -u) "$(PLIST)"; then \
+	  printf "$(RED)launchctl bootstrap failed.$(RST) Common causes:\n"; \
+	  printf "  - port $(PORT) already in use (check: lsof -nP -iTCP:$(PORT) -sTCP:LISTEN)\n"; \
+	  printf "  - the agent is loaded in another session; try: launchctl bootout gui/$$(id -u)/$(LABEL)\n"; \
+	  printf "  - the agent is marked disabled; try: launchctl enable gui/$$(id -u)/$(LABEL)\n"; \
+	  exit 1; \
+	fi
 	@launchctl kickstart -k gui/$$(id -u)/$(LABEL) 2>/dev/null || true
 	@printf "$(GRN)Installed $(APP_NAME) at $(INSTALL_DIR)$(RST)\n"
 	@printf "  URL:   http://localhost:$(PORT)\n"
