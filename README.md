@@ -18,7 +18,8 @@
   <a href="#providers">Providers</a> ·
   <a href="#integrations">Integrations</a> ·
   <a href="#extension-points">Extending</a> ·
-  <a href="./docs/ARCHITECTURE.md">Architecture</a>
+  <a href="./docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="#documentation">Docs</a>
 </p>
 
 <p align="center">
@@ -649,12 +650,29 @@ badge at the top of this README links straight to the latest run.
 - **Local secret scanner** ([scripts/scan-secrets.mjs](./scripts/scan-secrets.mjs))
   refuses to push commits that contain obvious API-key shapes.
 
+## Documentation
+
+All long-form docs live under [`docs/`](./docs/):
+
+- [docs/INSTALL.md](./docs/INSTALL.md) — first-launch warnings, portable vs
+  npm install paths, uninstall steps.
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — C4 container + component
+  diagrams and the main request / streaming / tool-call sequence flows.
+- [docs/adr/](./docs/adr/) — Architecture Decision Records. Start at
+  [ADR-0001](./docs/adr/0001-record-architecture-decisions.md); recent ones
+  worth skimming: [ADR-0010](./docs/adr/0010-agent-led-setup-and-integration-manifests.md)
+  (agent-led setup), [ADR-0015](./docs/adr/0015-native-github-tools.md)
+  (native GitHub tools), [ADR-0017](./docs/adr/0017-voice-via-gemini.md)
+  (voice).
+- [docs/journal/](./docs/journal/) — narrative dev notes that don't rise to
+  an ADR. See [docs/journal/README.md](./docs/journal/README.md) for the
+  conventions and the ADR-vs-journal split.
+
 ## Decisions
 
-Architecture decisions are recorded under [docs/adr/](./docs/adr/). Start
-with [ADR-0001](./docs/adr/0001-record-architecture-decisions.md). Open a new
-ADR before adding a model provider, changing the persistence schema, or
-introducing a second process.
+Open a new ADR before adding a model provider, changing the persistence
+schema, or introducing a second process. Template lives at
+[docs/adr/0000-template.md](./docs/adr/0000-template.md).
 
 ## License
 
