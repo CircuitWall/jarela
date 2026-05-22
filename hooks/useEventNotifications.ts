@@ -35,7 +35,19 @@ interface BridgeMessageReceived {
   ts: number;
 }
 
+// Browser-extension page-capture pushed a new user message into a thread.
+// Surfaces only as a thread refresh — no toast, no OS notification, since
+// the user just made the capture themselves and is already aware of it.
+interface ThreadMessageAdded {
+  type: "thread_message_added";
+  thread_id: string;
+  agent_id: string;
+  source: "page_capture";
+  ts: number;
+}
+
 type NotifEvent = RunCompleted | TaskCompleted | BridgeMessageReceived;
+type StreamEvent = NotifEvent | ThreadMessageAdded;
 
 interface AgentSummary {
   id: string;
@@ -111,9 +123,38 @@ export function useEventNotifications(options: Options) {
 
       es.onmessage = (msg) => {
         backoff = 500;
-        let ev: NotifEvent;
-        try { ev = JSON.parse(msg.data) as NotifEvent; } catch { return; }
+        let ev: StreamEvent;
+        try { ev = JSON.parse(msg.data) as StreamEvent; } catch { return; }
         if (!ev.ts) return;
+
+        // Page-capture push: re-fetch the affected thread AND drop a small
+        // toast so the user can see *which* agent received the capture
+        // without having to switch to the chat view first. The capture
+        // itself was made by the user, but the routing target (default
+        // agent's most-recent thread) isn't necessarily the agent they're
+        // currently looking at.
+        if (ev.type === "thread_message_added") {
+          lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
+          saveLastTs(lastTsRef.current);
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+              detail: { thread_id: ev.thread_id, agent_id: ev.agent_id },
+            }));
+          }
+          const agentName = optsRef.current.resolveAgentName(ev.agent_id);
+          pushToast({
+            kind: "info",
+            source: "system",
+            sourceLabel: "Page capture",
+            title: `📎 Captured to ${agentName}`,
+            body: "A page snippet was added to the most recent thread. Open Jarela to follow up.",
+            agent_id: ev.agent_id,
+            thread_id: ev.thread_id,
+            ttl: 5000,
+          });
+          return;
+        }
+
         // Ignore event types this hook doesn't surface (bridge_status,
         // bridge_unrouted, …). The badge would otherwise increment on every
         // pairing-state ping.
