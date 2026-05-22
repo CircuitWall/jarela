@@ -90,3 +90,72 @@ jobs:
           if [ -f server.pid ]; then
             kill $(cat server.pid) 2>/dev/null || true
           fi
+
+  npm-publish:
+    name: Publish to npm (if version bumped)
+    runs-on: ubuntu-latest
+    needs: [build, integration]
+    # Only on main, only when the npm publish feature flag is on. The job
+    # itself short-circuits if the version in package.json already exists
+    # on the registry, so it's safe to run on every push.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.JARELA_NPM_PUBLISH == 'true'
+    permissions:
+      contents: write   # for the auto-tag step
+      id-token: write   # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history so the auto-tag step can push a new tag.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Check whether this version is already published
+        id: check
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="$(node -p "require('./package.json').version")"
+          name="$(node -p "require('./package.json').name")"
+          echo "version=$pkg" >> "$GITHUB_OUTPUT"
+          if npm view "$name@$pkg" version >/dev/null 2>&1; then
+            echo "  $name@$pkg already on registry — nothing to publish."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "  $name@$pkg is new — will publish."
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.publish == 'true'
+        run: npm install --no-audit --no-fund
+
+      - name: Build
+        if: steps.check.outputs.publish == 'true'
+        run: npm run build
+
+      - name: Publish (with provenance)
+        if: steps.check.outputs.publish == 'true'
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag the published version
+        if: steps.check.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.check.outputs.version }}"
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "tag $tag already exists locally — skipping"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "Release $tag (auto-tagged from main)"
+          git push origin "$tag"
