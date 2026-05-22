@@ -25,6 +25,17 @@ export const INTEGRATIONS = {
       { key: "api_token", label: "API token", placeholder: "ATATT3xFfGF0…", secret: true, required: true },
     ],
   },
+  jira_align: {
+    label: "Jira Align",
+    description:
+      "Used by jira_align_* tools (read/search/walk hierarchy, create/update/transition/delete " +
+      "work items, comment). Generate an API token in Jira Align under Settings → Personal " +
+      "Access Tokens. Different surface from Jira Cloud — this is the portfolio-level product.",
+    fields: [
+      { key: "url", label: "Instance URL", placeholder: "https://your-company.jiraalign.com", secret: false, required: true },
+      { key: "api_token", label: "API token", placeholder: "eyJ…", secret: true, required: true },
+    ],
+  },
   google: {
     label: "Google AI (Gemini + Imagen)",
     description: "Used by the generate_image tool (Gemini / Imagen). Get a key at aistudio.google.com → API keys.",

@@ -19,6 +19,11 @@ import {
   confluenceSearchTool, confluenceGetPageTool,
 } from "./atlassian";
 import {
+  jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignGetItemChildrenTool,
+  jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
+  jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
+} from "./jira-align";
+import {
   githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
   githubListPullsTool, githubGetPullTool, githubGetRepoTool,
 } from "./github";
@@ -57,7 +62,7 @@ export { TOOLS_DIR, type ExtensionLoadError } from "./external";
 // — no parallel name→category map to keep in sync.
 export type ToolCategory =
   | "Memory" | "Files" | "Shell" | "Web" | "Images" | "Voice"
-  | "Schedule" | "Atlassian" | "GitHub" | "Mail" | "Calendar" | "Config" | "MCP";
+  | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar" | "Config" | "MCP";
 
 // Optional parent group rendered above categories in the Agent editor. The
 // idea is that "Atlassian" and "GitHub" are both Work tools that share an
@@ -67,7 +72,7 @@ export type ToolGroup = "Work" | null;
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
   Memory: null, Files: null, Shell: null, Web: null, Images: null, Voice: null,
   Schedule: null, Config: null, Mail: null, Calendar: null,
-  Atlassian: "Work", GitHub: "Work",
+  Atlassian: "Work", JiraAlign: "Work", GitHub: "Work",
 };
 
 const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInterface[]> = {
@@ -88,6 +93,11 @@ const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInte
   Atlassian: [
     jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool,
     jiraTransitionsTool, confluenceSearchTool, confluenceGetPageTool,
+  ],
+  JiraAlign: [
+    jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignGetItemChildrenTool,
+    jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
+    jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
   ],
   GitHub: [
     githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
