@@ -38,6 +38,7 @@ C4Container
     System_Ext(github, "GitHub API", "Issues / PRs / Repos (native github_* tools, ADR-0015) + Copilot OAuth (model provider)")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
     System_Ext(usershell, "User shell rc / Windows User env", "Source for credential env vars (ADR-0016)")
+    System_Ext(browserext, "Jarela Browser Extension", "Chrome MV3 — element picker, posts captures to localhost (ADR-0018)")
 
     Rel(user, ui, "HTTPS")
     Rel(ui, guard, "fetch + EventSource")
@@ -74,6 +75,7 @@ C4Container
     Rel(proxy, db, "read proxy_config (via crypto)")
     Rel(providers, proxy, "outbound via GlobalDispatcher")
     Rel(routes, proxy, "outbound via GlobalDispatcher")
+    Rel(browserext, routes, "POST /api/v1/page-capture (loopback)")
 ```
 
 ### Shared utilities
@@ -219,6 +221,43 @@ sequenceDiagram
     AG->>AG: execute graph
     AG->>DB: persist result
     AG->>N: notify (if configured)
+```
+
+## Key Flow — Browser-extension page capture (ADR-0018)
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant BX as Browser Extension (MV3)
+    participant SW as Extension Service Worker
+    participant CS as Content Script (picker)
+    participant PR as proxy.ts
+    participant API as /api/v1/page-capture
+    participant DB as SQLite
+    participant BUS as Notifications Bus
+    participant UI as Web UI (open tab)
+
+    Note over SW,API: Heartbeat — every 15s
+    SW->>API: GET /api/v1/health
+    API-->>SW: 200 OK ⇒ icon enabled
+
+    U->>BX: Click toolbar icon
+    BX->>SW: action.onClicked
+    SW->>CS: scripting.executeScript (idempotent)
+    CS-->>U: Overlay banner + element-tracking outline
+    U->>CS: Click target element (or ESC to cancel)
+    CS->>SW: runtime.sendMessage(jarela-capture, payload)
+    SW->>PR: POST /api/v1/page-capture (Origin: chrome-extension://…)
+    PR->>PR: Loopback Host check ✓; carve-out skips Origin check
+    PR->>API: forward
+    API->>API: Truncate text to 100KB UTF-8
+    API->>DB: addMessage(thread, "user", body)
+    API->>BUS: publish(thread_message_added)
+    API-->>SW: 200 {thread_id, msg_id, truncated, originalBytes}
+    SW-->>CS: ack
+    CS-->>U: Flash + "✈ Sent" pill animation + success banner
+    BUS-->>UI: SSE: thread_message_added
+    UI->>UI: dispatch jarela:thread-updated → re-fetch messages
 ```
 
 ## Non-Functional Requirements
