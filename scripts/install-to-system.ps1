@@ -190,18 +190,18 @@ Info "files copied:"
 Get-ChildItem $InstallDir | ForEach-Object { Info ("  " + $_.Name) }
 
 # ── 5. Re-register scheduled task pointing at the install dir ──────────────
-Step "Registering scheduled task '$TaskName' -> $InstallDir\launcher.ps1"
 $launcherPs1 = Join-Path $InstallDir 'launcher.ps1'
+$launcherVbs = Join-Path $InstallDir 'launcher.vbs'
+Step "Registering scheduled task '$TaskName' -> $launcherVbs"
 
-# Invoke launcher.ps1 directly with powershell -WindowStyle Hidden. We
-# previously routed through wscript.exe + launcher.vbs to hide the console
-# completely, but on some Windows configurations Task Scheduler's wscript
-# child can sit forever without spawning its powershell child, leaving the
-# task "Running" but the service down. Going straight to powershell is more
-# reliable; a brief console flash at logon is an acceptable trade-off.
+# Invoke launcher.vbs via wscript.exe. wscript has no console at all, so
+# no window flashes at logon — unlike `powershell.exe -WindowStyle Hidden`
+# which can briefly flash on some Windows builds. The VBS shim immediately
+# launches launcher.ps1 with intWindowStyle=0 and bWaitOnReturn=True so
+# Task Scheduler's MultipleInstances=IgnoreNew bookkeeping works.
 $action = New-ScheduledTaskAction `
-  -Execute 'powershell.exe' `
-  -Argument ('-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $launcherPs1 + '"') `
+  -Execute 'wscript.exe' `
+  -Argument ('"' + $launcherVbs + '"') `
   -WorkingDirectory $InstallDir
 
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
