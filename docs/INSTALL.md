@@ -85,6 +85,30 @@ npm update -g jarela
 jarela        # rebuilds on first run after upgrade
 ```
 
+### Install as an autostart service (npm path)
+
+By default `jarela` runs in the foreground — Ctrl-C stops it, nothing restarts it. To register it as a per-user autostart service (no admin / sudo required):
+
+```sh
+jarela install-service        # auto-detects Windows / macOS / Linux
+```
+
+This registers the native autostart mechanism for your OS, points it at the global `jarela` binary, and starts it immediately:
+
+| OS      | Mechanism                                        | Lives at                                                        |
+|---------|--------------------------------------------------|-----------------------------------------------------------------|
+| Windows | Scheduled Task `Jarela` (AtLogOn, hidden VBS)    | `%LOCALAPPDATA%\Jarela\service\launcher.vbs`                    |
+| macOS   | LaunchAgent `com.jarela.app` (RunAtLoad+KeepAlive) | `~/Library/LaunchAgents/com.jarela.app.plist`                  |
+| Linux   | systemd `--user` unit `jarela.service`           | `~/.config/systemd/user/jarela.service`                         |
+
+To remove:
+
+```sh
+jarela uninstall-service
+```
+
+(Neither command touches your data dir.)
+
 ---
 
 ## Where state lives
@@ -100,4 +124,5 @@ Override with `JARELA_DB_DIR=/path/to/dir`. Uninstalling does **not** delete thi
 
 - **macOS**: `launchctl unload ~/Library/LaunchAgents/com.jarela.app.plist && rm -rf ~/Library/Application\ Support/Jarela ~/Library/LaunchAgents/com.jarela.app.plist`
 - **Windows**: `powershell -ExecutionPolicy Bypass -File scripts\uninstall-from-system.ps1`
-- **npm**: `npm uninstall -g jarela`
+- **npm (CLI only)**: `npm uninstall -g jarela`
+- **npm (with autostart service)**: `jarela uninstall-service && npm uninstall -g jarela`
