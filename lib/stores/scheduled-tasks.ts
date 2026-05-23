@@ -14,11 +14,13 @@ export interface ScheduledTaskRow {
   next_run_at: string;     // ISO
   last_run_at: string | null;
   last_error: string | null;
-  enabled: number;         // 0 | 1  // When 1 the scheduler injects the prompt as a hidden user message and
-  // tells the agent it may stay silent. The injected user message and any
-  // NO_REPLY assistant turn are persisted with messages.hidden=1 so the
-  // chat panel shows nothing unless the agent actually had something to say.
-  silent: number;          // 0 | 1  created_at: string;
+  enabled: number;         // 0 | 1
+  // When 1 the scheduler wraps the prompt with a "reply only if material"
+  // directive and a NO_REPLY sentinel; NO_REPLY/empty assistant turns are
+  // dropped. Visibility is handled at the UI layer via the chat-panel
+  // category-filter toolbar (firings are tagged `scheduled_task`).
+  silent: number;          // 0 | 1
+  created_at: string;
   updated_at: string;
 }
 
