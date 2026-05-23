@@ -1,141 +1,55 @@
+// Public tool surface for the agent runtime.
+//
+// Built-in tools register themselves at module load (see ./registry.ts and
+// ./builtins.ts). External tools live under JARELA_TOOLS_DIR and are
+// loaded per-call (hot-reload). MCP tools come from lib/mcp/client.ts.
+//
+// To add a new built-in tool:
+//   1. Copy lib/tools/template.ts to lib/tools/<name>.ts and implement it.
+//   2. Call `registerTools("<Category>", [yourTool, ...])` at the bottom.
+//   3. Add `import "./<name>";` to lib/tools/builtins.ts.
+//
+// That's it — no central array to update, no parallel category map.
+
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { memoryReadTool, memoryWriteTool, memoryListTool } from "./memory";
-import { localExecTool, shellExecTool } from "./exec";
+
+// Side-effect import: triggers registerTools() in every built-in module.
+import "./builtins";
+
 import {
-  fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileListTool,
-  fileMkdirTool, fileDeleteTool, fileCopyTool, fileStatTool,
-} from "./files";
-import { webSearchTool } from "./search";
-import { webFetchTool } from "./fetch";
-import { generateImageTool } from "./generate_image";
-import { generateVoiceTool } from "./generate_voice";
-import { scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool } from "./schedule";
-import { proposeConfigChangeTool, checkProposalTool } from "./propose";
-import { listIntegrationsTool, getIntegrationSetupTool } from "./integrations";
-import {
-  jiraSearchTool, jiraGetIssueTool, jiraCreateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
-  jiraUpdateIssueTool, jiraFindUserTool,
-  confluenceSearchTool, confluenceGetPageTool,
-} from "./atlassian";
-import {
-  jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
-  jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
-  jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
-} from "./jira-align";
-import {
-  githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
-  githubListPullsTool, githubGetPullTool, githubGetRepoTool,
-} from "./github";
-import {
-  gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
-  gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
-} from "./gmail";
-import {
-  calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
-  calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
-} from "./calendar";
-import {
-  outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
-  outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
-} from "./outlook";
-import {
-  outlookCalendarListCalendarsTool, outlookCalendarListEventsTool,
-  outlookCalendarGetEventTool, outlookCalendarCreateEventTool,
-  outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
-} from "./outlook-calendar";
-import { getUserLocationTool } from "./location";
+  registeredTools,
+  registeredNames,
+  registeredCategory,
+  registeredGroup,
+  type ToolCategory,
+  type ToolGroup,
+} from "./registry";
 import { getMcpTools } from "@/lib/mcp/client";
-import { loadExternalTools, type ExtensionLoadError } from "./external";
+import {
+  loadExternalTools,
+  getToolsDir,
+  type ExtensionLoadError,
+} from "./external";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 
 export * from "./types";
-export { TOOLS_DIR, type ExtensionLoadError } from "./external";
+export { getToolsDir, type ExtensionLoadError } from "./external";
+export { registerTools, type ToolCategory, type ToolGroup } from "./registry";
 
-// Category assignments drive the grouped per-section UI in AgentEditor so
-// the user can flip an entire capability on/off without clicking every tool.
-// MCP tools default to "MCP" (overridable per-server in the future).
-//
-// To add a new tool: copy lib/tools/template.ts, implement the func, then
-// append it under the appropriate category below. A single source of truth
-// — no parallel name→category map to keep in sync.
-export type ToolCategory =
-  | "Memory" | "Files" | "Shell" | "Web" | "Images" | "Voice"
-  | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar" | "Config" | "MCP";
+const ALL_BUILTINS: StructuredToolInterface[] = registeredTools();
+export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = registeredNames();
 
-// Optional parent group rendered above categories in the Agent editor. The
-// idea is that "Atlassian" and "GitHub" are both Work tools that share an
-// auth model (corporate PAT/OAuth) — collapsing them under a single header
-// keeps the editor scannable as we add more vendor-native tools. Null = flat.
-export type ToolGroup = "Work" | null;
-const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
-  Memory: null, Files: null, Shell: null, Web: null, Images: null, Voice: null,
-  Schedule: null, Config: null, Mail: null, Calendar: null,
-  Atlassian: "Work", JiraAlign: "Work", GitHub: "Work",
-};
-
-const TOOLS_BY_CATEGORY: Record<Exclude<ToolCategory, "MCP">, StructuredToolInterface[]> = {
-  Memory: [memoryReadTool, memoryWriteTool, memoryListTool],
-  Shell: [localExecTool, shellExecTool],
-  Files: [
-    fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool,
-    fileDeleteTool, fileListTool, fileMkdirTool, fileStatTool,
-  ],
-  Web: [webSearchTool, webFetchTool, getUserLocationTool],
-  Images: [generateImageTool],
-  Voice: [generateVoiceTool],
-  Schedule: [scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool],
-  Config: [
-    proposeConfigChangeTool, checkProposalTool,
-    listIntegrationsTool, getIntegrationSetupTool,
-  ],
-  Atlassian: [
-    jiraSearchTool, jiraGetIssueTool, jiraFindUserTool,
-    jiraCreateIssueTool, jiraUpdateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
-    confluenceSearchTool, confluenceGetPageTool,
-  ],
-  JiraAlign: [
-    jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
-    jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
-    jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
-  ],
-  GitHub: [
-    githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
-    githubListPullsTool, githubGetPullTool, githubGetRepoTool,
-  ],
-  Mail: [
-    gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
-    gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
-    outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
-    outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
-  ],
-  Calendar: [
-    calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
-    calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
-    outlookCalendarListCalendarsTool, outlookCalendarListEventsTool,
-    outlookCalendarGetEventTool, outlookCalendarCreateEventTool,
-    outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
-  ],
-};
-
-const ALL_TOOLS: StructuredToolInterface[] = Object.values(TOOLS_BY_CATEGORY).flat();
-export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = new Set(ALL_TOOLS.map((t) => t.name));
-
-const TOOL_CATEGORY: Map<string, ToolCategory> = new Map(
-  (Object.entries(TOOLS_BY_CATEGORY) as Array<[ToolCategory, StructuredToolInterface[]]>)
-    .flatMap(([cat, tools]) => tools.map((t) => [t.name, cat] as const)),
-);
-
-// Per-call recompute so files dropped in ~/.jarela/tools/ are picked up
+// Per-call recompute so files dropped in $JARELA_TOOLS_DIR are picked up
 // without restart. loadExternalTools cache-busts require() per file.
 function loadExternal() {
   return loadExternalTools(BUILTIN_TOOL_NAMES);
 }
 
 export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
-  const builtin = TOOL_CATEGORY.get(name);
+  const builtin = registeredCategory(name);
   if (builtin) return builtin;
   const ext = loadExternal().categories.get(name);
   if (ext) return ext;
@@ -145,7 +59,7 @@ export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCa
 export function getToolGroup(name: string, source: "builtin" | "mcp"): ToolGroup {
   const cat = getToolCategory(name, source);
   if (cat === "MCP") return null;
-  return CATEGORY_GROUPS[cat] ?? null;
+  return registeredGroup(name) ?? null;
 }
 
 function applyPolicy(
@@ -164,7 +78,7 @@ function applyPolicy(
 // Synchronous: built-in + external tools (no MCP). Used by GET /api/v1/tools
 // and any code path that can't await.
 export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
-  return applyPolicy([...ALL_TOOLS, ...loadExternal().tools], policy);
+  return applyPolicy([...ALL_BUILTINS, ...loadExternal().tools], policy);
 }
 
 // Async: built-in + external + MCP tools.
@@ -178,7 +92,7 @@ export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredT
   } catch (err) {
     console.error("[tools] MCP load failed, continuing with built-ins only:", err);
   }
-  return applyPolicy([...ALL_TOOLS, ...loadExternal().tools, ...mcpTools], policy);
+  return applyPolicy([...ALL_BUILTINS, ...loadExternal().tools, ...mcpTools], policy);
 }
 
 export function toOpenAITools(tools: StructuredToolInterface[]): OpenAITool[] {
@@ -200,7 +114,7 @@ export async function executeTool(
   args: Record<string, unknown>,
   context: ToolContext = {},
 ): Promise<unknown> {
-  let t = ALL_TOOLS.find((x) => x.name === name);
+  let t = ALL_BUILTINS.find((x) => x.name === name);
   if (!t) {
     t = loadExternal().tools.find((x) => x.name === name);
   }
@@ -221,4 +135,37 @@ export async function executeTool(
     }
   }
   return result;
+}
+
+// One-shot startup loader. Call from instrumentation.ts so external tools
+// load + log their status at boot rather than lazily on first agent turn.
+let _initialized = false;
+export interface InitToolsSummary {
+  builtinCount: number;
+  externalCount: number;
+  errors: ExtensionLoadError[];
+  toolsDir: string;
+}
+
+export function initTools(): InitToolsSummary {
+  const toolsDir = getToolsDir();
+  const result = loadExternal();
+  const summary: InitToolsSummary = {
+    builtinCount: ALL_BUILTINS.length,
+    externalCount: result.tools.length,
+    errors: result.errors,
+    toolsDir,
+  };
+
+  if (!_initialized) {
+    console.info(
+      `[tools] ${summary.builtinCount} built-in tool(s) registered; ` +
+      `${summary.externalCount} external tool(s) loaded from ${toolsDir}`,
+    );
+    for (const err of summary.errors) {
+      console.error(`[tools] external ${err.file}: ${err.error}`);
+    }
+    _initialized = true;
+  }
+  return summary;
 }

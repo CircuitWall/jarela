@@ -24,6 +24,7 @@
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { registerTools } from "./registry";
 import {
   googleFetch,
   resolveGoogleAuth,
@@ -346,3 +347,8 @@ export const calendarDeleteEventTool = tool(
     }),
   },
 );
+
+registerTools("Calendar", [
+  calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
+  calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
+]);

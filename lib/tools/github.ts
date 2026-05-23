@@ -19,6 +19,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { registerTools } from "./registry";
 
 export interface GitHubAuth {
   token: string;
@@ -369,3 +370,8 @@ export const githubGetRepoTool = tool(
     }),
   },
 );
+
+registerTools("GitHub", [
+  githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
+  githubListPullsTool, githubGetPullTool, githubGetRepoTool,
+]);

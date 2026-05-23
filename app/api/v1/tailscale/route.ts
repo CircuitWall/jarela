@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { getConfig } from "@/lib/env/config";
 
 // Surface Tailscale serve status so the Profile panel can show whether the
 // installed Jarela is reachable on the tailnet. The endpoint is loopback-only
@@ -64,7 +65,7 @@ function runTailscale(bin: string, args: string[], timeoutMs = 3000): Promise<{ 
 
 export async function GET(): Promise<NextResponse<TailscaleStatus>> {
   const bin = findTailscale();
-  const port = Number(process.env.PORT ?? 4312);
+  const { port } = getConfig();
   const recipe = `tailscale serve --bg http://localhost:${port}`;
   const installScript = "scripts/install-tailscale-serve.ps1";
   const uninstallScript = "scripts/uninstall-tailscale-serve.ps1";

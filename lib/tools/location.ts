@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getUserProfile } from "@/lib/stores/user-profile";
+import { registerTools } from "./registry";
 
 // Returns the user's last reported browser geolocation, if they've opted in
 // from the UI. The agent should call this whenever a request is location-
@@ -47,3 +48,5 @@ export const getUserLocationTool = tool(
     schema: z.object({}).describe("No arguments — the user's location is stored server-side and updated by the client."),
   },
 );
+
+registerTools("Web", [getUserLocationTool]);

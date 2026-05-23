@@ -32,6 +32,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { registerTools } from "./registry";
 
 export interface JiraAlignAuth {
   url: string;        // e.g. "https://acme.jiraalign.com"
@@ -468,3 +469,9 @@ function normalizeDate(input: string): string {
 function escapeOData(s: string): string {
   return s.replace(/'/g, "''");
 }
+
+registerTools("JiraAlign", [
+  jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
+  jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
+  jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
+]);
