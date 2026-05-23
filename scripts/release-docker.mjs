@@ -19,7 +19,7 @@
 //   You must `docker login` (or `docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_TOKEN`)
 //   before running this. CI uses docker/login-action; see .github/workflows/release.yml.
 //
-// Default repo: `jarela/jarela` (override with --repo or JARELA_DOCKER_REPO env).
+// Default repo: `andrewgewu/jarela` (override with --repo or JARELA_DOCKER_REPO env).
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -41,7 +41,7 @@ function opt(name, fallback) {
 
 const pkg = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
 const version = opt("version", pkg.version);
-const repo = opt("repo", process.env.JARELA_DOCKER_REPO || "jarela/jarela");
+const repo = opt("repo", process.env.JARELA_DOCKER_REPO || "andrewgewu/jarela");
 const platforms = opt("platforms", "linux/amd64,linux/arm64");
 const dryRun = flag("dry-run");
 const noLatest = flag("no-latest");

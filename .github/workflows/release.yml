@@ -206,7 +206,7 @@ jobs:
             echo "tag $tag does not match package.json version $pkg" >&2
             exit 1
           fi
-          repo="${{ vars.JARELA_DOCKER_REPO || 'jarela/jarela' }}"
+          repo="${{ vars.JARELA_DOCKER_REPO || 'andrewgewu/jarela' }}"
           echo "version=$pkg" >> "$GITHUB_OUTPUT"
           echo "repo=$repo"   >> "$GITHUB_OUTPUT"
 
