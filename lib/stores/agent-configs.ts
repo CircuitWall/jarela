@@ -26,6 +26,7 @@ export interface AgentConfigRow {
   voice_name: string;                // Gemini prebuilt voice name (Kore, Puck, …)
   voice_stt_model: string;           // Gemini multimodal model used for transcription
   voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
+  display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
   created_at: string;
   updated_at: string;
 }
@@ -163,4 +164,70 @@ export function generateAgentId(name: string): string {
     .slice(0, 40);
   const suffix = Math.random().toString(36).slice(2, 6);
   return slug ? `${slug}-${suffix}` : `agent-${suffix}`;
+}
+
+// ── ADR-0022: per-agent message-channel display filters ─────────────────
+// Canonical channel keys mirrored in `hooks/useMessageFilters.ts`. Kept
+// in sync there by importing this constant — single source of truth.
+export const DISPLAY_FILTER_KEYS = [
+  "scheduled_task",
+  "bridge",
+  "synthetic",
+  "tool_use",
+  "thinking",
+] as const;
+export type DisplayFilterKey = (typeof DISPLAY_FILTER_KEYS)[number];
+export type DisplayFilters = Record<DisplayFilterKey, boolean>;
+
+export const DISPLAY_FILTER_DEFAULTS: DisplayFilters = {
+  scheduled_task: true,
+  bridge: true,
+  synthetic: true,
+  tool_use: true,
+  thinking: true,
+};
+
+function parseDisplayFilters(raw: string | null | undefined): DisplayFilters {
+  if (!raw) return { ...DISPLAY_FILTER_DEFAULTS };
+  try {
+    const parsed = JSON.parse(raw) as Partial<DisplayFilters>;
+    // Merge over defaults so newly-added channels stay visible on old rows.
+    return { ...DISPLAY_FILTER_DEFAULTS, ...parsed };
+  } catch {
+    return { ...DISPLAY_FILTER_DEFAULTS };
+  }
+}
+
+export function getAgentDisplayFilters(id: string): DisplayFilters | null {
+  const row = getAgentConfig(id);
+  if (!row) return null;
+  return parseDisplayFilters(row.display_filters);
+}
+
+/**
+ * Merge a partial filter map into the agent's stored prefs. Pass `null` to
+ * reset to defaults (clears the column). Safe against concurrent toggles
+ * from multiple browser tabs because the merge happens server-side.
+ */
+export function updateAgentDisplayFilters(
+  id: string,
+  patch: Partial<DisplayFilters> | null,
+): DisplayFilters | null {
+  const row = getAgentConfig(id);
+  if (!row) return null;
+  if (patch === null) {
+    getDb()
+      .prepare("UPDATE agent_configs SET display_filters=NULL, updated_at=? WHERE id=?")
+      .run(now(), id);
+    return { ...DISPLAY_FILTER_DEFAULTS };
+  }
+  const current = parseDisplayFilters(row.display_filters);
+  const next: DisplayFilters = { ...current };
+  for (const k of DISPLAY_FILTER_KEYS) {
+    if (k in patch && typeof patch[k] === "boolean") next[k] = patch[k] as boolean;
+  }
+  getDb()
+    .prepare("UPDATE agent_configs SET display_filters=?, updated_at=? WHERE id=?")
+    .run(JSON.stringify(next), now(), id);
+  return next;
 }

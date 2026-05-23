@@ -35,7 +35,7 @@ interface Props {
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { filters, toggle } = useMessageFilters();
+  const { filters, toggle } = useMessageFilters(agentConfig?.id ?? null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
