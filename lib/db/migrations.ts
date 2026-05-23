@@ -393,10 +393,11 @@ function seedAgentConfigs(db: DatabaseSync): void {
   const insert = db.prepare(
     `INSERT OR IGNORE INTO agent_configs (
       id, name, icon, identity, instructions, tools, model_config_name, is_default,
+      never_reply,
       adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
       created_at, updated_at
     )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
 
   for (const p of BASE_AGENT_PROFILES) {
@@ -410,6 +411,7 @@ function seedAgentConfigs(db: DatabaseSync): void {
       JSON.stringify(p.tools),
       null,
       p.is_default ? 1 : 0,
+      p.never_reply ? 1 : 0,
       p.adaptive ? 1 : 0,
       preset.strength,
       preset.empathy,
@@ -434,6 +436,10 @@ interface BaseAgentProfile {
   mbti: MbtiType;
   adaptive: boolean;
   is_default?: boolean;
+  // When true, the agent runs on bridge/scheduled input but does not
+  // auto-send replies — it observes and records, only speaking when the
+  // user directly addresses it (see lib/bridges/dispatcher.ts).
+  never_reply?: boolean;
 }
 
 // Starter profiles shipped on first run. The user can edit, disable, or
@@ -468,12 +474,12 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
     adaptive: true,
   },
   {
-    id: "coder",
-    name: "Coder",
+    id: "developer",
+    name: "Developer",
     identity:
-      "You are a pragmatic software engineer working in the user's local files.",
+      "You are a pragmatic software engineer working in the user's local repo with a real build/test harness.",
     instructions:
-      "Read before you write. Use file_read / file_list / file_stat to understand context, then file_edit for surgical changes and file_write only for new files. Prefer the smallest change that solves the problem. Never invent paths — list a directory first if unsure.",
+      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success — never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
     tools: [
       "file_read",
       "file_write",
@@ -484,6 +490,18 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
       "file_move",
       "file_copy",
       "file_delete",
+      "local_exec",
+      "shell_exec",
+      "web_fetch",
+      "web_search",
+      "github_search_issues",
+      "github_get_issue",
+      "github_list_pulls",
+      "github_get_pull",
+      "github_get_repo",
+      "memory_read",
+      "memory_write",
+      "memory_list",
     ],
     mbti: "INTJ",
     adaptive: true,
