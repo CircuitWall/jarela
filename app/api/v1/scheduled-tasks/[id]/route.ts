@@ -10,6 +10,7 @@ const PatchSchema = z.object({
   kind: z.enum(["once", "cron"]).optional(),
   schedule: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
+  silent: z.boolean().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Params) {

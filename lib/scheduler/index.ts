@@ -79,10 +79,43 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
   }
   const thread = getOrCreateAgentThread(task.agent_id);
 
-  const prepared = await prepareThreadRun(thread.thread_id, task.prompt);
+  const silent = task.silent === 1;
+  // Silent mode: wrap the prompt with a "reply only if material" directive
+  // AND a NO_REPLY sentinel so the post-run code can drop the assistant
+  // turn entirely when nothing is worth surfacing. Visibility itself is
+  // handled at the chat-panel layer via the category-filter toolbar —
+  // scheduler firings are always tagged `scheduled_task` so users can
+  // hide them en masse without losing the audit trail.
+  const effectivePrompt = silent
+    ? `${task.prompt}\n\n[SILENT_TASK] This prompt was triggered by a scheduled task running quietly. Reply with information only if there is something material the user needs to see right now. If nothing material to report, reply with exactly the single token NO_REPLY and nothing else.`
+    : task.prompt;
+
+  const prepared = await prepareThreadRun(
+    thread.thread_id,
+    effectivePrompt,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "scheduled_task", // userCategory
+  );
 
   const collected = await collectStream(prepared.stream);
-  persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents);
+  // Silent + NO_REPLY (or empty content) -> skip persisting the assistant
+  // turn. The user prompt remains for audit purposes. Otherwise persist
+  // tagged `scheduled_task` so the chat-panel filter can group firings.
+  const replyText = collected.assistantContent.trim();
+  const isNoReply = silent && /^\s*NO[_ ]?REPLY\b/i.test(replyText);
+  const skipAssistant = silent && (isNoReply || replyText.length === 0);
+  if (!skipAssistant) {
+    persistAssistantMessage(
+      thread.thread_id,
+      collected.assistantContent,
+      collected.usedTools,
+      collected.toolEvents,
+      "scheduled_task",
+    );
+  }
   markTaskRan(task.id, task.kind, task.schedule);
   publishNotification({
     type: "task_completed",
@@ -90,8 +123,12 @@ async function runTask(task: ScheduledTaskRow): Promise<void> {
     agent_id: task.agent_id,
     prompt: task.prompt,
     thread_id: thread.thread_id,
-    status: "done",
-    preview: collected.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+    // Silent + NO_REPLY surfaces as "skipped" so the notification stream
+    // can choose not to ping the user.
+    status: skipAssistant ? "skipped" : "done",
+    preview: skipAssistant
+      ? ""
+      : collected.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
     ts: Date.now(),
   });
 }

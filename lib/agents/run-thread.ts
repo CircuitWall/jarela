@@ -227,6 +227,10 @@ export async function prepareThreadRun(
   // Public callers leave this undefined and get the default budget. The
   // wrapper decrements it when it recursively re-invokes prepareThreadRun.
   _stallRetriesLeft: number = MAX_STALL_AUTO_RETRIES,
+  // Optional classification tag persisted on the injected user message.
+  // Surfaces in the chat panel's category-filter toolbar (e.g.
+  // 'scheduled_task', 'bridge', 'synthetic'). undefined = ordinary chat.
+  userCategory: string | null = null,
 ): Promise<PreparedThreadRun> {
   // Lazy-start the scheduler when any agent activity occurs so previously
   // saved scheduled tasks resume firing across server restarts.
@@ -249,7 +253,7 @@ export async function prepareThreadRun(
     attachments?.length ? [{ type: "text", text: trimmed }, ...attachments] : trimmed;
 
   const stored = typeof content === "string" ? content : JSON.stringify(content);
-  addMessage(thread_id, "user", stored);
+  addMessage(thread_id, "user", stored, undefined, userCategory);
   touchThread(thread_id, trimmed.slice(0, 80) || undefined);
 
   // Build the LLM history window: latest N messages that are also within the
@@ -479,6 +483,7 @@ export function persistAssistantMessage(
   content: string,
   usedTools?: readonly string[],
   toolEvents?: readonly PersistedToolEvent[],
+  category: string | null = null,
 ): void {
   const trimmed = content.trim();
   // Append a small, persistent footer listing which tools actually ran this
@@ -510,7 +515,7 @@ export function persistAssistantMessage(
   // has already heard.
   const persisted = stripAutoplayHints(final);
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
-    addMessage(thread_id, "assistant", persisted, sanitizedEvents);
+    addMessage(thread_id, "assistant", persisted, sanitizedEvents, category);
   }
 }
 

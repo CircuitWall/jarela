@@ -19,7 +19,7 @@ function agentIdFromConfig(config?: RunnableConfig): string | null {
 }
 
 export const scheduleTaskTool = tool(
-  async ({ prompt, when_iso, cron, description }, config) => {
+  async ({ prompt, when_iso, cron, description, silent }, config) => {
     const agentId = agentIdFromConfig(config);
     if (!agentId) return JSON.stringify({ error: "No agent context (missing thread_id)" });
     if (!when_iso && !cron) return JSON.stringify({ error: "Provide either when_iso (one-shot) or cron (recurring)" });
@@ -33,7 +33,7 @@ export const scheduleTaskTool = tool(
       if (kind === "once" && firstRun.getTime() < Date.now() - 60_000) {
         return JSON.stringify({ error: `when_iso "${schedule}" is in the past` });
       }
-      const row = createScheduledTask({ agent_id: agentId, prompt, description, kind, schedule });
+      const row = createScheduledTask({ agent_id: agentId, prompt, description, kind, schedule, silent });
       // Make sure the poller is awake so newly created tasks fire on time.
       startScheduler();
       return JSON.stringify({
@@ -42,6 +42,7 @@ export const scheduleTaskTool = tool(
         next_run_at: row.next_run_at,
         kind,
         schedule,
+        silent: row.silent === 1,
       });
     } catch (err) {
       return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
@@ -53,12 +54,20 @@ export const scheduleTaskTool = tool(
       "Schedule a prompt to be sent to this agent at a future time. " +
       "For one-shot reminders pass when_iso (ISO 8601 timestamp, e.g. '2026-05-15T15:00:00Z'). " +
       "For recurring tasks pass a 5-field cron expression (e.g. '0 9 * * 1-5' = weekdays 9am). " +
-      "Use the current time from your context to convert phrases like 'in 30 minutes' or 'tomorrow at 9am' into when_iso.",
+      "Use the current time from your context to convert phrases like 'in 30 minutes' or 'tomorrow at 9am' into when_iso. " +
+      "Set silent=true for background polling tasks: the agent will be instructed to answer NO_REPLY on firings " +
+      "where there is nothing material to surface, and those NO_REPLY turns are dropped. Visible firings remain " +
+      "tagged 'scheduled' so the user can hide the group with the chat filter toolbar.",
     schema: z.object({
       prompt: z.string().describe("The prompt the agent will receive when the task fires"),
       when_iso: z.string().optional().describe("ISO 8601 UTC timestamp for one-shot scheduling"),
       cron: z.string().optional().describe("5-field cron expression for recurring scheduling"),
       description: z.string().optional().describe("Short human-readable label for the task"),
+      silent: z.boolean().optional().describe(
+        "When true the agent is instructed to reply only when there is something material to surface. " +
+        "Reply with the literal token NO_REPLY on firings with nothing to report (that turn is dropped). " +
+        "Useful for background polling jobs (e.g. 'check inbox every 10 min').",
+      ),
     }),
   },
 );
@@ -77,6 +86,7 @@ export const listScheduledTasksTool = tool(
       last_run_at: t.last_run_at,
       last_error: t.last_error,
       enabled: t.enabled === 1,
+      silent: t.silent === 1,
     }));
     return JSON.stringify({ tasks, count: tasks.length });
   },

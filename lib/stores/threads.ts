@@ -7,7 +7,7 @@ const now = () => new Date().toISOString();
 // Explicit column list for message reads — omits `embedding` (~20KB of
 // JSON-encoded float[] per row) which only the embeddings module reads.
 // Avoids dragging it through the chat-history result set on every call.
-const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_events FROM messages";
+const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_events, category FROM messages";
 
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
@@ -19,6 +19,10 @@ export interface MessageRow {
   // on this turn or for user messages. Read back by the chat UI so historical
   // bubbles show the same expandable CALL/RESULT entries as live streaming.
   tool_events?: string | null;
+  // Non-null tags classify the message into a filterable group in the chat
+  // panel (e.g. 'scheduled_task', 'bridge', 'synthetic'). NULL = ordinary
+  // user/assistant chat content.
+  category?: string | null;
 }
 
 export interface PersistedToolEvent {
@@ -136,13 +140,14 @@ export function addMessage(
   role: "user" | "assistant",
   content: string,
   toolEvents?: PersistedToolEvent[] | null,
+  category: string | null = null,
 ): MessageRow {
   const msg_id = randomUUID();
   const t = now();
   const db = getDb();
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
-  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events) VALUES (?,?,?,?,?,?)")
-    .run(msg_id, thread_id, role, content, t, toolEventsJson);
+  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category) VALUES (?,?,?,?,?,?,?)")
+    .run(msg_id, thread_id, role, content, t, toolEventsJson, category);
   db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
   // Best-effort: embed the message so semantic recall can pull it back later.
   // Skip empty / very short content (greetings have no useful signal).
@@ -153,7 +158,7 @@ export function addMessage(
       }
     }).catch(() => { /* logged in embeddings module */ });
   }
-  return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson };
+  return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category };
 }
 
 export function getOrCreateAgentThread(agentId: string): ThreadRow {

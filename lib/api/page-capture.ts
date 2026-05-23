@@ -148,7 +148,7 @@ export async function handlePageCapture(req: Request): Promise<Response> {
     originalBytes,
   });
 
-  const msg = addMessage(thread_id, "user", messageBody);
+  const msg = addMessage(thread_id, "user", messageBody, undefined, "synthetic");
 
   publish({
     type: "thread_message_added",

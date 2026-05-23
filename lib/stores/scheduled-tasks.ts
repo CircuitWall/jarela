@@ -14,8 +14,11 @@ export interface ScheduledTaskRow {
   next_run_at: string;     // ISO
   last_run_at: string | null;
   last_error: string | null;
-  enabled: number;         // 0 | 1
-  created_at: string;
+  enabled: number;         // 0 | 1  // When 1 the scheduler injects the prompt as a hidden user message and
+  // tells the agent it may stay silent. The injected user message and any
+  // NO_REPLY assistant turn are persisted with messages.hidden=1 so the
+  // chat panel shows nothing unless the agent actually had something to say.
+  silent: number;          // 0 | 1  created_at: string;
   updated_at: string;
 }
 
@@ -37,17 +40,19 @@ export function createScheduledTask(input: {
   description?: string;
   kind: ScheduleKind;
   schedule: string;
+  silent?: boolean;
 }): ScheduledTaskRow {
   const id = randomUUID();
   const t = now();
   const next = computeNextRun(input.kind, input.schedule).toISOString();
+  const silent = input.silent ? 1 : 0;
   getDb()
     .prepare(
       `INSERT INTO scheduled_tasks
-       (id, agent_id, prompt, description, kind, schedule, next_run_at, last_run_at, last_error, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?)`,
+       (id, agent_id, prompt, description, kind, schedule, next_run_at, last_run_at, last_error, enabled, silent, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, ?, ?, ?)`,
     )
-    .run(id, input.agent_id, input.prompt, input.description ?? null, input.kind, input.schedule, next, t, t);
+    .run(id, input.agent_id, input.prompt, input.description ?? null, input.kind, input.schedule, next, silent, t, t);
   return {
     id,
     agent_id: input.agent_id,
@@ -59,6 +64,7 @@ export function createScheduledTask(input: {
     last_run_at: null,
     last_error: null,
     enabled: 1,
+    silent,
     created_at: t,
     updated_at: t,
   };
@@ -94,6 +100,7 @@ export interface UpdateScheduledTaskInput {
   kind?: ScheduleKind;
   schedule?: string;
   enabled?: boolean;
+  silent?: boolean;
 }
 
 // Patch an existing task. Only the supplied fields are touched; the rest
@@ -115,7 +122,7 @@ export function updateScheduledTask(id: string, patch: UpdateScheduledTaskInput)
   getDb()
     .prepare(
       `UPDATE scheduled_tasks SET
-         prompt=?, description=?, kind=?, schedule=?, next_run_at=?, enabled=?, last_error=?, updated_at=?
+         prompt=?, description=?, kind=?, schedule=?, next_run_at=?, enabled=?, silent=?, last_error=?, updated_at=?
        WHERE id=?`,
     )
     .run(
@@ -125,6 +132,7 @@ export function updateScheduledTask(id: string, patch: UpdateScheduledTaskInput)
       nextSchedule,
       nextRunAt,
       patch.enabled === undefined ? existing.enabled : (patch.enabled ? 1 : 0),
+      patch.silent === undefined ? existing.silent : (patch.silent ? 1 : 0),
       // Clear the last error whenever the user touches the task — they've
       // presumably fixed whatever caused it.
       null,

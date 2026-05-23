@@ -16,6 +16,7 @@ export function GET(req: NextRequest) {
     last_run_at: r.last_run_at,
     last_error: r.last_error,
     enabled: r.enabled === 1,
+    silent: r.silent === 1,
     created_at: r.created_at,
     updated_at: r.updated_at,
   })));

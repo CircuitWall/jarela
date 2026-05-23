@@ -113,7 +113,7 @@ describe("handlePageCapture — thread targeting", () => {
     const res = await handlePageCapture(makeReq(validBody));
     expect(res.status).toBe(200);
     expect(listThreadsByAgentMock).toHaveBeenCalledWith("default-agent", 1);
-    expect(addMessageMock).toHaveBeenCalledWith("default-recent", "user", expect.any(String));
+    expect(addMessageMock).toHaveBeenCalledWith("default-recent", "user", expect.any(String), undefined, "synthetic");
     expect(createThreadMock).not.toHaveBeenCalled();
   });
 
@@ -131,7 +131,7 @@ describe("handlePageCapture — thread targeting", () => {
         : [{ thread_id: "other-thread", title: "Theirs" }]
     );
     await handlePageCapture(makeReq(validBody));
-    expect(addMessageMock).toHaveBeenCalledWith("default-thread", "user", expect.any(String));
+    expect(addMessageMock).toHaveBeenCalledWith("default-thread", "user", expect.any(String), undefined, "synthetic");
   });
 
   it("creates a fresh thread under the default agent when it has none", async () => {
@@ -141,7 +141,7 @@ describe("handlePageCapture — thread targeting", () => {
     const res = await handlePageCapture(makeReq(validBody));
     expect(res.status).toBe(200);
     expect(createThreadMock).toHaveBeenCalledWith("default-agent", "Browser captures");
-    expect(addMessageMock).toHaveBeenCalledWith("fresh", "user", expect.any(String));
+    expect(addMessageMock).toHaveBeenCalledWith("fresh", "user", expect.any(String), undefined, "synthetic");
     const data = await res.json();
     expect(data.created_thread).toBe(true);
   });

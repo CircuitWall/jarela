@@ -38,12 +38,17 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   return NextResponse.json({
     ...thread,
+    // No server-side filtering: clients receive every message with its
+    // `category` tag and apply the chat-panel filter toolbar on the
+    // render side. Keeping the raw transcript over the wire means audit
+    // history is reachable from any client without round-trip params.
     messages: messages.map((m) => ({
       id: m.msg_id,
       role: m.role,
       content: m.content,
       created_at: m.created_at,
       tool_events: parseToolEvents(m.tool_events),
+      category: m.category ?? null,
     })),
     has_more,
   });

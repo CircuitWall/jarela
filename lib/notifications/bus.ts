@@ -17,7 +17,11 @@ export type NotificationEvent =
       agent_id: string;
       prompt: string;
       thread_id: string;
-      status: "done" | "error";
+      // "skipped" is emitted when a silent scheduled task ran but the agent
+      // chose not to surface a reply (NO_REPLY sentinel or empty). The chat
+      // already stays quiet via messages.hidden; downstream notification
+      // sinks can drop the ping too.
+      status: "done" | "error" | "skipped";
       preview: string;
       error?: string;
       ts: number;
