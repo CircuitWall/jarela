@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { registerTools } from "./registry";
 import { createPendingAction, getPendingAction } from "@/lib/stores/pending-actions";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
@@ -97,3 +98,5 @@ export const checkProposalTool = tool(
 function safeParse(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
 }
+
+registerTools("Config", [proposeConfigChangeTool, checkProposalTool]);

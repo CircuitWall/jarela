@@ -15,6 +15,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { truncateBytes } from "@/lib/utils/text";
+import { registerTools } from "./registry";
 import {
   graphFetch,
   resolveMicrosoftAuth,
@@ -302,3 +303,8 @@ export const outlookTrashMessageTool = tool(
     }),
   },
 );
+
+registerTools("Mail", [
+  outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
+  outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
+]);

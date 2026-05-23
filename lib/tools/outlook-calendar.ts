@@ -18,6 +18,7 @@
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { registerTools } from "./registry";
 import {
   graphFetch,
   resolveMicrosoftAuth,
@@ -336,3 +337,9 @@ export const outlookCalendarDeleteEventTool = tool(
     }),
   },
 );
+
+registerTools("Calendar", [
+  outlookCalendarListCalendarsTool, outlookCalendarListEventsTool,
+  outlookCalendarGetEventTool, outlookCalendarCreateEventTool,
+  outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
+]);

@@ -225,6 +225,24 @@ copy that directory anywhere you want to run Jarela without the source
 checkout. `npm start` is just a thin wrapper around `node server.js` with
 PORT/HOSTNAME defaults applied.
 
+### Configuration
+
+All runtime knobs are resolved once at startup via `lib/env/config.ts`.
+Set them in `.env.local` (see [`.env.example`](.env.example)) or export
+them in your shell / service unit:
+
+| Var                       | Default                | Purpose                                           |
+| ------------------------- | ---------------------- | ------------------------------------------------- |
+| `JARELA_PORT` / `PORT`    | `4312`                 | TCP port                                          |
+| `JARELA_HOSTNAME` / `HOSTNAME` | `127.0.0.1`       | Bind address                                      |
+| `JARELA_DB_DIR`           | `~/.jarela` (Win: `%LOCALAPPDATA%\Jarela`) | SQLite + generated files dir |
+| `JARELA_TOOLS_DIR`        | `$JARELA_DB_DIR/tools` | External tool plugins (CJS/TS) loaded at startup  |
+| `JARELA_RECURSION_LIMIT`  | `200`                  | Max LangGraph steps per agent run                 |
+| `JARELA_VOICE_TIMEOUT_MS` | `60000`                | Gemini voice (TTS/STT) request timeout            |
+| `JARELA_IMAGE_TIMEOUT_MS` | `60000`                | Gemini image-generation request timeout           |
+
+`JARELA_*` takes precedence over the legacy `PORT` / `HOSTNAME` names.
+
 ### Install as a background service
 
 Jarela is a single long-running Node process. Use whatever supervisor your
@@ -456,9 +474,9 @@ Names that collide with built-in tools are rejected (built-in wins). Throw an
 
 1. Copy [lib/tools/template.ts](./lib/tools/template.ts) to `lib/tools/<name>.ts`.
 2. Implement with `tool(...)` from `@langchain/core/tools` + a Zod schema.
-3. Add the export under the right category in `TOOLS_BY_CATEGORY` in
-   [lib/tools/index.ts](./lib/tools/index.ts).
-4. If it calls a network or external resource, document the env vars and gate
+3. Call `registerTools("<Category>", [yourTool, ...])` at the bottom of the file.
+4. Add `import "./<name>";` to [lib/tools/builtins.ts](./lib/tools/builtins.ts).
+5. If it calls a network or external resource, document the env vars and gate
    it behind a category the user can toggle off.
 
 ### Add an MCP server

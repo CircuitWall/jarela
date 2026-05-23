@@ -1,6 +1,7 @@
 import { execSync } from "child_process";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { registerTools } from "./registry";
 
 const MAX_OUTPUT_BYTES = 8_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -100,3 +101,5 @@ export const shellExecTool = tool(
     schema: execSchema,
   },
 );
+
+registerTools("Shell", [localExecTool, shellExecTool]);

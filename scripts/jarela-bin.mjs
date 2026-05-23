@@ -30,8 +30,13 @@ Usage:
   jarela --help, -h           show this help
 
 Environment:
-  PORT (default 4312), HOSTNAME (default 127.0.0.1),
-  JARELA_DB_DIR (default ~/.jarela on Unix, %LOCALAPPDATA%\\Jarela on Windows)
+  JARELA_PORT      / PORT      — TCP port (default 4312)
+  JARELA_HOSTNAME  / HOSTNAME  — bind address (default 127.0.0.1)
+  JARELA_DB_DIR                — data dir (default ~/.jarela on Unix,
+                                 %LOCALAPPDATA%\\Jarela on Windows)
+  JARELA_RECURSION_LIMIT       — max LangGraph steps per run (default 200)
+  JARELA_VOICE_TIMEOUT_MS      — Gemini voice request timeout (default 60000)
+  JARELA_IMAGE_TIMEOUT_MS      — Gemini image request timeout (default 60000)
 `);
 }
 
@@ -72,6 +77,11 @@ if (!existsSync(standalone)) {
   }
 }
 
+// Honour JARELA_PORT / JARELA_HOSTNAME (start-prod.mjs does the same; we
+// also set PORT/HOSTNAME here so the build step and any pre-server probes
+// see the same values).
+if (process.env.JARELA_PORT) process.env.PORT = process.env.JARELA_PORT;
+if (process.env.JARELA_HOSTNAME) process.env.HOSTNAME = process.env.JARELA_HOSTNAME;
 process.env.PORT ||= "4312";
 process.env.HOSTNAME ||= "127.0.0.1";
 process.chdir(root);

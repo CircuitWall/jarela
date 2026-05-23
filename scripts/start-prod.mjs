@@ -19,6 +19,11 @@ if (!existsSync(server)) {
   process.exit(1);
 }
 
+// Next's standalone server only reads PORT/HOSTNAME. Honour the
+// JARELA_*-prefixed names too (preferred per .env.example) so the public
+// config surface is consistent across CLI, service installer, and runtime.
+if (process.env.JARELA_PORT) process.env.PORT = process.env.JARELA_PORT;
+if (process.env.JARELA_HOSTNAME) process.env.HOSTNAME = process.env.JARELA_HOSTNAME;
 process.env.PORT ||= "4312";
 process.env.HOSTNAME ||= "127.0.0.1";
 

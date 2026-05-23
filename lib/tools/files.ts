@@ -3,6 +3,7 @@ import os from "os";
 import path from "path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { registerTools } from "./registry";
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
@@ -557,3 +558,8 @@ export const fileStatTool = tool(
     schema: statSchema,
   },
 );
+
+registerTools("Files", [
+  fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool,
+  fileDeleteTool, fileListTool, fileMkdirTool, fileStatTool,
+]);

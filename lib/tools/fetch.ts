@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
+import { registerTools } from "./registry";
 
 const MAX_BYTES = 200_000;
 const TIMEOUT_MS = 15_000;
@@ -134,3 +135,5 @@ export const webFetchTool = tool(
     }),
   },
 );
+
+registerTools("Web", [webFetchTool]);

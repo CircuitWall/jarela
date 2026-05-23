@@ -16,6 +16,7 @@ import { getCheckpointer } from "@/lib/agents/checkpointer";
 import type { ContentPart } from "@/lib/tools/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
+import { getConfig } from "@/lib/env/config";
 
 function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
@@ -154,7 +155,7 @@ export async function* streamWithConfig(
         // burns through 50 fast — 25 file moves and you're done. 200 leaves
         // generous headroom for legitimate multi-step work while still
         // bounding obvious runaway loops. Configurable via env per deployment.
-        recursionLimit: Number(process.env.JARELA_RECURSION_LIMIT) || 200,
+        recursionLimit: getConfig().recursionLimit,
         // Cancellation: when the user hits Stop (or the last client
         // disconnects), the route aborts this signal and the LangGraph
         // pregel loop unwinds, throwing a friendly aborted error below.
@@ -255,7 +256,7 @@ export async function* streamWithConfig(
     let friendly = rawMsg;
     let code = "agent_error";
     if (name === "GraphRecursionError" || /recursion limit/i.test(rawMsg)) {
-      const limit = Number(process.env.JARELA_RECURSION_LIMIT) || 200;
+      const limit = getConfig().recursionLimit;
       friendly =
         `The agent took too many tool-calling steps without finishing (hit the ${limit}-step limit). ` +
         `If the task is legitimately deep, raise JARELA_RECURSION_LIMIT in the env. ` +

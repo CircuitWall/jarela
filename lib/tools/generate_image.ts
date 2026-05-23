@@ -14,13 +14,11 @@ import { z } from "zod";
 import { randomUUID } from "crypto";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { writeBinaryFile } from "@/lib/files";
+import { getConfig } from "@/lib/env/config";
+import { registerTools } from "./registry";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
-// Cap any single image-generation HTTP call. Without this, a stuck Gemini
-// connection wedges the agent loop (and the Stop button does nothing useful
-// because fetch hasn't returned yet to check the abort signal).
-const REQUEST_TIMEOUT_MS = Number(process.env.JARELA_IMAGE_TIMEOUT_MS) || 60_000;
 
 function timeoutSignal(ms: number): AbortSignal {
   const c = new AbortController();
@@ -71,7 +69,7 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+      signal: timeoutSignal(getConfig().imageTimeoutMs),
     });
   } catch (err) {
     throw new Error(`Gemini request failed: ${describeError(err)}`);
@@ -103,7 +101,7 @@ async function callImagen(model: string, prompt: string, apiKey: string, n: numb
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-      signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+      signal: timeoutSignal(getConfig().imageTimeoutMs),
     });
   } catch (err) {
     throw new Error(`Imagen request failed: ${describeError(err)}`);
@@ -201,3 +199,5 @@ export const generateImageTool = tool(
     }),
   },
 );
+
+registerTools("Images", [generateImageTool]);

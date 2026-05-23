@@ -19,6 +19,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { registerTools } from "./registry";
 
 export interface AtlassianAuth {
   url: string;        // e.g. "https://your-team.atlassian.net"
@@ -640,3 +641,9 @@ function simplifyADF(adf: unknown): string {
     if (Array.isArray(children)) for (const c of children) walk(c);
   }
 }
+
+registerTools("Atlassian", [
+  jiraSearchTool, jiraGetIssueTool, jiraFindUserTool,
+  jiraCreateIssueTool, jiraUpdateIssueTool, jiraAddCommentTool, jiraTransitionsTool,
+  confluenceSearchTool, confluenceGetPageTool,
+]);

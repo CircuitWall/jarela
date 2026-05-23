@@ -1,5 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import { registerTools } from "./registry";
 
 interface SearchResult {
   title: string;
@@ -155,3 +156,5 @@ export const webSearchTool = tool(
     }),
   },
 );
+
+registerTools("Web", [webSearchTool]);
