@@ -29,6 +29,7 @@
     "scripts/install-tailscale-serve.ps1",
     "scripts/uninstall-tailscale-serve.ps1",
     "scripts/uninstall-from-system.ps1",
+    "scripts/release-docker.mjs",
     "next.config.ts",
     "tsconfig.json",
     "postcss.config.mjs",
@@ -45,7 +46,9 @@
     "test:live": "node scripts/live-test.mjs",
     "test:live:full": "node scripts/live-test.mjs --llm",
     "test:live:isolated": "node scripts/live-test-isolated.mjs",
-    "test:live:isolated:full": "node scripts/live-test-isolated.mjs --llm"
+    "test:live:isolated:full": "node scripts/live-test-isolated.mjs --llm",
+    "release:docker": "node scripts/release-docker.mjs",
+    "release:docker:dry": "node scripts/release-docker.mjs --dry-run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

@@ -1,0 +1,30 @@
+# Minimal compose file for running Jarela in Docker.
+#
+# Usage:
+#   docker compose up -d --build
+#   open http://127.0.0.1:4312
+#
+# State (SQLite, secrets keyfile, uploads) is persisted in the named
+# `jarela-data` volume. To reset, `docker compose down -v`.
+
+services:
+  jarela:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jarela:latest
+    container_name: jarela
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4312:4312"
+    environment:
+      # Defaults already baked into the image; listed here for visibility.
+      PORT: "4312"
+      HOSTNAME: "0.0.0.0"
+      JARELA_DB_DIR: "/data"
+      # NODE_ENV: production (set in image)
+    volumes:
+      - jarela-data:/data
+
+volumes:
+  jarela-data:
