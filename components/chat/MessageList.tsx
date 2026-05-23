@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { ChevronRight, Clock, X, ArrowDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
+import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 
 interface SystemNotice {
   id: string;
@@ -34,6 +35,45 @@ interface Props {
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { filters, toggle } = useMessageFilters();
+
+  // Apply category filter. Messages with no `category` (NULL = ordinary
+  // chat) are always shown; tagged messages are gated by their toggle.
+  // The `tool_use` and `thinking` filters do NOT remove whole messages —
+  // they're handled below by gating the inline ToolList / ThinkingLine.
+  const visibleMessages = useMemo(() => {
+    return messages.filter((m) => {
+      const cat = m.category;
+      if (!cat) return true;
+      if (cat === "scheduled_task") return filters.scheduled_task;
+      if (cat === "bridge") return filters.bridge;
+      if (cat === "synthetic") return filters.synthetic;
+      // Unknown future categories: show by default so forward-compat clients
+      // never silently drop content the server thinks should be visible.
+      return true;
+    });
+  }, [messages, filters.scheduled_task, filters.bridge, filters.synthetic]);
+
+  const hiddenCount = messages.length - visibleMessages.length;
+
+  // Surface a category chip in the toolbar only if it can actually do
+  // something useful right now: scheduled_task/bridge/synthetic chips
+  // appear only when at least one such message exists in the loaded
+  // transcript; tool_use appears when any assistant message has tool
+  // events; thinking appears when there's live thinking content (the
+  // only place it currently surfaces).
+  const availableChips = useMemo(() => {
+    const set = new Set<MessageFilterKey>();
+    for (const m of messages) {
+      if (m.category === "scheduled_task") set.add("scheduled_task");
+      else if (m.category === "bridge") set.add("bridge");
+      else if (m.category === "synthetic") set.add("synthetic");
+      if (m.tool_events && m.tool_events.length > 0) set.add("tool_use");
+    }
+    if (thinkingContent) set.add("thinking");
+    if (toolEvents && toolEvents.length > 0) set.add("tool_use");
+    return MESSAGE_FILTER_KEYS.filter((k) => set.has(k));
+  }, [messages, thinkingContent, toolEvents]);
   // Tracks whether the user was at the bottom on the most recent scroll event.
   // After every render, if true, we snap to bottom — which means: while the
   // user is at the bottom they "follow" automatically; if they scroll away,
@@ -132,13 +172,21 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
         </div>
       )}
+      {availableChips.length > 0 && (
+        <FilterToolbar
+          chips={availableChips}
+          filters={filters}
+          onToggle={toggle}
+          hiddenCount={hiddenCount}
+        />
+      )}
       {messages.length === 0 && !streamingContent && (
         <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
           Send a message to begin
         </div>
       )}
-      {messages.map((msg, i) => {
-        const startsTurn = i === 0 || messages[i - 1].role !== msg.role;
+      {visibleMessages.map((msg, i) => {
+        const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
         return (
           <div
             key={msg.id}
@@ -152,12 +200,13 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               agentConfig={agentConfig}
               userProfile={userProfile}
               showAvatar={startsTurn}
+              showToolEvents={filters.tool_use}
             />
           </div>
         );
       })}
-      {thinkingContent && <ThinkingLine text={thinkingContent} />}
-      {toolEvents && toolEvents.length > 0 && <ToolList events={toolEvents} />}
+      {thinkingContent && filters.thinking && <ThinkingLine text={thinkingContent} />}
+      {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}
       {streamingContent && (
         <MessageBubble
           message={{ role: "assistant", content: streamingContent, streaming: true }}
@@ -190,6 +239,61 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// Compact horizontal toolbar of category-visibility chips. Only renders
+// chips whose category is currently represented in the visible transcript,
+// so the toolbar stays empty for plain user/assistant threads. Hidden
+// counter on the right tells the user how many messages are gated out by
+// the current filter so the absence isn't mysterious.
+const CHIP_LABELS: Record<MessageFilterKey, string> = {
+  scheduled_task: "scheduled",
+  bridge: "bridge",
+  synthetic: "captures",
+  tool_use: "tools",
+  thinking: "thinking",
+};
+function FilterToolbar({
+  chips,
+  filters,
+  onToggle,
+  hiddenCount,
+}: {
+  chips: readonly MessageFilterKey[];
+  filters: Record<MessageFilterKey, boolean>;
+  onToggle: (key: MessageFilterKey) => void;
+  hiddenCount: number;
+}) {
+  return (
+    <div className="sticky top-0 z-10 -mx-4 px-4 py-1.5 mb-2 flex items-center gap-1.5 flex-wrap bg-surface/80 backdrop-blur border-b border-border/40 text-[11px]">
+      <span className="text-fg-faint mr-0.5 select-none">show:</span>
+      {chips.map((key) => {
+        const on = filters[key];
+        const Icon = on ? Eye : EyeOff;
+        return (
+          <button
+            key={key}
+            onClick={() => onToggle(key)}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border transition-colors ${
+              on
+                ? "bg-surface-2 border-border text-fg-muted hover:text-fg"
+                : "bg-transparent border-border/40 text-fg-faint hover:text-fg-muted line-through decoration-fg-faint/60"
+            }`}
+            title={on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`}
+            aria-pressed={on}
+          >
+            <Icon size={10} />
+            <span>{CHIP_LABELS[key]}</span>
+          </button>
+        );
+      })}
+      {hiddenCount > 0 && (
+        <span className="ml-auto text-fg-faint select-none" aria-live="polite">
+          {hiddenCount} hidden
+        </span>
+      )}
     </div>
   );
 }

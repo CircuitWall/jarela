@@ -68,6 +68,11 @@ export async function handleInboundMessage(
     const prepared = await prepareThreadRun(
       thread.thread_id,
       `${contextLines.join("\n")}\n\n${msg.text}`,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "bridge", // userCategory
     );
 
     // Silent mode: suppress *any* outbound signal — no reply, no typing
@@ -107,7 +112,7 @@ export async function handleInboundMessage(
       }
     }
 
-    persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents);
+    persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge");
 
     const reply = assistantContent.trim();
     // silent_mode (per-route): process the message (records history + runs
