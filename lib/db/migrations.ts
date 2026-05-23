@@ -168,6 +168,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureThreadsAgentIdUnique(db);
   ensureMessagesCategoryColumn(db);
   ensureScheduledTasksSilentColumn(db);
+  ensureAgentDisplayFiltersColumn(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
 }
@@ -242,6 +243,18 @@ function ensureScheduledTasksSilentColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(scheduled_tasks)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "silent")) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN silent INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
+// Per-agent message-channel display filters (ADR-0022). JSON blob:
+//   { "thinking": true, "tool_use": true, "scheduled_task": true,
+//     "bridge": true, "synthetic": true }
+// NULL = inherit defaults (all-on). Missing keys also default to true so
+// new channels added in future builds stay visible for existing users.
+function ensureAgentDisplayFiltersColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "display_filters")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN display_filters TEXT");
   }
 }
 
