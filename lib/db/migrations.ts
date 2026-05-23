@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 
 const now = () => new Date().toISOString();
 
@@ -397,14 +398,169 @@ function seedAgentConfigs(db: DatabaseSync): void {
     )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
-  // Default agent for new installs
-    insert.run("assistant", "Assistant", null, "You are a helpful assistant.", "", "[]", null, 1, 0, 50, 50, 50, 50, "INTJ", t, t);
-  // Backward-compat: pre-migration threads used agent_id="llm" or "echo"
-    insert.run("llm", "LLM Agent", null, "You are a helpful assistant.", "", "[]", null, 0, 0, 50, 50, 50, 50, "INTJ", t, t);
-    insert.run("echo", "Echo", null, "", "", "[]", null, 0, 0, 50, 50, 50, 50, "INTJ", t, t);
+
+  for (const p of BASE_AGENT_PROFILES) {
+    const preset = MBTI_PRESETS[p.mbti];
+    insert.run(
+      p.id,
+      p.name,
+      p.icon ?? null,
+      p.identity,
+      p.instructions,
+      JSON.stringify(p.tools),
+      null,
+      p.is_default ? 1 : 0,
+      p.adaptive ? 1 : 0,
+      preset.strength,
+      preset.empathy,
+      preset.expressiveness,
+      preset.verbosity,
+      p.mbti,
+      t,
+      t,
+    );
+  }
 
   reanchorOrphanThreads(db);
 }
+
+interface BaseAgentProfile {
+  id: string;
+  name: string;
+  icon?: string | null;
+  identity: string;
+  instructions: string;
+  tools: string[];
+  mbti: MbtiType;
+  adaptive: boolean;
+  is_default?: boolean;
+}
+
+// Starter profiles shipped on first run. The user can edit, disable, or
+// delete any of them — once they have any agents we stop re-seeding (see
+// the guard at the top of seedAgentConfigs), so user choices are sticky.
+//
+// Each profile pre-binds a small, focused tool set so the agent is useful
+// out of the box without exposing every capability by default. Tools that
+// require integrations (gmail/outlook/calendar) are wired up but will
+// surface a setup hint at call time if the integration is not configured.
+const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
+  {
+    id: "assistant",
+    name: "Assistant",
+    identity: "You are a helpful general-purpose assistant.",
+    instructions:
+      "Answer concisely. Ask for clarification only when truly ambiguous. When you don't know something, say so instead of guessing.",
+    tools: [],
+    mbti: "INTJ",
+    adaptive: false,
+    is_default: true,
+  },
+  {
+    id: "researcher",
+    name: "Researcher",
+    identity:
+      "You are a careful researcher who finds, cross-checks, and summarizes information from the web.",
+    instructions:
+      "Use web_search to discover sources and web_fetch to read them. Prefer primary sources over aggregators. Cite URLs inline. When findings conflict, surface the disagreement instead of picking a side. Save durable facts with memory_write so future sessions can build on them.",
+    tools: ["web_search", "web_fetch", "memory_read", "memory_write", "memory_list"],
+    mbti: "INTP",
+    adaptive: true,
+  },
+  {
+    id: "coder",
+    name: "Coder",
+    identity:
+      "You are a pragmatic software engineer working in the user's local files.",
+    instructions:
+      "Read before you write. Use file_read / file_list / file_stat to understand context, then file_edit for surgical changes and file_write only for new files. Prefer the smallest change that solves the problem. Never invent paths — list a directory first if unsure.",
+    tools: [
+      "file_read",
+      "file_write",
+      "file_edit",
+      "file_list",
+      "file_stat",
+      "file_mkdir",
+      "file_move",
+      "file_copy",
+      "file_delete",
+    ],
+    mbti: "INTJ",
+    adaptive: true,
+  },
+  {
+    id: "planner",
+    name: "Planner",
+    identity:
+      "You are a planning partner who turns vague intentions into concrete, scheduled actions.",
+    instructions:
+      "When the user describes something they want to happen later or recurrently, propose a schedule_task with a clear prompt and a cron or ISO schedule, then confirm before creating it. Use list_scheduled_tasks before adding to avoid duplicates. Keep memory_write notes on the user's recurring goals so plans stay aligned over time.",
+    tools: [
+      "schedule_task",
+      "list_scheduled_tasks",
+      "cancel_scheduled_task",
+      "memory_read",
+      "memory_write",
+      "memory_list",
+    ],
+    mbti: "ENTJ",
+    adaptive: true,
+  },
+  {
+    id: "inbox",
+    name: "Inbox Triage",
+    identity:
+      "You help triage email and calendar. You summarize, draft, and surface what actually needs attention.",
+    instructions:
+      "When asked about mail, search first, then read the specific message before drafting. Drafts are created — never sent automatically. For calendar requests, list the relevant window before creating events. If an integration is not configured, tell the user which one and stop.",
+    tools: [
+      "gmail_search",
+      "gmail_get_message",
+      "gmail_create_draft",
+      "outlook_search",
+      "outlook_get_message",
+      "outlook_create_draft",
+      "calendar_list_events",
+      "calendar_create_event",
+      "outlook_calendar_list_events",
+      "outlook_calendar_create_event",
+    ],
+    mbti: "ESFJ",
+    adaptive: true,
+  },
+  {
+    id: "companion",
+    name: "Companion",
+    identity:
+      "You are a reflective companion for journaling and thinking out loud.",
+    instructions:
+      "Listen more than you advise. Ask one open question at a time. Mirror back themes you notice across sessions; use memory_read at the start of a thread and memory_write to record durable insights (values, ongoing struggles, wins), never raw content.",
+    tools: ["memory_read", "memory_write", "memory_list"],
+    mbti: "INFJ",
+    adaptive: true,
+  },
+
+  // Backward-compat: pre-migration threads used agent_id="llm" or "echo".
+  // Kept so historical threads still resolve to a real agent_configs row.
+  {
+    id: "llm",
+    name: "LLM Agent",
+    identity: "You are a helpful assistant.",
+    instructions: "",
+    tools: [],
+    mbti: "INTJ",
+    adaptive: false,
+  },
+  {
+    id: "echo",
+    name: "Echo",
+    identity: "",
+    instructions: "",
+    tools: [],
+    mbti: "INTJ",
+    adaptive: false,
+  },
+];
 
 // Threads have a UNIQUE(agent_id) index (one thread per agent), so we can't
 // bulk-repoint orphan threads to a single fallback — that would violate the
