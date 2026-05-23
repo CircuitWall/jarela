@@ -131,18 +131,18 @@ docker compose up -d --build
 ### From Docker Hub (no clone, no build)
 
 Releases tagged `v*` publish a multi-arch (`linux/amd64` + `linux/arm64`)
-image to Docker Hub at [`jarela/jarela`](https://hub.docker.com/r/jarela/jarela):
+image to Docker Hub at [`andrewgewu/jarela`](https://hub.docker.com/r/andrewgewu/jarela):
 
 ```sh
 docker run -d --name jarela \
   -p 127.0.0.1:4312:4312 \
   -v jarela-data:/data \
   --restart unless-stopped \
-  jarela/jarela:latest
+  andrewgewu/jarela:latest
 ```
 
-Pin to a specific version with `jarela/jarela:0.1.0` (or the major/minor
-tags `jarela/jarela:0.1`, `jarela/jarela:0`).
+Pin to a specific version with `andrewgewu/jarela:0.1.0` (or the major/minor
+tags `andrewgewu/jarela:0.1`, `andrewgewu/jarela:0`).
 
 State (SQLite, encrypted secrets, uploads) is persisted in the named
 `jarela-data` volume. To reset, `docker compose down -v`.
