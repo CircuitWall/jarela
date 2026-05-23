@@ -4,7 +4,7 @@ import {
   PROVIDERS_DIR,
 } from "@/lib/providers/external";
 import { BUILTIN_PROVIDER_NAMES } from "@/lib/providers";
-import { loadExternalTools, TOOLS_DIR } from "@/lib/tools/external";
+import { loadExternalTools, getToolsDir } from "@/lib/tools/external";
 import { BUILTIN_TOOL_NAMES } from "@/lib/tools";
 
 export function GET() {
@@ -14,7 +14,7 @@ export function GET() {
   return NextResponse.json({
     directories: {
       providers: PROVIDERS_DIR,
-      tools: TOOLS_DIR,
+      tools: getToolsDir(),
     },
     providers: Object.values(provs.providers).map((p) => ({
       name: p.name,

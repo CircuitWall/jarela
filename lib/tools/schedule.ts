@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { registerTools } from "./registry";
 import {
   createScheduledTask,
   listScheduledTasks,
@@ -99,3 +100,5 @@ export const cancelScheduledTaskTool = tool(
     }),
   },
 );
+
+registerTools("Schedule", [scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool]);

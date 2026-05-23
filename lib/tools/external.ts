@@ -3,10 +3,17 @@ import { existsSync, readdirSync, statSync } from "fs";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { getDataDir } from "@/lib/db/data-dir";
-import type { ToolCategory } from "./index";
+import { getConfig } from "@/lib/env/config";
+import type { ToolCategory } from "./registry";
 
-export const TOOLS_DIR = join(getDataDir(), "tools");
+/**
+ * Absolute path to the external tools directory. Resolved lazily from
+ * `getConfig().toolsDir` so JARELA_TOOLS_DIR (and JARELA_DB_DIR fallback)
+ * are honoured.
+ */
+export function getToolsDir(): string {
+  return getConfig().toolsDir;
+}
 
 export interface ExternalToolDef {
   name: string;
@@ -52,7 +59,8 @@ export function loadExternalTools(
   const files = new Map<string, string>();
   const errors: ExtensionLoadError[] = [];
 
-  if (!existsSync(TOOLS_DIR)) {
+  const toolsDir = getToolsDir();
+  if (!existsSync(toolsDir)) {
     return { tools, categories, files, errors };
   }
 
@@ -61,11 +69,11 @@ export function loadExternalTools(
   const { createRequire } = (
     process as unknown as { getBuiltinModule: (id: string) => typeof import("node:module") }
   ).getBuiltinModule("node:module");
-  const req = createRequire(join(TOOLS_DIR, "_anchor"));
+  const req = createRequire(join(toolsDir, "_anchor"));
 
   let entries: string[];
   try {
-    entries = readdirSync(TOOLS_DIR);
+    entries = readdirSync(toolsDir);
   } catch {
     return { tools, categories, files, errors };
   }
@@ -74,7 +82,7 @@ export function loadExternalTools(
 
   for (const entry of entries) {
     if (!/\.(c?js|ts)$/i.test(entry)) continue;
-    const path = join(TOOLS_DIR, entry);
+    const path = join(toolsDir, entry);
     try {
       if (!statSync(path).isFile()) continue;
     } catch {
