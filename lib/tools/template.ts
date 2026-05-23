@@ -4,7 +4,8 @@
  * To add a new tool:
  *   1. Copy this file to lib/tools/your-tool.ts
  *   2. Rename `myTool`, update name/description/schema, implement the function
- *   3. Append your export to ALL_TOOLS in lib/tools/index.ts
+ *   3. Call `registerTools("<Category>", [myTool])` at the bottom (see below)
+ *   4. Add `import "./your-tool";` to lib/tools/builtins.ts
  *
  * Tools follow the LangChain StructuredTool convention:
  *   - Schema defined with Zod (auto-converted to JSON Schema for the LLM)
@@ -15,6 +16,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { registerTools } from "./registry";
 
 export const myTool = tool(
   async (
@@ -45,3 +47,7 @@ export const myTool = tool(
     }),
   },
 );
+
+// Pick the category your tool belongs to. See lib/tools/registry.ts for the
+// full list of valid categories.
+// registerTools("Web", [myTool]);

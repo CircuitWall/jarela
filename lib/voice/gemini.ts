@@ -5,9 +5,9 @@
 // same source as lib/tools/generate_image.ts.
 
 import { getIntegrationRaw } from "@/lib/stores/integrations";
+import { getConfig } from "@/lib/env/config";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
-const REQUEST_TIMEOUT_MS = Number(process.env.JARELA_VOICE_TIMEOUT_MS) || 60_000;
 
 function timeoutSignal(ms: number): AbortSignal {
   const c = new AbortController();
@@ -86,7 +86,7 @@ export async function geminiTts(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+    signal: timeoutSignal(getConfig().voiceTimeoutMs),
   });
   const json = (await res.json()) as GeminiResponse;
   if (!res.ok) {
@@ -137,7 +137,7 @@ export async function geminiStt(opts: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: timeoutSignal(REQUEST_TIMEOUT_MS),
+    signal: timeoutSignal(getConfig().voiceTimeoutMs),
   });
   const json = (await res.json()) as GeminiResponse;
   if (!res.ok) {

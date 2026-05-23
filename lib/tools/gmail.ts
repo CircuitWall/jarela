@@ -22,6 +22,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { truncateBytes } from "@/lib/utils/text";
+import { registerTools } from "./registry";
 import {
   googleFetch,
   resolveGoogleAuth,
@@ -341,3 +342,8 @@ export const gmailTrashMessageTool = tool(
     }),
   },
 );
+
+registerTools("Mail", [
+  gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
+  gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
+]);
