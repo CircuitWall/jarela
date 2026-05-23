@@ -289,6 +289,9 @@ type Props = {
   userProfile?: UserProfile | null;
   showAvatar?: boolean;
   threadId?: string | null;
+  // When false, suppress the inline ToolList for this message. Driven by
+  // the chat-panel filter toolbar's `tool_use` toggle.
+  showToolEvents?: boolean;
 };
 
 const GRADIENTS = [
@@ -709,7 +712,7 @@ function ClickableImage({ media_type, data }: { media_type: string; data: string
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true }: Props) {
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -934,7 +937,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             </div>
           )}
         </div>
-        {!isUser && !streaming && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
+        {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
         )}
         {refs.length > 0 && <RefsFooter refs={refs} />}

@@ -17,7 +17,7 @@ interface TaskCompleted {
   agent_id: string;
   prompt: string;
   thread_id: string;
-  status: "done" | "error";
+  status: "done" | "error" | "skipped";
   preview: string;
   error?: string;
   ts: number;
@@ -163,6 +163,10 @@ export function useEventNotifications(options: Options) {
           ev.type !== "task_completed" &&
           ev.type !== "bridge_message_received"
         ) return;
+        // Silent scheduled tasks that chose NO_REPLY publish status="skipped".
+        // Suppress the badge/toast/OS notification — they intentionally
+        // produced nothing for the user to see.
+        if (ev.type === "task_completed" && ev.status === "skipped") return;
         lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
         saveLastTs(lastTsRef.current);
         // Broadcast a thread-updated event regardless of whether we'll

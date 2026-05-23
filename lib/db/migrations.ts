@@ -166,6 +166,8 @@ export function runMigrations(db: DatabaseSync): void {
   ensureUserProfileLocationColumns(db);
   ensureProxyConfigSchemeAndCaBundle(db);
   ensureThreadsAgentIdUnique(db);
+  ensureMessagesCategoryColumn(db);
+  ensureScheduledTasksSilentColumn(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
 }
@@ -216,6 +218,31 @@ function ensureUserProfileLocationColumns(db: DatabaseSync): void {
   if (!names.has("location_label"))       db.exec("ALTER TABLE user_profile ADD COLUMN location_label TEXT");
   if (!names.has("location_updated_at"))  db.exec("ALTER TABLE user_profile ADD COLUMN location_updated_at TEXT");
   if (!names.has("location_consent"))     db.exec("ALTER TABLE user_profile ADD COLUMN location_consent INTEGER NOT NULL DEFAULT 0");
+}
+
+// Per-message classification. NULL/empty = ordinary chat content. Known
+// non-null values surface as filterable groups in the chat panel so users
+// can hide scheduled-task firings, bridge traffic, or synthetic page-capture
+// uploads without losing the audit trail. Current categories:
+//   'scheduled_task' - scheduler-injected prompt + its assistant reply
+//   'bridge'         - bridge-mediated user inbound + assistant outbound
+//   'synthetic'      - page-capture / file-upload generated user messages
+function ensureMessagesCategoryColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "category")) {
+    db.exec("ALTER TABLE messages ADD COLUMN category TEXT");
+  }
+}
+
+// Per-task "silent" mode. When 1 the scheduler injects the prompt as a
+// hidden user message and instructs the agent to reply only when there is
+// something worth showing — otherwise the assistant turn is persisted
+// hidden too (or skipped entirely).
+function ensureScheduledTasksSilentColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(scheduled_tasks)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "silent")) {
+    db.exec("ALTER TABLE scheduled_tasks ADD COLUMN silent INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function ensureThreadsAgentIdUnique(db: DatabaseSync): void {

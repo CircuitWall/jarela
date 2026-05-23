@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Calendar, CheckCircle2, Clock, Pencil, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Pencil, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
@@ -128,6 +128,17 @@ function TaskCard({
                 <>
                   <span>·</span>
                   <span className="truncate">{agent.name}</span>
+                </>
+              )}
+              {task.silent && (
+                <>
+                  <span>·</span>
+                  <span
+                    className="inline-flex items-center gap-0.5 text-fg-faint"
+                    title="Silent: agent only replies if there is something material to surface; firings still appear in chat under the 'scheduled' filter"
+                  >
+                    <EyeOff size={10} /> silent
+                  </span>
                 </>
               )}
             </div>
@@ -274,6 +285,7 @@ function TaskEditor({
     task.kind === "once" ? isoToLocalInput(task.schedule) : task.schedule,
   );
   const [enabled, setEnabled] = useState(task.enabled);
+  const [silent, setSilent] = useState(task.silent ?? false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -298,6 +310,7 @@ function TaskEditor({
         kind,
         schedule: scheduleOut,
         enabled,
+        silent,
       });
       onSaved();
     } catch (e) {
@@ -370,6 +383,17 @@ function TaskEditor({
             className="accent-emerald-600"
           />
           <span className="text-[11px]">{enabled ? "active" : "paused"}</span>
+        </label>
+      </Row>
+      <Row label="Silent">
+        <label className="inline-flex items-center gap-1 cursor-pointer" title="Instruct the agent to reply only when there is something material to surface (NO_REPLY answers are dropped). Useful for background polling jobs. Firings still appear in chat tagged 'scheduled' — use the chat filter toolbar to hide them from view.">
+          <input
+            type="checkbox"
+            checked={silent}
+            onChange={(e) => setSilent(e.target.checked)}
+            className="accent-sky-600"
+          />
+          <span className="text-[11px]">{silent ? "reply only if material" : "always reply"}</span>
         </label>
       </Row>
       {error && (

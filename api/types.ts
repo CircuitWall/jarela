@@ -81,6 +81,12 @@ export interface Message {
   // Lets the chat UI render historical tool invocations the same way it
   // renders live streaming ones.
   tool_events?: PersistedToolEvent[];
+  // Optional classification tag. NULL/undefined = ordinary chat content.
+  // Known values: 'scheduled_task' (scheduler firings), 'bridge' (bridge
+  // adapter traffic), 'synthetic' (page-capture / file-upload synthetic
+  // user messages). The chat-panel filter toolbar lets the user toggle
+  // each category on/off; persistence is the same regardless.
+  category?: string | null;
 }
 
 export interface ThreadDetail extends ThreadSummary {
@@ -292,6 +298,11 @@ export interface ScheduledTask {
   last_run_at: string | null;
   last_error: string | null;
   enabled: boolean;
+  // When true the scheduler wraps the prompt with a "reply only if material"
+  // directive and a NO_REPLY sentinel. NO_REPLY turns are not persisted at
+  // all. All other scheduler firings are tagged with `category=scheduled_task`
+  // so the chat-panel filter toolbar can hide them en masse.
+  silent: boolean;
   created_at: string;
   updated_at: string;
 }
