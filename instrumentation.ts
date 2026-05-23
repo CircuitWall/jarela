@@ -9,6 +9,11 @@ export async function register() {
   // arbitrary files from disk.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Install SIGINT/SIGTERM handlers before any subsystem spins up so a
+  // signal that arrives during boot still drains cleanly.
+  const { registerShutdownHandlers } = await import("@/lib/lifecycle/shutdown");
+  registerShutdownHandlers();
+
   // Dynamic import so this module stays edge-safe.
   const { initTools } = await import("@/lib/tools");
   initTools();

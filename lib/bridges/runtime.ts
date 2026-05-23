@@ -169,3 +169,14 @@ export async function startAllBridges(): Promise<void> {
     }
   }
 }
+
+// Stop every running bridge. Called from the graceful-shutdown path so
+// WhatsApp WS sockets etc. close cleanly before the process exits. We
+// await in parallel — a single slow `adapter.stop()` shouldn't gate the
+// others — but the whole call is still bounded by the outer shutdown
+// timeout in `lib/lifecycle/shutdown.ts`.
+export async function stopAllBridges(): Promise<void> {
+  const ids = Array.from(state.adapters.keys());
+  await Promise.allSettled(ids.map((id) => stopBridge(id)));
+  state.started = false;
+}

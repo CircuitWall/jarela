@@ -102,6 +102,37 @@ export function abortRun(thread_id: string, reason = "user_interrupted"): boolea
   return true;
 }
 
+// Abort every currently-running run. Used by the graceful-shutdown path so
+// LangGraph stream loops bail out instead of continuing past process exit.
+// Returns the number of runs that were signalled.
+export function abortAllRuns(reason = "server_shutdown"): number {
+  let count = 0;
+  for (const run of runs.values()) {
+    if (run.status !== "running") continue;
+    if (run.abort.signal.aborted) continue;
+    try { run.abort.abort(reason); count++; } catch { /* */ }
+  }
+  return count;
+}
+
+// Poll until every run has transitioned out of "running" (or until the
+// caller-supplied deadline elapses). Used during graceful shutdown after
+// `abortAllRuns()` so the stream `finally` blocks have a chance to flush
+// the trailing error chunk and call `finishRun()`. Resolves to the count
+// of runs still stuck in "running" when the deadline hit (0 = clean).
+export async function waitForRunsToSettle(timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (Date.now() < deadline) {
+    let stillRunning = 0;
+    for (const run of runs.values()) if (run.status === "running") stillRunning++;
+    if (stillRunning === 0) return 0;
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  }
+  let stillRunning = 0;
+  for (const run of runs.values()) if (run.status === "running") stillRunning++;
+  return stillRunning;
+}
+
 // Replays buffered events synchronously, then subscribes for live ones.
 // Returns an unsubscribe fn. Caller is responsible for calling it.
 export function subscribe(
