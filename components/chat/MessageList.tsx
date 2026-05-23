@@ -153,25 +153,11 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   }
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-4 py-4"
-      style={{
-        // Fade the top and bottom 24px of the scroll viewport so messages
-        // dissolve under the glass chrome instead of slamming into a hard
-        // edge. Vendor-prefixed for older WebKit (Safari < 15.4).
-        WebkitMaskImage:
-          "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
-        maskImage:
-          "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
-      }}
-    >
-      {hasMore && (
-        <div className="text-center py-1.5 text-[11px] text-fg-faint select-none">
-          {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
-        </div>
-      )}
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Toolbar lives OUTSIDE the masked scroll viewport: otherwise the
+          top 24px transparency-fade swallows the chip row (it's only
+          ~26px tall) and the user perceives "the filter sometimes
+          doesn't show". */}
       {availableChips.length > 0 && (
         <FilterToolbar
           chips={availableChips}
@@ -180,7 +166,26 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           hiddenCount={hiddenCount}
         />
       )}
-      {messages.length === 0 && !streamingContent && (
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 py-4"
+        style={{
+          // Fade the top and bottom 24px of the scroll viewport so messages
+          // dissolve under the glass chrome instead of slamming into a hard
+          // edge. Vendor-prefixed for older WebKit (Safari < 15.4).
+          WebkitMaskImage:
+            "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
+          maskImage:
+            "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
+        }}
+      >
+        {hasMore && (
+          <div className="text-center py-1.5 text-[11px] text-fg-faint select-none">
+            {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
+          </div>
+        )}
+        {messages.length === 0 && !streamingContent && (
         <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
           Send a message to begin
         </div>
@@ -239,6 +244,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               )}
         </div>
       ))}
+      </div>
     </div>
   );
 }
@@ -267,7 +273,7 @@ function FilterToolbar({
   hiddenCount: number;
 }) {
   return (
-    <div className="sticky top-0 z-10 -mx-4 px-4 py-1.5 mb-2 flex items-center gap-1.5 flex-wrap bg-surface/80 backdrop-blur border-b border-border/40 text-[11px]">
+    <div className="px-4 py-1.5 flex items-center gap-1.5 flex-wrap bg-surface/80 backdrop-blur border-b border-border/40 text-[11px]">
       <span className="text-fg-faint mr-0.5 select-none">show:</span>
       {chips.map((key) => {
         const on = filters[key];
