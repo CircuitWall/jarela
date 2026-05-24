@@ -17,6 +17,9 @@ function getCurrentVersion(): string {
 }
 
 export async function GET() {
-  const info = await checkForUpdate(getCurrentVersion());
+  const info = await checkForUpdate({
+    current: getCurrentVersion(),
+    packageRoot: process.cwd(),
+  });
   return NextResponse.json(info);
 }
