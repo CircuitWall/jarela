@@ -296,6 +296,7 @@ them in your shell / service unit:
 | `JARELA_IMAGE_TIMEOUT_MS` | `60000`                | Gemini image-generation request timeout           |
 | `JARELA_UPDATE_CHANNEL`   | `stable`               | `stable` (npm `latest`) or `main` (GitHub `main`, experimental) |
 | `JARELA_DISABLE_UPDATE_CHECK` | _(unset)_          | Set to `1` to skip the daily update probe         |
+| `JARELA_ENABLE_MOCK_PROVIDER` | _(unset)_          | Set to `1` to register the `mock` LLM provider (tests / offline dev) |
 
 `JARELA_*` takes precedence over the legacy `PORT` / `HOSTNAME` names.
 
@@ -315,6 +316,29 @@ newer code is available. Two tracks:
   `npm i -g github:CircuitWall/jarela#main`.
 
 Set `JARELA_DISABLE_UPDATE_CHECK=1` to silence the probe entirely.
+
+#### Mock LLM provider (testing / offline dev)
+
+Set `JARELA_ENABLE_MOCK_PROVIDER=1` to register a deterministic `mock`
+provider in the registry. With the flag set, configure an agent with
+`provider: "mock"` (any `model` id works) and Jarela will reply locally
+without making network calls. Behaviour is scripted via directives in the
+last user message:
+
+| Directive | Effect |
+|---|---|
+| `MOCK:reply=<text>` | stream back exactly `<text>` |
+| `MOCK:echo` | echo the user message verbatim |
+| `MOCK:tool=<name>:<json-args>` | emit one tool call (e.g. `MOCK:tool=web_search:{"q":"foo"}`) |
+| `MOCK:think=<text>` | emit a thinking delta before the text |
+| `MOCK:slow=<ms>` | sleep `<ms>` between word chunks |
+| `MOCK:error=<msg>` | throw `<msg>` |
+| `MOCK:stop=<reason>` | override stop_reason (`stop` / `tool_use` / `length`) |
+
+Embeddings are deterministic 384-dim L2-normalised vectors seeded by
+SHA-256 of the input, so semantic-recall tests have stable rankings. The
+flag is opt-in so production deployments never expose `mock` as a
+selectable backend.
 
 ### Install as a background service
 
