@@ -19,6 +19,7 @@
   <a href="#integrations">Integrations</a> ·
   <a href="#extension-points">Extending</a> ·
   <a href="./docs/ARCHITECTURE.md">Architecture</a> ·
+  <a href="./CONTRIBUTING.md">Contributing</a> ·
   <a href="#documentation">Docs</a>
 </p>
 
