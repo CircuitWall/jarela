@@ -34,25 +34,73 @@ import type {
 
 const BASE = "/api/v1";
 
-const AGENT_LIST_TTL_MS = 30_000;
+const LIST_TTL_MS = 30_000;
 
-let agentListCache: { data: AgentConfig[] | null; fetchedAt: number; inflight: Promise<AgentConfig[]> | null } = {
-  data: null,
-  fetchedAt: 0,
-  inflight: null,
-};
+interface ListCache<T> {
+  data: T[] | null;
+  fetchedAt: number;
+  inflight: Promise<T[]> | null;
+}
 
-function cloneAgents(rows: AgentConfig[]): AgentConfig[] {
+function emptyCache<T>(): ListCache<T> {
+  return { data: null, fetchedAt: 0, inflight: null };
+}
+
+function cloneRows<T>(rows: T[]): T[] {
   return rows.map((row) => ({ ...row }));
 }
 
+const agentListCache: ListCache<AgentConfig> = emptyCache();
+const modelListCache: ListCache<ModelConfig> = emptyCache();
+const taskListCache: ListCache<TaskAssignment> = emptyCache();
+
 function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
-  const snap = cloneAgents(rows);
-  agentListCache = { data: snap, fetchedAt: Date.now(), inflight: null };
+  const snap = cloneRows(rows);
+  agentListCache.data = snap;
+  agentListCache.fetchedAt = Date.now();
+  agentListCache.inflight = null;
   if (notify && typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
   }
-  return cloneAgents(snap);
+  return cloneRows(snap);
+}
+
+function setModelListCache(rows: ModelConfig[], notify = true): ModelConfig[] {
+  const snap = cloneRows(rows);
+  modelListCache.data = snap;
+  modelListCache.fetchedAt = Date.now();
+  modelListCache.inflight = null;
+  if (notify && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+  }
+  return cloneRows(snap);
+}
+
+function setTaskListCache(rows: TaskAssignment[], notify = true): TaskAssignment[] {
+  const snap = cloneRows(rows);
+  taskListCache.data = snap;
+  taskListCache.fetchedAt = Date.now();
+  taskListCache.inflight = null;
+  if (notify && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
+  }
+  return cloneRows(snap);
+}
+
+function cachedList<T>(
+  cache: ListCache<T>,
+  fetchFn: () => Promise<T[]>,
+  setCache: (rows: T[], notify?: boolean) => T[],
+  force: boolean,
+): Promise<T[]> {
+  const now = Date.now();
+  if (!force && cache.data && now - cache.fetchedAt < LIST_TTL_MS) {
+    return Promise.resolve(cloneRows(cache.data));
+  }
+  if (!force && cache.inflight) return cache.inflight;
+  const req = fetchFn().then((rows) => setCache(rows, false));
+  cache.inflight = req;
+  return req;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -69,17 +117,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   agents: {
-    list: (opts?: { force?: boolean }) => {
-      const force = opts?.force === true;
-      const now = Date.now();
-      if (!force && agentListCache.data && now - agentListCache.fetchedAt < AGENT_LIST_TTL_MS) {
-        return Promise.resolve(cloneAgents(agentListCache.data));
-      }
-      if (!force && agentListCache.inflight) return agentListCache.inflight;
-      const req = request<AgentConfig[]>("/agents").then((rows) => setAgentListCache(rows, false));
-      agentListCache = { ...agentListCache, inflight: req };
-      return req;
-    },
+    list: (opts?: { force?: boolean }) =>
+      cachedList(agentListCache, () => request<AgentConfig[]>("/agents"), setAgentListCache, opts?.force === true),
     get: (id: string) => request<AgentConfig>(`/agents/${encodeURIComponent(id)}`),
     create: async (data: AgentConfigIn) => {
       const created = await request<AgentConfig>("/agents", { method: "POST", body: JSON.stringify(data) });
@@ -161,15 +200,33 @@ export const api = {
   },
 
   models: {
-    list: () => request<ModelConfig[]>("/models"),
+    list: (opts?: { force?: boolean }) =>
+      cachedList(modelListCache, () => request<ModelConfig[]>("/models"), setModelListCache, opts?.force === true),
     providers: () => request<string[]>("/providers"),
     catalog: (provider: string) => request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`),
-    create: (name: string, data: ModelConfigIn) =>
-      request<ModelConfig>("/models", { method: "POST", body: JSON.stringify({ name, ...data }) }),
-    update: (name: string, data: ModelConfigIn) =>
-      request<ModelConfig>(`/models/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (name: string) =>
-      request<{ deleted: boolean }>(`/models/${encodeURIComponent(name)}`, { method: "DELETE" }),
+    create: async (name: string, data: ModelConfigIn) => {
+      const created = await request<ModelConfig>("/models", { method: "POST", body: JSON.stringify({ name, ...data }) });
+      if (modelListCache.data) setModelListCache([...modelListCache.data, created]);
+      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+      return created;
+    },
+    update: async (name: string, data: ModelConfigIn) => {
+      const updated = await request<ModelConfig>(`/models/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) });
+      if (modelListCache.data) setModelListCache(modelListCache.data.map((m) => (m.name === name ? updated : m)));
+      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+      return updated;
+    },
+    delete: async (name: string) => {
+      const res = await request<{ deleted: boolean }>(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
+      if (res.deleted) {
+        if (modelListCache.data) setModelListCache(modelListCache.data.filter((m) => m.name !== name));
+        else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+        // Deleting a model cascades to its assignments server-side; drop the
+        // task list cache so the next read reflects the server.
+        if (taskListCache.data) setTaskListCache(taskListCache.data.filter((t) => t.model_config_name !== name));
+      }
+      return res;
+    },
   },
 
   profile: {
@@ -195,13 +252,29 @@ export const api = {
   },
 
   tasks: {
-    list: () => request<TaskAssignment[]>("/tasks"),
-    assign: (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) =>
-      request<TaskAssignment>(`/tasks/${encodeURIComponent(agent_id)}`, {
+    list: (opts?: { force?: boolean }) =>
+      cachedList(taskListCache, () => request<TaskAssignment[]>("/tasks"), setTaskListCache, opts?.force === true),
+    assign: async (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) => {
+      const assigned = await request<TaskAssignment>(`/tasks/${encodeURIComponent(agent_id)}`, {
         method: "PUT", body: JSON.stringify({ model_config_name, tool_policy }),
-      }),
-    unassign: (agent_id: string) =>
-      request<{ deleted: boolean }>(`/tasks/${encodeURIComponent(agent_id)}`, { method: "DELETE" }),
+      });
+      if (taskListCache.data) {
+        const exists = taskListCache.data.some((t) => t.agent_id === agent_id);
+        const next = exists
+          ? taskListCache.data.map((t) => (t.agent_id === agent_id ? assigned : t))
+          : [...taskListCache.data, assigned];
+        setTaskListCache(next);
+      } else if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
+      }
+      return assigned;
+    },
+    unassign: async (agent_id: string) => {
+      const res = await request<{ deleted: boolean }>(`/tasks/${encodeURIComponent(agent_id)}`, { method: "DELETE" });
+      if (taskListCache.data) setTaskListCache(taskListCache.data.filter((t) => t.agent_id !== agent_id));
+      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
+      return res;
+    },
   },
 
   mcp: {
