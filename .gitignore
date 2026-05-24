@@ -52,6 +52,11 @@ yarn-error.log*
 # test
 coverage/
 
+# playwright
+test-results/
+playwright-report/
+playwright/.cache/
+
 # archived
 backend-archived/
 node_modules
