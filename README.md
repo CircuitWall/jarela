@@ -52,6 +52,13 @@
 
 ---
 
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180" controls width="640" muted>
+    Your browser doesn't support embedded video.
+    <a href="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180">Download the clip</a>.
+  </video>
+</p>
+
 ## What is Jarela?
 
 Jarela is a desktop-grade chat UI for **LangGraph** agents that runs as a
@@ -73,11 +80,7 @@ the LLM / MCP / GitHub providers you explicitly configure.
 > (Gmail + Calendar) and **Microsoft** (Outlook + Calendar) ecosystems as
 > first-class, parity peers — same in-UI OAuth, same tool surface, same
 > safety policy. Pick one, or connect both and let your agents bridge them.
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180" controls width="640" muted>
-    Your browser doesn't support embedded video. <a href="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180">Download the clip</a>.
-  </video>
-</p>
+
 ## Features
 
 ### Agent runtime
