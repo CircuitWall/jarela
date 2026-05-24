@@ -4,13 +4,13 @@
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "MIT",
   "author": "Andrew Ge Wu",
-  "homepage": "https://github.com/andrew-ge-wu/jarela#readme",
+  "homepage": "https://github.com/CircuitWall/jarela#readme",
   "bugs": {
-    "url": "https://github.com/andrew-ge-wu/jarela/issues"
+    "url": "https://github.com/CircuitWall/jarela/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/andrew-ge-wu/jarela.git"
+    "url": "git+https://github.com/CircuitWall/jarela.git"
   },
   "keywords": [
     "langgraph",
