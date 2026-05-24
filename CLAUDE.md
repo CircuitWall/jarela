@@ -43,6 +43,24 @@ scripts/            # Maintenance / live tests
 - Lint: `npm run lint`
 - Live tests: `npm run test:live` (smoke), `npm run test:live:full`
 
+## Contribution & release process
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full rules. Summary that you
+MUST follow:
+
+- **Trunk-based.** Never push to `main`; branch protection rejects it. Open a
+  PR from a topic branch (`feat/…`, `fix/…`, `chore/…`, `docs/…`, `refactor/…`).
+- **Squash merge.** PR title becomes the commit on `main` and the release-notes
+  entry, so the PR title MUST follow Conventional Commits (`type(scope)[!]: …`).
+- **Semver.** `MAJOR.MINOR.PATCH` in `package.json` is the source of truth.
+  Bump rule: any `feat!:` / `fix!:` / `BREAKING CHANGE:` → MAJOR; any `feat:` →
+  MINOR; otherwise PATCH. Pre-1.0 exception: breaking changes bump MINOR until
+  `1.0.0`.
+- **Release = tag push.** Bump `package.json` + update `CHANGELOG.md` in a
+  release PR. After merge, tag `main` with `vX.Y.Z` and push the tag — the
+  release workflow handles bundles, GitHub Release, and npm publish via OIDC
+  Trusted Publishing (no `NPM_TOKEN`).
+
 ## Conventions specific to this repo
 
 - All persistent state goes through `lib/db` or `lib/stores`. Never write ad-hoc state outside `JARELA_DB_DIR`.
