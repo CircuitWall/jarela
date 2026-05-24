@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `infrastructure` | `other`) over the API. Already-configured
   credentials are never hidden by the persona filter even when their
   category is outside the active preset.
+- **Memory panel**: list items now render a typed, compact summary of
+  each entry instead of a single-line `JSON.stringify`. Objects show
+  the first few `key: value` chips with a "+N more" tail; arrays show
+  their length and first elements; multi-line strings get a small
+  scrollable `<pre>`. A chevron toggles a pretty-printed expansion of
+  the full value. Token-shaped fields (`*_token`, `*_secret`,
+  `api_key`, `password`, …) are masked at every nesting level, so
+  glancing at the panel can't leak credentials.
 
 ### Changed
 
