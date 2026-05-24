@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-24
+
+### Fixed
+
+- MCP registry picker no longer renders the same server multiple times.
+  The upstream registry returns one row per published version, and the
+  picker was only filtering by `status == "active"`. It now filters by
+  `_meta.isLatest` (treating a missing flag as latest so newly-published
+  servers still surface) and dedupes by fully-qualified upstream name
+  plus `(id, transport)` install identity (#14).
+- MCP registry picker no longer surfaces community entries labelled as
+  "Vendor". The `com.<vendor>/` namespace is now matched against an
+  allowlist mirroring `VENDOR_GITHUB_ORGS`; any unrecognised
+  domain-verified namespace falls back to `Community` and is filtered
+  out by default (#14).
+
 ## [0.2.0] - 2026-05-24
 
 ### Added
