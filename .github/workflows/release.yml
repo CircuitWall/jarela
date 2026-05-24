@@ -44,6 +44,15 @@ jobs:
 
       - name: Build (next build → standalone)
         run: npm run build
+        # The Windows GitHub runner image ships legacy junctions
+        # (C:\Users\runneradmin\Application Data, AppData\Local\Application
+        # Data) that deny `scandir` for non-elevated processes. Webpack's
+        # snapshot/glob walks via HOME/USERPROFILE and trips on them, failing
+        # the build with `EPERM`. Point HOME/USERPROFILE at the runner's temp
+        # dir so the walk never enters the profile tree.
+        env:
+          HOME: ${{ runner.temp }}
+          USERPROFILE: ${{ runner.temp }}
 
       - name: Resolve version + bundle name
         id: meta
