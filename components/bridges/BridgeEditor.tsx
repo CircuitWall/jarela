@@ -5,6 +5,8 @@ import { api } from "@/api/client";
 import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute, ModelConfig } from "@/api/types";
 import { useBridgeRoutes } from "@/hooks/useBridges";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
+import { resolveAgentModel } from "@/lib/agents/effective-model";
+import { formatRelativeOrDate } from "@/lib/utils/time";
 import { StatusPill } from "./BridgesPanel";
 
 /**
@@ -189,15 +191,9 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   useEffect(() => { api.agents.list().then(setAgents).catch(() => {}); }, []);
   useEffect(() => { api.models.list().then(setModels).catch(() => {}); }, []);
 
-  const modelByName = useMemo(() => {
-    const m = new Map<string, ModelConfig>();
-    for (const x of models) m.set(x.name, x);
-    return m;
-  }, [models]);
-  const defaultModel = useMemo(() => models.find((m) => m.is_default) ?? null, [models]);
   /** Vision capability of an agent (resolves via its model_config_name, with default fallback). */
   function agentVisionState(a: AgentConfig): { supported: boolean; classified: boolean; modelLabel: string | null } {
-    const cfg = a.model_config_name ? modelByName.get(a.model_config_name) ?? defaultModel : defaultModel;
+    const cfg = resolveAgentModel(a, models);
     if (!cfg) return { supported: false, classified: false, modelLabel: null };
     return {
       supported: modelSupportsImages(cfg.provider, cfg.model_id),
@@ -679,13 +675,7 @@ function RouteRow({
 
 function formatRelative(ms: number): string {
   const diff = Date.now() - ms;
-  const s = Math.floor(diff / 1000);
-  if (s < 60) return "just now";
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(ms).toLocaleDateString();
+  if (diff < 60_000) return "just now";
+  if (diff > 7 * 86_400_000) return new Date(ms).toLocaleDateString();
+  return formatRelativeOrDate(ms).replace(/\sago$/, "");
 }

@@ -3,6 +3,7 @@ import { BookOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, ModelConfig } from "@/api/types";
+import { CapBadges } from "./CapBadges";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -12,28 +13,6 @@ interface Props {
   model?: ModelConfig;
   onSave: (name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) => Promise<void>;
   onClose: () => void;
-}
-
-const CAP_LABELS: Record<keyof CatalogModel["capabilities"], string> = {
-  vision: "👁 vision",
-  tools: "🔧 tools",
-  streaming: "⚡ stream",
-  json_mode: "{} json",
-  web_search: "🌐 search",
-};
-
-function CapBadges({ caps }: { caps: CatalogModel["capabilities"] }) {
-  const active = (Object.entries(caps) as [keyof typeof caps, boolean][]).filter(([, v]) => v);
-  if (!active.length) return null;
-  return (
-    <span className="flex flex-wrap gap-0.5">
-      {active.map(([k]) => (
-        <span key={k} className="px-1 py-0.5 rounded text-[9px] bg-surface text-fg-subtle border border-border whitespace-nowrap">
-          {CAP_LABELS[k]}
-        </span>
-      ))}
-    </span>
-  );
 }
 
 function fmtCtx(n: number | null) {

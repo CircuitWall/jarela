@@ -5,6 +5,7 @@ import type { ModelConfig } from "@/api/types";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { ModelEditor } from "./ModelEditor";
+import { CapBadges } from "./CapBadges";
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-700",
@@ -69,6 +70,9 @@ export function ModelsPanel() {
                   </span>
                 </div>
                 <p className="text-xs text-fg-subtle truncate">{m.model_id}</p>
+                <div className="mt-1">
+                  <CapBadges provider={m.provider} modelId={m.model_id} />
+                </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                 {!m.is_default && (

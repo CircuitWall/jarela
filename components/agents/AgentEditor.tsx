@@ -6,6 +6,7 @@ import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
+import { CapBadges } from "@/components/models/CapBadges";
 
 interface Props {
   agent?: AgentConfig;
@@ -284,16 +285,17 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               })}
             </select>
             {selectedModel && (
-              <p className="text-[11px] text-fg-faint">
-                Using <span className="text-fg-subtle">{selectedModel.provider}</span> / <span className="font-mono text-fg-muted">{selectedModel.model_id}</span>
-                {modelSupportsImages(selectedModel.provider, selectedModel.model_id) ? (
-                  <span className="ml-1 text-emerald-700 dark:text-emerald-300">· vision-capable 📷</span>
-                ) : isProviderClassified(selectedModel.provider) ? (
-                  <span className="ml-1 text-amber-700 dark:text-amber-300">· no image input</span>
-                ) : (
-                  <span className="ml-1 text-fg-faint">· image capability unknown</span>
-                )}
-              </p>
+              <div className="space-y-1">
+                <p className="text-[11px] text-fg-faint">
+                  Using <span className="text-fg-subtle">{selectedModel.provider}</span> / <span className="font-mono text-fg-muted">{selectedModel.model_id}</span>
+                  {!modelSupportsImages(selectedModel.provider, selectedModel.model_id) && (
+                    isProviderClassified(selectedModel.provider)
+                      ? <span className="ml-1 text-amber-700 dark:text-amber-300">· no image input</span>
+                      : <span className="ml-1 text-fg-faint">· capabilities unknown</span>
+                  )}
+                </p>
+                <CapBadges provider={selectedModel.provider} modelId={selectedModel.model_id} />
+              </div>
             )}
             {models.length === 0 && (
               <p className="text-[11px] text-amber-700 dark:text-amber-400">No model configs yet — go to the Models panel to add one first.</p>

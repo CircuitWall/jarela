@@ -220,6 +220,12 @@ function ensureUserProfileLocationColumns(db: DatabaseSync): void {
   if (!names.has("location_label"))       db.exec("ALTER TABLE user_profile ADD COLUMN location_label TEXT");
   if (!names.has("location_updated_at"))  db.exec("ALTER TABLE user_profile ADD COLUMN location_updated_at TEXT");
   if (!names.has("location_consent"))     db.exec("ALTER TABLE user_profile ADD COLUMN location_consent INTEGER NOT NULL DEFAULT 0");
+  // Persona preset (home/work/dev/custom). Drives the Credentials panel's
+  // category filter so a home user doesn't see Jira / infrastructure
+  // sections, and a work user doesn't see noise outside the work
+  // toolbelt. NULL = unset (treat as "custom" → show everything). Set
+  // by the Profile editor; consumed by IntegrationsPanel.
+  if (!names.has("preset"))               db.exec("ALTER TABLE user_profile ADD COLUMN preset TEXT");
 }
 
 // Per-message classification. NULL/empty = ordinary chat content. Known

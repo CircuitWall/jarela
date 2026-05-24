@@ -1,32 +1,69 @@
 "use client";
-import { CheckCircle2, ExternalLink, Key, Link as LinkIcon, Loader2, RefreshCw, Terminal, Trash2, XCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { CheckCircle2, ExternalLink, Filter, Key, Link as LinkIcon, Loader2, RefreshCw, Terminal, Trash2, XCircle } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import type { IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { useAppContext } from "@/contexts/AppContext";
+import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { NetworkSection } from "./NetworkSection";
 
 const SECRET_MASK = "********";
 
+// Human label for the preset chip in the panel header. Keep terse —
+// the chip is informational, not the primary picker (that lives in the
+// Profile editor).
+const PRESET_LABELS: Record<NonNullable<UserProfile["preset"]>, string> = {
+  home: "Home",
+  work: "Work",
+  dev: "Developer",
+  custom: "Everything",
+};
+
 export function IntegrationsPanel() {
+  const { dispatch } = useAppContext();
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [preset, setPreset] = useState<UserProfile["preset"]>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("integrations", "integration", containerRef);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await api.integrations.list();
+      const [res, profile] = await Promise.all([
+        api.integrations.list(),
+        api.profile.get().catch(() => null),
+      ]);
       setDefs(res.definitions);
       setStatuses(Object.fromEntries(res.statuses.map((s) => [s.name, s])));
+      setPreset(profile?.preset ?? null);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
+
+  // Persona filter: if the user has chosen a preset, hide integrations
+  // outside that bucket. "custom" or unset → show everything (legacy
+  // behaviour). Configured-but-out-of-bucket entries are kept visible
+  // so a previously-saved credential is never silently hidden.
+  const visibleDefs = useMemo(() => {
+    if (!preset) return defs;
+    const allowed = PRESET_CATEGORIES[preset];
+    if (allowed === null) return defs;
+    return defs.filter((def) => {
+      if (!def.category) return true;
+      if (allowed.has(def.category)) return true;
+      // Don't hide something the user has already configured — bail out
+      // gracefully so credentials never appear to vanish.
+      return statuses[def.name]?.configured === true;
+    });
+  }, [defs, preset, statuses]);
+
+  const hiddenCount = defs.length - visibleDefs.length;
 
   async function syncFromEnv() {
     setSyncing(true);
@@ -65,6 +102,20 @@ export function IntegrationsPanel() {
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
         <Key size={14} className="text-fg-subtle" />
         <h2 className="text-sm font-semibold text-fg mr-auto">Credentials</h2>
+        {preset && preset !== "custom" && (
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "SET_TAB", tab: "profile" })}
+            title={`Filtered to "${PRESET_LABELS[preset]}" preset. Click to change in Profile.`}
+            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-full border border-border bg-surface-2 text-fg-muted hover:bg-surface-3"
+          >
+            <Filter size={11} />
+            <span>{PRESET_LABELS[preset]}</span>
+            {hiddenCount > 0 && (
+              <span className="text-fg-faint">· {hiddenCount} hidden</span>
+            )}
+          </button>
+        )}
         <button
           onClick={syncFromEnv}
           disabled={syncing}
@@ -89,7 +140,7 @@ export function IntegrationsPanel() {
         <NetworkSection />
         {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
         {!loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No integrations available.</p>}
-        {defs.map((def) => (
+        {visibleDefs.map((def) => (
           <IntegrationCard
             key={def.name}
             definition={def}

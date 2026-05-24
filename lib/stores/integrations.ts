@@ -12,12 +12,32 @@ import { getIntegrationMeta, markFieldsAsUserTouched } from "@/lib/stores/integr
 export const SECRET_MASK = "********";
 const NAMESPACE = "integrations";
 
+// Persona-filter category. Mirrors the category enum in
+// lib/integrations/manifest.ts so we can drive the Credentials panel
+// off the same vocabulary the agent uses when explaining setup.
+//   llm            - LLM provider keys (Google, OpenAI, …)
+//   mail           - inbox + draft tools (Gmail, Outlook)
+//   calendar       - calendar event tools
+//   issue-tracker  - Jira / Jira Align / etc.
+//   chat           - messaging bridges (future)
+//   infrastructure - GitHub / cloud / k8s / …
+//   other          - everything else
+export type IntegrationCategory =
+  | "llm"
+  | "mail"
+  | "calendar"
+  | "issue-tracker"
+  | "chat"
+  | "infrastructure"
+  | "other";
+
 // Per-integration shape. Adding a new integration means:
 //   1. Add an entry here naming its fields and which are secrets.
 //   2. The Atlassian tool (or a future tool) reads via getIntegration().
 export const INTEGRATIONS = {
   atlassian: {
     label: "Atlassian (Jira + Confluence)",
+    category: "issue-tracker" as IntegrationCategory,
     description: "Used by jira_* and confluence_* tools. Get an API token at id.atlassian.com → Security → API tokens.",
     fields: [
       { key: "url", label: "Site URL", placeholder: "https://your-team.atlassian.net", secret: false, required: true },
@@ -27,6 +47,7 @@ export const INTEGRATIONS = {
   },
   jira_align: {
     label: "Jira Align",
+    category: "issue-tracker" as IntegrationCategory,
     description:
       "Used by jira_align_* tools (read/search/walk hierarchy, create/update/transition/delete " +
       "work items, comment). Generate an API token in Jira Align under Settings → Personal " +
@@ -38,6 +59,7 @@ export const INTEGRATIONS = {
   },
   google: {
     label: "Google AI (Gemini + Imagen)",
+    category: "llm" as IntegrationCategory,
     description: "Used by the generate_image tool (Gemini / Imagen). Get a key at aistudio.google.com → API keys.",
     fields: [
       { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
@@ -45,6 +67,7 @@ export const INTEGRATIONS = {
   },
   gmail: {
     label: "Gmail + Calendar",
+    category: "mail" as IntegrationCategory,
     description:
       "Used by the gmail_* and calendar_* tools (search/read/draft/label/archive mail; " +
       "list/create/update/delete calendar events). Drafts only \u2014 this integration " +
@@ -57,6 +80,7 @@ export const INTEGRATIONS = {
     ],
   },  github: {
     label: "GitHub",
+    category: "infrastructure" as IntegrationCategory,
     description:
       "Used by github_* tools (search/read/create/comment on issues + PRs, list PRs, get repo info). " +
       "Create a Personal Access Token at github.com/settings/tokens. Scopes: `repo` (private repos) or " +
@@ -67,6 +91,7 @@ export const INTEGRATIONS = {
   },
   outlook: {
     label: "Outlook + Calendar",
+    category: "mail" as IntegrationCategory,
     description:
       "Used by the outlook_* and outlook_calendar_* tools (search/read/draft/move/trash mail; " +
       "list/create/update/delete calendar events). Drafts only — this integration intentionally " +

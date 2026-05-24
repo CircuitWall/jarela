@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Brain, Calendar, Cpu, Key, MessageSquare, Monitor, Moon, Plug, Puzzle, Smartphone, Sun, User } from "lucide-react";
+import { Bot, Brain, Calendar, ChevronDown, Cpu, Key, MessageSquare, Monitor, Moon, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
@@ -25,8 +25,9 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   agents: <Bot size={13} />,
   memory: <Brain size={13} />,
   models: <Cpu size={13} />,
-  mcp: <Plug size={13} />,
-  extensions: <Puzzle size={13} />,
+  mcp: <Wrench size={13} />,
+  extensions: <Wrench size={13} />,
+  tools: <Wrench size={13} />,
   integrations: <Key size={13} />,
   tasks: <Calendar size={13} />,
   bridges: <Smartphone size={13} />,
@@ -40,25 +41,26 @@ const TAB_TITLES: Record<Tab, string> = {
   models: "Models",
   mcp: "MCP",
   extensions: "Extensions",
+  tools: "Tools",
   integrations: "Credentials",
   tasks: "Tasks",
   bridges: "Bridges",
   profile: "Profile",
 };
 
-// Ordered by expected day-to-day usage frequency (most to least).
-const TAB_ORDER: Tab[] = [
-  "chat",
-  "agents",
-  "memory",
-  "tasks",
-  "models",
-  "mcp",
-  "extensions",
-  "bridges",
-  "profile",
-  "integrations",
-];
+// Two-tier menu. "Common" surfaces the day-to-day verbs (chat, agents,
+// memory, tasks, bridges, profile). "Advanced" hides the engine room
+// (credentials, models, tools) behind a collapsible header so first-run
+// users aren't faced with eight cards of config they don't yet need.
+//
+// "tools" subsumes the legacy "mcp" + "extensions" tabs into a single
+// entry with internal sub-tabs (see components/tools/ToolsPanel.tsx).
+// The old tabs remain wired in the AppContext / AppShell for deep-link
+// back-compat with existing bookmarks and tests, but are hidden here.
+const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "tasks", "bridges", "profile"];
+const ADVANCED_TABS: Tab[] = ["integrations", "models", "tools"];
+
+const ADVANCED_KEY = "jarela.menu.advanced";
 
 const GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -184,29 +186,82 @@ export function MenuPanel({
   onShowToolsChange,
   onShowThinkingChange,
 }: Props) {
+  // Advanced section starts collapsed once the user has dismissed it
+  // once (persisted to localStorage). Defaults to *expanded* on first
+  // boot so the engine room is visible to power users out of the box.
+  const [advancedOpen, setAdvancedOpen] = useState<boolean>(true);
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(ADVANCED_KEY);
+      if (v != null) setAdvancedOpen(v === "1");
+    } catch {
+      /* localStorage may throw in private mode; harmless. */
+    }
+  }, []);
+  // If the user navigates into an Advanced tab via deep-link, auto-open
+  // the section so the active state is visible.
+  useEffect(() => {
+    if (ADVANCED_TABS.includes(activeTab) && !advancedOpen) {
+      setAdvancedOpen(true);
+      try { window.localStorage.setItem(ADVANCED_KEY, "1"); } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const toggleAdvanced = () => {
+    setAdvancedOpen((prev) => {
+      const next = !prev;
+      try { window.localStorage.setItem(ADVANCED_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const renderTabButton = (tab: Tab) => (
+    <button
+      key={tab}
+      onClick={() => onSetTab(tab)}
+      title={TAB_TITLES[tab]}
+      aria-label={TAB_TITLES[tab]}
+      className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-lg py-2 px-1 transition-colors ${
+        activeTab === tab
+          ? "bg-surface-3 text-fg ring-1 ring-border"
+          : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
+      }`}
+    >
+      <span className="shrink-0">{TAB_ICONS[tab]}</span>
+      <span className="text-[10px] leading-none truncate max-w-full">{TAB_TITLES[tab]}</span>
+    </button>
+  );
+
   return (
     <div
       className="glass-elevated fixed right-0 bottom-0 w-full sm:w-[26rem] max-w-full border-l border-border/60 z-40 flex flex-col pb-safe"
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
-      {/* Navigation tabs as a labeled icon grid. */}
-      <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 px-2 py-2 border-b border-border shrink-0">
-        {TAB_ORDER.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => onSetTab(tab)}
-            title={TAB_TITLES[tab]}
-            aria-label={TAB_TITLES[tab]}
-            className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-lg py-2 px-1 transition-colors ${
-              activeTab === tab
-                ? "bg-surface-3 text-fg ring-1 ring-border"
-                : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
-            }`}
-          >
-            <span className="shrink-0">{TAB_ICONS[tab]}</span>
-            <span className="text-[10px] leading-none truncate max-w-full">{TAB_TITLES[tab]}</span>
-          </button>
-        ))}
+      {/* Common navigation — the day-to-day surface. */}
+      <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0">
+        {COMMON_TABS.map(renderTabButton)}
+      </div>
+
+      {/* Advanced (collapsible) — configuration / engine room. */}
+      <div className="border-b border-border shrink-0">
+        <button
+          type="button"
+          onClick={toggleAdvanced}
+          aria-expanded={advancedOpen}
+          className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors"
+        >
+          <span className="font-medium">Advanced</span>
+          <ChevronDown
+            size={12}
+            className={`transition-transform ${advancedOpen ? "rotate-0" : "-rotate-90"}`}
+          />
+        </button>
+        {advancedOpen && (
+          <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+            {ADVANCED_TABS.map(renderTabButton)}
+          </div>
+        )}
       </div>
 
       {/* Main content area */}

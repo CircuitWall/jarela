@@ -2,6 +2,21 @@ import { getDb } from "@/lib/db";
 
 const now = () => new Date().toISOString();
 
+// Persona presets (see ADR — to be written). Drives the Credentials
+// panel's category filter so the agent surface stays calm.
+//
+//   home   → llm + mail + calendar + chat
+//   work   → everything except chat-only (everyone uses work mail/cal/jira)
+//   dev    → everything (including infrastructure)
+//   custom → no filter, show everything
+//
+// NULL in the DB also means "no filter".
+export type UserPreset = "home" | "work" | "dev" | "custom";
+
+export function isUserPreset(v: unknown): v is UserPreset {
+  return v === "home" || v === "work" || v === "dev" || v === "custom";
+}
+
 export interface UserProfileRow {
   id: string;
   name: string;
@@ -18,6 +33,8 @@ export interface UserProfileRow {
   location_label: string | null;
   location_updated_at: string | null;
   location_consent: number; // 0 | 1
+  // ── Persona ──────────────────────────────────────────────────────────
+  preset: UserPreset | null;
 }
 
 export function getUserProfile(): UserProfileRow | null {
@@ -89,5 +106,16 @@ export function updateUserLocation(input: {
       t,
       t,
     );
+  return getUserProfile()!;
+}
+
+export function setUserPreset(preset: UserPreset | null): UserProfileRow {
+  const t = now();
+  const db = getDb();
+  // Ensure a row exists so the UPDATE has something to touch.
+  if (!getUserProfile()) upsertUserProfile("", null, "");
+  db.prepare(
+    `UPDATE user_profile SET preset=?, updated_at=? WHERE id='me'`,
+  ).run(preset, t);
   return getUserProfile()!;
 }

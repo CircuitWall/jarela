@@ -6,7 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Bot, ChevronRight, Link as LinkIcon, Link2, Loader2, Paperclip, Pause, Play, User, X } from "lucide-react";
+import { Bot, ChevronRight, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -343,6 +343,78 @@ function UserAvatar({ profile }: { profile?: UserProfile | null }) {
   return (
     <div className="w-7 h-7 rounded-lg bg-surface-3 flex items-center justify-center">
       <User size={13} className="text-fg-faint" />
+    </div>
+  );
+}
+
+// Detects messages forwarded by the bridge dispatcher (lib/bridges/dispatcher.ts:
+// `contextLines.join("\n") + "\n\n" + msg.text`) so the chat UI can render the
+// metadata as a compact header card instead of dumping six bracketed `[key:value]`
+// lines at the top of every bubble. Format is fixed by dispatcher; if either
+// side changes, update both.
+interface BridgeContext {
+  bridgeId: string;
+  chatJid: string;
+  chatName: string;
+  isGroup: boolean;
+  senderJid: string;
+  senderName: string;
+  body: string;
+}
+
+function parseBridgeContext(raw: string): BridgeContext | null {
+  if (!raw.startsWith("[bridge:")) return null;
+  // Walk the contiguous `[key:value]` prefix line-by-line; stop at the first
+  // blank line (dispatcher always separates the header from the body with one).
+  const headers: Record<string, string> = {};
+  const lines = raw.split("\n");
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === "") { i++; break; }
+    const m = /^\[([a-z_]+):([\s\S]*)\]$/.exec(line);
+    if (!m) return null;
+    headers[m[1]] = m[2];
+  }
+  if (!headers.bridge || !headers.chat_jid || !headers.chat_type) return null;
+  return {
+    bridgeId: headers.bridge,
+    chatJid: headers.chat_jid,
+    chatName: headers.chat_name || headers.chat_jid,
+    isGroup: headers.chat_type === "group",
+    senderJid: headers.sender_jid || headers.chat_jid,
+    senderName: headers.sender_name || headers.sender_jid || "Unknown",
+    body: lines.slice(i).join("\n").trimEnd(),
+  };
+}
+
+// Compact header card for inbound bridge messages. Shows sender + chat
+// context as a single line of metadata above the actual message text, so a
+// WhatsApp DM looks like "Alice • DM\n<text>" and a group message looks
+// like "Alice in Family Chat • Group\n<text>". Always on the user-bubble
+// (accent) side because bridge messages are persisted with role=user.
+function BridgeMessageCard({ ctx }: { ctx: BridgeContext }) {
+  const showChat = ctx.isGroup && ctx.chatName && ctx.chatName !== ctx.senderName;
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="flex items-center gap-1.5 text-[11px] text-white/85 min-w-0">
+        {ctx.isGroup ? <Users size={11} className="shrink-0" /> : <MessageCircle size={11} className="shrink-0" />}
+        <span className="font-medium truncate" title={ctx.senderJid}>{ctx.senderName}</span>
+        {showChat && (
+          <>
+            <span className="text-white/55">in</span>
+            <span className="truncate" title={ctx.chatJid}>{ctx.chatName}</span>
+          </>
+        )}
+        <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
+          {ctx.isGroup ? "group" : "dm"}
+        </span>
+      </div>
+      {ctx.body ? (
+        <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">{ctx.body}</p>
+      ) : (
+        <p className="text-[12px] italic text-white/65">(empty message)</p>
+      )}
     </div>
   );
 }
@@ -935,6 +1007,8 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
           {typeof parsed === "string" ? (
             isUser ? (
               (() => {
+                const bridge = parseBridgeContext(parsed);
+                if (bridge) return <BridgeMessageCard ctx={bridge} />;
                 const ctx = parseCapturedContext(parsed);
                 if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
                 return (
@@ -950,9 +1024,30 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             )
           ) : (
             <div className="flex flex-col gap-1.5">
-              {parsed.map((part, i) => (
-                <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
-              ))}
+              {(() => {
+                // Bridge messages that carry attachments get persisted as a
+                // ContentPart[] whose first text part holds the bracketed
+                // [bridge:.] header + body. Detect that case so the user
+                // bubble shows the card on top of the media parts instead of
+                // a raw bracket dump above them.
+                const firstText = isUser && parsed[0]?.type === "text" && typeof parsed[0].text === "string"
+                  ? parsed[0].text
+                  : null;
+                const bridge = firstText ? parseBridgeContext(firstText) : null;
+                if (bridge) {
+                  return (
+                    <>
+                      <BridgeMessageCard ctx={bridge} />
+                      {parsed.slice(1).map((part, i) => (
+                        <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
+                      ))}
+                    </>
+                  );
+                }
+                return parsed.map((part, i) => (
+                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
+                ));
+              })()}
               {streaming && (
         <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
           <span className="jarela-typing-dot" />
