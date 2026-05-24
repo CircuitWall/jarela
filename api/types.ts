@@ -361,6 +361,8 @@ export interface CatalogModel {
     streaming: boolean;
     json_mode: boolean;
     web_search: boolean;
+    audio: boolean;
+    files: boolean;
   };
 }
 
