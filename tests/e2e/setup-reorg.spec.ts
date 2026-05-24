@@ -15,6 +15,14 @@ test.beforeEach(async ({ request, page }) => {
   // Reset the profile preset so the Credentials-chip + Profile-preset
   // tests don't bleed into each other (or into reruns).
   await request.put("/api/v1/profile", { data: { preset: null } });
+  // CI runs without an OS keychain, so the at-rest crypto bootstrap falls
+  // back to a keyfile and surfaces a fixed banner that covers the menu
+  // panel and intercepts clicks on tabs underneath. Pre-dismiss it so
+  // tests can interact with the UI without flakiness. Must seed the
+  // localStorage flag on the target origin before navigating.
+  await page.addInitScript(() => {
+    try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
+  });
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
 });
