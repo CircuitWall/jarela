@@ -4,6 +4,7 @@ import { Upload, Plus, Trash2, Shield, MapPin, Globe, Check, Copy } from "lucide
 import { api } from "@/api/client";
 import type { UserProfile, AccessWhitelistEntry, TailscaleStatus } from "@/api/types";
 import { useLocationSharing } from "@/hooks/useLocationSharing";
+import { formatRelative } from "@/lib/utils/time";
 
 export function ProfileEditor() {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -284,11 +285,7 @@ function LocationSharing({
 }
 
 function timeAgo(iso: string): string {
-  const s = Math.round((Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
-  if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-  return `${Math.round(s / 86400)}d ago`;
+  return formatRelative(iso);
 }
 
 function AccessWhitelist() {
