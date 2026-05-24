@@ -123,6 +123,8 @@ export interface SearchOptions {
   cursor?: string;
   limit?: number;
   fresh?: boolean;
+  /** When true, include Community-published entries (default: false — only Official + Vendor). */
+  includeCommunity?: boolean;
 }
 
 export interface SearchResult {
@@ -130,8 +132,14 @@ export interface SearchResult {
   nextCursor?: string;
 }
 
+// Default page size when caller doesn't specify. The upstream registry's own
+// default is small (~30); we bump it so that after filtering out community
+// entries and sorting by popularity, the first page still feels populated.
+const DEFAULT_LIMIT = 100;
+
 export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchResult> {
-  const key = `${opts.q ?? ""}|${opts.cursor ?? ""}|${opts.limit ?? ""}`;
+  const includeCommunity = opts.includeCommunity === true;
+  const key = `${opts.q ?? ""}|${opts.cursor ?? ""}|${opts.limit ?? ""}|${includeCommunity ? "all" : "verified"}`;
   if (!opts.fresh) {
     const cached = getCached(listCache, key);
     if (cached) return cached;
@@ -140,17 +148,36 @@ export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchRe
   const url = new URL(`${REGISTRY_BASE}/servers`);
   if (opts.q) url.searchParams.set("search", opts.q);
   if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
-  if (opts.limit) url.searchParams.set("limit", String(opts.limit));
+  url.searchParams.set("limit", String(opts.limit ?? DEFAULT_LIMIT));
 
   const raw = await fetchJson(url);
   const parsed = ListResponseZ.safeParse(raw);
   if (!parsed.success) throw new Error(`registry response failed validation: ${parsed.error.message}`);
 
-  const entries = (parsed.data.servers ?? [])
+  // Pair each translated entry with its fully-qualified upstream namespace
+  // so popularity scoring can read it (RegistryEntry.id is just the last
+  // path segment and loses the publisher prefix).
+  const translated = (parsed.data.servers ?? [])
     .filter((e) => (e._meta?.["io.modelcontextprotocol.registry/official"]?.status ?? "active") === "active")
-    .map(toRegistryEntry)
-    .filter((e): e is RegistryEntry => e !== null);
+    .map((e) => {
+      const entry = toRegistryEntry(e);
+      return entry ? { entry, qualifiedName: e.server.name } : null;
+    })
+    .filter((x): x is { entry: RegistryEntry; qualifiedName: string } => x !== null);
 
+  const filtered = includeCommunity
+    ? translated
+    : translated.filter((x) => x.entry.source !== "Community");
+
+  // Sort by popularity score (desc), then alphabetically. Stable within a
+  // page; pagination still works because we don't drop the upstream cursor.
+  filtered.sort((a, b) => {
+    const ds = popularityScore(b.entry, b.qualifiedName) - popularityScore(a.entry, a.qualifiedName);
+    if (ds !== 0) return ds;
+    return a.entry.name.localeCompare(b.entry.name);
+  });
+
+  const entries = filtered.map((x) => x.entry);
   const result: SearchResult = { entries, nextCursor: parsed.data.metadata?.nextCursor };
   setCached(listCache, key, result);
   return result;
@@ -389,10 +416,103 @@ function inferCategory(name: string): RegistryEntry["category"] {
   return "Productivity";
 }
 
+// GitHub orgs whose `io.github.<org>/...` namespaces we treat as Vendor-grade.
+// The MCP registry verifies these via OIDC, so the namespace really does
+// belong to the named org — but namespace existence alone doesn't imply
+// trustworthiness. This allowlist keeps the picker focused on first-party
+// integrations from established vendors.
+const VENDOR_GITHUB_ORGS = new Set<string>([
+  "anthropic",
+  "anthropics",
+  "openai",
+  "googleapis",
+  "google",
+  "microsoft",
+  "azure",
+  "github",
+  "cloudflare",
+  "stripe",
+  "sentry",
+  "sentry-mcp",
+  "vercel",
+  "supabase",
+  "neondatabase",
+  "upstash",
+  "redis",
+  "mongodb",
+  "elastic",
+  "hashicorp",
+  "docker",
+  "linear",
+  "notionhq",
+  "slack",
+  "atlassian",
+  "shopify",
+  "twilio",
+  "discordapp",
+  "deepmind",
+  "huggingface",
+  "perplexityai",
+  "brave",
+  "exa-labs",
+  "firecrawl",
+  "qdrant",
+  "pinecone-io",
+  "chroma-core",
+]);
+
+// Roughly-popular GitHub orgs get a boost so they float to the top of the
+// picker. Not exhaustive — just enough to surface household names first.
+const VENDOR_POPULARITY_BOOST = new Map<string, number>([
+  ["anthropic", 60], ["anthropics", 60],
+  ["openai", 55],
+  ["github", 55],
+  ["google", 50], ["googleapis", 50], ["deepmind", 45],
+  ["microsoft", 50], ["azure", 45],
+  ["cloudflare", 45],
+  ["stripe", 40],
+  ["vercel", 40],
+  ["supabase", 35],
+  ["notionhq", 35],
+  ["slack", 35],
+  ["linear", 30],
+  ["sentry", 30], ["sentry-mcp", 30],
+  ["atlassian", 25],
+  ["shopify", 25],
+  ["huggingface", 25],
+  ["docker", 25],
+  ["hashicorp", 25],
+  ["twilio", 20],
+  ["mongodb", 20], ["redis", 20], ["elastic", 20],
+  ["neondatabase", 20], ["upstash", 20],
+  ["perplexityai", 20], ["brave", 20], ["exa-labs", 20],
+]);
+
 function inferSource(name: string): RegistryEntry["source"] {
-  // Namespaces like `io.github.<vendor>/...` or `com.<vendor>/...` indicate
-  // verified publishers. Everything else under user namespaces is community.
+  // Reference servers maintained by the MCP team.
+  if (/^io\.github\.modelcontextprotocol\//.test(name)) return "Official";
+  if (/^io\.modelcontextprotocol\//.test(name)) return "Official";
+  // Domain-verified namespaces (`com.<vendor>/`) imply a real company
+  // published this entry — treat as Vendor.
   if (/^com\.[a-z0-9-]+\//.test(name)) return "Vendor";
-  if (/^io\.github\.[a-z0-9-]+\//.test(name)) return "Vendor";
+  // GitHub-namespace entries are only Vendor when the org is on the
+  // allowlist; anyone else's GitHub repo counts as Community.
+  const m = /^io\.github\.([a-z0-9-]+)\//.exec(name);
+  if (m && VENDOR_GITHUB_ORGS.has(m[1])) return "Vendor";
   return "Community";
+}
+
+function popularityScore(entry: RegistryEntry, qualifiedName: string): number {
+  // Official servers always rank highest.
+  if (entry.source === "Official") return 1000;
+  if (entry.source === "Community") return 0;
+  // Vendor base score + per-org boost from the popularity table. Match
+  // against the fully-qualified upstream name (e.g. `io.github.cloudflare/…`)
+  // since `entry.id` only carries the last path segment.
+  let score = 100;
+  const m =
+    /^io\.github\.([a-z0-9-]+)\//.exec(qualifiedName) ??
+    /^com\.([a-z0-9-]+)\//.exec(qualifiedName);
+  if (m) score += VENDOR_POPULARITY_BOOST.get(m[1]) ?? 0;
+  return score;
 }
