@@ -5,6 +5,7 @@ import type { AgentConfig, AgentConfigIn, ModelConfig, ToolInfo } from "@/api/ty
 import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
+import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 
 interface Props {
   agent?: AgentConfig;
@@ -265,17 +266,33 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               onChange={(e) => setModelConfigName(e.target.value)}
             >
               <option value="">
-                {defaultModel ? `Default (${defaultModel.name} · ${defaultModel.model_id})` : "(no default configured)"}
+                {defaultModel
+                  ? `Default (${defaultModel.name} · ${defaultModel.model_id})${modelSupportsImages(defaultModel.provider, defaultModel.model_id) ? " 📷" : ""}`
+                  : "(no default configured)"}
               </option>
-              {models.map((m) => (
-                <option key={m.name} value={m.name}>
-                  {m.name} · {m.provider} / {m.model_id}
-                </option>
-              ))}
+              {models.map((m) => {
+                // Prefix with a camera glyph when the model is known to
+                // accept image inputs — surfaces "this agent can read
+                // images from WhatsApp bridges / drag-and-drop" without
+                // a separate column. Plain <option> can't hold an SVG.
+                const vision = modelSupportsImages(m.provider, m.model_id);
+                return (
+                  <option key={m.name} value={m.name}>
+                    {vision ? "📷 " : ""}{m.name} · {m.provider} / {m.model_id}
+                  </option>
+                );
+              })}
             </select>
             {selectedModel && (
               <p className="text-[11px] text-fg-faint">
                 Using <span className="text-fg-subtle">{selectedModel.provider}</span> / <span className="font-mono text-fg-muted">{selectedModel.model_id}</span>
+                {modelSupportsImages(selectedModel.provider, selectedModel.model_id) ? (
+                  <span className="ml-1 text-emerald-700 dark:text-emerald-300">· vision-capable 📷</span>
+                ) : isProviderClassified(selectedModel.provider) ? (
+                  <span className="ml-1 text-amber-700 dark:text-amber-300">· no image input</span>
+                ) : (
+                  <span className="ml-1 text-fg-faint">· image capability unknown</span>
+                )}
               </p>
             )}
             {models.length === 0 && (
