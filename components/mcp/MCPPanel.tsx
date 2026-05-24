@@ -448,7 +448,13 @@ function RegistryPicker({
                     <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded border border-border text-fg-faint">
                       {e.transport}
                     </span>
-                    <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded border border-border text-fg-faint">
+                    <span className={`text-[9px] uppercase tracking-wider px-1 py-px rounded border ${
+                      e.source === "Official"
+                        ? "border-emerald-700/60 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                        : e.source === "Vendor"
+                          ? "border-sky-700/60 text-sky-600 dark:text-sky-400 bg-sky-500/10"
+                          : "border-border text-fg-faint"
+                    }`}>
                       {e.source}
                     </span>
                     {installed && (
