@@ -11,8 +11,11 @@
  *  - `connection.update` events drive our status reporter
  *    (`disconnected | pairing | connected | error`).
  *  - `messages.upsert` events with `type='notify'` (real-time inbound) and
- *    !fromMe are forwarded to the inbound handler as plain-text only —
- *    media (image/audio/voice/sticker/document) are silently dropped in v1.
+ *    !fromMe are forwarded to the inbound handler. Text, captions, images
+ *    (vision), stickers (as webp images), voice notes / audio, video, and
+ *    documents are all extracted via `extractContent`; location and contact
+ *    payloads are flattened into the text body. Reactions, polls and other
+ *    protocol-only messages are silently dropped.
  *  - `stop()` closes the WS without wiping auth.
  *  - `resetAuth()` removes the auth dir on disk; the next `start()` will
  *    fall into pairing mode again.
@@ -20,6 +23,7 @@
 
 import { ensureBridgeAuthDir, findRoute, removeBridgeAuthDir } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
+import type { ContentPart } from "@/lib/tools/types";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
 // types directly — both modules are loaded via dynamic `import()` inside
@@ -37,6 +41,7 @@ type WASocket = {
   end?: (err: Error | undefined) => void;
   groupFetchAllParticipating?: () => Promise<Record<string, { id: string; subject?: string }>>;
   onWhatsApp?: (...jids: string[]) => Promise<Array<{ jid?: string; exists?: boolean; lid?: string }>>;
+  updateMediaMessage?: (msg: unknown) => Promise<unknown>;
 };
 
 interface UnsafeBaileys {
@@ -44,6 +49,12 @@ interface UnsafeBaileys {
   useMultiFileAuthState: (dir: string) => Promise<{ state: unknown; saveCreds: () => Promise<void> }>;
   fetchLatestBaileysVersion: () => Promise<{ version: [number, number, number] }>;
   DisconnectReason: Record<string, number>;
+  downloadMediaMessage: (
+    message: unknown,
+    type: "buffer" | "stream",
+    options: Record<string, unknown>,
+    ctx?: { logger?: unknown; reuploadRequest?: (msg: unknown) => Promise<unknown> },
+  ) => Promise<Buffer>;
   Browsers: {
     ubuntu: (browser: string) => [string, string, string];
     macOS: (browser: string) => [string, string, string];
@@ -73,6 +84,14 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   private sentIds: string[] = [];
   private sentIdsSet = new Set<string>();
   private static readonly SENT_IDS_MAX = 500;
+  /**
+   * Cap on per-attachment payload size we'll forward to the LLM. WhatsApp
+   * compresses images to a few hundred KB; voice notes / short videos
+   * usually sit well under this too. The cap mainly exists so a deliberately
+   * crafted huge file (or a wallpaper-sized JPEG, or a 30-min video) doesn't
+   * blow the agent's request budget. 8 MB raw ≈ ~11 MB base64 inline.
+   */
+  private static readonly MAX_MEDIA_BYTES = 8 * 1024 * 1024;
 
   constructor(bridge_id: string) {
     this.bridge_id = bridge_id;
@@ -210,10 +229,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         const m = raw as {
           key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string; participant?: string };
           pushName?: string;
-          message?: {
-            conversation?: string;
-            extendedTextMessage?: { text?: string };
-          };
+          message?: WAMessageContent;
           messageTimestamp?: number | { low?: number };
         };
         if (!m.key?.remoteJid) continue;
@@ -236,9 +252,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // phone-number form.
         const remote_jid = pickRoutableJid(m.key.remoteJid, m.key.remoteJidAlt);
         const is_group = remote_jid.endsWith("@g.us");
-        // Update the chat cache regardless of whether the body is text —
-        // the chat is "real" the moment we see any message from it, even
-        // a sticker we'll drop.
+        // Update the chat cache regardless of payload shape — the chat is
+        // "real" the moment we see any message from it, even one whose
+        // body we end up unable to represent (e.g. reactions, polls).
         const ts = typeof m.messageTimestamp === "number"
           ? m.messageTimestamp * 1000
           : (m.messageTimestamp?.low ?? 0) * 1000 || Date.now();
@@ -246,8 +262,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // not the group subject. Avoid poisoning the group chat label.
         this.observeChat(remote_jid, is_group ? null : (m.pushName ?? null), ts);
 
-        const text = m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? "";
-        if (!text) continue; // drop non-text in v1
+        // Unwrap protocol envelopes (view-once, ephemeral, etc.) so we can
+        // see the underlying payload uniformly, then turn it into a text
+        // body + ContentPart attachments the agent can consume.
+        const inner = unwrapMessage(m.message);
+        const { text, attachments } = await this.extractContent(inner, m, baileys, sock, remote_jid);
+
+        // Drop messages we can't represent at all (e.g. protocol/system
+        // notices, reactions, unsupported message types).
+        if (!text && attachments.length === 0) continue;
         // In group chats `key.participant` is the actual sender's JID
         // (the chat-level remote_jid is the group, not the person). In 1:1
         // chats it's undefined — the sender == remote_jid. Normalize so the
@@ -265,6 +288,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           chat_name,
           sender_name,
           text,
+          attachments: attachments.length ? attachments : undefined,
           message_id: m.key.id ?? null,
           is_group,
           participant_jid,
@@ -476,6 +500,167 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     }
   }
 
+  /**
+   * Extract a routable text body + ContentPart attachments from one inbound
+   * WhatsApp message. Handles every common payload type:
+   *   - imageMessage          → image ContentPart (vision input)
+   *   - stickerMessage        → image ContentPart (webp; vision input)
+   *   - audioMessage / PTT    → file ContentPart with audio/* mime
+   *   - videoMessage          → file ContentPart with video/* mime
+   *   - documentMessage       → file ContentPart (utf-8 text for text/*+json,
+   *                             base64 for everything else)
+   *   - location / liveLoc    → inline text "[location: lat,lng ...]"
+   *   - contactMessage(s)     → inline text with the vcard / display names
+   *
+   * Each download is independent — a failure on one attachment doesn't lose
+   * the caption text or other attachments. Anything we can't represent
+   * leaves both fields empty and the upsert loop drops the message.
+   */
+  private async extractContent(
+    inner: WAMessageContent | undefined,
+    rawMessage: unknown,
+    baileys: UnsafeBaileys,
+    sock: WASocket,
+    remote_jid: string,
+  ): Promise<{ text: string; attachments: ContentPart[] }> {
+    const attachments: ContentPart[] = [];
+    let text =
+      inner?.conversation
+      ?? inner?.extendedTextMessage?.text
+      ?? inner?.imageMessage?.caption
+      ?? inner?.videoMessage?.caption
+      ?? inner?.documentMessage?.caption
+      ?? "";
+    if (!inner) return { text, attachments };
+
+    // Baileys' downloadMediaMessage expects the *outer* upsert message
+    // (with `.key` + `.message`), not the inner part. Wrap the per-kind
+    // download here so the loop body stays declarative.
+    const download = async (label: string): Promise<Buffer | null> => {
+      try {
+        const buf = await baileys.downloadMediaMessage(
+          rawMessage,
+          "buffer",
+          {},
+          {
+            logger: makeSilentLogger(),
+            reuploadRequest: sock.updateMediaMessage?.bind(sock),
+          },
+        );
+        if (!buf || buf.length === 0) return null;
+        if (buf.length > WhatsAppBridgeAdapter.MAX_MEDIA_BYTES) {
+          console.warn(
+            `[bridge ${this.bridge_id}] dropped oversize ${label} (${buf.length} bytes) from ${remote_jid}`,
+          );
+          return null;
+        }
+        return buf;
+      } catch (err) {
+        // Media decryption / network errors are non-fatal — fall through
+        // so the caption (if any) and other parts still reach the agent.
+        const m = err instanceof Error ? err.message : String(err);
+        console.warn(`[bridge ${this.bridge_id}] ${label} download failed for ${remote_jid}: ${m}`);
+        return null;
+      }
+    };
+
+    if (inner.imageMessage) {
+      const buf = await download("image");
+      if (buf) {
+        attachments.push({
+          type: "image",
+          media_type: inner.imageMessage.mimetype || "image/jpeg",
+          data: buf.toString("base64"),
+        });
+      }
+    }
+
+    if (inner.stickerMessage) {
+      const buf = await download("sticker");
+      if (buf) {
+        // Stickers are webp images — surfacing them as `image` lets vision
+        // models actually describe them. Animated stickers go through as
+        // their raw webp; providers that can't decode animated webp will
+        // typically render the first frame.
+        attachments.push({
+          type: "image",
+          media_type: inner.stickerMessage.mimetype || "image/webp",
+          data: buf.toString("base64"),
+        });
+      }
+    }
+
+    if (inner.audioMessage) {
+      const isVoice = !!inner.audioMessage.ptt;
+      const buf = await download(isVoice ? "voice" : "audio");
+      if (buf) {
+        attachments.push({
+          type: "file",
+          name: isVoice ? "voice-note" : "audio",
+          media_type: inner.audioMessage.mimetype || "audio/ogg",
+          data: buf.toString("base64"),
+        });
+      }
+    }
+
+    if (inner.videoMessage) {
+      const buf = await download("video");
+      if (buf) {
+        attachments.push({
+          type: "file",
+          name: "video",
+          media_type: inner.videoMessage.mimetype || "video/mp4",
+          data: buf.toString("base64"),
+        });
+      }
+    }
+
+    if (inner.documentMessage) {
+      const buf = await download("document");
+      if (buf) {
+        const mime = inner.documentMessage.mimetype || "application/octet-stream";
+        // The LLM layer (lib/agents/llm.ts) inlines text/* and
+        // application/json file parts directly as their `data` string. For
+        // those we must store the decoded UTF-8 contents, not base64.
+        const inlineAsText = mime.startsWith("text/") || mime === "application/json";
+        attachments.push({
+          type: "file",
+          name: inner.documentMessage.fileName || inner.documentMessage.title || "document",
+          media_type: mime,
+          data: inlineAsText ? buf.toString("utf8") : buf.toString("base64"),
+        });
+      }
+    }
+
+    if (inner.locationMessage) {
+      const { degreesLatitude, degreesLongitude, name, address } = inner.locationMessage;
+      const parts = [`lat=${degreesLatitude ?? "?"}`, `lng=${degreesLongitude ?? "?"}`];
+      if (name) parts.push(`name="${name}"`);
+      if (address) parts.push(`address="${address}"`);
+      text = (text ? text + "\n" : "") + `[location: ${parts.join(" ")}]`;
+    }
+
+    if (inner.liveLocationMessage) {
+      const { degreesLatitude, degreesLongitude } = inner.liveLocationMessage;
+      text = (text ? text + "\n" : "") + `[live-location: lat=${degreesLatitude ?? "?"} lng=${degreesLongitude ?? "?"}]`;
+    }
+
+    if (inner.contactMessage) {
+      const name = inner.contactMessage.displayName ?? "unknown";
+      const vcard = inner.contactMessage.vcard ?? "";
+      text = (text ? text + "\n" : "") + `[contact: ${name}]\n${vcard}`;
+    }
+
+    if (inner.contactsArrayMessage) {
+      const names = (inner.contactsArrayMessage.contacts ?? [])
+        .map((c) => c?.displayName ?? "unknown")
+        .join(", ");
+      text = (text ? text + "\n" : "") + `[contacts: ${names}]`;
+    }
+
+    return { text, attachments };
+  }
+
   private observeChat(remote_jid: string, name: string | null, ts: number | null): void {
     if (!remote_jid) return;
     const existing = this.chats.get(remote_jid);
@@ -511,6 +696,46 @@ function makeSilentLogger(): unknown {
   };
   self.child = () => self;
   return self;
+}
+
+/**
+ * Subset of Baileys' WAMessageContent we look at. WhatsApp wraps payloads
+ * in several envelope variants (view-once, ephemeral, V2 versions); see
+ * `unwrapMessage` for how we collapse them.
+ */
+type WAMessageContent = {
+  conversation?: string;
+  extendedTextMessage?: { text?: string };
+  stickerMessage?: { mimetype?: string; isAnimated?: boolean };
+  audioMessage?: { mimetype?: string; ptt?: boolean; seconds?: number };
+  videoMessage?: { caption?: string; mimetype?: string; seconds?: number };
+  documentMessage?: { caption?: string; fileName?: string; title?: string; mimetype?: string };
+  locationMessage?: { degreesLatitude?: number; degreesLongitude?: number; name?: string; address?: string };
+  liveLocationMessage?: { degreesLatitude?: number; degreesLongitude?: number; caption?: string };
+  contactMessage?: { displayName?: string; vcard?: string };
+  contactsArrayMessage?: { contacts?: Array<{ displayName?: string; vcard?: string }> };
+  imageMessage?: { caption?: string; mimetype?: string };
+  viewOnceMessage?: { message?: WAMessageContent };
+  viewOnceMessageV2?: { message?: WAMessageContent };
+  viewOnceMessageV2Extension?: { message?: WAMessageContent };
+  ephemeralMessage?: { message?: WAMessageContent };
+  documentWithCaptionMessage?: { message?: WAMessageContent };
+};
+
+/**
+ * Collapse the various WhatsApp envelope wrappers down to the inner content
+ * with the actual `imageMessage` / `conversation` / `extendedTextMessage`
+ * payload. Bounded recursion — these envelopes never nest deeper than 2
+ * levels in practice, but we cap at 5 as defence in depth.
+ */
+function unwrapMessage(msg: WAMessageContent | undefined, depth = 0): WAMessageContent | undefined {
+  if (!msg || depth > 5) return msg;
+  if (msg.ephemeralMessage?.message) return unwrapMessage(msg.ephemeralMessage.message, depth + 1);
+  if (msg.viewOnceMessage?.message) return unwrapMessage(msg.viewOnceMessage.message, depth + 1);
+  if (msg.viewOnceMessageV2?.message) return unwrapMessage(msg.viewOnceMessageV2.message, depth + 1);
+  if (msg.viewOnceMessageV2Extension?.message) return unwrapMessage(msg.viewOnceMessageV2Extension.message, depth + 1);
+  if (msg.documentWithCaptionMessage?.message) return unwrapMessage(msg.documentWithCaptionMessage.message, depth + 1);
+  return msg;
 }
 
 /**

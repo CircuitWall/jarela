@@ -11,6 +11,8 @@
  * a second channel doesn't require touching `dispatcher.ts` or `runtime.ts`.
  */
 
+import type { ContentPart } from "@/lib/tools/types";
+
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
 
 export interface InboundMessage {
@@ -22,8 +24,15 @@ export interface InboundMessage {
   chat_name: string | null;
   /** Best-effort sender display name for this specific inbound message. */
   sender_name: string | null;
-  /** Plain text body. Adapters drop non-text messages (media, voice) silently in v1. */
+  /** Plain text body (or media caption for messages whose payload is an image). */
   text: string;
+  /**
+   * Multi-modal attachments captured by the adapter (currently: WhatsApp
+   * image messages, downloaded and base64-encoded). Forwarded to the agent
+   * via the LLM's standard image input path. Empty/undefined for text-only
+   * messages and for adapters that don't support media.
+   */
+  attachments?: ContentPart[];
   /** Adapter-specific message id (used for de-dup on adapter restart). */
   message_id: string | null;
   /** Whether the chat is a group (informational only — routing is by JID either way). */

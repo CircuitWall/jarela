@@ -1,9 +1,10 @@
 "use client";
-import { ArrowLeft, Plus, QrCode, RefreshCw, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Camera, Plus, QrCode, RefreshCw, Search, Trash2, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
-import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute } from "@/api/types";
+import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute, ModelConfig } from "@/api/types";
 import { useBridgeRoutes } from "@/hooks/useBridges";
+import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { StatusPill } from "./BridgesPanel";
 
 /**
@@ -137,12 +138,21 @@ export function BridgeEditor({
 
         <RouteTable bridge_id={bridge.id} />
 
-        <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-fg-faint leading-relaxed">
+        <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-fg-faint leading-relaxed space-y-2">
           <p>
             <strong className="text-fg-muted">Unrouted messages are ignored (unless catch-all exists).</strong>{" "}
             If a WhatsApp chat isn&apos;t mapped to an agent below, incoming messages are silently dropped
             unless you add a <em>catch-all</em> route (`*`). Each agent can still have only one route,
             but a catch-all route can intentionally aggregate many chats into one agent thread.
+          </p>
+          <p>
+            <strong className="text-fg-muted">What gets forwarded.</strong>{" "}
+            Text, image captions, and image / sticker payloads (as vision input) reach the agent.
+            Voice notes, audio, video and documents are forwarded as attachments — agents can see
+            their filename and mime type, but only models with native audio / video / PDF support
+            interpret the contents. Location and contact-card messages are flattened into the text
+            body. The <Camera className="inline -mt-0.5" size={11} /> badge above marks agents whose
+            model can read images.
           </p>
         </section>
       </div>
@@ -171,8 +181,30 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
   // alongside the synced list. Keeps a hit visible even if the bridge's
   // chat cache drops it later.
   const [extraChats, setExtraChats] = useState<BridgeChat[]>([]);
+  // Resolved model config per agent — used to badge agents as vision-capable
+  // so the user can pick one that will actually interpret WhatsApp images,
+  // stickers and image-captioned messages forwarded through this bridge.
+  const [models, setModels] = useState<ModelConfig[]>([]);
 
   useEffect(() => { api.agents.list().then(setAgents).catch(() => {}); }, []);
+  useEffect(() => { api.models.list().then(setModels).catch(() => {}); }, []);
+
+  const modelByName = useMemo(() => {
+    const m = new Map<string, ModelConfig>();
+    for (const x of models) m.set(x.name, x);
+    return m;
+  }, [models]);
+  const defaultModel = useMemo(() => models.find((m) => m.is_default) ?? null, [models]);
+  /** Vision capability of an agent (resolves via its model_config_name, with default fallback). */
+  function agentVisionState(a: AgentConfig): { supported: boolean; classified: boolean; modelLabel: string | null } {
+    const cfg = a.model_config_name ? modelByName.get(a.model_config_name) ?? defaultModel : defaultModel;
+    if (!cfg) return { supported: false, classified: false, modelLabel: null };
+    return {
+      supported: modelSupportsImages(cfg.provider, cfg.model_id),
+      classified: isProviderClassified(cfg.provider),
+      modelLabel: `${cfg.provider} / ${cfg.model_id}`,
+    };
+  }
 
   // Pull chats whenever the Add form opens, then keep polling every 4s
   // while it stays open so newly-arrived chats appear without the user
@@ -453,10 +485,43 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
               className="w-full px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none"
             >
               <option value="">Select agent…</option>
-              {availableAgents.map((a) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
+              {availableAgents.map((a) => {
+                const v = agentVisionState(a);
+                // Prefix the option label with a camera glyph for vision-
+                // capable agents so the picker conveys the capability
+                // without needing a separate column. Plain <option> can't
+                // hold an SVG; the unicode camera is the closest stable
+                // glyph that renders across OSes.
+                const prefix = v.supported ? "📷 " : v.classified ? "   " : "   ";
+                return (
+                  <option key={a.id} value={a.id}>{prefix}{a.name}</option>
+                );
+              })}
             </select>
+            {(() => {
+              const a = availableAgents.find((x) => x.id === draft.agent_id);
+              if (!a) return null;
+              const v = agentVisionState(a);
+              if (v.supported) {
+                return (
+                  <p className="text-[10px] text-emerald-700 dark:text-emerald-300 flex items-center gap-1">
+                    <Camera size={10} /> Vision-capable — WhatsApp images, stickers and image captions will be read by this agent.
+                  </p>
+                );
+              }
+              if (!v.classified) {
+                return (
+                  <p className="text-[10px] text-fg-faint">
+                    Unknown model capabilities ({v.modelLabel ?? "no model"}) — images will be forwarded; whether the model can interpret them depends on the upstream provider.
+                  </p>
+                );
+              }
+              return (
+                <p className="text-[10px] text-amber-700 dark:text-amber-300">
+                  This agent&apos;s model ({v.modelLabel ?? "none"}) doesn&apos;t accept images. Text and image <em>captions</em> still reach it, but the image itself will be ignored. Switch the agent&apos;s model to a vision-capable one (e.g. gpt-4o, claude-3.5/4, gemini-1.5+) to enable image understanding.
+                </p>
+              );
+            })()}
 
             <label className="block text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Label (optional)</label>
             <input
@@ -490,38 +555,45 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
         <p className="text-[11px] text-fg-faint py-2">No routes. Inbound messages will be ignored unless you add a catch-all route.</p>
       )}
 
-      {routes.map((r) => (
-        <RouteRow
-          key={r.id}
-          route={r}
-          chatName={chats.find((c) => c.remote_jid === r.remote_jid)?.name ?? null}
-          agent={agents.find((a) => a.id === r.agent_id) ?? null}
-          onChangeAgent={async (agent_id) => {
-            try { await update(r.id, { agent_id }); }
-            catch (e) { alert(e instanceof Error ? e.message : String(e)); }
-          }}
-          onToggleSilent={async (silent_mode) => {
-            try { await update(r.id, { silent_mode }); }
-            catch (e) { alert(e instanceof Error ? e.message : String(e)); }
-          }}
-          agents={agents.filter((a) => a.id === r.agent_id || !usedAgents.has(a.id))}
-          onDelete={async () => {
-            if (!confirm("Delete this route? Incoming messages from this chat will be ignored.")) return;
-            await remove(r.id);
-          }}
-        />
-      ))}
+      {routes.map((r) => {
+        const a = agents.find((x) => x.id === r.agent_id) ?? null;
+        return (
+          <RouteRow
+            key={r.id}
+            route={r}
+            chatName={chats.find((c) => c.remote_jid === r.remote_jid)?.name ?? null}
+            agent={a}
+            agentVision={a ? agentVisionState(a) : null}
+            onChangeAgent={async (agent_id) => {
+              try { await update(r.id, { agent_id }); }
+              catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+            }}
+            onToggleSilent={async (silent_mode) => {
+              try { await update(r.id, { silent_mode }); }
+              catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+            }}
+            agents={agents.filter((x) => x.id === r.agent_id || !usedAgents.has(x.id))}
+            visionForAgent={(x) => agentVisionState(x)}
+            onDelete={async () => {
+              if (!confirm("Delete this route? Incoming messages from this chat will be ignored.")) return;
+              await remove(r.id);
+            }}
+          />
+        );
+      })}
     </section>
   );
 }
 
 function RouteRow({
-  route, chatName, agent, agents, onChangeAgent, onToggleSilent, onDelete,
+  route, chatName, agent, agentVision, agents, visionForAgent, onChangeAgent, onToggleSilent, onDelete,
 }: {
   route: BridgeRoute;
   chatName: string | null;
   agent: AgentConfig | null;
+  agentVision: { supported: boolean; classified: boolean; modelLabel: string | null } | null;
   agents: AgentConfig[];
+  visionForAgent: (a: AgentConfig) => { supported: boolean; classified: boolean; modelLabel: string | null };
   onChangeAgent: (id: string) => Promise<void>;
   onToggleSilent: (silent: boolean) => Promise<void>;
   onDelete: () => Promise<void> | void;
@@ -553,10 +625,32 @@ function RouteRow({
           className="px-1.5 py-0.5 text-[11px] bg-surface-3 rounded border border-border focus:border-accent outline-none max-w-[40%]"
         >
           {!agent && <option value="">(missing agent)</option>}
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
+          {agents.map((a) => {
+            const v = visionForAgent(a);
+            const prefix = v.supported ? "📷 " : "";
+            return <option key={a.id} value={a.id}>{prefix}{a.name}</option>;
+          })}
         </select>
+        {agentVision && (
+          <span
+            title={
+              agentVision.supported
+                ? `Vision-capable model (${agentVision.modelLabel}) — reads images & stickers.`
+                : agentVision.classified
+                ? `Model ${agentVision.modelLabel ?? ""} doesn't accept images. Captions still reach the agent; the image itself is ignored.`
+                : `Unknown capabilities for ${agentVision.modelLabel ?? "this model"} — image handling depends on the upstream provider.`
+            }
+            className={`shrink-0 inline-flex items-center justify-center w-5 h-5 rounded ${
+              agentVision.supported
+                ? "text-emerald-600 dark:text-emerald-400"
+                : agentVision.classified
+                ? "text-amber-600 dark:text-amber-400"
+                : "text-fg-faint"
+            }`}
+          >
+            <Camera size={11} />
+          </span>
+        )}
         <button
           onClick={() => void onDelete()}
           className="p-1 rounded text-fg-faint hover:text-rose-700 dark:hover:text-rose-400 hover:bg-surface-3"
