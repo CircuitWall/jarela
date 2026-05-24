@@ -6,10 +6,10 @@ import {
 } from "@/lib/stores/agent-configs";
 import type { MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { agentToResponse } from "@/lib/api/serializers";
-import { errorResponse, createdResponse } from "@/lib/api/responses";
+import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";
 
 export function GET() {
-  return NextResponse.json(listAgentConfigs().map(agentToResponse));
+  return cachedJson(listAgentConfigs().map(agentToResponse), 15);
 }
 
 export async function POST(req: NextRequest) {

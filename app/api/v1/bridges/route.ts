@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { createBridge, listBridges } from "@/lib/stores/bridges";
 import { bridgeToResponse } from "@/lib/api/serializers";
-import { createdResponse, validateBody } from "@/lib/api/responses";
+import { createdResponse, validateBody, cachedJson } from "@/lib/api/responses";
 
 export function GET() {
-  return NextResponse.json(listBridges().map(bridgeToResponse));
+  return cachedJson(listBridges().map(bridgeToResponse), 15);
 }
 
 const CreateSchema = z.object({

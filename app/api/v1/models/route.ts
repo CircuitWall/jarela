@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
-import { errorResponse, createdResponse } from "@/lib/api/responses";
+import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 
 export function GET() {
-  return NextResponse.json(listModelConfigs().map((r) => ({
+  return cachedJson(listModelConfigs().map((r) => ({
     ...r,
     params: parseJsonSafe<Record<string, unknown>>(r.params, {}),
     is_default: Boolean(r.is_default),
-  })));
+  })), 15);
 }
 
 export async function POST(req: NextRequest) {
