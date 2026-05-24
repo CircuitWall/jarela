@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-24
+
+### Added
+
+- Chat bubble now renders inbound bridge media inline: audio messages use
+  an `<audio controls>` player and video messages use a `<video controls>`
+  player, so voice notes and short clips from WhatsApp can be reviewed
+  without downloading the attachment (#20).
+
+### Changed
+
+- Bridge notification titles now read `Sender → Agent` (with a
+  `(group)` suffix for group chats) instead of just the chat name, so
+  operators can see who is talking to which agent from the toast alone
+  (#20).
+
 ## [0.2.1] - 2026-05-24
 
 ### Fixed
