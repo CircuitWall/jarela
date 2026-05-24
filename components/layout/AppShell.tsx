@@ -362,7 +362,11 @@ export function AppShell() {
         )}
 
         {showMenu && (
-          <div className="absolute inset-0 bg-black/30 backdrop-blur-sm z-10" onClick={() => setShowMenu(false)} />
+          <div
+            className="fixed left-0 right-0 bottom-0 bg-black/30 backdrop-blur-sm z-30"
+            style={{ top: "calc(3rem + var(--app-safe-top))" }}
+            onClick={() => setShowMenu(false)}
+          />
         )}
 
         {showMenu && (
