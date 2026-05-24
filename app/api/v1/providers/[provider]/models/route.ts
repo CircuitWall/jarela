@@ -19,12 +19,35 @@ export interface CatalogModel {
 
 type Params = { params: Promise<{ provider: string }> };
 
-export async function GET(_req: NextRequest, { params }: Params) {
+// Live provider catalogs (OpenAI, GitHub Copilot) hit external APIs on every
+// call; static ones still cost JSON construction. Cache per-provider for a
+// short TTL so flipping panels / model browsers doesn't re-hit upstream.
+const PROVIDER_CATALOG_TTL_MS = 10 * 60 * 1000;
+type CachedCatalog = { data: CatalogModel[]; fetchedAt: number };
+const catalogCache = new Map<string, CachedCatalog>();
+
+async function getCachedCatalog(provider: string, force: boolean): Promise<CatalogModel[]> {
+  const now = Date.now();
+  if (!force) {
+    const cached = catalogCache.get(provider);
+    if (cached && now - cached.fetchedAt < PROVIDER_CATALOG_TTL_MS) return cached.data;
+  }
+  const data = await fetchCatalog(provider);
+  catalogCache.set(provider, { data, fetchedAt: now });
+  return data;
+}
+
+export async function GET(req: NextRequest, { params }: Params) {
   const { provider } = await params;
+  const force = req.nextUrl.searchParams.get("fresh") === "1";
 
   try {
-    const models = await fetchCatalog(provider);
-    return NextResponse.json(models);
+    const models = await getCachedCatalog(provider, force);
+    return NextResponse.json(models, {
+      headers: {
+        "Cache-Control": "private, max-age=300, stale-while-revalidate=600",
+      },
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
