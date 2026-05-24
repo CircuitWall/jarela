@@ -20,6 +20,7 @@ import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
+import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
 import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
@@ -192,6 +193,7 @@ export function AppShell() {
         style={{ height: "calc(3rem + var(--app-safe-top))" }}
       />
       <CryptoFallbackBanner />
+      <UpdateAvailableBanner />
       <header
         className="glass fixed top-0 left-0 right-0 z-40 flex items-center px-4 border-b border-border/60"
         style={{

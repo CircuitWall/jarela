@@ -23,6 +23,7 @@ function printHelp() {
 
 Usage:
   jarela [start]              start the server in the foreground (default)
+  jarela update               upgrade Jarela to the latest published version
   jarela install-service      register an OS-native autostart service for the
                               current user (Windows Scheduled Task / macOS
                               LaunchAgent / Linux systemd --user). No admin.
@@ -37,12 +38,19 @@ Environment:
   JARELA_RECURSION_LIMIT       — max LangGraph steps per run (default 200)
   JARELA_VOICE_TIMEOUT_MS      — Gemini voice request timeout (default 60000)
   JARELA_IMAGE_TIMEOUT_MS      — Gemini image request timeout (default 60000)
+  JARELA_DISABLE_UPDATE_CHECK  — set to 1 to skip the npm update check
 `);
 }
 
 if (cmd === "--help" || cmd === "-h" || cmd === "help") {
   printHelp();
   process.exit(0);
+}
+
+if (cmd === "update") {
+  const { runUpdate } = await import("./update.mjs");
+  try { const code = await runUpdate({ root }); process.exit(code); }
+  catch (e) { console.error(`[jarela] update failed: ${e?.message ?? e}`); process.exit(1); }
 }
 
 if (cmd === "install-service") {
@@ -61,6 +69,15 @@ if (cmd && cmd !== "start") {
   console.error(`[jarela] unknown command: ${cmd}`);
   printHelp();
   process.exit(2);
+}
+
+// Best-effort update check (non-blocking, short timeout). Disable with
+// JARELA_DISABLE_UPDATE_CHECK=1.
+if (process.env.JARELA_DISABLE_UPDATE_CHECK !== "1") {
+  try {
+    const { notifyIfBehind } = await import("./update.mjs");
+    await notifyIfBehind({ root });
+  } catch { /* never block boot on an update check */ }
 }
 
 // Default: build if needed, then start.
