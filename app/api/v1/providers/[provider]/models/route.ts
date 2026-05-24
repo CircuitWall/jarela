@@ -12,6 +12,8 @@ export interface CatalogModel {
     streaming: boolean;
     json_mode: boolean;
     web_search: boolean;
+    audio: boolean;
+    files: boolean;
   };
 }
 
@@ -68,6 +70,8 @@ async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
         streaming: true,
         json_mode: true,
         web_search: false,
+        audio:     m.id.includes("audio") || m.id.startsWith("gpt-4o") || m.id.startsWith("gpt-5"),
+        files:     m.id.startsWith("gpt-4") || m.id.startsWith("gpt-5") || m.id.startsWith("o"),
       },
     }))
     .sort((a, b) => a.id.localeCompare(b.id));
@@ -150,6 +154,8 @@ async function fetchCopilotChatCatalog(sessionToken: string): Promise<CatalogMod
       streaming: m.capabilities?.supports?.streaming ?? true,
       json_mode: false,
       web_search: false,
+      audio: false,
+      files: m.capabilities?.supports?.vision ?? false,
     },
   }));
 }
@@ -185,7 +191,7 @@ function githubCopilotKnownModels(): CatalogModel[] {
     context_length: null,
     max_output_tokens: null,
     hosted_on: "github",
-    capabilities: { vision, tools, streaming: true, json_mode: false, web_search: false },
+    capabilities: { vision, tools, streaming: true, json_mode: false, web_search: false, audio: false, files: vision },
   });
   return [
     // OpenAI family
@@ -215,9 +221,9 @@ function githubCopilotKnownModels(): CatalogModel[] {
 
 function anthropicKnownModels(): CatalogModel[] {
   return [
-    { id: "claude-opus-4-7",        context_length: 1000000, max_output_tokens: 8192,  hosted_on: "anthropic", capabilities: { vision: true,  tools: true, streaming: true, json_mode: false, web_search: false } },
-    { id: "claude-sonnet-4-6",      context_length: 200000,  max_output_tokens: 8192,  hosted_on: "anthropic", capabilities: { vision: true,  tools: true, streaming: true, json_mode: false, web_search: false } },
-    { id: "claude-haiku-4-5-20251001", context_length: 200000, max_output_tokens: 4096, hosted_on: "anthropic", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: false } },
+    { id: "claude-opus-4-7",        context_length: 1000000, max_output_tokens: 8192,  hosted_on: "anthropic", capabilities: { vision: true,  tools: true, streaming: true, json_mode: false, web_search: true,  audio: false, files: true } },
+    { id: "claude-sonnet-4-6",      context_length: 200000,  max_output_tokens: 8192,  hosted_on: "anthropic", capabilities: { vision: true,  tools: true, streaming: true, json_mode: false, web_search: true,  audio: false, files: true } },
+    { id: "claude-haiku-4-5-20251001", context_length: 200000, max_output_tokens: 4096, hosted_on: "anthropic", capabilities: { vision: true, tools: true, streaming: true, json_mode: false, web_search: true, audio: false, files: true } },
   ];
 }
 
@@ -225,12 +231,12 @@ function anthropicKnownModels(): CatalogModel[] {
 
 function geminiKnownModels(): CatalogModel[] {
   return [
-    { id: "gemini-2.5-pro",          context_length: 1048576, max_output_tokens: 65536,  hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "gemini-2.5-flash",        context_length: 1048576, max_output_tokens: 65536,  hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "gemini-2.0-flash",        context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "gemini-2.0-flash-lite",   context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "gemini-1.5-pro",          context_length: 2097152, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
-    { id: "gemini-1.5-flash",        context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false } },
+    { id: "gemini-2.5-pro",          context_length: 1048576, max_output_tokens: 65536,  hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: true,  audio: true,  files: true } },
+    { id: "gemini-2.5-flash",        context_length: 1048576, max_output_tokens: 65536,  hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: true,  audio: true,  files: true } },
+    { id: "gemini-2.0-flash",        context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: true,  audio: true,  files: true } },
+    { id: "gemini-2.0-flash-lite",   context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false, audio: true,  files: true } },
+    { id: "gemini-1.5-pro",          context_length: 2097152, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false, audio: true,  files: true } },
+    { id: "gemini-1.5-flash",        context_length: 1048576, max_output_tokens: 8192,   hosted_on: "google", capabilities: { vision: true,  tools: true, streaming: true, json_mode: true, web_search: false, audio: true,  files: true } },
   ];
 }
 
@@ -238,7 +244,7 @@ function geminiKnownModels(): CatalogModel[] {
 
 function deepseekKnownModels(): CatalogModel[] {
   return [
-    { id: "deepseek-chat",     context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: true,  streaming: true, json_mode: true,  web_search: false } },
-    { id: "deepseek-reasoner", context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: false, streaming: true, json_mode: false, web_search: false } },
+    { id: "deepseek-chat",     context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: true,  streaming: true, json_mode: true,  web_search: false, audio: false, files: false } },
+    { id: "deepseek-reasoner", context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: false, streaming: true, json_mode: false, web_search: false, audio: false, files: false } },
   ];
 }

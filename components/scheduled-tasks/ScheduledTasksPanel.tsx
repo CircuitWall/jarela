@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -253,18 +254,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function formatRelative(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now();
-  const past = ms < 0;
-  const abs = Math.abs(ms);
-  const min = Math.round(abs / 60_000);
-  const hr = Math.round(abs / 3_600_000);
-  const day = Math.round(abs / 86_400_000);
-  let txt: string;
-  if (abs < 60_000) txt = "<1m";
-  else if (min < 60) txt = `${min}m`;
-  else if (hr < 48) txt = `${hr}h`;
-  else txt = `${day}d`;
-  return past ? `${txt} ago` : `in ${txt}`;
+  return sharedFormatRelative(iso, { collapseSeconds: true });
 }
 
 // Editable form for an existing task. Keeps inline within the expanded

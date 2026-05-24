@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Profile**: persona preset (Home / Work / Developer / Everything).
+  The picker lives in the Profile editor and drives a new category
+  filter on the Credentials panel so first-run users aren't faced
+  with eight unrelated integration cards. Existing installs keep
+  today's "show everything" behaviour until they pick a preset.
+  Schema: `user_profile.preset TEXT NULL` (auto-migrated; `NULL` =
+  no filter).
+- **Tools**: new top-level menu entry that bundles **MCP servers**
+  and **Browser extensions** behind a single nav label with inline
+  sub-tabs. Cuts the menu from 10 entries to 9 and clusters the two
+  "extend what the agent can do" surfaces together.
+- **Credentials**: each integration definition now exposes a
+  `category` (`llm` | `mail` | `calendar` | `issue-tracker` | `chat` |
+  `infrastructure` | `other`) over the API. Already-configured
+  credentials are never hidden by the persona filter even when their
+  category is outside the active preset.
+- **Memory panel**: list items now render a typed, compact summary of
+  each entry instead of a single-line `JSON.stringify`. Objects show
+  the first few `key: value` chips with a "+N more" tail; arrays show
+  their length and first elements; multi-line strings get a small
+  scrollable `<pre>`. A chevron toggles a pretty-printed expansion of
+  the full value. Token-shaped fields (`*_token`, `*_secret`,
+  `api_key`, `password`, …) are masked at every nesting level, so
+  glancing at the panel can't leak credentials.
+
+### Changed
+
+- **Menu**: the agent menu is now split into a top "common" row
+  (Chat, Agents, Memory, Tasks, Bridges, Profile) and a collapsible
+  "Advanced" section (Credentials, Models, Tools). The collapsed
+  state is persisted in `localStorage` (`jarela.menu.advanced`) and
+  auto-opens when navigating into an Advanced tab via deep-link.
+
 ### Security
 
 - `web_fetch` now refuses to call loopback, RFC1918, link-local, and

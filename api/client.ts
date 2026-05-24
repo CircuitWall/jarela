@@ -174,7 +174,7 @@ export const api = {
 
   profile: {
     get: () => request<UserProfile>("/profile"),
-    update: (data: Partial<Pick<UserProfile, "name" | "icon" | "about">>) =>
+    update: (data: Partial<Pick<UserProfile, "name" | "icon" | "about" | "preset">>) =>
       request<UserProfile>("/profile", { method: "PUT", body: JSON.stringify(data) }),
     setLocationConsent: (consent: boolean) =>
       request<UserProfile>("/profile/location", { method: "PUT", body: JSON.stringify({ consent }) }),
