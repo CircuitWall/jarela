@@ -1,12 +1,54 @@
 name: CI
 
 on:
+  # Run on PRs (against any base) and on the post-merge commit on main.
+  # We deliberately do NOT run on push to feature branches: that would
+  # double up with the pull_request run on every push. The main run keeps
+  # the README badge honest and acts as a final safety net after merge.
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
     branches: ["**"]
 
+# Cancel in-flight CI for the same ref when a newer commit lands. Keeps
+# PR queues short and stops us paying for stale runs after a force-push.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    # Detect whether the PR / push touched anything that could affect the
+    # built app. Doc-only, CHANGELOG-only, or release-workflow-only changes
+    # skip the expensive e2e job below. The other jobs (lint/build,
+    # integration) are cheap enough that we always run them.
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'app/**'
+              - 'components/**'
+              - 'contexts/**'
+              - 'hooks/**'
+              - 'lib/**'
+              - 'public/**'
+              - 'tests/**'
+              - 'api/**'
+              - 'scripts/**'
+              - 'next.config.ts'
+              - 'tsconfig.json'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/ci.yml'
+
   build:
     name: Lint, typecheck, build
     runs-on: ubuntu-latest
@@ -94,7 +136,13 @@ jobs:
   e2e:
     name: Playwright E2E
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    # Skip the expensive browser suite when the change footprint can't
+    # affect runtime behaviour (docs, CHANGELOG, release workflow, etc.).
+    # `if` on `needs.changes.outputs.app == 'true'` keeps the job result
+    # as "skipped" rather than failing — branch protection treats skipped
+    # required checks as passing.
+    if: ${{ needs.changes.outputs.app == 'true' }}
     timeout-minutes: 30
     env:
       JARELA_DB_DIR: /tmp/jarela-e2e
