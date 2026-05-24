@@ -294,8 +294,27 @@ them in your shell / service unit:
 | `JARELA_RECURSION_LIMIT`  | `200`                  | Max LangGraph steps per agent run                 |
 | `JARELA_VOICE_TIMEOUT_MS` | `60000`                | Gemini voice (TTS/STT) request timeout            |
 | `JARELA_IMAGE_TIMEOUT_MS` | `60000`                | Gemini image-generation request timeout           |
+| `JARELA_UPDATE_CHANNEL`   | `stable`               | `stable` (npm `latest`) or `main` (GitHub `main`, experimental) |
+| `JARELA_DISABLE_UPDATE_CHECK` | _(unset)_          | Set to `1` to skip the daily update probe         |
 
 `JARELA_*` takes precedence over the legacy `PORT` / `HOSTNAME` names.
+
+#### Update channels
+
+On startup and via `GET /api/v1/update`, Jarela checks once a day whether
+newer code is available. Two tracks:
+
+- **`stable`** (default) — polls npm for the latest published version of
+  `@circuitwall/jarela`. `jarela update` runs `npm i -g
+  @circuitwall/jarela@latest`.
+- **`main`** (experimental) — polls the tip commit of the `main` branch on
+  GitHub. For source checkouts the comparison is by commit SHA and
+  `jarela update` does `git pull --ff-only && npm i && npm run build`. For
+  npm installs it falls back to comparing the `main` branch's
+  `package.json` version and installs via
+  `npm i -g github:CircuitWall/jarela#main`.
+
+Set `JARELA_DISABLE_UPDATE_CHECK=1` to silence the probe entirely.
 
 ### Install as a background service
 
