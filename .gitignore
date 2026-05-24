@@ -61,5 +61,3 @@ playwright/.cache/
 backend-archived/
 node_modules
 lint_output.txt
-
-package-lock.json
