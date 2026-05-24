@@ -304,10 +304,16 @@ function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
     };
   }
   // bridge_message_received
+  // Direction matches the data flow: the inbound side messaged the agent.
+  // Title reads "<sender> → <agent>" so the user sees who reached out to
+  // which of their agents at a glance. For group chats the channel label
+  // already says "WhatsApp group"; we also tag the sender with "(group)"
+  // inside the title so it still reads correctly without the source pill.
   const who = ev.push_name || ev.remote_jid;
+  const sender = ev.is_group ? `${who} (group)` : who;
   const channel = ev.is_group ? "WhatsApp group" : "WhatsApp";
   return {
-    title: `${name} → ${who}`,
+    title: `${sender} → ${name}`,
     body: ev.preview || "(no reply)",
     kind: "info", source: "bridge", sourceLabel: channel,
   };
