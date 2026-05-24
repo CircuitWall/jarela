@@ -1024,9 +1024,30 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             )
           ) : (
             <div className="flex flex-col gap-1.5">
-              {parsed.map((part, i) => (
-                <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
-              ))}
+              {(() => {
+                // Bridge messages that carry attachments get persisted as a
+                // ContentPart[] whose first text part holds the bracketed
+                // [bridge:.] header + body. Detect that case so the user
+                // bubble shows the card on top of the media parts instead of
+                // a raw bracket dump above them.
+                const firstText = isUser && parsed[0]?.type === "text" && typeof parsed[0].text === "string"
+                  ? parsed[0].text
+                  : null;
+                const bridge = firstText ? parseBridgeContext(firstText) : null;
+                if (bridge) {
+                  return (
+                    <>
+                      <BridgeMessageCard ctx={bridge} />
+                      {parsed.slice(1).map((part, i) => (
+                        <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
+                      ))}
+                    </>
+                  );
+                }
+                return parsed.map((part, i) => (
+                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
+                ));
+              })()}
               {streaming && (
         <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
           <span className="jarela-typing-dot" />
