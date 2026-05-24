@@ -26,6 +26,24 @@
   <a href="https://github.com/CircuitWall/jarela/actions/workflows/ci.yml">
     <img src="https://github.com/CircuitWall/jarela/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" />
   </a>
+  <a href="https://github.com/CircuitWall/jarela/actions/workflows/release.yml">
+    <img src="https://github.com/CircuitWall/jarela/actions/workflows/release.yml/badge.svg" alt="Release status" />
+  </a>
+  <a href="https://www.npmjs.com/package/@circuitwall/jarela">
+    <img src="https://img.shields.io/npm/v/%40circuitwall%2Fjarela?logo=npm&label=npm" alt="npm version" />
+  </a>
+  <a href="https://hub.docker.com/r/andrewgewu/jarela">
+    <img src="https://img.shields.io/docker/v/andrewgewu/jarela?logo=docker&label=docker&sort=semver" alt="Docker image" />
+  </a>
+  <a href="https://github.com/CircuitWall/jarela/releases/latest">
+    <img src="https://img.shields.io/github/v/release/CircuitWall/jarela?logo=github&label=release&sort=semver" alt="Latest GitHub Release" />
+  </a>
+  <a href="./LICENSE">
+    <img src="https://img.shields.io/github/license/CircuitWall/jarela" alt="License: MIT" />
+  </a>
+  <a href="https://nodejs.org/">
+    <img src="https://img.shields.io/node/v/%40circuitwall%2Fjarela?logo=node.js" alt="Node version" />
+  </a>
 </p>
 
 ---
@@ -157,11 +175,19 @@ file layout.
 
 ### Install (no source checkout needed)
 
-Two pre-built paths — pick one. Both end at the same place: a local Next.js
-process on `http://127.0.0.1:4312`, all state in `~/.jarela`. See
-[INSTALL.md](./docs/INSTALL.md) for first-launch warnings and uninstall steps,
-and [ADR-0011](./docs/adr/0011-distribute-via-portable-archives-and-npm.md)
-for why both paths exist.
+Three pre-built release channels — pick the one that matches your host.
+All three end at the same place: a local Next.js process on
+`http://127.0.0.1:4312`, all state under `~/.jarela` (or a named Docker
+volume). See [INSTALL.md](./docs/INSTALL.md) for first-launch warnings
+and uninstall steps, and
+[ADR-0011](./docs/adr/0011-distribute-via-portable-archives-and-npm.md)
+for why multiple paths exist.
+
+| Channel | Best for | Install command | Updates |
+|---|---|---|---|
+| **GitHub Releases** (portable archive) | Air-gapped boxes, no Node toolchain | Download `jarela-<ver>-<os>.{tar.gz,zip}` from [Releases](https://github.com/CircuitWall/jarela/releases/latest), extract, run the install script with `--skip-build` | re-download next tag |
+| **npm** (`@circuitwall/jarela`) | Any host with Node ≥ 22 — global CLI, OS-native autostart | `npm install -g @circuitwall/jarela` | `npm update -g @circuitwall/jarela` |
+| **Docker Hub** (`andrewgewu/jarela`) | Linux server, NAS, container host | `docker run -d -p 127.0.0.1:4312:4312 -v jarela-data:/data andrewgewu/jarela` | `docker pull andrewgewu/jarela` |
 
 **A. Download a release archive** (no Node required to install — bundle is
 self-contained):
@@ -182,6 +208,33 @@ npm install -g @circuitwall/jarela
 jarela                # first run builds (~30–60 s), subsequent runs start instantly
 jarela install-service   # optional: register OS-native autostart (per-user, no admin)
 ```
+
+Releases on npm are published from GitHub Actions via
+[npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) and ship
+with [provenance attestations](https://docs.npmjs.com/generating-provenance-statements)
+signed to the sigstore transparency log — no long-lived `NPM_TOKEN` ever
+touches a release.
+
+**C. From Docker Hub** (Linux host with Docker ≥ 20.10):
+
+```bash
+docker run -d --name jarela \
+  -p 127.0.0.1:4312:4312 \
+  -v jarela-data:/data \
+  -e JARELA_DB_DIR=/data \
+  andrewgewu/jarela
+```
+
+Or with `docker compose`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CircuitWall/jarela/main/docker-compose.yml -o docker-compose.yml
+docker compose up -d
+```
+
+Tags: `latest`, `0`, `0.1`, `0.1.3`, … (semver-stepped). See
+[INSTALL.md → Path 3](./docs/INSTALL.md#path-3--docker-ubuntu--linux) for
+the full Docker recipe.
 
 ### Or from source (developers)
 
