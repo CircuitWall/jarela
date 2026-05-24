@@ -162,6 +162,12 @@ export interface UserProfile {
   location_label?: string | null;
   location_updated_at?: string | null;
   location_consent?: number; // 0 | 1
+  /**
+   * Persona preset selected in the Profile editor (home/work/dev/custom).
+   * Drives the Credentials panel's category filter. `null` or absent
+   * = no filter (show all integrations — the legacy behaviour).
+   */
+  preset?: "home" | "work" | "dev" | "custom" | null;
 }
 
 export interface AccessWhitelistEntry {
@@ -224,6 +230,12 @@ export interface IntegrationDefinition {
   label: string;
   description: string;
   fields: IntegrationField[];
+  /**
+   * Persona-filter bucket. Drives whether the Credentials panel shows
+   * this integration for the current Profile preset. Optional for
+   * back-compat with older clients.
+   */
+  category?: "llm" | "mail" | "calendar" | "issue-tracker" | "chat" | "infrastructure" | "other";
 }
 
 export interface IntegrationStatus {

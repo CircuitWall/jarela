@@ -11,6 +11,7 @@ export function ProfileEditor() {
   const [name, setName] = useState("");
   const [icon, setIcon] = useState<string | null>(null);
   const [about, setAbout] = useState("");
+  const [preset, setPreset] = useState<UserProfile["preset"]>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -20,6 +21,7 @@ export function ProfileEditor() {
       setName(p.name);
       setIcon(p.icon);
       setAbout(p.about);
+      setPreset(p.preset ?? null);
     }).catch(console.error);
   }, []);
 
@@ -35,7 +37,7 @@ export function ProfileEditor() {
     setSaving(true);
     setSaved(false);
     try {
-      const updated = await api.profile.update({ name, icon, about });
+      const updated = await api.profile.update({ name, icon, about, preset });
       setProfile(updated);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -47,7 +49,10 @@ export function ProfileEditor() {
   }
 
   const isDirty = profile
-    ? name !== profile.name || icon !== profile.icon || about !== profile.about
+    ? name !== profile.name
+      || icon !== profile.icon
+      || about !== profile.about
+      || (preset ?? null) !== (profile.preset ?? null)
     : false;
 
   return (
@@ -101,6 +106,8 @@ export function ProfileEditor() {
         This information is appended to every agent&apos;s context so they know who they&apos;re talking to.
       </p>
 
+      <PresetPicker value={preset} onChange={setPreset} />
+
       <button
         onClick={handleSave}
         disabled={saving || !isDirty}
@@ -114,6 +121,63 @@ export function ProfileEditor() {
       <TailscaleServe />
 
       <AccessWhitelist />
+    </div>
+  );
+}
+
+// ─── Persona preset ──────────────────────────────────────────────────────
+// Drives the Credentials panel's category filter. Strictly a UX shortcut:
+// each preset just hides categories that aren't useful for the chosen
+// persona. "Everything" (== custom in the DB) means no filtering — same as
+// having no preset at all, which is what fresh installs get.
+//
+// Storing the literal string keeps the column trivially extensible: a
+// future "education" preset is a one-line tweak to PRESET_CATEGORIES.
+
+type Preset = NonNullable<UserProfile["preset"]>;
+
+const PRESET_OPTIONS: Array<{ value: Preset; label: string; hint: string }> = [
+  { value: "home",   label: "Home",      hint: "LLMs, mail, calendar, chat" },
+  { value: "work",   label: "Work",      hint: "Office toolbelt + issue trackers" },
+  { value: "dev",    label: "Developer", hint: "Everything, incl. infrastructure" },
+  { value: "custom", label: "Everything", hint: "No filter — show every integration" },
+];
+
+function PresetPicker({
+  value,
+  onChange,
+}: {
+  value: UserProfile["preset"];
+  onChange: (v: Preset) => void;
+}) {
+  return (
+    <div className="block">
+      <span className="text-xs text-fg-subtle mb-1 block">Persona</span>
+      <p className="text-[11px] text-fg-faint mb-2">
+        Filters the Credentials panel so you only see integrations relevant to how
+        you use Jarela. Pick &quot;Everything&quot; to see them all.
+      </p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {PRESET_OPTIONS.map((o) => {
+          const selected = (value ?? "custom") === o.value;
+          return (
+            <button
+              key={o.value}
+              type="button"
+              onClick={() => onChange(o.value)}
+              aria-pressed={selected}
+              className={`text-left px-2.5 py-2 rounded-lg border transition-colors ${
+                selected
+                  ? "border-accent/60 bg-accent/10 text-fg"
+                  : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+              }`}
+            >
+              <div className="text-xs font-medium">{o.label}</div>
+              <div className="text-[10px] text-fg-faint leading-tight mt-0.5">{o.hint}</div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

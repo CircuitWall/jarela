@@ -14,6 +14,7 @@ import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { ExtensionsPanel } from "@/components/extensions/ExtensionsPanel";
+import { ToolsPanel } from "@/components/tools/ToolsPanel";
 import { IntegrationsPanel } from "@/components/integrations/IntegrationsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
@@ -338,6 +339,11 @@ export function AppShell() {
         {mountedTabs.has("extensions") && (
           <Activity mode={state.activeTab === "extensions" ? "visible" : "hidden"}>
             <ExtensionsPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("tools") && (
+          <Activity mode={state.activeTab === "tools" ? "visible" : "hidden"}>
+            <ToolsPanel />
           </Activity>
         )}
         {mountedTabs.has("integrations") && (
