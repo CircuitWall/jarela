@@ -158,16 +158,44 @@ export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchRe
   // so popularity scoring can read it (RegistryEntry.id is just the last
   // path segment and loses the publisher prefix).
   const translated = (parsed.data.servers ?? [])
-    .filter((e) => (e._meta?.["io.modelcontextprotocol.registry/official"]?.status ?? "active") === "active")
+    .filter((e) => {
+      const meta = e._meta?.["io.modelcontextprotocol.registry/official"];
+      // Drop archived / deleted entries.
+      if ((meta?.status ?? "active") !== "active") return false;
+      // Drop old versions. The registry returns every published version of
+      // each server; without this filter the picker shows the same server
+      // 3–5× over (one row per version) — that's the "duplicates" users see.
+      // Treat a missing flag as latest so newly-published servers that
+      // haven't been re-indexed yet still surface.
+      if (meta?.isLatest === false) return false;
+      return true;
+    })
     .map((e) => {
       const entry = toRegistryEntry(e);
       return entry ? { entry, qualifiedName: e.server.name } : null;
     })
     .filter((x): x is { entry: RegistryEntry; qualifiedName: string } => x !== null);
 
+  // Belt-and-suspenders: even with the isLatest filter, the registry
+  // occasionally returns two distinct namespaces that translate to the
+  // same display tuple (e.g. a vendor republished under a new prefix).
+  // Dedupe by fully-qualified upstream name first, then by the install
+  // identity (id + transport) so the picker never renders the same row
+  // twice across page joins.
+  const byQualified = new Map<string, { entry: RegistryEntry; qualifiedName: string }>();
+  for (const x of translated) {
+    if (!byQualified.has(x.qualifiedName)) byQualified.set(x.qualifiedName, x);
+  }
+  const byInstallIdentity = new Map<string, { entry: RegistryEntry; qualifiedName: string }>();
+  for (const x of byQualified.values()) {
+    const key = `${x.entry.id}|${x.entry.transport}`;
+    if (!byInstallIdentity.has(key)) byInstallIdentity.set(key, x);
+  }
+  const deduped = [...byInstallIdentity.values()];
+
   const filtered = includeCommunity
-    ? translated
-    : translated.filter((x) => x.entry.source !== "Community");
+    ? deduped
+    : deduped.filter((x) => x.entry.source !== "Community");
 
   // Sort by popularity score (desc), then alphabetically. Stable within a
   // page; pagination still works because we don't drop the upstream cursor.
@@ -488,13 +516,64 @@ const VENDOR_POPULARITY_BOOST = new Map<string, number>([
   ["perplexityai", 20], ["brave", 20], ["exa-labs", 20],
 ]);
 
+// Vendor-grade `com.<domain>/` publishers. Anyone who can prove domain
+// ownership can publish under `com.example/`, so the bare DNS-verified
+// namespace doesn't imply trustworthiness on its own. Without an allowlist
+// the picker silently fills with individuals' personal-domain MCP servers
+// labelled "Vendor". Keep this in sync with VENDOR_GITHUB_ORGS.
+const VENDOR_DOMAINS = new Set<string>([
+  "anthropic",
+  "openai",
+  "google",
+  "googleapis",
+  "microsoft",
+  "azure",
+  "github",
+  "cloudflare",
+  "stripe",
+  "sentry",
+  "vercel",
+  "supabase",
+  "neon",
+  "neondatabase",
+  "upstash",
+  "redis",
+  "mongodb",
+  "elastic",
+  "hashicorp",
+  "docker",
+  "linear",
+  "notion",
+  "notionhq",
+  "slack",
+  "atlassian",
+  "shopify",
+  "twilio",
+  "discord",
+  "discordapp",
+  "deepmind",
+  "huggingface",
+  "perplexity",
+  "perplexityai",
+  "brave",
+  "exa",
+  "exa-labs",
+  "firecrawl",
+  "qdrant",
+  "pinecone",
+  "pinecone-io",
+  "chroma-core",
+]);
+
 function inferSource(name: string): RegistryEntry["source"] {
   // Reference servers maintained by the MCP team.
   if (/^io\.github\.modelcontextprotocol\//.test(name)) return "Official";
   if (/^io\.modelcontextprotocol\//.test(name)) return "Official";
-  // Domain-verified namespaces (`com.<vendor>/`) imply a real company
-  // published this entry — treat as Vendor.
-  if (/^com\.[a-z0-9-]+\//.test(name)) return "Vendor";
+  // Domain-verified `com.<vendor>/` namespaces are Vendor only when the
+  // vendor is on the allowlist; any other DNS-verified namespace
+  // (including individual-owned domains) counts as Community.
+  const dom = /^com\.([a-z0-9-]+)(?:\.[a-z0-9-]+)*\//.exec(name);
+  if (dom && VENDOR_DOMAINS.has(dom[1])) return "Vendor";
   // GitHub-namespace entries are only Vendor when the org is on the
   // allowlist; anyone else's GitHub repo counts as Community.
   const m = /^io\.github\.([a-z0-9-]+)\//.exec(name);
