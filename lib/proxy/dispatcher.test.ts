@@ -48,7 +48,7 @@ function execReturns(stdout: string) {
   // and the mock is loose; we only need the shape promisify expects.
   mockedExec.mockImplementation((_cmd, _opts, cb) => {
     if (typeof _opts === "function") cb = _opts;
-    cb?.(null, { stdout, stderr: "" });
+    (cb as unknown as ((e: Error | null, v: { stdout: string; stderr: string }) => void) | undefined)?.(null, { stdout, stderr: "" });
   });
 }
 
@@ -56,7 +56,7 @@ function execFails(message = "boom") {
   // @ts-expect-error — see above.
   mockedExec.mockImplementation((_cmd, _opts, cb) => {
     if (typeof _opts === "function") cb = _opts;
-    cb?.(new Error(message), { stdout: "", stderr: "" });
+    (cb as unknown as ((e: Error | null, v: { stdout: string; stderr: string }) => void) | undefined)?.(new Error(message), { stdout: "", stderr: "" });
   });
 }
 
