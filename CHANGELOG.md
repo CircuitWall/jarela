@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `web_fetch` now refuses to call loopback, RFC1918, link-local, and
+  cloud-metadata (`169.254.169.254`) addresses. A prompt-injected page
+  could previously coax the agent into fetching
+  `http://127.0.0.1:4312/api/v1/...`, which the auth middleware treats
+  as the host's admin user (full unauthenticated access). Each
+  redirect hop is re-checked against the same policy. Operators with
+  a legitimate intranet target can opt back in with
+  `JARELA_ALLOW_PRIVATE_FETCH=1`.
+- The `file_*` agent tools now refuse to touch credential trees
+  (`~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.config/gh`, `~/.kube`,
+  `~/.docker`, `~/.netrc`, `~/.pgpass`) and any path whose basename
+  looks like a private key (`id_rsa`, `*.pem`, `*.key`,
+  `credentials`). Writes/edits/moves/deletes into Jarela's own data
+  dir (`~/.jarela`) are blocked too so prompt injection can't rewrite
+  app state. Override with `JARELA_ALLOW_SENSITIVE_FILES=1`.
+- WhatsApp bridge now sanitises inbound media `mimetype` against a
+  per-kind allowlist (image/audio/video/document) and rejects anything
+  that doesn't match the `type/subtype` RFC 6838 shape, instead of
+  trusting whatever the sender claimed.
+- The Next.js server now logs a prominent warning at boot if it is
+  bound to a non-loopback interface outside a container, since the
+  `Tailscale-User-Login` header it relies on for authentication is
+  trivially forgeable on the LAN without a Tailscale-Serve (or
+  equivalent) reverse proxy in front. Suppress with
+  `JARELA_ALLOW_NONLOOPBACK_BIND=1`.
+
 ## [0.3.0] - 2026-05-24
 
 ### Added
