@@ -212,15 +212,28 @@ jobs:
       - name: Publish (with provenance)
         run: npm publish --provenance --access public
 
-  docker-publish:
-    name: Publish to Docker Hub
-    runs-on: ubuntu-latest
+  # Per-arch native build. The previous single-job approach used QEMU to
+  # cross-compile linux/arm64 on an x86_64 runner — `npm ci` + `next build`
+  # under user-mode emulation took ~25 min on its own. We now fan out to
+  # one native runner per arch and merge the resulting digests into a
+  # single multi-arch manifest in `docker-manifest`.
+  docker-build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     needs: bundle
-    # Only runs if the Docker Hub secrets are configured. Forks / first-time
-    # setup without DOCKERHUB_USERNAME + DOCKERHUB_TOKEN skip this job cleanly.
     if: ${{ vars.JARELA_DOCKER_PUBLISH == 'true' }}
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch_tag: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch_tag: arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -239,8 +252,94 @@ jobs:
           echo "version=$pkg" >> "$GITHUB_OUTPUT"
           echo "repo=$repo"   >> "$GITHUB_OUTPUT"
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          # Push by digest only — no tag is set here. The manifest job
+          # below assembles the human-readable tags after both arches
+          # have published their digests.
+          outputs: type=image,name=${{ steps.meta.outputs.repo }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=Jarela
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+          cache-from: type=gha,scope=${{ matrix.arch_tag }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch_tag }}
+
+      - name: Export digest
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch_tag }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-manifest:
+    name: Publish to Docker Hub (manifest)
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: ${{ vars.JARELA_DOCKER_PUBLISH == 'true' }}
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          repo="${{ vars.JARELA_DOCKER_REPO || 'andrewgewu/jarela' }}"
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo"   >> "$GITHUB_OUTPUT"
+
+      - name: Compute tag flags
+        id: tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ steps.meta.outputs.version }}"
+          r="${{ steps.meta.outputs.repo }}"
+          tags="-t $r:$v"
+          # Skip moving tags for prereleases (e.g. 0.1.0-rc.1).
+          case "$v" in
+            *-*) ;;
+            *)
+              major="${v%%.*}"
+              rest="${v#*.}"
+              minor="${rest%%.*}"
+              tags="$tags -t $r:$major.$minor -t $r:$major -t $r:latest"
+              ;;
+          esac
+          echo "flags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digests-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -251,39 +350,17 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Compute tags
-        id: tags
-        shell: bash
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
         run: |
           set -euo pipefail
-          v="${{ steps.meta.outputs.version }}"
           r="${{ steps.meta.outputs.repo }}"
-          tags="$r:$v"
-          # Skip moving tags for prereleases (e.g. 0.1.0-rc.1).
-          case "$v" in
-            *-*) ;;
-            *)
-              major="${v%%.*}"
-              rest="${v#*.}"
-              minor="${rest%%.*}"
-              tags="$tags,$r:$major.$minor,$r:$major,$r:latest"
-              ;;
-          esac
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          # shellcheck disable=SC2046
+          docker buildx imagetools create ${{ steps.tags.outputs.flags }} \
+            $(printf "$r@sha256:%s " *)
 
-      - name: Build and push (linux/amd64, linux/arm64)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          labels: |
-            org.opencontainers.image.title=Jarela
-            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.licenses=MIT
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Inspect image
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect \
+            "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}"
