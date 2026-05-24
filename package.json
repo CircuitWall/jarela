@@ -29,7 +29,7 @@
     "pwa"
   ],
   "bin": {
-    "jarela": "./scripts/jarela-bin.mjs"
+    "jarela": "scripts/jarela-bin.mjs"
   },
   "engines": {
     "node": ">=22"
