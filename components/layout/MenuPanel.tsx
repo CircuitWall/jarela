@@ -185,7 +185,10 @@ export function MenuPanel({
   onShowThinkingChange,
 }: Props) {
   return (
-    <div className="glass-elevated absolute right-0 top-0 h-full w-full sm:w-[26rem] max-w-full border-l border-border/60 z-20 flex flex-col pb-safe">
+    <div
+      className="glass-elevated fixed right-0 bottom-0 w-full sm:w-[26rem] max-w-full border-l border-border/60 z-40 flex flex-col pb-safe"
+      style={{ top: "calc(3rem + var(--app-safe-top))" }}
+    >
       {/* Navigation tabs as a labeled icon grid. */}
       <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 px-2 py-2 border-b border-border shrink-0">
         {TAB_ORDER.map((tab) => (
