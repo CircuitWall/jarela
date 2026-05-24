@@ -178,7 +178,7 @@ the bundle ships a pre-built `.next/standalone/` tree.
 **B. From npm** (Node ≥ 22 required):
 
 ```bash
-npm install -g jarela
+npm install -g @circuitwall/jarela
 jarela                # first run builds (~30–60 s), subsequent runs start instantly
 jarela install-service   # optional: register OS-native autostart (per-user, no admin)
 ```

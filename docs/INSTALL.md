@@ -5,7 +5,7 @@ Three ways to install:
 | Path | When | Result |
 |------|------|--------|
 | **Pre-built archive** (this file) | You don't have Node, or want the simplest install | A native autostart entry on macOS / Windows |
-| **`npm install -g jarela`** | You have Node 22+ | A `jarela` CLI on your PATH |
+| **`npm install -g @circuitwall/jarela`** | You have Node 22+ | A `jarela` CLI on your PATH |
 | **Docker** (Ubuntu / any Linux host) | You want a container, headless server, or NAS | A `jarela` container listening on `127.0.0.1:4312` |
 
 All three end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted (host: `~/.jarela`; container: the `jarela-data` volume mounted at `/data`).
@@ -67,7 +67,7 @@ These warnings exist because we don't yet pay for an Apple Developer ID or an Au
 ## Path 2 — npm
 
 ```sh
-npm install -g jarela
+npm install -g @circuitwall/jarela
 jarela
 ```
 

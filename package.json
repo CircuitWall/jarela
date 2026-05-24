@@ -1,5 +1,5 @@
 {
-  "name": "jarela",
+  "name": "@circuitwall/jarela",
   "version": "0.1.2",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "MIT",
