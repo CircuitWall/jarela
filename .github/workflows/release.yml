@@ -72,8 +72,10 @@ jobs:
           cp -R .next/static     "$dest/.next/static"
           cp -R public           "$dest/public"
           cp package.json        "$dest/package.json"
+          cp LICENSE             "$dest/LICENSE"
+          cp README.md           "$dest/README.md"
           cp scripts/install-to-system.sh "$dest/scripts/"
-          cp INSTALL.md          "$dest/INSTALL.md"
+          cp docs/INSTALL.md     "$dest/INSTALL.md"
           chmod +x "$dest/scripts/install-to-system.sh"
 
       - name: Stage bundle (Windows)
@@ -88,7 +90,9 @@ jobs:
           Copy-Item -Recurse -Force .next/static     "$dest/.next/static"
           Copy-Item -Recurse -Force public           "$dest/public"
           Copy-Item              -Force package.json "$dest/package.json"
-          Copy-Item -Force INSTALL.md                "$dest/INSTALL.md"
+          Copy-Item              -Force LICENSE      "$dest/LICENSE"
+          Copy-Item              -Force README.md    "$dest/README.md"
+          Copy-Item -Force docs/INSTALL.md           "$dest/INSTALL.md"
           $winScripts = @(
             'install-to-system.ps1',
             'installed-launcher.ps1',

@@ -1,8 +1,33 @@
 {
   "name": "jarela",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "MIT",
+  "author": "Andrew Ge Wu",
+  "homepage": "https://github.com/andrew-ge-wu/jarela#readme",
+  "bugs": {
+    "url": "https://github.com/andrew-ge-wu/jarela/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrew-ge-wu/jarela.git"
+  },
+  "keywords": [
+    "langgraph",
+    "llm",
+    "chat",
+    "agents",
+    "mcp",
+    "anthropic",
+    "openai",
+    "google-genai",
+    "cohere",
+    "deepseek",
+    "self-hosted",
+    "local-first",
+    "nextjs",
+    "pwa"
+  ],
   "bin": {
     "jarela": "./scripts/jarela-bin.mjs"
   },
@@ -33,6 +58,7 @@
     "next.config.ts",
     "tsconfig.json",
     "postcss.config.mjs",
+    "CHANGELOG.md",
     "docs/INSTALL.md"
   ],
   "scripts": {
