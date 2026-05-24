@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-24
+
+### Added
+
+- WhatsApp bridge forwards inbound media (images, audio, video, documents)
+  to vision-capable agents, and the bridge editor now surfaces a
+  vision-capable hint per agent so operators can pick a compatible model
+  (#11).
+- MCP picker shows only verified upstream servers and ranks them by
+  popularity (#8).
+- Opt-in mock LLM provider (`JARELA_ENABLE_MOCK_PROVIDER=1`) for
+  deterministic offline development and CI, plus a Playwright E2E suite
+  driven entirely by the mock provider — no real LLM keys required (#5,
+  #6).
+- Experimental `main` update channel and an in-app update notice with a
+  `jarela update` CLI command for one-shot self-updates (#1, #4).
+- README hero video promoting the demo above the "what is Jarela"
+  section (#9, #10).
+
+### Fixed
+
+- Chat filter toolbar no longer gets stranded by the iOS PWA bounce — it
+  is now pinned to the top of the viewport (#2).
+- Menu tray pin behaviour on small viewports (#3).
+- Playwright `chat-mock` smoke test uses a unique marker per run and
+  asserts on `.last()` so it no longer trips strict-mode locator
+  resolution when the shared SQLite DB at `JARELA_DB_DIR=/tmp/jarela-e2e`
+  accumulates messages across the `chromium-desktop` and `mobile-safari`
+  projects (#7, #12).
+
 ## [0.1.3] - 2026-05-24
 
 ### Changed
