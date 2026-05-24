@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-24
+
+### Changed
+
+- Verify CI release path end-to-end via npm Trusted Publisher (OIDC).
+  No functional code changes vs. 0.1.2; this version exists to confirm
+  that tagged releases publish to npm with provenance attestations
+  signed by GitHub Actions, without any long-lived `NPM_TOKEN`.
+
 ## [0.1.2] - 2026-05-24
 
 First public release.
