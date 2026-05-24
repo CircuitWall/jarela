@@ -1,10 +1,20 @@
 name: CI
 
 on:
+  # Run on PRs (against any base) and on the post-merge commit on main.
+  # We deliberately do NOT run on push to feature branches: that would
+  # double up with the pull_request run on every push. The main run keeps
+  # the README badge honest and acts as a final safety net after merge.
   push:
-    branches: ["**"]
+    branches: ["main"]
   pull_request:
     branches: ["**"]
+
+# Cancel in-flight CI for the same ref when a newer commit lands. Keeps
+# PR queues short and stops us paying for stale runs after a force-push.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   changes:
