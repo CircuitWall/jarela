@@ -283,6 +283,13 @@ const sanitizeSchema = {
   },
 };
 
+// Module-scope plugin arrays — passing fresh array literals to ReactMarkdown
+// on every render of MarkdownContent forced react-markdown's internal
+// useMemo() inputs to differ each time, defeating its plugin-pipeline
+// memoization. Hoisting these makes the references stable across renders.
+const MD_REMARK_PLUGINS = [remarkGfm];
+const MD_REHYPE_PLUGINS: import("unified").PluggableList = [rehypeRaw, [rehypeSanitize, sanitizeSchema]];
+
 type Props = {
   message: Message | { role: "assistant"; content: string; streaming?: boolean };
   agentConfig?: AgentConfig | null;
@@ -594,8 +601,8 @@ function MapEmbed({ payload }: { payload: string }) {
 function MarkdownContent({ text, streaming, onInAppLink }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void }) {  return (
     <div className="prose prose-invert prose-sm max-w-none jarela-rich">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        remarkPlugins={MD_REMARK_PLUGINS}
+        rehypePlugins={MD_REHYPE_PLUGINS}
         components={{
           a({ href, children, ...rest }) {
             const parsed = href ? parseHref(href) : undefined;
