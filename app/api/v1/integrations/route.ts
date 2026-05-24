@@ -10,6 +10,7 @@ export function GET() {
     label: def.label,
     description: def.description,
     fields: def.fields,
+    category: def.category,
   }));
   const statuses = listIntegrations();
   return NextResponse.json({ definitions, statuses });

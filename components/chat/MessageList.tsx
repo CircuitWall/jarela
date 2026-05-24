@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
@@ -85,15 +85,49 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   const atBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
+  // Anchor for older-message pagination. When the user scrolls near the top
+  // and we call onLoadMore, we snapshot the viewport (scrollHeight + scrollTop)
+  // here. After the parent prepends the new messages and React commits, the
+  // layout effect below compensates scrollTop by the height delta so the
+  // content the user was looking at stays at the same on-screen position
+  // instead of remaining pinned to scrollTop=0 (which makes the viewport
+  // "jump" to the very oldest message).
+  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number } | null>(null);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    // Don't snap to bottom while we're in the middle of restoring scroll
+    // after a load-more prepend — the layout effect below owns scrollTop
+    // until the anchor is consumed.
+    if (prependAnchorRef.current) return;
     if (atBottomRef.current) el.scrollTop = el.scrollHeight;
   }); // intentionally no deps — runs after every render
 
+  // Restore scroll position after older messages have been prepended.
+  // useLayoutEffect runs synchronously after DOM mutations but before paint,
+  // so the user never sees the intermediate "scrolled to oldest" frame.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const anchor = prependAnchorRef.current;
+    if (!el || !anchor) return;
+    if (loadingMore) return; // wait until the fetch settled
+    const delta = el.scrollHeight - anchor.scrollHeight;
+    if (delta > 0) {
+      el.scrollTop = anchor.scrollTop + delta;
+      atBottomRef.current = false;
+    }
+    prependAnchorRef.current = null;
+  }, [messages, loadingMore]);
+
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
-    if (hasMore && !loadingMore && onLoadMore && el.scrollTop < 60) onLoadMore();
+    if (hasMore && !loadingMore && onLoadMore && el.scrollTop < 60) {
+      // Snapshot BEFORE asking the parent to fetch so we can compensate the
+      // scroll position once the new (older) messages arrive in props.
+      prependAnchorRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
+      onLoadMore();
+    }
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     atBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom && messages.length > 0);
