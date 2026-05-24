@@ -23,8 +23,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/andrew-ge-wu/jarela/actions/workflows/ci.yml">
-    <img src="https://github.com/andrew-ge-wu/jarela/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" />
+  <a href="https://github.com/CircuitWall/jarela/actions/workflows/ci.yml">
+    <img src="https://github.com/CircuitWall/jarela/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" />
   </a>
 </p>
 
@@ -188,7 +188,7 @@ jarela install-service   # optional: register OS-native autostart (per-user, no 
 Prerequisites: **Node.js ≥ 22.6** (Node 25 recommended), npm, git.
 
 ```bash
-git clone https://github.com/andrew-ge-wu/jarela.git
+git clone https://github.com/CircuitWall/jarela.git
 cd jarela
 npm install
 ```
