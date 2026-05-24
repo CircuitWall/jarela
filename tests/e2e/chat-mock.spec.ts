@@ -20,13 +20,18 @@ test("composer sends a message and the mock reply renders", async ({ page }) => 
   const composer = page.getByPlaceholder("Message…");
   await expect(composer).toBeEnabled({ timeout: 15_000 });
 
-  const marker = "playwright-e2e-marker-7f9a3";
+  // Unique per test run so previous runs (the SQLite DB at
+  // JARELA_DB_DIR=/tmp/jarela-e2e persists across Playwright retries and
+  // across the chromium-desktop / mobile-safari projects) don't leave
+  // matching messages that would trip strict-mode locator resolution.
+  const marker = `pw-e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await composer.fill(`MOCK:reply=${marker}`);
 
   // The send button has title="Send" but no aria-label.
   await page.locator('button[title="Send"]').click();
 
   // The mock provider streams the marker back; assert it lands in the
-  // rendered message list.
-  await expect(page.getByText(marker)).toBeVisible({ timeout: 20_000 });
+  // rendered message list. Use .last() because the marker also appears
+  // inside the user-message bubble that echoes "MOCK:reply=<marker>".
+  await expect(page.getByText(marker).last()).toBeVisible({ timeout: 20_000 });
 });
