@@ -187,6 +187,14 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
+      - name: Upgrade npm (Trusted Publishers needs >= 11.5)
+        # Node 22 ships npm 10.x, which doesn't speak the OIDC `npm publish`
+        # flow npm rolled out for Trusted Publishers in 2025. Without an
+        # auth header the PUT goes out unauthenticated and the registry
+        # masks the 401 as `404 'is not in this registry'` — that's why
+        # every tagged release before this fix failed at the publish step.
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
