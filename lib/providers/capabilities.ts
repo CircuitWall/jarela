@@ -84,3 +84,81 @@ export function modelSupportsImages(provider: string, modelId: string): boolean 
 export function isProviderClassified(provider: string): boolean {
   return provider.toLowerCase() in PATTERNS;
 }
+
+// ── extended capabilities for badge rendering ────────────────────────────────
+// Mirrors CatalogModel["capabilities"] so saved ModelConfigs can render the
+// same icon set the catalog browser uses. Heuristics err on the conservative
+// side for audio (vanilla gpt-4o is NOT audio-capable — only *-audio-preview /
+// *-realtime are) and generous side for files (PDF / document input).
+
+const AUDIO_PATTERNS: Record<string, RegExp[]> = {
+  openai: [/audio/i, /realtime/i],
+  gemini: [/^gemini-(1\.5|2|3)/i],
+  anthropic: [],
+  "github-copilot": [/audio/i, /realtime/i, /^gemini-(1\.5|2|3)/i],
+  deepseek: [],
+  cohere: [],
+  langchain: [],
+  mock: [/.*/],
+};
+
+const FILES_PATTERNS: Record<string, RegExp[]> = {
+  // PDF / document upload support.
+  openai: [/^gpt-4o/i, /^gpt-4\.1/i, /^gpt-4-turbo/i, /^gpt-5/i, /^o[134](?:-|$)/i, /^chatgpt-4o/i],
+  anthropic: [/^claude-3/i, /^claude-sonnet/i, /^claude-opus/i, /^claude-haiku-4/i, /^claude-[45](?:-|$)/i],
+  gemini: [/^gemini-(1\.5|2|3)/i],
+  "github-copilot": [/^gpt-4o/i, /^gpt-4\.1/i, /^gpt-5/i, /^o[134](?:-|$)/i, /^claude-3/i, /^claude-sonnet/i, /^claude-opus/i, /^claude-haiku-4/i, /^claude-[45](?:-|$)/i, /^gemini-(1\.5|2|3)/i],
+  deepseek: [],
+  cohere: [],
+  langchain: [],
+  mock: [/.*/],
+};
+
+const WEB_SEARCH_PATTERNS: Record<string, RegExp[]> = {
+  // Built-in provider-side web tool.
+  anthropic: [/^claude-3\.5/i, /^claude-3\.7/i, /^claude-sonnet/i, /^claude-opus/i, /^claude-haiku-4/i, /^claude-[45](?:-|$)/i],
+  openai: [],
+  gemini: [],
+  "github-copilot": [],
+  deepseek: [],
+  cohere: [],
+  langchain: [],
+  mock: [],
+};
+
+const JSON_MODE_PROVIDERS = new Set(["openai", "gemini", "deepseek", "mock"]);
+
+function matchesAny(map: Record<string, RegExp[]>, provider: string, modelId: string): boolean {
+  const pats = map[provider.toLowerCase()] ?? [];
+  return pats.some((re) => re.test(modelId));
+}
+
+export interface ModelCapabilities {
+  vision: boolean;
+  tools: boolean;
+  streaming: boolean;
+  json_mode: boolean;
+  web_search: boolean;
+  audio: boolean;
+  files: boolean;
+}
+
+/**
+ * Best-effort capability inference for a saved (provider, model_id) pair —
+ * used to render capability badges in surfaces that don't have a live
+ * catalog fetch (ModelsPanel, AgentEditor dropdowns, etc.).
+ */
+export function modelCapabilities(provider: string, modelId: string): ModelCapabilities {
+  const p = provider.toLowerCase();
+  // Reasoner-style models that don't expose tool calling.
+  const noTools = /^deepseek-reasoner/i.test(modelId);
+  return {
+    vision: modelSupportsImages(provider, modelId),
+    tools: isProviderClassified(p) && !noTools,
+    streaming: true,
+    json_mode: JSON_MODE_PROVIDERS.has(p),
+    web_search: matchesAny(WEB_SEARCH_PATTERNS, provider, modelId),
+    audio: matchesAny(AUDIO_PATTERNS, provider, modelId),
+    files: matchesAny(FILES_PATTERNS, provider, modelId),
+  };
+}

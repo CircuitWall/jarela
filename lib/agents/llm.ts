@@ -115,7 +115,15 @@ export async function* streamWithConfig(
   try {
     await checkpointer.deleteThread(threadId);
   } catch (err) {
-    console.error("[llm] checkpoint reset failed for thread", threadId, err);
+    // SqliteSaver creates the `checkpoints` table lazily on first write.
+    // If we get here before any checkpoint has ever been persisted (fresh
+    // DB, first turn of the process), deleteThread raises
+    // `SQLITE_ERROR: no such table: checkpoints` — which is a no-op for us,
+    // not an error. Swallow it; surface anything else.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table:\s*checkpoints/i.test(msg)) {
+      console.error("[llm] checkpoint reset failed for thread", threadId, err);
+    }
   }
 
   const agent = createReactAgent({ llm: model, tools, store, checkpointer });

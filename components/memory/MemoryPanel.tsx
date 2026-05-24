@@ -5,6 +5,7 @@ import type { MemoryItem } from "@/api/types";
 import { useMemory } from "@/hooks/useMemory";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { MemoryEditor } from "./MemoryEditor";
+import { MemoryValuePreview } from "./MemoryValuePreview";
 
 function useDebounce<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
@@ -56,12 +57,12 @@ export function MemoryPanel() {
         {items.map((item) => (
           <div key={`${item.namespace}/${item.key}`} data-deep-link-id={`${item.namespace}/${item.key}`} className="flex items-start gap-2 py-2.5 border-b border-border/60 group">
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="text-xs text-fg-faint">{item.namespace}</span>
-                <span className="text-xs text-fg-faint">/</span>
-                <span className="text-xs font-medium text-fg">{item.key}</span>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[10px] uppercase tracking-wide text-fg-faint">{item.namespace}</span>
+                <span className="text-fg-faint">/</span>
+                <span className="text-xs font-medium text-fg truncate">{item.key}</span>
               </div>
-              <p className="text-xs text-fg-subtle truncate">{JSON.stringify(item.value)}</p>
+              <MemoryValuePreview value={item.value} />
             </div>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
               <button onClick={() => setEditing(item)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit"><Pencil size={13} /></button>
