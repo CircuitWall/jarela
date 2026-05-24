@@ -637,13 +637,39 @@ function ContentPartView({ part, isUser, onInAppLink }: { part: ContentPart; isU
   if (part.type === "image") {
     return <ClickableImage media_type={part.media_type} data={part.data} />;
   }
-  // File attachment — make it clickable too: opens the raw text/PDF in a new tab.
+  // File attachment — render an inline player for audio/video so voice
+  // notes and short clips from the WhatsApp bridge are usable in-bubble.
+  // Other file types still fall through to a download/open-in-new-tab link.
   const file = part as ContentPart & { type: "file"; name: string; media_type: string; data: string };
   const dataUrl = `data:${file.media_type};base64,${file.data}`;
   // For text files our data field is plain text, not base64. Detect and wrap.
   const href = /^text\/|^application\/json$/.test(file.media_type)
     ? `data:${file.media_type};charset=utf-8,${encodeURIComponent(file.data)}`
     : dataUrl;
+  if (file.media_type.startsWith("audio/")) {
+    return (
+      <div className="mt-1 max-w-md">
+        {/* Native controls keep play/pause/seek consistent with the OS;
+            the filename hint below disambiguates voice-note vs file. */}
+        <audio controls className="w-full" src={dataUrl} />
+        <div className="mt-0.5 text-[10px] text-fg-faint truncate">{file.name}</div>
+      </div>
+    );
+  }
+  if (file.media_type.startsWith("video/")) {
+    return (
+      <div className="mt-1 max-w-md">
+        <video
+          controls
+          playsInline
+          className="w-full rounded-xl border border-border/40"
+          style={{ maxHeight: "400px" }}
+          src={dataUrl}
+        />
+        <div className="mt-0.5 text-[10px] text-fg-faint truncate">{file.name}</div>
+      </div>
+    );
+  }
   return (
     <a
       href={href}
