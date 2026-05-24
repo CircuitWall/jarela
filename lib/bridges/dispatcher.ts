@@ -69,7 +69,7 @@ export async function handleInboundMessage(
       thread.thread_id,
       `${contextLines.join("\n")}\n\n${msg.text}`,
       undefined,
-      undefined,
+      msg.attachments,
       undefined,
       undefined,
       "bridge", // userCategory
