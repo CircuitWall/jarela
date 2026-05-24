@@ -204,5 +204,47 @@ npm start            # http://localhost:4312 (prod-mode local run)
 npm run test:live    # smoke against the running server
 ```
 
+## Solo-maintainer quick PR flow
+
+Branch protection makes direct pushes to `main` impossible, but the round-trip
+through a PR can be done in ~30 seconds with `gh` CLI + auto-merge. Use this
+when you're the only reviewer.
+
+```powershell
+# 1. branch + commit
+git checkout -b fix/some-small-thing
+# …edit…
+git commit -am "fix(scope): describe the change"
+git push -u origin HEAD
+
+# 2. open a PR using the commit subject as title and body
+gh pr create --fill --base main
+
+# 3. queue auto-merge: GitHub waits for CI green, then squash-merges and
+#    deletes the branch. You can close the laptop now.
+gh pr merge --auto --squash --delete-branch
+```
+
+For a release PR:
+
+```powershell
+git checkout -b chore/release-0.2.0
+# bump package.json version, update CHANGELOG.md
+git commit -am "chore(release): bump to 0.2.0"
+git push -u origin HEAD
+gh pr create --fill --base main
+gh pr merge --auto --squash --delete-branch
+
+# After it auto-merges, on main:
+git checkout main && git pull
+git tag -a v0.2.0 -m "v0.2.0"
+git push origin v0.2.0
+```
+
+**Break-glass override.** Admin enforcement is intentionally off on `main`.
+If CI is wedged and you need to land a fix, you can disable a specific status
+check on the protection rule via the GitHub UI (Settings → Branches), merge,
+and re-enable. Don't make a habit of it.
+
 See [README.md](./README.md) for the full feature tour and
 [docs/INSTALL.md](./docs/INSTALL.md) for end-user install paths.
