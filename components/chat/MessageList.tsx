@@ -152,19 +152,47 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     el.scrollTop = el.scrollHeight;
   }
 
+  // The filter toolbar uses `position: fixed` (anchored just below the
+  // fixed AppShell header) so iOS PWA rubberband-bounce and any layout
+  // shift in the surrounding flex column can't pull it under the header
+  // and strand it there. We mirror its actual rendered height into a
+  // shrink-0 spacer in the flex column so the scroll viewport doesn't
+  // slide underneath — ResizeObserver because the chip row can wrap to
+  // two lines on narrow viewports with many active categories.
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const [toolbarH, setToolbarH] = useState(0);
+  useEffect(() => {
+    const el = toolbarRef.current;
+    if (!el) { setToolbarH(0); return; }
+    const ro = new ResizeObserver((entries) => {
+      const h = entries[0]?.contentRect.height ?? 0;
+      setToolbarH(h);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [availableChips.length]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      {/* Toolbar lives OUTSIDE the masked scroll viewport: otherwise the
-          top 24px transparency-fade swallows the chip row (it's only
-          ~26px tall) and the user perceives "the filter sometimes
-          doesn't show". */}
+      {/* Fixed-positioned toolbar pinned right below the AppShell header.
+          A shrink-0 spacer below reserves its vertical space in the flex
+          column so the message viewport doesn't slide under it. */}
       {availableChips.length > 0 && (
-        <FilterToolbar
-          chips={availableChips}
-          filters={filters}
-          onToggle={toggle}
-          hiddenCount={hiddenCount}
-        />
+        <>
+          <div
+            ref={toolbarRef}
+            className="fixed left-0 right-0 z-30"
+            style={{ top: "calc(3rem + var(--app-safe-top))" }}
+          >
+            <FilterToolbar
+              chips={availableChips}
+              filters={filters}
+              onToggle={toggle}
+              hiddenCount={hiddenCount}
+            />
+          </div>
+          <div className="shrink-0" aria-hidden style={{ height: toolbarH }} />
+        </>
       )}
       <div
         ref={scrollRef}
