@@ -22,6 +22,9 @@ First public release.
   `DOCKERHUB_TOKEN` secrets.
 - `LICENSE` (MIT), `CHANGELOG.md`, and `.nvmrc` so the package is publishable
   to npm and the registry surfaces correct license metadata.
+- Published to npm under the
+  [`@circuitwall`](https://www.npmjs.com/org/circuitwall) org as
+  [`@circuitwall/jarela`](https://www.npmjs.com/package/@circuitwall/jarela).
 - `package.json` metadata: `repository`, `author`, `keywords`, `homepage`,
   and `bugs`.
 - Per-agent message-channel display filters (ADR-0022). Users can hide
