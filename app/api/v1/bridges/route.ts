@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createBridge, listBridges } from "@/lib/stores/bridges";
 import { bridgeToResponse } from "@/lib/api/serializers";

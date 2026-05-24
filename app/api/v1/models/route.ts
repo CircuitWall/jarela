@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
 import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
