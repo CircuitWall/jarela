@@ -1,10 +1,15 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
+import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { registerTools } from "./registry";
 
 const MAX_BYTES = 200_000;
 const TIMEOUT_MS = 15_000;
+// Defense against SSRF redirect chains: every Location-hop is re-checked
+// against the SSRF policy. Cap the chain so a malicious server can't
+// pin us in a redirect loop.
+const MAX_REDIRECTS = 5;
 
 function extractTitle(html: string): string | null {
   const m = /<title[^>]*>([^<]+)<\/title>/i.exec(html);
@@ -66,16 +71,61 @@ export const webFetchTool = tool(
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
-        signal: ctrl.signal,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      });
+      // SSRF guard. The LLM controls `url`, and our HTTP middleware
+      // treats loopback callers as the host machine's admin user — a
+      // prompt-injected page could otherwise ask the agent to fetch
+      // http://127.0.0.1:4312/api/v1/... and elevate. Same story for
+      // 169.254.169.254 (cloud metadata) and the RFC1918 ranges.
+      // Operators with a legitimate intranet need can opt back in via
+      // JARELA_ALLOW_PRIVATE_FETCH=1.
+      const initialCheck = await checkPublicUrl(url);
+      if (!initialCheck.allowed) {
+        return JSON.stringify({
+          url,
+          error: `Refused to fetch private/loopback address (${initialCheck.reason}). Set JARELA_ALLOW_PRIVATE_FETCH=1 to override.`,
+        });
+      }
+
+      // Manual redirect chasing so each hop is re-checked against the
+      // SSRF policy. A 30x to an attacker-controlled host could otherwise
+      // bounce us into 169.254.x even though the initial URL looked
+      // public.
+      let currentUrl = url;
+      let res: Response;
+      for (let hop = 0; ; hop++) {
+        res = await fetch(currentUrl, {
+          signal: ctrl.signal,
+          redirect: "manual",
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+          },
+        });
+        if (res.status < 300 || res.status >= 400) break;
+        const loc = res.headers.get("location");
+        if (!loc) break;
+        if (hop >= MAX_REDIRECTS) {
+          return JSON.stringify({ url: currentUrl, error: `too many redirects (>${MAX_REDIRECTS})` });
+        }
+        let next: string;
+        try {
+          next = new URL(loc, currentUrl).toString();
+        } catch {
+          return JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}` });
+        }
+        const hopCheck = await checkPublicUrl(next);
+        if (!hopCheck.allowed) {
+          return JSON.stringify({
+            url: next,
+            error: `Refused redirect to private/loopback address (${hopCheck.reason}).`,
+          });
+        }
+        currentUrl = next;
+      }
+
       const contentType = res.headers.get("content-type") ?? "";
-      const finalUrl = res.url;
+      const finalUrl = res.url || currentUrl;
       // Read up to MAX_BYTES so a 5MB page doesn't blow the agent's context.
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();

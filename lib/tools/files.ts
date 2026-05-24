@@ -43,6 +43,91 @@ function resolvePath(p: string): string {
   return path.resolve(os.homedir(), s);
 }
 
+// Filesystem denylist for agent-driven file tools. The LLM has free
+// rein over the user's HOME by design — but a handful of subtrees hold
+// credentials whose disclosure or mutation is far more dangerous than
+// any chat use case justifies: SSH private keys, GPG secret rings,
+// cached cloud-provider tokens, the gh CLI auth blob, kubeconfig, the
+// docker daemon config. We also forbid writes to ~/.jarela so a
+// prompt-injected page can't rewrite the app's own SQLite state.
+//
+// Operators with an explicit need (e.g. asking the agent to fix an
+// authorized_keys file) can opt back in with
+// JARELA_ALLOW_SENSITIVE_FILES=1.
+function isInside(abs: string, parent: string): boolean {
+  const a = path.resolve(abs);
+  const p = path.resolve(parent);
+  if (a === p) return true;
+  const rel = path.relative(p, a);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+function sensitiveBase(): string[] {
+  const home = os.homedir();
+  return [
+    path.join(home, ".ssh"),
+    path.join(home, ".gnupg"),
+    path.join(home, ".aws"),
+    path.join(home, ".config", "gh"),
+    path.join(home, ".kube"),
+    path.join(home, ".docker"),
+  ];
+}
+
+function sensitiveFiles(): string[] {
+  const home = os.homedir();
+  return [
+    path.join(home, ".netrc"),
+    path.join(home, "_netrc"), // Windows convention
+    path.join(home, ".pgpass"),
+  ];
+}
+
+function jarelaDataDir(): string {
+  return process.env.JARELA_DB_DIR
+    ? path.resolve(process.env.JARELA_DB_DIR)
+    : path.join(os.homedir(), ".jarela");
+}
+
+function assertSafePath(abs: string, op: "read" | "write"): void {
+  if (process.env.JARELA_ALLOW_SENSITIVE_FILES === "1") return;
+  for (const base of sensitiveBase()) {
+    if (isInside(abs, base)) {
+      throw new Error(
+        `refused: '${abs}' is inside a credential directory (${path.basename(base)}). ` +
+          `Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+      );
+    }
+  }
+  for (const f of sensitiveFiles()) {
+    if (path.resolve(abs) === path.resolve(f)) {
+      throw new Error(
+        `refused: '${abs}' is a credential file. Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+      );
+    }
+  }
+  // Filename-based defense: catch private-key files anywhere on disk.
+  const base = path.basename(abs).toLowerCase();
+  if (
+    base === "id_rsa" ||
+    base === "id_ed25519" ||
+    base === "id_ecdsa" ||
+    base === "id_dsa" ||
+    base.endsWith(".pem") ||
+    base.endsWith(".key") ||
+    base === "credentials"
+  ) {
+    throw new Error(
+      `refused: '${abs}' looks like a credential file. Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+    );
+  }
+  if (op === "write" && isInside(abs, jarelaDataDir())) {
+    throw new Error(
+      `refused: '${abs}' is inside Jarela's data dir; the agent must not mutate app state directly.`,
+    );
+  }
+}
+
 // --- read ---------------------------------------------------------------
 
 const readSchema = z.object({
@@ -55,6 +140,7 @@ export const fileReadTool = tool(
   async ({ path: filePath, start_line, end_line }) => {
     const abs = resolvePath(filePath);
     try {
+      assertSafePath(abs, "read");
       const raw = await fs.readFile(abs, "utf8");
       let content = raw;
       let lineRange: { start: number; end: number } | null = null;
@@ -104,6 +190,7 @@ export const fileWriteTool = tool(
       return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes` });
     }
     try {
+      assertSafePath(abs, "write");
       if (create_dirs !== false) {
         await fs.mkdir(path.dirname(abs), { recursive: true });
       }
@@ -149,6 +236,7 @@ export const fileEditTool = tool(
   async ({ path: filePath, old_string, new_string }) => {
     const abs = resolvePath(filePath);
     try {
+      assertSafePath(abs, "write");
       const raw = await fs.readFile(abs, "utf8");
       const first = raw.indexOf(old_string);
       if (first === -1) {
@@ -207,6 +295,8 @@ export const fileMoveTool = tool(
     const srcAbs = resolvePath(source);
     let dstAbs = resolvePath(destination);
     try {
+      assertSafePath(srcAbs, "write");
+      assertSafePath(dstAbs, "write");
       const srcStat = await fs.stat(srcAbs);
       // If destination is an existing directory, move source INTO it
       // preserving its basename — matches `mv src dir/` semantics.
@@ -300,6 +390,7 @@ const listSchema = z.object({
 export const fileListTool = tool(
   async ({ path: dirPath, max_entries, include_hidden, pattern }) => {
     const abs = resolvePath(dirPath);
+    try { assertSafePath(abs, "read"); } catch (err) { return JSON.stringify({ ok: false, path: abs, error: (err as Error).message }); }
     const cap = max_entries ?? 200;
     const filter = pattern?.toLowerCase() ?? null;
     const entries: Array<{ path: string; kind: "file" | "directory" | "other"; size?: number }> = [];
@@ -392,6 +483,7 @@ export const fileMkdirTool = tool(
   async ({ path: dirPath, recursive }) => {
     const abs = resolvePath(dirPath);
     try {
+      assertSafePath(abs, "write");
       await fs.mkdir(abs, { recursive: recursive !== false });
       return JSON.stringify({ ok: true, path: abs });
     } catch (err) {
@@ -419,6 +511,7 @@ export const fileDeleteTool = tool(
   async ({ path: targetPath, recursive }) => {
     const abs = resolvePath(targetPath);
     try {
+      assertSafePath(abs, "write");
       const st = await fs.stat(abs);
       if (st.isDirectory()) {
         if (!recursive) {
@@ -469,6 +562,8 @@ export const fileCopyTool = tool(
     const srcAbs = resolvePath(source);
     let dstAbs = resolvePath(destination);
     try {
+      assertSafePath(srcAbs, "read");
+      assertSafePath(dstAbs, "write");
       const srcStat = await fs.stat(srcAbs);
       let dstStat: import("fs").Stats | null = null;
       try {
