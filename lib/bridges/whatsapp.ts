@@ -569,7 +569,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       if (buf) {
         attachments.push({
           type: "image",
-          media_type: inner.imageMessage.mimetype || "image/jpeg",
+          media_type: sanitizeMediaType(inner.imageMessage.mimetype, "image", "image/jpeg"),
           data: buf.toString("base64"),
         });
       }
@@ -584,7 +584,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // typically render the first frame.
         attachments.push({
           type: "image",
-          media_type: inner.stickerMessage.mimetype || "image/webp",
+          media_type: sanitizeMediaType(inner.stickerMessage.mimetype, "image", "image/webp"),
           data: buf.toString("base64"),
         });
       }
@@ -597,7 +597,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         attachments.push({
           type: "file",
           name: isVoice ? "voice-note" : "audio",
-          media_type: inner.audioMessage.mimetype || "audio/ogg",
+          media_type: sanitizeMediaType(inner.audioMessage.mimetype, "audio", "audio/ogg"),
           data: buf.toString("base64"),
         });
       }
@@ -609,7 +609,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         attachments.push({
           type: "file",
           name: "video",
-          media_type: inner.videoMessage.mimetype || "video/mp4",
+          media_type: sanitizeMediaType(inner.videoMessage.mimetype, "video", "video/mp4"),
           data: buf.toString("base64"),
         });
       }
@@ -618,7 +618,11 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     if (inner.documentMessage) {
       const buf = await download("document");
       if (buf) {
-        const mime = inner.documentMessage.mimetype || "application/octet-stream";
+        const mime = sanitizeMediaType(
+          inner.documentMessage.mimetype,
+          "document",
+          "application/octet-stream",
+        );
         // The LLM layer (lib/agents/llm.ts) inlines text/* and
         // application/json file parts directly as their `data` string. For
         // those we must store the decoded UTF-8 contents, not base64.
@@ -696,6 +700,51 @@ function makeSilentLogger(): unknown {
   };
   self.child = () => self;
   return self;
+}
+
+// Defence against an attacker-controlled sender stuffing a hostile
+// mimetype (e.g. `text/html; charset=...<script>`) into an inbound
+// WhatsApp message and having it surface unsanitised in our chat UI's
+// data-URL or in a downstream LLM provider call. We pin each media kind
+// to a small allowlist and fall back to the canonical default whenever
+// the sender's claimed type is unknown or syntactically suspicious.
+const MEDIA_TYPE_ALLOWLIST: Record<"image" | "audio" | "video" | "document", ReadonlySet<string>> = {
+  image: new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif"]),
+  audio: new Set(["audio/ogg", "audio/mpeg", "audio/mp4", "audio/aac", "audio/webm", "audio/wav", "audio/x-wav", "audio/3gpp"]),
+  video: new Set(["video/mp4", "video/webm", "video/quicktime", "video/3gpp"]),
+  // Documents: we keep the generic catch-all plus a handful of common
+  // office/text types so the UI can hint at the right viewer. Anything
+  // unrecognised collapses to application/octet-stream.
+  document: new Set([
+    "application/octet-stream",
+    "application/pdf",
+    "application/zip",
+    "application/json",
+    "application/xml",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "text/csv",
+    "text/markdown",
+    "text/html",
+  ]),
+};
+
+function sanitizeMediaType(
+  raw: string | undefined,
+  kind: "image" | "audio" | "video" | "document",
+  fallback: string,
+): string {
+  if (!raw || typeof raw !== "string") return fallback;
+  // Strip parameters (`image/jpeg; charset=...`), lowercase, trim.
+  const base = raw.split(";")[0].trim().toLowerCase();
+  // Reject anything that doesn't look like a bare RFC 6838 type/subtype.
+  if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/.test(base)) return fallback;
+  return MEDIA_TYPE_ALLOWLIST[kind].has(base) ? base : fallback;
 }
 
 /**
