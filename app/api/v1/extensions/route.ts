@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import {
   loadExternalProvidersDetailed,
   PROVIDERS_DIR,
@@ -6,12 +5,13 @@ import {
 import { BUILTIN_PROVIDER_NAMES } from "@/lib/providers";
 import { loadExternalTools, getToolsDir } from "@/lib/tools/external";
 import { BUILTIN_TOOL_NAMES } from "@/lib/tools";
+import { cachedJson } from "@/lib/api/responses";
 
 export function GET() {
   const provs = loadExternalProvidersDetailed(BUILTIN_PROVIDER_NAMES);
   const tools = loadExternalTools(BUILTIN_TOOL_NAMES);
 
-  return NextResponse.json({
+  return cachedJson({
     directories: {
       providers: PROVIDERS_DIR,
       tools: getToolsDir(),
@@ -30,5 +30,5 @@ export function GET() {
       ...provs.errors.map((e) => ({ kind: "provider" as const, ...e })),
       ...tools.errors.map((e) => ({ kind: "tool" as const, ...e })),
     ],
-  });
+  }, 300);
 }
