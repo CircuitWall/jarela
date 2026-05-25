@@ -125,7 +125,7 @@ export const jiraSearchTool = tool(
 );
 
 export const jiraGetIssueTool = tool(
-  async ({ issue_key, expand, custom_fields }) => {
+  async ({ issue_key, expand, custom_fields, include_comments }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
@@ -237,6 +237,15 @@ export const jiraGetIssueTool = tool(
       labels: f.labels,
       components: ((f.components as Array<Record<string, unknown>>) ?? []).map((c) => c.name),
       comments_count: ((f.comment as Record<string, unknown>)?.total) ?? 0,
+      ...(include_comments ? {
+        comments: (((f.comment as Record<string, unknown>)?.comments as Array<Record<string, unknown>>) ?? []).map((c) => ({
+          id: c.id,
+          author: (c.author as Record<string, unknown>)?.displayName ?? null,
+          created: c.created,
+          updated: c.updated,
+          body: simplifyADF(c.body),
+        })),
+      } : {}),
       parent: f.parent ? {
         key: (f.parent as Record<string, unknown>).key,
         summary: ((f.parent as Record<string, unknown>).fields as Record<string, unknown>)?.summary,
@@ -267,13 +276,20 @@ export const jiraGetIssueTool = tool(
       "parent, sub-tasks, issue_links (with link ids for jira_delete_link), and attachment metadata. " +
       "Pass `expand: ['remoteLinks']` to also fetch web/Confluence/GitHub links. " +
       "Pass `custom_fields` (display names like 'Vulnerability Description', or `customfield_NNNNN` ids) " +
-      "to include them in the response under a `custom_fields` map. ADF/rich-text is auto-flattened. " +
+      "to include them in the response under a `custom_fields` map. " +
+      "Pass `include_comments: true` to include flattened comment bodies (author, timestamps, text). " +
+      "ADF/rich-text is auto-flattened. " +
       "**PREFER THIS over shell-exec'ing the jira CLI.**",
     schema: z.object({
       issue_key: z.string().describe("Issue key like PROJ-123"),
       expand: z.array(z.string()).optional().describe("Fields to expand (e.g. ['changelog', 'transitions'])"),
       custom_fields: z.array(z.string()).optional().describe(
         "Custom field display names ('Vulnerability Description') or ids ('customfield_10473') to include",
+      ),
+      include_comments: z.boolean().optional().describe(
+        "If true, include a `comments` array with author/created/updated/body for each comment. " +
+        "Comments come from the same call (no extra API round-trip) but Jira caps the embedded list at ~50 — " +
+        "use a follow-up call for issues with more.",
       ),
     }),
   },

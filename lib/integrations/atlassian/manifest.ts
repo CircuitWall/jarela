@@ -4,9 +4,9 @@ export const atlassianManifest: IntegrationManifest = {
   id: "atlassian",
   name: "Atlassian (Jira + Confluence)",
   summary:
-    "Lets the agent search and modify Jira issues, post comments, and read " +
-    "Confluence pages. Authenticates with an Atlassian API token tied to your " +
-    "account email.",
+    "Lets the agent search and modify Jira issues, read and post comments, and " +
+    "read Confluence pages. Authenticates with an Atlassian API token tied to " +
+    "your account email.",
   category: "issue-tracker",
   prerequisites: [
     {
