@@ -21,6 +21,19 @@ export function createdResponse<T>(data: T): NextResponse {
   return NextResponse.json(data, { status: 201 });
 }
 
+// Wrap a 200 JSON response with a private Cache-Control header. Use on safe
+// GET endpoints that serve user-scoped data the client refetches often (panel
+// mounts, navigation back/forward) but mutates rarely. The TTL is short
+// enough that explicit mutations — which patch the client-side ApiClient
+// cache in place — stay observably consistent without an extra roundtrip.
+export function cachedJson<T>(data: T, maxAgeSeconds: number): NextResponse {
+  return NextResponse.json(data, {
+    headers: {
+      "Cache-Control": `private, max-age=${maxAgeSeconds}`,
+    },
+  });
+}
+
 // Validate a JSON request body against a zod schema.
 // Returns either the parsed data or a 400 NextResponse explaining the issue.
 // Caller pattern:

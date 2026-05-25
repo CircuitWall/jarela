@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { cachedJson } from "@/lib/api/responses";
 import { listTaskAssignments } from "@/lib/stores/task-assignments";
 
 export function GET() {
-  return NextResponse.json(listTaskAssignments());
+  return cachedJson(listTaskAssignments(), 15);
 }
