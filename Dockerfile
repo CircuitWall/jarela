@@ -36,9 +36,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
+# Force the public npm registry regardless of any inherited host config.
+# Belt-and-braces with the committed .npmrc: even if a contributor builds
+# from a checkout where .npmrc was stomped on, the image build still
+# resolves packages from registry.npmjs.org.
+ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_AUDIT=false
+
 # Install deps first for better layer caching.
 COPY package.json package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
 # Copy the rest of the sources and build the standalone bundle.
 COPY . .
