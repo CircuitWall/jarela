@@ -134,6 +134,11 @@ export async function* streamWithConfig(
   const announcedToolIds = new Set<string>();
   let pendingAIChunk: AIMessageChunk | null = null;
   let totalOutputTokens = 0;
+  // Tracks whether the model hit max_tokens mid-stream. JarelaChatModel tags
+  // the final chunk with additional_kwargs.stop_reason="length" when this
+  // happens; we surface a non-fatal warning before `done` so the user knows
+  // their (visibly truncated) response was cut off — and can ask to continue.
+  let truncatedByLength = false;
   // Tracks whether the previous emitted chunk was a tool result. When the next
   // AI message starts producing text, we prepend a paragraph break so the
   // pre-tool plan acknowledgment and the post-tool reply don't visually merge.
@@ -191,6 +196,9 @@ export async function* streamWithConfig(
           const reasoning = chunk.additional_kwargs?.reasoning_content;
           if (typeof reasoning === "string" && reasoning) {
             yield { type: "thinking_delta", data: { delta: reasoning } };
+          }
+          if (chunk.additional_kwargs?.stop_reason === "length") {
+            truncatedByLength = true;
           }
           pendingAIChunk = pendingAIChunk ? pendingAIChunk.concat(chunk) : chunk;
         } else if (chunk instanceof ToolMessage) {
@@ -271,6 +279,18 @@ export async function* streamWithConfig(
         `If the agent looked stuck in a loop (calling the same tool repeatedly), simplify the prompt or ` +
         `try /new to start fresh — long histories of tool results sometimes make the model re-attempt the same step.`;
       code = "recursion_limit";
+    } else if (/Received empty response from chat model call/i.test(rawMsg)) {
+      // Defense in depth: JarelaChatModel._streamFromProvider already guards
+      // against this by emitting a sentinel empty chunk, but if a future
+      // provider bypasses that path we still want a useful message instead of
+      // the raw LangChain stack.
+      friendly =
+        "The model returned an empty response. This usually means a content filter triggered, " +
+        "max_tokens was too low for a reasoning model, or the connection dropped mid-stream. " +
+        "Check the model config and retry.";
+      code = "empty_response";
+    } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
+      code = "max_tokens_exhausted";
     }
     // Pull out the FIRST in-app frame from the stack so the user sees what
     // module triggered it, without dumping the full Pregel/webpack trace.
@@ -278,6 +298,18 @@ export async function* streamWithConfig(
     const trimmed = firstAppFrame ? `\n${firstAppFrame.trim()}` : "";
     yield { type: "error", data: { message: `${friendly}${trimmed}`, code } };
     return;
+  }
+
+  if (truncatedByLength) {
+    yield {
+      type: "error",
+      data: {
+        message:
+          "Response truncated — the model hit its max_tokens limit before finishing. " +
+          "Raise max_tokens in the model config (Anthropic defaults to 4096) and ask me to continue.",
+        code: "max_tokens_truncated",
+      },
+    };
   }
 
   yield {
