@@ -164,14 +164,18 @@ export class JarelaChatModel extends BaseChatModel {
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
     if (!this._provider.streamInvoke) return;
+    let emittedAny = false;
+    let stopReason: "stop" | "tool_use" | "length" | undefined;
     for await (const event of this._provider.streamInvoke(this._modelId, invokeMessages, this._params, openaiTools)) {
       if (event.type === "text") {
+        emittedAny = true;
         await runManager?.handleLLMNewToken(event.delta);
         yield new ChatGenerationChunk({
           message: new AIMessageChunk({ content: event.delta }),
           text: event.delta,
         });
       } else if (event.type === "thinking") {
+        emittedAny = true;
         yield new ChatGenerationChunk({
           message: new AIMessageChunk({
             content: "",
@@ -180,6 +184,7 @@ export class JarelaChatModel extends BaseChatModel {
           text: "",
         });
       } else if (event.type === "tool_call_chunk") {
+        emittedAny = true;
         yield new ChatGenerationChunk({
           message: new AIMessageChunk({
             content: "",
@@ -193,7 +198,53 @@ export class JarelaChatModel extends BaseChatModel {
           }),
           text: "",
         });
+      } else if (event.type === "stop") {
+        stopReason = event.reason;
       }
+    }
+    // Provider ended the stream without emitting any text, thinking, or tool
+    // call chunks. Without this guard, LangChain's BaseChatModel consumer sees
+    // zero ChatGenerationChunks and throws "Received empty response from chat
+    // model call." — opaque to users. Translate the underlying stop reason
+    // into something actionable.
+    if (!emittedAny) {
+      if (stopReason === "length") {
+        throw new Error(
+          "Model returned no content before hitting max_tokens. " +
+          "Reasoning likely consumed the entire token budget — raise max_tokens " +
+          "(or the thinking budget) in the model config and retry.",
+        );
+      }
+      // stopReason "stop" with no content can mean a content-filter refusal
+      // (OpenAI/Azure map content_filter -> "stop" in our type), or a model
+      // that legitimately decided to emit nothing on this turn. Yield one
+      // empty chunk so LangChain has something to aggregate; the agent loop
+      // will record an empty AIMessage and the UI will fall through to `done`.
+      console.warn(
+        `[jarela-chat-model] Provider ${this._provider.name} ended stream with no content (stopReason=${stopReason ?? "<none>"}).`,
+      );
+      yield new ChatGenerationChunk({
+        message: new AIMessageChunk({
+          content: "",
+          additional_kwargs: stopReason ? { empty_stream_reason: stopReason } : {},
+        }),
+        text: "",
+      });
+      return;
+    }
+    // Mid-stream truncation: provider produced content then stopped because of
+    // max_tokens (or a length-equivalent). The aggregated message is partial
+    // (e.g. a table cut off mid-row). Tag the final chunk with stop_reason so
+    // the agent layer can surface a "your output was truncated" warning to
+    // the user — otherwise they see a cut-off response with no explanation.
+    if (stopReason === "length") {
+      yield new ChatGenerationChunk({
+        message: new AIMessageChunk({
+          content: "",
+          additional_kwargs: { stop_reason: "length" },
+        }),
+        text: "",
+      });
     }
   }
 }
