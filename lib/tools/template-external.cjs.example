@@ -12,7 +12,13 @@
 //     category?: string,      // optional UI grouping; one of:
 //                             //   "Memory" "Files" "Shell" "Web" "Images"
 //                             //   "Schedule" "Atlassian" "Mail" "Calendar" "Config"
-//     async run(args, ctx) {  // ctx = { thread_id?: string }
+//     secrets?: Array<{       // optional per-tool secret slots (ADR-0023)
+//       key: string,          //   stable id, matches /^[a-z0-9_-]+$/i
+//       label?: string,       //   human-readable label for the Extensions panel
+//       required?: boolean,   //   surfaces a warning when missing
+//       description?: string, //   helper text under the input
+//     }>,
+//     async run(args, ctx) {  // ctx = { thread_id?, getSecret(key) }
 //       return any;           // return value JSON-serialized for the agent
 //     }
 //   }
@@ -21,12 +27,19 @@
 // - No need to import langchain or zod — Jarela wraps your plain object.
 // - Throw an Error to signal failure; the agent receives the message.
 // - Keep handlers pure-Node (fetch, fs, etc.) so dependencies don't matter.
+// - Secrets are stored encrypted at rest in the Jarela DB and surfaced
+//   through `ctx.getSecret(key)`. Each tool sees only its own slots.
 
 module.exports = {
   name: "echo",
   description:
     "Echo a message back to the agent. Useful as a smoke test that external tools are wired up.",
   category: "Config",
+  // Uncomment to declare secret slots editable from the Extensions panel:
+  // secrets: [
+  //   { key: "api_key", label: "Service API key", required: true,
+  //     description: "Sign up at https://example.com to get one." },
+  // ],
   schema: {
     type: "object",
     properties: {
@@ -42,10 +55,14 @@ module.exports = {
     required: ["message"],
     additionalProperties: false,
   },
-  async run({ message, uppercase }, _ctx) {
+  async run({ message, uppercase }, ctx) {
     if (typeof message !== "string" || !message.trim()) {
       throw new Error("message is required and must be non-empty");
     }
+    // Example secret read (no-op here — the slot above is commented out):
+    //   const apiKey = ctx.getSecret("api_key");
+    //   if (!apiKey) throw new Error("Configure 'api_key' under Extensions → echo.");
+    void ctx;
     return { echoed: uppercase ? message.toUpperCase() : message };
   },
 };
