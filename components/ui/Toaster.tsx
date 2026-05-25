@@ -144,7 +144,7 @@ function ToastCard({ toast }: { toast: Toast }) {
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); close(); }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
+          className="opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity p-0.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
           aria-label="Dismiss"
         >
           <X size={13} />
