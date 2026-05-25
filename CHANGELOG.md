@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Documents**: index any folder on disk for semantic recall. The
+  new Documents tab lets the user point Jarela at one or more
+  folders; text files (markdown, code, configs, plain text) are
+  chunked, embedded with the configured model, and surfaced to
+  agents via the `documents_search` tool. Reindex runs automatically
+  every ~10 minutes from the scheduler; the panel offers per-source
+  `Reindex now`, enable/disable, and a preview-search input.
+  Embedding failures gracefully degrade to substring matching so
+  installations without an embedding provider still get useful
+  results. See ADR-0024 (`docs/adr/0024-document-rag.md`).
+
 ## [0.4.0] - 2026-05-25
 
 ### Added
