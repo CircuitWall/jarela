@@ -6,12 +6,39 @@
 // SW-local var; if the SW is killed mid-cycle the next alarm tick simply
 // re-evaluates from a fresh fetch.
 
-const JARELA_BASE = "http://127.0.0.1:4312";
-const HEALTH_URL = `${JARELA_BASE}/api/v1/health`;
-const CAPTURE_URL = `${JARELA_BASE}/api/v1/page-capture`;
+import {
+  STORAGE_KEY,
+  DEFAULT_CONFIG,
+  parseConfig,
+  healthUrl,
+  captureUrl,
+  buildBase,
+} from "./lib/config.mjs";
+
 const ALARM_NAME = "jarela-health";
 const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
+
+// Cached config — refreshed from chrome.storage on each tick and whenever
+// the user saves new values via the options page.
+let currentConfig = { ...DEFAULT_CONFIG };
+
+async function loadConfig() {
+  try {
+    const stored = await chrome.storage.local.get(STORAGE_KEY);
+    currentConfig = parseConfig(stored?.[STORAGE_KEY]);
+  } catch {
+    currentConfig = { ...DEFAULT_CONFIG };
+  }
+  return currentConfig;
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[STORAGE_KEY]) return;
+  currentConfig = parseConfig(changes[STORAGE_KEY].newValue);
+  // Re-evaluate health immediately so the icon reflects the new target.
+  void tickHealth();
+});
 
 let lastHealthy = false;
 
@@ -19,7 +46,7 @@ async function checkHealth() {
   try {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), HEALTH_TIMEOUT_MS);
-    const res = await fetch(HEALTH_URL, { signal: ctrl.signal, cache: "no-store" });
+    const res = await fetch(healthUrl(currentConfig), { signal: ctrl.signal, cache: "no-store" });
     clearTimeout(t);
     return res.ok;
   } catch {
@@ -37,14 +64,16 @@ async function applyHealthState(healthy) {
       128: `icons/icon-128${suffix}.png`,
     },
   });
+  const where = buildBase(currentConfig);
   await chrome.action.setTitle({
     title: healthy
-      ? "Capture an element to Jarela"
-      : "Jarela isn't running — start it (npm run dev) and the icon will re-enable",
+      ? `Capture an element to Jarela (${where})`
+      : `Jarela isn't reachable at ${where} — click to open settings`,
   });
 }
 
 async function tickHealth() {
+  await loadConfig();
   const ok = await checkHealth();
   await applyHealthState(ok);
 }
@@ -63,8 +92,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 // Toolbar click → enter picker mode in the active tab. If Jarela isn't
-// reachable, surface that explicitly via an OS notification (the user
-// asked something to happen and nothing did — silence is bad UX).
+// reachable, open the options page so the user can fix the port (and tell
+// them why — silence is bad UX when they asked something to happen).
 chrome.action.onClicked.addListener(async (tab) => {
   if (!tab?.id) return;
   // Re-check health right now in case the SW just woke up.
@@ -75,11 +104,16 @@ chrome.action.onClicked.addListener(async (tab) => {
       await chrome.notifications.create({
         type: "basic",
         iconUrl: "icons/icon-128-disabled.png",
-        title: "Jarela isn't running",
-        message: "Start the Jarela app and try again. The icon goes back to active when it's reachable.",
+        title: `Can't reach Jarela`,
+        message: `${buildBase(currentConfig)} didn't respond. Opening settings — confirm the host and port, or start the Jarela server.`,
         priority: 1,
       });
     } catch { /* notifications optional */ }
+    try {
+      await chrome.runtime.openOptionsPage();
+    } catch (err) {
+      console.warn("[jarela] failed to open options page:", err);
+    }
     return;
   }
   try {
@@ -114,7 +148,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type !== "jarela-capture") return false;
   (async () => {
     try {
-      const res = await fetch(CAPTURE_URL, {
+      const res = await fetch(captureUrl(currentConfig), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(msg.payload),
