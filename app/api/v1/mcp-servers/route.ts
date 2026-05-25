@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
   listMcpServers,
   upsertMcpServer,
@@ -6,10 +6,10 @@ import {
 } from "@/lib/stores/mcp-servers";
 import { invalidateMcpTools } from "@/lib/mcp/client";
 import { mcpServerToResponse } from "@/lib/api/serializers";
-import { errorResponse, createdResponse } from "@/lib/api/responses";
+import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";
 
 export function GET() {
-  return NextResponse.json(listMcpServers().map(mcpServerToResponse));
+  return cachedJson(listMcpServers().map(mcpServerToResponse), 15);
 }
 
 export async function POST(req: NextRequest) {

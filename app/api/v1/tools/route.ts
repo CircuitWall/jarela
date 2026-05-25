@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAllTools, getAllToolsAsync, getToolCategory, getToolGroup } from "@/lib/tools";
+import { cachedJson } from "@/lib/api/responses";
 
 export async function GET() {
   try {
@@ -7,7 +8,7 @@ export async function GET() {
     // Tag each tool's source so the UI can group "built-in" vs MCP-server tools.
     const builtInNames = new Set(getAllTools().map((t) => t.name));
     const all = await getAllToolsAsync();
-    return NextResponse.json(
+    return cachedJson(
       all.map((t) => {
         const source: "builtin" | "mcp" = builtInNames.has(t.name) ? "builtin" : "mcp";
         return {
@@ -18,6 +19,7 @@ export async function GET() {
           group: getToolGroup(t.name, source),
         };
       }),
+      60,
     );
   } catch (err) {
     return NextResponse.json(

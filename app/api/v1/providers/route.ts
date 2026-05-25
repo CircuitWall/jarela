@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
+import { cachedJson } from "@/lib/api/responses";
 import { listProviderNames } from "@/lib/providers";
 
 export async function GET() {
-  return NextResponse.json(listProviderNames());
+  return cachedJson(listProviderNames(), 300);
 }
