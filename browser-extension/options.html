@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Jarela Page Capture — Settings</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1115;
+      --fg: #e8eaed;
+      --muted: #9aa0a6;
+      --border: #2a2d33;
+      --accent: #6aa3ff;
+      --accent-fg: #0a0d14;
+      --ok: #22c55e;
+      --err: #ef4444;
+      --warn: #eab308;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #ffffff;
+        --fg: #1a1a1a;
+        --muted: #5f6368;
+        --border: #d9dce0;
+        --accent: #2563eb;
+        --accent-fg: #ffffff;
+      }
+    }
+    html, body {
+      background: var(--bg);
+      color: var(--fg);
+      font: 13px/1.5 system-ui, -apple-system, Segoe UI, sans-serif;
+      margin: 0;
+      padding: 0;
+    }
+    main {
+      max-width: 560px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .field { margin-bottom: 12px; }
+    .field:last-child { margin-bottom: 0; }
+    label { display: block; font-weight: 500; margin-bottom: 6px; }
+    .row {
+      display: grid;
+      grid-template-columns: 110px 1fr 100px;
+      gap: 8px;
+      align-items: center;
+    }
+    input[type="number"],
+    input[type="text"],
+    select {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      min-width: 0;
+    }
+    input:focus, select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+      border-color: transparent;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+    button, a.btn {
+      background: var(--accent);
+      color: var(--accent-fg);
+      border: 0;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font: inherit;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+    button.secondary, a.btn.secondary {
+      background: transparent;
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+    a.btn[aria-disabled="true"] { opacity: 0.5; pointer-events: none; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+    code {
+      background: rgba(127,127,127,0.15);
+      padding: 0 4px;
+      border-radius: 3px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .status { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .status[data-state="ok"] .dot { background: var(--ok); }
+    .status[data-state="err"] .dot { background: var(--err); }
+    .status[data-state="checking"] .dot {
+      background: var(--warn);
+      animation: pulse 1s ease-in-out infinite;
+    }
+    @keyframes pulse { 50% { opacity: 0.3; } }
+    .status[data-state="ok"] .label { color: var(--ok); }
+    .status[data-state="err"] .label { color: var(--err); }
+    .error { color: var(--err); font-size: 12px; margin-top: 4px; min-height: 1em; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Jarela Page Capture</h1>
+    <p class="sub">Tell the extension where your local Jarela server is listening.</p>
+
+    <section class="card">
+      <div class="field">
+        <label>Endpoint</label>
+        <div class="row">
+          <select id="scheme" aria-label="Scheme">
+            <option value="http">http://</option>
+            <option value="https">https://</option>
+          </select>
+          <input id="host" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="127.0.0.1" aria-label="Host" />
+          <input id="port" type="number" min="1" max="65535" step="1" placeholder="4312" aria-label="Port" />
+        </div>
+        <div class="hint">
+          Examples: <code>http://127.0.0.1:4312</code>, <code>http://localhost:4312</code>,
+          <code>https://my-laptop.tailnet.ts.net:4312</code>.
+        </div>
+        <div id="formError" class="error" role="alert"></div>
+      </div>
+
+      <div class="actions">
+        <button id="save" type="button">Save</button>
+        <button id="test" type="button" class="secondary">Test connection</button>
+        <button id="open" type="button" class="secondary">Open Jarela</button>
+      </div>
+      <div class="hint">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400;">
+          <input id="preferPwa" type="checkbox" />
+          Prefer installed PWA window (falls back to a tab)
+        </label>
+      </div>
+      <div class="hint">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400;">
+          <input id="autoOpen" type="checkbox" />
+          Open Jarela automatically after saving
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <label>Connection</label>
+      <div class="status" data-state="checking">
+        <span class="dot"></span>
+        <span class="label">Checking…</span>
+      </div>
+      <div id="detail" class="hint"></div>
+    </section>
+  </main>
+  <script src="options.js" type="module"></script>
+</body>
+</html>
