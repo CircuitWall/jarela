@@ -64,7 +64,7 @@ export function MemoryPanel() {
               </div>
               <MemoryValuePreview value={item.value} />
             </div>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
               <button onClick={() => setEditing(item)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit"><Pencil size={13} /></button>
               <button onClick={() => remove(item.namespace, item.key)} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
             </div>
