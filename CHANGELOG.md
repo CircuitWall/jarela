@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-25
+
 ### Added
 
+- **Browser extension**: configurable Jarela endpoint. The extension
+  options page now exposes the scheme (`http`/`https`), host, and
+  port the popup launches into, so users running Jarela on a custom
+  port (or behind a Tailscale-Serve hostname) no longer have to live
+  with the hardcoded `http://127.0.0.1:4312`. Clicking the extension
+  icon when Jarela isn't reachable opens the options page instead of
+  silently failing. When the page is reachable, the extension
+  prefers launching the installed PWA over a normal tab (#28).
+- **Jira tool**: `jira_get_issue` now accepts an
+  `include_comments` flag so the agent can pull issue conversation
+  history in one call without a follow-up `jira_get_comments` round
+  trip (#32).
 - **Profile**: persona preset (Home / Work / Developer / Everything).
   The picker lives in the Profile editor and drives a new category
   filter on the Credentials panel so first-run users aren't faced
@@ -41,6 +55,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Advanced" section (Credentials, Models, Tools). The collapsed
   state is persisted in `localStorage` (`jarela.menu.advanced`) and
   auto-opens when navigating into an Advanced tab via deep-link.
+
+### Fixed
+
+- **Chat (mobile)**: the "Play voice" button on assistant bubbles
+  is now visible on touch devices. It was gated behind
+  `group-hover:opacity-100` with no fallback, so iOS Safari and the
+  installed PWA rendered it invisibly. Same fix applied to the row-
+  action toolbars in the MCP, Memory, Models, and Sidebar panels,
+  plus the toast dismiss button (#33, #34).
+- **Chat**: stopping a streaming run now restores the input bar
+  cleanly. Previously the Stop button could leave the UI in a half-
+  streaming state where Send was disabled until the next refetch
+  (#31).
+- **Build**: regenerated `package-lock.json` against the public npm
+  registry. A previous lockfile regeneration was done on a machine
+  with a private mirror configured, leaking 84 internal-only
+  resolved URLs into the lockfile and breaking CI / Docker builds
+  for anyone without access to that mirror (`Cannot find module
+  '../lightningcss.linux-x64-gnu.node'` during `next build`) (#29).
+
+### Build
+
+- Project now ships a committed `.npmrc` that pins
+  `https://registry.npmjs.org/` so contributors with a private mirror
+  in `~/.npmrc` no longer leak internal URLs into the lockfile. The
+  `Dockerfile` and CI workflow set `--registry` explicitly as belt-
+  and-braces. CI also gained a sub-second tripwire that fails the
+  build if `package-lock.json` ever contains a non-public resolved
+  URL again (#30).
 
 ### Security
 
