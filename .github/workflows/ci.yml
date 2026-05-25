@@ -60,12 +60,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+
+      - name: Verify lockfile uses the public npm registry only
+        # Tripwire: refuse to build if package-lock.json points at any
+        # registry other than registry.npmjs.org. This caught the JFrog
+        # mirror leak that broke main in May 2026 — see commit f40b31b.
+        run: |
+          bad=$(grep -oE '"resolved": "https://[^"]+"' package-lock.json \
+                  | grep -v '"https://registry.npmjs.org/' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::package-lock.json contains non-public registry URLs:"
+            echo "$bad" | head -20
+            exit 1
+          fi
 
       - name: Install dependencies
-        # package-lock.json is gitignored (see ADR / commit history) so we
-        # cannot use `npm ci`. `npm install` resolves fresh against the
-        # public registry on every run.
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
       - name: Lint
         run: npm run lint
@@ -94,9 +105,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
       - name: Build
         run: npm run build
@@ -157,9 +169,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
       - name: Resolve Playwright version
         id: pw
