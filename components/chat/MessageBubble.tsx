@@ -977,7 +977,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
 
       <div className={`flex flex-col max-w-[88%] sm:max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
         {(timeLabel || messageId) && (
-          <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
+          <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
             {timeLabel && (
               <span className="text-[10px] text-fg-faint" aria-hidden>{timeLabel}</span>
             )}
