@@ -70,7 +70,7 @@ export function Sidebar({ threads, onNewThread, onDeleteThread }: Props) {
                 <span className="flex-1 text-xs truncate">{t.title ?? "New conversation"}</span>
                 <button
                   onClick={(e) => { e.stopPropagation(); onDeleteThread(t.thread_id); }}
-                  className="opacity-0 group-hover:opacity-100 p-0.5 text-fg-faint hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  className="opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 p-0.5 text-fg-faint hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   title="Delete"
                 >
                   <Trash2 size={12} />
