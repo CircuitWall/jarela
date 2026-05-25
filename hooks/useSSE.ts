@@ -97,18 +97,29 @@ export function useSSE(onDone?: () => void) {
     }
   }, [consume]);
 
-  // Stop the active run. Two-part: (1) tell the server to abort the agent
-  // stream so the LangGraph loop unwinds and downstream subscribers see a
-  // terminal event; (2) abort the local controller so the EventSource
-  // closes and the iterator's finally{} fires. The server sends `error` +
-  // `done` so the ChatView queue-drain still runs after an interrupt.
+  // Stop the active run. Three-part: (1) tell the server to abort the
+  // agent stream so the LangGraph loop unwinds; (2) tear down local
+  // streaming state immediately so the UI gates release and the queue
+  // drains — we cannot rely on the server's `error`+`done` round-trip
+  // because step (3) closes the EventSource before those broadcasts
+  // arrive; (3) abort the local controller so the EventSource closes
+  // and the iterator's finally{} fires. Without step (2) the consume()
+  // loop exits via its abort path (no terminal event) and never calls
+  // setStreaming(false) / onDone — the chat appears frozen and the only
+  // recovery is a full refresh.
   const stop = useCallback(() => {
     const tid = threadIdRef.current;
     if (tid) {
       void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
     }
+    setStreaming(false);
+    setThinkingContent("");
+    // Keep streamingContent visible until ChatView's refetch (via onDone)
+    // swaps in the persisted assistant message — same pattern as the
+    // `done` branch in consume().
     abortRef.current?.abort();
-  }, []);
+    onDone?.();
+  }, [onDone]);
 
   // Attach to an in-flight run for the given thread (server-side run kept
   // going because the user switched away, or because this is a fresh
