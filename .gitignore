@@ -2,7 +2,11 @@
 node_modules/
 .pnp
 .pnp.js
-.npmrc
+# We commit a project-local .npmrc that pins the public npm registry so
+# contributors who have a private mirror in ~/.npmrc don't accidentally
+# leak internal URLs into package-lock.json. Auth tokens, if ever needed,
+# belong in .npmrc.local (not read by npm automatically).
+.npmrc.local
 
 # next.js
 .next/
