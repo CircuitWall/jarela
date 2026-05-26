@@ -29,7 +29,7 @@ export function IntegrationsPanel() {
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [preset, setPreset] = useState<UserProfile["preset"]>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  useDeepLinkScroll("integrations", "integration", containerRef);
+  useDeepLinkScroll("connections", "integration", containerRef);
 
   async function load() {
     setLoading(true);

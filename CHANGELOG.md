@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Connections tab**: a single home for every auth surface. The old
+  "Credentials" tab is renamed to "Connections" and gains a sub-tab
+  for MCP server credentials, which previously lived under Tools.
+  Result: one mental model — *Connections* for "what accounts has
+  this been given access to", *Tools* for "what can the agent do".
+  Deep links update: `?tab=integrations` becomes `?tab=connections`
+  (the in-app proposal banners are auto-rewritten; external bookmarks
+  to the old slug stop resolving).
 - **Built-in tool toggles**: a new "Built-in" sub-tab under Tools
   lets the operator enable or disable whole categories of shipped
   tools (Memory, Files, Web, Shell, Mail, Calendar, …). Disabled
