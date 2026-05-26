@@ -420,6 +420,20 @@ export const api = {
     },
   },
 
+  // Filesystem browse — backs the folder-picker dialog in the Documents
+  // panel. Lists immediate subdirectories at an absolute path.
+  fs: {
+    browse: (p?: string) => {
+      const qs = p ? `?path=${encodeURIComponent(p)}` : "";
+      return request<{
+        path: string;
+        parent: string | null;
+        home: string;
+        entries: { name: string; path: string }[];
+      }>(`/fs/browse${qs}`);
+    },
+  },
+
   githubCopilotAuth: {
     status: () => request<{ signed_in: boolean; stored_at: string | null }>("/providers/github-copilot/auth"),
     start: () => request<{ device_code: string; user_code: string; verification_uri: string; expires_in: number; interval: number }>(
