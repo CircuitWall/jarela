@@ -1,8 +1,9 @@
 "use client";
-import { AlertCircle, FolderSearch, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertCircle, FolderOpen, FolderSearch, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { DocumentHit, DocumentSource } from "@/api/types";
+import { FolderPickerDialog } from "./FolderPickerDialog";
 
 export function DocumentsPanel() {
   const [sources, setSources] = useState<DocumentSource[]>([]);
@@ -11,6 +12,7 @@ export function DocumentsPanel() {
   const [addPath, setAddPath] = useState("");
   const [addLabel, setAddLabel] = useState("");
   const [adding, setAdding] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Per-source busy state for reindex spinners.
   const [busy, setBusy] = useState<Record<string, boolean>>({});
@@ -126,13 +128,23 @@ export function DocumentsPanel() {
         <section className="space-y-2">
           <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Add a folder</label>
           <div className="flex flex-col gap-2 sm:flex-row">
-            <input
-              type="text"
-              value={addPath}
-              onChange={(e) => setAddPath(e.target.value)}
-              placeholder="Absolute path, e.g. C:\\Users\\me\\notes"
-              className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
-            />
+            <div className="flex flex-1 min-w-0 gap-1">
+              <input
+                type="text"
+                value={addPath}
+                onChange={(e) => setAddPath(e.target.value)}
+                placeholder="Pick or paste an absolute path"
+                className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => setPickerOpen(true)}
+                title="Browse for a folder"
+                className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-surface-3 border border-border text-xs text-fg hover:bg-surface-2 transition-colors"
+              >
+                <FolderOpen size={13} /> Browse
+              </button>
+            </div>
             <input
               type="text"
               value={addLabel}
@@ -149,6 +161,17 @@ export function DocumentsPanel() {
             </button>
           </div>
         </section>
+
+        {pickerOpen && (
+          <FolderPickerDialog
+            initialPath={addPath.trim() || undefined}
+            onClose={() => setPickerOpen(false)}
+            onSelect={(picked) => {
+              setAddPath(picked);
+              setPickerOpen(false);
+            }}
+          />
+        )}
 
         {error && (
           <div className="flex items-start gap-2 text-xs text-red-600 dark:text-red-400 px-2 py-1.5 rounded-md bg-red-500/10 border border-red-500/20">
