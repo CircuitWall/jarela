@@ -159,6 +159,46 @@ export function runMigrations(db: DatabaseSync): void {
       ca_bundle   TEXT,                                    -- PEM, plaintext (public cert, ADR-0012)
       updated_at  TEXT    NOT NULL
     );
+    -- Document RAG (ADR-0024). A document_sources row is a folder the
+    -- user asked Jarela to index for semantic search. Walked on each
+    -- scheduler tick (cheap stat()); files whose mtime/size changed get
+    -- re-chunked and re-embedded. documents_search exposes recall over
+    -- the resulting chunks as an agent tool.
+    CREATE TABLE IF NOT EXISTS document_sources (
+      id              TEXT PRIMARY KEY,
+      path            TEXT NOT NULL,
+      label           TEXT,
+      enabled         INTEGER NOT NULL DEFAULT 1,
+      last_scan_at    TEXT,
+      last_error      TEXT,
+      created_at      TEXT NOT NULL,
+      updated_at      TEXT NOT NULL,
+      UNIQUE(path)
+    );
+    CREATE TABLE IF NOT EXISTS documents (
+      id              TEXT PRIMARY KEY,
+      source_id       TEXT NOT NULL REFERENCES document_sources(id) ON DELETE CASCADE,
+      path            TEXT NOT NULL,
+      rel_path        TEXT NOT NULL,
+      mtime_ms        INTEGER NOT NULL,
+      size_bytes      INTEGER NOT NULL,
+      content_hash    TEXT NOT NULL,
+      last_indexed_at TEXT NOT NULL,
+      chunk_count     INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(source_id, path)
+    );
+    CREATE INDEX IF NOT EXISTS idx_documents_source ON documents(source_id);
+    CREATE TABLE IF NOT EXISTS document_chunks (
+      id              TEXT PRIMARY KEY,
+      document_id     TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      chunk_index     INTEGER NOT NULL,
+      text            TEXT NOT NULL,
+      start_offset    INTEGER NOT NULL,
+      end_offset      INTEGER NOT NULL,
+      embedding       TEXT,
+      UNIQUE(document_id, chunk_index)
+    );
+    CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
   `);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);
