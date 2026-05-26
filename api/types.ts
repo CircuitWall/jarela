@@ -82,10 +82,11 @@ export interface Message {
   // renders live streaming ones.
   tool_events?: PersistedToolEvent[];
   // Optional classification tag. NULL/undefined = ordinary chat content.
-  // Known values: 'scheduled_task' (scheduler firings), 'bridge' (bridge
-  // adapter traffic), 'synthetic' (page-capture / file-upload synthetic
-  // user messages). The chat-panel filter toolbar lets the user toggle
-  // each category on/off; persistence is the same regardless.
+  // Known values: 'scheduled_task' (scheduler firings), 'watcher'
+  // (watcher-trigger firings, ADR-0027), 'bridge' (bridge adapter
+  // traffic), 'synthetic' (page-capture / file-upload synthetic user
+  // messages). The chat-panel filter toolbar lets the user toggle each
+  // category on/off; persistence is the same regardless.
   category?: string | null;
 }
 

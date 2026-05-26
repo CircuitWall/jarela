@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // `lib/stores/agent-configs.ts` — keep both lists in sync.
 export const MESSAGE_FILTER_KEYS = [
   "scheduled_task",
+  "watcher",
   "bridge",
   "synthetic",
   "tool_use",
@@ -26,6 +27,7 @@ const MIGRATION_FLAG_KEY = "jarela:msg-filters:legacy-migrated";
 
 const DEFAULTS: MessageFilters = {
   scheduled_task: true,
+  watcher: true,
   bridge: true,
   synthetic: true,
   tool_use: true,

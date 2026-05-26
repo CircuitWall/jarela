@@ -46,13 +46,14 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       const cat = m.category;
       if (!cat) return true;
       if (cat === "scheduled_task") return filters.scheduled_task;
+      if (cat === "watcher") return filters.watcher;
       if (cat === "bridge") return filters.bridge;
       if (cat === "synthetic") return filters.synthetic;
       // Unknown future categories: show by default so forward-compat clients
       // never silently drop content the server thinks should be visible.
       return true;
     });
-  }, [messages, filters.scheduled_task, filters.bridge, filters.synthetic]);
+  }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
 
@@ -66,6 +67,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const set = new Set<MessageFilterKey>();
     for (const m of messages) {
       if (m.category === "scheduled_task") set.add("scheduled_task");
+      else if (m.category === "watcher") set.add("watcher");
       else if (m.category === "bridge") set.add("bridge");
       else if (m.category === "synthetic") set.add("synthetic");
       if (m.tool_events && m.tool_events.length > 0) set.add("tool_use");
@@ -318,6 +320,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 // the current filter so the absence isn't mysterious.
 const CHIP_LABELS: Record<MessageFilterKey, string> = {
   scheduled_task: "scheduled",
+  watcher: "watcher",
   bridge: "bridge",
   synthetic: "captures",
   tool_use: "tools",
