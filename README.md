@@ -563,13 +563,21 @@ module.exports = {
   name: "weather",
   description: "Get weather for a city.",
   category: "Web",
+  // Optional: declare secret slots editable in the Extensions panel.
+  // Values are AES-256-GCM encrypted at rest (ADR-0023) and read at
+  // runtime via ctx.getSecret(). Each tool sees only its own slots.
+  secrets: [
+    { key: "api_key", label: "OpenWeather API key", required: true },
+  ],
   schema: {
     type: "object",
     properties: { city: { type: "string" } },
     required: ["city"],
   },
-  async run({ city }, _ctx) {
-    const r = await fetch(`https://wttr.in/${city}?format=j1`);
+  async run({ city }, ctx) {
+    const apiKey = ctx.getSecret("api_key");
+    if (!apiKey) throw new Error("Configure 'api_key' under Extensions → weather.");
+    const r = await fetch(`https://api.openweathermap.org/data/2.5/weather?q=${city}&appid=${apiKey}`);
     return await r.json();
   },
 };
