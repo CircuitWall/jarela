@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { join } from "path";
+import { join } from "node:path";
 import { runMigrations } from "./migrations";
 import { getDataDir } from "./data-dir";
 import { initMasterKey } from "@/lib/crypto/master-key";

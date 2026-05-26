@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import { getDb } from "@/lib/db";
 

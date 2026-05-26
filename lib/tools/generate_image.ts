@@ -11,7 +11,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { writeBinaryFile } from "@/lib/files";
 import { getConfig } from "@/lib/env/config";
