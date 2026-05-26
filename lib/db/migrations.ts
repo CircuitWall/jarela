@@ -90,6 +90,31 @@ export function runMigrations(db: DatabaseSync): void {
       updated_at    TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due ON scheduled_tasks(enabled, next_run_at);
+    -- Event-driven "watchers" (ADR-0027). A watcher polls one built-in
+    -- tool with fixed args on an interval; when the tool's output changes
+    -- (content hash != last_fingerprint) the agent is fired with
+    -- {previous, current} as context. Until then the watcher consumes no
+    -- LLM tokens — only the polled tool runs. Plugs into the trigger
+    -- abstraction (ADR-0025) as a sibling handler to scheduled_task.
+    CREATE TABLE IF NOT EXISTS watchers (
+      id                TEXT PRIMARY KEY,
+      agent_id          TEXT NOT NULL,
+      label             TEXT NOT NULL,
+      tool_name         TEXT NOT NULL,
+      tool_args         TEXT NOT NULL DEFAULT '{}',  -- JSON
+      interval_seconds  INTEGER NOT NULL,
+      last_fingerprint  TEXT,                         -- sha256 of last tool result
+      last_result       TEXT,                         -- raw tool result (string) for diff context
+      last_run_at       TEXT,
+      last_fired_at     TEXT,
+      last_error        TEXT,
+      next_run_at       TEXT NOT NULL,
+      enabled           INTEGER NOT NULL DEFAULT 1,
+      silent            INTEGER NOT NULL DEFAULT 0,
+      created_at        TEXT NOT NULL,
+      updated_at        TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_watchers_due ON watchers(enabled, next_run_at);
     CREATE TABLE IF NOT EXISTS mcp_servers (
       name          TEXT PRIMARY KEY,
       transport     TEXT NOT NULL,           -- 'stdio' | 'http'

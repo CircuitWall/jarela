@@ -327,6 +327,27 @@ export interface ScheduledTask {
   updated_at: string;
 }
 
+// Event-driven watcher (ADR-0027). Sibling of ScheduledTask: instead of
+// firing on a cron, the scheduler polls one built-in tool every
+// `interval_seconds` and only invokes the agent when the tool's output
+// changes since the previous poll.
+export interface Watcher {
+  id: string;
+  agent_id: string;
+  label: string;
+  tool: string;
+  args: unknown;
+  interval_seconds: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_fired_at: string | null;
+  last_error: string | null;
+  enabled: boolean;
+  silent: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // Document RAG (ADR-0024). A folder on the user's machine that Jarela
 // scans on a timer; matching text files are chunked + embedded into
 // `document_chunks` and surfaced to agents via the `documents_search`
