@@ -100,6 +100,7 @@ async function pollDueWatchers(asOf: Date): Promise<TriggerFiring[]> {
         firings.push({
           id: watcher.id,
           kind: WATCHER_KIND,
+          mode: "prompt",
           agentId: watcher.agent_id,
           prompt: buildFiringPrompt(watcher, watcher.last_result, result),
           silent: watcher.silent === 1,
@@ -126,6 +127,7 @@ export const watcherHandler: TriggerHandler = {
   },
 
   markFired(firing: TriggerFiring, outcome: TriggerOutcome): void {
+    if (firing.mode !== "prompt") return;
     // Polling state (last_run_at, last_fingerprint, last_result,
     // next_run_at) was already advanced inside getDueFirings — we only
     // publish a notification here so the UI's event stream lights up.
@@ -162,6 +164,7 @@ export async function firingForWatcherIdNow(id: string): Promise<TriggerFiring |
     return {
       id: watcher.id,
       kind: WATCHER_KIND,
+      mode: "prompt",
       agentId: watcher.agent_id,
       prompt: buildFiringPrompt(watcher, watcher.last_result, result),
       silent: watcher.silent === 1,
