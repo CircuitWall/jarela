@@ -36,7 +36,7 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("menu separates common from advanced and Tools opens MCP+Extensions sub-tabs", async ({ page }) => {
+test("menu separates common from advanced and Tools opens Built-in+Extensions sub-tabs", async ({ page }) => {
   await openMenu(page);
 
   // Common tabs visible up top.
@@ -54,14 +54,18 @@ test("menu separates common from advanced and Tools opens MCP+Extensions sub-tab
   await expect(page.getByRole("button", { name: "Connections", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Models", exact: true })).toBeVisible();
 
-  // Click Tools → ToolsPanel mounts with MCP/Extensions sub-tabs.
+  // Click Tools → ToolsPanel mounts with Built-in/Extensions sub-tabs.
+  // (MCP moved to Connections after the consolidation.)
   await page.getByRole("button", { name: "Tools", exact: true }).click();
-  const mcpTab = page.getByRole("tab", { name: "MCP servers" });
+  const builtinTab = page.getByRole("tab", { name: "Built-in" });
   const extTab = page.getByRole("tab", { name: "Browser extension" });
-  await expect(mcpTab).toBeVisible();
+  await expect(builtinTab).toBeVisible();
   await expect(extTab).toBeVisible();
-  await expect(mcpTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
+  await expect(builtinTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Built-in tools" })).toBeVisible();
+
+  // Tools tab should NOT show MCP sub-tab anymore (it lives in Connections).
+  await expect(page.getByRole("tab", { name: "MCP servers" })).toHaveCount(0);
 
   // Switch to Extensions sub-tab.
   await extTab.click();
