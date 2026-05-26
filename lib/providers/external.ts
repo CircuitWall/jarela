@@ -1,5 +1,5 @@
-import { join } from "path";
-import { existsSync, readdirSync, statSync } from "fs";
+import { join } from "node:path";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import type { ModelProvider } from "./types";
 import { getDataDir } from "@/lib/db/data-dir";
 

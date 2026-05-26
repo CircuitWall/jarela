@@ -11,7 +11,7 @@
 // Same shape used by both gmail-oauth.ts and microsoft-oauth.ts — pass a
 // unique `globalKey` per provider so they don't share a Map.
 
-import { randomBytes } from "crypto";
+import { randomBytes } from "node:crypto";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 
 export interface OAuthFlow {

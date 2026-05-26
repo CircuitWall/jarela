@@ -1,6 +1,6 @@
-import { promises as fs } from "fs";
-import os from "os";
-import path from "path";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
@@ -300,7 +300,7 @@ export const fileMoveTool = tool(
       const srcStat = await fs.stat(srcAbs);
       // If destination is an existing directory, move source INTO it
       // preserving its basename — matches `mv src dir/` semantics.
-      let dstStat: import("fs").Stats | null = null;
+      let dstStat: import("node:fs").Stats | null = null;
       try {
         dstStat = await fs.stat(dstAbs);
       } catch {
@@ -396,7 +396,7 @@ export const fileListTool = tool(
     const entries: Array<{ path: string; kind: "file" | "directory" | "other"; size?: number }> = [];
     let truncated = false;
     try {
-      let items: import("fs").Dirent[];
+      let items: import("node:fs").Dirent[];
       try {
         items = await fs.readdir(abs, { withFileTypes: true });
       } catch (err) {
@@ -565,7 +565,7 @@ export const fileCopyTool = tool(
       assertSafePath(srcAbs, "read");
       assertSafePath(dstAbs, "write");
       const srcStat = await fs.stat(srcAbs);
-      let dstStat: import("fs").Stats | null = null;
+      let dstStat: import("node:fs").Stats | null = null;
       try {
         dstStat = await fs.stat(dstAbs);
       } catch {

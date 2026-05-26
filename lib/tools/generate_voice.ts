@@ -9,7 +9,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { registerTools } from "./registry";
 import { writeBinaryFile } from "@/lib/files";

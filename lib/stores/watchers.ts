@@ -1,7 +1,7 @@
 // Watcher store (ADR-0027). Sibling to lib/stores/scheduled-tasks.ts;
 // shape mirrors it so the UI + trigger plumbing can treat them as
 // near-equivalents apart from the diff-aware fields.
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 
 export interface WatcherRow {

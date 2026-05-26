@@ -15,7 +15,7 @@
 //
 // All scheduling work happens inside `getDueFirings` because the
 // abstraction's markFired is only called for actually-fired runs.
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 import {
   getDueWatchers,
   getWatcher,
