@@ -19,6 +19,7 @@ import {
   type DocumentSourceRow,
 } from "@/lib/stores/document-sources";
 import { chunkText } from "./chunker";
+import { isRemoteKind, runRemoteSource, type RemoteIndexStats } from "./remote";
 
 // Conservative defaults; v1 is not configurable per source. ADR-0024
 // documents the rationale and the path to opening these up.
@@ -287,12 +288,20 @@ async function upsertDocument(
 export async function indexAllSources(opts?: { maxFilesPerSource?: number }): Promise<{
   source_id: string;
   path: string;
-  stats: IndexStats;
+  stats: IndexStats | RemoteIndexStats;
 }[]> {
   const sources = listEnabledDocumentSources();
-  const out: { source_id: string; path: string; stats: IndexStats }[] = [];
+  const out: { source_id: string; path: string; stats: IndexStats | RemoteIndexStats }[] = [];
   for (const s of sources) {
     try {
+      if (isRemoteKind(s.kind)) {
+        // Delegate to the per-kind remote handler (ADR-0026). Remote
+        // sources don't have an mtime stat — they have their own
+        // incremental cursor stored in document_sources.last_cursor.
+        const stats = await runRemoteSource(s);
+        out.push({ source_id: s.id, path: s.path, stats });
+        continue;
+      }
       const stats = await indexSource(s, { maxFiles: opts?.maxFilesPerSource });
       out.push({ source_id: s.id, path: s.path, stats });
     } catch (err) {

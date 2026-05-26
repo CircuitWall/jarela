@@ -5,8 +5,9 @@ export const atlassianManifest: IntegrationManifest = {
   name: "Atlassian (Jira + Confluence)",
   summary:
     "Lets the agent search and modify Jira issues, read and post comments, and " +
-    "read Confluence pages. Authenticates with an Atlassian API token tied to " +
-    "your account email.",
+    "read Confluence pages. Also powers smart-indexed document RAG over selected " +
+    "Jira projects/JQL and Confluence spaces/CQL via the documents_add_remote_source " +
+    "tool (ADR-0026). Authenticates with an Atlassian API token tied to your account email.",
   category: "issue-tracker",
   prerequisites: [
     {
@@ -39,6 +40,18 @@ export const atlassianManifest: IntegrationManifest = {
         "Propose enabling the integration. The user will be asked for the site URL, " +
         "their account email, and the API token. The token is stored encrypted at rest.",
       proposes: "enable_integration",
+    },
+    {
+      id: "configure-rag",
+      title: "Optional: scope a Jira/Confluence document source for semantic search (ADR-0026)",
+      description:
+        "After credentials are saved, suggest adding a scoped RAG source so the agent " +
+        "can answer questions from Atlassian content without reading everything. Use " +
+        "documents_add_remote_source with one of: kind='confluence_space' " +
+        "(config.space_key='ENG'), kind='jira_project' (config.project_key='ABC', " +
+        "optional config.recency_days=90), kind='confluence_cql' (config.cql='label = \"runbook\"'), " +
+        "or kind='jira_jql' (config.jql='project = ABC AND status != Done'). Indexing runs " +
+        "incrementally on the existing scheduler sweep; results are searchable via documents_search.",
     },
   ],
   troubleshooting: [

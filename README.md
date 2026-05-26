@@ -687,7 +687,8 @@ C4Context
     System_Ext(mcp, "MCP Servers", "Tool providers via @langchain/mcp-adapters")
     System_Ext(mcpreg, "MCP Registry", "registry.modelcontextprotocol.io — discovery only (ADR-0014)")
     System_Ext(github, "GitHub API", "Repo / PR integrations")
-    SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings")
+    System_Ext(atlassian, "Atlassian Cloud", "Jira + Confluence — tools + document-RAG ingest (ADR-0024, ADR-0026)")
+    SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings, document chunks")
     SystemDb_Ext(extdir, "~/.jarela/{providers,tools}/", "Drop-in .cjs extension files (hot-loaded)")
     System_Ext(browserext, "Jarela Browser Extension", "MV3 — element picker → loopback POST (ADR-0018)")
 
@@ -701,6 +702,7 @@ C4Context
     Rel(jarela, mcp, "stdio / SSE")
     Rel(jarela, mcpreg, "HTTPS (picker search)")
     Rel(jarela, github, "HTTPS")
+    Rel(jarela, atlassian, "HTTPS (tools + RAG indexer)")
     Rel(jarela, sqlite, "reads/writes")
     Rel(jarela, extdir, "scans per request")
 ```

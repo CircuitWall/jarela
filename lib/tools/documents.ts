@@ -7,7 +7,14 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
 import { searchDocuments } from "@/lib/documents/search";
-import { listDocumentSources } from "@/lib/stores/document-sources";
+import {
+  createDocumentSource,
+  deleteDocumentSource,
+  getDocumentSource,
+  listDocumentSources,
+  type DocumentSourceKind,
+} from "@/lib/stores/document-sources";
+import { indexOnDemand, runRemoteSource } from "@/lib/documents/remote";
 
 export const documentsSearch = tool(
   async ({ query, limit, source_id }) => {
@@ -64,3 +71,138 @@ export const documentsListSources = tool(
 );
 
 registerTools("Documents", [documentsSearch, documentsListSources]);
+
+// ── Remote document sources (ADR-0026) ──────────────────────────────────────
+//
+// These tools let agents add Jira projects, JQL queries, Confluence spaces,
+// and CQL queries as document sources, so a single retrieval surface
+// (`documents_search`) covers both local files and Atlassian content.
+
+const REMOTE_KINDS = ["confluence_space", "confluence_cql", "jira_project", "jira_jql"] as const;
+
+function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>): string {
+  switch (kind) {
+    case "confluence_space": return `confluence-space://${String(config.space_key ?? "").trim()}`;
+    case "confluence_cql":   return `confluence-cql://${Buffer.from(String(config.cql ?? "")).toString("base64").slice(0, 32)}`;
+    case "jira_project":     return `jira-project://${String(config.project_key ?? "").trim()}`;
+    case "jira_jql":         return `jira-jql://${Buffer.from(String(config.jql ?? "")).toString("base64").slice(0, 32)}`;
+    default:                 return `remote://${kind}/${Date.now()}`;
+  }
+}
+
+function validateRemoteConfig(kind: typeof REMOTE_KINDS[number], cfg: Record<string, unknown>): string | null {
+  if (kind === "confluence_space" && !cfg.space_key)  return "config.space_key is required for confluence_space";
+  if (kind === "confluence_cql"   && !cfg.cql)        return "config.cql is required for confluence_cql";
+  if (kind === "jira_project"     && !cfg.project_key) return "config.project_key is required for jira_project";
+  if (kind === "jira_jql"         && !cfg.jql)        return "config.jql is required for jira_jql";
+  return null;
+}
+
+export const documentsAddRemoteSource = tool(
+  async ({ kind, label, config }) => {
+    const err = validateRemoteConfig(kind, config);
+    if (err) return JSON.stringify({ error: err });
+    const path = syntheticPath(kind, config);
+    try {
+      const row = createDocumentSource({ path, label, kind, config });
+      return JSON.stringify({
+        ok: true,
+        id: row.id,
+        kind: row.kind,
+        label: row.label,
+        note: "Indexing runs on the next scheduler sweep (~10 min). Call documents_reindex_source with this id to force an immediate sync.",
+      });
+    } catch (e) {
+      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+  {
+    name: "documents_add_remote_source",
+    description:
+      "Add a Jira project / JQL query / Confluence space / CQL query as a document source. " +
+      "Indexed content becomes searchable via documents_search alongside local folders. " +
+      "Examples: kind='confluence_space' config={space_key:'ENG'}; kind='jira_project' " +
+      "config={project_key:'ABC', recency_days:90}; kind='jira_jql' config={jql:'project = ABC AND status != Done'}.",
+    schema: z.object({
+      kind: z.enum(REMOTE_KINDS),
+      label: z.string().describe("Human-readable label shown in the Documents panel."),
+      config: z.record(z.string(), z.unknown())
+        .describe("Per-kind config. confluence_space: {space_key}. confluence_cql: {cql}. " +
+                  "jira_project: {project_key}. jira_jql: {jql}. Optional: recency_days (int)."),
+    }),
+  },
+);
+
+export const documentsRemoveSource = tool(
+  async ({ source_id, confirm }) => {
+    if (confirm !== source_id) {
+      return JSON.stringify({ error: "pass confirm equal to source_id to actually delete" });
+    }
+    const row = getDocumentSource(source_id);
+    if (!row) return JSON.stringify({ error: "source not found" });
+    const ok = deleteDocumentSource(source_id);
+    return JSON.stringify({ ok, id: source_id, label: row.label });
+  },
+  {
+    name: "documents_remove_source",
+    description:
+      "Delete a document source and all its indexed chunks. Destructive — requires `confirm` to equal `source_id`.",
+    schema: z.object({
+      source_id: z.string(),
+      confirm: z.string().describe("Must equal source_id to proceed."),
+    }),
+  },
+);
+
+export const documentsReindexSource = tool(
+  async ({ source_id }) => {
+    const row = getDocumentSource(source_id);
+    if (!row) return JSON.stringify({ error: "source not found" });
+    if (row.kind === "local_folder") {
+      return JSON.stringify({
+        error: "documents_reindex_source is only for remote sources (Jira/Confluence). " +
+               "Local folders auto-reindex on the next scheduler sweep.",
+      });
+    }
+    try {
+      const stats = await runRemoteSource(row);
+      return JSON.stringify({ ok: true, id: source_id, stats });
+    } catch (e) {
+      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+  {
+    name: "documents_reindex_source",
+    description:
+      "Force an immediate incremental sync of a remote document source. Returns counts of added / updated / unchanged docs.",
+    schema: z.object({ source_id: z.string() }),
+  },
+);
+
+export const documentsIndexUrl = tool(
+  async ({ input }) => {
+    try {
+      const res = await indexOnDemand(input);
+      return JSON.stringify({ ok: true, ...res });
+    } catch (e) {
+      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+  {
+    name: "documents_index_url",
+    description:
+      "Fetch and index a single Jira issue or Confluence page on demand, stored under a shared " +
+      "'On-demand URLs' source. Accepts a bare Jira key (ABC-123), a /browse/<KEY> URL, or a " +
+      "Confluence /wiki/spaces/.../pages/<id> URL.",
+    schema: z.object({
+      input: z.string().describe("Jira key, Jira URL, or Confluence page URL"),
+    }),
+  },
+);
+
+registerTools("Documents", [
+  documentsAddRemoteSource,
+  documentsRemoveSource,
+  documentsReindexSource,
+  documentsIndexUrl,
+]);
