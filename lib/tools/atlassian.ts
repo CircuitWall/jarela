@@ -58,6 +58,18 @@ function authHeader(a: AtlassianAuth): string {
   return "Basic " + Buffer.from(`${a.email}:${a.apiToken}`).toString("base64");
 }
 
+// Sibling-module accessor: the remote document-RAG indexers (lib/documents/
+// remote/{jira,confluence}.ts, ADR-0026) reuse the same proxy-aware fetch
+// wrapper + auth header so they don't duplicate the Atlassian REST plumbing.
+// Underscore prefix marks it as "internal API, but reachable across modules".
+export async function _atlassianFetch(
+  auth: AtlassianAuth,
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
+  return atlassianFetch(auth, path, init);
+}
+
 async function atlassianFetch(
   auth: AtlassianAuth,
   path: string,
