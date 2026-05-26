@@ -18,7 +18,7 @@ C4Container
       Container(docs, "Document RAG", "lib/documents (+ lib/documents/remote)", "Folder indexer + remote indexers for Jira/Confluence; chunked + embedded into the documents tables; surfaced via documents_search (ADR-0024, ADR-0026)")
       Container(voice, "Voice", "lib/voice", "Gemini STT (push-to-talk) + TTS for the generate_voice tool (ADR-0017)")
       Container(mcp, "MCP Adapter", "@langchain/mcp-adapters", "Discovers & invokes external MCP tool servers")
-      Container(sched, "Scheduler", "cron-parser", "Runs background tasks on schedule, persists in DB")
+      Container(sched, "Scheduler", "cron-parser", "Runs scheduled tasks + polls event-driven watchers; persists in DB (ADR-0022, ADR-0025, ADR-0027)")
       Container(bridges, "Bridges", "lib/bridges", "Inbound transports (WhatsApp/Baileys) routed to agents")
       Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")

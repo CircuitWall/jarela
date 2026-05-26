@@ -15,6 +15,7 @@ import "./location";
 import "./generate_image";
 import "./generate_voice";
 import "./schedule";
+import "./watcher";
 import "./propose";
 import "./integrations";
 import "./atlassian";

@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
+import { WatchersSection } from "./WatchersSection";
 
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -83,6 +84,7 @@ export function ScheduledTasksPanel() {
         {sorted.map((t) => (
           <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} onChanged={() => void load()} />
         ))}
+        <WatchersSection agents={agents} />
       </div>
     </div>
   );
