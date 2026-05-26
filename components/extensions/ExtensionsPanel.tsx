@@ -1,9 +1,11 @@
 "use client";
-import { AlertCircle, Puzzle, RefreshCw } from "lucide-react";
+import { AlertCircle, Puzzle, RefreshCw, KeyRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { ExtensionsListResponse } from "@/api/types";
+import type { ExtensionsListResponse, ToolSecretSlotInfo, ExternalToolInfo } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+
+const SECRET_MASK = "********";
 
 export function ExtensionsPanel() {
   const [data, setData] = useState<ExtensionsListResponse | null>(null);
@@ -70,13 +72,7 @@ export function ExtensionsPanel() {
                 />
               ) : (
                 data.tools.map((t) => (
-                  <Row
-                    key={t.name}
-                    name={t.name}
-                    file={t.file}
-                    badge={t.category ?? undefined}
-                    sub={t.description}
-                  />
+                  <ToolRow key={t.name} tool={t} onSaved={() => void load()} />
                 ))
               )}
             </Section>
@@ -174,6 +170,140 @@ function Row({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function ToolRow({
+  tool,
+  onSaved,
+}: {
+  tool: ExternalToolInfo;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(tool.secrets.map((s) => [s.key, s.is_set ? SECRET_MASK : ""])),
+  );
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // If the panel re-fetches and the slot set changes, reset the editor.
+  useEffect(() => {
+    setValues(
+      Object.fromEntries(tool.secrets.map((s) => [s.key, s.is_set ? SECRET_MASK : ""])),
+    );
+  }, [tool.name, tool.secrets]);
+
+  const hasSecrets = tool.secrets.length > 0;
+  const setCount = tool.secrets.filter((s) => s.is_set).length;
+  const requiredMissing = tool.secrets.some((s) => s.required && !s.is_set);
+
+  async function save() {
+    setSaving(true);
+    setErr(null);
+    try {
+      const payload: Record<string, string> = {};
+      for (const s of tool.secrets) {
+        const v = values[s.key];
+        if (v === undefined) continue;
+        if (v === SECRET_MASK) continue; // leave untouched
+        payload[s.key] = v;
+      }
+      await api.extensions.saveToolSecrets(tool.name, payload);
+      onSaved();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div data-deep-link-id={tool.name} className="py-2 border-b border-border/60">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-fg">{tool.name}</span>
+            {tool.category && (
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-surface-2 text-fg-subtle border-border">
+                {tool.category}
+              </span>
+            )}
+            {hasSecrets && (
+              <span
+                className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${
+                  requiredMissing
+                    ? "bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900"
+                    : "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900"
+                }`}
+                title={requiredMissing ? "Required secrets are missing" : "Configured"}
+              >
+                {setCount}/{tool.secrets.length} secrets
+              </span>
+            )}
+          </div>
+          {tool.description && (
+            <p className="text-xs text-fg-faint mt-0.5 line-clamp-2">{tool.description}</p>
+          )}
+          {tool.file && (
+            <p className="text-[11px] text-fg-faint mt-0.5 font-mono truncate">{tool.file}</p>
+          )}
+        </div>
+        {hasSecrets && (
+          <button
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors shrink-0"
+            title="Edit secrets"
+          >
+            <KeyRound size={13} /> {open ? "Hide" : "Edit"}
+          </button>
+        )}
+      </div>
+
+      {open && hasSecrets && (
+        <div className="mt-2 ml-1 pl-3 border-l border-border/60 space-y-2">
+          {tool.secrets.map((s) => (
+            <label key={s.key} className="block">
+              <span className="text-xs text-fg-subtle">
+                {s.label ?? s.key}
+                {s.required && <span className="text-rose-600 dark:text-rose-400 ml-0.5">*</span>}
+              </span>
+              {s.description && (
+                <span className="block text-[11px] text-fg-faint">{s.description}</span>
+              )}
+              <input
+                type="password"
+                autoComplete="off"
+                value={values[s.key] ?? ""}
+                onChange={(e) =>
+                  setValues((v) => ({ ...v, [s.key]: e.target.value }))
+                }
+                onFocus={(e) => {
+                  if (e.currentTarget.value === SECRET_MASK) {
+                    e.currentTarget.select();
+                  }
+                }}
+                placeholder={s.is_set ? "" : "not configured"}
+                className="mt-0.5 w-full px-2 py-1 text-sm bg-surface border border-border rounded font-mono"
+              />
+            </label>
+          ))}
+          {err && <p className="text-xs text-rose-700 dark:text-rose-400">{err}</p>}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => void save()}
+              disabled={saving}
+              className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <span className="text-[11px] text-fg-faint">
+              Leave a field empty to clear it. Stored encrypted at rest.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

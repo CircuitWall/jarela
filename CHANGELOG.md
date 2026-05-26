@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Embedding failures gracefully degrade to substring matching so
   installations without an embedding provider still get useful
   results. See ADR-0024 (`docs/adr/0024-document-rag.md`).
+- **External tools**: encrypted secret slots. Tools loaded from
+  `~/.jarela/tools/` may declare a `secrets: [{ key, label?, required?,
+  description? }]` array; values are persisted in the `tool-secrets` memory
+  namespace, AES-256-GCM enveloped at rest like the integrations store, and
+  surfaced to the tool at run time via `ctx.getSecret(key)`. The Extensions
+  panel renders an "Edit" form per tool with the standard masked sentinel
+  pattern (plaintext never reaches the client). See
+  [ADR-0023](./docs/adr/0023-external-tool-secrets.md).
 
 ## [0.4.0] - 2026-05-25
 

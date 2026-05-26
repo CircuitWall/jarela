@@ -31,6 +31,7 @@ import type {
   StreamOptions,
   ToolInfo,
   ToolPolicy,
+  ToolSecretSlotInfo,
   TaskAssignment,
   ThreadDetail,
   ThreadSummary,
@@ -160,6 +161,15 @@ export const api = {
 
   extensions: {
     list: () => request<ExtensionsListResponse>("/extensions"),
+    getToolSecrets: (name: string) =>
+      request<{ name: string; secrets: ToolSecretSlotInfo[] }>(
+        `/extensions/tools/${encodeURIComponent(name)}/secrets`,
+      ),
+    saveToolSecrets: (name: string, values: Record<string, string>) =>
+      request<{ name: string; secrets: ToolSecretSlotInfo[] }>(
+        `/extensions/tools/${encodeURIComponent(name)}/secrets`,
+        { method: "PUT", body: JSON.stringify({ values }) },
+      ),
   },
 
   threads: {
