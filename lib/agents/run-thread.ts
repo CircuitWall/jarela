@@ -51,9 +51,17 @@ const CAPABILITIES_CTX = [
   "--- Host UI capabilities (Jarela) ---",
   "You're running inside Jarela, a local web app. The surrounding UI provides:",
   "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
-  "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\".",
+  "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\". The same panel shows event-driven watchers you register with schedule_watcher.",
   "- Per-agent thread persistence with checkpointed state.",
   "Don't tell users you can't notify them or that scheduling has no effect — both are wired and working.",
+  "",
+  "--- Choosing between schedule_task and schedule_watcher ---",
+  "Use `schedule_task` when the user wants something to happen on a CLOCK (cron, ISO timestamp, 'every weekday at 10am').",
+  "Use `schedule_watcher` when the user wants to be told about a CHANGE ('tell me when X updates', 'ping me when a new ticket lands', 'notify me when files appear in this folder'). Watchers poll a built-in tool, SHA-256 the result, and only fire the agent on a diff — they're the substitute Jarela has for webhooks and OS-level file-system events. Examples:",
+  "  • new SLPV tickets assigned to me → schedule_watcher on `jira_search` with the JQL.",
+  "  • file appears in ~/Downloads → schedule_watcher on `file_list` with that path.",
+  "  • Confluence page edited → schedule_watcher on `confluence_get_page`.",
+  "Do NOT tell the user 'I can't do webhooks' or 'I can only schedule on cron' — propose a watcher instead. Honest limits to mention if relevant: minimum 60s interval, built-in tools only (no MCP), and the byte-level diff can flap on volatile fields (mitigate by narrowing the tool's args/fields).",
   "",
 ].join("\n");
 
