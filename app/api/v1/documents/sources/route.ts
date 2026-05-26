@@ -9,6 +9,7 @@ import {
   listDocumentSources,
   type DocumentSourceKind,
 } from "@/lib/stores/document-sources";
+import { notifyTriggerHandlers } from "@/lib/triggers";
 
 const LocalSchema = z.object({
   path: z.string().min(1),
@@ -95,6 +96,7 @@ export async function POST(req: NextRequest) {
       kind: parsed.data.kind,
       config: parsed.data.config,
     });
+    await notifyTriggerHandlers("source_changed");
     return NextResponse.json(rowResponse(row), { status: 201 });
   }
 
@@ -118,5 +120,6 @@ export async function POST(req: NextRequest) {
   }
 
   const row = createDocumentSource({ path: abs, label: parsed.data.label ?? null });
+  await notifyTriggerHandlers("source_changed");
   return NextResponse.json(rowResponse(row), { status: 201 });
 }

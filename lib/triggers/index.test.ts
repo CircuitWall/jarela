@@ -50,7 +50,7 @@ describe("trigger registry (ADR-0025)", () => {
     // Force a firing through the second handler to confirm the replacement
     // is what's actually wired in.
     listTriggerHandlers()[0].markFired(
-      { id: "x", kind: "test_kind", agentId: "a", prompt: "p" },
+      { id: "x", kind: "test_kind", mode: "prompt", agentId: "a", prompt: "p" },
       { status: "done", preview: "", threadId: "" },
     );
     expect(seenSentinel).toBe("second");
@@ -66,6 +66,7 @@ describe("runTriggerTick (ADR-0025)", () => {
         {
           id: "fire-1",
           kind: "test_kind",
+          mode: "prompt",
           agentId: "agent-does-not-exist",
           prompt: "hi",
         },

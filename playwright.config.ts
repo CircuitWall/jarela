@@ -73,6 +73,11 @@ export default defineConfig({
           // Non-default port so we never collide with an installed
           // jarela on 4312.
           JARELA_PORT: String(E2E_PORT),
+          // Speed up the scheduler tick so the watcher → reindex e2e
+          // doesn't spend 30 s waiting for the next tick. 250 ms is
+          // tight enough that "save → search" feels live in the test
+          // but still leaves debounce + indexing room.
+          JARELA_SCHEDULER_TICK_MS: "250",
         },
       },
 });

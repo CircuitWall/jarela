@@ -18,6 +18,19 @@ export async function register() {
   const { initTools } = await import("@/lib/tools");
   initTools();
 
+  // Boot trigger handlers (scheduled-task is registered eagerly; the
+  // fs-watch + fast-sweep handlers need an explicit start() call to
+  // attach their watchers). Importing the module also wires the
+  // built-in scripts.
+  const triggers = await import("@/lib/triggers");
+  await triggers.startAllTriggerHandlers();
+
+  // Boot the scheduler unconditionally so trigger handlers (fs-watch,
+  // fast remote sweep) get fan-out ticks even if no thread / event /
+  // scheduled-task call has lazily started it yet.
+  const { startScheduler } = await import("@/lib/scheduler");
+  startScheduler();
+
   // Loud warning if the server is bound to a non-loopback interface
   // without being inside a container. The auth middleware
   // (lib/auth/access.ts) gates non-loopback callers behind a

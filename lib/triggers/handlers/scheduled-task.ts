@@ -5,14 +5,20 @@ import {
   type ScheduledTaskRow,
 } from "@/lib/stores/scheduled-tasks";
 import { publish as publishNotification } from "@/lib/notifications/bus";
-import type { TriggerFiring, TriggerHandler, TriggerOutcome } from "../types";
+import type {
+  PromptFiring,
+  TriggerFiring,
+  TriggerHandler,
+  TriggerOutcome,
+} from "../types";
 
 export const SCHEDULED_TASK_KIND = "scheduled_task";
 
-function firingFromTask(task: ScheduledTaskRow): TriggerFiring {
+function firingFromTask(task: ScheduledTaskRow): PromptFiring {
   return {
     id: task.id,
     kind: SCHEDULED_TASK_KIND,
+    mode: "prompt",
     agentId: task.agent_id,
     prompt: task.prompt,
     silent: task.silent === 1,
@@ -30,6 +36,9 @@ export const scheduledTaskHandler: TriggerHandler = {
   },
 
   markFired(firing: TriggerFiring, outcome: TriggerOutcome): void {
+    // Scheduled-task handler only emits prompt firings; narrow before
+    // touching agentId / prompt.
+    if (firing.mode !== "prompt") return;
     const scheduleKind = (firing.meta?.scheduleKind as ScheduledTaskRow["kind"] | undefined) ?? "cron";
     const schedule = (firing.meta?.schedule as string | undefined) ?? "";
     markTaskRan(firing.id, scheduleKind, schedule, outcome.error);
@@ -48,7 +57,7 @@ export const scheduledTaskHandler: TriggerHandler = {
 };
 
 /** Public helper for the "Run now" API route — fires a single task by id. */
-export function firingForTaskId(taskId: string): TriggerFiring | null {
+export function firingForTaskId(taskId: string): PromptFiring | null {
   const task = getScheduledTask(taskId);
   return task ? firingFromTask(task) : null;
 }

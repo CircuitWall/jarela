@@ -6,6 +6,7 @@ import {
   getDocumentSourceStats,
   updateDocumentSource,
 } from "@/lib/stores/document-sources";
+import { notifyTriggerHandlers } from "@/lib/triggers";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -43,6 +44,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
   const row = updateDocumentSource(id, parsed.data);
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  await notifyTriggerHandlers("source_changed");
   return NextResponse.json({
     id: row.id,
     path: row.path,
@@ -60,5 +62,6 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const ok = deleteDocumentSource(id);
   if (!ok) return NextResponse.json({ error: "not found" }, { status: 404 });
+  await notifyTriggerHandlers("source_changed");
   return NextResponse.json({ deleted: true });
 }
