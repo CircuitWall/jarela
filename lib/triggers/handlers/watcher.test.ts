@@ -64,11 +64,13 @@ describe("watcherHandler (ADR-0027)", () => {
     const w2 = getWatcher(w.id)!;
     const firings = await watcherHandler.getDueFirings(new Date(Date.parse(w2.next_run_at) + 1));
     expect(firings).toHaveLength(1);
-    expect(firings[0].agentId).toBe("a");
-    expect(firings[0].kind).toBe("watcher");
-    expect(firings[0].prompt).toContain('Watcher "change" detected a change');
-    expect(firings[0].prompt).toContain("v1");
-    expect(firings[0].prompt).toContain("v2");
+    const fired = firings[0];
+    if (fired.mode !== "prompt") throw new Error("expected prompt firing");
+    expect(fired.agentId).toBe("a");
+    expect(fired.kind).toBe("watcher");
+    expect(fired.prompt).toContain('Watcher "change" detected a change');
+    expect(fired.prompt).toContain("v1");
+    expect(fired.prompt).toContain("v2");
     const after = getWatcher(w.id)!;
     expect(after.last_fired_at).not.toBeNull();
   });
