@@ -1,16 +1,45 @@
 "use client";
-import { AlertCircle, FolderOpen, FolderSearch, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { AlertCircle, Cloud, FolderOpen, FolderSearch, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { DocumentHit, DocumentSource } from "@/api/types";
+import type { DocumentHit, DocumentSource, DocumentSourceKind } from "@/api/types";
 import { FolderPickerDialog } from "./FolderPickerDialog";
+
+// Friendly labels + per-kind field hints. Kept inline (not a separate
+// module) because this is the only consumer.
+const KIND_OPTIONS: Array<{ value: DocumentSourceKind; label: string }> = [
+  { value: "local_folder", label: "Local folder" },
+  { value: "jira_project", label: "Jira project" },
+  { value: "jira_jql", label: "Jira JQL" },
+  { value: "confluence_space", label: "Confluence space" },
+  { value: "confluence_cql", label: "Confluence CQL" },
+];
+
+function summarizeRemote(s: DocumentSource): string {
+  const c = s.config ?? {};
+  switch (s.kind) {
+    case "jira_project":     return `Jira project: ${String(c.project_key ?? "?")}`;
+    case "jira_jql":         return `Jira JQL: ${String(c.jql ?? "?")}`;
+    case "confluence_space": return `Confluence space: ${String(c.space_key ?? "?")}`;
+    case "confluence_cql":   return `Confluence CQL: ${String(c.cql ?? "?")}`;
+    default:                 return s.path;
+  }
+}
 
 export function DocumentsPanel() {
   const [sources, setSources] = useState<DocumentSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Add-form state. `addKind` drives which other inputs are required; the
+  // remote-only fields share one record because no two are needed at once.
+  const [addKind, setAddKind] = useState<DocumentSourceKind>("local_folder");
   const [addPath, setAddPath] = useState("");
   const [addLabel, setAddLabel] = useState("");
+  const [addProjectKey, setAddProjectKey] = useState("");
+  const [addSpaceKey, setAddSpaceKey] = useState("");
+  const [addQuery, setAddQuery] = useState("");      // JQL or CQL
+  const [addRecencyDays, setAddRecencyDays] = useState("");
   const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -38,18 +67,56 @@ export function DocumentsPanel() {
 
   useEffect(() => { void load(); }, []);
 
+  function buildPayload(): Parameters<typeof api.documents.createSource>[0] | null {
+    const label = addLabel.trim();
+    if (addKind === "local_folder") {
+      const trimmedPath = addPath.trim();
+      if (!trimmedPath) return null;
+      return { path: trimmedPath, label: label || null };
+    }
+    // Remote — config keyed off kind. `recency_days` is optional;
+    // include it only when the user provided a positive integer.
+    const config: Record<string, unknown> = {};
+    if (addKind === "jira_project") {
+      const v = addProjectKey.trim();
+      if (!v) return null;
+      config.project_key = v;
+    } else if (addKind === "confluence_space") {
+      const v = addSpaceKey.trim();
+      if (!v) return null;
+      config.space_key = v;
+    } else if (addKind === "jira_jql") {
+      const v = addQuery.trim();
+      if (!v) return null;
+      config.jql = v;
+    } else if (addKind === "confluence_cql") {
+      const v = addQuery.trim();
+      if (!v) return null;
+      config.cql = v;
+    }
+    const recency = parseInt(addRecencyDays, 10);
+    if (Number.isFinite(recency) && recency > 0) config.recency_days = recency;
+    if (!label) return null; // remote sources require a label
+    return { kind: addKind, label, config };
+  }
+
+  function resetAddForm() {
+    setAddPath("");
+    setAddLabel("");
+    setAddProjectKey("");
+    setAddSpaceKey("");
+    setAddQuery("");
+    setAddRecencyDays("");
+  }
+
   async function addSource() {
-    const trimmedPath = addPath.trim();
-    if (!trimmedPath) return;
+    const payload = buildPayload();
+    if (!payload) return;
     setAdding(true);
     setError(null);
     try {
-      await api.documents.createSource({
-        path: trimmedPath,
-        label: addLabel.trim() || null,
-      });
-      setAddPath("");
-      setAddLabel("");
+      await api.documents.createSource(payload);
+      resetAddForm();
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -70,8 +137,11 @@ export function DocumentsPanel() {
     }
   }
 
-  async function removeSource(id: string, path: string) {
-    if (!confirm(`Stop indexing ${path}? This deletes all chunks for this folder. Files on disk are untouched.`)) return;
+  async function removeSource(id: string, summary: string, kind: DocumentSourceKind) {
+    const tail = kind === "local_folder"
+      ? "Files on disk are untouched."
+      : "The upstream Jira/Confluence content is untouched.";
+    if (!confirm(`Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`)) return;
     try {
       await api.documents.deleteSource(id);
       await load();
@@ -119,47 +189,128 @@ export function DocumentsPanel() {
 
       <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-5">
         <p className="text-xs text-fg-faint leading-relaxed">
-          Folders listed here are scanned every ~10 minutes. Text files are chunked, embedded, and made available
-          to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool. Embedding uses
-          your default model provider; without one, search falls back to substring match.
+          Sources listed here are indexed in the background. Text files in folders are chunked, embedded, and
+          made available to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool.
+          Remote sources (Jira, Confluence) reuse the Atlassian credentials configured in
+          {" "}<em>Connections → Atlassian</em>. Embedding uses your default model provider; without one, search
+          falls back to substring match.
         </p>
 
-        {/* Add new source */}
+        {/* Add new source — kind picker drives the rest of the form. */}
         <section className="space-y-2">
-          <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Add a folder</label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <div className="flex flex-1 min-w-0 gap-1">
+          <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Add a source</label>
+          <div className="flex items-center gap-2">
+            <select
+              value={addKind}
+              onChange={(e) => { setAddKind(e.target.value as DocumentSourceKind); resetAddForm(); }}
+              className="px-2 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-fg"
+            >
+              {KIND_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <span className="text-[11px] text-fg-faint">
+              {addKind === "local_folder"
+                ? "Pick a folder on this machine."
+                : "Requires Atlassian credentials (Connections → Atlassian)."}
+            </span>
+          </div>
+
+          {addKind === "local_folder" && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-1 min-w-0 gap-1">
+                <input
+                  type="text"
+                  value={addPath}
+                  onChange={(e) => setAddPath(e.target.value)}
+                  placeholder="Pick or paste an absolute path"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
+                  title="Browse for a folder"
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-surface-3 border border-border text-xs text-fg hover:bg-surface-2 transition-colors"
+                >
+                  <FolderOpen size={13} /> Browse
+                </button>
+              </div>
               <input
                 type="text"
-                value={addPath}
-                onChange={(e) => setAddPath(e.target.value)}
-                placeholder="Pick or paste an absolute path"
-                className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                value={addLabel}
+                onChange={(e) => setAddLabel(e.target.value)}
+                placeholder="Label (optional)"
+                className="sm:w-40 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
               />
               <button
-                type="button"
-                onClick={() => setPickerOpen(true)}
-                title="Browse for a folder"
-                className="flex items-center gap-1 px-2 py-1.5 rounded-md bg-surface-3 border border-border text-xs text-fg hover:bg-surface-2 transition-colors"
+                onClick={() => void addSource()}
+                disabled={adding || !buildPayload()}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium disabled:opacity-50 hover:bg-accent-hover transition-colors"
               >
-                <FolderOpen size={13} /> Browse
+                <Plus size={13} /> Add
               </button>
             </div>
-            <input
-              type="text"
-              value={addLabel}
-              onChange={(e) => setAddLabel(e.target.value)}
-              placeholder="Label (optional)"
-              className="sm:w-40 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
-            />
-            <button
-              onClick={() => void addSource()}
-              disabled={adding || !addPath.trim()}
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium disabled:opacity-50 hover:bg-accent-hover transition-colors"
-            >
-              <Plus size={13} /> Add
-            </button>
-          </div>
+          )}
+
+          {addKind !== "local_folder" && (
+            <div className="space-y-2">
+              {addKind === "jira_project" && (
+                <input
+                  type="text"
+                  value={addProjectKey}
+                  onChange={(e) => setAddProjectKey(e.target.value)}
+                  placeholder='Project key (e.g. "ACME")'
+                  className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                />
+              )}
+              {addKind === "confluence_space" && (
+                <input
+                  type="text"
+                  value={addSpaceKey}
+                  onChange={(e) => setAddSpaceKey(e.target.value)}
+                  placeholder='Space key (e.g. "ENG")'
+                  className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                />
+              )}
+              {(addKind === "jira_jql" || addKind === "confluence_cql") && (
+                <textarea
+                  value={addQuery}
+                  onChange={(e) => setAddQuery(e.target.value)}
+                  placeholder={
+                    addKind === "jira_jql"
+                      ? 'JQL — e.g. assignee = currentUser() AND resolution = Unresolved'
+                      : 'CQL — e.g. label = onboarding'
+                  }
+                  rows={2}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y"
+                />
+              )}
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="text"
+                  value={addLabel}
+                  onChange={(e) => setAddLabel(e.target.value)}
+                  placeholder="Label (required)"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
+                />
+                <input
+                  type="number"
+                  min={1}
+                  value={addRecencyDays}
+                  onChange={(e) => setAddRecencyDays(e.target.value)}
+                  placeholder="Recency days (optional)"
+                  className="sm:w-44 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
+                />
+                <button
+                  onClick={() => void addSource()}
+                  disabled={adding || !buildPayload()}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-accent text-white text-xs font-medium disabled:opacity-50 hover:bg-accent-hover transition-colors"
+                >
+                  <Plus size={13} /> Add
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {pickerOpen && (
@@ -182,22 +333,25 @@ export function DocumentsPanel() {
 
         {/* Source list */}
         <section className="space-y-2">
-          <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Indexed folders</label>
+          <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Indexed sources</label>
           {loading && sources.length === 0 && (
             <p className="text-fg-faint text-sm py-3 text-center">Loading…</p>
           )}
           {!loading && sources.length === 0 && (
             <p className="text-fg-faint text-xs italic">
-              No folders yet. Add one above to start indexing.
+              No sources yet. Add one above to start indexing.
             </p>
           )}
           {sources.map((s) => (
             <div key={s.id} className="rounded-lg border border-border bg-surface-2 px-3 py-2.5 space-y-1.5">
               <div className="flex items-center gap-2">
+                {s.kind === "local_folder"
+                  ? <FolderOpen size={13} className="text-fg-subtle shrink-0" />
+                  : <Cloud size={13} className="text-fg-subtle shrink-0" />}
                 <span className="font-mono text-xs text-fg break-all flex-1">
                   {s.label ? <strong>{s.label}</strong> : null}
                   {s.label ? <span className="text-fg-faint"> — </span> : null}
-                  {s.path}
+                  {s.kind === "local_folder" ? s.path : summarizeRemote(s)}
                 </span>
                 <label className="text-[11px] text-fg-faint flex items-center gap-1 select-none">
                   <input
@@ -216,7 +370,7 @@ export function DocumentsPanel() {
                   <RefreshCw size={13} className={busy[s.id] ? "animate-spin" : ""} />
                 </button>
                 <button
-                  onClick={() => void removeSource(s.id, s.path)}
+                  onClick={() => void removeSource(s.id, s.kind === "local_folder" ? s.path : summarizeRemote(s), s.kind)}
                   title="Remove source"
                   className="p-1 text-fg-faint hover:text-red-600 dark:hover:text-red-400"
                 >
