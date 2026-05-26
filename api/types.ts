@@ -319,6 +319,64 @@ export interface ScheduledTask {
   updated_at: string;
 }
 
+// Document RAG (ADR-0024). A folder on the user's machine that Jarela
+// scans on a timer; matching text files are chunked + embedded into
+// `document_chunks` and surfaced to agents via the `documents_search`
+// tool.
+export interface DocumentSourceStats {
+  source_id: string;
+  document_count: number;
+  chunk_count: number;
+  embedded_chunk_count: number;
+}
+
+export interface DocumentSource {
+  id: string;
+  path: string;
+  label: string | null;
+  enabled: boolean;
+  last_scan_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+  stats: DocumentSourceStats;
+}
+
+export interface DocumentSourceIn {
+  path: string;
+  label?: string | null;
+}
+
+export interface DocumentSourcePatch {
+  label?: string | null;
+  enabled?: boolean;
+}
+
+export interface DocumentHit {
+  document_id: string;
+  source_id: string;
+  source_label: string | null;
+  rel_path: string;
+  abs_path: string;
+  chunk_index: number;
+  text: string;
+  score: number;
+  match: "semantic" | "substring";
+}
+
+export interface DocumentReindexResult {
+  source_id: string;
+  stats: {
+    scanned: number;
+    added: number;
+    updated: number;
+    removed: number;
+    unchanged: number;
+    errors: number;
+  };
+}
+
+
 export interface PendingAction {
   id: string;
   agent_id: string;

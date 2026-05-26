@@ -20,6 +20,11 @@ import type {
   McpServerIn,
   PendingAction,
   ScheduledTask,
+  DocumentSource,
+  DocumentSourceIn,
+  DocumentSourcePatch,
+  DocumentHit,
+  DocumentReindexResult,
   MemoryItem,
   ModelConfig,
   ModelConfigIn,
@@ -349,13 +354,34 @@ export const api = {
 
   scheduledTasks: {
     list: (agent_id?: string) =>
-      request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
-    update: (id: string, patch: Partial<Pick<ScheduledTask, "prompt" | "description" | "kind" | "schedule" | "enabled" | "silent">>) =>
+      request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),    update: (id: string, patch: Partial<Pick<ScheduledTask, "prompt" | "description" | "kind" | "schedule" | "enabled" | "silent">>) =>
       request<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
     cancel: (id: string) =>
       request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     runNow: (id: string) =>
       request<{ accepted: boolean; task_id: string }>(`/scheduled-tasks/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" }),
+  },
+
+  // Document RAG (ADR-0024). Folder sources are scanned by the scheduler
+  // every ~10 minutes; the search endpoint is a thin wrapper over the
+  // `documents_search` tool so callers can preview hits without invoking
+  // an agent.
+  documents: {
+    listSources: () => request<DocumentSource[]>("/documents/sources"),
+    createSource: (data: DocumentSourceIn) =>
+      request<DocumentSource>("/documents/sources", { method: "POST", body: JSON.stringify(data) }),
+    updateSource: (id: string, patch: DocumentSourcePatch) =>
+      request<DocumentSource>(`/documents/sources/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    deleteSource: (id: string) =>
+      request<{ deleted: boolean }>(`/documents/sources/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    reindex: (id: string) =>
+      request<DocumentReindexResult>(`/documents/sources/${encodeURIComponent(id)}/reindex`, { method: "POST", body: "{}" }),
+    search: (q: string, opts?: { limit?: number; source_id?: string }) => {
+      const p = new URLSearchParams({ q });
+      if (opts?.limit) p.set("limit", String(opts.limit));
+      if (opts?.source_id) p.set("source_id", opts.source_id);
+      return request<{ query: string; hits: DocumentHit[] }>(`/documents/search?${p.toString()}`);
+    },
   },
 
   githubCopilotAuth: {

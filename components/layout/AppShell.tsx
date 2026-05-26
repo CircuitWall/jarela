@@ -10,7 +10,7 @@ import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { ModelsPanel } from "@/components/models/ModelsPanel";
-import { AgentsPanel } from "@/components/agents/AgentsPanel";
+import { DocumentsPanel } from "@/components/documents/DocumentsPanel";import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { ExtensionsPanel } from "@/components/extensions/ExtensionsPanel";
@@ -324,6 +324,11 @@ export function AppShell() {
         {mountedTabs.has("memory") && (
           <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
             <MemoryPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("documents") && (
+          <Activity mode={state.activeTab === "documents" ? "visible" : "hidden"}>
+            <DocumentsPanel />
           </Activity>
         )}
         {mountedTabs.has("models") && (
