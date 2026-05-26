@@ -192,6 +192,14 @@ export interface ToolInfo {
   group?: string | null;
 }
 
+/** One built-in tool category with its current enable state. */
+export interface BuiltinToolCategoryInfo {
+  category: string;
+  enabled: boolean;
+  toolCount: number;
+  toolNames: string[];
+}
+
 export interface McpServer {
   name: string;
   transport: "stdio" | "http";

@@ -211,6 +211,15 @@ export function runMigrations(db: DatabaseSync): void {
       updated_at   TEXT NOT NULL,
       PRIMARY KEY (scope, key)
     );
+    -- Built-in tool category toggles. Missing row = enabled (default-on).
+    -- Disabled categories are filtered out at every tool-list surface so
+    -- they vanish from the agent permission UI AND cannot be invoked even
+    -- if an old agent config still references one of their tools.
+    CREATE TABLE IF NOT EXISTS builtin_tool_categories (
+      category   TEXT PRIMARY KEY,
+      enabled    INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    );
   `);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);

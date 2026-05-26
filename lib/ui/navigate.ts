@@ -12,7 +12,7 @@ export interface ParsedHref {
   external: boolean;
 }
 
-const TABS: Tab[] = ["chat", "agents", "memory", "models", "mcp", "extensions", "tools", "integrations", "tasks", "bridges", "profile"];
+const TABS: Tab[] = ["chat", "agents", "memory", "models", "mcp", "extensions", "tools", "connections", "tasks", "bridges", "profile"];
 
 export function parseHref(input: string | null | undefined): ParsedHref {
   if (!input) return { external: false };

@@ -36,6 +36,7 @@ import type {
   ThreadDetail,
   ThreadSummary,
   UserProfile,
+  BuiltinToolCategoryInfo,
 } from "./types";
 
 const BASE = "/api/v1";
@@ -157,6 +158,15 @@ export const api = {
 
   tools: {
     list: () => request<ToolInfo[]>("/tools"),
+  },
+
+  builtinTools: {
+    list: () => request<BuiltinToolCategoryInfo[]>("/builtin-tools"),
+    setEnabled: (category: string, enabled: boolean) =>
+      request<{ category: string; enabled: boolean }>("/builtin-tools", {
+        method: "PATCH",
+        body: JSON.stringify({ category, enabled }),
+      }),
   },
 
   extensions: {

@@ -12,7 +12,7 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ request, page }) => {
   await seedMockAgent(request);
-  // Reset the profile preset so the Credentials-chip + Profile-preset
+  // Reset the profile preset so the Connections-chip + Profile-preset
   // tests don't bleed into each other (or into reruns).
   await request.put("/api/v1/profile", { data: { preset: null } });
   // CI runs without an OS keychain, so the at-rest crypto bootstrap falls
@@ -36,7 +36,7 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("menu separates common from advanced and Tools opens MCP+Extensions sub-tabs", async ({ page }) => {
+test("menu separates common from advanced and Tools opens Built-in+Extensions sub-tabs", async ({ page }) => {
   await openMenu(page);
 
   // Common tabs visible up top.
@@ -49,19 +49,23 @@ test("menu separates common from advanced and Tools opens MCP+Extensions sub-tab
   await expect(advancedHeader).toBeVisible();
   await expect(advancedHeader).toHaveAttribute("aria-expanded", "true");
 
-  // Advanced tabs visible — Credentials, Models, Tools.
+  // Advanced tabs visible — Connections, Models, Tools.
   await expect(page.getByRole("button", { name: "Tools", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Credentials", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connections", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Models", exact: true })).toBeVisible();
 
-  // Click Tools → ToolsPanel mounts with MCP/Extensions sub-tabs.
+  // Click Tools → ToolsPanel mounts with Built-in/Extensions sub-tabs.
+  // (MCP moved to Connections after the consolidation.)
   await page.getByRole("button", { name: "Tools", exact: true }).click();
-  const mcpTab = page.getByRole("tab", { name: "MCP servers" });
+  const builtinTab = page.getByRole("tab", { name: "Built-in" });
   const extTab = page.getByRole("tab", { name: "Browser extension" });
-  await expect(mcpTab).toBeVisible();
+  await expect(builtinTab).toBeVisible();
   await expect(extTab).toBeVisible();
-  await expect(mcpTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
+  await expect(builtinTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Built-in tools" })).toBeVisible();
+
+  // Tools tab should NOT show MCP sub-tab anymore (it lives in Connections).
+  await expect(page.getByRole("tab", { name: "MCP servers" })).toHaveCount(0);
 
   // Switch to Extensions sub-tab.
   await extTab.click();
@@ -97,7 +101,7 @@ test("Profile preset picker round-trips through the API", async ({ page, request
   await page.getByRole("button", { name: "Profile", exact: true }).click();
 
   // Persona section heading.
-  await expect(page.getByText(/Filters the Credentials panel/i)).toBeVisible();
+  await expect(page.getByText(/Filters the Connections panel/i)).toBeVisible();
 
   // Pick the "Work" preset.
   const workBtn = page.getByRole("button", { name: /^Work\b/ });
@@ -114,13 +118,13 @@ test("Profile preset picker round-trips through the API", async ({ page, request
   expect(body.preset).toBe("work");
 });
 
-test("Credentials panel filter chip reflects the active preset", async ({ page, request }) => {
+test("Connections panel filter chip reflects the active preset", async ({ page, request }) => {
   // Pre-set the preset via the API so the panel renders with it on first paint.
   const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
   expect(put.ok()).toBeTruthy();
 
   await openMenu(page);
-  await page.getByRole("button", { name: "Credentials", exact: true }).click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
 
   // Header chip shows the human label and is clickable.
   const chip = page.getByRole("button", { name: /^Home/ });
@@ -134,7 +138,7 @@ test("Credentials panel filter chip reflects the active preset", async ({ page, 
 
   // Click chip → navigates to Profile.
   await chip.click();
-  await expect(page.getByText(/Filters the Credentials panel/i)).toBeVisible();
+  await expect(page.getByText(/Filters the Connections panel/i)).toBeVisible();
 });
 
 test("memory panel renders structured values and masks secret-shaped keys", async ({ page, request }) => {
