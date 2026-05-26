@@ -40,7 +40,7 @@ afterAll(() => {
   try { rmSync(sourceRoot, { recursive: true, force: true }); } catch {}
 });
 
-describe("reindexLocalFile (ADR-0027)", () => {
+describe("reindexLocalFile (ADR-0028)", () => {
   it("indexes a new file (added)", async () => {
     const abs = join(sourceRoot, "hello.md");
     writeFileSync(abs, "# Hello\n\nThis is a fresh document.");

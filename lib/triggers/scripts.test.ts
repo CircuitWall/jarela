@@ -11,7 +11,7 @@ beforeEach(() => {
   __resetScriptRegistry();
 });
 
-describe("script registry (ADR-0027)", () => {
+describe("script registry (ADR-0028)", () => {
   it("registers and looks up a script", async () => {
     registerScript("test.echo", async (args) => ({ preview: `echo:${args.x}` }));
     const fn = getScript("test.echo");

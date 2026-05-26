@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// E2E for the watcher → script-firing → indexer pipeline (ADR-0027 PR-D).
+// E2E for the watcher → script-firing → indexer pipeline (ADR-0028 PR-D).
 // Sequence:
 //   1. POST a local_folder source pointing at a fresh tmpdir.
 //   2. Write a Markdown file with a unique sentinel string into it.

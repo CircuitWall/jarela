@@ -1,4 +1,4 @@
-// ADR-0027. In-process script registry for ScriptFiring.
+// ADR-0028. In-process script registry for ScriptFiring.
 //
 // Trust model: only built-ins are registered, in code, at module load
 // time. There is NO mechanism to register a script from DB, user input,

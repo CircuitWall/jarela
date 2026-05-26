@@ -57,7 +57,7 @@ beforeEach(() => {
   mocks.markScanned.mockReset();
 });
 
-describe("document-fast-sweep handler (ADR-0027)", () => {
+describe("document-fast-sweep handler (ADR-0028)", () => {
   it("skips local_folder sources", async () => {
     mocks.enabledSources = [fakeSource("local-1", "local_folder")];
     expect(await dueFirings()).toHaveLength(0);

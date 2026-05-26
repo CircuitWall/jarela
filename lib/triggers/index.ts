@@ -134,6 +134,7 @@ export async function runScheduledTaskFiringNow(taskId: string): Promise<void> {
 export async function runWatcherFiringNow(watcherId: string): Promise<void> {
   const firing = await firingForWatcherIdNow(watcherId);
   if (!firing) return;
+  if (firing.mode !== "prompt") return;
   const outcome = await runTriggerAgent(firing);
   await watcherHandler.markFired(firing, outcome);
   if (outcome.status === "error" && outcome.error) {

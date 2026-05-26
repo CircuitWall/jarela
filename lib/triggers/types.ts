@@ -1,4 +1,4 @@
-// ADR-0025 / ADR-0027. Trigger abstraction.
+// ADR-0025 / ADR-0028. Trigger abstraction.
 //
 // A "trigger" is anything that fires autonomously. The original in-tree
 // implementation was the scheduled-task cron loop, with its firing logic
@@ -48,7 +48,7 @@ export interface PromptFiring extends TriggerFiringBase {
  * persisted messages. The script does its own side effects (e.g.
  * upserts a document row) and returns a short preview for telemetry.
  * The script name is a key into the in-process script registry; only
- * built-ins ship — no eval, no shell-out (ADR-0027).
+ * built-ins ship — no eval, no shell-out (ADR-0028).
  */
 export interface ScriptFiring extends TriggerFiringBase {
   mode: "script";

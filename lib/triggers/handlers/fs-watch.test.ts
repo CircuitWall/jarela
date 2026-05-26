@@ -27,7 +27,7 @@ function expectScript(f: TriggerFiring): ScriptFiring {
   return f;
 }
 
-describe("fs-watch handler (ADR-0027)", () => {
+describe("fs-watch handler (ADR-0028)", () => {
   it("debounces events into a single firing per (source, abs)", async () => {
     __pushEventForTest("src-1", "/root", "notes.md");
     __pushEventForTest("src-1", "/root", "notes.md");
