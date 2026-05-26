@@ -4,6 +4,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { getConfig } from "@/lib/env/config";
+import { getToolSecret, type ToolSecretSlot } from "@/lib/stores/tool-secrets";
 import type { ToolCategory } from "./registry";
 
 /**
@@ -20,9 +21,20 @@ export interface ExternalToolDef {
   description: string;
   schema: object;
   category?: ToolCategory;
+  // Optional per-tool secret slots. Surfaced in the Extensions panel as
+  // editable form fields; persisted (encrypted at rest) in the
+  // `tool-secrets` memory namespace. Read at run time via `ctx.getSecret`.
+  // See ADR-0023.
+  secrets?: ToolSecretSlot[];
   run: (
     args: Record<string, unknown>,
-    ctx: { thread_id?: string },
+    ctx: {
+      thread_id?: string;
+      // Returns the persisted secret for this tool's slot, or `null` if
+      // it has not been configured. Always scoped to the current tool —
+      // a tool cannot read another tool's secrets via this helper.
+      getSecret: (key: string) => string | null;
+    },
   ) => unknown | Promise<unknown>;
 }
 
@@ -35,20 +47,38 @@ export interface ExternalToolsResult {
   tools: StructuredToolInterface[];
   categories: Map<string, ToolCategory>;
   files: Map<string, string>;
+  // Declared secret slots per tool name (empty array if the tool did not
+  // declare any). Used by the Extensions panel to render input fields.
+  secrets: Map<string, ToolSecretSlot[]>;
   errors: ExtensionLoadError[];
+}
+
+function isValidSlot(v: unknown): v is ToolSecretSlot {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.key !== "string" || !/^[a-z0-9_-]+$/i.test(o.key)) return false;
+  if (o.label !== undefined && typeof o.label !== "string") return false;
+  if (o.required !== undefined && typeof o.required !== "boolean") return false;
+  if (o.description !== undefined && typeof o.description !== "string") return false;
+  return true;
 }
 
 function isValid(p: unknown): p is ExternalToolDef {
   if (!p || typeof p !== "object") return false;
   const o = p as Record<string, unknown>;
-  return (
-    typeof o.name === "string" &&
-    o.name.trim() !== "" &&
-    typeof o.description === "string" &&
-    typeof o.schema === "object" &&
-    o.schema !== null &&
-    typeof o.run === "function"
-  );
+  if (
+    typeof o.name !== "string" ||
+    o.name.trim() === "" ||
+    typeof o.description !== "string" ||
+    typeof o.schema !== "object" ||
+    o.schema === null ||
+    typeof o.run !== "function"
+  ) return false;
+  if (o.secrets !== undefined) {
+    if (!Array.isArray(o.secrets)) return false;
+    if (!o.secrets.every(isValidSlot)) return false;
+  }
+  return true;
 }
 
 export function loadExternalTools(
@@ -57,11 +87,12 @@ export function loadExternalTools(
   const tools: StructuredToolInterface[] = [];
   const categories = new Map<string, ToolCategory>();
   const files = new Map<string, string>();
+  const secrets = new Map<string, ToolSecretSlot[]>();
   const errors: ExtensionLoadError[] = [];
 
   const toolsDir = getToolsDir();
   if (!existsSync(toolsDir)) {
-    return { tools, categories, files, errors };
+    return { tools, categories, files, secrets, errors };
   }
 
   // Same trick as lib/providers/external.ts: bypass webpack's static analysis
@@ -75,7 +106,7 @@ export function loadExternalTools(
   try {
     entries = readdirSync(toolsDir);
   } catch {
-    return { tools, categories, files, errors };
+    return { tools, categories, files, secrets, errors };
   }
 
   const seen = new Set<string>();
@@ -129,6 +160,7 @@ export function loadExternalTools(
       async (args: unknown, _runManager?: unknown, config?: RunnableConfig) => {
         const ctx = {
           thread_id: config?.configurable?.thread_id as string | undefined,
+          getSecret: (key: string) => getToolSecret(def.name, key),
         };
         const result = await def.run(args as Record<string, unknown>, ctx);
         return typeof result === "string" ? result : JSON.stringify(result);
@@ -143,7 +175,8 @@ export function loadExternalTools(
     tools.push(wrapped);
     files.set(def.name, entry);
     if (def.category) categories.set(def.name, def.category);
+    secrets.set(def.name, def.secrets ?? []);
   }
 
-  return { tools, categories, files, errors };
+  return { tools, categories, files, secrets, errors };
 }

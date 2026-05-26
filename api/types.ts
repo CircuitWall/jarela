@@ -585,9 +585,21 @@ export interface ExtensionInfo {
   file: string | null;
 }
 
+// A secret slot declared by an external tool (ADR-0023). `is_set` indicates
+// whether a value is currently persisted in the encrypted store; the actual
+// secret never leaves the server.
+export interface ToolSecretSlotInfo {
+  key: string;
+  label?: string;
+  required?: boolean;
+  description?: string;
+  is_set: boolean;
+}
+
 export interface ExternalToolInfo extends ExtensionInfo {
   description: string;
   category: string | null;
+  secrets: ToolSecretSlotInfo[];
 }
 
 export interface ExtensionLoadError {
