@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { embedOne } from "@/lib/embeddings";
 

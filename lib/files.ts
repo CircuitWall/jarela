@@ -3,8 +3,8 @@
 // GET /api/v1/files/[name]. The tool returns a relative URL the chat
 // renderer can embed as <img src="/api/v1/files/...">.
 
-import { mkdirSync, writeFileSync } from "fs";
-import { join } from "path";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { getDataDir } from "@/lib/db/data-dir";
 
 export const FILES_DIR = join(getDataDir(), "files");

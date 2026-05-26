@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createReadStream } from "fs";
-import { stat } from "fs/promises";
-import { Readable } from "stream";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { fileAbsPath } from "@/lib/files";
 
 type Params = { params: Promise<{ name: string }> };

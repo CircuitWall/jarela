@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync } from "node:child_process";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
