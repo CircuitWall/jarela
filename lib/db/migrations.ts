@@ -231,6 +231,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureMessagesCategoryColumn(db);
   ensureScheduledTasksSilentColumn(db);
   ensureAgentDisplayFiltersColumn(db);
+  ensureDocumentSourceRemoteColumns(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
 }
@@ -323,6 +324,31 @@ function ensureAgentDisplayFiltersColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "display_filters")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN display_filters TEXT");
+  }
+}
+
+// ADR-0026 — remote document-RAG sources (Jira / Confluence). Extends the
+// ADR-0024 document_sources table with a discriminator + JSON config so a
+// single store + indexer dispatcher serves both local folders and remote
+// content. Existing rows are 'local_folder' (matches pre-0026 behavior).
+function ensureDocumentSourceRemoteColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(document_sources)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("kind")) {
+    db.exec(
+      "ALTER TABLE document_sources ADD COLUMN kind TEXT NOT NULL DEFAULT 'local_folder'",
+    );
+  }
+  if (!names.has("config")) {
+    // JSON-encoded per-kind config (e.g. {"space_key":"ENG"} for
+    // confluence_space, {"jql":"..."} for jira_jql). NULL for local_folder.
+    db.exec("ALTER TABLE document_sources ADD COLUMN config TEXT");
+  }
+  if (!names.has("last_cursor")) {
+    // Per-source incremental cursor (e.g. max external `updated` ISO
+    // timestamp for Jira/Confluence). Lets remote indexers run cheaply
+    // after the first full sync. NULL for local_folder.
+    db.exec("ALTER TABLE document_sources ADD COLUMN last_cursor TEXT");
   }
 }
 
