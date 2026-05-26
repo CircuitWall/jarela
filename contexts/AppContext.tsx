@@ -1,7 +1,7 @@
 "use client";
 import { createContext, useContext, useReducer, type ReactNode } from "react";
 
-export type Tab = "chat" | "agents" | "memory" | "models" | "mcp" | "extensions" | "tools" | "integrations" | "tasks" | "bridges" | "profile";
+export type Tab = "chat" | "agents" | "memory" | "documents" | "models" | "mcp" | "extensions" | "tools" | "integrations" | "tasks" | "bridges" | "profile";
 
 interface AppState {
   activeThreadId: string | null;
