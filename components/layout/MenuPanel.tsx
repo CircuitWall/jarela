@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Brain, Calendar, ChevronDown, Cpu, Key, MessageSquare, Monitor, Moon, Smartphone, Sun, User, Wrench } from "lucide-react";
+import { Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
@@ -24,6 +24,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   chat: <MessageSquare size={13} />,
   agents: <Bot size={13} />,
   memory: <Brain size={13} />,
+  documents: <FolderSearch size={13} />,
   models: <Cpu size={13} />,
   mcp: <Wrench size={13} />,
   extensions: <Wrench size={13} />,
@@ -38,6 +39,7 @@ const TAB_TITLES: Record<Tab, string> = {
   chat: "Chat",
   agents: "Agents",
   memory: "Memory",
+  documents: "Documents",
   models: "Models",
   mcp: "MCP",
   extensions: "Extensions",
@@ -57,7 +59,7 @@ const TAB_TITLES: Record<Tab, string> = {
 // entry with internal sub-tabs (see components/tools/ToolsPanel.tsx).
 // The old tabs remain wired in the AppContext / AppShell for deep-link
 // back-compat with existing bookmarks and tests, but are hidden here.
-const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "tasks", "bridges", "profile"];
+const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "documents", "tasks", "bridges", "profile"];
 const ADVANCED_TABS: Tab[] = ["integrations", "models", "tools"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";

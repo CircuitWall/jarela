@@ -6,6 +6,7 @@
 // preserves insertion order.
 
 import "./memory";
+import "./documents";
 import "./exec";
 import "./files";
 import "./search";

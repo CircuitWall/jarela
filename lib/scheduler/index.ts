@@ -5,18 +5,25 @@ import { collectStream } from "@/lib/agents/stream-collector";
 import { getDueTasks, markTaskRan, type ScheduledTaskRow } from "@/lib/stores/scheduled-tasks";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
+import { indexAllSources } from "@/lib/documents/indexer";
 
 const POLL_INTERVAL_MS = 30_000;
+// Sweep document sources every Nth tick. 20 ticks × 30s = 10 min, which
+// matches typical "I edited a file, ask Jarela about it" patience. PR-D
+// upgrades this to event-driven fs watching.
+const DOC_SWEEP_EVERY_TICKS = 20;
 
 interface SchedulerState {
   started: boolean;
   timer: NodeJS.Timeout | null;
   running: boolean;
+  tickCount: number;
 }
 const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   started: false,
   timer: null,
   running: false,
+  tickCount: 0,
 }));
 
 // Idempotent — call repeatedly; only the first call starts the loop.
@@ -59,6 +66,20 @@ async function tick(): Promise<void> {
           error: msg,
           ts: Date.now(),
         });
+      }
+    }
+
+    // Document-RAG reindex sweep (ADR-0024). Polled here until PR-D wires
+    // an fs watcher. Failures are logged but never block the tick.
+    state.tickCount = (state.tickCount + 1) % DOC_SWEEP_EVERY_TICKS;
+    if (state.tickCount === 0) {
+      try {
+        await indexAllSources();
+      } catch (err) {
+        console.error(
+          "[scheduler] document index sweep failed:",
+          err instanceof Error ? err.message : String(err),
+        );
       }
     }
   } finally {
