@@ -199,6 +199,18 @@ export function runMigrations(db: DatabaseSync): void {
       UNIQUE(document_id, chunk_index)
     );
     CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
+    -- Generic change-tracker primitive (ADR-0025). Lets any subsystem ask
+    -- "has (scope, key) changed since we last looked?" by recording a
+    -- fingerprint (e.g. content hash, mtime+size, etag) per key. Future
+    -- triggers (fs_watch, tool_call dedupe) use it; the document indexer
+    -- in lib/documents will migrate onto it in a later PR.
+    CREATE TABLE IF NOT EXISTS change_tracker (
+      scope        TEXT NOT NULL,
+      key          TEXT NOT NULL,
+      fingerprint  TEXT NOT NULL,
+      updated_at   TEXT NOT NULL,
+      PRIMARY KEY (scope, key)
+    );
   `);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);
