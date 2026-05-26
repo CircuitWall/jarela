@@ -9,19 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Trigger abstraction + change-tracker primitive** (ADR-0025). The
-  scheduler no longer owns the firing logic for scheduled tasks
-  directly. A new `lib/triggers` module defines a `TriggerHandler`
-  interface (`getDueFirings` + `markFired`) and a shared
-  `runTriggerAgent()` runner; the existing cron / once scheduled
-  tasks are now one such handler, sharing the silent-mode wrapping
-  and `scheduled_task` category tagging unchanged. A new
-  `change_tracker` SQLite table + `lib/stores/change-tracker.ts`
-  expose `recordSeen(scope, key, fingerprint)` for any subsystem
-  that needs "has this file / record / etag moved since I last
-  looked?" semantics. Both primitives are internal scaffolding for
-  upcoming tool-call and `fs.watch` triggers; no user-visible
-  surface in this release.
+- **Built-in tool toggles**: a new "Built-in" sub-tab under Tools
+  lets the operator enable or disable whole categories of shipped
+  tools (Memory, Files, Web, Shell, Mail, Calendar, …). Disabled
+  categories disappear from the agent permission editor AND are
+  blocked from invocation at runtime, so an older agent that still
+  has them in its allow-list cannot reach them. Default-enabled
+  semantics: existing installs see no change. First step of the
+  Connections consolidation (see follow-up stages).
 - **Documents**: index any folder on disk for semantic recall. The
   new Documents tab lets the user point Jarela at one or more
   folders; text files (markdown, code, configs, plain text) are
