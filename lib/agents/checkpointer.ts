@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join } from "node:path";
 import { SqliteSaver } from "@langchain/langgraph-checkpoint-sqlite";
 import { getDataDir } from "@/lib/db/data-dir";
 
