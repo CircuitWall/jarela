@@ -8,7 +8,7 @@ import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { listIntegrations } from "@/lib/stores/integrations";
 import { buildAdaptivePersonaContext } from "@/lib/agents/adaptive-persona";
-import os from "os";
+import os from "node:os";
 
 export class RunThreadError extends Error {
   status: number;

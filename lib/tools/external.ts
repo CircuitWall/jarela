@@ -1,5 +1,5 @@
-import { join } from "path";
-import { existsSync, readdirSync, statSync } from "fs";
+import { join } from "node:path";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";

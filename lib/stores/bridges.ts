@@ -1,6 +1,6 @@
-import { randomUUID } from "crypto";
-import { join } from "path";
-import { mkdirSync, rmSync } from "fs";
+import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { mkdirSync, rmSync } from "node:fs";
 import { getDb } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
