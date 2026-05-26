@@ -4,6 +4,18 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
 
+// ADR-0026 — `kind` discriminates local-folder sources from remote ones
+// (Jira projects, Confluence spaces, saved JQL/CQL, on-demand URL). `config`
+// is a JSON-encoded per-kind blob. `last_cursor` is a per-source incremental
+// watermark (used by remote indexers to do incremental syncs).
+export type DocumentSourceKind =
+  | "local_folder"
+  | "confluence_space"
+  | "confluence_cql"
+  | "jira_project"
+  | "jira_jql"
+  | "on_demand_url";
+
 export interface DocumentSourceRow {
   id: string;
   path: string;
@@ -13,6 +25,9 @@ export interface DocumentSourceRow {
   last_error: string | null;
   created_at: string;
   updated_at: string;
+  kind: DocumentSourceKind;
+  config: string | null;       // JSON; null for local_folder
+  last_cursor: string | null;  // incremental watermark; null for local_folder
 }
 
 const now = () => new Date().toISOString();
@@ -42,16 +57,20 @@ export function getDocumentSourceByPath(path: string): DocumentSourceRow | null 
 export function createDocumentSource(input: {
   path: string;
   label?: string | null;
+  kind?: DocumentSourceKind;
+  config?: Record<string, unknown> | null;
 }): DocumentSourceRow {
   const id = randomUUID();
   const t = now();
+  const kind = input.kind ?? "local_folder";
+  const config = input.config ? JSON.stringify(input.config) : null;
   getDb()
     .prepare(
       `INSERT INTO document_sources
-       (id, path, label, enabled, last_scan_at, last_error, created_at, updated_at)
-       VALUES (?, ?, ?, 1, NULL, NULL, ?, ?)`,
+       (id, path, label, enabled, last_scan_at, last_error, created_at, updated_at, kind, config, last_cursor)
+       VALUES (?, ?, ?, 1, NULL, NULL, ?, ?, ?, ?, NULL)`,
     )
-    .run(id, input.path, input.label ?? null, t, t);
+    .run(id, input.path, input.label ?? null, t, t, kind, config);
   return {
     id,
     path: input.path,
@@ -61,7 +80,25 @@ export function createDocumentSource(input: {
     last_error: null,
     created_at: t,
     updated_at: t,
+    kind,
+    config,
+    last_cursor: null,
   };
+}
+
+// Parsed-config accessor — JSON.parse on every call would be fine at our
+// scale but this helper keeps call sites tidy.
+export function parseSourceConfig<T = Record<string, unknown>>(
+  row: DocumentSourceRow,
+): T | null {
+  if (!row.config) return null;
+  try { return JSON.parse(row.config) as T; } catch { return null; }
+}
+
+export function updateDocumentSourceCursor(id: string, cursor: string | null): void {
+  getDb()
+    .prepare("UPDATE document_sources SET last_cursor=?, updated_at=? WHERE id=?")
+    .run(cursor, now(), id);
 }
 
 export function updateDocumentSource(
