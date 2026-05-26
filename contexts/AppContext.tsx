@@ -1,13 +1,13 @@
 "use client";
 import { createContext, useContext, useReducer, type ReactNode } from "react";
 
-export type Tab = "chat" | "agents" | "memory" | "documents" | "models" | "mcp" | "extensions" | "tools" | "integrations" | "tasks" | "bridges" | "profile";
+export type Tab = "chat" | "agents" | "memory" | "documents" | "models" | "mcp" | "extensions" | "tools" | "connections" | "tasks" | "bridges" | "profile";
 
 interface AppState {
   activeThreadId: string | null;
   activeAgentId: string | null;
   activeTab: Tab;
-  // Per-tab sub-selection (gmail in integrations, an mcp server name, an
+  // Per-tab sub-selection (gmail in connections, an mcp server name, an
   // agent uuid, a profile subsection slug, …). Settings panels read their
   // slot to scroll-to + highlight; the URL mirrors this via `?item=<id>`.
   selectedItem: Partial<Record<Tab, string>>;
