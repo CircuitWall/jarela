@@ -13,7 +13,15 @@ import { join } from "node:path";
 // The webServer in playwright.config.ts boots with
 // JARELA_SCHEDULER_TICK_MS=250, so debounce (500 ms) + tick (250 ms) +
 // indexing settle inside the 15 s polling budget below.
+//
+// Skipped on Linux: fs.watch with `recursive: true` is unsupported there
+// (the handler at lib/triggers/handlers/fs-watch.ts logs once and falls
+// back to the 10-min full sweep). 10 min >> 15 s budget, so this e2e
+// would always time out. The macOS / Windows runners exercise the
+// recursive path; Linux coverage of the same flow lives in the
+// per-handler vitest suite.
 test.describe.configure({ mode: "serial" });
+test.skip(process.platform === "linux", "fs.watch recursive unsupported on Linux — covered by unit tests");
 
 let sourceDir: string;
 let sourceId: string | null = null;
