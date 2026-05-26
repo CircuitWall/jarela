@@ -171,6 +171,7 @@ export function generateAgentId(name: string): string {
 // in sync there by importing this constant — single source of truth.
 export const DISPLAY_FILTER_KEYS = [
   "scheduled_task",
+  "watcher",
   "bridge",
   "synthetic",
   "tool_use",
@@ -181,6 +182,7 @@ export type DisplayFilters = Record<DisplayFilterKey, boolean>;
 
 export const DISPLAY_FILTER_DEFAULTS: DisplayFilters = {
   scheduled_task: true,
+  watcher: true,
   bridge: true,
   synthetic: true,
   tool_use: true,
