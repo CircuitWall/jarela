@@ -61,12 +61,28 @@ export const scheduleWatcherTool = tool(
       "Register an event-driven watcher: poll one built-in tool every N seconds " +
       "and re-engage this agent only when the tool's output changes since the " +
       "previous poll. Unlike schedule_task, this consumes zero LLM tokens between " +
-      "changes — the scheduler runs the tool, hashes the result, and only fires the " +
-      "agent on a diff. The agent receives the previous + current results as " +
-      "context. Suitable for low-noise polling like Jira-issue status, Confluence " +
-      "page version, an inbox count, or any tool that returns a small, stable " +
-      "structured value. Minimum interval is 60 seconds. Set silent=true to let the " +
-      "agent reply with NO_REPLY on changes it judges immaterial.",
+      "changes — the scheduler runs the tool, hashes the result (SHA-256 of the " +
+      "stringified return value), and only fires the agent on a diff. The agent " +
+      "receives the previous + current results as context.\n\n" +
+      "WHEN TO USE (use this instead of schedule_task whenever the user wants " +
+      "to be notified about CHANGES rather than at fixed times):\n" +
+      "  • 'tell me when Jira issue ABC-123 changes status' → jira_get_issue\n" +
+      "  • 'ping me when a new ticket lands in SLPV assigned to me' → jira_search with a narrow JQL\n" +
+      "  • 'notify me when files appear in ~/Downloads' → file_list on that path\n" +
+      "  • 'watch this Confluence page for edits' → confluence_get_page\n" +
+      "  • 'tell me when a webpage changes' → web_fetch\n\n" +
+      "This is the SUBSTITUTE for webhooks and OS-level filesystem events, which " +
+      "Jarela does not have. Don't tell the user 'no webhook support' — propose a " +
+      "watcher instead.\n\n" +
+      "LIMITS (be honest with the user about these):\n" +
+      "  • Built-in tools only (no MCP / external tools — scheduler runs without per-request context).\n" +
+      "  • Minimum interval 60 seconds.\n" +
+      "  • Diff is byte-exact SHA-256 of the tool's stringified result. If the tool " +
+      "returns volatile fields (e.g. `updated` timestamps, view counts) the watcher " +
+      "will fire on every poll. Mitigate by passing args that narrow the tool's " +
+      "output (e.g. `fields` on jira_search, specific paths on file_list).\n" +
+      "  • First poll seeds the baseline silently — the agent is NOT fired on creation.\n\n" +
+      "Set silent=true to let the agent reply with NO_REPLY on changes it judges immaterial.",
     schema: z.object({
       label: z.string().min(1).describe("Short human-readable name (e.g. 'ABC-123 status')"),
       tool: z.string().min(1).describe("Name of a built-in tool to poll (e.g. 'jira_get_issue')"),
