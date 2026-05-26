@@ -29,7 +29,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   mcp: <Wrench size={13} />,
   extensions: <Wrench size={13} />,
   tools: <Wrench size={13} />,
-  integrations: <Key size={13} />,
+  connections: <Key size={13} />,
   tasks: <Calendar size={13} />,
   bridges: <Smartphone size={13} />,
   profile: <User size={13} />,
@@ -44,7 +44,7 @@ const TAB_TITLES: Record<Tab, string> = {
   mcp: "MCP",
   extensions: "Extensions",
   tools: "Tools",
-  integrations: "Credentials",
+  connections: "Connections",
   tasks: "Tasks",
   bridges: "Bridges",
   profile: "Profile",
@@ -52,15 +52,16 @@ const TAB_TITLES: Record<Tab, string> = {
 
 // Two-tier menu. "Common" surfaces the day-to-day verbs (chat, agents,
 // memory, tasks, bridges, profile). "Advanced" hides the engine room
-// (credentials, models, tools) behind a collapsible header so first-run
+// (connections, models, tools) behind a collapsible header so first-run
 // users aren't faced with eight cards of config they don't yet need.
 //
-// "tools" subsumes the legacy "mcp" + "extensions" tabs into a single
-// entry with internal sub-tabs (see components/tools/ToolsPanel.tsx).
-// The old tabs remain wired in the AppContext / AppShell for deep-link
-// back-compat with existing bookmarks and tests, but are hidden here.
+// "connections" is the single home for every auth surface (built-in
+// integrations + MCP server credentials). "tools" is purely about
+// capability presence — what categories of tools the agent may use.
+// The legacy top-level "mcp" and "extensions" tabs remain wired for
+// deep-link back-compat but are hidden here.
 const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "documents", "tasks", "bridges", "profile"];
-const ADVANCED_TABS: Tab[] = ["integrations", "models", "tools"];
+const ADVANCED_TABS: Tab[] = ["connections", "models", "tools"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 

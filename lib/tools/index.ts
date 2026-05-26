@@ -34,6 +34,7 @@ import {
 } from "./external";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
+import { disabledCategories } from "@/lib/stores/builtin-tools";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
@@ -75,10 +76,25 @@ function applyPolicy(
   });
 }
 
+// Filter built-in tools whose category is disabled in the toggle store.
+// External + MCP tools are untouched (they have their own enable surfaces).
+function applyCategoryToggles(tools: StructuredToolInterface[]): StructuredToolInterface[] {
+  const disabled = disabledCategories();
+  if (disabled.size === 0) return tools;
+  return tools.filter((t) => {
+    const cat = registeredCategory(t.name);
+    if (!cat) return true; // not a built-in (or unregistered) → leave it
+    return !disabled.has(cat);
+  });
+}
+
 // Synchronous: built-in + external tools (no MCP). Used by GET /api/v1/tools
 // and any code path that can't await.
 export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
-  return applyPolicy([...ALL_BUILTINS, ...loadExternal().tools], policy);
+  return applyPolicy(
+    [...applyCategoryToggles(ALL_BUILTINS), ...loadExternal().tools],
+    policy,
+  );
 }
 
 // Async: built-in + external + MCP tools.
@@ -92,7 +108,10 @@ export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredT
   } catch (err) {
     console.error("[tools] MCP load failed, continuing with built-ins only:", err);
   }
-  return applyPolicy([...ALL_BUILTINS, ...loadExternal().tools, ...mcpTools], policy);
+  return applyPolicy(
+    [...applyCategoryToggles(ALL_BUILTINS), ...loadExternal().tools, ...mcpTools],
+    policy,
+  );
 }
 
 export function toOpenAITools(tools: StructuredToolInterface[]): OpenAITool[] {
@@ -115,6 +134,12 @@ export async function executeTool(
   context: ToolContext = {},
 ): Promise<unknown> {
   let t = ALL_BUILTINS.find((x) => x.name === name);
+  if (t) {
+    const cat = registeredCategory(name);
+    if (cat && disabledCategories().has(cat)) {
+      throw new Error(`Tool "${name}" is disabled (category ${cat} is turned off)`);
+    }
+  }
   if (!t) {
     t = loadExternal().tools.find((x) => x.name === name);
   }
