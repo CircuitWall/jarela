@@ -7,8 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-05-26
+
 ### Added
 
+- **Documents — remote sources (Jira & Confluence)**: alongside local
+  folders, the Documents tab now indexes Atlassian content directly.
+  Pick a kind (Confluence space, Confluence CQL, Jira project, Jira
+  JQL), supply the key/query, and the existing scheduler chunks +
+  embeds the matching pages/issues into the same `documents_search`
+  surface as local files. Auth reuses the Atlassian Connections entry
+  — no second credential prompt. See
+  [ADR-0026](./docs/adr/0026-remote-document-sources.md).
+- **Documents — folder picker**: the local-folder source form now uses
+  a native directory picker instead of a free-text path field, so the
+  user no longer has to type `/Users/…` paths or remember escaping
+  rules.
+- **Documents — watcher-driven re-indexing**: local sources now
+  re-index in ~1 s after a file change instead of waiting for the
+  10-minute sweep, via `fs.watch` with a 500 ms debounce. Atlassian
+  remote sources poll on a 60 s fast-sweep cadence. Built on a new
+  scripted-trigger primitive (the trigger abstraction now fires either
+  agent prompts or in-process scripts; deletions and missed events
+  are still backstopped by the existing 10-min full sweep). See
+  [ADR-0027](./docs/adr/0027-event-driven-watchers.md) and
+  [ADR-0028](./docs/adr/0028-scripted-trigger-firings.md).
+- **Watcher tasks**: event-driven companion to scheduled tasks. A
+  watcher polls a single built-in tool every N seconds and only
+  invokes the agent when the tool's output changes since the previous
+  poll — useful for "ping me when this PR list changes" without
+  cron-style polling churn. Watcher firings are tagged
+  `category="watcher"` so they're filterable in the chat-panel
+  toolbar. See ADR-0027.
+- **Chat filter — watcher channel**: the chat-panel category toolbar
+  now exposes a `watcher` chip alongside `scheduled`, `bridge`, and
+  `captures`, so the operator can hide watcher-fired messages without
+  affecting other automation.
 - **Connections tab**: a single home for every auth surface. The old
   "Credentials" tab is renamed to "Connections" and gains a sub-tab
   for MCP server credentials, which previously lived under Tools.
@@ -34,7 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Reindex now`, enable/disable, and a preview-search input.
   Embedding failures gracefully degrade to substring matching so
   installations without an embedding provider still get useful
-  results. See ADR-0024 (`docs/adr/0024-document-rag.md`).
+  results. See [ADR-0024](./docs/adr/0024-document-rag.md).
 - **External tools**: encrypted secret slots. Tools loaded from
   `~/.jarela/tools/` may declare a `secrets: [{ key, label?, required?,
   description? }]` array; values are persisted in the `tool-secrets` memory
@@ -43,6 +77,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   panel renders an "Edit" form per tool with the standard masked sentinel
   pattern (plaintext never reaches the client). See
   [ADR-0023](./docs/adr/0023-external-tool-secrets.md).
+
+### Changed
+
+- **Trigger abstraction**: scheduled tasks and the new watcher tasks
+  now share a single `TriggerHandler` interface, and a generic
+  `change_tracker` store records the "last seen" hash that watchers
+  diff against. Pure refactor — no behavioural change for existing
+  scheduled tasks. Lays the groundwork for additional trigger kinds
+  (file-system, webhook, MQTT). See
+  [ADR-0025](./docs/adr/0025-trigger-abstraction-and-change-tracker.md).
+
+### Fixed
+
+- **E2E**: the watcher e2e is now skipped on Linux runners — Node's
+  recursive `fs.watch` is unsupported there and the spec relied on it.
+  CI is green again on the GitHub-hosted Linux matrix; macOS / Windows
+  still exercise the full watcher path.
+
+### Internal
+
+- **Lint**: ESLint now enforces the `node:` prefix on every Node
+  builtin import (`fs`, `path`, `crypto`, …) and the codebase has been
+  migrated. Required for Next.js's edge-runtime path resolution; the
+  `no-restricted-imports` rule prevents regressions.
+
+### Breaking changes (#39, pre-1.0 → MINOR per CONTRIBUTING.md)
+
+- The `?tab=integrations` deep link is removed in favour of
+  `?tab=connections`. In-app proposal banners are auto-rewritten;
+  external bookmarks to the old slug stop resolving.
+- The `tools` category for MCP-server credentials moves under
+  Connections → MCP. Any external tooling that screen-scraped the
+  Tools tab for MCP credential UI will need to follow the new path.
 
 ## [0.4.0] - 2026-05-25
 
