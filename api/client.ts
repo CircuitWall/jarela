@@ -20,6 +20,7 @@ import type {
   McpServerIn,
   PendingAction,
   ScheduledTask,
+  Watcher,
   DocumentSource,
   DocumentSourceIn,
   DocumentSourcePatch,
@@ -380,6 +381,21 @@ export const api = {
       request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     runNow: (id: string) =>
       request<{ accepted: boolean; task_id: string }>(`/scheduled-tasks/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" }),
+  },
+
+  // Event-driven watchers (ADR-0027). Polls a built-in tool every N
+  // seconds; only fires the agent when the tool output changes.
+  watchers: {
+    list: (agent_id?: string) =>
+      request<Watcher[]>(`/watchers${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
+    create: (data: { agent_id: string; label: string; tool: string; args?: Record<string, unknown>; every_seconds: number; silent?: boolean }) =>
+      request<Watcher>("/watchers", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, patch: Partial<Pick<Watcher, "label" | "interval_seconds" | "enabled" | "silent">>) =>
+      request<Watcher>(`/watchers/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
+    cancel: (id: string) =>
+      request<{ deleted: boolean }>(`/watchers/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    runNow: (id: string) =>
+      request<{ accepted: boolean; watcher_id: string }>(`/watchers/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" }),
   },
 
   // Document RAG (ADR-0024). Folder sources are scanned by the scheduler
