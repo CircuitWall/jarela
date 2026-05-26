@@ -1,21 +1,30 @@
-// ADR-0025. Trigger abstraction.
+// ADR-0025 / ADR-0028. Trigger abstraction.
 //
-// A "trigger" is anything that fires an agent autonomously. The original
-// in-tree implementation was the scheduled-task cron loop, with its
-// firing logic baked directly into lib/scheduler/index.ts. PR-B extracts
-// that into a generic shape so future trigger kinds (tool_call in PR-C,
-// fs_watch in PR-D) plug in without rewriting the scheduler.
+// A "trigger" is anything that fires autonomously. The original in-tree
+// implementation was the scheduled-task cron loop, with its firing logic
+// baked directly into lib/scheduler/index.ts. PR-B extracted that into
+// a generic shape so future trigger kinds plug in without rewriting the
+// scheduler. PR-D (this file's current shape) generalises a firing
+// further into a `mode: "prompt" | "script"` discriminated union so
+// non-chat work (file re-index, remote sweep) can ride the same pipe.
 
-/**
- * A single, ready-to-run firing of a trigger. Whatever produced it has
- * already decided that the agent should be invoked now; the runner
- * does NOT re-check schedule / debounce / dedupe.
- */
-export interface TriggerFiring {
+/** Common shape every firing carries regardless of mode. */
+interface TriggerFiringBase {
   /** Opaque id of the underlying trigger row. The handler owns its meaning. */
   id: string;
-  /** Handler kind that produced this firing, e.g. "scheduled_task". */
+  /** Handler kind that produced this firing, e.g. "scheduled_task", "fs_watch". */
   kind: string;
+  /** Free-form bag the handler can read back in markFired(). */
+  meta?: Record<string, unknown>;
+}
+
+/**
+ * A firing that opens a thread and runs an agent prompt. The runner
+ * persists user + assistant messages and respects silent-mode
+ * NO_REPLY suppression (ADR-0022).
+ */
+export interface PromptFiring extends TriggerFiringBase {
+  mode: "prompt";
   /** Agent to invoke. */
   agentId: string;
   /** Prompt content as the user-turn message that opens this firing. */
@@ -23,8 +32,7 @@ export interface TriggerFiring {
   /**
    * When true the runner wraps the prompt with the "reply only if material"
    * directive + NO_REPLY sentinel and drops the assistant turn if the model
-   * returns NO_REPLY or an empty body. Matches the existing scheduled-task
-   * silent mode (ADR-0022).
+   * returns NO_REPLY or an empty body.
    */
   silent?: boolean;
   /**
@@ -33,16 +41,31 @@ export interface TriggerFiring {
    * handler kind when omitted.
    */
   category?: string;
-  /** Free-form bag the handler can read back in markFired(). */
-  meta?: Record<string, unknown>;
 }
 
+/**
+ * A firing that runs an in-process script — no thread, no LLM, no
+ * persisted messages. The script does its own side effects (e.g.
+ * upserts a document row) and returns a short preview for telemetry.
+ * The script name is a key into the in-process script registry; only
+ * built-ins ship — no eval, no shell-out (ADR-0028).
+ */
+export interface ScriptFiring extends TriggerFiringBase {
+  mode: "script";
+  /** Registry key, e.g. "documents.reindex_local_file". */
+  script: string;
+  /** Argument bag passed straight to the script function. */
+  args?: Record<string, unknown>;
+}
+
+export type TriggerFiring = PromptFiring | ScriptFiring;
+
 export interface TriggerOutcome {
-  /** done = assistant turn persisted; skipped = NO_REPLY or empty; error = run threw. */
+  /** done = run completed; skipped = NO_REPLY or empty (prompt only); error = run threw. */
   status: "done" | "skipped" | "error";
-  /** Short preview of the assistant content (for notifications). Empty when skipped/error. */
+  /** Short preview of the result (assistant content for prompt, script-supplied for script). */
   preview: string;
-  /** Thread id used for the run. Empty string when the run failed before a thread was opened. */
+  /** Thread id used for the run. Empty string for script firings or when the run failed before a thread was opened. */
   threadId: string;
   /** Error message when status === "error". */
   error?: string;
@@ -63,4 +86,21 @@ export interface TriggerHandler {
    * publishing notifications, etc.
    */
   markFired(firing: TriggerFiring, outcome: TriggerOutcome): void | Promise<void>;
+  /**
+   * Optional: invoked once at process boot. Use for attaching watchers,
+   * reading source rows, etc. Idempotent — may be called again after
+   * source-list changes.
+   */
+  start?(): void | Promise<void>;
+  /**
+   * Optional: invoked on graceful shutdown. Use for closing watchers /
+   * draining timers.
+   */
+  stop?(): void | Promise<void>;
+  /**
+   * Optional: invoked when something the handler cares about changed
+   * (e.g. document_sources mutated). Lets watchers re-sync without a
+   * full restart.
+   */
+  sync?(): void | Promise<void>;
 }

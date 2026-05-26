@@ -97,6 +97,17 @@ async function runShutdown(): Promise<void> {
     console.error("[jarela] stopping scheduler failed:", err);
   }
 
+  // 2b. Drain trigger handlers — closes fs.watch watchers and any other
+  //     handler that has timers / sockets attached. Independent of the
+  //     scheduler tick (those are run-loop ownership; this is per-handler
+  //     ownership of OS resources).
+  try {
+    const { stopAllTriggerHandlers } = await import("@/lib/triggers");
+    await stopAllTriggerHandlers();
+  } catch (err) {
+    console.error("[jarela] stopping trigger handlers failed:", err);
+  }
+
   // 3. Close bridges (WhatsApp Baileys WS, etc).
   try {
     const { stopAllBridges } = await import("@/lib/bridges/runtime");
