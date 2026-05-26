@@ -5,13 +5,18 @@ import {
   firingForTaskId,
   SCHEDULED_TASK_KIND,
 } from "./handlers/scheduled-task";
+import {
+  watcherHandler,
+  firingForWatcherIdNow,
+  WATCHER_KIND,
+} from "./handlers/watcher";
 import type { TriggerFiring } from "./types";
 
 // Single registration site for built-in handlers. Importing this file
 // from the scheduler ensures every handler is wired before the first
-// tick. Future PRs add their handlers here (PR-C: tool_call,
-// PR-D: fs_watch).
+// tick. Future PRs add their handlers here (PR-D: fs_watch).
 registerTriggerHandler(scheduledTaskHandler);
+registerTriggerHandler(watcherHandler);
 
 /** Run one tick of the trigger fan-out. Used by the scheduler loop. */
 export async function runTriggerTick(asOf: Date = new Date()): Promise<void> {
@@ -65,6 +70,24 @@ export async function runScheduledTaskFiringNow(taskId: string): Promise<void> {
 }
 
 export { SCHEDULED_TASK_KIND };
+export { WATCHER_KIND };
+
+/**
+ * Force a single watcher to poll right now. If the polled value differs
+ * from the previously stored fingerprint, fire the agent and return.
+ * Returns silently when there's no diff (so the manual "Run now" button
+ * doesn't fabricate a turn out of an unchanged poll).
+ */
+export async function runWatcherFiringNow(watcherId: string): Promise<void> {
+  const firing = await firingForWatcherIdNow(watcherId);
+  if (!firing) return;
+  const outcome = await runTriggerAgent(firing);
+  await watcherHandler.markFired(firing, outcome);
+  if (outcome.status === "error" && outcome.error) {
+    throw new Error(outcome.error);
+  }
+}
+
 export * from "./types";
 export { registerTriggerHandler, listTriggerHandlers } from "./registry";
 export { runTriggerAgent } from "./runner";

@@ -51,7 +51,7 @@ const CAPABILITIES_CTX = [
   "--- Host UI capabilities (Jarela) ---",
   "You're running inside Jarela, a local web app. The surrounding UI provides:",
   "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
-  "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\".",
+  "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\". The same panel shows event-driven watchers you register with schedule_watcher.",
   "- Per-agent thread persistence with checkpointed state.",
   "Don't tell users you can't notify them or that scheduling has no effect — both are wired and working.",
   "",
