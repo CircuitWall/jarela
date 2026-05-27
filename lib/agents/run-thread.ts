@@ -2,6 +2,7 @@ import { streamWithConfig } from "@/lib/agents/llm";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getRecentMessagesWindow, getThread, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { startScheduler } from "@/lib/scheduler";
@@ -569,6 +570,9 @@ export function persistAssistantMessage(
   const persisted = stripAutoplayHints(final);
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
     addMessage(thread_id, "assistant", persisted, sanitizedEvents, category);
+    if (sanitizedEvents && sanitizedEvents.length > 0) {
+      recordToolUsage(sanitizedEvents, persisted);
+    }
   }
 }
 

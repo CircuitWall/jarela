@@ -28,6 +28,8 @@ export async function GET(_req: NextRequest, { params }: Params) {
     last_error: row.last_error,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    kind: row.kind,
+    config: row.config ? JSON.parse(row.config) : null,
     stats: getDocumentSourceStats(row.id),
   });
 }
@@ -54,6 +56,8 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     last_error: row.last_error,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    kind: row.kind,
+    config: row.config ? JSON.parse(row.config) : null,
     stats: getDocumentSourceStats(row.id),
   });
 }

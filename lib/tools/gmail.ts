@@ -130,10 +130,17 @@ export const gmailSearchTool = tool(
     const list = await gmailFetch(
       auth,
       `/messages?q=${encodeURIComponent(query)}&maxResults=${limit}`,
-    ) as { messages?: Array<{ id: string; threadId: string }>; error?: string };
+    ) as { messages?: Array<{ id: string; threadId: string }>; resultSizeEstimate?: number; nextPageToken?: string; error?: string };
     if ("error" in list && list.error) return JSON.stringify(list);
     const ids = (list.messages ?? []).map((m) => m.id);
-    if (ids.length === 0) return JSON.stringify({ messages: [] });
+    if (ids.length === 0) {
+      return JSON.stringify({
+        query,
+        result_size_estimate: list.resultSizeEstimate ?? 0,
+        next_page_token: list.nextPageToken ?? null,
+        messages: [],
+      });
+    }
     // Parallel metadata fetch; the API recommends batching but for ≤100 ids
     // parallel single calls are simpler and well within quota.
     const details = await Promise.all(ids.map(async (id) => {
@@ -153,15 +160,21 @@ export const gmailSearchTool = tool(
         labels: m.labelIds ?? [],
       };
     }));
-    return JSON.stringify({ messages: details });
+    return JSON.stringify({
+      query,
+      result_size_estimate: list.resultSizeEstimate ?? details.length,
+      next_page_token: list.nextPageToken ?? null,
+      messages: details,
+    });
   },
   {
     name: "gmail_search",
     description:
       "Search the user's Gmail with Gmail query syntax. Returns message metadata (from, to, subject, " +
-      "date, snippet, labels). Examples: 'is:unread newer_than:1d', 'from:notifications@github.com', " +
-      "'subject:invoice has:attachment', 'in:inbox -category:promotions'. **Use this before calling " +
-      "gmail_get_message** — the snippet is often enough.",
+      "date, snippet, labels) plus Gmail's resultSizeEstimate and next page token so '1 result' " +
+      "doesn't get mistaken for '1 unread email'. Examples: 'is:unread newer_than:1d', " +
+      "'from:notifications@github.com', 'subject:invoice has:attachment', 'in:inbox -category:promotions'. " +
+      "Use this before calling gmail_get_message — the snippet is often enough.",
     schema: z.object({
       query: z.string().describe("Gmail query string"),
       max_results: z.number().int().optional().describe("Max messages (default 25, max 100)"),
