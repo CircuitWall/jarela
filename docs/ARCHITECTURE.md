@@ -9,7 +9,7 @@ C4Container
     Person_Ext(wa_user, "WhatsApp peer", "Phone number paired via Baileys")
 
     System_Boundary(b, "Jarela (Next.js process)") {
-      Container(ui, "Web UI", "React 19 + Tailwind", "Chat, agents, models, memory, integrations panels")
+    Container(ui, "Web UI", "React 19 + Tailwind", "Chat, agents, models, memory, connections, and tools panels")
       Container(guard, "Origin / CSRF Guard", "lib/auth", "Rejects cross-origin mutating requests; same-origin enforcement")
       Container(routes, "API Routes", "Next.js Route Handlers", "REST + SSE endpoints under /api/v1")
       Container(agents, "Agent Runtime", "LangGraph + @langchain/*", "State-machine orchestration of LLM + tools; streams completions through providers")
