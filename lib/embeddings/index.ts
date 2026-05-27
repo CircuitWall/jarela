@@ -61,6 +61,102 @@ export async function embedOne(text: string): Promise<number[] | null> {
   return out?.[0] ?? null;
 }
 
+// HTTP status / error message → "should we retry?"
+// 429 = rate limit, 5xx = transient server, plus a small set of node fetch
+// codes that show up under load. Anything else is a real config / input
+// problem that retrying won't fix.
+const TRANSIENT_RE = /\b(429|5\d\d|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR_(SOCKET|CONNECT_TIMEOUT)|fetch failed)\b/;
+function isTransient(err: unknown): boolean {
+  return TRANSIENT_RE.test(err instanceof Error ? err.message : String(err));
+}
+
+async function callEmbedWithRetry(
+  client: { provider: ReturnType<typeof getProvider>; modelId: string; params: ProviderParams },
+  texts: string[],
+): Promise<number[][]> {
+  // 250ms → 1s → 4s. Three attempts is enough to ride through a brief
+  // rate-limit blip without dragging out a whole reindex run.
+  const backoffs = [250, 1000, 4000];
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= backoffs.length; attempt++) {
+    try {
+      return await client.provider.embed!(client.modelId, texts, client.params);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= backoffs.length || !isTransient(err)) break;
+      await new Promise((r) => setTimeout(r, backoffs[attempt]));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+export interface EmbedBestEffortResult {
+  /** One slot per input text. `null` means embedding failed for that input. */
+  vectors: (number[] | null)[];
+  /** First error message seen, useful for surfacing on the source row. */
+  error: string | null;
+  /** Count of inputs that didn't get a vector. */
+  failed: number;
+}
+
+/**
+ * Like `embed()` but resilient: retries transient errors (429/5xx) with
+ * exponential backoff, then on persistent failure splits the batch in half
+ * and recurses, so one bad input doesn't lose embeddings for every other
+ * chunk in the same document.
+ *
+ * Returns per-input results so the caller can persist whichever vectors
+ * came back and report an aggregate count of failures up to the source
+ * row instead of swallowing the error.
+ */
+export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortResult> {
+  if (texts.length === 0) return { vectors: [], error: null, failed: 0 };
+  const client = await resolveEmbeddingClient();
+  if (!client) {
+    return {
+      vectors: texts.map(() => null),
+      error: "no embedding provider configured",
+      failed: texts.length,
+    };
+  }
+  return embedBestEffortInternal(client, texts);
+}
+
+async function embedBestEffortInternal(
+  client: { provider: ReturnType<typeof getProvider>; modelId: string; params: ProviderParams },
+  texts: string[],
+): Promise<EmbedBestEffortResult> {
+  try {
+    const vectors = await callEmbedWithRetry(client, texts);
+    if (vectors.length === texts.length) return { vectors, error: null, failed: 0 };
+    // Provider returned a short array — pad with nulls so indices line up.
+    const padded: (number[] | null)[] = texts.map((_, i) => vectors[i] ?? null);
+    const failed = padded.filter((v) => v === null).length;
+    return {
+      vectors: padded,
+      error: `embedding provider returned ${vectors.length}/${texts.length} vectors`,
+      failed,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (texts.length === 1) {
+      console.warn("[embeddings] failed:", msg);
+      return { vectors: [null], error: msg, failed: 1 };
+    }
+    // Halve and recurse: a single oversized input shouldn't poison its
+    // batchmates. The two halves run sequentially because the typical
+    // failure (rate limit) doesn't get better by parallelising.
+    const mid = Math.floor(texts.length / 2);
+    const left = await embedBestEffortInternal(client, texts.slice(0, mid));
+    const right = await embedBestEffortInternal(client, texts.slice(mid));
+    return {
+      vectors: [...left.vectors, ...right.vectors],
+      error: left.error ?? right.error,
+      failed: left.failed + right.failed,
+    };
+  }
+}
+
 export function cosine(a: number[], b: number[]): number {
   if (a.length !== b.length || a.length === 0) return 0;
   let dot = 0, na = 0, nb = 0;
