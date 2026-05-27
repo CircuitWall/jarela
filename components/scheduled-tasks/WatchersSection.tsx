@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import type { AgentConfig, Watcher } from "@/api/types";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
+import { pushToast } from "@/lib/ui/toasts";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -18,7 +19,22 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
     setLoading(true);
     try {
       setWatchers(await api.watchers.list());
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      // Surface the failure instead of silently rendering "No watchers".
+      // A swallowed catch here was masking real list errors and made it
+      // look like the panel was filtering watchers it actually wasn't.
+      console.error(e);
+      pushToast({
+        kind: "error",
+        source: "system",
+        sourceLabel: "Watchers",
+        title: "Couldn't load watchers",
+        body: e instanceof Error ? e.message : String(e),
+        agent_id: null,
+        thread_id: null,
+        ttl: 6000,
+      });
+    }
     finally { setLoading(false); }
   }
   useEffect(() => { void load(); }, []);
