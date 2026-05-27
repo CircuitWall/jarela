@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-05-27
+
+### Changed
+
+- **Docs**: refreshed the current-facing install and UI docs to match the
+  shipped product. README / INSTALL / ARCHITECTURE now reflect the
+  Connections tab rename, the split between Connections and Tools, Next.js 16,
+  the platform-specific Windows data dir, and the scoped npm package name
+  `@circuitwall/jarela` for install / update / uninstall commands.
+- **npm distribution**: the published package now includes a prebuilt
+  `.next/standalone` bundle so `npm install -g @circuitwall/jarela`
+  starts immediately instead of trying to compile inside `node_modules`.
+
+### Fixed
+
+- **Windows task runner**: `make install` now passes npm arguments reliably.
+  The PowerShell helper no longer collides with the automatic `$args`
+  variable, so `Invoke-Npm` actually runs `npm install` / `npm run …`
+  instead of invoking bare `npm` with an empty argument list.
+- **npm-installed startup**: `jarela start` no longer attempts a Next build
+  from a global `node_modules` path. If a packaged standalone bundle is
+  missing, the CLI now fails fast with a clear packaging error instead of
+  falling into an unrecoverable webpack parse failure.
+
 ## [0.5.0] - 2026-05-26
 
 ### Added
