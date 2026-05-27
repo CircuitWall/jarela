@@ -138,8 +138,9 @@ const readSchema = z.object({
 
 export const fileReadTool = tool(
   async ({ path: filePath, start_line, end_line }) => {
-    const abs = resolvePath(filePath);
+    let abs = filePath;
     try {
+      abs = resolvePath(filePath);
       assertSafePath(abs, "read");
       const raw = await fs.readFile(abs, "utf8");
       let content = raw;
@@ -185,11 +186,12 @@ const writeSchema = z.object({
 
 export const fileWriteTool = tool(
   async ({ path: filePath, content, create_dirs }) => {
-    const abs = resolvePath(filePath);
-    if (content.length > MAX_WRITE_BYTES) {
-      return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes` });
-    }
+    let abs = filePath;
     try {
+      abs = resolvePath(filePath);
+      if (content.length > MAX_WRITE_BYTES) {
+        return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes` });
+      }
       assertSafePath(abs, "write");
       if (create_dirs !== false) {
         await fs.mkdir(path.dirname(abs), { recursive: true });
@@ -234,8 +236,9 @@ const editSchema = z.object({
 
 export const fileEditTool = tool(
   async ({ path: filePath, old_string, new_string }) => {
-    const abs = resolvePath(filePath);
+    let abs = filePath;
     try {
+      abs = resolvePath(filePath);
       assertSafePath(abs, "write");
       const raw = await fs.readFile(abs, "utf8");
       const first = raw.indexOf(old_string);
@@ -292,9 +295,11 @@ const moveSchema = z.object({
 
 export const fileMoveTool = tool(
   async ({ source, destination, overwrite, create_dirs }) => {
-    const srcAbs = resolvePath(source);
-    let dstAbs = resolvePath(destination);
+    let srcAbs = source;
+    let dstAbs = destination;
     try {
+      srcAbs = resolvePath(source);
+      dstAbs = resolvePath(destination);
       assertSafePath(srcAbs, "write");
       assertSafePath(dstAbs, "write");
       const srcStat = await fs.stat(srcAbs);
@@ -389,8 +394,13 @@ const listSchema = z.object({
 
 export const fileListTool = tool(
   async ({ path: dirPath, max_entries, include_hidden, pattern }) => {
-    const abs = resolvePath(dirPath);
-    try { assertSafePath(abs, "read"); } catch (err) { return JSON.stringify({ ok: false, path: abs, error: (err as Error).message }); }
+    let abs = dirPath;
+    try {
+      abs = resolvePath(dirPath);
+      assertSafePath(abs, "read");
+    } catch (err) {
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+    }
     const cap = max_entries ?? 200;
     const filter = pattern?.toLowerCase() ?? null;
     const entries: Array<{ path: string; kind: "file" | "directory" | "other"; size?: number }> = [];
@@ -481,8 +491,9 @@ const mkdirSchema = z.object({
 
 export const fileMkdirTool = tool(
   async ({ path: dirPath, recursive }) => {
-    const abs = resolvePath(dirPath);
+    let abs = dirPath;
     try {
+      abs = resolvePath(dirPath);
       assertSafePath(abs, "write");
       await fs.mkdir(abs, { recursive: recursive !== false });
       return JSON.stringify({ ok: true, path: abs });
@@ -509,8 +520,9 @@ const deleteSchema = z.object({
 
 export const fileDeleteTool = tool(
   async ({ path: targetPath, recursive }) => {
-    const abs = resolvePath(targetPath);
+    let abs = targetPath;
     try {
+      abs = resolvePath(targetPath);
       assertSafePath(abs, "write");
       const st = await fs.stat(abs);
       if (st.isDirectory()) {
@@ -559,9 +571,11 @@ const copySchema = z.object({
 
 export const fileCopyTool = tool(
   async ({ source, destination, overwrite, recursive }) => {
-    const srcAbs = resolvePath(source);
-    let dstAbs = resolvePath(destination);
+    let srcAbs = source;
+    let dstAbs = destination;
     try {
+      srcAbs = resolvePath(source);
+      dstAbs = resolvePath(destination);
       assertSafePath(srcAbs, "read");
       assertSafePath(dstAbs, "write");
       const srcStat = await fs.stat(srcAbs);
@@ -626,8 +640,9 @@ const statSchema = z.object({
 
 export const fileStatTool = tool(
   async ({ path: targetPath }) => {
-    const abs = resolvePath(targetPath);
+    let abs = targetPath;
     try {
+      abs = resolvePath(targetPath);
       const st = await fs.stat(abs);
       return JSON.stringify({
         ok: true,
