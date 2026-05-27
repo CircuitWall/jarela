@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GitHub as a document-RAG source (ADR-0029)**: GitHub joins Jira and
+  Confluence as a remote document source, so the same `documents_search`
+  tool now retrieves across PRs, issues, and repo files. Two new source
+  kinds, both surfaced in the Documents panel and the
+  `documents_add_remote_source` tool:
+  - `github_pulls` — index every PR of one repo (title + body + issue
+    comments + review bodies) as one document per PR. Configurable
+    `state` (open/closed/all) and `recency_days`. Watermark is
+    max(`updated_at`) so re-runs are incremental.
+  - `github_repo` — index text files on one branch of one repo via the
+    Git Trees API. Filtered by the same extension allowlist + binary
+    heuristic as the local-folder walker. Watermark is the tree SHA, so
+    quiet repos cost a single API call per scheduler tick.
+  `documents_index_url` now also recognises `/pull/<n>`, `/issues/<n>`,
+  and `/blob/<ref>/<path>` URLs and stores the result under the same
+  shared on-demand source as Jira/Confluence URL captures.
 - **GitHub tools — full read/write surface**: the GitHub integration grew
   from 7 tools to 19, so the agent no longer has to fall back to the `gh`
   CLI for the common write workflows (which is the whole reason these

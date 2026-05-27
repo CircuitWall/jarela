@@ -78,7 +78,14 @@ registerTools("Documents", [documentsSearch, documentsListSources]);
 // and CQL queries as document sources, so a single retrieval surface
 // (`documents_search`) covers both local files and Atlassian content.
 
-const REMOTE_KINDS = ["confluence_space", "confluence_cql", "jira_project", "jira_jql"] as const;
+const REMOTE_KINDS = [
+  "confluence_space",
+  "confluence_cql",
+  "jira_project",
+  "jira_jql",
+  "github_pulls",
+  "github_repo",
+] as const;
 
 function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>): string {
   switch (kind) {
@@ -86,15 +93,19 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
     case "confluence_cql":   return `confluence-cql://${Buffer.from(String(config.cql ?? "")).toString("base64").slice(0, 32)}`;
     case "jira_project":     return `jira-project://${String(config.project_key ?? "").trim()}`;
     case "jira_jql":         return `jira-jql://${Buffer.from(String(config.jql ?? "")).toString("base64").slice(0, 32)}`;
+    case "github_pulls":     return `github-pulls://${String(config.owner ?? "").trim()}/${String(config.repo ?? "").trim()}`;
+    case "github_repo":      return `github-repo://${String(config.owner ?? "").trim()}/${String(config.repo ?? "").trim()}`;
     default:                 return `remote://${kind}/${Date.now()}`;
   }
 }
 
 function validateRemoteConfig(kind: typeof REMOTE_KINDS[number], cfg: Record<string, unknown>): string | null {
-  if (kind === "confluence_space" && !cfg.space_key)  return "config.space_key is required for confluence_space";
-  if (kind === "confluence_cql"   && !cfg.cql)        return "config.cql is required for confluence_cql";
+  if (kind === "confluence_space" && !cfg.space_key)   return "config.space_key is required for confluence_space";
+  if (kind === "confluence_cql"   && !cfg.cql)         return "config.cql is required for confluence_cql";
   if (kind === "jira_project"     && !cfg.project_key) return "config.project_key is required for jira_project";
-  if (kind === "jira_jql"         && !cfg.jql)        return "config.jql is required for jira_jql";
+  if (kind === "jira_jql"         && !cfg.jql)         return "config.jql is required for jira_jql";
+  if (kind === "github_pulls"     && (!cfg.owner || !cfg.repo)) return "config.owner and config.repo are required for github_pulls";
+  if (kind === "github_repo"      && (!cfg.owner || !cfg.repo)) return "config.owner and config.repo are required for github_repo";
   return null;
 }
 
@@ -119,16 +130,20 @@ export const documentsAddRemoteSource = tool(
   {
     name: "documents_add_remote_source",
     description:
-      "Add a Jira project / JQL query / Confluence space / CQL query as a document source. " +
+      "Add a Jira project / JQL query / Confluence space / CQL query / GitHub repo as a document source. " +
       "Indexed content becomes searchable via documents_search alongside local folders. " +
       "Examples: kind='confluence_space' config={space_key:'ENG'}; kind='jira_project' " +
-      "config={project_key:'ABC', recency_days:90}; kind='jira_jql' config={jql:'project = ABC AND status != Done'}.",
+      "config={project_key:'ABC', recency_days:90}; kind='jira_jql' config={jql:'project = ABC AND status != Done'}; " +
+      "kind='github_pulls' config={owner:'octocat', repo:'hello-world', state:'all', recency_days:60}; " +
+      "kind='github_repo' config={owner:'octocat', repo:'hello-world', ref:'main', path_prefix:'docs'}.",
     schema: z.object({
       kind: z.enum(REMOTE_KINDS),
       label: z.string().describe("Human-readable label shown in the Documents panel."),
       config: z.record(z.string(), z.unknown())
         .describe("Per-kind config. confluence_space: {space_key}. confluence_cql: {cql}. " +
-                  "jira_project: {project_key}. jira_jql: {jql}. Optional: recency_days (int)."),
+                  "jira_project: {project_key}. jira_jql: {jql}. " +
+                  "github_pulls: {owner, repo, state?, recency_days?}. " +
+                  "github_repo: {owner, repo, ref?, path_prefix?}. Optional everywhere: recency_days (int)."),
     }),
   },
 );
@@ -191,11 +206,12 @@ export const documentsIndexUrl = tool(
   {
     name: "documents_index_url",
     description:
-      "Fetch and index a single Jira issue or Confluence page on demand, stored under a shared " +
-      "'On-demand URLs' source. Accepts a bare Jira key (ABC-123), a /browse/<KEY> URL, or a " +
-      "Confluence /wiki/spaces/.../pages/<id> URL.",
+      "Fetch and index a single Jira issue, Confluence page, or GitHub PR/issue/file on demand, " +
+      "stored under a shared 'On-demand URLs' source. Accepts a bare Jira key (ABC-123), a " +
+      "/browse/<KEY> URL, a Confluence /wiki/spaces/.../pages/<id> URL, or a GitHub /pull/<n>, " +
+      "/issues/<n>, or /blob/<ref>/<path> URL.",
     schema: z.object({
-      input: z.string().describe("Jira key, Jira URL, or Confluence page URL"),
+      input: z.string().describe("Jira key, Jira URL, Confluence page URL, or GitHub PR/issue/blob URL"),
     }),
   },
 );

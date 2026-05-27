@@ -12,6 +12,12 @@ import {
 } from "@/lib/stores/document-sources";
 import { runConfluenceIndexer, indexConfluencePageById } from "./confluence";
 import { runJiraIndexer, indexJiraIssueByKey } from "./jira";
+import {
+  runGithubIndexer,
+  indexGithubPullByUrl,
+  indexGithubIssueByUrl,
+  indexGithubFileByUrl,
+} from "./github";
 import type { UpsertResult } from "./upsert";
 
 export interface RemoteIndexStats {
@@ -45,6 +51,12 @@ export async function runRemoteSource(source: DocumentSourceRow): Promise<Remote
       case "jira_project":
       case "jira_jql": {
         const s = await runJiraIndexer(source);
+        stats = s;
+        break;
+      }
+      case "github_pulls":
+      case "github_repo": {
+        const s = await runGithubIndexer(source);
         stats = s;
         break;
       }
@@ -87,11 +99,12 @@ export function getOrCreateOnDemandSource(): DocumentSourceRow {
 
 /**
  * Resolve a free-form input (Jira issue key, Jira browse URL, Confluence
- * page URL) to "fetch this one thing and index it under the on-demand
- * source". Surfaced via the `documents_index_url` tool + HTTP API.
+ * page URL, GitHub PR/issue/blob URL) to "fetch this one thing and index
+ * it under the on-demand source". Surfaced via the `documents_index_url`
+ * tool + HTTP API. ADR-0029 added the GitHub matchers.
  */
 export async function indexOnDemand(input: string): Promise<{
-  kind: "jira" | "confluence";
+  kind: "jira" | "confluence" | "github";
   identifier: string;
   result: UpsertResult;
   source_id: string;
@@ -124,9 +137,32 @@ export async function indexOnDemand(input: string): Promise<{
     const result = await indexConfluencePageById(source.id, pageId[1]);
     return { kind: "confluence", identifier: pageId[1], result, source_id: source.id };
   }
+  // GitHub PR /pull/<n>
+  const ghPull = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (ghPull) {
+    const [, owner, repo, n] = ghPull;
+    const result = await indexGithubPullByUrl(source.id, owner, repo, Number(n));
+    return { kind: "github", identifier: `${owner}/${repo}#${n}`, result, source_id: source.id };
+  }
+  // GitHub issue /issues/<n>
+  const ghIssue = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/);
+  if (ghIssue) {
+    const [, owner, repo, n] = ghIssue;
+    const result = await indexGithubIssueByUrl(source.id, owner, repo, Number(n));
+    return { kind: "github", identifier: `${owner}/${repo}#${n}`, result, source_id: source.id };
+  }
+  // GitHub file /blob/<ref>/<path>
+  const ghBlob = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
+  if (ghBlob) {
+    const [, owner, repo, ref, path] = ghBlob;
+    const cleanPath = path.split("?")[0].split("#")[0];
+    const result = await indexGithubFileByUrl(source.id, owner, repo, ref, cleanPath);
+    return { kind: "github", identifier: `${owner}/${repo}@${ref}/${cleanPath}`, result, source_id: source.id };
+  }
 
   throw new Error(
     "could not recognise input — expected a Jira issue key (ABC-123), a /browse/<KEY> URL, " +
-    "or a Confluence /wiki/spaces/.../pages/<id> URL.",
+    "a Confluence /wiki/spaces/.../pages/<id> URL, or a GitHub /pull/<n>, /issues/<n>, or " +
+    "/blob/<ref>/<path> URL.",
   );
 }

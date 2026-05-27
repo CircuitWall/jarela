@@ -13,7 +13,13 @@ const KIND_OPTIONS: Array<{ value: DocumentSourceKind; label: string }> = [
   { value: "jira_jql", label: "Jira JQL" },
   { value: "confluence_space", label: "Confluence space" },
   { value: "confluence_cql", label: "Confluence CQL" },
+  { value: "github_pulls", label: "GitHub pull requests" },
+  { value: "github_repo", label: "GitHub repo files" },
 ];
+
+function isGithubKind(k: DocumentSourceKind): boolean {
+  return k === "github_pulls" || k === "github_repo";
+}
 
 function summarizeRemote(s: DocumentSource): string {
   const c = s.config ?? {};
@@ -22,6 +28,16 @@ function summarizeRemote(s: DocumentSource): string {
     case "jira_jql":         return `Jira JQL: ${String(c.jql ?? "?")}`;
     case "confluence_space": return `Confluence space: ${String(c.space_key ?? "?")}`;
     case "confluence_cql":   return `Confluence CQL: ${String(c.cql ?? "?")}`;
+    case "github_pulls": {
+      const slug = `${String(c.owner ?? "?")}/${String(c.repo ?? "?")}`;
+      return `GitHub PRs: ${slug}`;
+    }
+    case "github_repo": {
+      const slug = `${String(c.owner ?? "?")}/${String(c.repo ?? "?")}`;
+      const ref = c.ref ? `@${String(c.ref)}` : "";
+      const prefix = c.path_prefix ? ` /${String(c.path_prefix).replace(/^\/+|\/+$/g, "")}` : "";
+      return `GitHub repo: ${slug}${ref}${prefix}`;
+    }
     default:                 return s.path;
   }
 }
@@ -40,6 +56,12 @@ export function DocumentsPanel() {
   const [addSpaceKey, setAddSpaceKey] = useState("");
   const [addQuery, setAddQuery] = useState("");      // JQL or CQL
   const [addRecencyDays, setAddRecencyDays] = useState("");
+  // GitHub-only fields
+  const [addGhOwner, setAddGhOwner] = useState("");
+  const [addGhRepo, setAddGhRepo] = useState("");
+  const [addGhRef, setAddGhRef] = useState("");
+  const [addGhPathPrefix, setAddGhPathPrefix] = useState("");
+  const [addGhState, setAddGhState] = useState<"all" | "open" | "closed">("all");
   const [adding, setAdding] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -93,6 +115,23 @@ export function DocumentsPanel() {
       const v = addQuery.trim();
       if (!v) return null;
       config.cql = v;
+    } else if (addKind === "github_pulls") {
+      const owner = addGhOwner.trim();
+      const repo = addGhRepo.trim();
+      if (!owner || !repo) return null;
+      config.owner = owner;
+      config.repo = repo;
+      config.state = addGhState;
+    } else if (addKind === "github_repo") {
+      const owner = addGhOwner.trim();
+      const repo = addGhRepo.trim();
+      if (!owner || !repo) return null;
+      config.owner = owner;
+      config.repo = repo;
+      const ref = addGhRef.trim();
+      if (ref) config.ref = ref;
+      const prefix = addGhPathPrefix.trim().replace(/^\/+|\/+$/g, "");
+      if (prefix) config.path_prefix = prefix;
     }
     const recency = parseInt(addRecencyDays, 10);
     if (Number.isFinite(recency) && recency > 0) config.recency_days = recency;
@@ -107,6 +146,11 @@ export function DocumentsPanel() {
     setAddSpaceKey("");
     setAddQuery("");
     setAddRecencyDays("");
+    setAddGhOwner("");
+    setAddGhRepo("");
+    setAddGhRef("");
+    setAddGhPathPrefix("");
+    setAddGhState("all");
   }
 
   async function addSource() {
@@ -140,7 +184,7 @@ export function DocumentsPanel() {
   async function removeSource(id: string, summary: string, kind: DocumentSourceKind) {
     const tail = kind === "local_folder"
       ? "Files on disk are untouched."
-      : "The upstream Jira/Confluence content is untouched.";
+      : "The upstream content is untouched.";
     if (!confirm(`Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`)) return;
     try {
       await api.documents.deleteSource(id);
@@ -191,9 +235,9 @@ export function DocumentsPanel() {
         <p className="text-xs text-fg-faint leading-relaxed">
           Sources listed here are indexed in the background. Text files in folders are chunked, embedded, and
           made available to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool.
-          Remote sources (Jira, Confluence) reuse the Atlassian credentials configured in
-          {" "}<em>Connections → Atlassian</em>. Embedding uses your default model provider; without one, search
-          falls back to substring match.
+          Remote sources reuse credentials configured in <em>Connections</em>: Jira/Confluence under
+          {" "}<em>Atlassian</em>, GitHub PRs/repos under <em>GitHub</em>. Embedding uses your default model
+          provider; without one, search falls back to substring match.
         </p>
 
         {/* Add new source — kind picker drives the rest of the form. */}
@@ -212,7 +256,9 @@ export function DocumentsPanel() {
             <span className="text-[11px] text-fg-faint">
               {addKind === "local_folder"
                 ? "Pick a folder on this machine."
-                : "Requires Atlassian credentials (Connections → Atlassian)."}
+                : isGithubKind(addKind)
+                  ? "Requires GitHub credentials (Connections → GitHub)."
+                  : "Requires Atlassian credentials (Connections → Atlassian)."}
             </span>
           </div>
 
@@ -284,6 +330,54 @@ export function DocumentsPanel() {
                   rows={2}
                   className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y"
                 />
+              )}
+              {isGithubKind(addKind) && (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={addGhOwner}
+                    onChange={(e) => setAddGhOwner(e.target.value)}
+                    placeholder='Owner (e.g. "octocat")'
+                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={addGhRepo}
+                    onChange={(e) => setAddGhRepo(e.target.value)}
+                    placeholder='Repo (e.g. "hello-world")'
+                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                  />
+                </div>
+              )}
+              {addKind === "github_pulls" && (
+                <select
+                  value={addGhState}
+                  onChange={(e) => setAddGhState(e.target.value as "all" | "open" | "closed")}
+                  className="w-full sm:w-44 px-2 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
+                  title="Which PRs to index"
+                >
+                  <option value="all">All PRs</option>
+                  <option value="open">Open PRs only</option>
+                  <option value="closed">Closed PRs only</option>
+                </select>
+              )}
+              {addKind === "github_repo" && (
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={addGhRef}
+                    onChange={(e) => setAddGhRef(e.target.value)}
+                    placeholder="Ref (optional, default branch)"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                  />
+                  <input
+                    type="text"
+                    value={addGhPathPrefix}
+                    onChange={(e) => setAddGhPathPrefix(e.target.value)}
+                    placeholder="Path prefix (optional, e.g. docs)"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono"
+                  />
+                </div>
               )}
               <div className="flex flex-col gap-2 sm:flex-row">
                 <input

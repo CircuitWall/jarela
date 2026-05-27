@@ -70,6 +70,17 @@ async function ghFetch(
   return parseJsonSafe<unknown>(text, text);
 }
 
+// Exposed for sibling modules that need the same auth/proxy/CA-bundle
+// behaviour without duplicating the wrapper (currently:
+// `lib/documents/remote/github.ts`, ADR-0029). Mirrors `_atlassianFetch`.
+export async function _ghFetch(
+  auth: GitHubAuth,
+  path: string,
+  init?: RequestInit,
+): Promise<unknown> {
+  return ghFetch(auth, path, init);
+}
+
 // ── Shared helpers ─────────────────────────────────────────────────────────
 
 const BODY_CAP = 20_000;
