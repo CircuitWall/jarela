@@ -68,9 +68,9 @@ function Show-Help {
     Write-Host "Override with `$env:JARELA_DB_DIR" -ForegroundColor DarkGray
 }
 
-function Invoke-Npm([string[]]$Args) {
-    & npm @Args
-    if ($LASTEXITCODE -ne 0) { throw "npm $($Args -join ' ') failed (exit $LASTEXITCODE)" }
+function Invoke-Npm([string[]]$NpmArgs) {
+    & npm @NpmArgs
+    if ($LASTEXITCODE -ne 0) { throw "npm $($NpmArgs -join ' ') failed (exit $LASTEXITCODE)" }
 }
 
 function Invoke-Node([string]$Script) {
@@ -88,19 +88,19 @@ switch ($Target.ToLowerInvariant()) {
 
     'help'           { Show-Help }
 
-    'install'        { Invoke-Npm @('install') }
+    'install'        { Invoke-Npm -NpmArgs @('install') }
 
-    'dev'            { Invoke-Npm @('run', 'dev') }
+    'dev'            { Invoke-Npm -NpmArgs @('run', 'dev') }
 
-    'build'          { Invoke-Npm @('run', 'build') }
+    'build'          { Invoke-Npm -NpmArgs @('run', 'build') }
 
-    'start'          { Invoke-Npm @('start') }
+    'start'          { Invoke-Npm -NpmArgs @('start') }
 
-    'lint'           { Invoke-Npm @('run', 'lint') }
+    'lint'           { Invoke-Npm -NpmArgs @('run', 'lint') }
 
-    'test'           { Invoke-Npm @('run', 'test:live') }
+    'test'           { Invoke-Npm -NpmArgs @('run', 'test:live') }
 
-    'test-full'      { Invoke-Npm @('run', 'test:live:full') }
+    'test-full'      { Invoke-Npm -NpmArgs @('run', 'test:live:full') }
 
     'icons'          { Invoke-Node 'scripts\gen-logo.mjs' }
 
