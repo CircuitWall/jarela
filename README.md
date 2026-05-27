@@ -309,6 +309,9 @@ them in your shell / service unit:
 | `JARELA_UPDATE_CHANNEL`   | `stable`               | `stable` (npm `latest`) or `main` (GitHub `main`, experimental) |
 | `JARELA_DISABLE_UPDATE_CHECK` | _(unset)_          | Set to `1` to skip the daily update probe         |
 | `JARELA_ENABLE_MOCK_PROVIDER` | _(unset)_          | Set to `1` to register the `mock` LLM provider (tests / offline dev) |
+| `NEXT_PUBLIC_APP_NAME`    | `Jarela`               | User-visible app name (browser tab, sidebar, agent system prompt). Forks override to rebrand without source patches. |
+| `NEXT_PUBLIC_APP_DESCRIPTION` | `Jarela — local chat interface for LangGraph agents` | `<meta name="description">` for the HTML head. |
+| `NEXT_PUBLIC_APP_ISSUE_URL` | `https://github.com/CircuitWall/jarela/issues/new` | "Report a bug" target. Forks point this at their own tracker. |
 
 `JARELA_*` takes precedence over the legacy `PORT` / `HOSTNAME` names.
 

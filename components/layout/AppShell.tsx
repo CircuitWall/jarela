@@ -25,6 +25,7 @@ import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
 import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
+import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 
 export function AppShell() {
@@ -142,9 +143,9 @@ export function AppShell() {
       return pwaUnfocused || !onSameAgentChat;
     },
     resolveAgentName: (agentId) => {
-      if (!agentId) return "Jarela";
+      if (!agentId) return getAppName();
       const a = agentsRef.current.find((x) => x.id === agentId);
-      return a?.name ?? "Jarela";
+      return a?.name ?? getAppName();
     },
     resolveAgentIcon: (agentId) => {
       if (!agentId) return null;
@@ -221,7 +222,7 @@ export function AppShell() {
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto dark:brightness-0 dark:invert" />
-            <span className="text-fg font-semibold tracking-tight">Jarela</span>
+            <span className="text-fg font-semibold tracking-tight">{getAppName()}</span>
             <span className="text-xs text-fg-faint max-w-[11rem] truncate hidden sm:inline">
               {activeAgent?.name ?? "select agent"}
             </span>

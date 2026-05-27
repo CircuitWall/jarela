@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable app branding** — three new `NEXT_PUBLIC_*` env vars let
+  forks rebrand the user-visible name, description, and bug-report URL
+  without patching source. Defaults preserve the upstream "Jarela" branding
+  exactly:
+  - `NEXT_PUBLIC_APP_NAME` (default `Jarela`) — browser tab title, sidebar
+    header, app-shell logo title, welcome screen, and the agent's own
+    system prompt (so the LLM stops echoing "Jarela" when running in a
+    rebranded fork).
+  - `NEXT_PUBLIC_APP_DESCRIPTION` (default `"Jarela — local chat interface
+    for LangGraph agents"`) — `<meta name="description">`.
+  - `NEXT_PUBLIC_APP_ISSUE_URL` (default
+    `https://github.com/CircuitWall/jarela/issues/new`) — the Report-a-bug
+    toast target.
+  Surfaced via a new `lib/env/app-config.ts` helper module (client-safe)
+  and exposed on the cached `getConfig()` object as `appName`,
+  `appDescription`, and `issueUrl`.
 - **GitHub as a document-RAG source (ADR-0029)**: GitHub joins Jira and
   Confluence as a remote document source, so the same `documents_search`
   tool now retrieves across PRs, issues, and repo files. Two new source

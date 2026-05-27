@@ -8,7 +8,14 @@ import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { listIntegrations } from "@/lib/stores/integrations";
 import { buildAdaptivePersonaContext } from "@/lib/agents/adaptive-persona";
+import { getAppName } from "@/lib/env/app-config";
 import os from "node:os";
+
+// Resolve the app name once at module load. Forks set NEXT_PUBLIC_APP_NAME to
+// rebrand the user-visible name the LLM echoes in chat replies; default
+// "Jarela" for upstream. Static system-prompt sections below interpolate this
+// constant so the strings still allocate once per process, not per turn.
+const APP_NAME = getAppName();
 
 export class RunThreadError extends Error {
   status: number;
@@ -48,8 +55,8 @@ function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promis
 // from arrays on every user turn. Per-turn pieces (user profile, integrations,
 // memory, recall, current time) are still composed inside the function.
 const CAPABILITIES_CTX = [
-  "--- Host UI capabilities (Jarela) ---",
-  "You're running inside Jarela, a local web app. The surrounding UI provides:",
+  `--- Host UI capabilities (${APP_NAME}) ---`,
+  `You're running inside ${APP_NAME}, a local web app. The surrounding UI provides:`,
   "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
   "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\". The same panel shows event-driven watchers you register with schedule_watcher.",
   "  IMPORTANT: this panel is GLOBAL across all agents — it lists scheduled tasks and watchers for every agent on the instance, each row labelled with the owning agent's name. Do NOT tell the user the panel is filtered by the current agent or that the UI is hiding entries because they belong to a different agent. If the user expects to see something there and doesn't, the cause is something else (the UI loaded before the new entry, a stale view, or a list-fetch error) — say so plainly rather than inventing a per-agent scope.",
@@ -58,7 +65,7 @@ const CAPABILITIES_CTX = [
   "",
   "--- Choosing between schedule_task and schedule_watcher ---",
   "Use `schedule_task` when the user wants something to happen on a CLOCK (cron, ISO timestamp, 'every weekday at 10am').",
-  "Use `schedule_watcher` when the user wants to be told about a CHANGE ('tell me when X updates', 'ping me when a new ticket lands', 'notify me when files appear in this folder'). Watchers poll a built-in tool, SHA-256 the result, and only fire the agent on a diff — they're the substitute Jarela has for webhooks and OS-level file-system events. Examples:",
+  `Use \`schedule_watcher\` when the user wants to be told about a CHANGE ('tell me when X updates', 'ping me when a new ticket lands', 'notify me when files appear in this folder'). Watchers poll a built-in tool, SHA-256 the result, and only fire the agent on a diff — they're the substitute ${APP_NAME} has for webhooks and OS-level file-system events. Examples:`,
   "  • new SLPV tickets assigned to me → schedule_watcher on `jira_search` with the JQL.",
   "  • file appears in ~/Downloads → schedule_watcher on `file_list` with that path.",
   "  • Confluence page edited → schedule_watcher on `confluence_get_page`.",
@@ -193,7 +200,7 @@ const CITATION_CTX = [
   "",
   "WHAT counts as a substantive claim that needs a tag:",
   "- Counts, totals, IDs, UUIDs, status fields, timestamps, version numbers.",
-  "- Behavioral statements about how Jarela, a tool, an integration, a file, or the codebase works.",
+  `- Behavioral statements about how ${APP_NAME}, a tool, an integration, a file, or the codebase works.`,
   "- Quotes, file paths, function/class names, config values.",
   "- Anything the user could reasonably challenge with \"how do you know?\"",
   "",
@@ -213,7 +220,7 @@ const CITATION_CTX = [
   "HARD RULES:",
   "- If you don't have a source for a claim, do NOT make the claim. Say \"I don't know\" or call a tool to find out.",
   "- Never tag a tool call you didn't actually make this conversation. Never invent a file path or line number to make a claim look sourced — that's worse than no tag.",
-  "- Don't speculate about Jarela's UI behavior unless a tool result, the codebase, or the user's own message gave you the fact. If the user reports the UI shows something different than you'd expect, say you don't know why and propose concrete checks (refresh, look at the right tab, inspect logs) — do not invent a mechanism (a hidden filter, a permissions rule, a per-agent scope) to explain the gap.",
+  `- Don't speculate about ${APP_NAME}'s UI behavior unless a tool result, the codebase, or the user's own message gave you the fact. If the user reports the UI shows something different than you'd expect, say you don't know why and propose concrete checks (refresh, look at the right tab, inspect logs) — do not invent a mechanism (a hidden filter, a permissions rule, a per-agent scope) to explain the gap.`,
   "- If asked to recall something from prior turns and you don't actually see it in your context window, say so — don't reconstruct it from plausibility.",
   "",
   "EXAMPLES:",
@@ -359,7 +366,7 @@ export async function prepareThreadRun(
       : process.platform === "darwin"
         ? "iCloud Drive on macOS: ~/Library/Mobile Documents/com~apple~CloudDocs"
         : "",
-    "File-tool path resolution: absolute paths and `~/...` are honored verbatim; BARE RELATIVE paths (e.g. `notes.txt`) resolve against HOME, not cwd. cwd is the Jarela install directory and should never be used as a default location for user files.",
+    `File-tool path resolution: absolute paths and \`~/...\` are honored verbatim; BARE RELATIVE paths (e.g. \`notes.txt\`) resolve against HOME, not cwd. cwd is the ${APP_NAME} install directory and should never be used as a default location for user files.`,
     "Verify file paths with file_stat or file_list before assuming they exist. Always echo the resolved absolute path back to the user when you create/move/delete a file so they know where it landed.",
   ].filter(Boolean).join("\n");
 
