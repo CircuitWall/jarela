@@ -1,9 +1,10 @@
 "use client";
-import { AlertCircle, Bot, X } from "lucide-react";
+import { AlertCircle, Bot, ChevronDown, ChevronRight, Copy, ExternalLink, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { dismissToast, type Toast, useToasts } from "@/lib/ui/toasts";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
+import { buildReport } from "@/lib/ui/error-report";
 
 const GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -96,6 +97,37 @@ function ToastCard({ toast }: { toast: Toast }) {
   }
 
   const isError = toast.kind === "error";
+  // Error toasts with expandable details (stack trace + Copy + Report).
+  // Stop propagation on every interactive sub-element so clicks don't
+  // trigger the body's open()/navigate behavior.
+  const hasReport = isError && (toast.details != null || toast.reportInput != null);
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function onCopy(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!toast.reportInput) return;
+    const { body } = await buildReport(toast.reportInput);
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard rejected (no focus, secure context, etc.) — open a window
+      // with the text instead so the user can copy manually.
+      const win = window.open("", "_blank", "noopener,noreferrer,width=600,height=400");
+      if (win) {
+        win.document.body.innerText = body;
+      }
+    }
+  }
+
+  async function onReport(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!toast.reportInput) return;
+    const { url } = await buildReport(toast.reportInput);
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
   // Avatar — when we have an agent_id use a deterministic gradient. Otherwise
   // fall back to a generic bot icon.
   const avatar = toast.agent_id ? (
@@ -141,6 +173,17 @@ function ToastCard({ toast }: { toast: Toast }) {
           ) : (toast.agent_id || toast.thread_id) ? (
             <p className="text-[10px] text-accent/80 mt-1">Open chat →</p>
           ) : null}
+          {hasReport && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+              className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-rose-700 dark:text-rose-300/90 hover:text-rose-900 dark:hover:text-rose-200"
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              {expanded ? "Hide details" : "Show details"}
+            </button>
+          )}
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); close(); }}
@@ -150,6 +193,39 @@ function ToastCard({ toast }: { toast: Toast }) {
           <X size={13} />
         </button>
       </div>
+      {hasReport && expanded && (
+        <div
+          className="border-t border-rose-700/30 bg-rose-50/40 dark:bg-rose-950/20 px-3 py-2 space-y-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {toast.details && (
+            <pre className="text-[10px] leading-snug text-rose-900 dark:text-rose-200/90 max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono bg-surface-3/60 rounded p-2">
+              {toast.details}
+            </pre>
+          )}
+          {toast.reportInput && (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onCopy}
+                className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-surface-3 hover:bg-surface-4 text-fg border border-border"
+              >
+                <Copy size={11} />
+                {copied ? "Copied" : "Copy report"}
+              </button>
+              <button
+                type="button"
+                onClick={onReport}
+                className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white"
+                title="Opens a pre-filled GitHub issue"
+              >
+                <ExternalLink size={11} />
+                Report this issue
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       {/* Bottom progress sliver showing time remaining; pauses on hover. */}
       {toast.ttl > 0 && !exiting && (
         <div
