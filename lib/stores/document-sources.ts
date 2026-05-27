@@ -18,6 +18,8 @@ export type DocumentSourceKind =
   | "jira_jql"
   | "github_pulls"
   | "github_repo"
+  | "gmail_mail"
+  | "outlook_mail"
   | "on_demand_url";
 
 export interface DocumentSourceRow {

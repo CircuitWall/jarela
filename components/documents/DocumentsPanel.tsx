@@ -15,10 +15,16 @@ const KIND_OPTIONS: Array<{ value: DocumentSourceKind; label: string }> = [
   { value: "confluence_cql", label: "Confluence CQL" },
   { value: "github_pulls", label: "GitHub pull requests" },
   { value: "github_repo", label: "GitHub repo files" },
+  { value: "gmail_mail", label: "Gmail mail" },
+  { value: "outlook_mail", label: "Outlook mail" },
 ];
 
 function isGithubKind(k: DocumentSourceKind): boolean {
   return k === "github_pulls" || k === "github_repo";
+}
+
+function isMailKind(k: DocumentSourceKind): boolean {
+  return k === "gmail_mail" || k === "outlook_mail";
 }
 
 function summarizeRemote(s: DocumentSource): string {
@@ -38,6 +44,8 @@ function summarizeRemote(s: DocumentSource): string {
       const prefix = c.path_prefix ? ` /${String(c.path_prefix).replace(/^\/+|\/+$/g, "")}` : "";
       return `GitHub repo: ${slug}${ref}${prefix}`;
     }
+    case "gmail_mail":       return `Gmail: ${String(c.query ?? "?")}`;
+    case "outlook_mail":     return `Outlook: ${String(c.query ?? "?")}`;
     default:                 return s.path;
   }
 }
@@ -55,6 +63,9 @@ export function DocumentsPanel() {
   const [addProjectKey, setAddProjectKey] = useState("");
   const [addSpaceKey, setAddSpaceKey] = useState("");
   const [addQuery, setAddQuery] = useState("");      // JQL or CQL
+  const [addMailQuery, setAddMailQuery] = useState("");
+  const [addMailMaxResults, setAddMailMaxResults] = useState("");
+  const [addMailPageSize, setAddMailPageSize] = useState("");
   const [addRecencyDays, setAddRecencyDays] = useState("");
   // GitHub-only fields
   const [addGhOwner, setAddGhOwner] = useState("");
@@ -132,6 +143,14 @@ export function DocumentsPanel() {
       if (ref) config.ref = ref;
       const prefix = addGhPathPrefix.trim().replace(/^\/+|\/+$/g, "");
       if (prefix) config.path_prefix = prefix;
+    } else if (isMailKind(addKind)) {
+      const v = addMailQuery.trim();
+      if (!v) return null;
+      config.query = v;
+      const maxResults = parseInt(addMailMaxResults, 10);
+      if (Number.isFinite(maxResults) && maxResults > 0) config.max_results = maxResults;
+      const pageSize = parseInt(addMailPageSize, 10);
+      if (Number.isFinite(pageSize) && pageSize > 0) config.page_size = pageSize;
     }
     const recency = parseInt(addRecencyDays, 10);
     if (Number.isFinite(recency) && recency > 0) config.recency_days = recency;
@@ -145,6 +164,9 @@ export function DocumentsPanel() {
     setAddProjectKey("");
     setAddSpaceKey("");
     setAddQuery("");
+    setAddMailQuery("");
+    setAddMailMaxResults("");
+    setAddMailPageSize("");
     setAddRecencyDays("");
     setAddGhOwner("");
     setAddGhRepo("");
@@ -184,7 +206,9 @@ export function DocumentsPanel() {
   async function removeSource(id: string, summary: string, kind: DocumentSourceKind) {
     const tail = kind === "local_folder"
       ? "Files on disk are untouched."
-      : "The upstream content is untouched.";
+      : isMailKind(kind)
+        ? "The upstream mailbox is untouched."
+        : "The upstream content is untouched.";
     if (!confirm(`Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`)) return;
     try {
       await api.documents.deleteSource(id);
@@ -236,8 +260,8 @@ export function DocumentsPanel() {
           Sources listed here are indexed in the background. Text files in folders are chunked, embedded, and
           made available to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool.
           Remote sources reuse credentials configured in <em>Connections</em>: Jira/Confluence under
-          {" "}<em>Atlassian</em>, GitHub PRs/repos under <em>GitHub</em>. Embedding uses your default model
-          provider; without one, search falls back to substring match.
+          {" "}<em>Atlassian</em>, GitHub PRs/repos under <em>GitHub</em>, and mail under <em>Gmail</em>/<em>Outlook</em>.
+          Embedding uses your default model provider; without one, search falls back to substring match.
         </p>
 
         {/* Add new source — kind picker drives the rest of the form. */}
@@ -256,6 +280,10 @@ export function DocumentsPanel() {
             <span className="text-[11px] text-fg-faint">
               {addKind === "local_folder"
                 ? "Pick a folder on this machine."
+                : isMailKind(addKind)
+                  ? addKind === "gmail_mail"
+                    ? "Requires Gmail credentials (Connections → Gmail)."
+                    : "Requires Outlook credentials (Connections → Outlook)."
                 : isGithubKind(addKind)
                   ? "Requires GitHub credentials (Connections → GitHub)."
                   : "Requires Atlassian credentials (Connections → Atlassian)."}
@@ -331,6 +359,19 @@ export function DocumentsPanel() {
                   className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y"
                 />
               )}
+              {isMailKind(addKind) && (
+                <textarea
+                  value={addMailQuery}
+                  onChange={(e) => setAddMailQuery(e.target.value)}
+                  placeholder={
+                    addKind === "gmail_mail"
+                      ? 'Gmail query — e.g. is:unread newer_than:7d'
+                      : 'KQL — e.g. isRead:false received>=2026-05-01'
+                  }
+                  rows={2}
+                  className="w-full px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg font-mono resize-y"
+                />
+              )}
               {isGithubKind(addKind) && (
                 <div className="flex flex-col gap-2 sm:flex-row">
                   <input
@@ -387,14 +428,35 @@ export function DocumentsPanel() {
                   placeholder="Label (required)"
                   className="flex-1 min-w-0 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
                 />
-                <input
-                  type="number"
-                  min={1}
-                  value={addRecencyDays}
-                  onChange={(e) => setAddRecencyDays(e.target.value)}
-                  placeholder="Recency days (optional)"
-                  className="sm:w-44 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
-                />
+                {isMailKind(addKind) ? (
+                  <>
+                    <input
+                      type="number"
+                      min={1}
+                      value={addMailMaxResults}
+                      onChange={(e) => setAddMailMaxResults(e.target.value)}
+                      placeholder="Max results (optional)"
+                      className="sm:w-44 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      value={addMailPageSize}
+                      onChange={(e) => setAddMailPageSize(e.target.value)}
+                      placeholder="Page size (optional)"
+                      className="sm:w-40 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
+                    />
+                  </>
+                ) : (
+                  <input
+                    type="number"
+                    min={1}
+                    value={addRecencyDays}
+                    onChange={(e) => setAddRecencyDays(e.target.value)}
+                    placeholder="Recency days (optional)"
+                    className="sm:w-44 px-2.5 py-1.5 rounded-md bg-surface-2 border border-border text-sm text-fg"
+                  />
+                )}
                 <button
                   onClick={() => void addSource()}
                   disabled={adding || !buildPayload()}

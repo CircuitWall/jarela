@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
   // string that nft cannot see. Marking it external + explicitly tracing
   // its node_modules directory ensures the standalone bundle ships
   // keytar's native binding so the installed app can use the OS keychain.
-  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate", "keytar"],
+  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate", "keytar", "baileys"],
   outputFileTracingIncludes: {
     "/**": ["./node_modules/keytar/**/*"],
   },
