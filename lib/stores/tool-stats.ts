@@ -83,7 +83,7 @@ export function listToolStats(): ToolStatsRow[] {
       `SELECT tool_name, call_count, success_count, error_count, used_count, last_called_at, updated_at
          FROM tool_stats`,
     )
-    .all() as ToolStatsRow[];
+    .all() as unknown as ToolStatsRow[];
 }
 
 export function getToolStatsMap(names?: readonly string[]): Map<string, ToolUsefulnessStats> {
@@ -94,7 +94,7 @@ export function getToolStatsMap(names?: readonly string[]): Map<string, ToolUsef
            FROM tool_stats
           WHERE tool_name IN (${names.map(() => "?").join(",")})`,
       )
-      .all(...names) as ToolStatsRow[]
+      .all(...names) as unknown as ToolStatsRow[]
     : listToolStats();
 
   const out = new Map<string, ToolUsefulnessStats>();
