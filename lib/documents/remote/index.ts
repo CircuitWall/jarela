@@ -20,6 +20,10 @@ export interface RemoteIndexStats {
   updated: number;
   unchanged: number;
   errors: number;
+  /** Total chunks across this run that didn't get an embedding vector. */
+  embedFailed?: number;
+  /** First embed error message seen, if any. */
+  embedError?: string | null;
 }
 
 /** Returns true if `kind` is anything other than `local_folder`. */
@@ -55,7 +59,16 @@ export async function runRemoteSource(source: DocumentSourceRow): Promise<Remote
     lastError = err instanceof Error ? err.message : String(err);
     stats.errors++;
   }
-  markSourceScanned(source.id, lastError);
+  // Mirror the local indexer's surfacing rule: a fetch error wins; otherwise
+  // bubble up an embed-failure summary so the operator sees that semantic
+  // search is degraded for this source without grepping logs.
+  const embedFailed = stats.embedFailed ?? 0;
+  const composite = lastError
+    ? lastError
+    : embedFailed > 0
+      ? `${embedFailed} chunk${embedFailed === 1 ? "" : "s"} failed to embed${stats.embedError ? ": " + stats.embedError : ""}`
+      : null;
+  markSourceScanned(source.id, composite);
   return stats;
 }
 

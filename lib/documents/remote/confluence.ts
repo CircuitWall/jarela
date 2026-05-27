@@ -80,12 +80,15 @@ export interface ConfluenceIndexStats {
   unchanged: number;
   errors: number;
   cursor: string | null;
+  embedFailed: number;
+  embedError: string | null;
 }
 
 export async function runConfluenceIndexer(source: DocumentSourceRow): Promise<ConfluenceIndexStats> {
   const stats: ConfluenceIndexStats = {
     scanned: 0, added: 0, updated: 0, unchanged: 0, errors: 0,
     cursor: source.last_cursor,
+    embedFailed: 0, embedError: null,
   };
   const auth = _resolveAtlassianAuth();
   if ("error" in auth) throw new Error(auth.error);
@@ -116,6 +119,8 @@ export async function runConfluenceIndexer(source: DocumentSourceRow): Promise<C
         if (res.status === "added") stats.added++;
         else if (res.status === "updated") stats.updated++;
         else stats.unchanged++;
+        stats.embedFailed += res.chunks - res.embedded;
+        if (res.embedError && !stats.embedError) stats.embedError = res.embedError;
         if (!highWater || updatedAt > highWater) highWater = updatedAt;
       } catch {
         stats.errors++;

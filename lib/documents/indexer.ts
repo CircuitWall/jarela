@@ -12,7 +12,7 @@ import { randomUUID, createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { getDb } from "@/lib/db";
-import { embed } from "@/lib/embeddings";
+import { embedBestEffort } from "@/lib/embeddings";
 import {
   listEnabledDocumentSources,
   markSourceScanned,
@@ -173,6 +173,8 @@ export async function indexSource(
   const stats: IndexStats = { scanned: 0, added: 0, updated: 0, removed: 0, unchanged: 0, errors: 0 };
   const db = getDb();
   let lastError: string | null = null;
+  let embedFailed = 0;
+  let embedError: string | null = null;
 
   // Resolve real files on disk.
   const files = await walk(source.path);
@@ -217,7 +219,9 @@ export async function indexSource(
     }
 
     try {
-      await upsertLocalDocument(source.id, f, text, hash, existing?.id);
+      const r = await upsertLocalDocument(source.id, f, text, hash, existing?.id);
+      embedFailed += r.chunks - r.embedded;
+      if (r.embedError && !embedError) embedError = r.embedError;
       processed++;
       if (existing) stats.updated++;
       else stats.added++;
@@ -227,7 +231,16 @@ export async function indexSource(
     }
   }
 
-  markSourceScanned(source.id, lastError);
+  // Embed failures are not fetch failures — but if everything else
+  // succeeded we still want them visible on the row, so the operator
+  // doesn't have to grep server logs to discover that semantic search
+  // is degraded for this source.
+  const composite = lastError
+    ? lastError
+    : embedFailed > 0
+      ? `${embedFailed} chunk${embedFailed === 1 ? "" : "s"} failed to embed${embedError ? ": " + embedError : ""}`
+      : null;
+  markSourceScanned(source.id, composite);
   return stats;
 }
 
@@ -242,7 +255,7 @@ export async function upsertLocalDocument(
   text: string,
   hash: string,
   existingId: string | undefined,
-): Promise<void> {
+): Promise<{ chunks: number; embedded: number; embedError: string | null }> {
   const db = getDb();
   const t = new Date().toISOString();
   const docId = existingId ?? randomUUID();
@@ -262,29 +275,30 @@ export async function upsertLocalDocument(
     ).run(docId, sourceId, f.abs, f.rel, f.mtime_ms, f.size, hash, t);
   }
 
-  await chunkAndEmbedDocument(docId, text, f.rel);
+  return chunkAndEmbedDocument(docId, text, f.rel);
 }
 
 /**
  * Chunk a document's text, persist the chunks, and best-effort embed
  * them. Shared between the local sweep, single-file watcher firings,
- * and remote-source upserts.
+ * and remote-source upserts. Returns counts so the caller can aggregate
+ * embed failures up to the source row instead of swallowing them.
  */
 export async function chunkAndEmbedDocument(
   documentId: string,
   text: string,
-  label: string,
-): Promise<void> {
+  _label: string,
+): Promise<{ chunks: number; embedded: number; embedError: string | null }> {
   const db = getDb();
   const chunks = chunkText(text);
   if (chunks.length === 0) {
     db.prepare("UPDATE documents SET chunk_count=0 WHERE id=?").run(documentId);
-    return;
+    return { chunks: 0, embedded: 0, embedError: null };
   }
 
   // Insert chunks first without embeddings — recall falls back to
   // substring scan, so they're useful immediately. Then attempt to embed
-  // in a single batch; persist what comes back.
+  // in a single batch; persist whichever vectors came back.
   const insertChunk = db.prepare(
     `INSERT INTO document_chunks
      (id, document_id, chunk_index, text, start_offset, end_offset, embedding)
@@ -298,23 +312,18 @@ export async function chunkAndEmbedDocument(
   }
   db.prepare("UPDATE documents SET chunk_count=? WHERE id=?").run(chunks.length, documentId);
 
-  // Best-effort embed. Failures (no provider configured, transient
-  // network error) are tolerated — substring fallback still works.
-  try {
-    const vectors = await embed(chunks.map((c) => c.text));
-    if (vectors) {
-      const updateEmb = db.prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
-      for (let i = 0; i < vectors.length; i++) {
-        updateEmb.run(JSON.stringify(vectors[i]), chunkIds[i]);
-      }
+  // embedBestEffort handles retry + halving fallback internally so a
+  // single bad input or transient 429 doesn't drop the whole document.
+  const { vectors, error } = await embedBestEffort(chunks.map((c) => c.text));
+  const updateEmb = db.prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
+  let embedded = 0;
+  for (let i = 0; i < vectors.length; i++) {
+    if (vectors[i] != null) {
+      updateEmb.run(JSON.stringify(vectors[i]), chunkIds[i]);
+      embedded++;
     }
-  } catch (err) {
-    console.warn(
-      "[documents] embed failed for",
-      label,
-      err instanceof Error ? err.message : String(err),
-    );
   }
+  return { chunks: chunks.length, embedded, embedError: error };
 }
 
 export async function indexAllSources(opts?: { maxFilesPerSource?: number }): Promise<{
