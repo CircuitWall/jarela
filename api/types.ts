@@ -452,6 +452,8 @@ export interface DocumentReindexResult {
     removed: number;
     unchanged: number;
     errors: number;
+    embed_failed?: number;
+    embed_error?: string | null;
   };
 }
 

@@ -164,6 +164,8 @@ interface IndexStats {
   removed: number;
   unchanged: number;
   errors: number;
+  embed_failed?: number;
+  embed_error?: string | null;
 }
 
 export async function indexSource(
@@ -240,6 +242,10 @@ export async function indexSource(
     : embedFailed > 0
       ? `${embedFailed} chunk${embedFailed === 1 ? "" : "s"} failed to embed${embedError ? ": " + embedError : ""}`
       : null;
+  if (embedFailed > 0) {
+    stats.embed_failed = embedFailed;
+    stats.embed_error = embedError;
+  }
   markSourceScanned(source.id, composite);
   return stats;
 }
