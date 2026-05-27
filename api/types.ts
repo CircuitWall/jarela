@@ -337,6 +337,12 @@ export interface ScheduledTask {
   // all. All other scheduler firings are tagged with `category=scheduled_task`
   // so the chat-panel filter toolbar can hide them en masse.
   silent: boolean;
+  // ADR-0032 — discriminated reaction. 'agent_prompt' (default) runs the
+  // agent with `prompt`; 'script' runs a registered reaction.* script with
+  // no LLM round-trip.
+  reaction_kind: "agent_prompt" | "script";
+  reaction_script: string | null;
+  reaction_script_args: unknown | null;
   created_at: string;
   updated_at: string;
 }
@@ -358,6 +364,15 @@ export interface Watcher {
   last_error: string | null;
   enabled: boolean;
   silent: boolean;
+  // ADR-0030: optional user-supplied directive substituted for the default
+  // "summarise the diff" instruction when the watcher fires. NULL = default.
+  reaction_prompt: string | null;
+  // ADR-0031: discriminator for the reaction. 'agent_prompt' (default)
+  // routes to a PromptFiring (uses reaction_prompt); 'script' routes to a
+  // ScriptFiring (uses reaction_script + reaction_script_args).
+  reaction_kind: "agent_prompt" | "script";
+  reaction_script: string | null;
+  reaction_script_args: unknown | null;
   created_at: string;
   updated_at: string;
 }

@@ -76,18 +76,22 @@ export function runMigrations(db: DatabaseSync): void {
       updated_at        TEXT NOT NULL
     );
     CREATE TABLE IF NOT EXISTS scheduled_tasks (
-      id            TEXT PRIMARY KEY,
-      agent_id      TEXT NOT NULL,
-      prompt        TEXT NOT NULL,
-      description   TEXT,
-      kind          TEXT NOT NULL,
-      schedule      TEXT NOT NULL,
-      next_run_at   TEXT NOT NULL,
-      last_run_at   TEXT,
-      last_error    TEXT,
-      enabled       INTEGER NOT NULL DEFAULT 1,
-      created_at    TEXT NOT NULL,
-      updated_at    TEXT NOT NULL
+      id                   TEXT PRIMARY KEY,
+      agent_id             TEXT NOT NULL,
+      prompt               TEXT NOT NULL,
+      description          TEXT,
+      kind                 TEXT NOT NULL,
+      schedule             TEXT NOT NULL,
+      next_run_at          TEXT NOT NULL,
+      last_run_at          TEXT,
+      last_error           TEXT,
+      enabled              INTEGER NOT NULL DEFAULT 1,
+      silent               INTEGER NOT NULL DEFAULT 0,
+      reaction_kind        TEXT NOT NULL DEFAULT 'agent_prompt',  -- ADR-0032
+      reaction_script      TEXT,                                  -- ADR-0032
+      reaction_script_args TEXT,                                  -- ADR-0032
+      created_at           TEXT NOT NULL,
+      updated_at           TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due ON scheduled_tasks(enabled, next_run_at);
     -- Event-driven "watchers" (ADR-0027). A watcher polls one built-in
@@ -111,6 +115,10 @@ export function runMigrations(db: DatabaseSync): void {
       next_run_at       TEXT NOT NULL,
       enabled           INTEGER NOT NULL DEFAULT 1,
       silent            INTEGER NOT NULL DEFAULT 0,
+      reaction_prompt   TEXT,                          -- ADR-0030: NULL = default directive
+      reaction_kind     TEXT NOT NULL DEFAULT 'agent_prompt',  -- ADR-0031: 'agent_prompt' | 'script'
+      reaction_script       TEXT,                       -- ADR-0031: registry key, only when kind='script'
+      reaction_script_args  TEXT,                       -- ADR-0031: JSON object, only when kind='script'
       created_at        TEXT NOT NULL,
       updated_at        TEXT NOT NULL
     );
@@ -269,6 +277,9 @@ export function runMigrations(db: DatabaseSync): void {
   ensureScheduledTasksSilentColumn(db);
   ensureAgentDisplayFiltersColumn(db);
   ensureDocumentSourceRemoteColumns(db);
+  ensureWatchersReactionPromptColumn(db);
+  ensureWatchersReactionKindColumns(db);
+  ensureScheduledTasksReactionKindColumns(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
 }
@@ -341,6 +352,41 @@ function ensureMessagesCategoryColumn(db: DatabaseSync): void {
   }
 }
 
+// ADR-0030 — per-watcher reaction prompt. NULL = use the default
+// "summarise the diff" directive baked into buildFiringPrompt. Non-null =
+// substitute that text in place of the default; the diff envelope (label,
+// tool, args, previous, current) is unchanged.
+function ensureWatchersReactionPromptColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(watchers)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "reaction_prompt")) {
+    db.exec("ALTER TABLE watchers ADD COLUMN reaction_prompt TEXT");
+  }
+}
+
+// ADR-0031 — script-backed watcher reactions. Adds three nullable columns
+// to the watchers table:
+//   reaction_kind         'agent_prompt' (default) | 'script'
+//   reaction_script       registry key, only when kind='script'
+//   reaction_script_args  JSON object, only when kind='script'
+// Existing rows get reaction_kind='agent_prompt' and continue to behave
+// identically (the agent runs against the diff, optionally guided by
+// ADR-0030's reaction_prompt).
+function ensureWatchersReactionKindColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(watchers)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("reaction_kind")) {
+    db.exec(
+      "ALTER TABLE watchers ADD COLUMN reaction_kind TEXT NOT NULL DEFAULT 'agent_prompt'",
+    );
+  }
+  if (!names.has("reaction_script")) {
+    db.exec("ALTER TABLE watchers ADD COLUMN reaction_script TEXT");
+  }
+  if (!names.has("reaction_script_args")) {
+    db.exec("ALTER TABLE watchers ADD COLUMN reaction_script_args TEXT");
+  }
+}
+
 // Per-task "silent" mode. When 1 the scheduler injects the prompt as a
 // hidden user message and instructs the agent to reply only when there is
 // something worth showing — otherwise the assistant turn is persisted
@@ -349,6 +395,29 @@ function ensureScheduledTasksSilentColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(scheduled_tasks)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "silent")) {
     db.exec("ALTER TABLE scheduled_tasks ADD COLUMN silent INTEGER NOT NULL DEFAULT 0");
+  }
+}
+
+// ADR-0032 — script-backed scheduled tasks. Mirrors the watcher migration
+// in ensureWatchersReactionKindColumns. Adds:
+//   reaction_kind         'agent_prompt' (default) | 'script'
+//   reaction_script       registry key, only when kind='script'
+//   reaction_script_args  JSON object, only when kind='script'
+// Existing rows take reaction_kind='agent_prompt' (column default) and
+// continue to fire the agent with the saved prompt as before.
+function ensureScheduledTasksReactionKindColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(scheduled_tasks)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("reaction_kind")) {
+    db.exec(
+      "ALTER TABLE scheduled_tasks ADD COLUMN reaction_kind TEXT NOT NULL DEFAULT 'agent_prompt'",
+    );
+  }
+  if (!names.has("reaction_script")) {
+    db.exec("ALTER TABLE scheduled_tasks ADD COLUMN reaction_script TEXT");
+  }
+  if (!names.has("reaction_script_args")) {
+    db.exec("ALTER TABLE scheduled_tasks ADD COLUMN reaction_script_args TEXT");
   }
 }
 

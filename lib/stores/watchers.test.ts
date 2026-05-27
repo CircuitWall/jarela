@@ -18,6 +18,12 @@ const {
   clampInterval,
 } = await import("./watchers");
 
+// ADR-0031 — register a fake `reaction.*` script so validateReactionScript
+// accepts it. The store test must not depend on built-in reaction scripts
+// being side-effect imported.
+const { registerScript } = await import("@/lib/triggers/scripts");
+registerScript("reaction.test", async () => ({ preview: "test" }));
+
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
@@ -109,5 +115,170 @@ describe("watchers store (ADR-0027)", () => {
     const intervalUpdated = updateWatcher(w.id, { interval_seconds: 300 })!;
     expect(intervalUpdated.interval_seconds).toBe(300);
     expect(intervalUpdated.next_run_at).not.toBe(beforeNext);
+  });
+
+  // ADR-0030 — per-watcher reaction prompt.
+  describe("reaction_prompt (ADR-0030)", () => {
+    it("defaults to null when not provided", () => {
+      const w = createWatcher({ agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60 });
+      expect(w.reaction_prompt).toBeNull();
+      expect(getWatcher(w.id)!.reaction_prompt).toBeNull();
+    });
+
+    it("persists a non-empty prompt and trims surrounding whitespace", () => {
+      const w = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_prompt: "  open a Jira ticket on change  ",
+      });
+      expect(w.reaction_prompt).toBe("open a Jira ticket on change");
+      expect(getWatcher(w.id)!.reaction_prompt).toBe("open a Jira ticket on change");
+    });
+
+    it("treats empty / whitespace-only as null (fall back to default directive)", () => {
+      const w1 = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_prompt: "",
+      });
+      expect(w1.reaction_prompt).toBeNull();
+
+      deleteWatcher(w1.id);
+      const w2 = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_prompt: "   \n  ",
+      });
+      expect(w2.reaction_prompt).toBeNull();
+    });
+
+    it("rejects prompts over 4000 characters", () => {
+      expect(() => createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_prompt: "x".repeat(4001),
+      })).toThrow(/<= 4000/);
+    });
+
+    it("updateWatcher: undefined leaves the value, null clears it, string sets it", () => {
+      const w = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_prompt: "initial",
+      });
+      // undefined → leave alone.
+      const a = updateWatcher(w.id, { label: "renamed" })!;
+      expect(a.reaction_prompt).toBe("initial");
+
+      // string → set.
+      const b = updateWatcher(w.id, { reaction_prompt: "updated" })!;
+      expect(b.reaction_prompt).toBe("updated");
+
+      // null → clear.
+      const c = updateWatcher(w.id, { reaction_prompt: null })!;
+      expect(c.reaction_prompt).toBeNull();
+    });
+  });
+
+  // ADR-0031 — discriminated reaction column (agent_prompt | script).
+  describe("reaction kind discriminator (ADR-0031)", () => {
+    it("defaults to reaction_kind='agent_prompt' with both script columns null", () => {
+      const w = createWatcher({ agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60 });
+      expect(w.reaction_kind).toBe("agent_prompt");
+      expect(w.reaction_script).toBeNull();
+      expect(w.reaction_script_args).toBeNull();
+    });
+
+    it("creates a script-kind watcher with prompt forced to null", () => {
+      const w = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+        reaction_script: "reaction.test",
+        reaction_script_args: { title: "hi" },
+        // even if a prompt is supplied, the discriminator forces it null.
+        reaction_prompt: "ignored on script kind",
+      });
+      expect(w.reaction_kind).toBe("script");
+      expect(w.reaction_script).toBe("reaction.test");
+      expect(w.reaction_script_args).toBe(JSON.stringify({ title: "hi" }));
+      expect(w.reaction_prompt).toBeNull();
+    });
+
+    it("rejects reaction_kind='script' without reaction_script", () => {
+      expect(() => createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+      })).toThrow(/requires reaction_script/);
+    });
+
+    it("rejects a reaction_script that lacks the reaction. prefix", () => {
+      expect(() => createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+        reaction_script: "documents.reindex_local_file",
+      })).toThrow(/must begin with "reaction\."/);
+    });
+
+    it("rejects a reaction_script that is not registered", () => {
+      expect(() => createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+        reaction_script: "reaction.nonexistent",
+      })).toThrow(/not registered/);
+    });
+
+    it("rejects non-object reaction_script_args", () => {
+      expect(() => createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+        reaction_script: "reaction.test",
+        // @ts-expect-error — runtime guard intentionally tested
+        reaction_script_args: ["a", "b"],
+      })).toThrow(/JSON object/);
+    });
+
+    it("updateWatcher: switching kind to 'script' clears reaction_prompt", () => {
+      const w = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_prompt: "before",
+      });
+      const updated = updateWatcher(w.id, {
+        reaction_kind: "script",
+        reaction_script: "reaction.test",
+        reaction_script_args: { x: 1 },
+      })!;
+      expect(updated.reaction_kind).toBe("script");
+      expect(updated.reaction_prompt).toBeNull();
+      expect(updated.reaction_script).toBe("reaction.test");
+      expect(updated.reaction_script_args).toBe(JSON.stringify({ x: 1 }));
+    });
+
+    it("updateWatcher: switching kind back to 'agent_prompt' clears script columns", () => {
+      const w = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+        reaction_script: "reaction.test",
+        reaction_script_args: { x: 1 },
+      });
+      const updated = updateWatcher(w.id, {
+        reaction_kind: "agent_prompt",
+        reaction_prompt: "now an agent prompt",
+      })!;
+      expect(updated.reaction_kind).toBe("agent_prompt");
+      expect(updated.reaction_prompt).toBe("now an agent prompt");
+      expect(updated.reaction_script).toBeNull();
+      expect(updated.reaction_script_args).toBeNull();
+    });
+
+    it("updateWatcher: kind-preserving patch only allows the matching branch's fields", () => {
+      const w = createWatcher({
+        agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60,
+        reaction_kind: "script",
+        reaction_script: "reaction.test",
+      });
+      // While in 'script' mode, reaction_prompt patches are ignored —
+      // the column is forced to null by resolveReaction.
+      const a = updateWatcher(w.id, { reaction_script_args: { y: 2 } })!;
+      expect(a.reaction_script_args).toBe(JSON.stringify({ y: 2 }));
+      expect(a.reaction_prompt).toBeNull();
+
+      // Cannot clear reaction_script while still in 'script' mode.
+      expect(() => updateWatcher(w.id, { reaction_script: null })).toThrow(/cannot be cleared/);
+    });
   });
 });

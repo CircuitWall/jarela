@@ -375,7 +375,14 @@ export const api = {
 
   scheduledTasks: {
     list: (agent_id?: string) =>
-      request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),    update: (id: string, patch: Partial<Pick<ScheduledTask, "prompt" | "description" | "kind" | "schedule" | "enabled" | "silent">>) =>
+      request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
+    // ADR-0032 — patch supports the reaction discriminator. Mirrors the
+    // watchers.update shape; explicit reaction_kind triggers a full replace.
+    update: (id: string, patch: Partial<Pick<ScheduledTask, "prompt" | "description" | "kind" | "schedule" | "enabled" | "silent">> & {
+      reaction_kind?: "agent_prompt" | "script";
+      reaction_script?: string | null;
+      reaction_script_args?: Record<string, unknown> | null;
+    }) =>
       request<ScheduledTask>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
     cancel: (id: string) =>
       request<{ deleted: boolean }>(`/scheduled-tasks/${encodeURIComponent(id)}`, { method: "DELETE" }),
@@ -388,14 +395,41 @@ export const api = {
   watchers: {
     list: (agent_id?: string) =>
       request<Watcher[]>(`/watchers${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
-    create: (data: { agent_id: string; label: string; tool: string; args?: Record<string, unknown>; every_seconds: number; silent?: boolean }) =>
+    create: (data: {
+      agent_id: string;
+      label: string;
+      tool: string;
+      args?: Record<string, unknown>;
+      every_seconds: number;
+      silent?: boolean;
+      reaction_kind?: "agent_prompt" | "script";
+      reaction_prompt?: string | null;
+      reaction_script?: string | null;
+      reaction_script_args?: Record<string, unknown> | null;
+    }) =>
       request<Watcher>("/watchers", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, patch: Partial<Pick<Watcher, "label" | "interval_seconds" | "enabled" | "silent">>) =>
+    update: (
+      id: string,
+      patch: Partial<{
+        label: string;
+        interval_seconds: number;
+        enabled: boolean;
+        silent: boolean;
+        reaction_kind: "agent_prompt" | "script";
+        reaction_prompt: string | null;
+        reaction_script: string | null;
+        reaction_script_args: Record<string, unknown> | null;
+      }>,
+    ) =>
       request<Watcher>(`/watchers/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) }),
     cancel: (id: string) =>
       request<{ deleted: boolean }>(`/watchers/${encodeURIComponent(id)}`, { method: "DELETE" }),
     runNow: (id: string) =>
       request<{ accepted: boolean; watcher_id: string }>(`/watchers/${encodeURIComponent(id)}/run`, { method: "POST", body: "{}" }),
+    // ADR-0031: list registered reaction scripts (`reaction.*` namespace)
+    // for the watcher UI's reaction-kind picker.
+    listReactionScripts: () =>
+      request<{ scripts: string[] }>("/watchers/reaction-scripts"),
   },
 
   // Document RAG (ADR-0024). Folder sources are scanned by the scheduler

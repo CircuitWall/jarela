@@ -42,11 +42,19 @@ function stringifyResult(value: unknown): string {
   }
 }
 
+const DEFAULT_REACTION_DIRECTIVE =
+  `Summarise what changed and decide whether the user needs to know. ` +
+  `If nothing material changed, you may stay silent.`;
+
 function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current: string): string {
   const argsPretty = (() => {
     try { return JSON.stringify(JSON.parse(watcher.tool_args), null, 2); }
     catch { return watcher.tool_args; }
   })();
+  // ADR-0030: a non-null reaction_prompt swaps in for the default directive.
+  // The diff envelope (label/tool/args/previous/current) is unchanged so the
+  // agent always has the change context regardless of the user's instruction.
+  const directive = watcher.reaction_prompt?.trim() || DEFAULT_REACTION_DIRECTIVE;
   return [
     `Watcher "${watcher.label}" detected a change.`,
     ``,
@@ -59,9 +67,85 @@ function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current
     `--- Current result ---`,
     current,
     ``,
-    `Summarise what changed and decide whether the user needs to know. ` +
-    `If nothing material changed, you may stay silent.`,
+    directive,
   ].join("\n");
+}
+
+/**
+ * ADR-0031 — build the args bundle handed to a `reaction.*` script when
+ * a watcher with reaction_kind='script' fires. The bundle merges the
+ * user-supplied script args with diff context (previous + current
+ * stringified results, plus a slim `watcher` descriptor) so any reaction
+ * script can access both the static config and the change context.
+ */
+function buildScriptArgs(watcher: WatcherRow, previous: string | null, current: string): Record<string, unknown> {
+  let userArgs: Record<string, unknown> = {};
+  if (watcher.reaction_script_args) {
+    try {
+      const parsed = JSON.parse(watcher.reaction_script_args);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        userArgs = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Persisted args are validated at write time; a parse error here
+      // means storage corruption. Fall back to empty so the script still
+      // runs with diff context.
+    }
+  }
+  return {
+    ...userArgs,
+    watcher: {
+      id: watcher.id,
+      label: watcher.label,
+      tool_name: watcher.tool_name,
+      tool_args: safeJson(watcher.tool_args),
+      agent_id: watcher.agent_id,
+    },
+    previous,
+    current,
+  };
+}
+
+function safeJson(s: string): unknown {
+  try { return JSON.parse(s); } catch { return s; }
+}
+
+/**
+ * ADR-0031 — produce the right firing for a watcher that just observed
+ * a change. Routes on `reaction_kind`: 'agent_prompt' → PromptFiring (the
+ * original ADR-0027 path); 'script' → ScriptFiring dispatched through
+ * the trigger runner with no LLM round-trip.
+ */
+function buildFiring(watcher: WatcherRow, previous: string | null, current: string): TriggerFiring {
+  if (watcher.reaction_kind === "script" && watcher.reaction_script) {
+    return {
+      id: watcher.id,
+      kind: WATCHER_KIND,
+      mode: "script",
+      script: watcher.reaction_script,
+      args: buildScriptArgs(watcher, previous, current),
+      meta: {
+        label: watcher.label,
+        tool_name: watcher.tool_name,
+        agent_id: watcher.agent_id,
+        reaction_kind: "script",
+        reaction_script: watcher.reaction_script,
+        // Carry silent through so markFired can suppress the
+        // task_completed notification when the user has muted this watcher.
+        silent: watcher.silent === 1,
+      },
+    };
+  }
+  return {
+    id: watcher.id,
+    kind: WATCHER_KIND,
+    mode: "prompt",
+    agentId: watcher.agent_id,
+    prompt: buildFiringPrompt(watcher, previous, current),
+    silent: watcher.silent === 1,
+    category: "watcher",
+    meta: { label: watcher.label, tool_name: watcher.tool_name, reaction_kind: "agent_prompt", silent: watcher.silent === 1 },
+  };
 }
 
 async function invokeWatcherTool(watcher: WatcherRow): Promise<string> {
@@ -97,16 +181,7 @@ async function pollDueWatchers(asOf: Date): Promise<TriggerFiring[]> {
         fired: changed,
       });
       if (changed) {
-        firings.push({
-          id: watcher.id,
-          kind: WATCHER_KIND,
-          mode: "prompt",
-          agentId: watcher.agent_id,
-          prompt: buildFiringPrompt(watcher, watcher.last_result, result),
-          silent: watcher.silent === 1,
-          category: "watcher",
-          meta: { label: watcher.label, tool_name: watcher.tool_name },
-        });
+        firings.push(buildFiring(watcher, watcher.last_result, result));
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -127,17 +202,42 @@ export const watcherHandler: TriggerHandler = {
   },
 
   markFired(firing: TriggerFiring, outcome: TriggerOutcome): void {
-    if (firing.mode !== "prompt") return;
     // Polling state (last_run_at, last_fingerprint, last_result,
     // next_run_at) was already advanced inside getDueFirings — we only
     // publish a notification here so the UI's event stream lights up.
+    // ADR-0031 — script firings publish too; reuse `task_completed` with
+    // a synthesised prompt and the watcher's agent_id from meta (script
+    // firings have no thread, so threadId is empty).
+    // silent=true on the watcher suppresses the notification (in addition
+    // to the prompt-mode NO_REPLY semantic). Errors still surface.
+    const silent = firing.mode === "prompt"
+      ? firing.silent === true
+      : firing.meta?.silent === true;
+    if (silent && !outcome.error) return;
+    if (firing.mode === "prompt") {
+      publishNotification({
+        type: "task_completed",
+        task_id: firing.id,
+        agent_id: firing.agentId,
+        prompt: firing.prompt,
+        thread_id: outcome.threadId,
+        status: outcome.status,
+        preview: outcome.preview,
+        error: outcome.error,
+        ts: Date.now(),
+      });
+      return;
+    }
+    const meta = (firing.meta ?? {}) as { label?: string; agent_id?: string; reaction_script?: string };
+    const label = meta.label ?? "(watcher)";
+    const scriptName = meta.reaction_script ?? firing.script;
     publishNotification({
       type: "task_completed",
       task_id: firing.id,
-      agent_id: firing.agentId,
-      prompt: firing.prompt,
-      thread_id: outcome.threadId,
-      status: outcome.status,
+      agent_id: meta.agent_id ?? "",
+      prompt: `Watcher "${label}" fired script ${scriptName}`,
+      thread_id: "",
+      status: outcome.status === "skipped" ? "done" : outcome.status,
       preview: outcome.preview,
       error: outcome.error,
       ts: Date.now(),
@@ -161,16 +261,7 @@ export async function firingForWatcherIdNow(id: string): Promise<TriggerFiring |
     const changed = !firstRun && fp !== watcher.last_fingerprint;
     recordWatcherPoll({ id: watcher.id, fingerprint: fp, result, fired: changed });
     if (!changed) return null;
-    return {
-      id: watcher.id,
-      kind: WATCHER_KIND,
-      mode: "prompt",
-      agentId: watcher.agent_id,
-      prompt: buildFiringPrompt(watcher, watcher.last_result, result),
-      silent: watcher.silent === 1,
-      category: "watcher",
-      meta: { label: watcher.label, tool_name: watcher.tool_name },
-    };
+    return buildFiring(watcher, watcher.last_result, result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     recordWatcherPollError(watcher.id, msg);

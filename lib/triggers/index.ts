@@ -12,6 +12,9 @@ import {
 } from "./handlers/watcher";
 import { fsWatchHandler } from "./handlers/fs-watch";
 import { documentFastSweepHandler } from "./handlers/document-fast-sweep";
+// Side-effect imports: ensure built-in reaction scripts (ADR-0031) are
+// in the registry before the first watcher firing dispatches.
+import "./reactions/notify";
 import type { TriggerFiring } from "./types";
 
 // Single registration site for built-in handlers. Importing this file
@@ -118,7 +121,9 @@ export async function runTriggerTick(asOf: Date = new Date()): Promise<void> {
 export async function runScheduledTaskFiringNow(taskId: string): Promise<void> {
   const firing = firingForTaskId(taskId);
   if (!firing) throw new Error(`scheduled task ${taskId} not found`);
-  const outcome = await runTriggerAgent(firing);
+  // Route through runTriggerFiring so script-kind firings dispatch
+  // through the script registry instead of the agent (ADR-0032).
+  const outcome = await runTriggerFiring(firing);
   await scheduledTaskHandler.markFired(firing, outcome);
   if (outcome.status === "error" && outcome.error) {
     throw new Error(outcome.error);
@@ -146,4 +151,11 @@ export { SCHEDULED_TASK_KIND, WATCHER_KIND };
 export * from "./types";
 export { registerTriggerHandler, listTriggerHandlers } from "./registry";
 export { runTriggerAgent, runTriggerScript, runTriggerFiring };
-export { registerScript, getScript, listScripts } from "./scripts";
+export {
+  registerScript,
+  getScript,
+  listScripts,
+  listReactionScripts,
+  isReactionScript,
+  REACTION_SCRIPT_PREFIX,
+} from "./scripts";

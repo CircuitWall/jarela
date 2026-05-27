@@ -39,6 +39,21 @@ export function listScripts(): string[] {
   return Array.from(state.scripts.keys()).sort();
 }
 
+// ADR-0031 — names beginning with this prefix are user-attachable
+// reaction scripts. Internal plumbing scripts (e.g.
+// `documents.reindex_local_file`) live under other namespaces and are
+// excluded so the watcher schedule surface can't accidentally invoke
+// them.
+export const REACTION_SCRIPT_PREFIX = "reaction.";
+
+export function listReactionScripts(): string[] {
+  return listScripts().filter((n) => n.startsWith(REACTION_SCRIPT_PREFIX));
+}
+
+export function isReactionScript(name: string): boolean {
+  return name.startsWith(REACTION_SCRIPT_PREFIX) && state.scripts.has(name);
+}
+
 /** Test-only helper. */
 export function __resetScriptRegistry(): void {
   state.scripts.clear();
