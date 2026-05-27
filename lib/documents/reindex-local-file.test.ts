@@ -14,10 +14,16 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-reindex-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 const sourceRoot = mkdtempSync(join(tmpdir(), "jarela-reindex-fixtures-"));
 
-// Stub the embedder so the test doesn't try to dial out — return null
-// so we exercise the "no embeddings, substring fallback only" path.
+// Stub the embedder so the test doesn't try to dial out — every input
+// gets a `null` vector so we exercise the "no embeddings, substring
+// fallback only" path.
 vi.mock("@/lib/embeddings", () => ({
   embed: vi.fn().mockResolvedValue(null),
+  embedBestEffort: vi.fn(async (texts: string[]) => ({
+    vectors: texts.map(() => null),
+    error: null,
+    failed: texts.length,
+  })),
 }));
 
 const { reindexLocalFile } = await import("./reindex-local-file");
