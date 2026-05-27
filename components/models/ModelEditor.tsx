@@ -3,6 +3,7 @@ import { BookOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, ModelConfig } from "@/api/types";
+import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "./CapBadges";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
@@ -82,7 +83,14 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       setCatalog(models);
       setShowCatalog(true);
     } catch (e) {
+      // Inline catalog error preserves the in-context retry path; toast
+      // surfaces the report-issue affordance.
       setCatalogError(String(e));
+      pushErrorToast({
+        title: "Couldn't load model catalog",
+        error: e,
+        context: { panel: "models", action: "catalog.load", provider },
+      });
     } finally {
       setCatalogLoading(false);
     }
@@ -106,7 +114,13 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       if (maxTokens) params.max_tokens = Number(maxTokens);
       await onSave(name.trim(), { provider, model_id: modelId.trim(), params, is_default: isDefault });
       onClose();
-    } catch (e) { setError(String(e)); }
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't save model",
+        error: e,
+        context: { panel: "models", action: "model.save", name: name.trim(), provider, model_id: modelId.trim() },
+      });
+    }
     finally { setSaving(false); }
   }
 
