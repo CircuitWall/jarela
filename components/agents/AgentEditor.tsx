@@ -6,6 +6,7 @@ import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
+import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "@/components/models/CapBadges";
 
 interface Props {
@@ -179,7 +180,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
       });
       onClose();
     } catch (e) {
-      setError(String(e));
+      pushErrorToast({
+        title: "Couldn't save agent",
+        error: e,
+        context: { panel: "agents", action: "agent.save", agent_name: name.trim() },
+      });
     } finally {
       setSaving(false);
     }

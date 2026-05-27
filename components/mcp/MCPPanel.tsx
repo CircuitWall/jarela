@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { pushErrorToast } from "@/lib/ui/error-report";
 
 // `editing` value when the user clicked New: starts on the picker step;
 // once they pick a registry entry (or click "custom") it transitions to a form.
@@ -193,7 +194,11 @@ function MCPEditor({
       }
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      pushErrorToast({
+        title: server ? "Couldn't update MCP server" : "Couldn't create MCP server",
+        error: e,
+        context: { panel: "mcp", action: server ? "mcp.update" : "mcp.create", name: name.trim(), transport },
+      });
     } finally {
       setSaving(false);
     }
@@ -367,7 +372,14 @@ function RegistryPicker({
       setNextCursor(res.nextCursor);
     } catch (e) {
       setEntries([]); setNextCursor(undefined);
+      // Inline error preserves the Retry button at the picker; the toast
+      // gives the user a one-click path to report the failure.
       setError(e instanceof Error ? e.message : String(e));
+      pushErrorToast({
+        title: "Couldn't search MCP registry",
+        error: e,
+        context: { panel: "mcp", action: "registry.search", query: q || null },
+      });
     } finally {
       setLoading(false);
     }
@@ -384,6 +396,11 @@ function RegistryPicker({
       setNextCursor(res.nextCursor);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+      pushErrorToast({
+        title: "Couldn't load more registry entries",
+        error: e,
+        context: { panel: "mcp", action: "registry.loadMore", cursor: nextCursor ?? null },
+      });
     } finally {
       setLoadingMore(false);
     }

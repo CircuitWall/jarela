@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { BuiltinToolCategoryInfo } from "@/api/types";
+import { pushErrorToast } from "@/lib/ui/error-report";
 
 // Built-in tool category toggles. Each row is one category from the tool
 // registry; turning it off filters its tools out of the agent permission
@@ -32,14 +33,19 @@ const CATEGORY_BLURB: Record<string, string> = {
 export function BuiltinToolsPanel() {
   const [rows, setRows] = useState<BuiltinToolCategoryInfo[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     api.builtinTools
       .list()
       .then(setRows)
-      .catch((e: unknown) => setError(String(e)))
+      .catch((e: unknown) => {
+        pushErrorToast({
+          title: "Couldn't load built-in tools",
+          error: e,
+          context: { panel: "tools", action: "list" },
+        });
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -52,7 +58,11 @@ export function BuiltinToolsPanel() {
         prev.map((r) => (r.category === row.category ? { ...r, enabled: next } : r)),
       );
     } catch (e) {
-      setError(String(e));
+      pushErrorToast({
+        title: "Couldn't toggle built-in tool",
+        error: e,
+        context: { panel: "tools", action: "toggle", category: row.category, target_enabled: next },
+      });
     } finally {
       setBusy((b) => ({ ...b, [row.category]: false }));
     }
@@ -68,12 +78,6 @@ export function BuiltinToolsPanel() {
           if an older agent still has them in its allow-list.
         </p>
       </header>
-
-      {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 bg-red-500/5 border border-red-500/30 rounded-md px-2 py-1.5">
-          {error}
-        </div>
-      )}
 
       {loading && <p className="text-fg-faint text-sm py-3 text-center">Loading…</p>}
 

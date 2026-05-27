@@ -7,6 +7,7 @@ import { useBridgeRoutes } from "@/hooks/useBridges";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { resolveAgentModel } from "@/lib/agents/effective-model";
 import { formatRelativeOrDate } from "@/lib/utils/time";
+import { pushErrorToast } from "@/lib/ui/error-report";
 import { StatusPill } from "./BridgesPanel";
 
 /**
@@ -67,7 +68,11 @@ export function BridgeEditor({
       // Re-pairing also enables the bridge if it was off, so the QR fires.
       if (!bridge.enabled) await onToggleEnabled();
     } catch (e) {
-      alert(`Re-pair failed: ${e instanceof Error ? e.message : String(e)}`);
+      pushErrorToast({
+        title: "Couldn't re-pair bridge",
+        error: e,
+        context: { panel: "bridges", action: "bridge.rePair", bridge_id: bridge.id },
+      });
     } finally {
       setRepairing(false);
     }
@@ -562,11 +567,23 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
             agentVision={a ? agentVisionState(a) : null}
             onChangeAgent={async (agent_id) => {
               try { await update(r.id, { agent_id }); }
-              catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+              catch (e) {
+                pushErrorToast({
+                  title: "Couldn't change route's agent",
+                  error: e,
+                  context: { panel: "bridges", action: "route.changeAgent", route_id: r.id, agent_id },
+                });
+              }
             }}
             onToggleSilent={async (silent_mode) => {
               try { await update(r.id, { silent_mode }); }
-              catch (e) { alert(e instanceof Error ? e.message : String(e)); }
+              catch (e) {
+                pushErrorToast({
+                  title: "Couldn't toggle silent mode",
+                  error: e,
+                  context: { panel: "bridges", action: "route.toggleSilent", route_id: r.id, silent_mode },
+                });
+              }
             }}
             agents={agents.filter((x) => x.id === r.agent_id || !usedAgents.has(x.id))}
             visionForAgent={(x) => agentVisionState(x)}
