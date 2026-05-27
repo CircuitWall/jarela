@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/jarela",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "MIT",
   "author": "Andrew Ge Wu",
@@ -35,6 +35,7 @@
     "node": ">=22"
   },
   "files": [
+    ".next/standalone",
     "app",
     "lib",
     "components",
@@ -47,6 +48,7 @@
     "scripts/start-prod.mjs",
     "scripts/postbuild.mjs",
     "scripts/check-integration-manifests.mjs",
+    "scripts/check-npm-package.mjs",
     "scripts/install-to-system.sh",
     "scripts/install-to-system.ps1",
     "scripts/installed-launcher.ps1",
@@ -66,6 +68,7 @@
     "build": "next build --webpack && node scripts/postbuild.mjs",
     "start": "node scripts/start-prod.mjs",
     "lint": "eslint . && node scripts/check-integration-manifests.mjs",
+    "test:package": "node scripts/check-npm-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
