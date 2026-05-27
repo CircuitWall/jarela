@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
 const standalone = join(root, ".next", "standalone", "server.js");
+const installedUnderNodeModules = /[\\/]node_modules[\\/]/i.test(root);
 
 const cmd = process.argv[2];
 
@@ -80,8 +81,16 @@ if (process.env.JARELA_DISABLE_UPDATE_CHECK !== "1") {
   } catch { /* never block boot on an update check */ }
 }
 
-// Default: build if needed, then start.
+// Default: start the bundled standalone server. Source checkouts can still
+// build on demand; globally-installed npm packages must *not* try to run a
+// Next build from inside node_modules because webpack excludes that path.
 if (!existsSync(standalone)) {
+  if (installedUnderNodeModules) {
+    console.error(
+      "[jarela] packaged standalone bundle missing. This npm install cannot build in-place from node_modules. Update to a release that ships the prebuilt standalone output.",
+    );
+    process.exit(1);
+  }
   console.log("[jarela] first run — building production bundle (one-time, ~30–60 s)…");
   const r = spawnSync("npm", ["run", "build"], {
     cwd: root,
