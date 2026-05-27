@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
+import { pushErrorToast } from "@/lib/ui/error-report";
 import { WatchersSection } from "./WatchersSection";
 
 export function ScheduledTasksPanel() {
@@ -45,7 +46,11 @@ export function ScheduledTasksPanel() {
     try {
       await api.scheduledTasks.runNow(task.id);
     } catch (e) {
-      alert(`Run failed: ${e instanceof Error ? e.message : String(e)}`);
+      pushErrorToast({
+        title: "Couldn't run scheduled task",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "task.runNow", task_id: task.id },
+      });
     } finally {
       void load();
     }
@@ -205,7 +210,11 @@ function TaskCard({
                   await api.scheduledTasks.update(task.id, { enabled: !task.enabled });
                   onChanged();
                 } catch (e) {
-                  alert(`Toggle failed: ${e instanceof Error ? e.message : String(e)}`);
+                  pushErrorToast({
+                    title: "Couldn't toggle scheduled task",
+                    error: e,
+                    context: { panel: "scheduled-tasks", action: "task.toggle", task_id: task.id, target_enabled: !task.enabled },
+                  });
                 }
               }}
               className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted"
@@ -306,7 +315,11 @@ function TaskEditor({
       });
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      pushErrorToast({
+        title: "Couldn't save scheduled task",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "task.save", task_id: task.id },
+      });
     } finally {
       setSaving(false);
     }

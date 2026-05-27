@@ -7,6 +7,8 @@
 // surfaces (gear panel agent list, chat agent selector) can render their
 // own breakdowns from the same source of truth.
 import { useEffect, useState } from "react";
+// Type-only import — no runtime cycle with error-report.ts.
+import type { ErrorReportInput } from "./error-report";
 
 // Source the notification originated from — used by toasts/OS notifications
 // to label "what triggered this" so the user can tell a scheduled task ping
@@ -34,6 +36,12 @@ export interface Toast {
   created_at: number;
   // Auto-dismiss timeout in ms (0 = sticky)
   ttl: number;
+  // Full technical details (stack trace, JSON envelope) revealed by the
+  // expand chevron on error toasts. Set by pushErrorToast.
+  details?: string;
+  // When present the Toaster renders the "Report this issue" button which
+  // opens a pre-filled GitHub issue. Set by pushErrorToast.
+  reportInput?: ErrorReportInput;
 }
 
 let toasts: Toast[] = [];

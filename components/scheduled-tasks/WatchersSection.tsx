@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, Watcher } from "@/api/types";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
+import { pushErrorToast } from "@/lib/ui/error-report";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -33,7 +34,13 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
   }
   async function runNow(w: Watcher) {
     try { await api.watchers.runNow(w.id); }
-    catch (e) { alert(`Run failed: ${e instanceof Error ? e.message : String(e)}`); }
+    catch (e) {
+      pushErrorToast({
+        title: "Couldn't run watcher",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "watcher.runNow", watcher_id: w.id, label: w.label },
+      });
+    }
     finally { void load(); }
   }
 
@@ -196,7 +203,11 @@ function WatcherCard({
                   await api.watchers.update(watcher.id, { enabled: !watcher.enabled });
                   onChanged();
                 } catch (e) {
-                  alert(`Toggle failed: ${e instanceof Error ? e.message : String(e)}`);
+                  pushErrorToast({
+                    title: "Couldn't toggle watcher",
+                    error: e,
+                    context: { panel: "scheduled-tasks", action: "watcher.toggle", watcher_id: watcher.id, target_enabled: !watcher.enabled },
+                  });
                 }
               }}
               className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted"

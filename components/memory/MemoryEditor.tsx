@@ -2,6 +2,7 @@
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { MemoryItem } from "@/api/types";
+import { pushErrorToast } from "@/lib/ui/error-report";
 
 interface Props {
   item?: MemoryItem;
@@ -30,7 +31,13 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
     if (!namespace.trim() || !key.trim()) { setError("Namespace and key are required"); return; }
     setSaving(true);
     try { await onSave(namespace.trim(), key.trim(), parsed); onClose(); }
-    catch (e) { setError(String(e)); }
+    catch (e) {
+      pushErrorToast({
+        title: "Couldn't save memory entry",
+        error: e,
+        context: { panel: "memory", action: "memory.save", namespace: namespace.trim(), key: key.trim() },
+      });
+    }
     finally { setSaving(false); }
   }
 
