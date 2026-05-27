@@ -245,6 +245,18 @@ export function runMigrations(db: DatabaseSync): void {
       enabled    INTEGER NOT NULL DEFAULT 1,
       updated_at TEXT NOT NULL
     );
+    -- Aggregated per-tool telemetry used to rank/filter tools in the UI.
+    -- used_count is heuristic: a successful result whose payload appears to
+    -- feed the assistant's final response for that turn.
+    CREATE TABLE IF NOT EXISTS tool_stats (
+      tool_name      TEXT PRIMARY KEY,
+      call_count     INTEGER NOT NULL DEFAULT 0,
+      success_count  INTEGER NOT NULL DEFAULT 0,
+      error_count    INTEGER NOT NULL DEFAULT 0,
+      used_count     INTEGER NOT NULL DEFAULT 0,
+      last_called_at TEXT,
+      updated_at     TEXT NOT NULL
+    );
   `);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);

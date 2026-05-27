@@ -191,6 +191,19 @@ export interface ToolInfo {
    * under a single "Work" header. `null` (or absent) means render flat.
    */
   group?: string | null;
+  stats?: ToolUsefulnessStats;
+}
+
+export interface ToolUsefulnessStats {
+  call_count: number;
+  success_count: number;
+  error_count: number;
+  used_count: number;
+  success_rate: number;
+  usefulness_rate: number;
+  score: number;
+  never_used: boolean;
+  last_called_at: string | null;
 }
 
 /** One built-in tool category with its current enable state. */
