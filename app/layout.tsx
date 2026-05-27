@@ -2,11 +2,12 @@ import type { Metadata, Viewport } from "next";
 import { AppProvider } from "@/contexts/AppContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistration";
+import { getAppName, getAppDescription } from "@/lib/env/app-config";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Jarela",
-  description: "Jarela — local chat interface for LangGraph agents",
+  title: getAppName(),
+  description: getAppDescription(),
   manifest: "/manifest.json",
   icons: {
     icon: [

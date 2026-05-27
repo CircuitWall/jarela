@@ -13,6 +13,7 @@
 // `process.env` must call `resetConfigCache()` between cases.
 
 import { getDataDir } from "@/lib/db/data-dir";
+import { getAppName, getAppDescription, getAppIssueUrl } from "./app-config";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -31,6 +32,12 @@ export interface JarelaConfig {
   readonly voiceTimeoutMs: number;
   /** Per-request timeout for Gemini image-generation calls, ms. */
   readonly imageTimeoutMs: number;
+  /** User-visible app name. Forks override via NEXT_PUBLIC_APP_NAME. */
+  readonly appName: string;
+  /** Meta description for the HTML <head>. NEXT_PUBLIC_APP_DESCRIPTION. */
+  readonly appDescription: string;
+  /** "Report a bug" target — GitHub issues URL. NEXT_PUBLIC_APP_ISSUE_URL. */
+  readonly issueUrl: string;
 }
 
 const DEFAULTS = {
@@ -70,6 +77,9 @@ export function getConfig(): JarelaConfig {
     recursionLimit: parsePositiveInt(env.JARELA_RECURSION_LIMIT, DEFAULTS.recursionLimit),
     voiceTimeoutMs: parsePositiveInt(env.JARELA_VOICE_TIMEOUT_MS, DEFAULTS.voiceTimeoutMs),
     imageTimeoutMs: parsePositiveInt(env.JARELA_IMAGE_TIMEOUT_MS, DEFAULTS.imageTimeoutMs),
+    appName: getAppName(),
+    appDescription: getAppDescription(),
+    issueUrl: getAppIssueUrl(),
   };
   return cached;
 }

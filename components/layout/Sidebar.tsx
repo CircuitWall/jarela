@@ -1,6 +1,7 @@
 "use client";
 import { Brain, Cpu, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
+import { getAppName } from "@/lib/env/app-config";
 import type { ThreadSummary } from "@/api/types";
 
 interface Props {
@@ -22,7 +23,7 @@ export function Sidebar({ threads, onNewThread, onDeleteThread }: Props) {
     <aside className="w-64 shrink-0 flex flex-col h-full border-r border-border bg-surface-2">
       {/* Header */}
       <div className="flex items-center px-4 py-3 border-b border-border">
-        <span className="font-semibold text-fg text-sm">Jarela</span>
+        <span className="font-semibold text-fg text-sm">{getAppName()}</span>
       </div>
 
       {/* Tab bar */}
