@@ -146,6 +146,38 @@ function listIndexedDocs(sourceId: string): Map<string, IndexedDocRow> {
   return map;
 }
 
+interface UnembeddedChunkRow {
+  id: string;
+  text: string;
+}
+
+function listUnembeddedChunks(documentId: string): UnembeddedChunkRow[] {
+  return getDb()
+    .prepare(
+      `SELECT id, text
+       FROM document_chunks
+       WHERE document_id=? AND embedding IS NULL
+       ORDER BY chunk_index ASC`,
+    )
+    .all(documentId) as unknown as UnembeddedChunkRow[];
+}
+
+async function backfillDocumentEmbeddings(documentId: string): Promise<{ missing: number; embedded: number; embedError: string | null }> {
+  const rows = listUnembeddedChunks(documentId);
+  if (rows.length === 0) return { missing: 0, embedded: 0, embedError: null };
+
+  const { vectors, error } = await embedBestEffort(rows.map((r) => r.text));
+  const updateEmb = getDb().prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
+  let embedded = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const v = vectors[i];
+    if (v == null) continue;
+    updateEmb.run(JSON.stringify(v), rows[i].id);
+    embedded++;
+  }
+  return { missing: rows.length, embedded, embedError: error };
+}
+
 export async function readTextFile(abs: string): Promise<string | null> {
   let buf: Buffer;
   try { buf = await fs.readFile(abs); } catch { return null; }
@@ -200,6 +232,20 @@ export async function indexSource(
     if (processed >= maxThisRun) break;
     const existing = indexed.get(f.abs);
     if (existing && existing.mtime_ms === f.mtime_ms && existing.size_bytes === f.size) {
+      // Root-cause fix: if a file was indexed while embeddings were
+      // unavailable, unchanged files used to be skipped forever and never
+      // backfilled. Try to embed any still-null chunks on unchanged docs.
+      try {
+        const r = await backfillDocumentEmbeddings(existing.id);
+        if (r.missing > 0) {
+          embedFailed += Math.max(r.missing - r.embedded, 0);
+          if (r.embedError && !embedError) embedError = r.embedError;
+          processed++;
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        stats.errors++;
+      }
       stats.unchanged++;
       continue;
     }
@@ -216,6 +262,17 @@ export async function indexSource(
       // Mtime/size changed but content didn't — just touch the row.
       db.prepare("UPDATE documents SET mtime_ms=?, size_bytes=?, last_indexed_at=? WHERE id=?")
         .run(f.mtime_ms, f.size, new Date().toISOString(), existing.id);
+      try {
+        const r = await backfillDocumentEmbeddings(existing.id);
+        if (r.missing > 0) {
+          embedFailed += Math.max(r.missing - r.embedded, 0);
+          if (r.embedError && !embedError) embedError = r.embedError;
+          processed++;
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+        stats.errors++;
+      }
       stats.unchanged++;
       continue;
     }
