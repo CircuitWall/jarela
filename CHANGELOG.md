@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **GitHub tools — full read/write surface**: the GitHub integration grew
+  from 7 tools to 19, so the agent no longer has to fall back to the `gh`
+  CLI for the common write workflows (which is the whole reason these
+  tools exist on locked-down corp laptops). New tools cover:
+  - Issues: `github_update_issue` (close / reopen / edit / re-label),
+    `github_list_issue_comments`.
+  - Pull requests: `github_create_pull`, `github_update_pull`,
+    `github_merge_pull` (merge / squash / rebase, optional `sha` guard
+    against force-pushes), `github_request_reviewers`,
+    `github_create_review` (approve / request changes / comment),
+    `github_list_pull_files` (with truncated patches),
+    `github_list_pull_reviews`.
+  - Repo content: `github_list_branches`, `github_get_file` (UTF-8 decode
+    + binary detection + 20 KB cap), `github_search_code` (with code
+    snippets via `text-match` Accept header).
+  All tools route through the same `ghFetch` wrapper as before, so the
+  in-app HTTP proxy and custom CA bundle continue to apply.
+
 ## [0.5.1] - 2026-05-27
 
 ### Changed
