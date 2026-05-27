@@ -19,6 +19,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { isLikelyBinary } from "@/lib/documents/indexer";
 import { registerTools } from "./registry";
 
 export interface GitHubAuth {
@@ -69,10 +70,50 @@ async function ghFetch(
   return parseJsonSafe<unknown>(text, text);
 }
 
+// ── Shared helpers ─────────────────────────────────────────────────────────
+
+const BODY_CAP = 20_000;
+const COMMENT_CAP = 8_000;
+const PATCH_CAP = 8_000;
+const SNIPPET_CAP = 400;
+
+// Pure-fn body cap. Returns the same `body` field shape as the existing
+// inline ternaries in github_get_issue / github_get_pull (str + truncated
+// flag) so the agent doesn't need to handle two shapes.
+export function truncate(text: string, cap: number): { text: string; truncated: boolean } {
+  if (text.length <= cap) return { text, truncated: false };
+  return { text: text.slice(0, cap), truncated: true };
+}
+
+// `/repos/.../contents/{path}` returns a base64-encoded blob; the API also
+// returns the same response shape for directories (as an array). Decode +
+// detect binary so the agent gets useful output for text and a clear
+// not-text signal for everything else.
+export interface DecodedBlob {
+  binary: boolean;
+  text?: string;
+  size_bytes: number;
+}
+export function decodeContentsBlob(content: string, encoding: string | undefined): DecodedBlob {
+  if (!content) return { binary: false, text: "", size_bytes: 0 };
+  const b64 = encoding === "base64" ? content.replace(/\s+/g, "") : "";
+  const buf = b64 ? Buffer.from(b64, "base64") : Buffer.from(content, "utf8");
+  if (isLikelyBinary(buf)) return { binary: true, size_bytes: buf.length };
+  return { binary: false, text: buf.toString("utf8"), size_bytes: buf.length };
+}
+
 // Trim repo URLs on issue/PR responses to user-facing html_urls (the API
 // returns api.github.com/repos/... which is useless for a human).
 type GhUser = { login?: string } | null;
 type GhLabel = { name?: string };
+
+function liteUser(u: unknown): string | null {
+  return (u as GhUser)?.login ?? null;
+}
+function liteLabels(labels: unknown): string[] {
+  return (labels as GhLabel[] | undefined ?? []).map((l) => l.name).filter(Boolean) as string[];
+}
+
 type GhIssueLite = {
   number?: number;
   title?: string;
@@ -109,8 +150,8 @@ export const githubSearchIssuesTool = tool(
         state: i.state,
         is_pr: !!i.pull_request,
         url: i.html_url,
-        user: i.user?.login ?? null,
-        labels: (i.labels ?? []).map((l) => l.name).filter(Boolean),
+        user: liteUser(i.user),
+        labels: liteLabels(i.labels),
         updated_at: i.updated_at,
         comments: i.comments ?? 0,
       })),
@@ -141,24 +182,24 @@ export const githubGetIssueTool = tool(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
     ) as Record<string, unknown> & { error?: string };
     if (data.error) return JSON.stringify(data);
-    const labels = (data.labels as Array<{ name?: string }> | undefined ?? []).map((l) => l.name).filter(Boolean);
-    const assignees = (data.assignees as Array<{ login?: string }> | undefined ?? []).map((a) => a.login).filter(Boolean);
-    const body = typeof data.body === "string" ? data.body : "";
+    const assignees = (data.assignees as Array<{ login?: string }> | undefined ?? [])
+      .map((a) => a.login).filter(Boolean);
+    const cap = truncate(typeof data.body === "string" ? data.body : "", BODY_CAP);
     return JSON.stringify({
       number: data.number,
       title: data.title,
       state: data.state,
       is_pr: !!data.pull_request,
       url: data.html_url,
-      author: (data.user as { login?: string } | null)?.login ?? null,
-      labels,
+      author: liteUser(data.user),
+      labels: liteLabels(data.labels),
       assignees,
       created_at: data.created_at,
       updated_at: data.updated_at,
       closed_at: data.closed_at,
       comments: data.comments,
-      body: body.length > 20_000 ? body.slice(0, 20_000) : body,
-      truncated: body.length > 20_000,
+      body: cap.text,
+      truncated: cap.truncated,
     });
   },
   {
@@ -257,7 +298,7 @@ export const githubListPullsTool = tool(
         state: p.state,
         draft: p.draft,
         url: p.html_url,
-        user: (p.user as { login?: string } | null)?.login ?? null,
+        user: liteUser(p.user),
         head: (p.head as { ref?: string } | null)?.ref ?? null,
         base: (p.base as { ref?: string } | null)?.ref ?? null,
         created_at: p.created_at,
@@ -293,7 +334,7 @@ export const githubGetPullTool = tool(
     if (data.error) return JSON.stringify(data);
     const head = data.head as { ref?: string; sha?: string; repo?: { full_name?: string } } | null;
     const base = data.base as { ref?: string; sha?: string } | null;
-    const body = typeof data.body === "string" ? data.body : "";
+    const cap = truncate(typeof data.body === "string" ? data.body : "", BODY_CAP);
     return JSON.stringify({
       number: data.number,
       title: data.title,
@@ -303,7 +344,7 @@ export const githubGetPullTool = tool(
       mergeable: data.mergeable,           // null = GitHub still computing
       mergeable_state: data.mergeable_state,
       url: data.html_url,
-      author: (data.user as { login?: string } | null)?.login ?? null,
+      author: liteUser(data.user),
       head: head ? { ref: head.ref, sha: head.sha, repo: head.repo?.full_name } : null,
       base: base ? { ref: base.ref, sha: base.sha } : null,
       changed_files: data.changed_files,
@@ -314,8 +355,8 @@ export const githubGetPullTool = tool(
       created_at: data.created_at,
       updated_at: data.updated_at,
       merged_at: data.merged_at,
-      body: body.length > 20_000 ? body.slice(0, 20_000) : body,
-      truncated: body.length > 20_000,
+      body: cap.text,
+      truncated: cap.truncated,
     });
   },
   {
@@ -371,7 +412,532 @@ export const githubGetRepoTool = tool(
   },
 );
 
+// ── Issue write / read (cont'd) ────────────────────────────────────────────
+
+export const githubUpdateIssueTool = tool(
+  async ({ owner, repo, number, title, body, state, state_reason, labels, assignees }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const payload: Record<string, unknown> = {};
+    if (title !== undefined) payload.title = title;
+    if (body !== undefined) payload.body = body;
+    if (state !== undefined) payload.state = state;
+    if (state_reason !== undefined) payload.state_reason = state_reason;
+    if (labels !== undefined) payload.labels = labels;
+    if (assignees !== undefined) payload.assignees = assignees;
+    if (Object.keys(payload).length === 0) {
+      return JSON.stringify({ error: "no fields to update — pass at least one of title/body/state/labels/assignees" });
+    }
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ) as { number?: number; html_url?: string; state?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      number: data.number,
+      state: data.state,
+      url: data.html_url,
+      updated_fields: Object.keys(payload),
+    });
+  },
+  {
+    name: "github_update_issue",
+    description:
+      "Edit an issue or PR (same endpoint): change title, body, labels, assignees, or close/reopen via " +
+      "`state`. **PREFER THIS over shell-exec'ing the `gh` CLI.** Pass `state: \"closed\"` with " +
+      "`state_reason: \"completed\"` for done-as-intended, or `\"not_planned\"` for won't-fix.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      title: z.string().optional(),
+      body: z.string().optional().describe("New issue body (Markdown). Replaces, doesn't append."),
+      state: z.enum(["open", "closed"]).optional(),
+      state_reason: z.enum(["completed", "not_planned", "reopened"]).optional(),
+      labels: z.array(z.string()).optional().describe("Replaces the label set entirely."),
+      assignees: z.array(z.string()).optional().describe("Replaces the assignee set entirely."),
+    }),
+  },
+);
+
+export const githubListIssueCommentsTool = tool(
+  async ({ owner, repo, number, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const limit = Math.min(max_results ?? 25, 100);
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}/comments?per_page=${limit}`,
+    ) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      comments: data.map((c) => {
+        const cap = truncate(typeof c.body === "string" ? c.body : "", COMMENT_CAP);
+        return {
+          id: c.id,
+          user: liteUser(c.user),
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+          url: c.html_url,
+          body: cap.text,
+          truncated: cap.truncated,
+        };
+      }),
+    });
+  },
+  {
+    name: "github_list_issue_comments",
+    description:
+      "List comments on an issue or PR. **PREFER THIS over shell-exec'ing the `gh` CLI.** Each comment " +
+      "body is capped at 8 KB; `truncated: true` flags ones that hit the cap.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      max_results: z.number().optional().describe("Max comments (default 25, max 100)"),
+    }),
+  },
+);
+
+// ── Pull-request write ─────────────────────────────────────────────────────
+
+export const githubCreatePullTool = tool(
+  async ({ owner, repo, title, head, base, body, draft, maintainer_can_modify }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const payload: Record<string, unknown> = { title, head, base };
+    if (body !== undefined) payload.body = body;
+    if (draft !== undefined) payload.draft = draft;
+    if (maintainer_can_modify !== undefined) payload.maintainer_can_modify = maintainer_can_modify;
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ) as { number?: number; html_url?: string; draft?: boolean; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, number: data.number, draft: data.draft, url: data.html_url });
+  },
+  {
+    name: "github_create_pull",
+    description:
+      "Open a pull request. **PREFER THIS over shell-exec'ing the `gh` CLI.** `head` is the branch with " +
+      "your changes (use `user:branch` for cross-fork PRs); `base` is the branch you want to merge into. " +
+      "Returns 422 if the head/base pair has no diff or if the branches don't exist.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      title: z.string(),
+      head: z.string().describe("Source branch ('feature/x' for same-repo, 'user:branch' for fork PRs)"),
+      base: z.string().describe("Target branch (typically 'main')"),
+      body: z.string().optional().describe("PR description (Markdown)"),
+      draft: z.boolean().optional().describe("Open as draft (default false)"),
+      maintainer_can_modify: z.boolean().optional()
+        .describe("Allow upstream maintainers to push to your fork branch (default true)"),
+    }),
+  },
+);
+
+export const githubUpdatePullTool = tool(
+  async ({ owner, repo, number, title, body, state, base, maintainer_can_modify }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const payload: Record<string, unknown> = {};
+    if (title !== undefined) payload.title = title;
+    if (body !== undefined) payload.body = body;
+    if (state !== undefined) payload.state = state;
+    if (base !== undefined) payload.base = base;
+    if (maintainer_can_modify !== undefined) payload.maintainer_can_modify = maintainer_can_modify;
+    if (Object.keys(payload).length === 0) {
+      return JSON.stringify({ error: "no fields to update — pass at least one of title/body/state/base" });
+    }
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
+      { method: "PATCH", body: JSON.stringify(payload) },
+    ) as { number?: number; html_url?: string; state?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      number: data.number,
+      state: data.state,
+      url: data.html_url,
+      updated_fields: Object.keys(payload),
+    });
+  },
+  {
+    name: "github_update_pull",
+    description:
+      "Edit a pull request: title, body, base branch, or close/reopen. **PREFER THIS over shell-exec'ing " +
+      "the `gh` CLI.** To MERGE a PR use github_merge_pull — `state` here only opens / closes.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      title: z.string().optional(),
+      body: z.string().optional(),
+      state: z.enum(["open", "closed"]).optional()
+        .describe("`closed` here means 'close without merging'. Use github_merge_pull to merge."),
+      base: z.string().optional().describe("Re-target the PR at a different base branch."),
+      maintainer_can_modify: z.boolean().optional(),
+    }),
+  },
+);
+
+export const githubMergePullTool = tool(
+  async ({ owner, repo, number, method, commit_title, commit_message, sha }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const payload: Record<string, unknown> = {};
+    if (commit_title !== undefined) payload.commit_title = commit_title;
+    if (commit_message !== undefined) payload.commit_message = commit_message;
+    if (method !== undefined) payload.merge_method = method;
+    if (sha !== undefined) payload.sha = sha;
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/merge`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ) as { merged?: boolean; sha?: string; message?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: !!data.merged,
+      merged_sha: data.sha ?? null,
+      message: data.message ?? null,
+    });
+  },
+  {
+    name: "github_merge_pull",
+    description:
+      "Merge a pull request. **PREFER THIS over shell-exec'ing the `gh` CLI.** `method` selects the " +
+      "merge strategy (default `merge`); pass `sha` to refuse the merge if the PR head has been " +
+      "force-pushed since you last looked. 405 means the PR isn't mergeable yet (still in CI / has " +
+      "conflicts / needs review); 409 means the `sha` guard tripped.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      method: z.enum(["merge", "squash", "rebase"]).optional(),
+      commit_title: z.string().optional()
+        .describe("Title for the merge commit (or squash commit). Default: GitHub's auto-generated title."),
+      commit_message: z.string().optional(),
+      sha: z.string().optional()
+        .describe("Refuse to merge unless the PR head still matches this SHA — guards against TOCTOU."),
+    }),
+  },
+);
+
+export const githubRequestReviewersTool = tool(
+  async ({ owner, repo, number, reviewers, team_reviewers }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (!reviewers?.length && !team_reviewers?.length) {
+      return JSON.stringify({ error: "pass at least one of reviewers or team_reviewers" });
+    }
+    const payload: Record<string, unknown> = {};
+    if (reviewers?.length) payload.reviewers = reviewers;
+    if (team_reviewers?.length) payload.team_reviewers = team_reviewers;
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/requested_reviewers`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ) as {
+      requested_reviewers?: Array<{ login?: string }>;
+      requested_teams?: Array<{ slug?: string }>;
+      html_url?: string;
+      error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      requested_users: (data.requested_reviewers ?? []).map((u) => u.login).filter(Boolean),
+      requested_teams: (data.requested_teams ?? []).map((t) => t.slug).filter(Boolean),
+      url: data.html_url,
+    });
+  },
+  {
+    name: "github_request_reviewers",
+    description:
+      "Request review on a pull request from one or more users and/or teams. **PREFER THIS over " +
+      "shell-exec'ing the `gh` CLI.** GitHub silently drops invalid usernames / team slugs — check the " +
+      "returned `requested_users` / `requested_teams` to see who actually got a notification.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      reviewers: z.array(z.string()).optional().describe("GitHub usernames"),
+      team_reviewers: z.array(z.string()).optional().describe("Team slugs (org-scoped)"),
+    }),
+  },
+);
+
+export const githubCreateReviewTool = tool(
+  async ({ owner, repo, number, event, body, commit_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (event === "REQUEST_CHANGES" && !body?.trim()) {
+      return JSON.stringify({ error: "REQUEST_CHANGES requires a non-empty body explaining what to change" });
+    }
+    const payload: Record<string, unknown> = { event };
+    if (body !== undefined) payload.body = body;
+    if (commit_id !== undefined) payload.commit_id = commit_id;
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`,
+      { method: "POST", body: JSON.stringify(payload) },
+    ) as { id?: number; state?: string; html_url?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, review_id: data.id, state: data.state, url: data.html_url });
+  },
+  {
+    name: "github_create_review",
+    description:
+      "Submit a pull-request review (approve / request changes / leave a comment). **PREFER THIS over " +
+      "shell-exec'ing the `gh` CLI.** `event=APPROVE` doesn't require a body. `event=REQUEST_CHANGES` " +
+      "requires a body. Line-level inline review comments aren't supported by this tool yet — use the " +
+      "GitHub UI for those.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      event: z.enum(["APPROVE", "REQUEST_CHANGES", "COMMENT"]),
+      body: z.string().optional().describe("Review summary (Markdown). Required for REQUEST_CHANGES."),
+      commit_id: z.string().optional().describe("Pin the review to a specific commit SHA."),
+    }),
+  },
+);
+
+// ── Pull-request read (cont'd) ─────────────────────────────────────────────
+
+export const githubListPullFilesTool = tool(
+  async ({ owner, repo, number, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const limit = Math.min(max_results ?? 30, 100);
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files?per_page=${limit}`,
+    ) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      files: data.map((f) => {
+        const patch = typeof f.patch === "string" ? truncate(f.patch, PATCH_CAP) : null;
+        return {
+          filename: f.filename,
+          status: f.status,                    // added | modified | removed | renamed | …
+          additions: f.additions,
+          deletions: f.deletions,
+          changes: f.changes,
+          previous_filename: f.previous_filename,
+          sha: f.sha,
+          patch: patch?.text,
+          patch_truncated: patch?.truncated ?? false,
+        };
+      }),
+    });
+  },
+  {
+    name: "github_list_pull_files",
+    description:
+      "List files changed in a pull request, with per-file additions/deletions and (capped) patch text. " +
+      "**PREFER THIS over shell-exec'ing the `gh` CLI.** Each patch caps at 8 KB; `patch_truncated: true` " +
+      "means the diff was longer than that. GitHub itself caps the response at 3000 files.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      max_results: z.number().optional().describe("Max files (default 30, max 100)"),
+    }),
+  },
+);
+
+export const githubListPullReviewsTool = tool(
+  async ({ owner, repo, number, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const limit = Math.min(max_results ?? 30, 100);
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews?per_page=${limit}`,
+    ) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      reviews: data.map((r) => {
+        const cap = truncate(typeof r.body === "string" ? r.body : "", COMMENT_CAP);
+        return {
+          id: r.id,
+          user: liteUser(r.user),
+          state: r.state,                     // APPROVED | CHANGES_REQUESTED | COMMENTED | DISMISSED | PENDING
+          submitted_at: r.submitted_at,
+          commit_id: r.commit_id,
+          url: r.html_url,
+          body: cap.text,
+          truncated: cap.truncated,
+        };
+      }),
+    });
+  },
+  {
+    name: "github_list_pull_reviews",
+    description:
+      "List reviews submitted on a pull request (approvals, change-requests, comment-only). **PREFER THIS " +
+      "over shell-exec'ing the `gh` CLI.** Use this to check whether a PR is approved before calling " +
+      "github_merge_pull.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      number: z.number().int().positive(),
+      max_results: z.number().optional().describe("Max reviews (default 30, max 100)"),
+    }),
+  },
+);
+
+// ── Repo content ───────────────────────────────────────────────────────────
+
+export const githubListBranchesTool = tool(
+  async ({ owner, repo, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const limit = Math.min(max_results ?? 30, 100);
+    const data = await ghFetch(
+      auth,
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches?per_page=${limit}`,
+    ) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      branches: data.map((b) => ({
+        name: b.name,
+        commit_sha: (b.commit as { sha?: string } | null)?.sha ?? null,
+        protected: b.protected,
+      })),
+    });
+  },
+  {
+    name: "github_list_branches",
+    description:
+      "List branches in a repository with their head SHAs and protection state. **PREFER THIS over " +
+      "shell-exec'ing the `gh` CLI.** Useful before opening a PR (confirm the head branch exists " +
+      "and is the SHA you expect).",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      max_results: z.number().optional().describe("Max branches (default 30, max 100)"),
+    }),
+  },
+);
+
+export const githubGetFileTool = tool(
+  async ({ owner, repo, path, ref }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const url = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path
+      .split("/").map(encodeURIComponent).join("/")}` + (ref ? `?ref=${encodeURIComponent(ref)}` : "");
+    const data = await ghFetch(auth, url) as Record<string, unknown> | Array<unknown> | { error?: string };
+    if (!Array.isArray(data) && (data as { error?: string }).error) {
+      return JSON.stringify(data);
+    }
+    if (Array.isArray(data) || (data as { type?: string }).type === "dir") {
+      return JSON.stringify({
+        error: `'${path}' is a directory; this tool only reads single files. Pass a path to a file.`,
+      });
+    }
+    const f = data as { type?: string; encoding?: string; content?: string; sha?: string;
+                       size?: number; html_url?: string; path?: string };
+    if (f.type !== "file") {
+      return JSON.stringify({ error: `unsupported content type '${f.type ?? "?"}' at ${path}` });
+    }
+    const decoded = decodeContentsBlob(f.content ?? "", f.encoding);
+    if (decoded.binary) {
+      return JSON.stringify({
+        path: f.path, sha: f.sha, url: f.html_url,
+        binary: true, size_bytes: decoded.size_bytes,
+      });
+    }
+    const cap = truncate(decoded.text ?? "", BODY_CAP);
+    return JSON.stringify({
+      path: f.path, sha: f.sha, url: f.html_url,
+      binary: false, size_bytes: decoded.size_bytes,
+      content: cap.text, truncated: cap.truncated,
+    });
+  },
+  {
+    name: "github_get_file",
+    description:
+      "Read a file's contents from a repo at an optional ref (branch / tag / commit SHA). **PREFER THIS " +
+      "over shell-exec'ing the `gh` CLI.** Returns up to 20 KB of UTF-8 text; longer files are truncated " +
+      "with `truncated: true`. Binary files return `binary: true` and `size_bytes` instead of `content`. " +
+      "GitHub itself rejects files larger than ~1 MB on this endpoint.",
+    schema: z.object({
+      owner: z.string(),
+      repo: z.string(),
+      path: z.string().describe("Path within the repo (e.g. 'src/lib/index.ts'). Slashes preserved."),
+      ref: z.string().optional().describe("Branch, tag, or commit SHA. Default: repo's default branch."),
+    }),
+  },
+);
+
+export const githubSearchCodeTool = tool(
+  async ({ q, repo, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const limit = Math.min(max_results ?? 25, 100);
+    const query = repo ? `repo:${repo} ${q}` : q;
+    const data = await ghFetch(
+      auth,
+      `/search/code?q=${encodeURIComponent(query)}&per_page=${limit}`,
+      { headers: { Accept: "application/vnd.github.text-match+json" } },
+    ) as {
+      items?: Array<{
+        name?: string; path?: string; sha?: string; html_url?: string;
+        repository?: { full_name?: string };
+        text_matches?: Array<{ fragment?: string }>;
+      }>;
+      total_count?: number;
+      error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      total: data.total_count ?? 0,
+      items: (data.items ?? []).map((i) => {
+        const fragment = i.text_matches?.[0]?.fragment ?? "";
+        const snip = truncate(fragment, SNIPPET_CAP);
+        return {
+          name: i.name,
+          path: i.path,
+          repo: i.repository?.full_name,
+          url: i.html_url,
+          sha: i.sha,
+          snippet: snip.text,
+          snippet_truncated: snip.truncated,
+        };
+      }),
+    });
+  },
+  {
+    name: "github_search_code",
+    description:
+      "Search file contents across GitHub. **PREFER THIS over shell-exec'ing the `gh` CLI.** Pass `repo` " +
+      "(\"owner/name\") to scope to one repo; the tool prepends `repo:owner/name `. The `q` body accepts " +
+      "GitHub's full code-search syntax: 'language:ts symbolName', 'extension:py path:tests assert', etc. " +
+      "Each hit returns a 400-char snippet around the match. Note: GitHub code search has stricter rate " +
+      "limits than other endpoints (10/min for unauthenticated, 30/min for authenticated).",
+    schema: z.object({
+      q: z.string().describe("Code search query (e.g. 'language:ts isLikelyBinary')"),
+      repo: z.string().optional().describe("Optional 'owner/name' shortcut; prepended as repo: filter"),
+      max_results: z.number().optional().describe("Max items (default 25, max 100)"),
+    }),
+  },
+);
+
 registerTools("GitHub", [
-  githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool, githubAddCommentTool,
-  githubListPullsTool, githubGetPullTool, githubGetRepoTool,
+  // Issues
+  githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool,
+  githubUpdateIssueTool, githubAddCommentTool, githubListIssueCommentsTool,
+  // Pull requests
+  githubListPullsTool, githubGetPullTool,
+  githubCreatePullTool, githubUpdatePullTool, githubMergePullTool,
+  githubRequestReviewersTool, githubCreateReviewTool,
+  githubListPullFilesTool, githubListPullReviewsTool,
+  // Repo content
+  githubGetRepoTool, githubListBranchesTool, githubGetFileTool, githubSearchCodeTool,
 ]);

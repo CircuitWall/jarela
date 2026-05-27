@@ -4,8 +4,9 @@ export const githubManifest: IntegrationManifest = {
   id: "github",
   name: "GitHub",
   summary:
-    "Lets the agent search, read, create, and comment on GitHub issues and pull " +
-    "requests via the REST API. Authenticates with a Personal Access Token.",
+    "Lets the agent search, read, create, comment on, open/merge, and review GitHub issues " +
+    "and pull requests, list branches, read repo files, and search code via the REST API. " +
+    "Authenticates with a Personal Access Token.",
   category: "issue-tracker",
   prerequisites: [
     {
