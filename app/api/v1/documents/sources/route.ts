@@ -19,7 +19,14 @@ const LocalSchema = z.object({
 // ADR-0026 — remote source kinds (Jira/Confluence) share the same store
 // and indexer pipeline. A separate body shape keeps the local-folder
 // happy path identical to pre-0026.
-const REMOTE_KINDS = ["confluence_space", "confluence_cql", "jira_project", "jira_jql"] as const;
+const REMOTE_KINDS = [
+  "confluence_space",
+  "confluence_cql",
+  "jira_project",
+  "jira_jql",
+  "github_pulls",
+  "github_repo",
+] as const;
 const RemoteSchema = z.object({
   kind: z.enum(REMOTE_KINDS),
   label: z.string().min(1),
@@ -32,6 +39,8 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
     case "confluence_cql":   return `confluence-cql://${Buffer.from(String(config.cql ?? "")).toString("base64").slice(0, 32)}`;
     case "jira_project":     return `jira-project://${String(config.project_key ?? "")}`;
     case "jira_jql":         return `jira-jql://${Buffer.from(String(config.jql ?? "")).toString("base64").slice(0, 32)}`;
+    case "github_pulls":     return `github-pulls://${String(config.owner ?? "")}/${String(config.repo ?? "")}`;
+    case "github_repo":      return `github-repo://${String(config.owner ?? "")}/${String(config.repo ?? "")}`;
     default: return `remote://${kind}/${Date.now()}`;
   }
 }

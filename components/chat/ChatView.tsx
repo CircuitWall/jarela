@@ -139,7 +139,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     // Typically two rows (user + assistant) instead of the full 50-row page,
     // so handleDone is O(turn) instead of O(thread). Falls back to full
     // reload if we somehow have no anchor (fresh thread, race).
-    const cur = messagesRef.current;
+    //
+    // Anchor on the last *persisted* row, never an `opt-*` optimistic. The
+    // optimistic's created_at is from the client clock; if it skews ahead of
+    // the server, `after: anchor` would skip the just-persisted user row.
+    const cur = messagesRef.current.filter((m) => !m.id.startsWith("opt-"));
     const anchor = cur.length > 0 ? cur[cur.length - 1].created_at : undefined;
     const fetchPromise = anchor
       ? api.threads.get(threadId, { after: anchor })
@@ -150,8 +154,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       // and the persisted assistant bubble swap atomically — no gap, no
       // visual jump-back when the chat content briefly shrinks.
       if (anchor) {
-        // Append only — anything older is already on screen.
-        setMessages((prev) => appendUnique(prev, d.messages));
+        // Drop optimistic user bubbles before appending — their `opt-*` ids
+        // don't match the server-assigned ids of the persisted rows, so
+        // id-only dedupe in appendUnique would leave both copies and the
+        // user's message would render twice.
+        setMessages((prev) => appendUnique(prev.filter((m) => !m.id.startsWith("opt-")), d.messages));
       } else {
         setMessages(d.messages);
         setHasMore(d.has_more);
