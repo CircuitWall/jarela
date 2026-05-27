@@ -16,9 +16,16 @@ vi.mock("./confluence", () => ({
   indexConfluencePageById: vi.fn(async () => ({ status: "added" as const })),
   runConfluenceIndexer: vi.fn(),
 }));
+vi.mock("./github", () => ({
+  indexGithubPullByUrl: vi.fn(async () => ({ status: "added" as const })),
+  indexGithubIssueByUrl: vi.fn(async () => ({ status: "added" as const })),
+  indexGithubFileByUrl: vi.fn(async () => ({ status: "added" as const })),
+  runGithubIndexer: vi.fn(),
+}));
 
 const { indexJiraIssueByKey } = await import("./jira");
 const { indexConfluencePageById } = await import("./confluence");
+const { indexGithubPullByUrl, indexGithubIssueByUrl, indexGithubFileByUrl } = await import("./github");
 const { indexOnDemand, getOrCreateOnDemandSource } = await import("./index");
 const { deleteDocumentSource, listDocumentSources } = await import("@/lib/stores/document-sources");
 
@@ -58,6 +65,31 @@ describe("indexOnDemand input parsing", () => {
     const r = await indexOnDemand("https://acme.atlassian.net/wiki/viewpage.action?pageId=99");
     expect(r.kind).toBe("confluence");
     expect(r.identifier).toBe("99");
+  });
+
+  it("recognises a GitHub /pull/<n> URL", async () => {
+    const r = await indexOnDemand("https://github.com/octocat/hello-world/pull/42");
+    expect(r.kind).toBe("github");
+    expect(r.identifier).toBe("octocat/hello-world#42");
+    expect(indexGithubPullByUrl).toHaveBeenCalledWith(expect.any(String), "octocat", "hello-world", 42);
+  });
+
+  it("recognises a GitHub /issues/<n> URL", async () => {
+    const r = await indexOnDemand("https://github.com/octocat/hello-world/issues/7");
+    expect(r.kind).toBe("github");
+    expect(r.identifier).toBe("octocat/hello-world#7");
+    expect(indexGithubIssueByUrl).toHaveBeenCalledWith(expect.any(String), "octocat", "hello-world", 7);
+  });
+
+  it("recognises a GitHub /blob/<ref>/<path> URL and strips fragments", async () => {
+    const r = await indexOnDemand(
+      "https://github.com/octocat/hello-world/blob/main/docs/setup.md?plain=1#L4",
+    );
+    expect(r.kind).toBe("github");
+    expect(r.identifier).toBe("octocat/hello-world@main/docs/setup.md");
+    expect(indexGithubFileByUrl).toHaveBeenCalledWith(
+      expect.any(String), "octocat", "hello-world", "main", "docs/setup.md",
+    );
   });
 
   it("throws on unrecognised input", async () => {
