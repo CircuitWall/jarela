@@ -385,7 +385,9 @@ export type DocumentSourceKind =
   | "jira_project"
   | "jira_jql"
   | "github_pulls"
-  | "github_repo";
+  | "github_repo"
+  | "gmail_mail"
+  | "outlook_mail";
 
 export interface DocumentSource {
   id: string;

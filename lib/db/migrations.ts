@@ -364,7 +364,7 @@ function ensureAgentDisplayFiltersColumn(db: DatabaseSync): void {
   }
 }
 
-// ADR-0026 — remote document-RAG sources (Jira / Confluence). Extends the
+// ADR-0026 — remote document-RAG sources (Jira / Confluence / mail). Extends the
 // ADR-0024 document_sources table with a discriminator + JSON config so a
 // single store + indexer dispatcher serves both local folders and remote
 // content. Existing rows are 'local_folder' (matches pre-0026 behavior).
@@ -378,7 +378,8 @@ function ensureDocumentSourceRemoteColumns(db: DatabaseSync): void {
   }
   if (!names.has("config")) {
     // JSON-encoded per-kind config (e.g. {"space_key":"ENG"} for
-    // confluence_space, {"jql":"..."} for jira_jql). NULL for local_folder.
+    // confluence_space, {"jql":"..."} for jira_jql, {"query":"is:unread"}
+    // for gmail_mail). NULL for local_folder.
     db.exec("ALTER TABLE document_sources ADD COLUMN config TEXT");
   }
   if (!names.has("last_cursor")) {
