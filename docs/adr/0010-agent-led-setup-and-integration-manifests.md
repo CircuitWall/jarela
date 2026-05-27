@@ -228,7 +228,7 @@ before reopening the question.
 ### What stays in static UI
 
 * The first-key screen (above).
-* The Integrations panel for users who prefer clicking. Manifests
+* The Connections tab for users who prefer clicking. Manifests
   drive its rendering too — same source of truth, two front-ends.
 * Approval cards in chat for any pending action. The visual diff is
   the user's last line of defense.
@@ -282,7 +282,7 @@ before reopening the question.
 * Good, because reuses the existing approval rail — no new
   privilege surface.
 * Good, because the same manifest powers both the agent and the
-  static Integrations panel.
+  static Connections tab.
 * Bad, because authoring cost per integration.
 
 ### D. Full automation in a setup-mode session

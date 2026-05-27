@@ -42,7 +42,7 @@ network.
   users to either grant the agent destructive power or block it entirely.
 * **Auth lives in two places.** Server-deployed instances want
   env-var config (so creds don't sit in SQLite); per-user installs want
-  the in-app Integrations panel. The tool must accept both, env first.
+  the in-app Connections tab. The tool must accept both, env first.
 * **Don't pretend to be Jira Cloud.** Sharing a tool name or auth path
   would silently misroute calls. Distinct file, distinct integration
   key, distinct env var prefix.
