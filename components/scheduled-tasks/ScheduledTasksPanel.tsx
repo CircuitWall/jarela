@@ -7,6 +7,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { WatchersSection } from "./WatchersSection";
+import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -143,7 +144,7 @@ function TaskCard({
                   <span>·</span>
                   <span
                     className="inline-flex items-center gap-0.5 text-fg-faint"
-                    title="Silent: agent only replies if there is something material to surface; firings still appear in chat under the 'scheduled' filter"
+                    title="Silent: suppresses the task_completed notification and tells the agent to reply only when something material surfaces. Errors still notify."
                   >
                     <EyeOff size={10} /> silent
                   </span>
@@ -160,8 +161,20 @@ function TaskCard({
             <TaskEditor task={task} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
           ) : (
             <>
-          <Row label="Prompt">
-            <pre className="whitespace-pre-wrap break-words font-mono text-fg-muted">{task.prompt}</pre>
+          {task.reaction_kind === "agent_prompt" && (
+            <Row label="Prompt">
+              <pre className="whitespace-pre-wrap break-words font-mono text-fg-muted">{task.prompt}</pre>
+            </Row>
+          )}
+          {task.reaction_kind === "script" && (
+            <Row label="Prompt">
+              <span className="text-fg-faint italic">
+                (running script: <span className="font-mono">{task.reaction_script}</span> — no agent prompt)
+              </span>
+            </Row>
+          )}
+          <Row label="Reaction">
+            <TaskReactionEditor task={task} onChanged={onChanged} />
           </Row>
           {task.description && (
             <Row label="Description">{task.description}</Row>
@@ -250,6 +263,87 @@ function TaskCard({
             </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ADR-0032 — kind toggle + script editor for a scheduled task. The
+// agent_prompt branch is the existing `prompt` column on the task,
+// which is rendered above (or via TaskEditor); when the user switches to
+// 'script' the prompt becomes a "(running script: …)" stub.
+function TaskReactionEditor({
+  task, onChanged,
+}: {
+  task: ScheduledTask;
+  onChanged: () => void;
+}) {
+  const [switching, setSwitching] = useState(false);
+
+  async function switchKind(next: "agent_prompt" | "script") {
+    if (next === task.reaction_kind) return;
+    setSwitching(true);
+    try {
+      if (next === "script") {
+        await api.scheduledTasks.update(task.id, {
+          reaction_kind: "script",
+          reaction_script: null,
+          reaction_script_args: null,
+        });
+      } else {
+        await api.scheduledTasks.update(task.id, {
+          reaction_kind: "agent_prompt",
+          // Restore a non-empty prompt sentinel so the NOT NULL column
+          // stays populated; the user can then edit it via the TaskEditor.
+          prompt: task.prompt && task.prompt.trim() ? task.prompt : "(edit me)",
+        });
+      }
+      onChanged();
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't switch reaction kind",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "task.reaction_kind", task_id: task.id, target_kind: next },
+      });
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1">
+        <KindPill
+          active={task.reaction_kind === "agent_prompt"}
+          onClick={() => void switchKind("agent_prompt")}
+          disabled={switching}
+          title="On firing, run this task's agent with the prompt above (default)."
+        >
+          Agent prompt
+        </KindPill>
+        <KindPill
+          active={task.reaction_kind === "script"}
+          onClick={() => void switchKind("script")}
+          disabled={switching}
+          title="On firing, run a built-in reaction.* script with no LLM round-trip."
+        >
+          Script
+        </KindPill>
+      </div>
+      {task.reaction_kind === "script" && (
+        <ReactionScriptEditor
+          initialScript={task.reaction_script}
+          initialArgs={task.reaction_script_args}
+          onSave={async ({ script, args }) => {
+            await api.scheduledTasks.update(task.id, {
+              reaction_script: script,
+              reaction_script_args: args,
+            });
+            onChanged();
+          }}
+          errorContext={{ panel: "scheduled-tasks", action: "task.reaction_script", task_id: task.id }}
+          diffContext={false}
+        />
       )}
     </div>
   );
@@ -391,14 +485,14 @@ function TaskEditor({
         </label>
       </Row>
       <Row label="Silent">
-        <label className="inline-flex items-center gap-1 cursor-pointer" title="Instruct the agent to reply only when there is something material to surface (NO_REPLY answers are dropped). Useful for background polling jobs. Firings still appear in chat tagged 'scheduled' — use the chat filter toolbar to hide them from view.">
+        <label className="inline-flex items-center gap-1 cursor-pointer" title="When silent: suppresses the task_completed notification AND tells the agent to reply only when something material surfaces (NO_REPLY answers are dropped). Errors still notify so failures aren't hidden. Firings remain visible in chat tagged 'scheduled' — use the filter toolbar to hide them.">
           <input
             type="checkbox"
             checked={silent}
             onChange={(e) => setSilent(e.target.checked)}
             className="accent-sky-600"
           />
-          <span className="text-[11px]">{silent ? "reply only if material" : "always reply"}</span>
+          <span className="text-[11px]">{silent ? "muted (no notification)" : "always notify"}</span>
         </label>
       </Row>
       {error && (
