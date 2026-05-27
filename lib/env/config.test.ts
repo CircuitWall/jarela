@@ -15,6 +15,9 @@ const KEYS = [
   "JARELA_RECURSION_LIMIT",
   "JARELA_VOICE_TIMEOUT_MS",
   "JARELA_IMAGE_TIMEOUT_MS",
+  "NEXT_PUBLIC_APP_NAME",
+  "NEXT_PUBLIC_APP_DESCRIPTION",
+  "NEXT_PUBLIC_APP_ISSUE_URL",
 ] as const;
 
 describe("getConfig", () => {
@@ -44,6 +47,27 @@ describe("getConfig", () => {
     expect(c.voiceTimeoutMs).toBe(60_000);
     expect(c.imageTimeoutMs).toBe(60_000);
     expect(c.dataDir).toBe("/tmp/jarela-test-data");
+    expect(c.appName).toBe("Jarela");
+    expect(c.appDescription).toBe("Jarela — local chat interface for LangGraph agents");
+    expect(c.issueUrl).toBe("https://github.com/CircuitWall/jarela/issues/new");
+  });
+
+  it("honours NEXT_PUBLIC_APP_NAME override", () => {
+    process.env.NEXT_PUBLIC_APP_NAME = "MyFork";
+    resetConfigCache();
+    expect(getConfig().appName).toBe("MyFork");
+  });
+
+  it("honours NEXT_PUBLIC_APP_DESCRIPTION override", () => {
+    process.env.NEXT_PUBLIC_APP_DESCRIPTION = "MyFork — internal fork";
+    resetConfigCache();
+    expect(getConfig().appDescription).toBe("MyFork — internal fork");
+  });
+
+  it("honours NEXT_PUBLIC_APP_ISSUE_URL override", () => {
+    process.env.NEXT_PUBLIC_APP_ISSUE_URL = "https://example.com/issues/new";
+    resetConfigCache();
+    expect(getConfig().issueUrl).toBe("https://example.com/issues/new");
   });
 
   it("prefers JARELA_PORT over PORT", () => {

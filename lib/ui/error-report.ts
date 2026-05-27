@@ -1,13 +1,15 @@
 "use client";
 // Generalized user-facing error reporting. Wraps the toast pub/sub with an
 // expand-to-details treatment plus a one-click "Report this issue" path that
-// opens a pre-filled GitHub issue at github.com/CircuitWall/jarela. No
+// opens a pre-filled GitHub issue at the configured issue tracker. No
 // outbound network from the app — the user reviews and submits the issue
-// themselves, which keeps Jarela's no-telemetry stance intact.
+// themselves, which keeps the no-telemetry stance intact.
+//
+// Forks set NEXT_PUBLIC_APP_ISSUE_URL to redirect "Report a bug" away from
+// upstream (CircuitWall/jarela) and to their own tracker.
 
 import { pushToast } from "./toasts";
-
-const ISSUE_BASE = "https://github.com/CircuitWall/jarela/issues/new";
+import { getAppIssueUrl } from "@/lib/env/app-config";
 
 // GitHub's "new issue" URL works up to ~8KB before some clients silently drop
 // the body. Stay well under that and tell the user to copy the full report
@@ -113,7 +115,7 @@ export function buildIssueUrl(report: { title: string; body: string }): string {
     body,
     labels: "user-report",
   });
-  return `${ISSUE_BASE}?${params.toString()}`;
+  return `${getAppIssueUrl()}?${params.toString()}`;
 }
 
 // Cached app version. We fetch once on the first error, then reuse for the

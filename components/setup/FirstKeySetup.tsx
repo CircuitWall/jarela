@@ -7,6 +7,7 @@
 import { useState } from "react";
 import { CheckCircle2, ExternalLink, Loader2, ShieldCheck, XCircle } from "lucide-react";
 import { api } from "@/api/client";
+import { getAppName } from "@/lib/env/app-config";
 
 type Provider = "anthropic" | "openai" | "gemini" | "deepseek";
 
@@ -114,7 +115,7 @@ export function FirstKeySetup() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/logo-mark-transparent.png" alt="" className="h-10 w-auto" />
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Welcome to Jarela</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Welcome to {getAppName()}</h1>
             <p className="text-sm text-fg-subtle">
               One key to get started — your assistant handles the rest.
             </p>
