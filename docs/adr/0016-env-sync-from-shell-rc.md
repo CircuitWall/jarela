@@ -20,7 +20,7 @@ Should the app paper over this gap, and if so, where does the source of truth li
 
 * The installed-vs-dev divergence is the most common credential support question — invariably "but my token is in `.zshrc`, why doesn't it work?" The fix should require zero user action beyond install.
 * Credentials rotate. If the user updates `.zshrc`, the change should propagate without retyping.
-* Some users *want* to type the token in the panel and have that be authoritative. Sourcing rc on every request would silently overwrite their choice.
+* Some users *want* to type the token in the Connections tab and have that be authoritative. Sourcing rc on every request would silently overwrite their choice.
 * Cross-platform — macOS LaunchAgent, Linux systemd-user, Windows. Each has a different "user-scope env" mechanism.
 * CLAUDE.md invariants: no new daemon, no telemetry, single Next.js process, no required cloud calls. Whatever we add must run inside the existing process.
 
@@ -39,14 +39,14 @@ Chosen option: **encrypted DB cache, populated by a cross-platform probe with pe
 Each integration field gets a `source` flag in [lib/stores/integration_meta.ts](../../lib/stores/integration_meta.ts):
 
 * `"rc"` — last write came from the env-syncer. Future syncs may overwrite.
-* `"user"` — user typed the value into the Integrations panel. The syncer never touches this field again.
+* `"user"` — user typed the value into the Connections tab. The syncer never touches this field again.
 
 `saveIntegration()` flips changed fields to `"user"`. The syncer only writes fields whose flag is `"rc"` or absent. This makes rotation flow through transparently while never silently undoing a manual edit.
 
 ### Trigger points
 
 * **Boot, once per process** — [lib/db/index.ts](../../lib/db/index.ts) calls `runEnvSyncOnce()` after DB init, fire-and-forget. New installs auto-populate; rotation picks up on restart.
-* **Manual** — *Sync from environment* button in the Integrations panel ([components/integrations/IntegrationsPanel.tsx](../../components/integrations/IntegrationsPanel.tsx)) calls `POST /api/v1/env-sync`. Returns a `SyncResult` so the UI can explain *why* nothing changed (e.g. "field skipped because you edited it here").
+* **Manual** — *Sync from environment* button in the built-in integrations section of the Connections tab ([components/integrations/IntegrationsPanel.tsx](../../components/integrations/IntegrationsPanel.tsx)) calls `POST /api/v1/env-sync`. Returns a `SyncResult` so the UI can explain *why* nothing changed (e.g. "field skipped because you edited it here").
 
 ### Cross-platform probe
 
@@ -60,7 +60,7 @@ Hard-coded in [lib/env/allowlist.ts](../../lib/env/allowlist.ts) — only known 
 ### Consequences
 
 * **Good** — installed launchers work out of the box for every user who already has tokens in their dotfiles. Rotation flows through automatically on restart (or one click).
-* **Good** — manual edits in the panel are preserved — the conflict rule is explicit and auditable in the per-field `source` flag, surfaced as a "from shell" badge in the UI.
+* **Good** — manual edits in the UI are preserved — the conflict rule is explicit and auditable in the per-field `source` flag, surfaced as a "from shell" badge in the UI.
 * **Good** — cross-platform: macOS LaunchAgent, Linux systemd-user, Windows registry, dev-shell — the same code path covers all four.
 * **Good** — values stay in the existing encrypted `integrations` namespace (ADR-0005). The metadata namespace is plaintext but contains only `{source, rc_synced_at}` flags.
 * **Bad** — adds a child-process spawn at boot. Bounded by the 4 s timeout and runs once per process; failures are warnings, never fatal.
@@ -96,6 +96,6 @@ Hard-coded in [lib/env/allowlist.ts](../../lib/env/allowlist.ts) — only known 
 
 * [ADR-0005 — at-rest encryption envelope](0005-at-rest-encryption.md) — credentials live in the encrypted `integrations` namespace.
 * [ADR-0009 — in-app HTTP proxy](0009-in-app-http-proxy-configuration.md) and [ADR-0012 — proxy CA bundle](0012-proxy-ca-bundle.md) — env-then-DB precedence pattern this ADR follows.
-* [ADR-0010 — agent-led setup](0010-agent-led-setup-and-integration-manifests.md) — defines the Integrations panel UX that env-sync feeds into.
+* [ADR-0010 — agent-led setup](0010-agent-led-setup-and-integration-manifests.md) — defines the Connections-tab UX that env-sync feeds into.
 * [ADR-0015 — native GitHub tools](0015-native-github-tools.md) — the immediate beneficiary, since `GITHUB_TOKEN` is overwhelmingly an rc resident.
 * Provider API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) are intentionally out of scope: they live in `ModelConfig.params` per-model, not in the integrations store, so a 1:1 env→field mapping doesn't fit. A follow-up ADR will define a "provider defaults" namespace that env-sync can target.

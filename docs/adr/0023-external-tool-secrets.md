@@ -66,7 +66,7 @@ across the loader, a new store wrapper, one route, and a panel section.
 * Tool authors get a clean, optional addition to the contract: declare what
   you need, read it via `ctx.getSecret("api_key")`.
 * Operators get one place to configure tool credentials, mirroring the
-  existing Integrations panel.
+  existing Connections tab for built-in credentials.
 * The plaintext blast radius is unchanged from ADR-0013: anything running
   in the Jarela process can ultimately read anything else. The per-tool
   scoping of `ctx.getSecret` is a convention surfaced through the loader,
