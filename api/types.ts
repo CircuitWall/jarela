@@ -457,6 +457,10 @@ export interface DocumentReindexResult {
   };
 }
 
+export interface DocumentSettings {
+  embedding_model_config: string | null;
+}
+
 
 export interface PendingAction {
   id: string;

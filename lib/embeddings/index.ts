@@ -1,5 +1,6 @@
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getDefaultModelConfig, listModelConfigs, type ModelConfigRow } from "@/lib/stores/model-config";
+import { getEmbeddingModelConfigName } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -50,11 +51,18 @@ async function resolveEmbeddingClient(): Promise<{
     if (explicit) return explicit;
   }
 
-  // 2) default chat model if it also supports embeddings.
+  // 2) persisted app-level embedding model selection.
+  const configuredName = getEmbeddingModelConfigName();
+  if (configuredName) {
+    const configured = fromConfig(getModelConfig(configuredName));
+    if (configured) return configured;
+  }
+
+  // 3) default chat model if it also supports embeddings.
   const fromDefault = fromConfig(getDefaultModelConfig());
   if (fromDefault) return fromDefault;
 
-  // 3) installation-safe fallback: any configured model with embed support.
+  // 4) installation-safe fallback: any configured model with embed support.
   // This avoids "silent 0 embeddings forever" when default chat provider
   // (e.g. github-copilot) has no embed API but another model is configured.
   const configs = listModelConfigs();
