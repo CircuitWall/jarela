@@ -36,6 +36,7 @@ interface Props {
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
+  const autoRecoveredRef = useRef<string | null>(null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -56,6 +57,21 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
+
+  // Self-heal stale/accidental filter states that blank an entire thread.
+  // If a thread has persisted messages but every one is filtered out, users
+  // perceive this as "chat is empty". Auto-reset once per thread snapshot so
+  // content remains visible without requiring manual recovery.
+  useEffect(() => {
+    if (messages.length === 0 || streamingContent) return;
+    if (visibleMessages.length > 0) return;
+    if (hiddenCount !== messages.length) return;
+    const lastId = messages[messages.length - 1]?.id ?? "none";
+    const key = `${threadId ?? "no-thread"}:${messages.length}:${lastId}`;
+    if (autoRecoveredRef.current === key) return;
+    autoRecoveredRef.current = key;
+    reset();
+  }, [threadId, messages, visibleMessages.length, hiddenCount, streamingContent, reset]);
 
   // Surface a category chip in the toolbar only if it can actually do
   // something useful right now: scheduled_task/bridge/synthetic chips
