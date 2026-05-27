@@ -158,10 +158,11 @@ export const listReactionScriptsTool = tool(
   {
     name: "list_reaction_scripts",
     description:
-      "List the names of built-in reaction scripts available to schedule_watcher when " +
-      "reaction_kind='script'. Reaction scripts run with NO LLM round-trip on a watcher " +
-      "diff and have access to {watcher, previous, current} plus user-supplied args. " +
-      "Names are always prefixed with `reaction.` (e.g. `reaction.notify`).",
+      "List the names of built-in reaction scripts available to schedule_watcher AND " +
+      "schedule_task when reaction_kind='script'. Reaction scripts run with NO LLM round-trip " +
+      "on a firing. Watchers auto-merge {watcher, previous, current} into the script args; " +
+      "scheduled tasks auto-merge a `task` descriptor (no diff context). Names are always " +
+      "prefixed with `reaction.` (e.g. `reaction.notify`).",
     schema: z.object({}),
   },
 );
