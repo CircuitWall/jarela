@@ -6,6 +6,7 @@ import type { AgentConfig, Watcher } from "@/api/types";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
+import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -154,7 +155,7 @@ function WatcherCard({
                   <span>·</span>
                   <span
                     className="inline-flex items-center gap-0.5 text-fg-faint"
-                    title="Silent: agent only replies if the diff is material"
+                    title="Silent: suppresses the task_completed notification and tells the agent to reply only on material diffs. Errors still notify."
                   >
                     <EyeOff size={10} /> silent
                   </span>
@@ -174,6 +175,9 @@ function WatcherCard({
             <pre className="whitespace-pre-wrap break-words font-mono text-fg-muted">
               {JSON.stringify(watcher.args ?? {}, null, 2)}
             </pre>
+          </Row>
+          <Row label="Reaction">
+            <ReactionEditor watcher={watcher} onSaved={onChanged} />
           </Row>
           <Row label="Interval">
             <span>{formatInterval(watcher.interval_seconds)}</span>
@@ -261,6 +265,156 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div className="flex items-start gap-2">
       <span className="w-20 shrink-0 text-fg-faint">{label}</span>
       <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// ADR-0030 + ADR-0031. The Reaction row routes between two editors based on
+// `reaction_kind`. A kind toggle at the top swaps the column atomically via
+// PATCH (reaction_kind: ...). The store enforces the discriminated-union
+// rules — switching to 'script' clears reaction_prompt and vice versa.
+const REACTION_PROMPT_MAX = 4000;
+
+function ReactionEditor({
+  watcher, onSaved,
+}: {
+  watcher: Watcher;
+  onSaved: () => void;
+}) {
+  const [switching, setSwitching] = useState(false);
+
+  async function switchKind(next: "agent_prompt" | "script", scriptName?: string) {
+    setSwitching(true);
+    try {
+      if (next === "script") {
+        await api.watchers.update(watcher.id, {
+          reaction_kind: "script",
+          reaction_script: scriptName ?? null,
+          reaction_script_args: null,
+        });
+      } else {
+        await api.watchers.update(watcher.id, {
+          reaction_kind: "agent_prompt",
+          reaction_prompt: null,
+        });
+      }
+      onSaved();
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't switch reaction kind",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "watcher.reaction_kind", watcher_id: watcher.id, target_kind: next },
+      });
+    } finally {
+      setSwitching(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1">
+        <KindPill
+          active={watcher.reaction_kind === "agent_prompt"}
+          onClick={() => watcher.reaction_kind !== "agent_prompt" && void switchKind("agent_prompt")}
+          disabled={switching}
+          title="On change, run this watcher's agent with a custom prompt (default behaviour)."
+        >
+          Agent prompt
+        </KindPill>
+        <KindPill
+          active={watcher.reaction_kind === "script"}
+          onClick={() => watcher.reaction_kind !== "script" && void switchKind("script")}
+          disabled={switching}
+          title="On change, run a built-in reaction.* script with no LLM round-trip."
+        >
+          Script
+        </KindPill>
+      </div>
+      {watcher.reaction_kind === "script"
+        ? (
+          <ReactionScriptEditor
+            initialScript={watcher.reaction_script}
+            initialArgs={watcher.reaction_script_args}
+            onSave={async ({ script, args }) => {
+              await api.watchers.update(watcher.id, {
+                reaction_script: script,
+                reaction_script_args: args,
+              });
+              onSaved();
+            }}
+            errorContext={{ panel: "scheduled-tasks", action: "watcher.reaction_script", watcher_id: watcher.id }}
+            diffContext={true}
+          />
+        )
+        : <ReactionPromptEditor watcher={watcher} onSaved={onSaved} />}
+    </div>
+  );
+}
+
+function ReactionPromptEditor({
+  watcher, onSaved,
+}: {
+  watcher: Watcher;
+  onSaved: () => void;
+}) {
+  const initial = watcher.reaction_prompt ?? "";
+  const [value, setValue] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  // Reset local state if the watcher was refetched and the prompt
+  // changed (e.g. agent edited it via the tool while this card was open).
+  useEffect(() => { setValue(watcher.reaction_prompt ?? ""); }, [watcher.reaction_prompt]);
+  const dirty = value.trim() !== initial.trim();
+  const tooLong = value.length > REACTION_PROMPT_MAX;
+
+  async function save(next: string | null) {
+    setSaving(true);
+    try {
+      await api.watchers.update(watcher.id, { reaction_prompt: next });
+      onSaved();
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't save reaction",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "watcher.reaction_prompt", watcher_id: watcher.id },
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        rows={3}
+        placeholder="Default: summarise what changed and decide whether the user needs to know."
+        className="w-full text-[11px] font-mono rounded border border-border bg-surface-1 px-2 py-1 text-fg-muted focus:outline-none focus:border-fg-muted resize-y"
+      />
+      <div className="flex items-center gap-2 text-[10px] text-fg-faint">
+        <span className={tooLong ? "text-rose-700 dark:text-rose-400" : ""}>
+          {value.length}/{REACTION_PROMPT_MAX}
+        </span>
+        <span className="ml-auto flex gap-2">
+          {watcher.reaction_prompt !== null && (
+            <button
+              onClick={() => { setValue(""); void save(null); }}
+              disabled={saving}
+              className="px-2 py-0.5 rounded border border-border hover:text-fg hover:border-fg-muted disabled:opacity-50"
+              title="Clear the custom instruction; fall back to the default directive."
+            >
+              Reset to default
+            </button>
+          )}
+          <button
+            onClick={() => void save(value.trim() ? value : null)}
+            disabled={saving || !dirty || tooLong}
+            className="px-2 py-0.5 rounded border border-border hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </span>
+      </div>
     </div>
   );
 }

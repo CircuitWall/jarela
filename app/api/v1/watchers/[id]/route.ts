@@ -9,6 +9,14 @@ const PatchSchema = z.object({
   interval_seconds: z.number().int().min(60).optional(),
   enabled: z.boolean().optional(),
   silent: z.boolean().optional(),
+  // ADR-0030: null/empty string clears back to the default directive.
+  reaction_prompt: z.string().max(4000).nullable().optional(),
+  // ADR-0031: when reaction_kind is provided the reaction is fully replaced
+  // (the other branch's fields are forced NULL by the store). When absent,
+  // only the matching branch's field is patched. nullable() allows clearing.
+  reaction_kind: z.enum(["agent_prompt", "script"]).optional(),
+  reaction_script: z.string().nullable().optional(),
+  reaction_script_args: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Params) {

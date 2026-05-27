@@ -3,6 +3,23 @@
 // near-equivalents apart from the diff-aware fields.
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
+import {
+  normaliseReactionPrompt,
+  normaliseReactionScriptArgs,
+  resolveReaction,
+  validateReactionScript,
+  type ReactionKind,
+  type ResolvedReaction,
+} from "./reaction-shared";
+
+// Re-export so existing imports of these helpers from `@/lib/stores/watchers`
+// keep working (back-compat for tests + any historical call site).
+export {
+  normaliseReactionPrompt,
+  normaliseReactionScriptArgs,
+  validateReactionScript,
+  type ReactionKind,
+};
 
 export interface WatcherRow {
   id: string;
@@ -19,6 +36,10 @@ export interface WatcherRow {
   next_run_at: string;          // ISO
   enabled: number;              // 0 | 1
   silent: number;               // 0 | 1
+  reaction_prompt: string | null;        // ADR-0030: user-supplied directive; NULL = default
+  reaction_kind: ReactionKind;           // ADR-0031
+  reaction_script: string | null;        // ADR-0031: registry key when reaction_kind='script'
+  reaction_script_args: string | null;   // ADR-0031: JSON-encoded args bag
   created_at: string;
   updated_at: string;
 }
@@ -35,14 +56,23 @@ export function clampInterval(seconds: number): number {
   return n;
 }
 
-export function createWatcher(input: {
+export interface CreateWatcherInput {
   agent_id: string;
   label: string;
   tool_name: string;
   tool_args?: Record<string, unknown>;
   interval_seconds: number;
   silent?: boolean;
-}): WatcherRow {
+  // ADR-0030 / ADR-0031: only one reaction is active per watcher.
+  // - kind 'agent_prompt' (default): reaction_prompt is the optional directive.
+  // - kind 'script':                   reaction_script + reaction_script_args drive a script firing.
+  reaction_kind?: ReactionKind;
+  reaction_prompt?: string | null;
+  reaction_script?: string | null;
+  reaction_script_args?: Record<string, unknown> | null;
+}
+
+export function createWatcher(input: CreateWatcherInput): WatcherRow {
   const id = randomUUID();
   const t = now();
   const interval = clampInterval(input.interval_seconds);
@@ -53,15 +83,21 @@ export function createWatcher(input: {
   const next = new Date(Date.now() + interval * 1000).toISOString();
   const argsJson = JSON.stringify(input.tool_args ?? {});
   const silent = input.silent ? 1 : 0;
+  const reaction = resolveReaction(input);
   getDb()
     .prepare(
       `INSERT INTO watchers
        (id, agent_id, label, tool_name, tool_args, interval_seconds,
         last_fingerprint, last_result, last_run_at, last_fired_at, last_error,
-        next_run_at, enabled, silent, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, 1, ?, ?, ?)`,
+        next_run_at, enabled, silent, reaction_prompt,
+        reaction_kind, reaction_script, reaction_script_args,
+        created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, ?, 1, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.agent_id, input.label, input.tool_name, argsJson, interval, next, silent, t, t);
+    .run(
+      id, input.agent_id, input.label, input.tool_name, argsJson, interval, next, silent,
+      reaction.prompt, reaction.kind, reaction.script, reaction.scriptArgs, t, t,
+    );
   return {
     id,
     agent_id: input.agent_id,
@@ -77,6 +113,10 @@ export function createWatcher(input: {
     next_run_at: next,
     enabled: 1,
     silent,
+    reaction_prompt: reaction.prompt,
+    reaction_kind: reaction.kind,
+    reaction_script: reaction.script,
+    reaction_script_args: reaction.scriptArgs,
     created_at: t,
     updated_at: t,
   };
@@ -111,6 +151,15 @@ export interface UpdateWatcherInput {
   interval_seconds?: number;
   enabled?: boolean;
   silent?: boolean;
+  // ADR-0030 / ADR-0031: a PATCH may swap the reaction kind. The semantics
+  // mirror the create input — if reaction_kind is provided, the reaction is
+  // fully replaced (the other branch's fields are forced NULL). If
+  // reaction_kind is absent, only the matching field for the EXISTING kind
+  // can be updated. undefined leaves a field alone; null clears it.
+  reaction_kind?: ReactionKind;
+  reaction_prompt?: string | null;
+  reaction_script?: string | null;
+  reaction_script_args?: Record<string, unknown> | null;
 }
 
 export function updateWatcher(id: string, patch: UpdateWatcherInput): WatcherRow | null {
@@ -125,10 +174,46 @@ export function updateWatcher(id: string, patch: UpdateWatcherInput): WatcherRow
   const nextRunAt = patch.interval_seconds !== undefined
     ? new Date(Date.now() + interval * 1000).toISOString()
     : existing.next_run_at;
+
+  // Compute the reaction columns. Two cases:
+  //  1. patch.reaction_kind is set → fully resolve the patch as a new reaction.
+  //  2. patch.reaction_kind is absent → keep the existing kind, but allow the
+  //     matching branch's field to be patched (e.g. update reaction_prompt
+  //     while staying in 'agent_prompt' kind).
+  let reaction: ResolvedReaction;
+  if (patch.reaction_kind !== undefined) {
+    reaction = resolveReaction({
+      reaction_kind: patch.reaction_kind,
+      reaction_prompt: patch.reaction_prompt,
+      reaction_script: patch.reaction_script,
+      reaction_script_args: patch.reaction_script_args,
+    });
+  } else if (existing.reaction_kind === "script") {
+    const script = patch.reaction_script === undefined
+      ? existing.reaction_script
+      : (patch.reaction_script === null ? null : validateReactionScript(patch.reaction_script));
+    if (!script) {
+      throw new Error(
+        "reaction_script cannot be cleared while reaction_kind='script' — switch reaction_kind to 'agent_prompt' instead",
+      );
+    }
+    const scriptArgs = patch.reaction_script_args === undefined
+      ? existing.reaction_script_args
+      : normaliseReactionScriptArgs(patch.reaction_script_args);
+    reaction = { kind: "script", prompt: null, script, scriptArgs };
+  } else {
+    const prompt = patch.reaction_prompt === undefined
+      ? existing.reaction_prompt
+      : normaliseReactionPrompt(patch.reaction_prompt);
+    reaction = { kind: "agent_prompt", prompt, script: null, scriptArgs: null };
+  }
+
   getDb()
     .prepare(
       `UPDATE watchers
-       SET label=?, interval_seconds=?, next_run_at=?, enabled=?, silent=?, updated_at=?
+       SET label=?, interval_seconds=?, next_run_at=?, enabled=?, silent=?,
+           reaction_prompt=?, reaction_kind=?, reaction_script=?, reaction_script_args=?,
+           updated_at=?
        WHERE id=?`,
     )
     .run(
@@ -137,6 +222,10 @@ export function updateWatcher(id: string, patch: UpdateWatcherInput): WatcherRow
       nextRunAt,
       patch.enabled === undefined ? existing.enabled : (patch.enabled ? 1 : 0),
       patch.silent === undefined ? existing.silent : (patch.silent ? 1 : 0),
+      reaction.prompt,
+      reaction.kind,
+      reaction.script,
+      reaction.scriptArgs,
       t,
       id,
     );
