@@ -35,7 +35,7 @@ interface Props {
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { filters, toggle } = useMessageFilters(agentConfig?.id ?? null);
+  const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -249,11 +249,24 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
             {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
           </div>
         )}
-        {messages.length === 0 && !streamingContent && (
-        <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
-          Send a message to begin
-        </div>
-      )}
+        {visibleMessages.length === 0 && !streamingContent && (
+          <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
+            {messages.length === 0 ? (
+              <span>Send a message to begin</span>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-center px-4">
+                <span>{hiddenCount} message{hiddenCount === 1 ? " is" : "s are"} hidden by filters</span>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="text-xs px-2.5 py-1 rounded-md border border-border bg-surface-2 text-fg-muted hover:text-fg hover:bg-surface-3 transition-colors"
+                >
+                  Show all messages
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       {visibleMessages.map((msg, i) => {
         const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
         return (
