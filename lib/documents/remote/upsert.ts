@@ -8,8 +8,7 @@
 
 import { randomUUID, createHash } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { embed } from "@/lib/embeddings";
-import { chunkText } from "../chunker";
+import { chunkAndEmbedDocument } from "../indexer";
 
 export interface RemoteDocInput {
   /** Stable synthetic path, e.g. "jira://ABC-123" or "confluence://12345". */
@@ -59,6 +58,12 @@ function hashContent(text: string): string {
 
 export interface UpsertResult {
   status: "unchanged" | "added" | "updated";
+  /** Total chunks produced for this document (0 when unchanged). */
+  chunks: number;
+  /** Chunks that successfully got an embedding vector. */
+  embedded: number;
+  /** First embed error seen for this document, if any. */
+  embedError: string | null;
 }
 
 /**
@@ -80,7 +85,7 @@ export async function upsertRemoteDocument(
   if (existing && existing.content_hash === hash) {
     db.prepare("UPDATE documents SET mtime_ms=?, last_indexed_at=? WHERE id=?")
       .run(mtime, t, existing.id);
-    return { status: "unchanged" };
+    return { status: "unchanged", chunks: 0, embedded: 0, embedError: null };
   }
 
   const docId = existing?.id ?? randomUUID();
@@ -101,43 +106,13 @@ export async function upsertRemoteDocument(
     ).run(docId, sourceId, input.path, input.title, mtime, size, hash, t);
   }
 
-  const chunks = chunkText(input.text);
-  if (chunks.length === 0) {
-    db.prepare("UPDATE documents SET chunk_count=0 WHERE id=?").run(docId);
-    return { status: existing ? "updated" : "added" };
-  }
-
-  const insertChunk = db.prepare(
-    `INSERT INTO document_chunks
-     (id, document_id, chunk_index, text, start_offset, end_offset, embedding)
-     VALUES (?, ?, ?, ?, ?, ?, NULL)`,
-  );
-  const chunkIds: string[] = [];
-  for (let i = 0; i < chunks.length; i++) {
-    const id = randomUUID();
-    chunkIds.push(id);
-    insertChunk.run(id, docId, i, chunks[i].text, chunks[i].start_offset, chunks[i].end_offset);
-  }
-  db.prepare("UPDATE documents SET chunk_count=? WHERE id=?").run(chunks.length, docId);
-
-  // Best-effort embed; substring fallback covers no-provider / failure cases.
-  try {
-    const vectors = await embed(chunks.map((c) => c.text));
-    if (vectors) {
-      const updateEmb = db.prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
-      for (let i = 0; i < vectors.length; i++) {
-        updateEmb.run(JSON.stringify(vectors[i]), chunkIds[i]);
-      }
-    }
-  } catch (err) {
-    console.warn(
-      "[documents/remote] embed failed for",
-      input.path,
-      err instanceof Error ? err.message : String(err),
-    );
-  }
-
-  return { status: existing ? "updated" : "added" };
+  const r = await chunkAndEmbedDocument(docId, input.text, input.path);
+  return {
+    status: existing ? "updated" : "added",
+    chunks: r.chunks,
+    embedded: r.embedded,
+    embedError: r.embedError,
+  };
 }
 
 /**
