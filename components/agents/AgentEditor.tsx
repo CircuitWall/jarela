@@ -118,6 +118,16 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
     }
     for (const arr of buckets.values()) arr.sort((a, b) => orderOf(a[0]) - orderOf(b[0]));
 
+    for (const arr of buckets.values()) {
+      for (const entry of arr) {
+        entry[1].sort((a, b) => {
+          const scoreDiff = (b.stats?.score ?? 0) - (a.stats?.score ?? 0);
+          if (scoreDiff !== 0) return scoreDiff;
+          return a.name.localeCompare(b.name);
+        });
+      }
+    }
+
     return [...buckets.entries()]
       .sort((a, b) => (groupOrder.get(a[0]) ?? 999) - (groupOrder.get(b[0]) ?? 999))
       .map(([group, categories]) => ({ group, categories }));
@@ -620,11 +630,26 @@ function ToolCategoryBlock({
                 checked={selected.includes(t.name)}
                 onChange={() => onToggleTool(t.name)}
               />
-              <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
+              <span className="min-w-0 flex-1 flex items-center gap-1.5">
+                <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
+                  {Math.round((t.stats?.score ?? 1) * 100)}%
+                </span>
+              </span>
             </label>
           ))}
         </div>
       )}
     </div>
   );
+}
+
+function toolScoreClass(score: number): string {
+  if (score >= 0.75) {
+    return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+  if (score >= 0.5) {
+    return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  }
+  return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300";
 }

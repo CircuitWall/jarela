@@ -11,6 +11,7 @@ import {
   type DocumentSourceRow,
 } from "@/lib/stores/document-sources";
 import { runConfluenceIndexer, indexConfluencePageById } from "./confluence";
+import { runMailIndexer } from "./mail";
 import { runJiraIndexer, indexJiraIssueByKey } from "./jira";
 import {
   runGithubIndexer,
@@ -26,6 +27,7 @@ export interface RemoteIndexStats {
   updated: number;
   unchanged: number;
   errors: number;
+  removed?: number;
   /** Total chunks across this run that didn't get an embedding vector. */
   embedFailed?: number;
   /** First embed error message seen, if any. */
@@ -57,6 +59,12 @@ export async function runRemoteSource(source: DocumentSourceRow): Promise<Remote
       case "github_pulls":
       case "github_repo": {
         const s = await runGithubIndexer(source);
+        stats = s;
+        break;
+      }
+      case "gmail_mail":
+      case "outlook_mail": {
+        const s = await runMailIndexer(source);
         stats = s;
         break;
       }
