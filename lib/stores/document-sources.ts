@@ -8,12 +8,16 @@ import { getDb } from "@/lib/db";
 // (Jira projects, Confluence spaces, saved JQL/CQL, on-demand URL). `config`
 // is a JSON-encoded per-kind blob. `last_cursor` is a per-source incremental
 // watermark (used by remote indexers to do incremental syncs).
+// ADR-0029 added `github_pulls` (PRs of one repo) and `github_repo` (text
+// files on one branch of one repo).
 export type DocumentSourceKind =
   | "local_folder"
   | "confluence_space"
   | "confluence_cql"
   | "jira_project"
   | "jira_jql"
+  | "github_pulls"
+  | "github_repo"
   | "on_demand_url";
 
 export interface DocumentSourceRow {
