@@ -16,7 +16,7 @@ const LocalSchema = z.object({
   label: z.string().nullable().optional(),
 });
 
-// ADR-0026 — remote source kinds (Jira/Confluence) share the same store
+// ADR-0026 — remote source kinds (Jira/Confluence/GitHub/mail) share the same store
 // and indexer pipeline. A separate body shape keeps the local-folder
 // happy path identical to pre-0026.
 const REMOTE_KINDS = [
@@ -26,6 +26,8 @@ const REMOTE_KINDS = [
   "jira_jql",
   "github_pulls",
   "github_repo",
+  "gmail_mail",
+  "outlook_mail",
 ] as const;
 const RemoteSchema = z.object({
   kind: z.enum(REMOTE_KINDS),
@@ -34,6 +36,7 @@ const RemoteSchema = z.object({
 });
 
 function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>): string {
+  const hash = Buffer.from(JSON.stringify({ kind, config })).toString("base64").replace(/=+$/g, "").slice(0, 24);
   switch (kind) {
     case "confluence_space": return `confluence-space://${String(config.space_key ?? "")}`;
     case "confluence_cql":   return `confluence-cql://${Buffer.from(String(config.cql ?? "")).toString("base64").slice(0, 32)}`;
@@ -41,6 +44,8 @@ function syntheticPath(kind: DocumentSourceKind, config: Record<string, unknown>
     case "jira_jql":         return `jira-jql://${Buffer.from(String(config.jql ?? "")).toString("base64").slice(0, 32)}`;
     case "github_pulls":     return `github-pulls://${String(config.owner ?? "")}/${String(config.repo ?? "")}`;
     case "github_repo":      return `github-repo://${String(config.owner ?? "")}/${String(config.repo ?? "")}`;
+    case "gmail_mail":       return `gmail-mail://${hash}`;
+    case "outlook_mail":     return `outlook-mail://${hash}`;
     default: return `remote://${kind}/${Date.now()}`;
   }
 }

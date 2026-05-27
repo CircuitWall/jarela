@@ -109,9 +109,12 @@ export const outlookSearchTool = tool(
       auth,
       `/me/messages?${params.toString()}`,
       { headers: { ConsistencyLevel: "eventual" } },
-    ) as { value?: GraphMessage[]; error?: string };
+    ) as { value?: GraphMessage[]; "@odata.count"?: number; "@odata.nextLink"?: string; error?: string };
     if ("error" in data && data.error) return JSON.stringify(data);
     return JSON.stringify({
+      query,
+      total_count: data["@odata.count"] ?? null,
+      next_link: data["@odata.nextLink"] ?? null,
       messages: (data.value ?? []).map(summarizeMessage),
     });
   },
@@ -119,7 +122,8 @@ export const outlookSearchTool = tool(
     name: "outlook_search",
     description:
       "Search the user's Outlook mailbox using KQL (Microsoft's keyword query language). " +
-      "Returns message metadata (from, to, subject, received, snippet, labels). Examples: " +
+      "Returns message metadata (from, to, subject, received, snippet, labels) plus @odata.count " +
+      "and next_link when available. Examples: " +
       "'from:notifications@github.com', 'subject:invoice hasAttachment:true', " +
       "'isRead:false received>=2026-05-17'. **Use this before calling outlook_get_message** — " +
       "the snippet is often enough.",
