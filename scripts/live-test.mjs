@@ -136,6 +136,11 @@ test("tools: github_* registered under the Work group (ADR-0015)", async () => {
   const required = [
     "github_search_issues", "github_get_issue", "github_create_issue", "github_add_comment",
     "github_list_pulls", "github_get_pull", "github_get_repo",
+    "github_update_issue", "github_list_issue_comments",
+    "github_create_pull", "github_update_pull", "github_merge_pull",
+    "github_request_reviewers", "github_create_review",
+    "github_list_pull_files", "github_list_pull_reviews",
+    "github_list_branches", "github_get_file", "github_search_code",
   ];
   const byName = new Map(body.map((t) => [t.name, t]));
   for (const name of required) {
