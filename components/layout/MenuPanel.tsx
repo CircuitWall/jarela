@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Smartphone, Sun, User, Wrench } from "lucide-react";
+import { Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import type { Tab } from "@/contexts/AppContext";
@@ -33,6 +33,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   tasks: <Calendar size={13} />,
   bridges: <Smartphone size={13} />,
   profile: <User size={13} />,
+  harness: <Shapes size={13} />,
 };
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -48,6 +49,7 @@ const TAB_TITLES: Record<Tab, string> = {
   tasks: "Tasks",
   bridges: "Bridges",
   profile: "Profile",
+  harness: "Harness",
 };
 
 // Two-tier menu. "Common" surfaces the day-to-day verbs (chat, agents,
@@ -61,7 +63,7 @@ const TAB_TITLES: Record<Tab, string> = {
 // The legacy top-level "mcp" and "extensions" tabs remain wired for
 // deep-link back-compat but are hidden here.
 const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "documents", "tasks", "bridges", "profile"];
-const ADVANCED_TABS: Tab[] = ["connections", "models", "tools"];
+const ADVANCED_TABS: Tab[] = ["connections", "models", "tools", "harness"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
@@ -261,7 +263,7 @@ export function MenuPanel({
           />
         </button>
         {advancedOpen && (
-          <div className="grid grid-cols-3 gap-1.5 px-2 pb-2">
+          <div className="grid grid-cols-4 gap-1.5 px-2 pb-2">
             {ADVANCED_TABS.map(renderTabButton)}
           </div>
         )}
