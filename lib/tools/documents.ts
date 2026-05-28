@@ -13,6 +13,7 @@ import {
   createDocumentSource,
   deleteDocumentSource,
   getDocumentSource,
+  getDocumentSourceByPath,
   listDocumentSources,
   type DocumentSourceKind,
 } from "@/lib/stores/document-sources";
