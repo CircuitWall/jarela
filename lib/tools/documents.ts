@@ -4,6 +4,8 @@
 // embedded yet.
 
 import { tool } from "@langchain/core/tools";
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import { z } from "zod";
 import { registerTools } from "./registry";
 import { searchDocuments } from "@/lib/documents/search";
@@ -15,6 +17,7 @@ import {
   type DocumentSourceKind,
 } from "@/lib/stores/document-sources";
 import { indexOnDemand, runRemoteSource } from "@/lib/documents/remote";
+import { notifyTriggerHandlers } from "@/lib/triggers";
 
 export const documentsSearch = tool(
   async ({ query, limit, source_id }) => {
@@ -70,7 +73,48 @@ export const documentsListSources = tool(
   },
 );
 
-registerTools("Documents", [documentsSearch, documentsListSources]);
+export const documentsAddLocalSource = tool(
+  async ({ path: inputPath, label }) => {
+    const abs = path.resolve(inputPath);
+    try {
+      const st = await fs.stat(abs);
+      if (!st.isDirectory()) {
+        return JSON.stringify({ error: "path is not a directory" });
+      }
+    } catch {
+      return JSON.stringify({ error: "path does not exist or is unreadable" });
+    }
+    if (getDocumentSourceByPath(abs)) {
+      return JSON.stringify({ error: "source already exists for this path" });
+    }
+    try {
+      const row = createDocumentSource({ path: abs, label: label ?? null, kind: "local_folder" });
+      await notifyTriggerHandlers("source_changed");
+      return JSON.stringify({
+        ok: true,
+        id: row.id,
+        kind: row.kind,
+        path: row.path,
+        label: row.label,
+        note: "Local folders auto-reindex on file changes (fs-watch on macOS/Windows; periodic sweep fallback on Linux).",
+      });
+    } catch (e) {
+      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+    }
+  },
+  {
+    name: "documents_add_local_source",
+    description:
+      "Add a local folder as a Documents source so its files become searchable via documents_search. " +
+      "Pass any relative or absolute path; the tool resolves it to an absolute directory and validates it.",
+    schema: z.object({
+      path: z.string().min(1).describe("Local folder path to index (relative or absolute)."),
+      label: z.string().optional().describe("Optional source label shown in the Documents panel."),
+    }),
+  },
+);
+
+registerTools("Documents", [documentsSearch, documentsListSources, documentsAddLocalSource]);
 
 // ── Remote document sources (ADR-0026) ──────────────────────────────────────
 //
