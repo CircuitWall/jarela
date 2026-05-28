@@ -17,7 +17,7 @@
 //   - On demand via POST /api/v1/env-sync (returns a SyncResult so the
 //     UI can show what happened).
 
-import { ENV_ALLOWLIST, getAllEnvVarNames, type EnvFieldMapping } from "./allowlist";
+import { getEffectiveAllowlist, getAllEnvVarNames, type EnvFieldMapping } from "./allowlist";
 import { discoverEnvVars, type DiscoveredEnv } from "./discover";
 import {
   INTEGRATIONS,
@@ -96,7 +96,7 @@ async function runSync(apply: boolean): Promise<SyncResult> {
   const writesByIntegration = new Map<string, Record<string, string>>();
   const metaUpdates: Array<{ name: string; field: string; source: FieldSource }> = [];
 
-  for (const m of ENV_ALLOWLIST) {
+  for (const m of getEffectiveAllowlist()) {
     if (!isKnownIntegration(m.integration)) continue; // allowlist drift; ignore
     const cand = evaluateCandidate(m, discovered.values);
     candidates.push(cand);

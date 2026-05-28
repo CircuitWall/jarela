@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Anthropic integration card + customizable env-sync allowlist
+  (ADR-0034).** The Integrations panel now has a Claude card so the
+  Anthropic API key can live in the encrypted store like every other
+  credential, and the Anthropic provider's fallback chain reads it before
+  `process.env.ANTHROPIC_API_KEY`. Env-sync's default allowlist now
+  includes `ANTHROPIC_API_KEY`. Users can also add per-`(integration,
+  field)` env-var name aliases via a new "Aliases" editor in the panel
+  (or `PUT /api/v1/env-sync/allowlist`) — useful when dotfiles use
+  non-canonical names like `MY_GH_PAT`. Defaults always remain; overrides
+  are additive.
+- **Subprocess credential injection.** `local_exec` shells and stdio MCP
+  children now receive every env-sync-managed credential the encrypted
+  store has, layered between `process.env` and the explicit per-call /
+  per-server env override. Service-mode installs (launchd, systemd,
+  brew services) where the launching environment was empty now expose
+  the same `ANTHROPIC_API_KEY` / `GITHUB_TOKEN` / `ATLASSIAN_*` /
+  `GOOGLE_API_KEY` to subprocesses that the agent itself uses. Per-call
+  `env` (for exec) and per-server `spec.env` (for MCP) still win and
+  can be set to empty string to unset.
+
 - **Documents tooling parity for local sources**: added
   `documents_add_local_source(path, label?)` so agents can create local
   folder sources directly (with path existence/directory validation), not

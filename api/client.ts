@@ -11,6 +11,7 @@ import type {
   BridgeRouteIn,
   BridgeRoutePatch,
   ContentPart,
+  EnvAllowlistConfig,
   EnvSyncResult,
   ExtensionsListResponse,
   IntegrationsListResponse,
@@ -361,6 +362,14 @@ export const api = {
   envSync: {
     preview: () => request<EnvSyncResult>("/env-sync"),
     apply: () => request<EnvSyncResult>("/env-sync", { method: "POST", body: "{}" }),
+    allowlist: {
+      get: () => request<EnvAllowlistConfig>("/env-sync/allowlist"),
+      set: (integration: string, field: string, envVars: string[]) =>
+        request<EnvAllowlistConfig>("/env-sync/allowlist", {
+          method: "PUT",
+          body: JSON.stringify({ integration, field, envVars }),
+        }),
+    },
   },
 
   pending: {

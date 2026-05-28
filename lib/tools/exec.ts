@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
+import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
 const MAX_OUTPUT_BYTES = 8_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -47,7 +48,15 @@ function runLocalCommand(
   }
 
   const cwd = options.cwd?.trim() ? options.cwd : process.cwd();
-  const env = { ...process.env, ...options.env };
+  // Layered env. Later spreads win:
+  //   1. process.env — PATH, HOME, locale, the shell's exports
+  //   2. integration-store credentials — so a service install (launchd,
+  //      systemd) where ANTHROPIC_API_KEY etc. were never exported in the
+  //      service's environment still hands those values to subprocesses.
+  //      The encrypted store, populated by env-sync from the user's rc
+  //      or via the Integrations panel, is the canonical source.
+  //   3. options.env — explicit per-call override always wins.
+  const env = { ...process.env, ...getInjectedSubprocessEnv(), ...options.env };
 
   try {
     const output = execSync(command, {

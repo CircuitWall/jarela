@@ -35,6 +35,14 @@ export type IntegrationCategory =
 //   1. Add an entry here naming its fields and which are secrets.
 //   2. The Atlassian tool (or a future tool) reads via getIntegration().
 export const INTEGRATIONS = {
+  anthropic: {
+    label: "Anthropic (Claude)",
+    category: "llm" as IntegrationCategory,
+    description: "Used by Claude-family chat models. Get a key at console.anthropic.com → API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "sk-ant-…", secret: true, required: true },
+    ],
+  },
   atlassian: {
     label: "Atlassian (Jira + Confluence)",
     category: "issue-tracker" as IntegrationCategory,
