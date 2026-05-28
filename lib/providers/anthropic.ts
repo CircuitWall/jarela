@@ -55,12 +55,23 @@ export const anthropicProvider: ModelProvider = {
     });
 
     const systemMsg = messages.find((m) => m.role === "system");
-    const userMessages = messages.filter((m) => m.role !== "system") as Anthropic.MessageParam[];
+    const systemText = typeof systemMsg?.content === "string"
+      ? systemMsg.content
+      : (systemMsg?.content ?? [])
+          .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
+          .map((p) => p.text)
+          .join("\n");
+    const userMessages = messages
+      .filter((m) => m.role !== "system")
+      .map((m): Anthropic.MessageParam => ({
+        role: (m.role === "assistant" ? "assistant" : "user"),
+        content: toAnthropicContent(m.content),
+      }));
 
     const stream = await client.messages.stream({
       model: model_id,
       max_tokens: params.max_tokens ?? 4096,
-      system: systemMsg?.content,
+      system: systemText || undefined,
       messages: userMessages,
     });
 

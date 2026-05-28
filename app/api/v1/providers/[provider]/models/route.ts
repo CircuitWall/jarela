@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getProvider } from "@/lib/providers";
 import { listModelConfigs } from "@/lib/stores/model-config";
+import type { ProviderCatalogModel, ProviderParams } from "@/lib/providers/types";
 
 export interface CatalogModel {
   id: string;
@@ -60,8 +62,30 @@ async function fetchCatalog(provider: string): Promise<CatalogModel[]> {
     case "anthropic": return anthropicKnownModels();
     case "gemini":  return geminiKnownModels();
     case "deepseek": return deepseekKnownModels();
-    default: return [];
+    default: return fetchExternalCatalog(provider);
   }
+}
+
+async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[]> {
+  let provider;
+  try {
+    provider = getProvider(providerName);
+  } catch {
+    return [];
+  }
+  if (!provider.listModels) return [];
+
+  const cfg = listModelConfigs().find((c) => c.provider === providerName);
+  let params: ProviderParams = {};
+  if (cfg) {
+    try {
+      params = JSON.parse(cfg.params) as ProviderParams;
+    } catch {
+      params = {};
+    }
+  }
+  const models = await provider.listModels(params);
+  return models as ProviderCatalogModel[];
 }
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────

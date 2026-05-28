@@ -134,9 +134,13 @@ export const openaiProvider: ModelProvider = {
 
   async chat(model_id, messages, params): Promise<ProviderStreamResult> {
     const client = makeClient(params);
+    const mapped = messages.map((m): InvokeMessage => ({
+      role: m.role,
+      content: m.content,
+    }));
     const stream = await client.chat.completions.create({
       model: model_id,
-      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+      messages: toOpenAIMessages(mapped),
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
@@ -275,9 +279,13 @@ export function makeOpenAICompatProvider(
 
     async chat(model_id, messages, params): Promise<ProviderStreamResult> {
       const client = makeClient(params, defaultBaseURL, fixedHeaders);
+      const mapped = messages.map((m): InvokeMessage => ({
+        role: m.role,
+        content: m.content,
+      }));
       const stream = await client.chat.completions.create({
         model: model_id,
-        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+        messages: toOpenAIMessages(mapped),
         stream: true,
         temperature: params.temperature,
         max_tokens: params.max_tokens,
