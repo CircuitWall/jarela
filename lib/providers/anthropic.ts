@@ -11,6 +11,39 @@ import type {
   OpenAITool,
 } from "./types";
 
+function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {
+  const p = params as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const keys = [
+    "temperature",
+    "top_p",
+    "top_k",
+    "stop_sequences",
+    "metadata",
+    "tool_choice",
+    "service_tier",
+  ];
+  for (const k of keys) {
+    if (p[k] !== undefined) out[k] = p[k];
+  }
+  return out;
+}
+
+function appendServerTools(
+  anthropicTools: Anthropic.Tool[],
+  params: ProviderParams,
+): Anthropic.Tool[] {
+  const native = (params as Record<string, unknown>).anthropic_server_tools;
+  if (!Array.isArray(native)) return anthropicTools;
+  const merged = [...anthropicTools];
+  for (const t of native) {
+    if (t && typeof t === "object") {
+      merged.push(t as Anthropic.Tool);
+    }
+  }
+  return merged;
+}
+
 export const anthropicProvider: ModelProvider = {
   name: "anthropic",
 
@@ -22,12 +55,23 @@ export const anthropicProvider: ModelProvider = {
     });
 
     const systemMsg = messages.find((m) => m.role === "system");
-    const userMessages = messages.filter((m) => m.role !== "system") as Anthropic.MessageParam[];
+    const systemText = typeof systemMsg?.content === "string"
+      ? systemMsg.content
+      : (systemMsg?.content ?? [])
+          .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
+          .map((p) => p.text)
+          .join("\n");
+    const userMessages = messages
+      .filter((m) => m.role !== "system")
+      .map((m): Anthropic.MessageParam => ({
+        role: (m.role === "assistant" ? "assistant" : "user"),
+        content: toAnthropicContent(m.content),
+      }));
 
     const stream = await client.messages.stream({
       model: model_id,
       max_tokens: params.max_tokens ?? 4096,
-      system: systemMsg?.content,
+      system: systemText || undefined,
       messages: userMessages,
     });
 
@@ -51,7 +95,7 @@ export const anthropicProvider: ModelProvider = {
 
     const systemMsg = messages.find((m) => m.role === "system");
     const msgList = toAnthropicMessages(messages.filter((m) => m.role !== "system"));
-    const anthropicTools = toAnthropicTools(tools);
+    const anthropicTools = appendServerTools(toAnthropicTools(tools), params);
 
     const resp = await client.messages.create({
       model: model_id,
@@ -59,6 +103,8 @@ export const anthropicProvider: ModelProvider = {
       system: typeof systemMsg?.content === "string" ? systemMsg.content : undefined,
       messages: msgList,
       tools: anthropicTools,
+      ...(params.thinking ? { thinking: params.thinking } : {}),
+      ...(pickAnthropicOptions(params) as Record<string, unknown>),
     });
 
     const textContent = resp.content
@@ -87,12 +133,13 @@ export const anthropicProvider: ModelProvider = {
 
       const systemMsg = messages.find((m) => m.role === "system");
       const msgList = toAnthropicMessages(messages.filter((m) => m.role !== "system"));
-      const anthropicTools = toAnthropicTools(tools);
+      const anthropicTools = appendServerTools(toAnthropicTools(tools), params);
 
       const body: Anthropic.Messages.MessageStreamParams = {
         model: model_id,
         max_tokens: params.max_tokens ?? 4096,
         messages: msgList,
+        ...(pickAnthropicOptions(params) as Record<string, unknown>),
       };
       if (typeof systemMsg?.content === "string") body.system = systemMsg.content;
       if (anthropicTools.length > 0) body.tools = anthropicTools;

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Documents tooling parity for local sources**: added
+  `documents_add_local_source(path, label?)` so agents can create local
+  folder sources directly (with path existence/directory validation), not
+  only remote Jira/Confluence/GitHub sources. This closes the previous
+  gap where local folders had to be added manually in the Documents UI.
+
 - **Configurable app branding** — three new `NEXT_PUBLIC_*` env vars let
   forks rebrand the user-visible name, description, and bug-report URL
   without patching source. Defaults preserve the upstream "Jarela" branding
