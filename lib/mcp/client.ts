@@ -6,6 +6,7 @@ import {
   type McpHttpSpec,
   type McpStdioSpec,
 } from "@/lib/stores/mcp-servers";
+import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
 // Singleton MCP client manager. Connects to enabled servers on first access,
 // caches the resulting StructuredTools, and invalidates on configuration
@@ -175,7 +176,18 @@ function buildSubprocessEnv(userEnv: Record<string, string>): Record<string, str
     out[k] = v;
   }
 
-  // 2. Per-server spec.env layered on top — user's explicit config always
+  // 2. Inject env-sync-managed credentials from the encrypted integration
+  //    store. Service-mode installs (launchd, systemd, brew services)
+  //    start with no shell env, so ANTHROPIC_API_KEY / GITHUB_TOKEN / …
+  //    have to come from the store or downstream tools see nothing. This
+  //    layer goes after process.env so that when the store has been
+  //    refreshed by env-sync, the new value wins over a stale shell
+  //    export.
+  for (const [k, v] of Object.entries(getInjectedSubprocessEnv())) {
+    out[k] = v;
+  }
+
+  // 3. Per-server spec.env layered on top — user's explicit config always
   //    wins. Use this to (a) supply API keys, (b) pin THIS server to a
   //    specific registry without affecting the rest, or (c) unset something
   //    via empty string.
