@@ -24,6 +24,7 @@ import type {
   DocumentSource,
   DocumentSourceIn,
   DocumentSourcePatch,
+  DocumentSettings,
   DocumentHit,
   DocumentReindexResult,
   MemoryItem,
@@ -452,6 +453,9 @@ export const api = {
       if (opts?.source_id) p.set("source_id", opts.source_id);
       return request<{ query: string; hits: DocumentHit[] }>(`/documents/search?${p.toString()}`);
     },
+    getSettings: () => request<DocumentSettings>("/documents/settings"),
+    setSettings: (patch: DocumentSettings) =>
+      request<DocumentSettings>("/documents/settings", { method: "PUT", body: JSON.stringify(patch) }),
   },
 
   // Filesystem browse — backs the folder-picker dialog in the Documents

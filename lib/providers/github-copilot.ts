@@ -9,6 +9,29 @@ import type {
 import { getStoredOAuthToken } from "./github-copilot-auth";
 import { toOpenAIMessages } from "./openai";
 
+function pickGitHubCompatOptions(params: ProviderParams): Record<string, unknown> {
+  const p = params as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  const keys = [
+    "top_p",
+    "presence_penalty",
+    "frequency_penalty",
+    "stop",
+    "response_format",
+    "logprobs",
+    "top_logprobs",
+    "reasoning_effort",
+    "thinking",
+    "stream_options",
+    "user",
+    "user_id",
+  ];
+  for (const k of keys) {
+    if (p[k] !== undefined) out[k] = p[k];
+  }
+  return out;
+}
+
 interface SessionToken {
   token: string;
   expiresAt: number;
@@ -134,6 +157,7 @@ export const githubCopilotProvider: ModelProvider = {
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
     return {
       stream: (async function* () {
@@ -155,6 +179,7 @@ export const githubCopilotProvider: ModelProvider = {
       stream: false,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
     const choice = resp.choices[0];
     return {
@@ -187,6 +212,7 @@ export const githubCopilotProvider: ModelProvider = {
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
 
     for await (const chunk of stream) {
@@ -194,6 +220,9 @@ export const githubCopilotProvider: ModelProvider = {
       if (!choice) continue;
       const delta = choice.delta as Record<string, unknown>;
       if (delta.content) yield { type: "text", delta: delta.content as string };
+      if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+        yield { type: "thinking", delta: delta.reasoning_content };
+      }
       if (delta.tool_calls) {
         for (const tc of delta.tool_calls as Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>) {
           yield {
@@ -210,5 +239,15 @@ export const githubCopilotProvider: ModelProvider = {
         yield { type: "stop", reason: fr === "tool_calls" ? "tool_use" : fr === "length" ? "length" : "stop" };
       }
     }
+  },
+
+  async embed(model_id, inputs, params): Promise<number[][]> {
+    if (inputs.length === 0) return [];
+    const client = await resolvedClient(params);
+    const resp = await client.embeddings.create({
+      model: model_id,
+      input: inputs,
+    });
+    return resp.data.map((d) => d.embedding);
   },
 };

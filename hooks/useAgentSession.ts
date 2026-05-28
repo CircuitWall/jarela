@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 
-export function useAgentSession(agentId: string | null) {
+export function useAgentSession(agentId: string | null, preferredThreadId?: string | null) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,26 +23,40 @@ export function useAgentSession(agentId: string | null) {
 
     setLoading(true);
     let cancelled = false;
-    api.agents
-      .getThread(agentId)
-      .then((t) => {
+    (async () => {
+      try {
+        // If the UI explicitly selected a thread (sidebar, toast, notification),
+        // prefer it as long as it still belongs to this agent.
+        if (preferredThreadId) {
+          try {
+            const d = await api.threads.get(preferredThreadId, { limit: 1 });
+            if (cancelled) return;
+            if (d.agent_id === agentId) {
+              setThreadId(preferredThreadId);
+              return;
+            }
+          } catch {
+            // Fallback to the agent's default thread below.
+          }
+        }
+
+        const t = await api.agents.getThread(agentId);
         if (cancelled) return;
         setThreadId(t.thread_id);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (cancelled) return;
         setError(String(err));
         console.error(err);
-      })
-      .finally(() => {
+      } finally {
         if (cancelled) return;
         setLoading(false);
-      });
+      }
+    })();
 
     // Cancel late responses if the user switches agents again before this
     // fetch resolves — otherwise the older fetch can overwrite the newer one.
     return () => { cancelled = true; };
-  }, [agentId]);
+  }, [agentId, preferredThreadId]);
 
   return { threadId, loading, error };
 }

@@ -6,7 +6,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { Bot, ChevronRight, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Copy, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -642,15 +642,7 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
             const code = String(children).replace(/\n$/, "");
             if (match?.[1] === "map") return <MapEmbed payload={code} />;
             return match ? (
-              <SyntaxHighlighter
-                style={oneDark}
-                language={match[1]}
-                PreTag="div"
-                wrapLongLines
-                customStyle={{ maxWidth: "100%", overflowX: "auto" }}
-              >
-                {code}
-              </SyntaxHighlighter>
+              <CodeFence language={match[1]} code={code} />
             ) : (
               <code className="bg-surface-2 px-1 rounded text-fg-muted break-all">{code}</code>
             );
@@ -703,6 +695,43 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function CodeFence({ language, code }: { language: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = useCallback(() => {
+    void navigator.clipboard.writeText(code).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }).catch(console.error);
+  }, [code]);
+
+  return (
+    <div className="relative my-2 rounded-md overflow-hidden border border-border/60">
+      <div className="flex items-center justify-between px-2 py-1 text-[10px] bg-surface-3 text-fg-faint uppercase tracking-wide">
+        <span>{language}</span>
+        <button
+          onClick={copyCode}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/60 bg-surface-2 text-fg-muted hover:text-fg transition-colors"
+          title="Copy code"
+          aria-label="Copy code"
+        >
+          {copied ? <Check size={10} /> : <Copy size={10} />}
+          <span>{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <SyntaxHighlighter
+        style={oneDark}
+        language={language}
+        PreTag="div"
+        wrapLongLines
+        customStyle={{ margin: 0, borderRadius: 0, maxWidth: "100%", overflowX: "auto" }}
+      >
+        {code}
+      </SyntaxHighlighter>
     </div>
   );
 }
@@ -811,6 +840,16 @@ function ClickableImage({ media_type, data }: { media_type: string; data: string
   );
 }
 
+function messageTextForCopy(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content.map((part) => {
+    if (part.type === "text") return part.text;
+    if (part.type === "file") return `[File: ${part.name}]`;
+    if (part.type === "image") return `[Image: ${part.media_type}]`;
+    return "";
+  }).filter(Boolean).join("\n\n");
+}
+
 // Memoized: while a run streams, ChatView re-renders on every text_delta to
 // update the live streaming bubble. Without React.memo, every persisted
 // MessageBubble re-renders too — for a 50-message thread that's 50
@@ -861,6 +900,26 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       });
     }).catch(console.error);
   }, [messageId, threadId]);
+
+  const [copiedMessage, setCopiedMessage] = useState(false);
+  const copyMessage = useCallback(() => {
+    const text = messageTextForCopy(parsed);
+    if (!text) return;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedMessage(true);
+      setTimeout(() => setCopiedMessage(false), 1200);
+      pushToast({
+        kind: "success",
+        source: "system",
+        sourceLabel: "Chat",
+        title: "Message copied",
+        body: "Copied message content to clipboard.",
+        agent_id: null,
+        thread_id: threadId,
+        ttl: 2000,
+      });
+    }).catch(console.error);
+  }, [parsed, threadId]);
 
   // —— TTS playback ——
   // The Play button is rendered for assistant bubbles whose agent has
@@ -991,6 +1050,14 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 <Link2 size={11} />
               </button>
             )}
+            <button
+              onClick={copyMessage}
+              className="text-fg-faint hover:text-fg p-0.5 rounded"
+              title={copiedMessage ? "Copied" : "Copy message text"}
+              aria-label="Copy message text"
+            >
+              {copiedMessage ? <Check size={11} /> : <Copy size={11} />}
+            </button>
             {voiceEnabled && !streaming && ttsAbleText.trim() && (
               <button
                 onClick={() => void speak()}

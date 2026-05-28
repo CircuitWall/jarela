@@ -35,7 +35,8 @@ interface Props {
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { filters, toggle } = useMessageFilters(agentConfig?.id ?? null);
+  const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
+  const autoRecoveredRef = useRef<string | null>(null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -56,6 +57,21 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
+
+  // Self-heal stale/accidental filter states that blank an entire thread.
+  // If a thread has persisted messages but every one is filtered out, users
+  // perceive this as "chat is empty". Auto-reset once per thread snapshot so
+  // content remains visible without requiring manual recovery.
+  useEffect(() => {
+    if (messages.length === 0 || streamingContent) return;
+    if (visibleMessages.length > 0) return;
+    if (hiddenCount !== messages.length) return;
+    const lastId = messages[messages.length - 1]?.id ?? "none";
+    const key = `${threadId ?? "no-thread"}:${messages.length}:${lastId}`;
+    if (autoRecoveredRef.current === key) return;
+    autoRecoveredRef.current = key;
+    reset();
+  }, [threadId, messages, visibleMessages.length, hiddenCount, streamingContent, reset]);
 
   // Surface a category chip in the toolbar only if it can actually do
   // something useful right now: scheduled_task/bridge/synthetic chips
@@ -86,6 +102,8 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   // keeps visible content stable).
   const atBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [scrollButtonActive, setScrollButtonActive] = useState(false);
+  const hideScrollButtonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Anchor for older-message pagination. When the user scrolls near the top
   // and we call onLoadMore, we snapshot the viewport (scrollHeight + scrollTop)
@@ -133,7 +151,20 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     atBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom && messages.length > 0);
+    if (!isAtBottom && messages.length > 0) {
+      setScrollButtonActive(true);
+      if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
+      hideScrollButtonTimerRef.current = setTimeout(() => {
+        setScrollButtonActive(false);
+      }, 2200);
+    }
   }
+
+  useEffect(() => {
+    return () => {
+      if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
+    };
+  }, []);
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
   // flash the same highlight ring used by settings deep links. Re-runs when
@@ -186,6 +217,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (!el) return;
     atBottomRef.current = true;
     el.scrollTop = el.scrollHeight;
+    setShowScrollButton(false);
+    setScrollButtonActive(false);
+    if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
   }
 
   // The filter toolbar uses `position: fixed` (anchored just below the
@@ -249,11 +283,24 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
             {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
           </div>
         )}
-        {messages.length === 0 && !streamingContent && (
-        <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
-          Send a message to begin
-        </div>
-      )}
+        {visibleMessages.length === 0 && !streamingContent && (
+          <div className="flex items-center justify-center h-full text-fg-faint text-sm select-none">
+            {messages.length === 0 ? (
+              <span>Send a message to begin</span>
+            ) : (
+              <div className="flex flex-col items-center gap-2 text-center px-4">
+                <span>{hiddenCount} message{hiddenCount === 1 ? " is" : "s are"} hidden by filters</span>
+                <button
+                  type="button"
+                  onClick={reset}
+                  className="text-xs px-2.5 py-1 rounded-md border border-border bg-surface-2 text-fg-muted hover:text-fg hover:bg-surface-3 transition-colors"
+                >
+                  Show all messages
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       {visibleMessages.map((msg, i) => {
         const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
         return (
@@ -296,19 +343,27 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           <span className="text-xs italic text-fg-faint bg-surface-2 px-3 py-1 rounded-full border border-border">
             {n.text}
           </span>
-              {showScrollButton && (
-                <button
-                  onClick={scrollToBottom}
-                  className="fixed bottom-20 right-6 p-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2 duration-200 z-30"
-                  title="Scroll to latest message"
-                  aria-label="Scroll to latest message"
-                >
-                  <ArrowDown size={18} />
-                </button>
-              )}
         </div>
       ))}
       </div>
+      {showScrollButton && (
+        <button
+          onClick={scrollToBottom}
+          onMouseEnter={() => setScrollButtonActive(true)}
+          onMouseLeave={() => {
+            if (!showScrollButton) return;
+            if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
+            hideScrollButtonTimerRef.current = setTimeout(() => setScrollButtonActive(false), 1400);
+          }}
+          className={`fixed bottom-20 right-6 p-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg transition-all duration-200 z-30 ${
+            scrollButtonActive ? "opacity-100 translate-y-0" : "opacity-30 translate-y-1"
+          }`}
+          title="Scroll to latest message"
+          aria-label="Scroll to latest message"
+        >
+          <ArrowDown size={18} />
+        </button>
+      )}
     </div>
   );
 }

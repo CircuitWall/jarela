@@ -11,6 +11,29 @@ import type {
   OpenAITool,
 } from "./types";
 
+function pickOpenAICompatOptions(params: ProviderParams): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const p = params as Record<string, unknown>;
+  const keys = [
+    "top_p",
+    "presence_penalty",
+    "frequency_penalty",
+    "stop",
+    "response_format",
+    "logprobs",
+    "top_logprobs",
+    "reasoning_effort",
+    "thinking",
+    "stream_options",
+    "user",
+    "user_id",
+  ];
+  for (const k of keys) {
+    if (p[k] !== undefined) out[k] = p[k];
+  }
+  return out;
+}
+
 function makeClient(
   params: ProviderParams,
   baseURL?: string,
@@ -72,17 +95,56 @@ function toOpenAIMessages(
 // raw InvokeMessage shapes that the OpenAI SDK then rejects for images/files.
 export { toOpenAIContent, toOpenAIMessages };
 
+function ollamaOriginFromParams(params: ProviderParams): string | null {
+  const raw = typeof params.base_url === "string" ? params.base_url : "";
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+    const isOllamaPort = u.port === "11434";
+    if (!isLocal || !isOllamaPort) return null;
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return null;
+  }
+}
+
+async function tryPullOllamaModel(model_id: string, params: ProviderParams): Promise<boolean> {
+  const origin = ollamaOriginFromParams(params);
+  if (!origin) return false;
+  try {
+    const res = await fetch(`${origin}/api/pull`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: model_id, stream: false }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function isModelNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b404\b|model.*not found|unsupported.*embed/i.test(msg);
+}
+
 export const openaiProvider: ModelProvider = {
   name: "openai",
 
   async chat(model_id, messages, params): Promise<ProviderStreamResult> {
     const client = makeClient(params);
+    const mapped = messages.map((m): InvokeMessage => ({
+      role: m.role,
+      content: m.content,
+    }));
     const stream = await client.chat.completions.create({
       model: model_id,
-      messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+      messages: toOpenAIMessages(mapped),
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     return {
       stream: (async function* () {
@@ -104,6 +166,7 @@ export const openaiProvider: ModelProvider = {
       stream: false,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     const choice = resp.choices[0];
     return {
@@ -131,14 +194,29 @@ export const openaiProvider: ModelProvider = {
   },
 
   async embed(model_id, inputs, params): Promise<number[][]> {
-    return openaiEmbed(makeClient(params), model_id, inputs);
+    return openaiEmbed(makeClient(params), model_id, inputs, params);
   },
 };
 
-async function openaiEmbed(client: OpenAI, model_id: string, inputs: string[]): Promise<number[][]> {
+async function openaiEmbed(
+  client: OpenAI,
+  model_id: string,
+  inputs: string[],
+  params: ProviderParams,
+): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  const resp = await client.embeddings.create({ model: model_id, input: inputs });
-  return resp.data.map((d) => d.embedding);
+  try {
+    const resp = await client.embeddings.create({ model: model_id, input: inputs });
+    return resp.data.map((d) => d.embedding);
+  } catch (err) {
+    // Self-host ergonomics: when pointed at local Ollama and the embedding
+    // model isn't present yet, pull it on-demand and retry once.
+    if (isModelNotFoundError(err) && await tryPullOllamaModel(model_id, params)) {
+      const resp = await client.embeddings.create({ model: model_id, input: inputs });
+      return resp.data.map((d) => d.embedding);
+    }
+    throw err;
+  }
 }
 
 async function* openaiStreamInvoke(
@@ -154,6 +232,7 @@ async function* openaiStreamInvoke(
     stream: true,
     temperature: params.temperature,
     max_tokens: params.max_tokens,
+    ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
   };
   if (tools.length > 0) {
     body.tools = tools as OpenAI.Chat.ChatCompletionTool[];
@@ -200,12 +279,17 @@ export function makeOpenAICompatProvider(
 
     async chat(model_id, messages, params): Promise<ProviderStreamResult> {
       const client = makeClient(params, defaultBaseURL, fixedHeaders);
+      const mapped = messages.map((m): InvokeMessage => ({
+        role: m.role,
+        content: m.content,
+      }));
       const stream = await client.chat.completions.create({
         model: model_id,
-        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+        messages: toOpenAIMessages(mapped),
         stream: true,
         temperature: params.temperature,
         max_tokens: params.max_tokens,
+        ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       return {
         stream: (async function* () {
@@ -227,6 +311,7 @@ export function makeOpenAICompatProvider(
         stream: false,
         temperature: params.temperature,
         max_tokens: params.max_tokens,
+        ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       const choice = resp.choices[0];
       return {
@@ -254,7 +339,7 @@ export function makeOpenAICompatProvider(
     },
 
     async embed(model_id, inputs, params): Promise<number[][]> {
-      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders), model_id, inputs);
+      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders), model_id, inputs, params);
     },
   };
 }

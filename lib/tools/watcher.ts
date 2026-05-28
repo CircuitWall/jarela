@@ -162,7 +162,9 @@ export const listReactionScriptsTool = tool(
       "schedule_task when reaction_kind='script'. Reaction scripts run with NO LLM round-trip " +
       "on a firing. Watchers auto-merge {watcher, previous, current} into the script args; " +
       "scheduled tasks auto-merge a `task` descriptor (no diff context). Names are always " +
-      "prefixed with `reaction.` (e.g. `reaction.notify`).",
+      "prefixed with `reaction.` (e.g. `reaction.notify`). Internal built-in scripts outside " +
+      "the `reaction.` namespace (for example documents.reindex_local_file) are intentionally " +
+      "excluded from this list.",
     schema: z.object({}),
   },
 );

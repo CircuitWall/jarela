@@ -2,7 +2,7 @@
 import { AlertCircle, Cloud, FolderOpen, FolderSearch, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { DocumentHit, DocumentSource, DocumentSourceKind } from "@/api/types";
+import type { DocumentHit, DocumentSource, DocumentSourceKind, ModelConfig } from "@/api/types";
 import { FolderPickerDialog } from "./FolderPickerDialog";
 
 // Friendly labels + per-kind field hints. Kept inline (not a separate
@@ -54,6 +54,16 @@ export function DocumentsPanel() {
   const [sources, setSources] = useState<DocumentSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [models, setModels] = useState<ModelConfig[]>([]);
+  const [embeddingModel, setEmbeddingModel] = useState<string>("__auto__");
+  const [savingEmbeddingModel, setSavingEmbeddingModel] = useState(false);
+  const [embeddingProbe, setEmbeddingProbe] = useState<{
+    ok: boolean;
+    provider: string;
+    model_id: string;
+    dimension?: number;
+    error?: string;
+  } | null>(null);
 
   // Add-form state. `addKind` drives which other inputs are required; the
   // remote-only fields share one record because no two are needed at once.
@@ -90,7 +100,15 @@ export function DocumentsPanel() {
     setLoading(true);
     setError(null);
     try {
-      setSources(await api.documents.listSources());
+      const [sourceRows, modelRows, settings] = await Promise.all([
+        api.documents.listSources(),
+        api.models.list(),
+        api.documents.getSettings(),
+      ]);
+      setSources(sourceRows);
+      setModels(modelRows);
+      setEmbeddingModel(settings.embedding_model_config ?? "__auto__");
+      setEmbeddingProbe(settings.embedding_probe ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -99,6 +117,22 @@ export function DocumentsPanel() {
   }
 
   useEffect(() => { void load(); }, []);
+
+  async function saveEmbeddingModel(value: string) {
+    const next = value === "__auto__" ? null : value;
+    setEmbeddingModel(value);
+    setSavingEmbeddingModel(true);
+    setEmbeddingProbe(null);
+    try {
+      const updated = await api.documents.setSettings({ embedding_model_config: next });
+      setEmbeddingModel(updated.embedding_model_config ?? "__auto__");
+      setEmbeddingProbe(updated.embedding_probe ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingEmbeddingModel(false);
+    }
+  }
 
   function buildPayload(): Parameters<typeof api.documents.createSource>[0] | null {
     const label = addLabel.trim();
@@ -194,7 +228,13 @@ export function DocumentsPanel() {
   async function reindex(id: string) {
     setBusy((b) => ({ ...b, [id]: true }));
     try {
-      await api.documents.reindex(id);
+      const result = await api.documents.reindex(id);
+      if ((result.stats.embed_failed ?? 0) > 0) {
+        setError(
+          `Embedding degraded: ${result.stats.embed_failed} chunk${result.stats.embed_failed === 1 ? "" : "s"} failed to embed` +
+          (result.stats.embed_error ? ` (${result.stats.embed_error})` : ""),
+        );
+      }
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -263,6 +303,37 @@ export function DocumentsPanel() {
           {" "}<em>Atlassian</em>, GitHub PRs/repos under <em>GitHub</em>, and mail under <em>Gmail</em>/<em>Outlook</em>.
           Embedding uses your default model provider; without one, search falls back to substring match.
         </p>
+
+        <section className="space-y-2">
+          <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Embedding model</label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <select
+              value={embeddingModel}
+              onChange={(e) => { void saveEmbeddingModel(e.target.value); }}
+              disabled={savingEmbeddingModel}
+              className="px-2 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-fg disabled:opacity-60"
+            >
+              <option value="__auto__">Auto (best available)</option>
+              {models.map((m) => (
+                <option key={m.name} value={m.name}>{m.name} ({m.provider})</option>
+              ))}
+            </select>
+            <span className="text-[11px] text-fg-faint">
+              Used for document chunk embeddings. Rescan applies this to all eligible chunks.
+            </span>
+          </div>
+          {savingEmbeddingModel && (
+            <p className="text-[11px] text-fg-faint">Testing embedding model...</p>
+          )}
+          {!savingEmbeddingModel && embeddingProbe && (
+            <p className={`text-[11px] ${embeddingProbe.ok ? "text-emerald-500" : "text-red-400"}`}>
+              {embeddingProbe.ok
+                ? `Usable: ${embeddingProbe.provider}/${embeddingProbe.model_id}` +
+                  (embeddingProbe.dimension ? ` (${embeddingProbe.dimension} dims)` : "")
+                : `Not usable: ${embeddingProbe.error ?? "embedding probe failed"}`}
+            </p>
+          )}
+        </section>
 
         {/* Add new source — kind picker drives the rest of the form. */}
         <section className="space-y-2">
@@ -539,6 +610,11 @@ export function DocumentsPanel() {
                 <span>{s.stats.embedded_chunk_count} embedded</span>
                 {s.last_scan_at && <span>last scan: {new Date(s.last_scan_at).toLocaleString()}</span>}
               </div>
+              {!s.last_error && s.stats.chunk_count > 0 && s.stats.embedded_chunk_count === 0 && (
+                <div className="text-[11px] text-amber-700 dark:text-amber-400 break-words">
+                  Warning: this source has chunks but zero embeddings. Semantic recall is degraded; check default model/provider embedding support.
+                </div>
+              )}
               {s.last_error && (
                 <div className="text-[11px] text-red-600 dark:text-red-400 break-words">
                   Last error: {s.last_error}

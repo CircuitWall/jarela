@@ -1,5 +1,6 @@
 import { getProvider } from "@/lib/providers";
-import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, getDefaultModelConfig, listModelConfigs, type ModelConfigRow } from "@/lib/stores/model-config";
+import { getEmbeddingModelConfigName } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -21,23 +22,56 @@ async function resolveEmbeddingClient(): Promise<{
   modelId: string;
   params: ProviderParams;
 } | null> {
+  function fromConfig(cfg: ModelConfigRow | null): {
+    provider: ReturnType<typeof getProvider>;
+    modelId: string;
+    params: ProviderParams;
+  } | null {
+    if (!cfg) return null;
+    let params: ProviderParams;
+    try { params = JSON.parse(cfg.params) as ProviderParams; } catch { return null; }
+    const provider = getProvider(cfg.provider);
+    if (!provider.embed) return null;
+    // Default to a small embedding model for the OpenAI-compatible providers if
+    // the chat model_id was used (e.g. "gpt-4o", "claude-..."). Override via
+    // params.embedding_model_id.
+    const overridden = (params as Record<string, unknown>).embedding_model_id;
+    const modelId = typeof overridden === "string" && overridden
+      ? overridden
+      : isChatModelId(cfg.model_id)
+        ? "text-embedding-3-small"
+        : cfg.model_id;
+    return { provider, modelId, params };
+  }
+
   const explicitName = process.env.EMBEDDING_MODEL_CONFIG;
-  const cfg = explicitName ? getModelConfig(explicitName) : getDefaultModelConfig();
-  if (!cfg) return null;
-  let params: ProviderParams;
-  try { params = JSON.parse(cfg.params) as ProviderParams; } catch { return null; }
-  const provider = getProvider(cfg.provider);
-  if (!provider.embed) return null;
-  // Default to a small embedding model for the OpenAI-compatible providers if
-  // the chat model_id was used (e.g. "gpt-4o", "claude-..."). Override via
-  // params.embedding_model_id.
-  const overridden = (params as Record<string, unknown>).embedding_model_id;
-  const modelId = typeof overridden === "string" && overridden
-    ? overridden
-    : isChatModelId(cfg.model_id)
-      ? "text-embedding-3-small"
-      : cfg.model_id;
-  return { provider, modelId, params };
+  // 1) explicit embedding model name (if provided).
+  if (explicitName) {
+    const explicit = fromConfig(getModelConfig(explicitName));
+    if (explicit) return explicit;
+  }
+
+  // 2) persisted app-level embedding model selection.
+  const configuredName = getEmbeddingModelConfigName();
+  if (configuredName) {
+    const configured = fromConfig(getModelConfig(configuredName));
+    if (configured) return configured;
+  }
+
+  // 3) default chat model if it also supports embeddings.
+  const fromDefault = fromConfig(getDefaultModelConfig());
+  if (fromDefault) return fromDefault;
+
+  // 4) installation-safe fallback: any configured model with embed support.
+  // This avoids "silent 0 embeddings forever" when default chat provider
+  // (e.g. github-copilot) has no embed API but another model is configured.
+  const configs = listModelConfigs();
+  for (const cfg of configs) {
+    if (explicitName && cfg.name === explicitName) continue;
+    const candidate = fromConfig(cfg);
+    if (candidate) return candidate;
+  }
+  return null;
 }
 
 function isChatModelId(id: string): boolean {

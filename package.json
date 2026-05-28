@@ -72,6 +72,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:e2e:coverage": "c8 --all --include \"tests/e2e/**/*.ts\" --reporter=text-summary --reporter=lcov --check-coverage --lines 80 --functions 80 --branches 80 --statements 80 playwright test",
     "test:live": "node scripts/live-test.mjs",
     "test:live:full": "node scripts/live-test.mjs --llm",
     "test:live:isolated": "node scripts/live-test-isolated.mjs",
@@ -133,6 +134,7 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@vitest/coverage-v8": "^4.1.7",
+    "c8": "^10.1.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
     "vitest": "^4.1.7"

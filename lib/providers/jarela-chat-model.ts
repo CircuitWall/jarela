@@ -108,7 +108,7 @@ export class JarelaChatModel extends BaseChatModel {
 
     const providerMessages = invokeMessages
       .filter((m) => m.role !== "tool")
-      .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: String(m.content) }));
+      .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
     const { stream } = await this._provider.chat(this._modelId, providerMessages, this._params);
     let text = "";
     for await (const chunk of stream) { text += chunk; }

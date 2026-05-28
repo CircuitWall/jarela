@@ -1,9 +1,9 @@
-import type { InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
+import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
 export type { InvokeMessage, InvokeResult, OpenAITool };
 
 export interface ProviderMessage {
   role: "system" | "user" | "assistant";
-  content: string;
+  content: string | ContentPart[];
 }
 
 export interface ProviderParams {
@@ -21,12 +21,32 @@ export interface ProviderStreamResult {
   stream: AsyncIterable<string>;
 }
 
+export interface ProviderCatalogModel {
+  id: string;
+  context_length: number | null;
+  max_output_tokens: number | null;
+  hosted_on: string | null;
+  capabilities: {
+    vision: boolean;
+    tools: boolean;
+    streaming: boolean;
+    json_mode: boolean;
+    web_search: boolean;
+    audio: boolean;
+    files: boolean;
+  };
+}
+
 // Low-level events yielded by streamInvoke. Tool calls arrive as fragments
 // (start with id+name, then args_delta chunks); consumers assemble them.
 export type ProviderStreamEvent =
   | { type: "text"; delta: string }
   | { type: "thinking"; delta: string }
   | { type: "tool_call_chunk"; index: number; id?: string; name?: string; args_delta?: string }
+  | { type: "citation"; source?: string; snippet?: string; url?: string }
+  | { type: "usage"; input_tokens?: number; output_tokens?: number; total_tokens?: number }
+  | { type: "audio_chunk"; mime_type: string; data_b64: string }
+  | { type: "provider_event"; name: string; payload: unknown }
   | { type: "stop"; reason: "stop" | "tool_use" | "length" };
 
 export interface ModelProvider {
@@ -58,4 +78,6 @@ export interface ModelProvider {
     inputs: string[],
     params: ProviderParams,
   ): Promise<number[][]>;
+  // Optional model catalog provider for UI model pickers.
+  listModels?(params: ProviderParams): Promise<ProviderCatalogModel[]>;
 }

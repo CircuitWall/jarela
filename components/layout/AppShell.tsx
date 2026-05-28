@@ -31,7 +31,10 @@ import { MenuPanel } from "./MenuPanel";
 export function AppShell() {
   const { state, dispatch } = useAppContext();
   useUrlSync();
-  const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(state.activeAgentId);
+  const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
+    state.activeAgentId,
+    state.activeThreadId,
+  );
 
   const [showMenu, setShowMenu] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
