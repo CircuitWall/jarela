@@ -75,7 +75,12 @@ const SELF_CONFIG_BODY = [
   "Do NOT include real secrets in the payload — use placeholder values and ask the user to fill them in the UI before approving.",
   "  - toggle_mcp: enable/disable an installed MCP server.",
   "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
-  "  - update_agent: edit identity, instructions, or history window for an agent.",
+  "  - update_agent: edit identity, instructions, history window, or harness_id for an agent. " +
+  "Pass `harness_id` to switch which harness the agent runs under (an existing 'builtin:default' or 'custom:<uuid>'); pass null to inherit the global default.",
+  "  - upsert_harness: create or edit a CUSTOM harness preset (the behavioural scaffolding wrapped around every turn). " +
+  "Built-in harnesses ('builtin:*') are read-only — to tweak default behaviour, omit `id` and copy the sections you want as a starting point. " +
+  "Use this sparingly: identity/instructions edits via update_agent are the right tool for tone, role, and topic preferences. " +
+  "Reach for upsert_harness only when the user wants a structural change to the scaffolding the LLM sees on every turn (e.g., disable inline citation, swap the entire output-formatting section). After approval, follow up with update_agent to point an agent at the new harness id.",
   "  - start_oauth: kick off the OAuth consent flow for an integration that already has client_id/secret saved. " +
   "Payload: { integration_id }. The user approves, then a vendor consent screen opens in a new tab.",
   "  - set_provider_key: add or replace an LLM provider/model entry. Payload: { name, provider, model_id, is_default? }. " +
