@@ -542,6 +542,13 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("voice_auto_speak")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN voice_auto_speak INTEGER NOT NULL DEFAULT 1");
   }
+  // ADR-0033 — per-agent harness override. NULL = inherit the global default
+  // harness (app-settings.default_harness_id, which itself defaults to
+  // 'builtin:default'). Non-null is either a builtin id ("builtin:default")
+  // or a user-created custom id ("custom:<uuid>").
+  if (!names.has("harness_id")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN harness_id TEXT");
+  }
 }
 
 /**

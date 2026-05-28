@@ -27,6 +27,7 @@ export interface AgentConfigRow {
   voice_stt_model: string;           // Gemini multimodal model used for transcription
   voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
   display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
+  harness_id: string | null;         // ADR-0033: per-agent harness override; NULL = inherit global default
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +77,7 @@ export interface UpsertAgentInput {
   voice_name?: string;
   voice_stt_model?: string;
   voice_auto_speak?: boolean;
+  harness_id?: string | null;
 }
 
 export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
@@ -90,14 +92,22 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
   const expressiveness = input.adaptive_expressiveness ?? preset.expressiveness;
   const verbosity = input.adaptive_verbosity ?? preset.verbosity;
   if (input.is_default) db.prepare("UPDATE agent_configs SET is_default=0").run();
+  // harness_id: explicit `undefined` means "keep existing"; explicit `null`
+  // means "use the global default". Empty string is normalised to null too,
+  // matching how the AgentEditor sends "" for the inherit option.
+  const harnessId =
+    input.harness_id === undefined
+      ? (existing?.harness_id ?? null)
+      : (input.harness_id && input.harness_id.length > 0 ? input.harness_id : null);
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
          history_limit, history_window_hours, never_reply,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
+         harness_id,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -134,6 +144,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       input.voice_auto_speak === undefined
         ? (existing?.voice_auto_speak ?? 1)
         : (input.voice_auto_speak ? 1 : 0),
+      harnessId,
       created_at,
       t,
     );

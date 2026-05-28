@@ -63,10 +63,11 @@ describe("watchers store (ADR-0027)", () => {
   it("getDueWatchers returns rows whose next_run_at <= asOf and ignores disabled rows", () => {
     const a = createWatcher({ agent_id: "a", label: "a", tool_name: "t1", interval_seconds: 60 });
     const b = createWatcher({ agent_id: "a", label: "b", tool_name: "t2", interval_seconds: 60 });
-    // Force `a` to be due now by rewinding its next_run_at via update of interval.
-    // (updateWatcher recomputes next_run_at to now + interval when interval changes.)
-    // Easier: fast-forward `asOf` to next_run_at + a tick.
-    const asOf = new Date(Date.parse(a.next_run_at) + 1);
+    // Fast-forward `asOf` past whichever watcher's next_run_at is later —
+    // they're created back-to-back so the timestamps may differ by 1+ ms
+    // depending on host clock granularity (this previously flaked in CI).
+    const latestNextRun = Math.max(Date.parse(a.next_run_at), Date.parse(b.next_run_at));
+    const asOf = new Date(latestNextRun + 1);
     const due = getDueWatchers(asOf);
     expect(due.map((w) => w.id)).toContain(a.id);
     expect(due.map((w) => w.id)).toContain(b.id);

@@ -28,6 +28,10 @@ vi.mock("@/lib/stores/model-config", () => ({
     resolveEmbedClient
       ? { provider: "openai", model_id: "text-embedding-3-small", params: "{}" }
       : null,
+  // resolveEmbeddingClient falls back to scanning all configured models when
+  // the default can't embed. These tests mock the default directly, so an
+  // empty list is the right shape — no fallback row should ever match.
+  listModelConfigs: () => [],
 }));
 
 const { embedBestEffort } = await import("./index");

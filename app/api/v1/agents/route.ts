@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     voice_name?: string;
     voice_stt_model?: string;
     voice_auto_speak?: boolean;
+    harness_id?: string | null;
   };
 
   if (!body.name?.trim()) {
@@ -64,6 +65,7 @@ export async function POST(req: NextRequest) {
     voice_name: body.voice_name,
     voice_stt_model: body.voice_stt_model,
     voice_auto_speak: body.voice_auto_speak,
+    harness_id: body.harness_id,
   });
 
   return createdResponse(agentToResponse(row));

@@ -123,6 +123,8 @@ flowchart LR
     B --> I[Checkpoint Store<br/>lib/db]
     I --> J[(SQLite ~/.jarela)]
     B --> K[Memory Store<br/>lib/stores]
+    B --> HR[Harness Resolver<br/>lib/agents/harness]
+    HR --> K
     K --> CR[Crypto Envelope<br/>lib/crypto]
     CR --> J
     K --> J

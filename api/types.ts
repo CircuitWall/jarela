@@ -28,6 +28,12 @@ export interface AgentConfig {
   voice_name: string;
   voice_stt_model: string;
   voice_auto_speak: boolean;
+  /**
+   * Optional override for which behavioral harness wraps this agent's system
+   * prompt. NULL = inherit the global default. Built-in IDs are prefixed
+   * `builtin:`; user-created customs are prefixed `custom:`.
+   */
+  harness_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +60,7 @@ export interface AgentConfigIn {
   voice_name?: string;
   voice_stt_model?: string;
   voice_auto_speak?: boolean;
+  harness_id?: string | null;
 }
 
 export interface ThreadSummary {
@@ -517,6 +524,41 @@ export interface CatalogModel {
 }
 
 export type { ContentPart, MessageContent } from "@/lib/tools/types";
+
+import type {
+  Harness as _Harness,
+  HarnessSection as _HarnessSection,
+  HarnessSectionKey as _HarnessSectionKey,
+} from "@/lib/agents/harness/types";
+
+export type {
+  Harness,
+  HarnessSection,
+  HarnessSectionKey,
+} from "@/lib/agents/harness/types";
+export {
+  HARNESS_SECTION_KEYS,
+  DEFAULT_HARNESS_ID,
+  isBuiltinHarnessId,
+  SECTION_DISPLAY,
+} from "@/lib/agents/harness/types";
+
+export interface HarnessListResponse {
+  harnesses: _Harness[];
+  default_harness_id: string;
+}
+
+export interface HarnessIn {
+  name: string;
+  description?: string;
+  sections?: Partial<Record<_HarnessSectionKey, Partial<_HarnessSection>>>;
+}
+
+export interface HarnessPatch {
+  name?: string;
+  description?: string;
+  sections?: Partial<Record<_HarnessSectionKey, Partial<_HarnessSection>>>;
+}
 
 export type SSEEventType =
   | { type: "text_delta"; delta: string }

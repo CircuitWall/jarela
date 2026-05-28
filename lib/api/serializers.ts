@@ -31,6 +31,7 @@ export function agentToResponse(a: AgentConfigRow) {
     voice_name: a.voice_name,
     voice_stt_model: a.voice_stt_model,
     voice_auto_speak: !!a.voice_auto_speak,
+    harness_id: a.harness_id,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };
