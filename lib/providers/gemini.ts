@@ -79,10 +79,10 @@ function providerMessagesToGemini(messages: ProviderMessage[]): {
     .filter((m) => m.role !== "system")
     .map((m) => ({
       role: (m.role === "assistant" ? "model" : "user") as "user" | "model",
-      parts: [{ text: m.content } as GeminiPart],
+      parts: contentToGeminiParts(m.content),
     }));
   return {
-    systemInstruction: system ? { parts: [{ text: system.content }] } : undefined,
+    systemInstruction: system ? { parts: contentToGeminiParts(system.content) } : undefined,
     contents,
   };
 }
