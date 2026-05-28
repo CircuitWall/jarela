@@ -328,6 +328,24 @@ export interface EnvSyncResult {
   ts: string;
 }
 
+/** One allowlist row — env-var name(s) → an existing integration field. */
+export interface EnvAllowlistMapping {
+  envVars: string[];
+  integration: string;
+  field: string;
+}
+
+/**
+ * Allowlist API payload. `defaults` is the code-owned ENV_ALLOWLIST.
+ * `overrides` keys are `"<integration>:<field>"` pointing at the user's
+ * additional env-var aliases (defaults always remain, even if missing
+ * from the override list).
+ */
+export interface EnvAllowlistConfig {
+  defaults: EnvAllowlistMapping[];
+  overrides: Record<string, string[]>;
+}
+
 export interface ScheduledTask {
   id: string;
   agent_id: string;

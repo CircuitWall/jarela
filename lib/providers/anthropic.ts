@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ContentPart } from "@/lib/tools/types";
+import { getIntegrationRaw } from "@/lib/stores/integrations";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -10,6 +11,14 @@ import type {
   InvokeResult,
   OpenAITool,
 } from "./types";
+
+// Resolves the API key in fallback order:
+//   1. params.api_key — explicit per-call override
+//   2. integration store — value put there by the user (UI) or env-sync (rc)
+//   3. process.env.ANTHROPIC_API_KEY — last-resort process inheritance
+function resolveApiKey(params: ProviderParams): string | undefined {
+  return params.api_key ?? getIntegrationRaw("anthropic")?.api_key ?? process.env.ANTHROPIC_API_KEY;
+}
 
 function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {
   const p = params as Record<string, unknown>;
@@ -49,7 +58,7 @@ export const anthropicProvider: ModelProvider = {
 
   async chat(model_id, messages, params): Promise<ProviderStreamResult> {
     const client = new Anthropic({
-      apiKey: params.api_key ?? process.env.ANTHROPIC_API_KEY,
+      apiKey: resolveApiKey(params),
       baseURL: params.base_url,
       defaultHeaders: params.extra_headers,
     });
@@ -88,7 +97,7 @@ export const anthropicProvider: ModelProvider = {
 
   async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
     const client = new Anthropic({
-      apiKey: params.api_key ?? process.env.ANTHROPIC_API_KEY,
+      apiKey: resolveApiKey(params),
       baseURL: params.base_url,
       defaultHeaders: params.extra_headers,
     });
@@ -126,7 +135,7 @@ export const anthropicProvider: ModelProvider = {
   streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
     return (async function* () {
       const client = new Anthropic({
-        apiKey: params.api_key ?? process.env.ANTHROPIC_API_KEY,
+        apiKey: resolveApiKey(params),
         baseURL: params.base_url,
         defaultHeaders: params.extra_headers,
       });
