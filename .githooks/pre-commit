@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Pre-commit gate: mirror the CI checks that block PRs so we catch failures
+# locally before they hit the queue. Skip with `git commit --no-verify` if
+# you really need to bypass (e.g. WIP commit on a throwaway branch).
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Nothing staged → nothing to check. Lets `git commit --allow-empty` etc.
+# pass without paying the lint+typecheck+test tax.
+if git diff --cached --quiet; then
+  exit 0
+fi
+
+echo "[pre-commit] lint"
+npm run -s lint
+
+echo "[pre-commit] typecheck"
+npx -y tsc --noEmit
+
+echo "[pre-commit] unit tests"
+npm test --silent

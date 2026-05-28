@@ -18,6 +18,7 @@ import { ToolsPanel } from "@/components/tools/ToolsPanel";
 import { ConnectionsPanel } from "@/components/connections/ConnectionsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
+import { HarnessPanel } from "@/components/harness/HarnessPanel";
 import { TopProgressBar } from "@/components/ui/TopProgressBar";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
@@ -373,6 +374,11 @@ export function AppShell() {
         {mountedTabs.has("profile") && (
           <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
             <ProfilePanel />
+          </Activity>
+        )}
+        {mountedTabs.has("harness") && (
+          <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
+            <HarnessPanel />
           </Activity>
         )}
 

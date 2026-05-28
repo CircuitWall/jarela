@@ -45,6 +45,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     voice_name?: string;
     voice_stt_model?: string;
     voice_auto_speak?: boolean;
+    harness_id?: string | null;
   };
 
   const row = upsertAgentConfig({
@@ -70,6 +71,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     voice_name: body.voice_name,
     voice_stt_model: body.voice_stt_model,
     voice_auto_speak: body.voice_auto_speak,
+    harness_id: "harness_id" in body ? body.harness_id : undefined,
   });
 
   return NextResponse.json(agentToResponse(row));
