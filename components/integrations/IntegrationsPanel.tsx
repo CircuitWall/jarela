@@ -1,5 +1,5 @@
 "use client";
-import { CheckCircle2, ExternalLink, Filter, Key, Link as LinkIcon, Loader2, RefreshCw, Terminal, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, Filter, Key, Link as LinkIcon, Loader2, RefreshCw, Settings2, Terminal, Trash2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
@@ -7,6 +7,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { useAppContext } from "@/contexts/AppContext";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { NetworkSection } from "./NetworkSection";
+import { EnvAliasEditor } from "./EnvAliasEditor";
 
 const SECRET_MASK = "********";
 
@@ -27,6 +28,7 @@ export function IntegrationsPanel() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [aliasEditorOpen, setAliasEditorOpen] = useState(false);
   const [preset, setPreset] = useState<UserProfile["preset"]>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("connections", "integration", containerRef);
@@ -117,6 +119,14 @@ export function IntegrationsPanel() {
           </button>
         )}
         <button
+          onClick={() => setAliasEditorOpen((v) => !v)}
+          title="Add additional env-var name aliases that env-sync should look for, per integration field."
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3"
+        >
+          <Settings2 size={11} />
+          Aliases
+        </button>
+        <button
           onClick={syncFromEnv}
           disabled={syncing}
           title="Pull standard credential env vars (GITHUB_TOKEN, ATLASSIAN_API_TOKEN, …) from your shell rc / Windows User env. Fields you've edited here are never overwritten."
@@ -136,6 +146,12 @@ export function IntegrationsPanel() {
               <XCircle size={12} />
             </button>
           </div>
+        )}
+        {aliasEditorOpen && (
+          <EnvAliasEditor
+            onClose={() => setAliasEditorOpen(false)}
+            onSaved={() => { /* re-sync happens on next click of Sync button; nothing to refresh here */ }}
+          />
         )}
         <NetworkSection />
         {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
