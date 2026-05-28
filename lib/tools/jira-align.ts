@@ -450,6 +450,120 @@ export const jiraAlignAddCommentTool = tool(
   },
 );
 
+// ── Hierarchy entities (read-only listing — ADR-0035) ──────────────────────
+//
+// Jira Align organizes work-items inside a hierarchy of programs, teams,
+// releases, sprints (PIs), portfolios, and value streams. The work-item tools
+// above return ids for those entities (programId, teamId, etc.) but until now
+// the agent had no way to resolve those ids to names without a manual lookup.
+// These two tools fill that gap. They mirror TYPE_TO_COLLECTION's discipline:
+// reject unknown entity_type up front, route to the right /<collection>.
+
+const ENTITY_TO_COLLECTION: Record<string, string> = {
+  program: "programs",
+  team: "teams",
+  release: "releases",
+  sprint: "sprints",
+  portfolio: "portfolios",
+  value_stream: "valueStreams",
+};
+const KNOWN_ENTITIES = Object.keys(ENTITY_TO_COLLECTION) as ReadonlyArray<keyof typeof ENTITY_TO_COLLECTION>;
+const ENTITY_ENUM = z.enum(KNOWN_ENTITIES as [string, ...string[]]);
+
+function entityCollectionFor(entity_type: string): string | { error: string } {
+  const seg = ENTITY_TO_COLLECTION[entity_type.toLowerCase()];
+  if (!seg) {
+    return {
+      error: `unknown Jira Align entity_type "${entity_type}". Expected one of: ${KNOWN_ENTITIES.join(", ")}.`,
+    };
+  }
+  return seg;
+}
+
+function summarizeEntity(
+  entity_type: string,
+  data: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    id: data.id,
+    entity_type,
+    name: data.name ?? data.title ?? null,
+    description: data.description ?? null,
+    state: data.state ?? data.status ?? null,
+    parent_id: data.parentId ?? data.parentID ?? null,
+    program_id: data.programId ?? data.programID ?? null,
+    portfolio_id: data.portfolioId ?? data.portfolioID ?? null,
+    start_date: data.startDate ?? null,
+    end_date: data.endDate ?? null,
+    active: data.isActive ?? data.active ?? null,
+  };
+}
+
+export const jiraAlignListEntitiesTool = tool(
+  async ({ entity_type, name_filter, max_results, filter }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = entityCollectionFor(entity_type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+
+    const params = new URLSearchParams();
+    const clauses: string[] = [];
+    if (name_filter) clauses.push(`contains(name, '${escapeOData(name_filter)}')`);
+    if (filter) clauses.push(`(${filter})`);
+    if (clauses.length) params.set("$filter", clauses.join(" and "));
+    params.set("limit", String(Math.min(max_results ?? 50, 100)));
+
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}?${params}`) as {
+      items?: Array<Record<string, unknown>>;
+      nextPageToken?: string;
+      error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      entity_type,
+      items: (data.items ?? []).map((d) => summarizeEntity(entity_type, d)),
+      next_page_token: data.nextPageToken ?? null,
+    });
+  },
+  {
+    name: "jira_align_list_entities",
+    description:
+      "List non-work-item Jira Align entities of a given type: programs, teams, releases, sprints (PIs), " +
+      "portfolios, or value streams. Use to resolve human names → ids before passing to work-item tools, " +
+      "or to enumerate available programs/teams when planning work. Filter by `name_filter` (contains-match) " +
+      "or by raw OData `filter` for advanced cases.",
+    schema: z.object({
+      entity_type: ENTITY_ENUM,
+      name_filter: z.string().optional().describe("Case-insensitive name fragment"),
+      filter: z.string().optional().describe("Raw OData $filter expression (advanced)"),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+    }),
+  },
+);
+
+export const jiraAlignGetEntityTool = tool(
+  async ({ entity_type, entity_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = entityCollectionFor(entity_type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}/${encodeURIComponent(entity_id)}`) as
+      Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify(summarizeEntity(entity_type, data));
+  },
+  {
+    name: "jira_align_get_entity",
+    description:
+      "Fetch a single Jira Align hierarchy entity by id: program, team, release, sprint (PI), portfolio, " +
+      "or value stream. Returns id, name, description, state, hierarchy refs, dates.",
+    schema: z.object({
+      entity_type: ENTITY_ENUM,
+      entity_id: z.string(),
+    }),
+  },
+);
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 // JA's $filter accepts ISO-8601 date literals without quotes. Map a small set
@@ -474,4 +588,6 @@ registerTools("JiraAlign", [
   jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
   jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
   jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
+  // Hierarchy entity listing (ADR-0035)
+  jiraAlignListEntitiesTool, jiraAlignGetEntityTool,
 ]);
