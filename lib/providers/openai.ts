@@ -72,6 +72,40 @@ function toOpenAIMessages(
 // raw InvokeMessage shapes that the OpenAI SDK then rejects for images/files.
 export { toOpenAIContent, toOpenAIMessages };
 
+function ollamaOriginFromParams(params: ProviderParams): string | null {
+  const raw = typeof params.base_url === "string" ? params.base_url : "";
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const isLocal = u.hostname === "localhost" || u.hostname === "127.0.0.1";
+    const isOllamaPort = u.port === "11434";
+    if (!isLocal || !isOllamaPort) return null;
+    return `${u.protocol}//${u.host}`;
+  } catch {
+    return null;
+  }
+}
+
+async function tryPullOllamaModel(model_id: string, params: ProviderParams): Promise<boolean> {
+  const origin = ollamaOriginFromParams(params);
+  if (!origin) return false;
+  try {
+    const res = await fetch(`${origin}/api/pull`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: model_id, stream: false }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+function isModelNotFoundError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /\b404\b|model.*not found|unsupported.*embed/i.test(msg);
+}
+
 export const openaiProvider: ModelProvider = {
   name: "openai",
 
@@ -131,14 +165,29 @@ export const openaiProvider: ModelProvider = {
   },
 
   async embed(model_id, inputs, params): Promise<number[][]> {
-    return openaiEmbed(makeClient(params), model_id, inputs);
+    return openaiEmbed(makeClient(params), model_id, inputs, params);
   },
 };
 
-async function openaiEmbed(client: OpenAI, model_id: string, inputs: string[]): Promise<number[][]> {
+async function openaiEmbed(
+  client: OpenAI,
+  model_id: string,
+  inputs: string[],
+  params: ProviderParams,
+): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  const resp = await client.embeddings.create({ model: model_id, input: inputs });
-  return resp.data.map((d) => d.embedding);
+  try {
+    const resp = await client.embeddings.create({ model: model_id, input: inputs });
+    return resp.data.map((d) => d.embedding);
+  } catch (err) {
+    // Self-host ergonomics: when pointed at local Ollama and the embedding
+    // model isn't present yet, pull it on-demand and retry once.
+    if (isModelNotFoundError(err) && await tryPullOllamaModel(model_id, params)) {
+      const resp = await client.embeddings.create({ model: model_id, input: inputs });
+      return resp.data.map((d) => d.embedding);
+    }
+    throw err;
+  }
 }
 
 async function* openaiStreamInvoke(
@@ -254,7 +303,7 @@ export function makeOpenAICompatProvider(
     },
 
     async embed(model_id, inputs, params): Promise<number[][]> {
-      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders), model_id, inputs);
+      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders), model_id, inputs, params);
     },
   };
 }
