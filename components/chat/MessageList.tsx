@@ -102,6 +102,8 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   // keeps visible content stable).
   const atBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [scrollButtonActive, setScrollButtonActive] = useState(false);
+  const hideScrollButtonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Anchor for older-message pagination. When the user scrolls near the top
   // and we call onLoadMore, we snapshot the viewport (scrollHeight + scrollTop)
@@ -149,7 +151,20 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     atBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom && messages.length > 0);
+    if (!isAtBottom && messages.length > 0) {
+      setScrollButtonActive(true);
+      if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
+      hideScrollButtonTimerRef.current = setTimeout(() => {
+        setScrollButtonActive(false);
+      }, 2200);
+    }
   }
+
+  useEffect(() => {
+    return () => {
+      if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
+    };
+  }, []);
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
   // flash the same highlight ring used by settings deep links. Re-runs when
@@ -202,6 +217,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (!el) return;
     atBottomRef.current = true;
     el.scrollTop = el.scrollHeight;
+    setShowScrollButton(false);
+    setScrollButtonActive(false);
+    if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
   }
 
   // The filter toolbar uses `position: fixed` (anchored just below the
@@ -325,19 +343,27 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           <span className="text-xs italic text-fg-faint bg-surface-2 px-3 py-1 rounded-full border border-border">
             {n.text}
           </span>
-              {showScrollButton && (
-                <button
-                  onClick={scrollToBottom}
-                  className="fixed bottom-20 right-6 p-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg transition-all animate-in fade-in slide-in-from-bottom-2 duration-200 z-30"
-                  title="Scroll to latest message"
-                  aria-label="Scroll to latest message"
-                >
-                  <ArrowDown size={18} />
-                </button>
-              )}
         </div>
       ))}
       </div>
+      {showScrollButton && (
+        <button
+          onClick={scrollToBottom}
+          onMouseEnter={() => setScrollButtonActive(true)}
+          onMouseLeave={() => {
+            if (!showScrollButton) return;
+            if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
+            hideScrollButtonTimerRef.current = setTimeout(() => setScrollButtonActive(false), 1400);
+          }}
+          className={`fixed bottom-20 right-6 p-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg transition-all duration-200 z-30 ${
+            scrollButtonActive ? "opacity-100 translate-y-0" : "opacity-30 translate-y-1"
+          }`}
+          title="Scroll to latest message"
+          aria-label="Scroll to latest message"
+        >
+          <ArrowDown size={18} />
+        </button>
+      )}
     </div>
   );
 }
