@@ -22,6 +22,9 @@ test("Agents panel renders header and the create-new affordance", async ({ page 
   // "New" is the canonical add-button label across every panel.
   await expect(page.getByRole("button", { name: "New" })).toBeVisible();
 
-  // The seeded mock agent appears in the list.
-  await expect(page.getByText("E2E Mock").first()).toBeVisible();
+  // The seeded mock agent appears in the list. seedMockAgent marks the
+  // agent is_default=true, which makes ChatView render a hidden
+  // welcome-screen tile with the same name; filter to the visible
+  // occurrence inside the active Agents panel.
+  await expect(page.getByText("E2E Mock").filter({ visible: true }).first()).toBeVisible();
 });
