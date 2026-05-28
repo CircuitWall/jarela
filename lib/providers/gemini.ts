@@ -18,7 +18,7 @@ type GeminiPart =
   | { functionCall: { name: string; args?: Record<string, unknown> } }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
-function useCompat(params: ProviderParams): boolean {
+function isCompatMode(params: ProviderParams): boolean {
   return (params as Record<string, unknown>).gemini_use_openai_compat === true;
 }
 
@@ -431,7 +431,7 @@ async function geminiEmbed(model_id: string, inputs: string[], params: ProviderP
 export const geminiProvider: ModelProvider = {
   ...geminiCompat,
   async chat(model_id, messages, params): Promise<ProviderStreamResult> {
-    if (useCompat(params)) return geminiCompat.chat(model_id, messages, params);
+    if (isCompatMode(params)) return geminiCompat.chat(model_id, messages, params);
     try {
       return await geminiNativeChat(model_id, messages, params);
     } catch {
@@ -440,7 +440,7 @@ export const geminiProvider: ModelProvider = {
   },
 
   async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
-    if (useCompat(params)) {
+    if (isCompatMode(params)) {
       if (!geminiCompat.invoke) throw new Error("Gemini compat provider has no invoke() implementation");
       return geminiCompat.invoke(model_id, messages, params, tools);
     }
@@ -453,7 +453,7 @@ export const geminiProvider: ModelProvider = {
   },
 
   streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
-    if (useCompat(params)) {
+    if (isCompatMode(params)) {
       if (!geminiCompat.streamInvoke) throw new Error("Gemini compat provider has no streamInvoke() implementation");
       return geminiCompat.streamInvoke(model_id, messages, params, tools);
     }
