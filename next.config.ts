@@ -18,14 +18,15 @@ const nextConfig: NextConfig = {
   // whole package as external keeps ws resolved at runtime against the
   // traced node_modules, where its JS fallback works correctly.
   //
-  // `keytar` is invoked from a child node process via `execFileSync` (see
-  // lib/crypto/master-key.ts) with `require('keytar')` inside a script
-  // string that nft cannot see. Marking it external + explicitly tracing
-  // its node_modules directory ensures the standalone bundle ships
-  // keytar's native binding so the installed app can use the OS keychain.
-  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate", "keytar", "baileys"],
+  // `@napi-rs/keyring` is invoked from a child node process via
+  // `execFileSync` (see lib/crypto/master-key.ts) with a static
+  // `require('@napi-rs/keyring/keytar')` inside a script string that nft
+  // cannot see. Marking it external + explicitly tracing its node_modules
+  // directory ensures the standalone bundle ships the native binding so
+  // the installed app can use the OS keychain.
+  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate", "@napi-rs/keyring", "baileys"],
   outputFileTracingIncludes: {
-    "/**": ["./node_modules/keytar/**/*"],
+    "/**": ["./node_modules/@napi-rs/keyring/**/*"],
   },
 };
 
