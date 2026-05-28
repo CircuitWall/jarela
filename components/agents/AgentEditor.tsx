@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
-import type { AgentConfig, AgentConfigIn, ModelConfig, ToolInfo } from "@/api/types";
+import type { AgentConfig, AgentConfigIn, Harness, ModelConfig, ToolInfo } from "@/api/types";
+import { api } from "@/api/client";
 import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
@@ -51,8 +52,23 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [voiceName, setVoiceName] = useState<string>(agent?.voice_name ?? "Kore");
   const [voiceSttModel, setVoiceSttModel] = useState<string>(agent?.voice_stt_model ?? "gemini-2.5-flash");
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState<boolean>(agent?.voice_auto_speak ?? true);
+  const [harnessId, setHarnessId] = useState<string>(agent?.harness_id ?? "");
+  const [harnesses, setHarnesses] = useState<Harness[]>([]);
+  const [defaultHarnessId, setDefaultHarnessId] = useState<string>("builtin:default");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.harnesses.list()
+      .then((res) => {
+        if (cancelled) return;
+        setHarnesses(res.harnesses);
+        setDefaultHarnessId(res.default_harness_id);
+      })
+      .catch(() => { /* harness picker silently empty if fetch fails */ });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -187,6 +203,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         voice_name: voiceName,
         voice_stt_model: voiceSttModel,
         voice_auto_speak: voiceAutoSpeak,
+        harness_id: harnessId || null,
       });
       onClose();
     } catch (e) {
@@ -368,6 +385,33 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
           {/* Step 4: Advanced */}
           <Section step={4} title="Advanced settings">
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Harness</span>
+              <select
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={harnessId}
+                onChange={(e) => setHarnessId(e.target.value)}
+              >
+                <option value="">
+                  Use global default
+                  {(() => {
+                    const def = harnesses.find((h) => h.id === defaultHarnessId);
+                    return def ? ` (${def.name})` : "";
+                  })()}
+                </option>
+                {harnesses.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}{h.builtin ? " (built-in)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="text-[11px] text-fg-faint">
+              Behavioral scaffolding (output formatting, citation rules, anti-fabrication, self-config) injected into this agent&apos;s system prompt.
+            </p>
+
+            <hr className="border-border/60 my-2" />
+
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
                 type="checkbox"
