@@ -216,6 +216,13 @@ sequenceDiagram
     Note over AG,DB: Agent never sees secrets — collected by approval UI directly
 ```
 
+The same `propose_config_change` → `ApprovalsBanner` → `applyAction` loop also
+carries agent-driven **harness edits** ([ADR-0036](./adr/0036-agent-driven-harness-edits.md)):
+the agent proposes `upsert_harness` to create or modify a custom preset, and
+`update_agent` (with `harness_id`) to point an agent at it. Built-in harnesses
+remain read-only and the global default pointer stays UI-only — both invariants
+enforced inside `applyAction`.
+
 ## Key Flow — Scheduled background task
 
 ```mermaid

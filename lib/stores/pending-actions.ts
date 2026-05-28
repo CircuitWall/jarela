@@ -11,7 +11,9 @@ export type ActionKind =
   // Added by ADR-0010 (agent-led setup).
   | "start_oauth"
   | "set_provider_key"
-  | "enable_integration";
+  | "enable_integration"
+  // Added by ADR-0036 (agent-driven harness edits).
+  | "upsert_harness";
 
 export type ActionStatus = "pending" | "approved" | "denied" | "failed";
 

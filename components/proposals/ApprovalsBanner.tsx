@@ -34,6 +34,14 @@ function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: 
       const id = str("agent_id");
       return id ? { href: `?tab=agents&item=${encodeURIComponent(id)}`, hrefLabel: "Open agent →", title: "Agent updated" } : null;
     }
+    case "upsert_harness": {
+      // Prefer the harness id from the apply result (creates assign a fresh
+      // custom:<uuid>); fall back to the payload id for edits.
+      const result = (action.result ?? null) as Record<string, unknown> | null;
+      const resultId = result && typeof result["id"] === "string" ? (result["id"] as string) : undefined;
+      const id = resultId ?? str("id");
+      return id ? { href: `?tab=harness&item=${encodeURIComponent(id)}`, hrefLabel: "Open in Harness →", title: "Harness saved" } : { href: "?tab=harness", hrefLabel: "Open Harness →", title: "Harness saved" };
+    }
     default:
       return null;
   }

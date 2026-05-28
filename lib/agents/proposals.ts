@@ -12,6 +12,18 @@ import type { ActionKind } from "@/lib/stores/pending-actions";
 import { getManifest } from "@/lib/integrations/registry";
 import { saveIntegration, INTEGRATIONS } from "@/lib/stores/integrations";
 import { upsertModelConfig, getModelConfig } from "@/lib/stores/model-config";
+import {
+  createCustomHarness,
+  getHarness,
+  updateCustomHarness,
+} from "@/lib/stores/harnesses";
+import {
+  CUSTOM_HARNESS_ID_PREFIX,
+  HARNESS_SECTION_KEYS,
+  isBuiltinHarnessId,
+  type HarnessSection,
+  type HarnessSectionKey,
+} from "@/lib/agents/harness/types";
 
 export interface ApplyResult {
   ok: boolean;
@@ -35,6 +47,7 @@ export async function applyAction(
     case "start_oauth":        return applyStartOauth(payload);
     case "set_provider_key":   return applySetProviderKey(payload, extras);
     case "enable_integration": return applyEnableIntegration(payload, extras);
+    case "upsert_harness":     return applyUpsertHarness(payload);
     default:                   return { ok: false, detail: `unknown kind: ${kind}` };
   }
 }
@@ -110,10 +123,19 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     instructions?: string;
     history_limit?: number;
     history_window_hours?: number;
+    harness_id?: string | null;
   };
   if (!p.agent_id) return { ok: false, detail: "agent_id required" };
   const existing = getAgentConfig(p.agent_id);
   if (!existing) return { ok: false, detail: `agent "${p.agent_id}" not found` };
+  // ADR-0036: harness_id may now be set via update_agent. Validate the id
+  // resolves before writing — upsertAgentConfig stores the value verbatim, so
+  // a bad id would silently break the next agent run with "unknown harness".
+  if (p.harness_id !== undefined && p.harness_id !== null && p.harness_id !== "") {
+    if (!getHarness(p.harness_id)) {
+      return { ok: false, detail: `harness "${p.harness_id}" not found` };
+    }
+  }
   upsertAgentConfig({
     id: existing.id,
     name: existing.name,
@@ -124,6 +146,7 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     model_config_name: existing.model_config_name,
     history_limit: p.history_limit ?? existing.history_limit,
     history_window_hours: p.history_window_hours ?? existing.history_window_hours,
+    harness_id: p.harness_id,
   });
   return {
     ok: true,
@@ -131,8 +154,51 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
       agent_id: p.agent_id,
       identity_changed: p.identity !== undefined,
       instructions_changed: p.instructions !== undefined,
+      harness_id_changed: p.harness_id !== undefined,
     },
   };
+}
+
+// ADR-0036: agent-driven edits to *custom* harness presets. Built-ins remain
+// read-only; the global default pointer stays UI-only. Creates when `id` is
+// omitted; edits when `id` matches an existing custom harness.
+function applyUpsertHarness(payload: unknown): ApplyResult {
+  const p = payload as {
+    id?: string;
+    name?: string;
+    description?: string;
+    sections?: Partial<Record<HarnessSectionKey, Partial<HarnessSection>>>;
+  };
+  if (p.id && isBuiltinHarnessId(p.id)) {
+    return { ok: false, detail: "built-in harnesses are read-only" };
+  }
+  const sections = p.sections ?? {};
+  for (const k of Object.keys(sections)) {
+    if (!HARNESS_SECTION_KEYS.includes(k as HarnessSectionKey)) {
+      return { ok: false, detail: `unknown harness section: ${k}` };
+    }
+  }
+  if (p.id && p.id.startsWith(CUSTOM_HARNESS_ID_PREFIX)) {
+    const updated = updateCustomHarness(p.id, {
+      name: p.name,
+      description: p.description,
+      sections: p.sections,
+    });
+    if (!updated) return { ok: false, detail: `custom harness "${p.id}" not found` };
+    return { ok: true, detail: { id: updated.id, name: updated.name, created: false } };
+  }
+  if (p.id) {
+    return { ok: false, detail: `harness id must start with "${CUSTOM_HARNESS_ID_PREFIX}" or be omitted` };
+  }
+  if (!p.name || !p.name.trim()) {
+    return { ok: false, detail: "name required when creating a harness" };
+  }
+  const created = createCustomHarness({
+    name: p.name,
+    description: p.description,
+    sections: p.sections ?? {},
+  });
+  return { ok: true, detail: { id: created.id, name: created.name, created: true } };
 }
 
 // ---------------------------------------------------------------------------
