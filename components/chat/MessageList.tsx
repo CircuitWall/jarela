@@ -102,8 +102,6 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   // keeps visible content stable).
   const atBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [scrollButtonActive, setScrollButtonActive] = useState(false);
-  const hideScrollButtonTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Anchor for older-message pagination. When the user scrolls near the top
   // and we call onLoadMore, we snapshot the viewport (scrollHeight + scrollTop)
@@ -151,20 +149,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     atBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom && messages.length > 0);
-    if (!isAtBottom && messages.length > 0) {
-      setScrollButtonActive(true);
-      if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
-      hideScrollButtonTimerRef.current = setTimeout(() => {
-        setScrollButtonActive(false);
-      }, 2200);
-    }
   }
-
-  useEffect(() => {
-    return () => {
-      if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
-    };
-  }, []);
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
   // flash the same highlight ring used by settings deep links. Re-runs when
@@ -218,8 +203,6 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     atBottomRef.current = true;
     el.scrollTop = el.scrollHeight;
     setShowScrollButton(false);
-    setScrollButtonActive(false);
-    if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
   }
 
   // The filter toolbar uses `position: fixed` (anchored just below the
@@ -243,7 +226,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   }, [availableChips.length]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 relative">
       {/* Fixed-positioned toolbar pinned right below the AppShell header.
           A shrink-0 spacer below reserves its vertical space in the flex
           column so the message viewport doesn't slide under it. */}
@@ -349,15 +332,8 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
-          onMouseEnter={() => setScrollButtonActive(true)}
-          onMouseLeave={() => {
-            if (!showScrollButton) return;
-            if (hideScrollButtonTimerRef.current) clearTimeout(hideScrollButtonTimerRef.current);
-            hideScrollButtonTimerRef.current = setTimeout(() => setScrollButtonActive(false), 1400);
-          }}
-          className={`fixed bottom-20 right-6 p-2.5 rounded-full bg-accent hover:bg-accent-hover text-white shadow-lg transition-all duration-200 z-30 ${
-            scrollButtonActive ? "opacity-100 translate-y-0" : "opacity-30 translate-y-1"
-          }`}
+          style={{ top: `calc(${toolbarH}px + 0.75rem)` }}
+          className="absolute left-1/2 -translate-x-1/2 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-top-2 duration-200 z-20"
           title="Scroll to latest message"
           aria-label="Scroll to latest message"
         >
