@@ -267,6 +267,9 @@ function geminiKnownModels(): CatalogModel[] {
 
 function deepseekKnownModels(): CatalogModel[] {
   return [
+    { id: "deepseek-v4-flash", context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: true,  streaming: true, json_mode: true,  web_search: false, audio: false, files: false } },
+    { id: "deepseek-v4-pro",   context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: true,  streaming: true, json_mode: true,  web_search: false, audio: false, files: false } },
+    // Compatibility aliases currently accepted by DeepSeek (scheduled deprecation 2026-07-24).
     { id: "deepseek-chat",     context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: true,  streaming: true, json_mode: true,  web_search: false, audio: false, files: false } },
     { id: "deepseek-reasoner", context_length: 65536,  max_output_tokens: 8192, hosted_on: "deepseek", capabilities: { vision: false, tools: false, streaming: true, json_mode: false, web_search: false, audio: false, files: false } },
   ];

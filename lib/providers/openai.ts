@@ -11,6 +11,29 @@ import type {
   OpenAITool,
 } from "./types";
 
+function pickOpenAICompatOptions(params: ProviderParams): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const p = params as Record<string, unknown>;
+  const keys = [
+    "top_p",
+    "presence_penalty",
+    "frequency_penalty",
+    "stop",
+    "response_format",
+    "logprobs",
+    "top_logprobs",
+    "reasoning_effort",
+    "thinking",
+    "stream_options",
+    "user",
+    "user_id",
+  ];
+  for (const k of keys) {
+    if (p[k] !== undefined) out[k] = p[k];
+  }
+  return out;
+}
+
 function makeClient(
   params: ProviderParams,
   baseURL?: string,
@@ -117,6 +140,7 @@ export const openaiProvider: ModelProvider = {
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     return {
       stream: (async function* () {
@@ -138,6 +162,7 @@ export const openaiProvider: ModelProvider = {
       stream: false,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
+      ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     const choice = resp.choices[0];
     return {
@@ -203,6 +228,7 @@ async function* openaiStreamInvoke(
     stream: true,
     temperature: params.temperature,
     max_tokens: params.max_tokens,
+    ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
   };
   if (tools.length > 0) {
     body.tools = tools as OpenAI.Chat.ChatCompletionTool[];
@@ -255,6 +281,7 @@ export function makeOpenAICompatProvider(
         stream: true,
         temperature: params.temperature,
         max_tokens: params.max_tokens,
+        ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       return {
         stream: (async function* () {
@@ -276,6 +303,7 @@ export function makeOpenAICompatProvider(
         stream: false,
         temperature: params.temperature,
         max_tokens: params.max_tokens,
+        ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       const choice = resp.choices[0];
       return {
