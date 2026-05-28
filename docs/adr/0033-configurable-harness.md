@@ -6,6 +6,8 @@ deciders: andwu
 
 # ADR-0033: Configurable harness (sectional, global default + per-agent override)
 
+> **Extended by [ADR-0036](0036-agent-driven-harness-edits.md)** — agent-driven edits to custom harnesses (and switching an agent's `harness_id`) are now permitted via the approval flow. Built-ins remain read-only and the global default pointer stays UI-only.
+
 ## Context and Problem Statement
 
 The system prompt sent to the LLM on every turn is assembled in

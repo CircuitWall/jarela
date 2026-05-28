@@ -51,6 +51,7 @@ export const proposeConfigChangeTool = tool(
           "start_oauth",
           "set_provider_key",
           "enable_integration",
+          "upsert_harness",
         ])
         .describe("Type of change being proposed"),
       payload: z.record(z.string(), z.unknown())
@@ -62,11 +63,14 @@ export const proposeConfigChangeTool = tool(
           "  OR { name, transport, spec }\n" +
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
           "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'] }\n" +
-          "- update_agent: { agent_id, identity?, instructions?, history_limit?, history_window_hours? }\n" +
+          "- update_agent: { agent_id, identity?, instructions?, history_limit?, history_window_hours?, harness_id? } " +
+          "  — harness_id accepts an existing harness id ('builtin:default' or 'custom:<uuid>'), or null to inherit the global default\n" +
           "- start_oauth: { integration_id: 'gmail' } — only after enable_integration saved client_id/secret\n" +
           "- set_provider_key: { name: 'anthropic-default', provider: 'anthropic', model_id: 'claude-opus-4-7', is_default?: true } " +
           "  — the user pastes the API key into the approval modal; do NOT include it here\n" +
-          "- enable_integration: { id: 'gmail' } — the user fills credentials in the approval modal"
+          "- enable_integration: { id: 'gmail' } — the user fills credentials in the approval modal\n" +
+          "- upsert_harness: { id?: 'custom:<uuid>', name, description?, sections: { capabilities?: {enabled,body}, plan_first?: {enabled,body}, presentation?: {enabled,body}, citation?: {enabled,body}, self_config?: {enabled,body} } } " +
+          "  — omit `id` to create; pass an existing custom:* id to edit. Built-in harnesses ('builtin:*') are read-only and rejected."
         ),
       reason: z.string().describe("Short human-readable reason shown to the user (≤100 chars)"),
     }),

@@ -504,7 +504,8 @@ export interface PendingAction {
     | "update_agent"
     | "start_oauth"
     | "set_provider_key"
-    | "enable_integration";
+    | "enable_integration"
+    | "upsert_harness";
   payload: Record<string, unknown>;
   reason: string | null;
   status: "pending" | "approved" | "denied" | "failed";
