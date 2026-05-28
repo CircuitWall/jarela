@@ -11,13 +11,12 @@ test.beforeEach(async ({ request, page }) => {
   await page.goto("/?tab=connections&item=mcp");
 });
 
-test("MCP servers tab mounts under Connections with header + add form", async ({ page }) => {
+test("MCP servers tab mounts under Connections with header + add affordance", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("heading", { name: "Add MCP server" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New" })).toBeVisible();
 });
 
-test("MCP servers list renders without errors when empty", async ({ page }) => {
+test("MCP empty-state copy explains what MCP servers are for", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible({ timeout: 15_000 });
-  // The list container is the <main> element; even with zero servers it renders.
-  await expect(page.locator("main")).toBeVisible();
+  await expect(page.getByText(/MCP servers expose tools/)).toBeVisible();
 });

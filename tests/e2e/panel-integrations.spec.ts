@@ -22,19 +22,8 @@ test("Integrations sub-tab is the default and shows Credentials heading", async 
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
 });
 
-test("At least one provider credential row renders", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible({ timeout: 15_000 });
-  // Provider credential rows render as a list under Credentials. Some site
-  // setups have zero rows by default; what we really care about is that the
-  // panel container mounts without throwing.
-  await expect(page.locator("main")).toBeVisible();
-});
-
 test("Switching to MCP sub-tab swaps the visible panel", async ({ page }) => {
-  await page.goto("/?tab=connections");
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible({ timeout: 15_000 });
   await page.getByRole("tab", { name: "MCP servers" }).click();
-  await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
-  // Credentials heading should no longer be primary content.
   await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
 });

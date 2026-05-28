@@ -14,8 +14,3 @@ test.beforeEach(async ({ request, page }) => {
 test("Extensions panel renders the header", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Extensions" })).toBeVisible({ timeout: 15_000 });
 });
-
-test("Extensions panel main container is present", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "Extensions" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator("main")).toBeVisible();
-});

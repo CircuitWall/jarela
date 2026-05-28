@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { seedMockAgent } from "./helpers";
 
 // Per-panel rendered-element check for the Agents tab.
-// data-testid is intentionally NOT used here — we lean on accessible roles
+// data-testid is intentionally NOT used — we lean on accessible roles
 // and visible text so the test exercises what the user sees.
 
 test.describe.configure({ mode: "serial" });
@@ -15,16 +15,13 @@ test.beforeEach(async ({ request, page }) => {
   await page.goto("/?tab=agents");
 });
 
-test("Agents panel renders header, list, and the create-new affordance", async ({ page }) => {
+test("Agents panel renders header and the create-new affordance", async ({ page }) => {
   // Header label appears as a small uppercase tag rather than an h2.
   await expect(page.getByText("Agents", { exact: true }).first()).toBeVisible({ timeout: 15_000 });
 
-  // The seeded mock agent ("E2E Mock") shows up in the list.
-  await expect(page.getByText("E2E Mock").first()).toBeVisible();
+  // "New" is the canonical add-button label across every panel.
+  await expect(page.getByRole("button", { name: "New" })).toBeVisible();
 
-  // Primary action — "+" icon-only button. Confirm at least one button has the
-  // create affordance; we don't assume a specific aria-label since the panel
-  // uses lucide icons.
-  const buttons = page.locator("main button, [role='dialog'] button");
-  await expect(buttons.first()).toBeVisible();
+  // The seeded mock agent appears in the list.
+  await expect(page.getByText("E2E Mock").first()).toBeVisible();
 });

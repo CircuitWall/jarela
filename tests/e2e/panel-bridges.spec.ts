@@ -14,8 +14,3 @@ test.beforeEach(async ({ request, page }) => {
 test("Bridges panel renders the Bridges header", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Bridges" })).toBeVisible({ timeout: 15_000 });
 });
-
-test("Bridges panel main mounts without crashing", async ({ page }) => {
-  await expect(page.getByRole("heading", { name: "Bridges" })).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator("main")).toBeVisible();
-});

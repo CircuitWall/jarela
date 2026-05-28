@@ -11,18 +11,13 @@ test.beforeEach(async ({ request, page }) => {
   await page.goto("/?tab=memory");
 });
 
-test("Memory panel renders header and supports the empty state", async ({ page }) => {
+test("Memory panel renders header, search, and namespace filter", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Memory Store" })).toBeVisible({ timeout: 15_000 });
-
-  // Memory rows are listed if any exist; either way the panel chrome should
-  // render without crashing. Confirm the surrounding container is present.
-  await expect(page.locator("main")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Search…" })).toBeVisible();
+  await expect(page.getByRole("combobox")).toBeVisible();
 });
 
 test("Memory panel exposes a way to add a new memory entry", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Memory Store" })).toBeVisible({ timeout: 15_000 });
-  // The "Add" button (icon or text) should be on the page somewhere — at minimum
-  // the panel mounts at least one button beside the header.
-  const buttons = page.locator("main button");
-  await expect(buttons.first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "New" })).toBeVisible();
 });
