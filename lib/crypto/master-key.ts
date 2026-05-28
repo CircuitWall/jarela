@@ -1,12 +1,13 @@
 // Master key management for at-rest encryption (ADR-0005).
 //
 // The key is a 32-byte value used by lib/crypto/envelope.ts for AES-256-GCM.
-// Primary storage is the host OS keychain via keytar. We bootstrap
-// synchronously by spawning a one-shot child Node process so the rest of
-// the codebase keeps its synchronous store API.
+// Primary storage is the host OS keychain via @napi-rs/keyring (its
+// keytar-compatible shim). We bootstrap synchronously by spawning a
+// one-shot child Node process so the rest of the codebase keeps its
+// synchronous store API.
 //
 // Fallback (when keychain access fails — headless Linux, locked Mac
-// keychain, missing keytar native binary): a 0600-permissioned file at
+// keychain, missing keyring native binary): a 0600-permissioned file at
 // ${dataDir}/.secret-key. Same threat model as today's plaintext DB for
 // adversaries with filesystem read, but uniform so the encrypt/decrypt
 // code path stays single-shape.
@@ -91,12 +92,12 @@ export function getMasterKeySource(): MasterKeySource | null {
   return _source;
 }
 
-// Spawn a child Node process that talks to keytar and prints the base64
-// key on stdout. Either reads the existing entry or generates a new one
-// and stores it. Synchronous from the caller's perspective.
+// Spawn a child Node process that talks to the OS keyring and prints the
+// base64 key on stdout. Either reads the existing entry or generates a
+// new one and stores it. Synchronous from the caller's perspective.
 function loadOrCreateViaKeychain(): string {
   const script = `
-    const keytar = require('keytar');
+    const keytar = require('@napi-rs/keyring/keytar');
     const { randomBytes } = require('crypto');
     (async () => {
       const SERVICE = ${JSON.stringify(KEYCHAIN_SERVICE)};

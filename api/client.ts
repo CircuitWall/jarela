@@ -11,6 +11,7 @@ import type {
   BridgeRouteIn,
   BridgeRoutePatch,
   ContentPart,
+  EnvAllowlistConfig,
   EnvSyncResult,
   ExtensionsListResponse,
   IntegrationsListResponse,
@@ -39,6 +40,10 @@ import type {
   ThreadSummary,
   UserProfile,
   BuiltinToolCategoryInfo,
+  Harness,
+  HarnessIn,
+  HarnessListResponse,
+  HarnessPatch,
 } from "./types";
 
 const BASE = "/api/v1";
@@ -357,6 +362,14 @@ export const api = {
   envSync: {
     preview: () => request<EnvSyncResult>("/env-sync"),
     apply: () => request<EnvSyncResult>("/env-sync", { method: "POST", body: "{}" }),
+    allowlist: {
+      get: () => request<EnvAllowlistConfig>("/env-sync/allowlist"),
+      set: (integration: string, field: string, envVars: string[]) =>
+        request<EnvAllowlistConfig>("/env-sync/allowlist", {
+          method: "PUT",
+          body: JSON.stringify({ integration, field, envVars }),
+        }),
+    },
   },
 
   pending: {
@@ -524,6 +537,25 @@ export const api = {
 
   tailscale: {
     status: () => request<import("./types").TailscaleStatus>("/tailscale"),
+  },
+
+  harnesses: {
+    list: () => request<HarnessListResponse>("/harnesses"),
+    get: (id: string) => request<Harness>(`/harnesses/${encodeURIComponent(id)}`),
+    create: (data: HarnessIn) =>
+      request<Harness>("/harnesses", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, patch: HarnessPatch) =>
+      request<Harness>(`/harnesses/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    delete: (id: string) =>
+      request<{ deleted: boolean }>(`/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    setDefault: (id: string) =>
+      request<{ id: string }>("/harnesses/default", {
+        method: "PUT",
+        body: JSON.stringify({ id }),
+      }),
   },
 
   proxy: {

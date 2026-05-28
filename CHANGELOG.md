@@ -7,7 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-05-28
+
+### Changed
+
+- **License switched from MIT to Apache-2.0.** Aligns the project with
+  the Apache-2.0 patent grant and contributor terms; users redistributing
+  Jarela should review the new `LICENSE` and `NOTICE` requirements.
+- **LangGraph checkpointer now uses `node:sqlite` instead of
+  `better-sqlite3`** ([ADR-0034](docs/adr/0034-replace-better-sqlite3-checkpointer-with-node-sqlite.md)).
+  In-tree `NodeSqliteSaver` replaces `@langchain/langgraph-checkpoint-sqlite`.
+  Schema is unchanged so existing `~/.jarela/checkpoints.db` files keep
+  working without migration. This drops the EOL `prebuild-install`
+  transitive dependency and removes one native module from the
+  standalone bundle.
+- **Native-module dependencies trimmed.** `keytar` was replaced by
+  `@napi-rs/keyring` and `react-syntax-highlighter` by `rehype-highlight`,
+  removing two more native build steps from the install path.
+  `p-timeout` is now pinned to drop the unused `p-finally` transitive.
+- **Chat scroll-to-latest button** moved from the bottom-right corner
+  to the top-center of the messages pane so it doesn't overlap the
+  composer or follow-up suggestions on narrow viewports.
+- **Optimistic user bubble** is now dropped as soon as the persisted
+  row arrives over the SSE stream, eliminating the brief duplicate that
+  appeared on slow networks.
+
 ### Added
+
+- **Agent-driven harness edits via the approval flow
+  ([ADR-0036](docs/adr/0036-agent-driven-harness-edits.md)).** Two new
+  `propose_config_change` kinds — `upsert_harness` (create/edit a custom
+  harness preset) and an extended `update_agent` that accepts
+  `harness_id` — let the agent itself propose harness changes. Built-in
+  harnesses (`builtin:*`) stay read-only and the global default pointer
+  remains UI-only. Approval-time validation rejects unknown harness ids
+  and built-in writes before they touch storage. The ApprovalsBanner
+  toast now deep-links to `?tab=harness&item=<id>` for the freshly
+  created or edited row.
+- **Configurable harness presets
+  ([ADR-0033](docs/adr/0033-configurable-harness.md)).** The five
+  hard-coded harness modules (`capabilities`, `plan_first`,
+  `presentation`, `citation`, `self_config`) wrapped around every agent
+  turn are now first-class config: a global default pointer plus
+  per-agent overrides, with built-in presets and user-authored custom
+  presets surfaced in a new Harness settings tab. Existing agents keep
+  the previous behaviour by inheriting the default `builtin:default`
+  preset.
+- **Comprehensive Atlassian + Jira Align coverage
+  ([ADR-0035](docs/adr/0035-comprehensive-atlassian-coverage.md)).**
+  Adds full Jira Agile coverage (sprints: create / start / complete,
+  move issues, rank backlog), worklogs read+add, attachment download
+  and delete, issue history/changelog, project metadata (projects,
+  versions, components, issue-types, priorities, statuses, version
+  release lifecycle), Confluence v2 holes (label CRUD, content
+  versions, ancestor walks), and broader Jira Align surface. Routes
+  through the same proxy + custom CA bundle as the existing tools.
+- **Script-backed reactions and silent muting
+  ([ADR-0030](docs/adr/0030-user-defined-watcher-reaction-prompt.md) /
+  [ADR-0031](docs/adr/0031-script-backed-watcher-reactions.md) /
+  [ADR-0032](docs/adr/0032-script-backed-scheduled-tasks.md)).**
+  Watchers now accept a user-defined reaction prompt per watcher
+  (replacing the hardcoded "summarise what changed" directive), and
+  both watchers and scheduled tasks can choose a `script` reaction kind
+  that runs an in-process function with no LLM round-trip — useful for
+  notify/log/append-to-memory reactions where the user already knows
+  the action. A silent-mute flag suppresses the user-facing notification
+  while still firing the reaction.
+- **Mail as a configurable indexing source.** Mail sources (Gmail /
+  Outlook) are now configurable from the Documents panel like other
+  remote sources, including watermark-based incremental sync.
+- **Provider and chat UX expansion.** Additional LLM/integration
+  providers and chat controls land in the Connections + chat panes
+  (model picker affordances, integration card refinements).
+- **Inline source attribution** is now mandated in the harness's
+  citation section so the agent emits `[ref:…]` markers next to every
+  factual claim, reducing hallucination and giving the UI a hook for
+  future click-through.
+- **Error-report toast.** Browser errors that bubble up to the
+  top-level handler now surface as an opt-in toast linking to the bug
+  report URL (`NEXT_PUBLIC_APP_ISSUE_URL`), so forks see their own
+  issue tracker and upstream users see CircuitWall's.
+- **Confluence tool surface expanded** with v2 + v1-fallback coverage
+  for spaces, pages, comments, and labels.
+- **Anthropic integration card + customizable env-sync allowlist
+  (ADR-0034).** The Integrations panel now has a Claude card so the
+  Anthropic API key can live in the encrypted store like every other
+  credential, and the Anthropic provider's fallback chain reads it before
+  `process.env.ANTHROPIC_API_KEY`. Env-sync's default allowlist now
+  includes `ANTHROPIC_API_KEY`. Users can also add per-`(integration,
+  field)` env-var name aliases via a new "Aliases" editor in the panel
+  (or `PUT /api/v1/env-sync/allowlist`) — useful when dotfiles use
+  non-canonical names like `MY_GH_PAT`. Defaults always remain; overrides
+  are additive.
+- **Subprocess credential injection.** `local_exec` shells and stdio MCP
+  children now receive every env-sync-managed credential the encrypted
+  store has, layered between `process.env` and the explicit per-call /
+  per-server env override. Service-mode installs (launchd, systemd,
+  brew services) where the launching environment was empty now expose
+  the same `ANTHROPIC_API_KEY` / `GITHUB_TOKEN` / `ATLASSIAN_*` /
+  `GOOGLE_API_KEY` to subprocesses that the agent itself uses. Per-call
+  `env` (for exec) and per-server `spec.env` (for MCP) still win and
+  can be set to empty string to unset.
 
 - **Documents tooling parity for local sources**: added
   `documents_add_local_source(path, label?)` so agents can create local

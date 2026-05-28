@@ -957,6 +957,1051 @@ export const jiraDeleteIssueTool = tool(
   },
 );
 
+// ── Jira agile tools ────────────────────────────────────────────────────────
+//
+// Sprint/board/backlog/rank lives at `/rest/agile/1.0/...`, NOT `/rest/api/3/`.
+// Same hostname + same Basic auth as the platform API, so atlassianFetch works
+// unchanged — only the path family differs. See ADR-0035.
+//
+// Sprint state machine: future → active → closed (one-way). Atlassian rejects
+// other transitions server-side, but we validate client-side too so the agent
+// gets a clean error with the list of legal next states instead of a 400.
+
+const SPRINT_STATES = ["future", "active", "closed"] as const;
+type SprintState = (typeof SPRINT_STATES)[number];
+
+// Pure — exported for tests. Returns the state argument shape Atlassian's
+// `POST /sprint/{id}` accepts, or an error if the transition is illegal.
+export function validateSprintTransition(
+  current: string | undefined,
+  target: SprintState,
+): { ok: true } | { error: string } {
+  if (target === "future") {
+    return { error: "cannot transition a sprint back to 'future' once created" };
+  }
+  if (current === "closed") {
+    return { error: "sprint is already closed; no further transitions allowed" };
+  }
+  if (target === "active" && current && current !== "future") {
+    return { error: `cannot start a sprint in state '${current}' — only 'future' sprints can be started` };
+  }
+  if (target === "closed" && current && current !== "active") {
+    return { error: `cannot complete a sprint in state '${current}' — only 'active' sprints can be completed` };
+  }
+  return { ok: true };
+}
+
+export const jiraListBoardsTool = tool(
+  async ({ project, name, type, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (project) params.set("projectKeyOrId", project);
+    if (name) params.set("name", name);
+    if (type) params.set("type", type);
+    params.set("maxResults", String(Math.min(max_results ?? 50, 100)));
+    const data = await atlassianFetch(auth, `/rest/agile/1.0/board?${params}`) as
+      | { values?: Array<Record<string, unknown>>; isLast?: boolean; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      boards: (data.values ?? []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        type: b.type,
+        project_key: ((b.location as Record<string, unknown>)?.projectKey) ?? null,
+      })),
+      is_last: data.isLast ?? null,
+    });
+  },
+  {
+    name: "jira_list_boards",
+    description:
+      "List Jira agile boards (Scrum or Kanban). Filter by project key, name fragment, or board type. " +
+      "Returns id, name, type, project_key. Use the id with jira_list_sprints / jira_get_backlog / etc.",
+    schema: z.object({
+      project: z.string().optional().describe("Project key or id to filter by"),
+      name: z.string().optional().describe("Board name fragment (case-insensitive contains-match)"),
+      type: z.enum(["scrum", "kanban", "simple"]).optional(),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+    }),
+  },
+);
+
+export const jiraGetBoardTool = tool(
+  async ({ board_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    // Two calls in parallel — board metadata + configuration. The configuration
+    // endpoint is what reveals estimation field, sub-query, ranking field, etc.,
+    // which the agent often needs alongside the basic board info.
+    const [meta, config] = await Promise.all([
+      atlassianFetch(auth, `/rest/agile/1.0/board/${encodeURIComponent(board_id)}`),
+      atlassianFetch(auth, `/rest/agile/1.0/board/${encodeURIComponent(board_id)}/configuration`),
+    ]) as [Record<string, unknown> & { error?: string }, Record<string, unknown> & { error?: string }];
+    if (meta.error) return JSON.stringify(meta);
+    return JSON.stringify({
+      id: meta.id,
+      name: meta.name,
+      type: meta.type,
+      project_key: ((meta.location as Record<string, unknown>)?.projectKey) ?? null,
+      configuration: config.error ? null : {
+        filter_id: ((config.filter as Record<string, unknown>)?.id) ?? null,
+        sub_query: ((config.subQuery as Record<string, unknown>)?.query) ?? null,
+        estimation_field: ((config.estimation as Record<string, unknown>)?.field as Record<string, unknown>)?.fieldId ?? null,
+        ranking_field: ((config.ranking as Record<string, unknown>)?.rankCustomFieldId) ?? null,
+      },
+    });
+  },
+  {
+    name: "jira_get_board",
+    description:
+      "Fetch board metadata and configuration in one call: id, name, type, project_key, plus filter id, " +
+      "sub-query JQL, estimation field, and ranking custom field. Use this when you need to know how " +
+      "issues are estimated or ranked on a specific board.",
+    schema: z.object({
+      board_id: z.union([z.string(), z.number()]).describe("Board id from jira_list_boards"),
+    }),
+  },
+);
+
+export const jiraListSprintsTool = tool(
+  async ({ board_id, state, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (state) params.set("state", state);
+    params.set("maxResults", String(Math.min(max_results ?? 50, 100)));
+    const data = await atlassianFetch(
+      auth,
+      `/rest/agile/1.0/board/${encodeURIComponent(board_id)}/sprint?${params}`,
+    ) as { values?: Array<Record<string, unknown>>; isLast?: boolean; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      sprints: (data.values ?? []).map((s) => ({
+        id: s.id,
+        name: s.name,
+        state: s.state,
+        goal: s.goal ?? null,
+        start_date: s.startDate ?? null,
+        end_date: s.endDate ?? null,
+        complete_date: s.completeDate ?? null,
+        origin_board_id: s.originBoardId ?? null,
+      })),
+      is_last: data.isLast ?? null,
+    });
+  },
+  {
+    name: "jira_list_sprints",
+    description:
+      "List sprints on a board. Filter by state ('active', 'closed', 'future'). Returns sprint id, name, " +
+      "state, goal, dates, origin_board_id. To list issues IN a sprint, use jira_search with " +
+      "JQL `sprint = {id}` — that's faster and supports custom field selection.",
+    schema: z.object({
+      board_id: z.union([z.string(), z.number()]),
+      state: z.enum(["active", "closed", "future"]).optional().describe("Comma in API but tool takes one state"),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+    }),
+  },
+);
+
+export const jiraGetSprintTool = tool(
+  async ({ sprint_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const data = await atlassianFetch(auth, `/rest/agile/1.0/sprint/${encodeURIComponent(sprint_id)}`) as Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      id: data.id,
+      name: data.name,
+      state: data.state,
+      goal: data.goal ?? null,
+      start_date: data.startDate ?? null,
+      end_date: data.endDate ?? null,
+      complete_date: data.completeDate ?? null,
+      origin_board_id: data.originBoardId ?? null,
+    });
+  },
+  {
+    name: "jira_get_sprint",
+    description:
+      "Fetch a single sprint by id. Returns name, state, goal, start/end/complete dates. Use jira_search " +
+      "with `sprint = {id}` to list its issues.",
+    schema: z.object({ sprint_id: z.union([z.string(), z.number()]) }),
+  },
+);
+
+export const jiraCreateSprintTool = tool(
+  async ({ board_id, name, goal, start_date, end_date }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const body: Record<string, unknown> = { originBoardId: Number(board_id), name };
+    if (goal) body.goal = goal;
+    if (start_date) body.startDate = start_date;
+    if (end_date) body.endDate = end_date;
+    const data = await atlassianFetch(auth, `/rest/agile/1.0/sprint`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }) as { id?: number; self?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, sprint_id: data.id, board_id });
+  },
+  {
+    name: "jira_create_sprint",
+    description:
+      "Create a future sprint on a board. New sprints always start in 'future' state — use " +
+      "jira_update_sprint with state='active' to start it. start_date/end_date are ISO 8601 strings; " +
+      "they're optional but required by Atlassian before you can start the sprint.",
+    schema: z.object({
+      board_id: z.union([z.string(), z.number()]).describe("Origin board id"),
+      name: z.string().describe("Sprint name"),
+      goal: z.string().optional(),
+      start_date: z.string().optional().describe("ISO 8601 timestamp"),
+      end_date: z.string().optional().describe("ISO 8601 timestamp"),
+    }),
+  },
+);
+
+export const jiraUpdateSprintTool = tool(
+  async ({ sprint_id, name, goal, start_date, end_date, state }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+
+    if (state) {
+      // Validate transition client-side. Fetch current state for a clean error.
+      const current = await atlassianFetch(
+        auth,
+        `/rest/agile/1.0/sprint/${encodeURIComponent(sprint_id)}`,
+      ) as { state?: string; error?: string };
+      if (current.error) return JSON.stringify(current);
+      const check = validateSprintTransition(current.state, state);
+      if ("error" in check) {
+        return JSON.stringify({
+          error: check.error,
+          current_state: current.state,
+          legal_next_states: SPRINT_STATES.filter(
+            (s) => !("error" in validateSprintTransition(current.state, s)),
+          ),
+        });
+      }
+    }
+
+    const body: Record<string, unknown> = {};
+    if (name !== undefined) body.name = name;
+    if (goal !== undefined) body.goal = goal;
+    if (start_date !== undefined) body.startDate = start_date;
+    if (end_date !== undefined) body.endDate = end_date;
+    if (state !== undefined) body.state = state;
+    if (Object.keys(body).length === 0) {
+      return JSON.stringify({ error: "no fields to update — pass at least one of name, goal, start_date, end_date, state" });
+    }
+
+    const data = await atlassianFetch(auth, `/rest/agile/1.0/sprint/${encodeURIComponent(sprint_id)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }) as Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      sprint_id,
+      state: data.state,
+      updated_fields: Object.keys(body),
+    });
+  },
+  {
+    name: "jira_update_sprint",
+    description:
+      "Update a sprint's name, goal, dates, or state. State transitions: future→active (start) or " +
+      "active→closed (complete). Other transitions are rejected client-side with the list of legal " +
+      "next states. Pass only the fields you want to change. **Disable to make the agent unable to " +
+      "start/complete sprints.**",
+    schema: z.object({
+      sprint_id: z.union([z.string(), z.number()]),
+      name: z.string().optional(),
+      goal: z.string().optional(),
+      start_date: z.string().optional().describe("ISO 8601 timestamp"),
+      end_date: z.string().optional().describe("ISO 8601 timestamp"),
+      state: z.enum(["active", "closed"]).optional().describe(
+        "Target state. 'active' starts a future sprint; 'closed' completes an active sprint.",
+      ),
+    }),
+  },
+);
+
+export const jiraDeleteSprintTool = tool(
+  async ({ sprint_id, confirm }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (String(confirm) !== String(sprint_id)) {
+      return JSON.stringify({
+        error:
+          `Refusing to delete sprint ${sprint_id}: pass \`confirm\` set to the same id to proceed. ` +
+          `Sprint deletion is irreversible — the issues are unassigned but historical sprint data is lost.`,
+      });
+    }
+    const data = await atlassianFetch(auth, `/rest/agile/1.0/sprint/${encodeURIComponent(sprint_id)}`, {
+      method: "DELETE",
+    }) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_sprint_id: sprint_id });
+  },
+  {
+    name: "jira_delete_sprint",
+    description:
+      "Permanently delete a sprint. **Irreversible** — issues are unassigned from the sprint but the " +
+      "sprint's velocity/burndown data is lost. The agent must pass `confirm` set to the same `sprint_id` " +
+      "to proceed (two-arg gate). **Leave this tool disabled unless the user explicitly wants delete capability.**",
+    schema: z.object({
+      sprint_id: z.union([z.string(), z.number()]),
+      confirm: z.union([z.string(), z.number()]).describe("Must equal `sprint_id` for the delete to proceed"),
+    }),
+  },
+);
+
+export const jiraMoveIssuesToSprintTool = tool(
+  async ({ sprint_id, issue_keys }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (!issue_keys.length) return JSON.stringify({ error: "issue_keys is empty" });
+    if (issue_keys.length > 50) {
+      return JSON.stringify({ error: `agile API accepts up to 50 issues per call (got ${issue_keys.length})` });
+    }
+    const data = await atlassianFetch(
+      auth,
+      `/rest/agile/1.0/sprint/${encodeURIComponent(sprint_id)}/issue`,
+      { method: "POST", body: JSON.stringify({ issues: issue_keys }) },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, sprint_id, moved: issue_keys });
+  },
+  {
+    name: "jira_move_issues_to_sprint",
+    description:
+      "Move issues into a sprint. Up to 50 issues per call. Issues already in another sprint are " +
+      "transparently moved (no separate remove step needed). Use jira_move_issues_to_backlog to remove " +
+      "issues from sprints without putting them in a new one.",
+    schema: z.object({
+      sprint_id: z.union([z.string(), z.number()]),
+      issue_keys: z.array(z.string()).describe("Issue keys to move (e.g. ['PROJ-1','PROJ-2'])"),
+    }),
+  },
+);
+
+export const jiraMoveIssuesToBacklogTool = tool(
+  async ({ issue_keys, board_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (!issue_keys.length) return JSON.stringify({ error: "issue_keys is empty" });
+    if (issue_keys.length > 50) {
+      return JSON.stringify({ error: `agile API accepts up to 50 issues per call (got ${issue_keys.length})` });
+    }
+    // The board-scoped endpoint /backlog/{boardId}/issue moves issues into THAT
+    // board's backlog (preserving rank). The unscoped /backlog/issue endpoint
+    // works for Scrum boards but not Kanban. Caller passes board_id when known.
+    const path = board_id
+      ? `/rest/agile/1.0/backlog/${encodeURIComponent(board_id)}/issue`
+      : `/rest/agile/1.0/backlog/issue`;
+    const data = await atlassianFetch(auth, path, {
+      method: "POST",
+      body: JSON.stringify({ issues: issue_keys }),
+    }) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, moved_to_backlog: issue_keys, board_id: board_id ?? null });
+  },
+  {
+    name: "jira_move_issues_to_backlog",
+    description:
+      "Remove issues from their current sprint and put them back on the backlog. Up to 50 issues per " +
+      "call. Pass `board_id` for Kanban boards (the unscoped endpoint only works for Scrum). For Scrum, " +
+      "board_id is optional but recommended for clarity.",
+    schema: z.object({
+      issue_keys: z.array(z.string()),
+      board_id: z.union([z.string(), z.number()]).optional().describe(
+        "Required for Kanban boards; optional but recommended for Scrum",
+      ),
+    }),
+  },
+);
+
+export const jiraRankIssuesTool = tool(
+  async ({ issues, rank_before_issue, rank_after_issue, rank_custom_field_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (!issues.length) return JSON.stringify({ error: "issues is empty" });
+    if (issues.length > 50) {
+      return JSON.stringify({ error: `agile API accepts up to 50 issues per call (got ${issues.length})` });
+    }
+    if ((rank_before_issue && rank_after_issue) || (!rank_before_issue && !rank_after_issue)) {
+      return JSON.stringify({
+        error: "pass exactly one of rank_before_issue or rank_after_issue (not both, not neither)",
+      });
+    }
+    const body: Record<string, unknown> = { issues };
+    if (rank_before_issue) body.rankBeforeIssue = rank_before_issue;
+    if (rank_after_issue) body.rankAfterIssue = rank_after_issue;
+    if (rank_custom_field_id !== undefined) body.rankCustomFieldId = rank_custom_field_id;
+    const data = await atlassianFetch(auth, `/rest/agile/1.0/issue/rank`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    }) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      ranked: issues,
+      relative_to: rank_before_issue ? { before: rank_before_issue } : { after: rank_after_issue },
+    });
+  },
+  {
+    name: "jira_rank_issues",
+    description:
+      "Rank up to 50 issues relative to a single anchor issue (before XOR after). Pass " +
+      "rank_custom_field_id only on sites that have a non-default rank field — get it from " +
+      "jira_get_board.configuration.ranking_field. Order within `issues[]` is preserved.",
+    schema: z.object({
+      issues: z.array(z.string()).describe("Issue keys in the order they should be placed"),
+      rank_before_issue: z.string().optional().describe("Anchor: place `issues` immediately before this key"),
+      rank_after_issue: z.string().optional().describe("Anchor: place `issues` immediately after this key"),
+      rank_custom_field_id: z.number().optional().describe(
+        "Custom rank field id (numeric). Default is the global rank field; rarely needed.",
+      ),
+    }),
+  },
+);
+
+// ── Jira issue extras (comments CRUD, worklogs, attachments, changelog) ─────
+//
+// These fill specific gaps left by the issue-CRUD tools above:
+//   - jira_get_issue caps embedded comments at ~50; jira_get_comments paginates.
+//   - jira_update_issue can't touch existing comments — that needs the per-comment endpoint.
+//   - jira_upload_attachment uploads but doesn't read or delete; the get/delete pair completes it.
+//   - jira_get_issue's changelog field is opt-in via expand and capped; the dedicated endpoint paginates.
+// See ADR-0035.
+
+export const jiraGetCommentsTool = tool(
+  async ({ issue_key, start_at, max_results, order_by }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (start_at !== undefined) params.set("startAt", String(start_at));
+    params.set("maxResults", String(Math.min(max_results ?? 50, 100)));
+    if (order_by) params.set("orderBy", order_by);
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}/comment?${params}`,
+    ) as {
+      comments?: Array<Record<string, unknown>>;
+      startAt?: number; maxResults?: number; total?: number;
+      error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      issue_key,
+      start_at: data.startAt ?? 0,
+      max_results: data.maxResults ?? 0,
+      total: data.total ?? 0,
+      comments: (data.comments ?? []).map((c) => ({
+        id: c.id,
+        author: (c.author as Record<string, unknown>)?.displayName ?? null,
+        created: c.created,
+        updated: c.updated,
+        body: simplifyADF(c.body),
+      })),
+    });
+  },
+  {
+    name: "jira_get_comments",
+    description:
+      "Paginated comment list for a Jira issue. Use this when an issue has more comments than the " +
+      "embedded list returned by jira_get_issue (Jira caps that at ~50). order_by accepts 'created' " +
+      "or '-created' for ascending/descending. ADF bodies auto-flattened.",
+    schema: z.object({
+      issue_key: z.string(),
+      start_at: z.number().optional().describe("Offset for pagination (default 0)"),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+      order_by: z.enum(["created", "-created"]).optional(),
+    }),
+  },
+);
+
+export const jiraUpdateCommentTool = tool(
+  async ({ issue_key, comment_id, body }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}/comment/${encodeURIComponent(comment_id)}`,
+      { method: "PUT", body: JSON.stringify({ body: textToADF(body) }) },
+    ) as { id?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, comment_id: data.id ?? comment_id });
+  },
+  {
+    name: "jira_update_comment",
+    description:
+      "Edit an existing comment on a Jira issue. Plain-text body is auto-converted to ADF (same as " +
+      "jira_add_comment). The author and created timestamp are preserved; updated reflects this edit.",
+    schema: z.object({
+      issue_key: z.string(),
+      comment_id: z.string().describe("Comment id from jira_get_issue.comments[].id or jira_get_comments"),
+      body: z.string(),
+    }),
+  },
+);
+
+export const jiraDeleteCommentTool = tool(
+  async ({ issue_key, comment_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}/comment/${encodeURIComponent(comment_id)}`,
+      { method: "DELETE" },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_comment_id: comment_id, issue_key });
+  },
+  {
+    name: "jira_delete_comment",
+    description:
+      "Permanently delete a comment from a Jira issue. **Destructive — no undo.** Look up the id via " +
+      "jira_get_issue (include_comments: true) or jira_get_comments. Disable to make the agent unable " +
+      "to delete comments.",
+    schema: z.object({ issue_key: z.string(), comment_id: z.string() }),
+  },
+);
+
+export const jiraGetAttachmentContentTool = tool(
+  async ({ content_url, as_text }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    // Attachment content URLs from /rest/api/3/issue/{key} come pre-built as
+    // absolute URLs under the auth.url host. We accept either absolute or
+    // relative; build the request URL accordingly.
+    const fullUrl = content_url.startsWith("http")
+      ? content_url
+      : `${auth.url}${content_url.startsWith("/") ? "" : "/"}${content_url}`;
+    const res = await fetch(fullUrl, { headers: { Authorization: authHeader(auth) } });
+    if (!res.ok) {
+      const errText = await res.text();
+      return JSON.stringify({ error: `Atlassian ${res.status}: ${errText.slice(0, 500)}` });
+    }
+    const ct = res.headers.get("content-type") ?? "";
+    const looksText = as_text === true
+      || (as_text !== false && /^(text\/|application\/(json|xml|yaml|x-yaml))/i.test(ct));
+    if (looksText) {
+      const text = await res.text();
+      return JSON.stringify({
+        content_type: ct,
+        size: text.length,
+        as: "text",
+        content: text.slice(0, 50_000),
+        truncated: text.length > 50_000,
+      });
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    return JSON.stringify({
+      content_type: ct,
+      size: buf.length,
+      as: "base64",
+      content: buf.toString("base64"),
+    });
+  },
+  {
+    name: "jira_get_attachment_content",
+    description:
+      "Fetch a Jira issue attachment's bytes by content_url (from jira_get_issue.attachments[].content_url). " +
+      "Returns UTF-8 text capped at 50KB for text-like content types, or base64 for binary. Override the " +
+      "auto-detection via `as_text`. Mirrors confluence_get_attachment_content.",
+    schema: z.object({
+      content_url: z.string().describe("content_url from jira_get_issue.attachments[]"),
+      as_text: z.boolean().optional().describe(
+        "Force text decode (true) or binary base64 (false). Default: auto-detect by content-type.",
+      ),
+    }),
+  },
+);
+
+export const jiraDeleteAttachmentTool = tool(
+  async ({ attachment_id }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/attachment/${encodeURIComponent(attachment_id)}`,
+      { method: "DELETE" },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_attachment_id: attachment_id });
+  },
+  {
+    name: "jira_delete_attachment",
+    description:
+      "Permanently delete an attachment from a Jira issue by id. **Destructive — no undo.** Look up " +
+      "the id via jira_get_issue.attachments[].id. Disable to make the agent unable to delete attachments.",
+    schema: z.object({
+      attachment_id: z.string().describe("Attachment id (from jira_get_issue.attachments[].id)"),
+    }),
+  },
+);
+
+export const jiraAddWorklogTool = tool(
+  async ({ issue_key, time_spent, started, comment }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const body: Record<string, unknown> = { timeSpent: time_spent };
+    if (started) body.started = started;
+    if (comment) body.comment = textToADF(comment);
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}/worklog`,
+      { method: "POST", body: JSON.stringify(body) },
+    ) as { id?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, worklog_id: data.id, issue_key });
+  },
+  {
+    name: "jira_add_worklog",
+    description:
+      "Log time spent on a Jira issue. time_spent uses Jira's duration syntax: '1h', '30m', '2d 4h', etc. " +
+      "started is an ISO 8601 timestamp (defaults to now). comment is plain text auto-converted to ADF.",
+    schema: z.object({
+      issue_key: z.string(),
+      time_spent: z.string().describe("Duration string ('1h', '30m', '2d 4h')"),
+      started: z.string().optional().describe("ISO 8601 timestamp; defaults to now"),
+      comment: z.string().optional(),
+    }),
+  },
+);
+
+export const jiraListWorklogsTool = tool(
+  async ({ issue_key, start_at, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (start_at !== undefined) params.set("startAt", String(start_at));
+    params.set("maxResults", String(Math.min(max_results ?? 50, 1000)));
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}/worklog?${params}`,
+    ) as {
+      worklogs?: Array<Record<string, unknown>>;
+      startAt?: number; maxResults?: number; total?: number;
+      error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      issue_key,
+      start_at: data.startAt ?? 0,
+      max_results: data.maxResults ?? 0,
+      total: data.total ?? 0,
+      worklogs: (data.worklogs ?? []).map((w) => ({
+        id: w.id,
+        author: (w.author as Record<string, unknown>)?.displayName ?? null,
+        time_spent: w.timeSpent,
+        time_spent_seconds: w.timeSpentSeconds,
+        started: w.started,
+        created: w.created,
+        updated: w.updated,
+        comment: simplifyADF(w.comment),
+      })),
+    });
+  },
+  {
+    name: "jira_list_worklogs",
+    description:
+      "List worklog entries on a Jira issue (paginated). Returns id, author, time_spent (display string + " +
+      "seconds), started, comment. Use to compute totals or audit time tracking.",
+    schema: z.object({
+      issue_key: z.string(),
+      start_at: z.number().optional(),
+      max_results: z.number().optional().describe("Default 50, max 1000"),
+    }),
+  },
+);
+
+export const jiraGetChangelogTool = tool(
+  async ({ issue_key, start_at, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (start_at !== undefined) params.set("startAt", String(start_at));
+    params.set("maxResults", String(Math.min(max_results ?? 50, 100)));
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}/changelog?${params}`,
+    ) as {
+      values?: Array<Record<string, unknown>>;
+      startAt?: number; maxResults?: number; total?: number;
+      error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      issue_key,
+      start_at: data.startAt ?? 0,
+      max_results: data.maxResults ?? 0,
+      total: data.total ?? 0,
+      changelog: (data.values ?? []).map((entry) => ({
+        id: entry.id,
+        author: (entry.author as Record<string, unknown>)?.displayName ?? null,
+        created: entry.created,
+        items: ((entry.items as Array<Record<string, unknown>>) ?? []).map((item) => ({
+          field: item.field,
+          field_type: item.fieldtype,
+          // Atlassian returns both `from`/`to` (raw ids) and `fromString`/`toString`
+          // (human-readable). Prefer the human form when present. NB: hasOwn check
+          // is required because `toString` is inherited from Object.prototype.
+          from: Object.hasOwn(item, "fromString") ? item.fromString : (item.from ?? null),
+          to: Object.hasOwn(item, "toString") ? item.toString : (item.to ?? null),
+        })),
+      })),
+    });
+  },
+  {
+    name: "jira_get_changelog",
+    description:
+      "Fetch a Jira issue's history (paginated). Each entry has author, timestamp, and a list of " +
+      "field-level changes (field name, from, to). Useful for 'what changed yesterday?' audits and " +
+      "for surfacing the previous value of a field.",
+    schema: z.object({
+      issue_key: z.string(),
+      start_at: z.number().optional(),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+    }),
+  },
+);
+
+// ── Jira project metadata (projects, versions, components, generic enums) ──
+//
+// These let the agent introspect a site without guessing — list projects,
+// list versions on a project, read the canonical issue-type/priority/status
+// names. Mostly thin wrappers around /rest/api/3/project*, /version, /component,
+// and the four enum endpoints. See ADR-0035.
+
+export const jiraListProjectsTool = tool(
+  async ({ query, category_id, max_results, start_at }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (query) params.set("query", query);
+    if (category_id !== undefined) params.set("categoryId", String(category_id));
+    if (start_at !== undefined) params.set("startAt", String(start_at));
+    params.set("maxResults", String(Math.min(max_results ?? 50, 100)));
+    const data = await atlassianFetch(auth, `/rest/api/3/project/search?${params}`) as
+      | { values?: Array<Record<string, unknown>>; total?: number; isLast?: boolean; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      total: data.total ?? 0,
+      is_last: data.isLast ?? null,
+      projects: (data.values ?? []).map((p) => ({
+        id: p.id,
+        key: p.key,
+        name: p.name,
+        type_key: p.projectTypeKey ?? null,
+        style: p.style ?? null,
+        lead: ((p.lead as Record<string, unknown>)?.displayName) ?? null,
+      })),
+    });
+  },
+  {
+    name: "jira_list_projects",
+    description:
+      "List Jira projects (paginated). Filter by name fragment via `query` or by category. Returns " +
+      "id, key, name, type, style ('classic'|'next-gen'), lead.",
+    schema: z.object({
+      query: z.string().optional().describe("Project name/key fragment"),
+      category_id: z.number().optional(),
+      start_at: z.number().optional(),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+    }),
+  },
+);
+
+export const jiraGetProjectTool = tool(
+  async ({ project_key, include_versions, include_components, include_issue_types }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const expand: string[] = [];
+    if (include_versions) expand.push("versions");
+    if (include_components) expand.push("components");
+    if (include_issue_types) expand.push("issueTypes");
+    const qs = expand.length ? `?expand=${expand.join(",")}` : "";
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/project/${encodeURIComponent(project_key)}${qs}`,
+    ) as Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      id: data.id,
+      key: data.key,
+      name: data.name,
+      type_key: data.projectTypeKey ?? null,
+      style: data.style ?? null,
+      description: data.description ?? null,
+      lead: ((data.lead as Record<string, unknown>)?.displayName) ?? null,
+      url: `${auth.url}/browse/${data.key}`,
+      ...(include_versions ? {
+        versions: ((data.versions as Array<Record<string, unknown>>) ?? []).map((v) => ({
+          id: v.id, name: v.name, released: v.released, archived: v.archived,
+          start_date: v.startDate ?? null, release_date: v.releaseDate ?? null,
+        })),
+      } : {}),
+      ...(include_components ? {
+        components: ((data.components as Array<Record<string, unknown>>) ?? []).map((c) => ({
+          id: c.id, name: c.name,
+          lead: ((c.lead as Record<string, unknown>)?.displayName) ?? null,
+        })),
+      } : {}),
+      ...(include_issue_types ? {
+        issue_types: ((data.issueTypes as Array<Record<string, unknown>>) ?? []).map((t) => ({
+          id: t.id, name: t.name, subtask: t.subtask, hierarchy_level: t.hierarchyLevel,
+        })),
+      } : {}),
+    });
+  },
+  {
+    name: "jira_get_project",
+    description:
+      "Fetch a single Jira project by key. Optionally include versions, components, and/or issue types " +
+      "in the response — saves separate calls for the common 'tell me about this project' use case.",
+    schema: z.object({
+      project_key: z.string(),
+      include_versions: z.boolean().optional(),
+      include_components: z.boolean().optional(),
+      include_issue_types: z.boolean().optional(),
+    }),
+  },
+);
+
+export const jiraListVersionsTool = tool(
+  async ({ project_key, start_at, max_results, order_by }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    if (start_at !== undefined) params.set("startAt", String(start_at));
+    params.set("maxResults", String(Math.min(max_results ?? 50, 100)));
+    if (order_by) params.set("orderBy", order_by);
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/project/${encodeURIComponent(project_key)}/version?${params}`,
+    ) as {
+      values?: Array<Record<string, unknown>>;
+      total?: number; isLast?: boolean; error?: string;
+    };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      total: data.total ?? 0,
+      is_last: data.isLast ?? null,
+      versions: (data.values ?? []).map((v) => ({
+        id: v.id,
+        name: v.name,
+        released: v.released,
+        archived: v.archived,
+        start_date: v.startDate ?? null,
+        release_date: v.releaseDate ?? null,
+        description: v.description ?? null,
+      })),
+    });
+  },
+  {
+    name: "jira_list_versions",
+    description:
+      "List versions on a Jira project (paginated). Returns id, name, released/archived flags, dates. " +
+      "Use jira_create_version to add a new one and jira_update_version to release/archive.",
+    schema: z.object({
+      project_key: z.string(),
+      start_at: z.number().optional(),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+      order_by: z.enum(["sequence", "name", "startDate", "releaseDate", "-sequence", "-name", "-startDate", "-releaseDate"]).optional(),
+    }),
+  },
+);
+
+export const jiraCreateVersionTool = tool(
+  async ({ project_key, name, description, start_date, release_date, released }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    // Resolve project key → numeric project id (the version endpoint requires id, not key).
+    const proj = await atlassianFetch(auth, `/rest/api/3/project/${encodeURIComponent(project_key)}`) as
+      { id?: string; error?: string };
+    if (proj.error) return JSON.stringify(proj);
+    if (!proj.id) return JSON.stringify({ error: `could not resolve project_key "${project_key}" to a numeric id` });
+    const body: Record<string, unknown> = { projectId: Number(proj.id), name };
+    if (description !== undefined) body.description = description;
+    if (start_date !== undefined) body.startDate = start_date;
+    if (release_date !== undefined) body.releaseDate = release_date;
+    if (released !== undefined) body.released = released;
+    const data = await atlassianFetch(auth, `/rest/api/3/version`, {
+      method: "POST", body: JSON.stringify(body),
+    }) as { id?: string; name?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, version_id: data.id, name: data.name });
+  },
+  {
+    name: "jira_create_version",
+    description:
+      "Create a new version on a Jira project. Pass the project key — we resolve it to the numeric id. " +
+      "start_date / release_date are 'YYYY-MM-DD'. Set released=true to mark released on creation.",
+    schema: z.object({
+      project_key: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      start_date: z.string().optional().describe("YYYY-MM-DD"),
+      release_date: z.string().optional().describe("YYYY-MM-DD"),
+      released: z.boolean().optional(),
+    }),
+  },
+);
+
+export const jiraUpdateVersionTool = tool(
+  async ({ version_id, name, description, start_date, release_date, released, archived }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const body: Record<string, unknown> = {};
+    if (name !== undefined) body.name = name;
+    if (description !== undefined) body.description = description;
+    if (start_date !== undefined) body.startDate = start_date;
+    if (release_date !== undefined) body.releaseDate = release_date;
+    if (released !== undefined) body.released = released;
+    if (archived !== undefined) body.archived = archived;
+    if (Object.keys(body).length === 0) {
+      return JSON.stringify({ error: "no fields to update — pass at least one of name, description, start_date, release_date, released, archived" });
+    }
+    const data = await atlassianFetch(auth, `/rest/api/3/version/${encodeURIComponent(version_id)}`, {
+      method: "PUT", body: JSON.stringify(body),
+    }) as Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      version_id,
+      released: data.released ?? null,
+      archived: data.archived ?? null,
+      updated_fields: Object.keys(body),
+    });
+  },
+  {
+    name: "jira_update_version",
+    description:
+      "Edit a version: rename, change dates, mark released/unreleased, mark archived/unarchived. " +
+      "Pass only the fields you want to change. To 'release' a version, pass released=true (and " +
+      "release_date if not already set). To unrelease, pass released=false. **Disable to make the " +
+      "agent unable to release versions.**",
+    schema: z.object({
+      version_id: z.string(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      start_date: z.string().optional(),
+      release_date: z.string().optional(),
+      released: z.boolean().optional(),
+      archived: z.boolean().optional(),
+    }),
+  },
+);
+
+export const jiraListComponentsTool = tool(
+  async ({ project_key }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const data = await atlassianFetch(
+      auth,
+      `/rest/api/3/project/${encodeURIComponent(project_key)}/components`,
+    ) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      components: data.map((c) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description ?? null,
+        lead: ((c.lead as Record<string, unknown>)?.displayName) ?? null,
+        assignee_type: c.assigneeType ?? null,
+      })),
+    });
+  },
+  {
+    name: "jira_list_components",
+    description:
+      "List components on a Jira project. Returns id, name, description, lead, default assignee type. " +
+      "Components are not paginated by Jira — the full list returns in one call.",
+    schema: z.object({ project_key: z.string() }),
+  },
+);
+
+export const jiraCreateComponentTool = tool(
+  async ({ project_key, name, description, lead_account_id, assignee_type }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const body: Record<string, unknown> = { project: project_key, name };
+    if (description !== undefined) body.description = description;
+    if (lead_account_id !== undefined) body.leadAccountId = lead_account_id;
+    if (assignee_type !== undefined) body.assigneeType = assignee_type;
+    const data = await atlassianFetch(auth, `/rest/api/3/component`, {
+      method: "POST", body: JSON.stringify(body),
+    }) as { id?: string; name?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, component_id: data.id, name: data.name });
+  },
+  {
+    name: "jira_create_component",
+    description:
+      "Create a component on a Jira project. assignee_type controls default assignee for issues with " +
+      "this component: 'PROJECT_DEFAULT' | 'COMPONENT_LEAD' | 'PROJECT_LEAD' | 'UNASSIGNED'.",
+    schema: z.object({
+      project_key: z.string(),
+      name: z.string(),
+      description: z.string().optional(),
+      lead_account_id: z.string().optional(),
+      assignee_type: z.enum(["PROJECT_DEFAULT", "COMPONENT_LEAD", "PROJECT_LEAD", "UNASSIGNED"]).optional(),
+    }),
+  },
+);
+
+const META_KIND_TO_PATH: Record<string, string> = {
+  issue_type: "/rest/api/3/issuetype",
+  priority: "/rest/api/3/priority",
+  status: "/rest/api/3/status",
+  resolution: "/rest/api/3/resolution",
+};
+const META_KINDS = Object.keys(META_KIND_TO_PATH) as ReadonlyArray<keyof typeof META_KIND_TO_PATH>;
+
+export const jiraListMetaTool = tool(
+  async ({ kind }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (!kind) {
+      return JSON.stringify({
+        available_kinds: META_KINDS,
+        usage: "Pass kind='issue_type' | 'priority' | 'status' | 'resolution' to list that enum's values for the site.",
+      });
+    }
+    const path = META_KIND_TO_PATH[kind];
+    if (!path) {
+      return JSON.stringify({ error: `unknown kind "${kind}". Expected one of: ${META_KINDS.join(", ")}.` });
+    }
+    const data = await atlassianFetch(auth, path) as Array<Record<string, unknown>> | { error?: string };
+    if (!Array.isArray(data)) return JSON.stringify(data);
+    return JSON.stringify({
+      kind,
+      values: data.map((v) => ({
+        id: v.id,
+        name: v.name,
+        description: v.description ?? null,
+        ...(kind === "issue_type" ? { subtask: v.subtask, hierarchy_level: v.hierarchyLevel } : {}),
+        ...(kind === "status" ? {
+          status_category: ((v.statusCategory as Record<string, unknown>)?.name) ?? null,
+        } : {}),
+      })),
+    });
+  },
+  {
+    name: "jira_list_meta",
+    description:
+      "List values for a Jira site-wide enum: issue types, priorities, statuses, or resolutions. " +
+      "Pass `kind` = 'issue_type' | 'priority' | 'status' | 'resolution'. Omit `kind` to list available kinds. " +
+      "Use this before jira_create_issue / jira_update_issue when you don't know the exact name on this site.",
+    schema: z.object({
+      kind: z.enum(META_KINDS as [string, ...string[]]).optional(),
+    }),
+  },
+);
+
 // ── Confluence tools ────────────────────────────────────────────────────────
 //
 // Most tools below use the Confluence v2 REST API (/wiki/api/v2/...). Three
@@ -1626,6 +2671,202 @@ export const confluenceAddLabelTool = tool(
   },
 );
 
+// ── Confluence v2 gap-fillers (ADR-0035) ────────────────────────────────────
+//
+// v2 audit on 2026-05-28 confirmed:
+//   - DELETE /pages/{id} exists (with optional purge=true).
+//   - PUT/DELETE /footer-comments/{id} and /inline-comments/{id} exist.
+//   - DELETE /attachments/{id} exists (with optional purge=true).
+//   - Label group is STILL read-only (CONFCLOUD-76866); confluence_remove_label
+//     uses the v1 fallback `DELETE /content/{id}/label?name=...`.
+
+export const confluenceDeletePageTool = tool(
+  async ({ page_id, purge, confirm }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (purge && confirm !== page_id) {
+      return JSON.stringify({
+        error:
+          `Refusing to permanently delete page ${page_id}: purge=true requires confirm to equal page_id. ` +
+          `A purged page cannot be restored from trash. Drop purge if you only want to soft-delete.`,
+      });
+    }
+    const qs = purge ? `?purge=true` : "";
+    const data = await atlassianFetch(
+      auth,
+      `/wiki/api/v2/pages/${encodeURIComponent(page_id)}${qs}`,
+      { method: "DELETE" },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_page_id: page_id, purged: !!purge });
+  },
+  {
+    name: "confluence_delete_page",
+    description:
+      "Delete a Confluence page (v2). Default soft-deletes (page goes to trash, restorable). " +
+      "Pass purge=true for permanent deletion, which **also requires `confirm` to equal page_id** " +
+      "as a guardrail. Disable to make the agent unable to delete pages.",
+    schema: z.object({
+      page_id: z.string(),
+      purge: z.boolean().optional().describe("If true, permanently delete (skip trash). Requires confirm=page_id."),
+      confirm: z.string().optional().describe("Required when purge=true; must equal page_id."),
+    }),
+  },
+);
+
+const COMMENT_KIND_TO_PATH: Record<string, string> = {
+  footer: "footer-comments",
+  inline: "inline-comments",
+};
+
+export const confluenceUpdateCommentTool = tool(
+  async ({ comment_id, kind, body_text, body_storage, version_number, version_message }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const segment = COMMENT_KIND_TO_PATH[kind];
+    if (!segment) {
+      return JSON.stringify({ error: `unknown kind "${kind}". Expected 'footer' or 'inline'.` });
+    }
+    const body = resolveBody({ body_text, body_storage });
+    if ("error" in body) return JSON.stringify(body);
+
+    let nextVersion = version_number;
+    if (nextVersion === undefined) {
+      // PUT requires version.number = current + 1; auto-fetch when not passed.
+      const current = await atlassianFetch(
+        auth,
+        `/wiki/api/v2/${segment}/${encodeURIComponent(comment_id)}`,
+      ) as { version?: { number?: number }; error?: string };
+      if (current.error) return JSON.stringify(current);
+      const cur = current.version?.number;
+      if (typeof cur !== "number") return JSON.stringify({ error: "could not read current comment version" });
+      nextVersion = cur + 1;
+    }
+
+    const payload: Record<string, unknown> = {
+      version: { number: nextVersion, ...(version_message ? { message: version_message } : {}) },
+      body: { representation: body.representation, value: body.value },
+    };
+    const data = await atlassianFetch(
+      auth,
+      `/wiki/api/v2/${segment}/${encodeURIComponent(comment_id)}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+    ) as Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      comment_id,
+      kind,
+      version: (data.version as Record<string, unknown> | undefined)?.number ?? nextVersion,
+    });
+  },
+  {
+    name: "confluence_update_comment",
+    description:
+      "Edit an existing Confluence comment (v2). Pass `kind: 'footer' | 'inline'` to route to the " +
+      "correct endpoint. Same `body_text` xor `body_storage` pattern as confluence_add_comment. If " +
+      "version_number is omitted, the tool auto-fetches the current version and sends current+1 " +
+      "(Confluence requires strict +1 increments).",
+    schema: z.object({
+      comment_id: z.string(),
+      kind: z.enum(["footer", "inline"]),
+      body_text: z.string().optional(),
+      body_storage: z.string().optional(),
+      version_number: z.number().optional().describe("Explicit version (must be current+1). Omit to auto-fetch."),
+      version_message: z.string().optional(),
+    }),
+  },
+);
+
+export const confluenceDeleteCommentTool = tool(
+  async ({ comment_id, kind }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const segment = COMMENT_KIND_TO_PATH[kind];
+    if (!segment) {
+      return JSON.stringify({ error: `unknown kind "${kind}". Expected 'footer' or 'inline'.` });
+    }
+    const data = await atlassianFetch(
+      auth,
+      `/wiki/api/v2/${segment}/${encodeURIComponent(comment_id)}`,
+      { method: "DELETE" },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_comment_id: comment_id, kind });
+  },
+  {
+    name: "confluence_delete_comment",
+    description:
+      "Permanently delete a Confluence comment (v2). Pass `kind: 'footer' | 'inline'`. **Destructive — " +
+      "no undo.** Disable to make the agent unable to delete comments.",
+    schema: z.object({
+      comment_id: z.string(),
+      kind: z.enum(["footer", "inline"]),
+    }),
+  },
+);
+
+export const confluenceRemoveLabelTool = tool(
+  async ({ page_id, label }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    // v1 fallback — v2 Label group is read-only as of 2026-05-28 (CONFCLOUD-76866).
+    // The v1 endpoint accepts the label name as a query param; the prefix
+    // defaults to "global" which is what confluence_add_label uses.
+    const data = await atlassianFetch(
+      auth,
+      `/wiki/rest/api/content/${encodeURIComponent(page_id)}/label?name=${encodeURIComponent(label)}`,
+      { method: "DELETE" },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, page_id, removed_label: label });
+  },
+  {
+    name: "confluence_remove_label",
+    description:
+      "Remove a single label from a Confluence page. Uses the v1 endpoint (v2 Label group is still " +
+      "read-only as of 2026). Counterpart to confluence_add_label.",
+    schema: z.object({
+      page_id: z.string(),
+      label: z.string().describe("Label name to remove (no prefix; we always use 'global')"),
+    }),
+  },
+);
+
+export const confluenceDeleteAttachmentTool = tool(
+  async ({ attachment_id, purge, confirm }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (purge && confirm !== attachment_id) {
+      return JSON.stringify({
+        error:
+          `Refusing to permanently delete attachment ${attachment_id}: purge=true requires confirm to equal attachment_id. ` +
+          `A purged attachment cannot be restored.`,
+      });
+    }
+    const qs = purge ? `?purge=true` : "";
+    const data = await atlassianFetch(
+      auth,
+      `/wiki/api/v2/attachments/${encodeURIComponent(attachment_id)}${qs}`,
+      { method: "DELETE" },
+    ) as { error?: string } | string;
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_attachment_id: attachment_id, purged: !!purge });
+  },
+  {
+    name: "confluence_delete_attachment",
+    description:
+      "Delete a Confluence attachment by id (v2). Default soft-deletes (trash, restorable). Pass " +
+      "purge=true for permanent deletion, which **also requires `confirm` to equal attachment_id** " +
+      "as a guardrail.",
+    schema: z.object({
+      attachment_id: z.string(),
+      purge: z.boolean().optional(),
+      confirm: z.string().optional().describe("Required when purge=true; must equal attachment_id."),
+    }),
+  },
+);
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 // Convert plain text → Confluence storage-format XHTML. Splits on blank lines
@@ -1840,6 +3081,21 @@ registerTools("Atlassian", [
   jiraAddCommentTool, jiraTransitionsTool,
   jiraLinkIssuesTool, jiraAddRemoteLinkTool, jiraDeleteLinkTool,
   jiraUploadAttachmentTool, jiraDeleteIssueTool,
+  // Agile (ADR-0035): boards, sprints, backlog, rank
+  jiraListBoardsTool, jiraGetBoardTool,
+  jiraListSprintsTool, jiraGetSprintTool,
+  jiraCreateSprintTool, jiraUpdateSprintTool, jiraDeleteSprintTool,
+  jiraMoveIssuesToSprintTool, jiraMoveIssuesToBacklogTool,
+  jiraRankIssuesTool,
+  // Issue extras (ADR-0035): comments CRUD, worklogs, attachments, changelog
+  jiraGetCommentsTool, jiraUpdateCommentTool, jiraDeleteCommentTool,
+  jiraGetAttachmentContentTool, jiraDeleteAttachmentTool,
+  jiraAddWorklogTool, jiraListWorklogsTool, jiraGetChangelogTool,
+  // Project metadata (ADR-0035): projects, versions, components, generic enums
+  jiraListProjectsTool, jiraGetProjectTool,
+  jiraListVersionsTool, jiraCreateVersionTool, jiraUpdateVersionTool,
+  jiraListComponentsTool, jiraCreateComponentTool,
+  jiraListMetaTool,
   confluenceSearchTool, confluenceGetPageTool,
   confluenceGetPageByTitleTool, confluenceGetPageChildrenTool,
   confluenceGetPageAncestorsTool, confluenceListSpacesTool,
@@ -1848,4 +3104,7 @@ registerTools("Atlassian", [
   confluenceCreatePageTool, confluenceUpdatePageTool,
   confluenceAddCommentTool, confluenceMovePageTool,
   confluenceUploadAttachmentTool, confluenceAddLabelTool,
+  // Confluence gap-fillers (ADR-0035)
+  confluenceDeletePageTool, confluenceUpdateCommentTool, confluenceDeleteCommentTool,
+  confluenceRemoveLabelTool, confluenceDeleteAttachmentTool,
 ]);

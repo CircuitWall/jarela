@@ -1,11 +1,12 @@
 "use client";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import "highlight.js/styles/github-dark.css";
 import { Bot, Check, ChevronRight, Copy, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
@@ -288,7 +289,24 @@ const sanitizeSchema = {
 // useMemo() inputs to differ each time, defeating its plugin-pipeline
 // memoization. Hoisting these makes the references stable across renders.
 const MD_REMARK_PLUGINS = [remarkGfm];
-const MD_REHYPE_PLUGINS: import("unified").PluggableList = [rehypeRaw, [rehypeSanitize, sanitizeSchema]];
+// rehype-highlight runs after rehype-raw (so any raw HTML <code> blocks are
+// also highlighted) and before rehype-sanitize (so the spans/classes it adds
+// pass through the sanitizer's allow-list rather than being stripped).
+const MD_REHYPE_PLUGINS: import("unified").PluggableList = [
+  rehypeRaw,
+  [rehypeHighlight, { detect: true, ignoreMissing: true }],
+  [rehypeSanitize, sanitizeSchema],
+];
+
+function reactChildrenToText(children: ReactNode): string {
+  if (children == null || typeof children === "boolean") return "";
+  if (typeof children === "string" || typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(reactChildrenToText).join("");
+  if (typeof children === "object" && "props" in (children as object)) {
+    return reactChildrenToText((children as { props: { children?: ReactNode } }).props.children);
+  }
+  return "";
+}
 
 type Props = {
   message: Message | { role: "assistant"; content: string; streaming?: boolean };
@@ -637,14 +655,20 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
               </a>
             );
           },
+          pre({ children }) {
+            // CodeFence renders its own <pre>, so collapse react-markdown's
+            // outer wrapper to avoid <pre><pre>...</pre></pre>.
+            return <>{children}</>;
+          },
           code({ className, children }) {
             const match = /language-(\w+)/.exec(className ?? "");
-            const code = String(children).replace(/\n$/, "");
-            if (match?.[1] === "map") return <MapEmbed payload={code} />;
+            if (match?.[1] === "map") {
+              return <MapEmbed payload={reactChildrenToText(children).replace(/\n$/, "")} />;
+            }
             return match ? (
-              <CodeFence language={match[1]} code={code} />
+              <CodeFence language={match[1]} className={className ?? ""}>{children}</CodeFence>
             ) : (
-              <code className="bg-surface-2 px-1 rounded text-fg-muted break-all">{code}</code>
+              <code className="bg-surface-2 px-1 rounded text-fg-muted break-all">{children}</code>
             );
           },
           img({ src, alt }) {
@@ -699,16 +723,20 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
   );
 }
 
-function CodeFence({ language, code }: { language: string; code: string }) {
+function CodeFence({ language, className, children }: { language: string; className: string; children: ReactNode }) {
   const [copied, setCopied] = useState(false);
+  const codeText = useMemo(() => reactChildrenToText(children).replace(/\n$/, ""), [children]);
 
   const copyCode = useCallback(() => {
-    void navigator.clipboard.writeText(code).then(() => {
+    void navigator.clipboard.writeText(codeText).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     }).catch(console.error);
-  }, [code]);
+  }, [codeText]);
 
+  // rehype-highlight already populated `className` with `hljs language-X`
+  // plus per-token spans inside `children`. The `hljs` class drives styling
+  // from the imported github-dark theme.
   return (
     <div className="relative my-2 rounded-md overflow-hidden border border-border/60">
       <div className="flex items-center justify-between px-2 py-1 text-[10px] bg-surface-3 text-fg-faint uppercase tracking-wide">
@@ -723,15 +751,9 @@ function CodeFence({ language, code }: { language: string; code: string }) {
           <span>{copied ? "Copied" : "Copy"}</span>
         </button>
       </div>
-      <SyntaxHighlighter
-        style={oneDark}
-        language={language}
-        PreTag="div"
-        wrapLongLines
-        customStyle={{ margin: 0, borderRadius: 0, maxWidth: "100%", overflowX: "auto" }}
-      >
-        {code}
-      </SyntaxHighlighter>
+      <pre className="m-0 p-3 text-xs leading-relaxed overflow-x-auto bg-[#0d1117]">
+        <code className={className}>{children}</code>
+      </pre>
     </div>
   );
 }
