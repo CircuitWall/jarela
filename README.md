@@ -43,7 +43,7 @@
     <img src="https://img.shields.io/github/v/release/CircuitWall/jarela?logo=github&label=release&sort=semver" alt="Latest GitHub Release" />
   </a>
   <a href="./LICENSE">
-    <img src="https://img.shields.io/github/license/CircuitWall/jarela" alt="License: MIT" />
+    <img src="https://img.shields.io/github/license/CircuitWall/jarela" alt="License: Apache-2.0" />
   </a>
   <a href="https://nodejs.org/">
     <img src="https://img.shields.io/node/v/%40circuitwall%2Fjarela?logo=node.js" alt="Node version" />
@@ -842,8 +842,6 @@ schema, or introducing a second process. Template lives at
 
 ## License
 
-No license has been published yet — treat the source as "all rights reserved"
-until an explicit `LICENSE` file is added.
-
-No license has been published yet — treat the source as "all rights reserved"
-until an explicit `LICENSE` file is added.
+Licensed under the [Apache License, Version 2.0](./LICENSE). Derivative works
+and refactors must preserve the copyright/attribution notices and mark any
+modified files as changed (Apache-2.0 §4(b)–(c)).
