@@ -39,8 +39,13 @@ export default defineConfig({
         "lib/bridges/dispatcher.ts",
         "**/index.ts",
       ],
-      // Target — not a hard gate. Print numbers, let humans read them.
-      thresholds: undefined,
+      // Hard gate in CI/local coverage runs.
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+      },
     },
   },
 });

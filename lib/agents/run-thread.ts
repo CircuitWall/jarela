@@ -71,6 +71,8 @@ const CAPABILITIES_CTX = [
   "  • file appears in ~/Downloads → schedule_watcher on `file_list` with that path.",
   "  • Confluence page edited → schedule_watcher on `confluence_get_page`.",
   "Do NOT tell the user 'I can't do webhooks' or 'I can only schedule on cron' — propose a watcher instead. Honest limits to mention if relevant: minimum 60s interval, built-in tools only (no MCP), and the byte-level diff can flap on volatile fields (mitigate by narrowing the tool's args/fields).",
+  `- Documents local-folder sources auto-reindex on file changes via internal fs-watch scripts on macOS/Windows (Linux falls back to periodic sweep). Do NOT tell users this needs an LLM watcher loop.`,
+  "- list_reaction_scripts intentionally shows only user-attachable reaction.* scripts. Internal scripts (e.g. documents.reindex_local_file) are built-in plumbing and won't appear there.",
   "",
 ].join("\n");
 
@@ -86,6 +88,11 @@ const PLAN_FIRST_CTX = [
   "- The reply is a direct text answer with no tool calls.",
   "- The task is trivially short (a one-word answer, a yes/no).",
   "- You're already mid-execution from a prior turn (e.g. follow-up tool call after seeing a result).",
+  "",
+  "ACTION PRINCIPLE:",
+  "- If the user asked you to do something and a tool can do it, execute it in this turn instead of giving instructions back.",
+  "- Ask follow-up questions only when required parameters or approval are genuinely missing.",
+  "- For destructive operations (delete/cancel/remove/overwrite), require explicit confirmation unless the user already gave it.",
   "",
   "ANTI-FABRICATION RULES (very important):",
   "- NEVER report a tool result you didn't actually receive. If you didn't call the tool, you have no result.",
@@ -385,6 +392,36 @@ export async function prepareThreadRun(
           `Atlassian: ${url} as ${i.values.email}.`,
           "  Use jira_search / jira_get_issue / jira_create_issue / jira_add_comment / jira_transition_issue / confluence_search / confluence_get_page.",
           "  DO NOT shell out to a `jira` or `acli` CLI — these REST tools are already authenticated and use the corporate proxy correctly.",
+        ];
+      }
+      if (i.name === "jira_align") {
+        return [
+          "Jira Align: configured.",
+          "  Use jira_align_search_items / jira_align_get_item / jira_align_create_item / jira_align_update_item / jira_align_transition_item / jira_align_add_comment.",
+        ];
+      }
+      if (i.name === "github") {
+        return [
+          "GitHub: configured.",
+          "  Use github_* tools for issues/PRs/code/reviews (search, create, update, comment, merge, file fetch) instead of shelling out to `gh`.",
+        ];
+      }
+      if (i.name === "gmail") {
+        return [
+          "Gmail + Calendar: configured.",
+          "  Use gmail_* for inbox/search/draft/labels and calendar_* for event operations. Prefer these typed tools over raw IMAP/SMTP instructions.",
+        ];
+      }
+      if (i.name === "outlook") {
+        return [
+          "Outlook + Calendar: configured.",
+          "  Use outlook_* for mail operations and outlook_calendar_* for event operations.",
+        ];
+      }
+      if (i.name === "google") {
+        return [
+          "Google AI: configured.",
+          "  Use generate_image when the user asks to create images; don't claim image generation is unavailable.",
         ];
       }
       return [`${i.name}: configured.`];
