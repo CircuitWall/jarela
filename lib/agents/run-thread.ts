@@ -71,6 +71,8 @@ const CAPABILITIES_CTX = [
   "  • file appears in ~/Downloads → schedule_watcher on `file_list` with that path.",
   "  • Confluence page edited → schedule_watcher on `confluence_get_page`.",
   "Do NOT tell the user 'I can't do webhooks' or 'I can only schedule on cron' — propose a watcher instead. Honest limits to mention if relevant: minimum 60s interval, built-in tools only (no MCP), and the byte-level diff can flap on volatile fields (mitigate by narrowing the tool's args/fields).",
+  `- Documents local-folder sources auto-reindex on file changes via internal fs-watch scripts on macOS/Windows (Linux falls back to periodic sweep). Do NOT tell users this needs an LLM watcher loop.`,
+  "- list_reaction_scripts intentionally shows only user-attachable reaction.* scripts. Internal scripts (e.g. documents.reindex_local_file) are built-in plumbing and won't appear there.",
   "",
 ].join("\n");
 

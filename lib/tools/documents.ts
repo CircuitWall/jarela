@@ -121,7 +121,7 @@ export const documentsAddRemoteSource = tool(
         id: row.id,
         kind: row.kind,
         label: row.label,
-        note: "Indexing runs on the next scheduler sweep (~10 min). Call documents_reindex_source with this id to force an immediate sync.",
+        note: "Remote sources index on the scheduler sweep (~10 min). Call documents_reindex_source with this id to force an immediate sync. Local folders auto-reindex on file changes.",
       });
     } catch (e) {
       return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
@@ -176,7 +176,7 @@ export const documentsReindexSource = tool(
     if (row.kind === "local_folder") {
       return JSON.stringify({
         error: "documents_reindex_source is only for remote sources (Jira/Confluence). " +
-               "Local folders auto-reindex on the next scheduler sweep.",
+               "Local folders auto-reindex on file changes (fs-watch on macOS/Windows; periodic sweep fallback on Linux).",
       });
     }
     try {
