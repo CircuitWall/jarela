@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **LangGraph checkpointer now uses `node:sqlite` instead of
+  `better-sqlite3`** ([ADR-0034](docs/adr/0034-replace-better-sqlite3-checkpointer-with-node-sqlite.md)).
+  In-tree `NodeSqliteSaver` replaces `@langchain/langgraph-checkpoint-sqlite`.
+  Schema is unchanged so existing `~/.jarela/checkpoints.db` files keep
+  working without migration. This drops the EOL `prebuild-install`
+  transitive dependency and removes one native module from the
+  standalone bundle.
+
 ### Added
 
 - **Documents tooling parity for local sources**: added
