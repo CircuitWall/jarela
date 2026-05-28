@@ -452,7 +452,20 @@ export interface DocumentReindexResult {
     removed: number;
     unchanged: number;
     errors: number;
+    embed_failed?: number;
+    embed_error?: string | null;
   };
+}
+
+export interface DocumentSettings {
+  embedding_model_config: string | null;
+  embedding_probe?: {
+    ok: boolean;
+    provider: string;
+    model_id: string;
+    dimension?: number;
+    error?: string;
+  } | null;
 }
 
 

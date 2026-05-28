@@ -11,6 +11,8 @@
 //
 //     // Streaming text completion. Required.
 //     async chat(model_id, messages, params) {
+//       // messages[].content is string OR multipart array
+//       // [{type:"text",text},{type:"image",media_type,data},{type:"file",...}]
 //       return { stream: AsyncIterable<string> };
 //     }
 //
@@ -18,10 +20,31 @@
 //     async invoke?(model_id, messages, params, tools) { ... }
 //
 //     // Streaming structured call. Optional but recommended for tool-using agents.
+//     // Supported events include text/thinking/tool_call_chunk/stop plus
+//     // optional richer events (citation, usage, audio_chunk, provider_event).
 //     streamInvoke?(model_id, messages, params, tools) { ... }  // AsyncIterable<event>
 //
 //     // Embeddings. Optional.
 //     async embed?(model_id, inputs, params) { return number[][]; }
+//
+//     // UI model picker support. Optional.
+//     async listModels?(params) {
+//       return [{
+//         id: "my-model",
+//         context_length: null,
+//         max_output_tokens: null,
+//         hosted_on: "mycloud",
+//         capabilities: {
+//           vision: true,
+//           tools: true,
+//           streaming: true,
+//           json_mode: true,
+//           web_search: false,
+//           audio: false,
+//           files: true,
+//         },
+//       }];
+//     }
 //   }
 //
 // Notes:

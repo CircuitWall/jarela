@@ -552,6 +552,17 @@ module.exports = {
 };
 ```
 
+Optional advanced hooks for fuller native exposure:
+
+- `invoke(model_id, messages, params, tools)` for non-stream tool calls
+- `streamInvoke(model_id, messages, params, tools)` for token/tool/thinking streams
+- `embed(model_id, inputs, params)` for semantic recall
+- `listModels(params)` so the Models UI can show this provider's catalog
+
+`chat()` now receives multipart content too (`string | ContentPart[]`), so
+external providers can implement native vision/files paths without using
+`invoke()` first.
+
 `.js`, `.cjs`, and `.ts` are accepted (`.ts` uses Node ≥ 22.6 type-stripping).
 ESM `.mjs` files are not — use CommonJS exports. Built-in provider names cannot
 be overridden.
