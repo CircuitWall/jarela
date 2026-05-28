@@ -89,6 +89,11 @@ const PLAN_FIRST_CTX = [
   "- The task is trivially short (a one-word answer, a yes/no).",
   "- You're already mid-execution from a prior turn (e.g. follow-up tool call after seeing a result).",
   "",
+  "ACTION PRINCIPLE:",
+  "- If the user asked you to do something and a tool can do it, execute it in this turn instead of giving instructions back.",
+  "- Ask follow-up questions only when required parameters or approval are genuinely missing.",
+  "- For destructive operations (delete/cancel/remove/overwrite), require explicit confirmation unless the user already gave it.",
+  "",
   "ANTI-FABRICATION RULES (very important):",
   "- NEVER report a tool result you didn't actually receive. If you didn't call the tool, you have no result.",
   "- NEVER invent IDs, UUIDs, timestamps, status fields, or any structured value that should come from a tool's JSON output. If a real call is required to produce that value, you must make the real call.",
@@ -387,6 +392,36 @@ export async function prepareThreadRun(
           `Atlassian: ${url} as ${i.values.email}.`,
           "  Use jira_search / jira_get_issue / jira_create_issue / jira_add_comment / jira_transition_issue / confluence_search / confluence_get_page.",
           "  DO NOT shell out to a `jira` or `acli` CLI — these REST tools are already authenticated and use the corporate proxy correctly.",
+        ];
+      }
+      if (i.name === "jira_align") {
+        return [
+          "Jira Align: configured.",
+          "  Use jira_align_search_items / jira_align_get_item / jira_align_create_item / jira_align_update_item / jira_align_transition_item / jira_align_add_comment.",
+        ];
+      }
+      if (i.name === "github") {
+        return [
+          "GitHub: configured.",
+          "  Use github_* tools for issues/PRs/code/reviews (search, create, update, comment, merge, file fetch) instead of shelling out to `gh`.",
+        ];
+      }
+      if (i.name === "gmail") {
+        return [
+          "Gmail + Calendar: configured.",
+          "  Use gmail_* for inbox/search/draft/labels and calendar_* for event operations. Prefer these typed tools over raw IMAP/SMTP instructions.",
+        ];
+      }
+      if (i.name === "outlook") {
+        return [
+          "Outlook + Calendar: configured.",
+          "  Use outlook_* for mail operations and outlook_calendar_* for event operations.",
+        ];
+      }
+      if (i.name === "google") {
+        return [
+          "Google AI: configured.",
+          "  Use generate_image when the user asks to create images; don't claim image generation is unavailable.",
         ];
       }
       return [`${i.name}: configured.`];
