@@ -459,6 +459,13 @@ export interface DocumentReindexResult {
 
 export interface DocumentSettings {
   embedding_model_config: string | null;
+  embedding_probe?: {
+    ok: boolean;
+    provider: string;
+    model_id: string;
+    dimension?: number;
+    error?: string;
+  } | null;
 }
 
 

@@ -57,6 +57,13 @@ export function DocumentsPanel() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [embeddingModel, setEmbeddingModel] = useState<string>("__auto__");
   const [savingEmbeddingModel, setSavingEmbeddingModel] = useState(false);
+  const [embeddingProbe, setEmbeddingProbe] = useState<{
+    ok: boolean;
+    provider: string;
+    model_id: string;
+    dimension?: number;
+    error?: string;
+  } | null>(null);
 
   // Add-form state. `addKind` drives which other inputs are required; the
   // remote-only fields share one record because no two are needed at once.
@@ -101,6 +108,7 @@ export function DocumentsPanel() {
       setSources(sourceRows);
       setModels(modelRows);
       setEmbeddingModel(settings.embedding_model_config ?? "__auto__");
+      setEmbeddingProbe(settings.embedding_probe ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -114,9 +122,11 @@ export function DocumentsPanel() {
     const next = value === "__auto__" ? null : value;
     setEmbeddingModel(value);
     setSavingEmbeddingModel(true);
+    setEmbeddingProbe(null);
     try {
       const updated = await api.documents.setSettings({ embedding_model_config: next });
       setEmbeddingModel(updated.embedding_model_config ?? "__auto__");
+      setEmbeddingProbe(updated.embedding_probe ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -312,6 +322,17 @@ export function DocumentsPanel() {
               Used for document chunk embeddings. Rescan applies this to all eligible chunks.
             </span>
           </div>
+          {savingEmbeddingModel && (
+            <p className="text-[11px] text-fg-faint">Testing embedding model...</p>
+          )}
+          {!savingEmbeddingModel && embeddingProbe && (
+            <p className={`text-[11px] ${embeddingProbe.ok ? "text-emerald-500" : "text-red-400"}`}>
+              {embeddingProbe.ok
+                ? `Usable: ${embeddingProbe.provider}/${embeddingProbe.model_id}` +
+                  (embeddingProbe.dimension ? ` (${embeddingProbe.dimension} dims)` : "")
+                : `Not usable: ${embeddingProbe.error ?? "embedding probe failed"}`}
+            </p>
+          )}
         </section>
 
         {/* Add new source — kind picker drives the rest of the form. */}
