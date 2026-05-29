@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-05-29
+
+### Added
+
+- **Per-route reply trigger for bridges (`respond_to`).** Bridge routes now
+  carry an explicit `respond_to` setting (`"counterpart"` (default) or
+  `"user"`) controlling which inbound sender role unlocks an outbound reply.
+  The agent always runs on every inbound message so it sees the full
+  conversation context — only the reply is gated. `silent_mode` remains the
+  master switch (hardwired in the WhatsApp adapter's own `sendText` /
+  `sendTyping`) and overrides `respond_to`. Migration adds the column with a
+  back-compat default that preserves existing behaviour.
+- **Cross-adapter sender-role framing.** New `MessageRole` type and
+  [lib/bridges/message-role.ts](lib/bridges/message-role.ts) helper give the
+  agent an explicit framing per inbound message (paired user / counterpart /
+  group member / agent). The dispatcher prepends a one-line prose framing
+  plus a `[message_role:<role>]` tag so the LLM no longer reads every
+  inbound chunk as a direct command. Future adapters (Telegram, Slack,
+  Discord, mail) just populate `InboundMessage.role` and inherit the
+  behaviour.
+- **Bridge editor reply-trigger control.** New per-route select in
+  [components/bridges/BridgeEditor.tsx](components/bridges/BridgeEditor.tsx)
+  with chat-type-aware labels and explanatory subtext; greys out when
+  `silent_mode` is on.
+
+### Fixed
+
+- **Streamed thinking line stays visible after the turn finishes.** The
+  amber 'thinking…' panel was unmounting on stream `done`, yanking it out
+  from under a user mid-read. [hooks/useSSE.ts](hooks/useSSE.ts) now keeps
+  the buffered thinking content until the next `start()` / `attach()`, and
+  [components/chat/ChatView.tsx](components/chat/ChatView.tsx) passes it to
+  `MessageList` whenever non-empty rather than only while streaming.
+
 ## [0.6.4] - 2026-05-29
 
 ### Fixed
