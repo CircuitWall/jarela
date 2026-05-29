@@ -12,26 +12,13 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { writeBinaryFile } from "@/lib/files";
 import { getConfig } from "@/lib/env/config";
+import { resolveGoogleApiKey, timeoutSignal } from "@/lib/utils/google-api";
 import { registerTools } from "./registry";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
-
-function timeoutSignal(ms: number): AbortSignal {
-  const c = new AbortController();
-  setTimeout(() => c.abort(new Error(`timeout after ${ms}ms`)), ms).unref?.();
-  return c.signal;
-}
-
-function resolveApiKey(): string | null {
-  const raw = getIntegrationRaw("google");
-  const fromStore = raw?.api_key?.trim();
-  if (fromStore) return fromStore;
-  return (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim() || null;
-}
 
 interface InlineData {
   mimeType?: string;
@@ -143,7 +130,7 @@ export const generateImageTool = tool(
     const trimmed = prompt.trim();
     if (!trimmed) throw new Error("prompt is required and must be non-empty");
 
-    const apiKey = resolveApiKey();
+    const apiKey = resolveGoogleApiKey();
     if (!apiKey) {
       throw new Error(
         'Google API key not configured. Open the Integrations panel and set "Google AI (Gemini + Imagen)", or set GEMINI_API_KEY in the environment.',

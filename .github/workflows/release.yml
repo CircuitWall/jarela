@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write   # softprops/action-gh-release attaches archives to the Release
+  packages: write   # ghcr.io publication for GitHub Packages card
   id-token: write   # npm provenance
 
 jobs:
@@ -254,9 +255,15 @@ jobs:
             echo "tag $tag does not match package.json version $pkg" >&2
             exit 1
           fi
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           repo="${{ vars.JARELA_DOCKER_REPO || 'andrewgewu/jarela' }}"
+          ghcr_repo="${{ vars.JARELA_GHCR_REPO || '' }}"
+          if [ -z "$ghcr_repo" ]; then
+            ghcr_repo="ghcr.io/${owner}/jarela"
+          fi
           echo "version=$pkg" >> "$GITHUB_OUTPUT"
           echo "repo=$repo"   >> "$GITHUB_OUTPUT"
+          echo "ghcr_repo=$ghcr_repo" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -309,6 +316,7 @@ jobs:
     if: ${{ vars.JARELA_DOCKER_PUBLISH == 'true' }}
     permissions:
       contents: read
+      packages: write
     steps:
       - name: Resolve version
         id: meta
@@ -316,9 +324,15 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME#v}"
+          owner="$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
           repo="${{ vars.JARELA_DOCKER_REPO || 'andrewgewu/jarela' }}"
+          ghcr_repo="${{ vars.JARELA_GHCR_REPO || '' }}"
+          if [ -z "$ghcr_repo" ]; then
+            ghcr_repo="ghcr.io/${owner}/jarela"
+          fi
           echo "version=$tag" >> "$GITHUB_OUTPUT"
           echo "repo=$repo"   >> "$GITHUB_OUTPUT"
+          echo "ghcr_repo=$ghcr_repo" >> "$GITHUB_OUTPUT"
 
       - name: Compute tag flags
         id: tags
@@ -329,6 +343,25 @@ jobs:
           r="${{ steps.meta.outputs.repo }}"
           tags="-t $r:$v"
           # Skip moving tags for prereleases (e.g. 0.1.0-rc.1).
+          case "$v" in
+            *-*) ;;
+            *)
+              major="${v%%.*}"
+              rest="${v#*.}"
+              minor="${rest%%.*}"
+              tags="$tags -t $r:$major.$minor -t $r:$major -t $r:latest"
+              ;;
+          esac
+          echo "flags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Compute GHCR tag flags
+        id: ghcr-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          v="${{ steps.meta.outputs.version }}"
+          r="${{ steps.meta.outputs.ghcr_repo }}"
+          tags="-t $r:$v"
           case "$v" in
             *-*) ;;
             *)
@@ -356,6 +389,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Create manifest list and push
         working-directory: /tmp/digests
         run: |
@@ -370,3 +410,15 @@ jobs:
           set -euo pipefail
           docker buildx imagetools inspect \
             "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}"
+
+      - name: Mirror image to GHCR
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create ${{ steps.ghcr-tags.outputs.flags }} \
+            "${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}"
+
+      - name: Inspect GHCR image
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect \
+            "${{ steps.meta.outputs.ghcr_repo }}:${{ steps.meta.outputs.version }}"
