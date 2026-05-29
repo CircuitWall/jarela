@@ -1,0 +1,6 @@
+# Generated service-worker artifacts (Serwist output) are minified bundles.
+# Exclude them from npm tarballs to reduce opaque/obfuscated-file risk flags.
+public/sw.js
+public/swe-worker-*.js
+.next/standalone/public/sw.js
+.next/standalone/public/swe-worker-*.js

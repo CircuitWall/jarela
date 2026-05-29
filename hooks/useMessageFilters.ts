@@ -96,7 +96,6 @@ export function useMessageFilters(agentId?: string | null) {
     if (!agentId) {
       // Agent switched to none — reset to defaults. setState in effect is
       // intentional here: agentId is the external key driving this state.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFilters(DEFAULTS);
       return;
     }

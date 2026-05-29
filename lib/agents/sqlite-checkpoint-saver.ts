@@ -139,6 +139,44 @@ CREATE TABLE IF NOT EXISTS writes (
     }
   }
 
+  private async decodeRowState(row: Row): Promise<{
+    pendingWrites: [string, string, unknown][];
+    checkpoint: Checkpoint;
+    metadata: CheckpointMetadata;
+  }> {
+    const pendingWrites = await Promise.all(
+      JSON.parse(String(row.pending_writes ?? "[]")).map(
+        async (write: { task_id: string; channel: string; type?: string; value?: string }) => {
+          return [
+            write.task_id,
+            write.channel,
+            await this.serde.loadsTyped(write.type ?? "json", write.value ?? ""),
+          ] as [string, string, unknown];
+        },
+      ),
+    );
+
+    const checkpoint = (await this.serde.loadsTyped(
+      (row.type as string | null) ?? "json",
+      row.checkpoint as Uint8Array | string,
+    )) as Checkpoint;
+
+    if (checkpoint.v < 4 && row.parent_checkpoint_id != null) {
+      await this.migratePendingSends(
+        checkpoint,
+        row.thread_id as string,
+        row.parent_checkpoint_id as string,
+      );
+    }
+
+    const metadata = (await this.serde.loadsTyped(
+      (row.type as string | null) ?? "json",
+      row.metadata as Uint8Array | string,
+    )) as CheckpointMetadata;
+
+    return { pendingWrites, checkpoint, metadata };
+  }
+
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
     this.setup();
     const { thread_id, checkpoint_ns = "", checkpoint_id } =
@@ -166,38 +204,12 @@ CREATE TABLE IF NOT EXISTS writes (
       throw new Error("Missing thread_id or checkpoint_id");
     }
 
-    const pendingWrites = await Promise.all(
-      JSON.parse(String(row.pending_writes ?? "[]")).map(
-        async (write: { task_id: string; channel: string; type?: string; value?: string }) => {
-          return [
-            write.task_id,
-            write.channel,
-            await this.serde.loadsTyped(write.type ?? "json", write.value ?? ""),
-          ] as [string, string, unknown];
-        },
-      ),
-    );
-
-    const checkpoint = (await this.serde.loadsTyped(
-      (row.type as string | null) ?? "json",
-      row.checkpoint as Uint8Array | string,
-    )) as Checkpoint;
-
-    if (checkpoint.v < 4 && row.parent_checkpoint_id != null) {
-      await this.migratePendingSends(
-        checkpoint,
-        row.thread_id as string,
-        row.parent_checkpoint_id as string,
-      );
-    }
+    const { pendingWrites, checkpoint, metadata } = await this.decodeRowState(row);
 
     return {
       checkpoint,
       config: finalConfig,
-      metadata: (await this.serde.loadsTyped(
-        (row.type as string | null) ?? "json",
-        row.metadata as Uint8Array | string,
-      )) as CheckpointMetadata,
+      metadata,
       parentConfig: row.parent_checkpoint_id
         ? {
             configurable: {
@@ -293,28 +305,7 @@ CREATE TABLE IF NOT EXISTS writes (
 
     const rows = this.db.prepare(sql).all(...(args as never[])) as Row[];
     for (const row of rows) {
-      const pendingWrites = await Promise.all(
-        JSON.parse(String(row.pending_writes ?? "[]")).map(
-          async (write: { task_id: string; channel: string; type?: string; value?: string }) => {
-            return [
-              write.task_id,
-              write.channel,
-              await this.serde.loadsTyped(write.type ?? "json", write.value ?? ""),
-            ] as [string, string, unknown];
-          },
-        ),
-      );
-      const checkpoint = (await this.serde.loadsTyped(
-        (row.type as string | null) ?? "json",
-        row.checkpoint as Uint8Array | string,
-      )) as Checkpoint;
-      if (checkpoint.v < 4 && row.parent_checkpoint_id != null) {
-        await this.migratePendingSends(
-          checkpoint,
-          row.thread_id as string,
-          row.parent_checkpoint_id as string,
-        );
-      }
+      const { pendingWrites, checkpoint, metadata } = await this.decodeRowState(row);
       yield {
         config: {
           configurable: {
@@ -324,10 +315,7 @@ CREATE TABLE IF NOT EXISTS writes (
           },
         },
         checkpoint,
-        metadata: (await this.serde.loadsTyped(
-          (row.type as string | null) ?? "json",
-          row.metadata as Uint8Array | string,
-        )) as CheckpointMetadata,
+        metadata,
         parentConfig: row.parent_checkpoint_id
           ? {
               configurable: {

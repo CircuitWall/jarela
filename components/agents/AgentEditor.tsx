@@ -572,43 +572,28 @@ function ToolGroupBlock({
   }, [someOn]);
 
   return (
-    <div className="rounded-lg border border-border bg-surface-1/40">
-      <div className="flex items-center gap-2 px-2 py-1.5">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="text-fg-subtle hover:text-fg transition-colors"
-          aria-label={open ? "Collapse" : "Expand"}
-        >
-          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-        </button>
-        <label className="flex items-center gap-1.5 cursor-pointer flex-1 min-w-0">
-          <input
-            ref={headerRef}
-            type="checkbox"
-            className="rounded border-border"
-            checked={allOn}
-            onChange={(e) => onToggleGroup(group, e.target.checked)}
-          />
-          <span className="text-[12px] font-semibold text-fg truncate">{group}</span>
-        </label>
-        <span className="text-[10px] text-fg-faint shrink-0">{selectedInGroup}/{allTools.length}</span>
-      </div>
-      {open && (
-        <div className="space-y-1.5 px-2 pb-2 pt-0.5 border-t border-border/60">
-          {categories.map(([category, catTools]) => (
-            <ToolCategoryBlock
-              key={category}
-              category={category}
-              tools={catTools}
-              selected={selected}
-              onToggleTool={onToggleTool}
-              onToggleCategory={onToggleCategory}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+    <ToolSelectionSection
+      label={group}
+      open={open}
+      setOpen={setOpen}
+      selectedCount={selectedInGroup}
+      totalCount={allTools.length}
+      allOn={allOn}
+      onToggleAll={(enable) => onToggleGroup(group, enable)}
+      headerRef={headerRef}
+      bodyClassName="space-y-1.5 px-2 pb-2 pt-0.5 border-t border-border/60"
+    >
+      {categories.map(([category, catTools]) => (
+        <ToolCategoryBlock
+          key={category}
+          category={category}
+          tools={catTools}
+          selected={selected}
+          onToggleTool={onToggleTool}
+          onToggleCategory={onToggleCategory}
+        />
+      ))}
+    </ToolSelectionSection>
   );
 }
 
@@ -642,6 +627,61 @@ function ToolCategoryBlock({
   }, [someOn]);
 
   return (
+    <ToolSelectionSection
+      label={category}
+      open={open}
+      setOpen={setOpen}
+      selectedCount={selectedInCat}
+      totalCount={tools.length}
+      allOn={allOn}
+      onToggleAll={(enable) => onToggleCategory(category, enable)}
+      headerRef={headerRef}
+      bodyClassName="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
+    >
+      {tools.map((t) => (
+        <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
+          <input
+            type="checkbox"
+            className="rounded border-border"
+            checked={selected.includes(t.name)}
+            onChange={() => onToggleTool(t.name)}
+          />
+          <span className="min-w-0 flex-1 flex items-center gap-1.5">
+            <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
+            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
+              {Math.round((t.stats?.score ?? 1) * 100)}%
+            </span>
+          </span>
+        </label>
+      ))}
+    </ToolSelectionSection>
+  );
+}
+
+function ToolSelectionSection({
+  label,
+  open,
+  setOpen,
+  selectedCount,
+  totalCount,
+  allOn,
+  onToggleAll,
+  headerRef,
+  bodyClassName,
+  children,
+}: {
+  label: string;
+  open: boolean;
+  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  selectedCount: number;
+  totalCount: number;
+  allOn: boolean;
+  onToggleAll: (enable: boolean) => void;
+  headerRef: React.RefObject<HTMLInputElement | null>;
+  bodyClassName: string;
+  children: React.ReactNode;
+}) {
+  return (
     <div className="rounded-lg border border-border bg-surface-1/40">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button
@@ -658,32 +698,13 @@ function ToolCategoryBlock({
             type="checkbox"
             className="rounded border-border"
             checked={allOn}
-            onChange={(e) => onToggleCategory(category, e.target.checked)}
+            onChange={(e) => onToggleAll(e.target.checked)}
           />
-          <span className="text-[12px] font-semibold text-fg truncate">{category}</span>
+          <span className="text-[12px] font-semibold text-fg truncate">{label}</span>
         </label>
-        <span className="text-[10px] text-fg-faint shrink-0">{selectedInCat}/{tools.length}</span>
+        <span className="text-[10px] text-fg-faint shrink-0">{selectedCount}/{totalCount}</span>
       </div>
-      {open && (
-        <div className="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60">
-          {tools.map((t) => (
-            <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
-              <input
-                type="checkbox"
-                className="rounded border-border"
-                checked={selected.includes(t.name)}
-                onChange={() => onToggleTool(t.name)}
-              />
-              <span className="min-w-0 flex-1 flex items-center gap-1.5">
-                <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
-                  {Math.round((t.stats?.score ?? 1) * 100)}%
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
-      )}
+      {open && <div className={bodyClassName}>{children}</div>}
     </div>
   );
 }

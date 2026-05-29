@@ -1,6 +1,6 @@
 "use client";
 import { Globe, Loader2, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ProxyApplyResult, ProxyConfigEnvelope, ProxyMode, ProxyScheme } from "@/api/types";
 
@@ -31,20 +31,7 @@ export function NetworkSection() {
   const [caLabel, setCaLabel] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  async function load() {
-    setLoading(true);
-    try {
-      const r = await api.proxy.get();
-      setEnv(r);
-      seed(r);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function seed(r: ProxyConfigEnvelope) {
+  const seed = useCallback((r: ProxyConfigEnvelope) => {
     const c = r.config;
     setMode(c.mode);
     setScheme(c.scheme);
@@ -55,9 +42,22 @@ export function NetworkSection() {
     setNoProxy(c.no_proxy ?? "");
     setCaBundle(c.ca_bundle ?? null);
     setCaLabel(c.ca_bundle ? `Saved CA bundle (${humanBytes(c.ca_bundle.length)})` : null);
-  }
+  }, []);
 
-  useEffect(() => { void load(); }, []);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const r = await api.proxy.get();
+      setEnv(r);
+      seed(r);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [seed]);
+
+  useEffect(() => { void load(); }, [load]);
 
   async function save() {
     setError(null);

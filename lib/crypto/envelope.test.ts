@@ -64,8 +64,12 @@ describe("decrypt error handling", () => {
 
   it("throws on a tampered tag (auth failure)", () => {
     const ct = encrypt("guarded");
-    // Flip the last byte of the base64url payload — corrupts the tag.
-    const tampered = ct.slice(0, -1) + (ct.slice(-1) === "A" ? "B" : "A");
+    // Mutate one byte in the authenticated payload so GCM tag validation
+    // deterministically fails after decoding.
+    const prefix = "enc:v1:";
+    const buf = Buffer.from(ct.slice(prefix.length), "base64url");
+    buf[buf.length - 1] ^= 0x01;
+    const tampered = prefix + buf.toString("base64url");
     expect(() => decrypt(tampered)).toThrow();
   });
 });

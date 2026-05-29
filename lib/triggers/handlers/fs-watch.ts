@@ -78,7 +78,7 @@ function handleEvent(w: WatcherState, filename: string | null): void {
   if (!filename) return;
   // Filter dot-dirs and SKIP_DIRS inline. We can't trust the
   // recursive watcher to honour them.
-  const segments = filename.split(sep).filter((s) => s.length > 0);
+  const segments = filename.split(/[\\/]+/).filter((s) => s.length > 0);
   if (segments.length === 0) return;
   for (let i = 0; i < segments.length - 1; i++) {
     const seg = segments[i];
@@ -87,7 +87,7 @@ function handleEvent(w: WatcherState, filename: string | null): void {
   }
   const file = segments[segments.length - 1];
   if (!ALLOWED_EXT.has(lowerExt(file))) return;
-  const abs = join(w.rootPath, filename);
+  const abs = join(w.rootPath, ...segments);
   scheduleDebounce(w, abs);
 }
 

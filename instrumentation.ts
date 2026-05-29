@@ -57,7 +57,7 @@ function warnIfExposedBind(): void {
   // binding 0.0.0.0 to the pod's network namespace and reverse-proxying
   // in front of it.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const fs: typeof import("node:fs") = require("node:fs");
     if (fs.existsSync("/.dockerenv")) return;
   } catch {

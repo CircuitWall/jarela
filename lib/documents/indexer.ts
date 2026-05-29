@@ -323,6 +323,17 @@ export async function upsertLocalDocument(
   const t = new Date().toISOString();
   const docId = existingId ?? randomUUID();
 
+  // Two writers can race on (source_id, path): the full sweep in
+  // indexSource() loads listIndexedDocs() once and iterates, while
+  // fs-watch firings call reindexLocalFile() per file. If a watcher
+  // event lands mid-sweep, both paths can see "no existing row" and
+  // both try to INSERT, tripping UNIQUE(source_id, path)
+  // (lib/db/migrations.ts). REPLACE INTO is unsafe: document_chunks
+  // has ON DELETE CASCADE on documents.id, so REPLACE would nuke every
+  // chunk on each call. Use ON CONFLICT DO NOTHING, and if we lost the
+  // race, adopt the winner's id and overwrite via UPDATE so the latest
+  // content still wins.
+  let writeId = docId;
   if (existingId) {
     db.prepare(
       `UPDATE documents
@@ -330,15 +341,31 @@ export async function upsertLocalDocument(
        WHERE id=?`,
     ).run(f.abs, f.rel, f.mtime_ms, f.size, hash, t, existingId);
     db.prepare("DELETE FROM document_chunks WHERE document_id=?").run(existingId);
+    writeId = existingId;
   } else {
-    db.prepare(
+    const info = db.prepare(
       `INSERT INTO documents
        (id, source_id, path, rel_path, mtime_ms, size_bytes, content_hash, last_indexed_at, chunk_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+       ON CONFLICT(source_id, path) DO NOTHING`,
     ).run(docId, sourceId, f.abs, f.rel, f.mtime_ms, f.size, hash, t);
+    if (info.changes === 0) {
+      const winner = db
+        .prepare("SELECT id FROM documents WHERE source_id=? AND path=?")
+        .get(sourceId, f.abs) as { id: string } | undefined;
+      if (winner) {
+        db.prepare(
+          `UPDATE documents
+           SET rel_path=?, mtime_ms=?, size_bytes=?, content_hash=?, last_indexed_at=?
+           WHERE id=?`,
+        ).run(f.rel, f.mtime_ms, f.size, hash, t, winner.id);
+        db.prepare("DELETE FROM document_chunks WHERE document_id=?").run(winner.id);
+        writeId = winner.id;
+      }
+    }
   }
 
-  return chunkAndEmbedDocument(docId, text, f.rel);
+  return chunkAndEmbedDocument(writeId, text, f.rel);
 }
 
 /**

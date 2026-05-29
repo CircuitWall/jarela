@@ -95,6 +95,94 @@ function toOpenAIMessages(
 // raw InvokeMessage shapes that the OpenAI SDK then rejects for images/files.
 export { toOpenAIContent, toOpenAIMessages };
 
+type OpenAIStreamDelta = {
+  content?: string | null;
+  reasoning_content?: string | null;
+  tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
+};
+
+type OpenAIStreamChoice = {
+  delta?: OpenAIStreamDelta;
+  finish_reason?: string | null;
+};
+
+type OpenAIInvokeChoice = {
+  message?: {
+    content?: string | null;
+    tool_calls?: Array<{ type?: string; id?: string; function?: { name?: string; arguments?: string } }>;
+  };
+  finish_reason?: string | null;
+};
+
+function parseStopReason(reason: string | null | undefined): InvokeResult["stop_reason"] {
+  if (reason === "tool_calls") return "tool_use";
+  if (reason === "length") return "length";
+  return "stop";
+}
+
+export function parseOpenAIInvokeChoice(choice: OpenAIInvokeChoice): InvokeResult {
+  return {
+    text: choice.message?.content ?? null,
+    tool_calls: (choice.message?.tool_calls ?? []).flatMap((tc) => {
+      if (tc?.type !== "function" || !tc.function?.name) return [];
+      return [{
+        id: tc.id ?? "",
+        name: tc.function.name,
+        arguments: (() => {
+          try {
+            return JSON.parse(tc.function.arguments ?? "{}") as Record<string, unknown>;
+          } catch {
+            return {};
+          }
+        })(),
+      }];
+    }),
+    stop_reason: parseStopReason(choice.finish_reason),
+  };
+}
+
+export async function* streamOpenAIEvents(
+  stream: AsyncIterable<{ choices?: OpenAIStreamChoice[] }>,
+): AsyncIterable<ProviderStreamEvent> {
+  for await (const chunk of stream) {
+    const choice = chunk.choices?.[0];
+    if (!choice) continue;
+    const delta = choice.delta;
+    if (!delta) continue;
+    if (delta.content) yield { type: "text", delta: delta.content };
+    if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+      yield { type: "thinking", delta: delta.reasoning_content };
+    }
+    if (delta.tool_calls) {
+      for (const tc of delta.tool_calls) {
+        yield {
+          type: "tool_call_chunk",
+          index: tc.index ?? 0,
+          id: tc.id,
+          name: tc.function?.name,
+          args_delta: tc.function?.arguments,
+        };
+      }
+    }
+    if (choice.finish_reason) {
+      yield { type: "stop", reason: parseStopReason(choice.finish_reason) };
+    }
+  }
+}
+
+async function streamOpenAIText(
+  stream: AsyncIterable<{ choices?: Array<{ delta?: { content?: string | null } }> }>,
+): Promise<ProviderStreamResult> {
+  return {
+    stream: (async function* () {
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta?.content;
+        if (delta) yield delta;
+      }
+    })(),
+  };
+}
+
 function ollamaOriginFromParams(params: ProviderParams): string | null {
   const raw = typeof params.base_url === "string" ? params.base_url : "";
   if (!raw) return null;
@@ -146,14 +234,7 @@ export const openaiProvider: ModelProvider = {
       max_tokens: params.max_tokens,
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
-    return {
-      stream: (async function* () {
-        for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) yield delta;
-        }
-      })(),
-    };
+    return streamOpenAIText(stream);
   },
 
   async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
@@ -168,25 +249,7 @@ export const openaiProvider: ModelProvider = {
       max_tokens: params.max_tokens,
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
-    const choice = resp.choices[0];
-    return {
-      text: choice.message.content ?? null,
-      tool_calls: (choice.message.tool_calls ?? []).flatMap((tc) => {
-        if (tc?.type !== "function" || !tc.function?.name) return [];
-        return [{
-          id: tc.id,
-          name: tc.function.name,
-          arguments: (() => {
-            try {
-              return JSON.parse(tc.function.arguments) as Record<string, unknown>;
-            } catch {
-              return {};
-            }
-          })(),
-        }];
-      }),
-      stop_reason: choice.finish_reason === "tool_calls" ? "tool_use" : "stop",
-    };
+    return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
   },
 
   streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
@@ -239,34 +302,7 @@ async function* openaiStreamInvoke(
     body.tool_choice = "auto";
   }
   const stream = await client.chat.completions.create(body);
-  for await (const chunk of stream) {
-    const choice = chunk.choices[0];
-    if (!choice) continue;
-    const delta = choice.delta as {
-      content?: string | null;
-      reasoning_content?: string | null;
-      tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
-    };
-    if (delta.content) yield { type: "text", delta: delta.content };
-    if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
-      yield { type: "thinking", delta: delta.reasoning_content };
-    }
-    if (delta.tool_calls) {
-      for (const tc of delta.tool_calls) {
-        yield {
-          type: "tool_call_chunk",
-          index: tc.index ?? 0,
-          id: tc.id,
-          name: tc.function?.name,
-          args_delta: tc.function?.arguments,
-        };
-      }
-    }
-    if (choice.finish_reason) {
-      const fr = choice.finish_reason;
-      yield { type: "stop", reason: fr === "tool_calls" ? "tool_use" : fr === "length" ? "length" : "stop" };
-    }
-  }
+  yield* streamOpenAIEvents(stream as AsyncIterable<{ choices?: OpenAIStreamChoice[] }>);
 }
 
 export function makeOpenAICompatProvider(
@@ -291,14 +327,7 @@ export function makeOpenAICompatProvider(
         max_tokens: params.max_tokens,
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
-      return {
-        stream: (async function* () {
-          for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta?.content;
-            if (delta) yield delta;
-          }
-        })(),
-      };
+      return streamOpenAIText(stream);
     },
 
     async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
@@ -313,25 +342,7 @@ export function makeOpenAICompatProvider(
         max_tokens: params.max_tokens,
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
-      const choice = resp.choices[0];
-      return {
-        text: choice.message.content ?? null,
-        tool_calls: (choice.message.tool_calls ?? []).flatMap((tc) => {
-          if (tc?.type !== "function" || !tc.function?.name) return [];
-          return [{
-            id: tc.id,
-            name: tc.function.name,
-            arguments: (() => {
-              try {
-                return JSON.parse(tc.function.arguments) as Record<string, unknown>;
-              } catch {
-                return {};
-              }
-            })(),
-          }];
-        }),
-        stop_reason: choice.finish_reason === "tool_calls" ? "tool_use" : "stop",
-      };
+      return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
     },
 
     streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {

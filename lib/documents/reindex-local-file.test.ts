@@ -27,6 +27,7 @@ vi.mock("@/lib/embeddings", () => ({
 }));
 
 const { reindexLocalFile } = await import("./reindex-local-file");
+const { upsertLocalDocument, hashContent } = await import("./indexer");
 const { getDb } = await import("@/lib/db");
 const { createDocumentSource } = await import("@/lib/stores/document-sources");
 
@@ -127,5 +128,33 @@ describe("reindexLocalFile (ADR-0028)", () => {
       abs,
     });
     expect(result.preview).toMatch(/^skipped: source/);
+  });
+
+  // Regression: full sweep and fs-watch can race on the same
+  // (source_id, path). Both call upsertLocalDocument with
+  // existingId=undefined and trip UNIQUE(source_id, path) on the
+  // second INSERT. Fix uses ON CONFLICT DO NOTHING + winner adoption.
+  it("upsertLocalDocument is idempotent across concurrent inserts (UNIQUE race)", async () => {
+    const abs = join(sourceRoot, "race.md");
+    const rel = "race.md";
+    writeFileSync(abs, "racing writers");
+    const text = "racing writers";
+    const hash = hashContent(text);
+    const f = { abs, rel, mtime_ms: Date.now(), size: text.length };
+
+    // Two concurrent calls, both with existingId=undefined â€” this is
+    // exactly the pattern that used to throw `UNIQUE constraint failed`.
+    await expect(
+      Promise.all([
+        upsertLocalDocument(sourceId, f, text, hash, undefined),
+        upsertLocalDocument(sourceId, f, text, hash, undefined),
+      ]),
+    ).resolves.toBeDefined();
+
+    // Exactly one row should exist for that (source_id, path).
+    const rows = getDb()
+      .prepare("SELECT id FROM documents WHERE source_id=? AND path=?")
+      .all(sourceId, abs);
+    expect(rows.length).toBe(1);
   });
 });
