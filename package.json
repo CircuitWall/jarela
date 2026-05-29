@@ -36,6 +36,8 @@
   },
   "files": [
     ".next/standalone",
+    "!.next/standalone/public/sw.js",
+    "!.next/standalone/public/swe-worker-*.js",
     "app",
     "lib",
     "components",
@@ -43,6 +45,8 @@
     "hooks",
     "api",
     "public",
+    "!public/sw.js",
+    "!public/swe-worker-*.js",
     "scripts/jarela-bin.mjs",
     "scripts/service-install.mjs",
     "scripts/start-prod.mjs",
