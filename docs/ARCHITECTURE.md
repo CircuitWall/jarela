@@ -125,6 +125,8 @@ flowchart LR
     B --> K[Memory Store<br/>lib/stores]
     B --> HR[Harness Resolver<br/>lib/agents/harness]
     HR --> K
+    B --> OV[Output Validator<br/>lib/agents/output-validator]
+    OV -.post-turn check.-> B
     K --> CR[Crypto Envelope<br/>lib/crypto]
     CR --> J
     K --> J
@@ -222,6 +224,22 @@ the agent proposes `upsert_harness` to create or modify a custom preset, and
 `update_agent` (with `harness_id`) to point an agent at it. Built-in harnesses
 remain read-only and the global default pointer stays UI-only — both invariants
 enforced inside `applyAction`.
+
+### Output validator (anti-fabrication)
+
+`lib/agents/output-validator` post-checks every assistant turn before the
+terminal `done` chunk leaves `stallRetryStream`
+([ADR-0037](./adr/0037-agent-output-validator.md)). It cross-references the
+assistant text against the `tool_call` chunks issued in the same turn and
+flags four fabrication shapes — claim-without-tool, citation-of-an-unregistered-tool,
+citation-of-an-uncalled-tool, and summary-without-action. A flagged turn
+triggers the same retry path the stall detector uses (`↻` separator + a
+reason-aware synthetic-user nudge); if the retry budget is exhausted,
+`persistAssistantMessage` appends a visible `*⚠️ Output validator flagged: ...*`
+footer to the persisted message. The validator runs entirely on regex —
+no extra LLM call per turn — and is exercised by both unit tests and a
+named-scenario regression set (`npm run test:eval`) seeded with real
+observed hallucinations.
 
 ## Key Flow — Scheduled background task
 
