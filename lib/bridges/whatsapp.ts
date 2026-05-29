@@ -10,8 +10,10 @@
  *    we convert to a data URL and surface via `onStatusChange`.
  *  - `connection.update` events drive our status reporter
  *    (`disconnected | pairing | connected | error`).
- *  - `messages.upsert` events with `type='notify'` (real-time inbound) and
- *    !fromMe are forwarded to the inbound handler. Text, captions, images
+ *  - `messages.upsert` events with `type='notify'` (real-time inbound) are
+ *    forwarded to the inbound handler. User-authored `fromMe` messages are
+ *    included so the agent sees full conversational context; bot-authored
+ *    echoes are suppressed via sent-message ID tracking. Text, captions, images
  *    (vision), stickers (as webp images), voice notes / audio, video, and
  *    documents are all extracted via `extractContent`; location and contact
  *    payloads are flattened into the text body. Reactions, polls and other
@@ -83,8 +85,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   // to themselves can route to an agent.
   private selfJid: string | null = null;
   // IDs of messages we sent via sendText. WhatsApp echoes these back as
-  // `fromMe` upserts; without this filter we'd loop on our own replies in
-  // the self-chat. Bounded ring (most recent N).
+  // `fromMe` upserts; we suppress only those IDs so user-authored `fromMe`
+  // messages still flow through for context. Bounded ring (most recent N).
   private sentIds: string[] = [];
   private sentIdsSet = new Set<string>();
   private static readonly SENT_IDS_MAX = 500;
@@ -247,13 +249,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         };
         if (!m.key?.remoteJid) continue;
         if (m.key.fromMe) {
-          // Allow `fromMe` ONLY in the self-chat (you DMing yourself), so the
-          // "Yourself" route can fire without a second WhatsApp account.
-          // Skip our own bot replies (sendText records their IDs) and any
-          // `fromMe` traffic in other chats (those echoes would loop).
-          const candidate = pickRoutableJid(m.key.remoteJid, m.key.remoteJidAlt);
-          const isSelfChat = !!this.selfJid && candidate === this.selfJid;
-          if (!isSelfChat) continue;
+          // Include user-authored `fromMe` traffic so the agent receives full
+          // chat context (including the user's own replies), but suppress
+          // bridge-authored echoes to prevent bot loopbacks.
           if (m.key.id && this.sentIdsSet.has(m.key.id)) continue;
         }
         // Baileys 7 / modern WhatsApp delivers many personal chats with a
