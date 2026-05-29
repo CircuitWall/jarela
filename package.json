@@ -64,7 +64,7 @@
     "docs/INSTALL.md"
   ],
   "scripts": {
-    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true",
+    "setup:hooks": "node scripts/setup-git-hooks.mjs",
     "dev": "next dev --webpack -p 4312",
     "build": "next build --webpack && node scripts/postbuild.mjs",
     "start": "node scripts/start-prod.mjs",

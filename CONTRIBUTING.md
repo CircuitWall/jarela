@@ -196,6 +196,7 @@ automation) flow through to the release workflow normally.
 git clone https://github.com/CircuitWall/jarela.git
 cd jarela
 npm install
+npm run setup:hooks
 npm run dev          # http://localhost:3000
 
 npm run lint
