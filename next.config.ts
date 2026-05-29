@@ -24,7 +24,15 @@ const nextConfig: NextConfig = {
   // cannot see. Marking it external + explicitly tracing its node_modules
   // directory ensures the standalone bundle ships the native binding so
   // the installed app can use the OS keychain.
-  serverExternalPackages: ["ws", "bufferutil", "utf-8-validate", "@napi-rs/keyring", "baileys", "undici"],
+  serverExternalPackages: [
+    "ws",
+    "bufferutil",
+    "utf-8-validate",
+    "@napi-rs/keyring",
+    "@whiskeysockets/baileys",
+    "baileys",
+    "undici",
+  ],
   outputFileTracingIncludes: {
     "/**": ["./node_modules/@napi-rs/keyring/**/*"],
   },
