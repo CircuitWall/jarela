@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [lib/tools/files.test.ts](lib/tools/files.test.ts) now uses
   `path.basename(...)` instead of slash-splitting paths, making assertions
   robust across path separators.
+- **WhatsApp self-chat context forwarding improved without bot loops.**
+  [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now forwards user-authored
+  `fromMe` replies so agents get full local conversation context, while still
+  suppressing bridge-authored echoes via sent-message ID tracking.
 - **fs-watch skip-dir filtering normalized across separators.**
   [lib/triggers/handlers/fs-watch.ts](lib/triggers/handlers/fs-watch.ts) now
   splits event filenames on both `/` and `\\`, ensuring skip-dir and dot-dir
