@@ -10,6 +10,7 @@ import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { listIntegrations } from "@/lib/stores/integrations";
 import { buildAdaptivePersonaContext } from "@/lib/agents/adaptive-persona";
 import { resolveHarness } from "@/lib/agents/harness/resolve";
+import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getAppName } from "@/lib/env/app-config";
 import os from "node:os";
 
@@ -304,7 +305,7 @@ export async function prepareThreadRun(
 
   const rawStream = streamWithConfig(thread_id, history, streamOpts, signal);
   return {
-    stream: stallRetryStream(rawStream, thread_id, options, signal, _stallRetriesLeft),
+    stream: stallRetryStream(rawStream, thread_id, options, signal, _stallRetriesLeft, allowedTools),
     thread_id,
   };
 }
@@ -324,16 +325,18 @@ async function* stallRetryStream(
   options: StreamOptions | undefined,
   signal: AbortSignal | undefined,
   retriesLeft: number,
+  allowedTools: readonly string[],
 ): AsyncGenerator<StreamChunk> {
   // If no retry budget, just forward everything unchanged. The downstream
-  // persistAssistantMessage will still tag a stall with a warning footer.
+  // persistAssistantMessage will still tag a stall or fabrication with a
+  // warning footer.
   if (retriesLeft <= 0) {
     for await (const chunk of inner) yield chunk;
     return;
   }
 
   let textBuf = "";
-  let toolCount = 0;
+  const toolNames: string[] = [];
   let doneChunk: StreamChunk | null = null;
   let sawError = false;
 
@@ -343,7 +346,8 @@ async function* stallRetryStream(
       if (typeof d === "string") textBuf += d;
       yield chunk;
     } else if (chunk.type === "tool_call") {
-      toolCount++;
+      const name = (chunk.data as { name?: unknown } | undefined)?.name;
+      if (typeof name === "string" && name) toolNames.push(name);
       yield chunk;
     } else if (chunk.type === "done") {
       // Hold the terminal marker — if we retry, the retry's `done` closes
@@ -361,11 +365,17 @@ async function* stallRetryStream(
 
   const stalled =
     !sawError &&
-    toolCount === 0 &&
+    toolNames.length === 0 &&
     textBuf.trim().length > 0 &&
     looksLikeStall(textBuf.trim());
 
-  if (!stalled) {
+  // Fabrication check (ADR-0037): only run when the stall path didn't claim
+  // this turn — stall-retry already handles zero-tool stall-prose turns.
+  const fabrication = !sawError && !stalled
+    ? validateAssistantOutput(textBuf, toolNames, allowedTools)
+    : ({ ok: true } as const);
+
+  if (!stalled && fabrication.ok) {
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -375,9 +385,11 @@ async function* stallRetryStream(
   yield { type: "text_delta", data: { delta: "\n\n↻ " } };
 
   // Inject a forceful nudge as a synthetic user message so the model sees
-  // its own stalled reply + an instruction to continue.
-  const nudge =
-    "\u21bb Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize \u2014 just call the tool.";
+  // its own flagged reply + an instruction to continue. Stall and fabrication
+  // get distinct, reason-aware nudges.
+  const nudge = stalled
+    ? "\u21bb Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize \u2014 just call the tool."
+    : `\u21bb Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim \u2014 either call the actual tool, or rephrase as a proposal/question.`;
 
   const retry = await prepareThreadRun(
     thread_id,
@@ -413,6 +425,16 @@ export function persistAssistantMessage(
     final = `${trimmed}\n\n*⚠️ Agent stalled — promised a next step but did not invoke any tool. Reply "continue" to retry.*`;
   } else if (toolList.length > 0) {
     final = `${trimmed}\n\n*— used: ${toolList.join(", ")}*`;
+  }
+  // Fabrication footer (ADR-0037): runs after the retry budget is exhausted
+  // and a flagged reply still made it through. Look up allowed tools from
+  // the agent config so callers don't have to thread it through.
+  if (trimmed && !final.includes("*⚠️ Agent stalled")) {
+    const allowedTools = lookupAllowedToolsForThread(thread_id);
+    const v = validateAssistantOutput(trimmed, toolList, allowedTools);
+    if (!v.ok) {
+      final = `${final}\n\n*⚠️ Output validator flagged: ${v.reason}*`;
+    }
   }
   // Cap individual tool payloads so a single 64KB file_read result doesn't
   // make every reload of this thread re-download a giant blob. Keep the
@@ -479,6 +501,22 @@ const STALL_PATTERNS: RegExp[] = [
   /\bi['’]?ll (check|verify|continue|proceed|look|try|do (?:that|this|it)|keep going|get (?:on|right) (?:on|to))/i,
   /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
 ];
+
+// Resolve the agent's allowed_tools list from a thread id. Best-effort: empty
+// list if the thread or agent config has gone away (the validator then
+// flags any `(via foo)` citation as unregistered, which is the safe default).
+function lookupAllowedToolsForThread(thread_id: string): string[] {
+  try {
+    const thread = getThread(thread_id);
+    if (!thread) return [];
+    const agentCfg = getAgentConfig(thread.agent_id);
+    if (!agentCfg) return [];
+    const parsed = JSON.parse(agentCfg.tools) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export function looksLikeStall(text: string): boolean {
   // Inspect the last paragraph / sentence \u2014 earlier acknowledgment
