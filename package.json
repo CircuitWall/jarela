@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/jarela",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
@@ -75,7 +75,9 @@
     "lint": "eslint . && node scripts/check-integration-manifests.mjs",
     "security:audit": "npm audit --omit=dev --audit-level=high",
     "security:secrets": "node scripts/scan-secrets.mjs --all",
-    "security:ci": "npm run security:audit && npm run security:secrets",
+    "security:link-preview": "node scripts/check-link-preview-version.mjs",
+    "security:routes": "node scripts/check-route-bundles.mjs",
+    "security:ci": "npm run security:audit && npm run security:secrets && npm run security:link-preview",
     "test:package": "node scripts/check-npm-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

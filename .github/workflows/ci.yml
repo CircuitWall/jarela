@@ -107,6 +107,9 @@ jobs:
       - name: Build (next build)
         run: npm run build
 
+      - name: Route bundle security attestation
+        run: npm run security:routes
+
       - name: Verify npm tarball contains runnable standalone bundle
         run: npm run test:package
 
