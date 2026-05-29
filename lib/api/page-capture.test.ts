@@ -80,7 +80,7 @@ describe("handlePageCapture — validation", () => {
   });
 
   it("rejects missing url", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { url, ...withoutUrl } = validBody;
     const res = await handlePageCapture(makeReq(withoutUrl));
     expect(res.status).toBe(400);
@@ -92,7 +92,7 @@ describe("handlePageCapture — validation", () => {
   });
 
   it("rejects missing capturedAt", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { capturedAt, ...rest } = validBody;
     const res = await handlePageCapture(makeReq(rest));
     expect(res.status).toBe(400);
@@ -185,7 +185,7 @@ describe("handlePageCapture — message body", () => {
   });
 
   it("uses the URL as fallback when no title is given", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+     
     const { title, ...rest } = validBody;
     await handlePageCapture(makeReq(rest));
     const body = addMessageMock.mock.calls[0][2] as string;
