@@ -177,7 +177,8 @@ create an Outlook Calendar invite in the same turn.
   auto-discovers the proxy (via `scutil --proxy`) and trust store (via `security
   find-certificate` against System + login keychains, written to
   `~/.jarela/system-ca.pem`) — zero shell-config or manual CA paste
-  required for Macs with MDM-pushed corporate roots (ADR-0020).
+  required when the corporate roots are already in the system keychain
+  (ADR-0020).
 
 ## Quick start
 

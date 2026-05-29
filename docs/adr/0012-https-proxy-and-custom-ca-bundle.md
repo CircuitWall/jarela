@@ -20,8 +20,8 @@ customisation. Two real-world deployments fail with this shape:
    client to speak `https://` to the proxy, not plaintext HTTP. Today
    the user has no way to express that — even if the proxy listens on
    port 443 the dispatcher hardcodes `http://`.
-2. **TLS-intercepting proxies (MITM with internal root CA).** The
-   `internal-egress-proxy.example.com` and most mid/large corporate egress points
+2. **TLS-intercepting proxies (MITM with internal root CA).** Many
+   enterprise egress proxies and most mid/large corporate egress points
    re-sign every outbound TLS connection with an internal root. Node
    does not trust that root, so every LLM/MCP call fails with
    `unable to get local issuer certificate` /

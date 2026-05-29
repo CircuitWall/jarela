@@ -46,7 +46,9 @@ export function useSSE(onDone?: () => void) {
         // assistant bubble disappears for ~100ms. The consumer (ChatView)
         // calls clearStreamingContent after refetch lands, swapping the
         // streaming bubble for the persisted message in a single render.
-        setThinkingContent("");
+        // Don't clear thinkingContent either: thinking isn't persisted on
+        // the message, so clearing here would yank it out from under a user
+        // who's still reading. It clears on the next start()/attach().
         onDone?.();
         break;
       } else if (event.type === "error") {
@@ -113,10 +115,8 @@ export function useSSE(onDone?: () => void) {
       void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
     }
     setStreaming(false);
-    setThinkingContent("");
-    // Keep streamingContent visible until ChatView's refetch (via onDone)
-    // swaps in the persisted assistant message — same pattern as the
-    // `done` branch in consume().
+    // Keep streamingContent and thinkingContent visible until the next
+    // start()/attach() — same pattern as the `done` branch in consume().
     abortRef.current?.abort();
     onDone?.();
   }, [onDone]);

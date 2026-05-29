@@ -411,7 +411,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         // doesn't disappear before the refetch arrives. Cleared atomically in
         // handleDone via clearStreamingRef once the persisted message lands.
         streamingContent={streamingContent || undefined}
-        thinkingContent={streaming ? thinkingContent : undefined}
+        // Keep the live thinking line visible past `streaming=false` so a
+        // user who's still reading isn't yanked out mid-sentence. useSSE
+        // clears thinkingContent on the next start()/attach().
+        thinkingContent={thinkingContent || undefined}
         toolEvents={streaming ? toolEvents : undefined}
         hasMore={hasMore}
         loadingMore={loadingMore}

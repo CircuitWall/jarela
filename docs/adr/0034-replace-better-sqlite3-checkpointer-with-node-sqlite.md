@@ -119,5 +119,5 @@ API differences bridged:
   — still depends on the deprecated `prebuild-install`.
 * [prebuild/prebuild-install#216](https://github.com/prebuild/prebuild-install/issues/216)
   — upstream deprecation notice and migration guidance.
-* a downstream fork's PR — the
-  downstream PR whose `sonatype-cli` check this change unblocks.
+* The downstream fork's PR whose `sonatype-cli` check this
+  change unblocks.

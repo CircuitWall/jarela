@@ -1,8 +1,9 @@
 // macOS keychain → PEM bundle export (ADR-0020).
 //
-// Macs with corporate roots in the keychain receive their root CAs (including the MITM root
-// the egress proxy uses to re-sign outbound TLS) via MDM, which lands them
-// in the System and Login keychains. We extract those certs to a single
+// macOS hosts behind a TLS-intercepting corporate proxy receive the
+// internal root (used by the proxy to re-sign outbound TLS) via MDM or
+// manual install, which lands it in the System and Login keychains. We
+// extract those certs to a single
 // PEM file under the Jarela data dir, then point both undici's
 // `requestTls.ca` (live) and the launchd plist's `NODE_EXTRA_CA_CERTS`
 // (next restart) at it. End result: one source of truth (the OS), one
