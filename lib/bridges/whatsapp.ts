@@ -10,8 +10,10 @@
  *    we convert to a data URL and surface via `onStatusChange`.
  *  - `connection.update` events drive our status reporter
  *    (`disconnected | pairing | connected | error`).
- *  - `messages.upsert` events with `type='notify'` (real-time inbound) and
- *    !fromMe are forwarded to the inbound handler. Text, captions, images
+ *  - `messages.upsert` events with `type='notify'` (real-time inbound) are
+ *    forwarded to the inbound handler. User-authored `fromMe` messages are
+ *    included so the agent sees full conversational context; bot-authored
+ *    echoes are suppressed via sent-message ID tracking. Text, captions, images
  *    (vision), stickers (as webp images), voice notes / audio, video, and
  *    documents are all extracted via `extractContent`; location and contact
  *    payloads are flattened into the text body. Reactions, polls and other
@@ -21,6 +23,7 @@
  *    fall into pairing mode again.
  */
 
+import { createRequire } from "node:module";
 import { ensureBridgeAuthDir, findRoute, removeBridgeAuthDir } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/types";
@@ -35,7 +38,11 @@ import type { ContentPart } from "@/lib/tools/types";
 type WASocket = {
   ev: { on: (event: string, handler: (...args: unknown[]) => void) => void };
   user?: { id?: string };
-  sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
+  sendMessage: (
+    jid: string,
+    content: { text: string },
+    options?: { getUrlInfo?: undefined },
+  ) => Promise<unknown>;
   sendPresenceUpdate?: (presence: string, jid?: string) => Promise<unknown>;
   presenceSubscribe?: (jid: string) => Promise<unknown>;
   end?: (err: Error | undefined) => void;
@@ -79,8 +86,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   // to themselves can route to an agent.
   private selfJid: string | null = null;
   // IDs of messages we sent via sendText. WhatsApp echoes these back as
-  // `fromMe` upserts; without this filter we'd loop on our own replies in
-  // the self-chat. Bounded ring (most recent N).
+  // `fromMe` upserts; we suppress only those IDs so user-authored `fromMe`
+  // messages still flow through for context. Bounded ring (most recent N).
   private sentIds: string[] = [];
   private sentIdsSet = new Set<string>();
   private static readonly SENT_IDS_MAX = 500;
@@ -92,6 +99,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
    * blow the agent's request budget. 8 MB raw ≈ ~11 MB base64 inline.
    */
   private static readonly MAX_MEDIA_BYTES = 8 * 1024 * 1024;
+  // Runtime-only CommonJS resolver for optional legacy deps. Using
+  // createRequire keeps webpack/tsc from trying to statically resolve
+  // uninstalled optional packages at build time.
+  private static readonly REQUIRE = createRequire(import.meta.url);
 
   constructor(bridge_id: string) {
     this.bridge_id = bridge_id;
@@ -108,11 +119,20 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     let baileys: UnsafeBaileys;
     let qrcode: typeof import("qrcode");
     try {
-      baileys = (await import("baileys")) as unknown as UnsafeBaileys;
+      try {
+        baileys = (await import("@whiskeysockets/baileys")) as unknown as UnsafeBaileys;
+      } catch {
+        // Backward compatibility for installs that still provide the legacy
+        // unscoped package name.
+        baileys = WhatsAppBridgeAdapter.REQUIRE("baileys") as UnsafeBaileys;
+      }
       qrcode = await import("qrcode");
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
-      this.pushStatus({ status: "error", error: `Baileys not installed: ${m}` });
+      this.pushStatus({
+        status: "error",
+        error: `Baileys not installed. Install @whiskeysockets/baileys and qrcode. (${m})`,
+      });
       throw err;
     }
 
@@ -234,13 +254,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         };
         if (!m.key?.remoteJid) continue;
         if (m.key.fromMe) {
-          // Allow `fromMe` ONLY in the self-chat (you DMing yourself), so the
-          // "Yourself" route can fire without a second WhatsApp account.
-          // Skip our own bot replies (sendText records their IDs) and any
-          // `fromMe` traffic in other chats (those echoes would loop).
-          const candidate = pickRoutableJid(m.key.remoteJid, m.key.remoteJidAlt);
-          const isSelfChat = !!this.selfJid && candidate === this.selfJid;
-          if (!isSelfChat) continue;
+          // Include user-authored `fromMe` traffic so the agent receives full
+          // chat context (including the user's own replies), but suppress
+          // bridge-authored echoes to prevent bot loopbacks.
           if (m.key.id && this.sentIdsSet.has(m.key.id)) continue;
         }
         // Baileys 7 / modern WhatsApp delivers many personal chats with a
@@ -394,8 +410,21 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     }
     const sock = this.sock;
     if (!sock) throw new Error("Bridge not connected");
-    const result = await (sock as unknown as { sendMessage: (jid: string, content: { text: string }) => Promise<unknown> })
-      .sendMessage(remote_jid, { text });
+    const result = await (
+      sock as unknown as {
+        sendMessage: (
+          jid: string,
+          content: { text: string },
+          options?: { getUrlInfo?: undefined },
+        ) => Promise<unknown>;
+      }
+    ).sendMessage(
+      remote_jid,
+      { text },
+      // Security hardening: prevent Baileys from invoking link-preview-js URL
+      // fetches for outbound text messages (SSRF/loopback class risks).
+      { getUrlInfo: undefined },
+    );
     // Record the outgoing message ID so the matching `fromMe` echo from
     // messages.upsert doesn't re-enter the routing pipeline in the self-chat.
     const sentId = (result as { key?: { id?: string } } | null | undefined)?.key?.id;

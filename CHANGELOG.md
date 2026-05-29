@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-29
+
+### Fixed
+
+- **Release workflow build failure with optional Baileys fallback.**
+  [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now resolves the legacy
+  unscoped `baileys` fallback via runtime `createRequire(...)` instead of a
+  literal dynamic import, so Next/TypeScript no longer attempt to resolve an
+  uninstalled optional package during CI `next build`.
+
+## [0.6.3] - 2026-05-29
+
+### Changed
+
+- **Lint output made actionable again.** React-Compiler advisory warnings and
+  stale `eslint-disable` directives were cleaned up, and
+  [components/integrations/NetworkSection.tsx](components/integrations/NetworkSection.tsx)
+  was updated to satisfy hook dependency analysis.
+
+### Fixed
+
+- **WhatsApp self-chat context forwarding improved without bot loops.**
+  [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now forwards user-authored
+  `fromMe` replies so agents get full local conversation context, while still
+  suppressing bridge-authored echoes via sent-message ID tracking.
+
+## [0.6.2] - 2026-05-29
+
+### Changed
+
+- **Baileys dependency hardened and compatibility-preserved.** WhatsApp bridge
+  dependency moved from unscoped `baileys` to
+  `@whiskeysockets/baileys` in [package.json](package.json), while
+  [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now prefers the scoped
+  import with a fallback to the legacy package name for older installs.
+- **Standalone external package allowlist updated.**
+  [next.config.ts](next.config.ts) now externalizes both scoped and legacy
+  Baileys package names to keep standalone tracing and runtime resolution
+  stable during migration.
+- **Build-only PWA dependencies moved out of production runtime deps.**
+  `@serwist/next` and `serwist` were moved to `devDependencies`, reducing
+  production dependency surface for installs that consume the published bundle.
+
+### Fixed
+
+- **Cross-platform file-list tests stabilized on Windows.**
+  [lib/tools/files.test.ts](lib/tools/files.test.ts) now uses
+  `path.basename(...)` instead of slash-splitting paths, making assertions
+  robust across path separators.
+- **fs-watch skip-dir filtering normalized across separators.**
+  [lib/triggers/handlers/fs-watch.ts](lib/triggers/handlers/fs-watch.ts) now
+  splits event filenames on both `/` and `\\`, ensuring skip-dir and dot-dir
+  filters work on Windows and POSIX-style watcher payloads.
+- **Crypto tamper test made deterministic.**
+  [lib/crypto/envelope.test.ts](lib/crypto/envelope.test.ts) now mutates
+  decoded bytes before re-encoding, avoiding base64url edge cases where
+  string-level edits did not always alter authenticated payload bytes.
+
+## [0.6.1] - 2026-05-29
+
+### Changed
+
+- **Supply-chain hardening for standalone server bundles.** Server production
+  minification is now disabled and server source maps are enabled in
+  [next.config.ts](next.config.ts), reducing obfuscation-style scanner noise in
+  generated `route.js`/chunk artifacts while preserving runtime behavior.
+- **Standalone dependency externalization expanded.** `undici` is now included
+  in `serverExternalPackages` so Next's standalone output avoids rebundling a
+  large minified HTTP client chunk family that previously triggered false-positive
+  obfuscation alerts.
+- **OpenAI-compatible and agent route internals refactored.** Shared parsing and
+  mapping logic was deduplicated across providers and API handlers to reduce
+  drift risk and tighten maintenance on security-sensitive request/response code.
+
+### Added
+
+- **`link-preview-js` version gate** via
+  [scripts/check-link-preview-version.mjs](scripts/check-link-preview-version.mjs)
+  and npm script `security:link-preview`, enforcing the patched CVE floor
+  (`>= 4.0.1`) whenever the package appears in the lockfile.
+- **Route bundle security attestation** via
+  [scripts/check-route-bundles.mjs](scripts/check-route-bundles.mjs) and
+  npm script `security:routes`, checking generated standalone API route bundles
+  for extreme line-length obfuscation signatures, dangerous invocation patterns,
+  and missing source maps.
+- **Shared tool test harness** in [lib/tools/test-helpers.ts](lib/tools/test-helpers.ts),
+  eliminating duplicate fetch/env scaffolding across Atlassian/Jira Align suites.
+
+### Fixed
+
+- **WhatsApp bridge outbound SSRF risk surface reduced.** Outbound message send
+  calls in [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now explicitly
+  disable Baileys URL preview resolution (`getUrlInfo: undefined`), preventing
+  link-preview fetch paths from executing during normal text sends.
+- **Security CI ordering corrected.** The pre-build `security:ci` gate now runs
+  only checks that do not depend on build artifacts, while `security:routes`
+  runs post-build in [ci workflow](.github/workflows/ci.yml), keeping the gate
+  strict and deterministic in clean CI environments.
+
 ## [0.6.0] - 2026-05-28
 
 ### Changed

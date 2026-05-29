@@ -86,7 +86,6 @@ function InlineAudio({ href }: { href: string }) {
   const wantsAuto = /[?&]autoplay=1\b/.test(href);
   const [auto] = useState(() => wantsAuto && !playedAutoplayHrefs.has(href));
   return (
-    // eslint-disable-next-line jsx-a11y/media-has-caption
     <audio
       controls
       preload="metadata"
