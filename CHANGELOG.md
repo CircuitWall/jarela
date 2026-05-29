@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-29
+
+### Fixed
+
+- **Release workflow build failure with optional Baileys fallback.**
+  [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now resolves the legacy
+  unscoped `baileys` fallback via runtime `createRequire(...)` instead of a
+  literal dynamic import, so Next/TypeScript no longer attempt to resolve an
+  uninstalled optional package during CI `next build`.
+
 ## [0.6.3] - 2026-05-29
 
 ### Changed
