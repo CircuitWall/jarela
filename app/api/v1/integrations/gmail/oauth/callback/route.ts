@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { exchangeCode, getFlow, updateFlow } from "@/lib/integrations/gmail-oauth";
 import { saveIntegration } from "@/lib/stores/integrations";
+import { escapeHtml, oauthHtmlResponse } from "@/app/api/v1/integrations/oauth-callback";
 
 // GET /api/v1/integrations/gmail/oauth/callback?code=…&state=…
 //
@@ -17,16 +18,16 @@ export async function GET(req: NextRequest) {
 
   const flow = state ? getFlow(state) : undefined;
   if (!flow) {
-    return htmlResponse("Authorization session not found or expired. Please retry from Jarela.", true);
+    return oauthHtmlResponse("Authorization session not found or expired. Please retry from Jarela.", true);
   }
 
   if (errParam) {
     updateFlow(state, { status: "error", error: errParam });
-    return htmlResponse(`Google reported an error: ${escapeHtml(errParam)}. You can close this tab.`, true);
+    return oauthHtmlResponse(`Google reported an error: ${escapeHtml(errParam)}. You can close this tab.`, true);
   }
   if (!code) {
     updateFlow(state, { status: "error", error: "no code returned" });
-    return htmlResponse("Google did not return an authorization code.", true);
+    return oauthHtmlResponse("Google did not return an authorization code.", true);
   }
 
   try {
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
         "Google did not return a refresh_token. This usually means you have previously " +
         "authorized this client. Revoke it at https://myaccount.google.com/permissions and retry.";
       updateFlow(state, { status: "error", error: msg });
-      return htmlResponse(msg, true);
+      return oauthHtmlResponse(msg, true);
     }
     const saved = saveIntegration("gmail", {
       client_id: flow.clientId,
@@ -50,36 +51,13 @@ export async function GET(req: NextRequest) {
     });
     if ("error" in saved) {
       updateFlow(state, { status: "error", error: saved.error });
-      return htmlResponse(`Failed to save: ${escapeHtml(saved.error)}`, true);
+      return oauthHtmlResponse(`Failed to save: ${escapeHtml(saved.error)}`, true);
     }
     updateFlow(state, { status: "done" });
-    return htmlResponse("Gmail connected. You can close this tab and return to Jarela.", false);
+    return oauthHtmlResponse("Gmail connected. You can close this tab and return to Jarela.", false);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     updateFlow(state, { status: "error", error: msg });
-    return htmlResponse(`Token exchange failed: ${escapeHtml(msg)}`, true);
+    return oauthHtmlResponse(`Token exchange failed: ${escapeHtml(msg)}`, true);
   }
-}
-
-function htmlResponse(message: string, isError: boolean): NextResponse {
-  const color = isError ? "#fca5a5" : "#86efac";
-  const title = isError ? "Authorization failed" : "Authorization complete";
-  const body = `<!doctype html>
-<html><head><meta charset="utf-8"><title>${title}</title>
-<style>
-  body { font-family: ui-sans-serif, system-ui, sans-serif; background: #0a0a0a; color: #e5e5e5;
-         display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-  .card { max-width: 32rem; padding: 2rem; border: 1px solid #27272a; border-radius: 0.5rem;
-          background: #18181b; }
-  h1 { font-size: 1.1rem; margin: 0 0 0.75rem; color: ${color}; }
-  p  { margin: 0; line-height: 1.5; font-size: 0.9rem; color: #d4d4d8; }
-</style></head>
-<body><div class="card"><h1>${title}</h1><p>${escapeHtml(message)}</p></div>
-<script>setTimeout(()=>{try{window.close()}catch(_){}}, 2000);</script>
-</body></html>`;
-  return new NextResponse(body, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 }
