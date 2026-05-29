@@ -23,6 +23,7 @@
  *    fall into pairing mode again.
  */
 
+import { createRequire } from "node:module";
 import { ensureBridgeAuthDir, findRoute, removeBridgeAuthDir } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/types";
@@ -98,6 +99,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
    * blow the agent's request budget. 8 MB raw ≈ ~11 MB base64 inline.
    */
   private static readonly MAX_MEDIA_BYTES = 8 * 1024 * 1024;
+  // Runtime-only CommonJS resolver for optional legacy deps. Using
+  // createRequire keeps webpack/tsc from trying to statically resolve
+  // uninstalled optional packages at build time.
+  private static readonly REQUIRE = createRequire(import.meta.url);
 
   constructor(bridge_id: string) {
     this.bridge_id = bridge_id;
@@ -119,7 +124,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       } catch {
         // Backward compatibility for installs that still provide the legacy
         // unscoped package name.
-        baileys = (await import("baileys")) as unknown as UnsafeBaileys;
+        baileys = WhatsAppBridgeAdapter.REQUIRE("baileys") as UnsafeBaileys;
       }
       qrcode = await import("qrcode");
     } catch (err) {
