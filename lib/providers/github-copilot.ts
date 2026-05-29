@@ -7,7 +7,7 @@ import type {
   InvokeResult,
 } from "./types";
 import { getStoredOAuthToken } from "./github-copilot-auth";
-import { toOpenAIMessages } from "./openai";
+import { parseOpenAIInvokeChoice, streamOpenAIEvents, toOpenAIMessages } from "./openai";
 
 function pickGitHubCompatOptions(params: ProviderParams): Record<string, unknown> {
   const p = params as Record<string, unknown>;
@@ -181,25 +181,7 @@ export const githubCopilotProvider: ModelProvider = {
       max_tokens: params.max_tokens,
       ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
-    const choice = resp.choices[0];
-    return {
-      text: choice.message.content ?? null,
-      tool_calls: (choice.message.tool_calls ?? []).flatMap((tc) => {
-        if (tc?.type !== "function" || !tc.function?.name) return [];
-        return [{
-          id: tc.id,
-          name: tc.function.name,
-          arguments: (() => {
-            try {
-              return JSON.parse(tc.function.arguments) as Record<string, unknown>;
-            } catch {
-              return {};
-            }
-          })(),
-        }];
-      }),
-      stop_reason: choice.finish_reason === "tool_calls" ? "tool_use" : "stop",
-    };
+    return parseOpenAIInvokeChoice(resp.choices[0]);
   },
 
   async *streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
@@ -215,30 +197,18 @@ export const githubCopilotProvider: ModelProvider = {
       ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
 
-    for await (const chunk of stream) {
-      const choice = chunk.choices[0];
-      if (!choice) continue;
-      const delta = choice.delta as Record<string, unknown>;
-      if (delta.content) yield { type: "text", delta: delta.content as string };
-      if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
-        yield { type: "thinking", delta: delta.reasoning_content };
-      }
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls as Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>) {
-          yield {
-            type: "tool_call_chunk",
-            index: tc.index ?? 0,
-            id: tc.id,
-            name: tc.function?.name,
-            args_delta: tc.function?.arguments,
+    yield* streamOpenAIEvents(
+      stream as AsyncIterable<{
+        choices?: Array<{
+          delta?: {
+            content?: string | null;
+            reasoning_content?: string | null;
+            tool_calls?: Array<{ index?: number; id?: string; function?: { name?: string; arguments?: string } }>;
           };
-        }
-      }
-      if (choice.finish_reason) {
-        const fr = choice.finish_reason;
-        yield { type: "stop", reason: fr === "tool_calls" ? "tool_use" : fr === "length" ? "length" : "stop" };
-      }
-    }
+          finish_reason?: string | null;
+        }>;
+      }>,
+    );
   },
 
   async embed(model_id, inputs, params): Promise<number[][]> {
