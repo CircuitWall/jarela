@@ -585,6 +585,16 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
                 });
               }
             }}
+            onChangeRespondTo={async (respond_to) => {
+              try { await update(r.id, { respond_to }); }
+              catch (e) {
+                pushErrorToast({
+                  title: "Couldn't change reply trigger",
+                  error: e,
+                  context: { panel: "bridges", action: "route.changeRespondTo", route_id: r.id, respond_to },
+                });
+              }
+            }}
             agents={agents.filter((x) => x.id === r.agent_id || !usedAgents.has(x.id))}
             visionForAgent={(x) => agentVisionState(x)}
             onDelete={async () => {
@@ -599,7 +609,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
 }
 
 function RouteRow({
-  route, chatName, agent, agentVision, agents, visionForAgent, onChangeAgent, onToggleSilent, onDelete,
+  route, chatName, agent, agentVision, agents, visionForAgent, onChangeAgent, onToggleSilent, onChangeRespondTo, onDelete,
 }: {
   route: BridgeRoute;
   chatName: string | null;
@@ -609,6 +619,7 @@ function RouteRow({
   visionForAgent: (a: AgentConfig) => { supported: boolean; classified: boolean; modelLabel: string | null };
   onChangeAgent: (id: string) => Promise<void>;
   onToggleSilent: (silent: boolean) => Promise<void>;
+  onChangeRespondTo: (respond_to: "user" | "counterpart") => Promise<void>;
   onDelete: () => Promise<void> | void;
 }) {
   // Prefer the route's user-set label, fall back to the live chat name from
@@ -682,10 +693,31 @@ function RouteRow({
         <span className="text-[11px] text-fg-subtle leading-snug">
           <span className="text-fg-muted font-medium">Silent mode</span> — listen only, never auto-reply.
           <span className="block text-[10px] text-fg-faint">
-            The agent still receives every message and can run tools / update memory{isGroup ? " (with the sender's name prepended so it can tell group members apart)" : ""}, but nothing is sent back to {isGroup ? "the group" : "this chat"}.
+            The agent still receives every message and can run tools / update memory{isGroup ? " (with the sender's name prepended so it can tell group members apart)" : ""}, but nothing is sent back to {isGroup ? "the group" : "this chat"}. Overrides the reply-trigger below.
           </span>
         </span>
       </label>
+      <div className={`mt-1 flex items-start gap-2 px-0.5 ${route.silent_mode ? "opacity-50" : ""}`}>
+        <span className="text-[11px] text-fg-subtle leading-snug flex-1">
+          <span className="text-fg-muted font-medium">Reply trigger</span> — auto-reply when…
+          <span className="block text-[10px] text-fg-faint">
+            {route.respond_to === "counterpart"
+              ? isGroup
+                ? "Another group member sends a message. The agent stays quiet on your own messages."
+                : "Your counterpart sends a message. The agent stays quiet on your own messages."
+              : "You send a message yourself (e.g. expand-my-draft assistant). The agent stays quiet on others'."}
+          </span>
+        </span>
+        <select
+          value={route.respond_to}
+          disabled={route.silent_mode}
+          onChange={(e) => void onChangeRespondTo(e.target.value as "user" | "counterpart")}
+          className="px-1.5 py-0.5 text-[11px] bg-surface-3 rounded border border-border focus:border-accent outline-none disabled:cursor-not-allowed"
+        >
+          <option value="counterpart">{isGroup ? "Group members" : "Counterpart"}</option>
+          <option value="user">Me</option>
+        </select>
+      </div>
     </div>
   );
 }

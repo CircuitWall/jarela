@@ -642,8 +642,18 @@ export interface BridgeRoute {
   // When true, the agent still runs (records history, executes tools) on
   // every inbound message but the dispatcher suppresses the outbound reply.
   // Per-route so the same agent can be a replier in one chat and an
-  // observer in another.
+  // observer in another. Hardwired guard — overrides `respond_to`; the
+  // adapter re-checks this inside its own send path so even tool calls
+  // can't bypass it.
   silent_mode: boolean;
+  // Which inbound sender role triggers an outbound reply. The agent
+  // ALWAYS runs (so it sees the full conversation), but the reply only
+  // goes out when the message that triggered the run matches this role.
+  // - 'counterpart' (default): agent answers the user's chat partner /
+  //   group members but stays quiet on the user's own messages.
+  // - 'user': agent only reacts to the paired user's own messages.
+  // silent_mode overrides — when set, nothing goes out regardless.
+  respond_to: "user" | "counterpart";
   created_at: string;
   updated_at: string;
 }
@@ -653,6 +663,7 @@ export interface BridgeRouteIn {
   agent_id: string;
   label?: string | null;
   silent_mode?: boolean;
+  respond_to?: "user" | "counterpart";
 }
 
 export interface BridgeRoutePatch {
@@ -660,6 +671,7 @@ export interface BridgeRoutePatch {
   agent_id?: string;
   label?: string | null;
   silent_mode?: boolean;
+  respond_to?: "user" | "counterpart";
 }
 
 export interface BridgeChat {
