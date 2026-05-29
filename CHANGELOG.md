@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-30
+
+### Added
+
+- **Post-turn output validator for safer agent responses**
+  ([ADR-0037](docs/adr/0037-post-turn-output-validator.md)). Adds a
+  policy-driven validation pass after each agent turn with configurable
+  actions for block, warn, and transform paths, plus persistence-backed
+  controls for validator behavior.
+
 ## [0.6.5] - 2026-05-29
 
 ### Added
