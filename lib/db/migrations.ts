@@ -573,6 +573,16 @@ function ensureBridgeRouteColumns(db: DatabaseSync): void {
       `);
     }
   }
+  // Per-route reply trigger: which sender role unlocks an outbound reply.
+  // 'counterpart' (default) = agent answers the user's chat partner / group
+  // members but stays quiet when the user themselves types — the typical
+  // "auto-responder on my behalf" use case. 'user' = agent only reacts to
+  // the user's own messages (e.g. expand/translate-my-draft assistants).
+  // silent_mode (above) overrides this — when set, nothing goes out
+  // regardless of role match.
+  if (!names.has("respond_to")) {
+    db.exec("ALTER TABLE bridge_routes ADD COLUMN respond_to TEXT NOT NULL DEFAULT 'counterpart'");
+  }
 }
 
 function ensureTaskAssignmentColumns(db: DatabaseSync): void {
