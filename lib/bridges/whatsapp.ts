@@ -308,6 +308,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           message_id: m.key.id ?? null,
           is_group,
           participant_jid,
+          // sentIdsSet filtering above means agent echoes never reach this
+          // construction site, so "user" vs "counterpart" is the only live
+          // distinction here.
+          role: m.key.fromMe ? "user" : "counterpart",
         };
         if (this.inboundHandler) {
           try { await this.inboundHandler(inbound); }

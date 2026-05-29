@@ -4,6 +4,7 @@ import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thre
 import { collectStream } from "@/lib/agents/stream-collector";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { resolveRoute } from "./router";
+import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
 
 /**
@@ -46,28 +47,25 @@ export async function handleInboundMessage(
     }
 
     const thread = getOrCreateAgentThread(agentId);
-    // Always stamp bridge/chat provenance onto inbound text so agents can
-    // distinguish sources when a route aggregates multiple chats (catch-all)
-    // and when group participants share one agent thread.
+    // Stamp bridge/chat provenance + sender role onto every inbound prompt.
+    // Role framing (user / counterpart / agent) is shared across every
+    // bridge adapter via `formatBridgePrompt` — see lib/bridges/message-role.ts.
     const chatName = msg.chat_name ?? msg.push_name ?? "unknown";
     const senderJid = msg.participant_jid ?? msg.remote_jid;
     const senderName = msg.sender_name ?? msg.push_name ?? senderJid;
-    const contextLines = [
-      `[bridge:${adapter.bridge_id}]`,
-      `[chat_jid:${msg.remote_jid}]`,
-      `[chat_name:${chatName}]`,
-      `[chat_type:${msg.is_group ? "group" : "dm"}]`,
-      `[sender_jid:${senderJid}]`,
-      `[sender_name:${senderName}]`,
-    ];
-    if (msg.is_group) {
-      contextLines.push(`[group_name:${chatName}]`);
-      contextLines.push(`[participant_jid:${senderJid}]`);
-      contextLines.push(`[participant_name:${senderName}]`);
-    }
+    const promptText = formatBridgePrompt({
+      bridge_id: adapter.bridge_id,
+      chat_id: msg.remote_jid,
+      chat_name: chatName,
+      is_group: msg.is_group,
+      role: msg.role,
+      sender_id: senderJid,
+      sender_name: senderName,
+      text: msg.text,
+    });
     const prepared = await prepareThreadRun(
       thread.thread_id,
-      `${contextLines.join("\n")}\n\n${msg.text}`,
+      promptText,
       undefined,
       msg.attachments,
       undefined,
@@ -79,6 +77,17 @@ export async function handleInboundMessage(
     // indicator. The typing presence itself is a tell that an agent is
     // listening, so observer-mode routes must stay completely dark on the
     // wire. The agent still runs and persists history below.
+    //
+    // silent_mode is the master switch — when set, nothing goes out
+    // regardless of `respond_to`. The WhatsApp adapter re-checks
+    // silent_mode inside its own sendText/sendTyping as a hard
+    // belt-and-suspenders guard, so even a tool that called the adapter
+    // directly cannot bypass it. respond_to is the finer-grained reply
+    // trigger: the agent ALWAYS runs (so it observes the full
+    // conversation), but the reply is only sent when the inbound role
+    // matches. Default 'counterpart' = agent answers the user's chat
+    // partner / group members but stays quiet on the user's own messages.
+    // 'user' = inverse — react only to what the paired user typed.
     const silent = route.silent_mode === 1;
 
     // Show the "composing…" presence on the channel while we drain the
@@ -86,8 +95,13 @@ export async function handleInboundMessage(
     // after ~10s if not renewed. We always send a final "paused" in the
     // finally block, regardless of success/throw, so we never leave a
     // stuck typing indicator.
-    let typingActive = !silent;
-    if (!silent) {
+    // Typing presence only flashes when we're actually going to send — i.e.
+    // not silent AND the inbound role matches respond_to. Otherwise the
+    // composing-bubble would tell the chat someone is replying when no
+    // reply is coming, which is worse UX than no indicator at all.
+    const willReply = !silent && msg.role === route.respond_to;
+    let typingActive = willReply;
+    if (willReply) {
       void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
     }
     const typingTimer = setInterval(() => {
@@ -107,7 +121,7 @@ export async function handleInboundMessage(
     } finally {
       typingActive = false;
       clearInterval(typingTimer);
-      if (!silent) {
+      if (willReply) {
         void adapter.sendTyping(msg.remote_jid, false).catch(() => { /* best-effort */ });
       }
     }
@@ -115,13 +129,12 @@ export async function handleInboundMessage(
     persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge");
 
     const reply = assistantContent.trim();
-    // silent_mode (per-route): process the message (records history + runs
-    // tools) but suppress the outbound send. Useful for read-only/observer
-    // agents on group chats where the user wants logging without auto-posting.
-    // The WhatsApp adapter also re-checks `route.silent_mode` inside its own
-    // sendText as a hard belt-and-suspenders guard, so even if a tool tried
-    // to call adapter.sendText directly the send would still be dropped.
-    if (reply.length > 0 && !silent) {
+    // Outbound reply gate: silent_mode (master switch) AND respond_to
+    // (per-role trigger). Both must clear for a message to leave the
+    // dispatcher. The WhatsApp adapter also re-checks `route.silent_mode`
+    // inside its own sendText as a belt-and-suspenders guard, so even a
+    // tool that called adapter.sendText directly would be dropped.
+    if (reply.length > 0 && willReply) {
       try {
         await adapter.sendText(msg.remote_jid, reply);
       } catch (sendErr) {

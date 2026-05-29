@@ -13,6 +13,7 @@ function toResponse(r: BridgeRouteRow) {
     agent_id: r.agent_id,
     label: r.label,
     silent_mode: r.silent_mode === 1,
+    respond_to: r.respond_to,
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
@@ -25,6 +26,7 @@ const PatchSchema = z.object({
   agent_id: z.string().trim().min(1).optional(),
   label: z.string().trim().max(120).nullable().optional(),
   silent_mode: z.boolean().optional(),
+  respond_to: z.enum(["user", "counterpart"]).optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Params) {

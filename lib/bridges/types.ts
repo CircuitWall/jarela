@@ -12,6 +12,7 @@
  */
 
 import type { ContentPart } from "@/lib/tools/types";
+import type { MessageRole } from "./message-role";
 
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
 
@@ -44,6 +45,17 @@ export interface InboundMessage {
    * prompt so the LLM can tell two participants apart.
    */
   participant_jid: string | null;
+  /**
+   * Who sent this message from the agent's perspective. Adapters map
+   * their platform-specific "who sent this" signal onto a `MessageRole`
+   * so the dispatcher's framing logic (`formatBridgePrompt`) is uniform
+   * across every bridge — see `lib/bridges/message-role.ts` for the
+   * semantics.
+   *
+   * For WhatsApp: `key.fromMe && !echo` → "user", otherwise "counterpart".
+   * (Adapter-side echo filtering means "agent" should never appear.)
+   */
+  role: MessageRole;
 }
 
 export interface StatusUpdate {
