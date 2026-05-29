@@ -201,6 +201,7 @@ npm run dev          # http://localhost:3000
 
 npm run lint
 npm run build
+npm run security:ci
 npm start            # http://localhost:4312 (prod-mode local run)
 npm run test:live    # smoke against the running server
 ```
