@@ -112,11 +112,20 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     let baileys: UnsafeBaileys;
     let qrcode: typeof import("qrcode");
     try {
-      baileys = (await import("baileys")) as unknown as UnsafeBaileys;
+      try {
+        baileys = (await import("@whiskeysockets/baileys")) as unknown as UnsafeBaileys;
+      } catch {
+        // Backward compatibility for installs that still provide the legacy
+        // unscoped package name.
+        baileys = (await import("baileys")) as unknown as UnsafeBaileys;
+      }
       qrcode = await import("qrcode");
     } catch (err) {
       const m = err instanceof Error ? err.message : String(err);
-      this.pushStatus({ status: "error", error: `Baileys not installed: ${m}` });
+      this.pushStatus({
+        status: "error",
+        error: `Baileys not installed. Install @whiskeysockets/baileys and qrcode. (${m})`,
+      });
       throw err;
     }
 

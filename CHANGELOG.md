@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-05-29
+
+### Changed
+
+- **Baileys dependency hardened and compatibility-preserved.** WhatsApp bridge
+  dependency moved from unscoped `baileys` to
+  `@whiskeysockets/baileys` in [package.json](package.json), while
+  [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now prefers the scoped
+  import with a fallback to the legacy package name for older installs.
+- **Standalone external package allowlist updated.**
+  [next.config.ts](next.config.ts) now externalizes both scoped and legacy
+  Baileys package names to keep standalone tracing and runtime resolution
+  stable during migration.
+- **Build-only PWA dependencies moved out of production runtime deps.**
+  `@serwist/next` and `serwist` were moved to `devDependencies`, reducing
+  production dependency surface for installs that consume the published bundle.
+
+### Fixed
+
+- **Cross-platform file-list tests stabilized on Windows.**
+  [lib/tools/files.test.ts](lib/tools/files.test.ts) now uses
+  `path.basename(...)` instead of slash-splitting paths, making assertions
+  robust across path separators.
+- **fs-watch skip-dir filtering normalized across separators.**
+  [lib/triggers/handlers/fs-watch.ts](lib/triggers/handlers/fs-watch.ts) now
+  splits event filenames on both `/` and `\\`, ensuring skip-dir and dot-dir
+  filters work on Windows and POSIX-style watcher payloads.
+- **Crypto tamper test made deterministic.**
+  [lib/crypto/envelope.test.ts](lib/crypto/envelope.test.ts) now mutates
+  decoded bytes before re-encoding, avoiding base64url edge cases where
+  string-level edits did not always alter authenticated payload bytes.
+
 ## [0.6.1] - 2026-05-29
 
 ### Changed
