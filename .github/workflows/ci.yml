@@ -49,9 +49,29 @@ jobs:
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
 
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      - name: Run security gates
+        run: npm run security:ci
+
   build:
     name: Lint, typecheck, build
     runs-on: ubuntu-latest
+    needs: security
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -86,6 +106,9 @@ jobs:
 
       - name: Build (next build)
         run: npm run build
+
+      - name: Route bundle security attestation
+        run: npm run security:routes
 
       - name: Verify npm tarball contains runnable standalone bundle
         run: npm run test:package

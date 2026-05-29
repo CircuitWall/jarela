@@ -4,22 +4,16 @@
 // or inline_data parts). API key is resolved from the "google" integration,
 // same source as lib/tools/generate_image.ts.
 
-import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { getConfig } from "@/lib/env/config";
+import {
+  resolveGoogleApiKey as resolveGoogleApiKeyShared,
+  timeoutSignal,
+} from "@/lib/utils/google-api";
 
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
 
-function timeoutSignal(ms: number): AbortSignal {
-  const c = new AbortController();
-  setTimeout(() => c.abort(new Error(`timeout after ${ms}ms`)), ms).unref?.();
-  return c.signal;
-}
-
 export function resolveGoogleApiKey(): string | null {
-  const raw = getIntegrationRaw("google");
-  const fromStore = raw?.api_key?.trim();
-  if (fromStore) return fromStore;
-  return (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "").trim() || null;
+  return resolveGoogleApiKeyShared();
 }
 
 interface InlineData {

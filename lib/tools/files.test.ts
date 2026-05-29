@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync, statSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 // Override HOME *before* importing the module under test. The tools resolve
 // bare relative paths under os.homedir() and apply the credential-file
@@ -406,7 +406,7 @@ describe("file_list", () => {
     writeFileSync(join(d, ".x"), "");
     writeFileSync(join(d, "y"), "");
     const out = parse(await fileListTool.invoke({ path: d, include_hidden: true }));
-    const names = (out.entries as Array<{ path: string }>).map((e) => e.path.split("/").pop());
+    const names = (out.entries as Array<{ path: string }>).map((e) => basename(e.path));
     expect(names).toContain(".x");
     expect(names).toContain("y");
   });
@@ -418,7 +418,7 @@ describe("file_list", () => {
     writeFileSync(join(d, "notes.txt"), "");
     writeFileSync(join(d, "summary.pdf"), "");
     const out = parse(await fileListTool.invoke({ path: d, pattern: "PDF" }));
-    const names = (out.entries as Array<{ path: string }>).map((e) => e.path.split("/").pop()!.toLowerCase());
+    const names = (out.entries as Array<{ path: string }>).map((e) => basename(e.path).toLowerCase());
     expect(names.sort()).toEqual(["report.pdf", "summary.pdf"]);
   });
 
