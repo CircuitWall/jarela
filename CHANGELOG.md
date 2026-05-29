@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-05-29
+
+### Changed
+
+- **Supply-chain hardening for standalone server bundles.** Server production
+  minification is now disabled and server source maps are enabled in
+  [next.config.ts](next.config.ts), reducing obfuscation-style scanner noise in
+  generated `route.js`/chunk artifacts while preserving runtime behavior.
+- **Standalone dependency externalization expanded.** `undici` is now included
+  in `serverExternalPackages` so Next's standalone output avoids rebundling a
+  large minified HTTP client chunk family that previously triggered false-positive
+  obfuscation alerts.
+- **OpenAI-compatible and agent route internals refactored.** Shared parsing and
+  mapping logic was deduplicated across providers and API handlers to reduce
+  drift risk and tighten maintenance on security-sensitive request/response code.
+
+### Added
+
+- **`link-preview-js` version gate** via
+  [scripts/check-link-preview-version.mjs](scripts/check-link-preview-version.mjs)
+  and npm script `security:link-preview`, enforcing the patched CVE floor
+  (`>= 4.0.1`) whenever the package appears in the lockfile.
+- **Route bundle security attestation** via
+  [scripts/check-route-bundles.mjs](scripts/check-route-bundles.mjs) and
+  npm script `security:routes`, checking generated standalone API route bundles
+  for extreme line-length obfuscation signatures, dangerous invocation patterns,
+  and missing source maps.
+- **Shared tool test harness** in [lib/tools/test-helpers.ts](lib/tools/test-helpers.ts),
+  eliminating duplicate fetch/env scaffolding across Atlassian/Jira Align suites.
+
+### Fixed
+
+- **WhatsApp bridge outbound SSRF risk surface reduced.** Outbound message send
+  calls in [lib/bridges/whatsapp.ts](lib/bridges/whatsapp.ts) now explicitly
+  disable Baileys URL preview resolution (`getUrlInfo: undefined`), preventing
+  link-preview fetch paths from executing during normal text sends.
+- **Security CI ordering corrected.** The pre-build `security:ci` gate now runs
+  only checks that do not depend on build artifacts, while `security:routes`
+  runs post-build in [ci workflow](.github/workflows/ci.yml), keeping the gate
+  strict and deterministic in clean CI environments.
+
 ## [0.6.0] - 2026-05-28
 
 ### Changed

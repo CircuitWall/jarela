@@ -35,7 +35,11 @@ import type { ContentPart } from "@/lib/tools/types";
 type WASocket = {
   ev: { on: (event: string, handler: (...args: unknown[]) => void) => void };
   user?: { id?: string };
-  sendMessage: (jid: string, content: { text: string }) => Promise<unknown>;
+  sendMessage: (
+    jid: string,
+    content: { text: string },
+    options?: { getUrlInfo?: undefined },
+  ) => Promise<unknown>;
   sendPresenceUpdate?: (presence: string, jid?: string) => Promise<unknown>;
   presenceSubscribe?: (jid: string) => Promise<unknown>;
   end?: (err: Error | undefined) => void;
@@ -394,8 +398,21 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     }
     const sock = this.sock;
     if (!sock) throw new Error("Bridge not connected");
-    const result = await (sock as unknown as { sendMessage: (jid: string, content: { text: string }) => Promise<unknown> })
-      .sendMessage(remote_jid, { text });
+    const result = await (
+      sock as unknown as {
+        sendMessage: (
+          jid: string,
+          content: { text: string },
+          options?: { getUrlInfo?: undefined },
+        ) => Promise<unknown>;
+      }
+    ).sendMessage(
+      remote_jid,
+      { text },
+      // Security hardening: prevent Baileys from invoking link-preview-js URL
+      // fetches for outbound text messages (SSRF/loopback class risks).
+      { getUrlInfo: undefined },
+    );
     // Record the outgoing message ID so the matching `fromMe` echo from
     // messages.upsert doesn't re-enter the routing pipeline in the self-chat.
     const sentId = (result as { key?: { id?: string } } | null | undefined)?.key?.id;
