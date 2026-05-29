@@ -1,5 +1,5 @@
-// Branding knobs sourced from NEXT_PUBLIC_* env vars so forks (e.g. MyFork)
-// can rebrand the app without patching source. NEXT_PUBLIC_* is the right
+// Branding knobs sourced from NEXT_PUBLIC_* env vars so forks can rebrand
+// the app without patching source. NEXT_PUBLIC_* is the right
 // channel here because Next.js inlines these at build time, which lets
 // client components read them directly (no React Context, no server
 // round-trip). Server-only modules read the same keys at runtime.

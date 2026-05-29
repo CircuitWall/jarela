@@ -10,7 +10,7 @@ informed:
 
 ## Context and Problem Statement
 
-On corporate networks (e.g. Macs behind a corporate proxy) Jarela's outbound `fetch`
+On corporate networks Jarela's outbound `fetch`
 calls — to LLM providers, MCP servers, and integration APIs — fail with
 `getaddrinfo ENOTFOUND` because the host can only be reached through an
 HTTP proxy and/or VPN-pushed DNS. Browsers transparently use the system
@@ -224,8 +224,8 @@ on the password using the existing `SECRET_MASK` sentinel.
 
 ## More Information
 
-* Triggered by: this ENOTFOUND incident on a Mac behind a corporate proxy
-  (2026-05-19).
+* Triggered by: an ENOTFOUND incident on a developer machine behind a
+  corporate proxy (2026-05-19).
 * Builds on [[adr-0005-encrypt-secrets-at-rest]].
 * Related: the LaunchAgent plist template and
   `scripts/install-to-system.sh` will gain a one-line note pointing
