@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#configuration-guide-home--work">Config guide</a> ·
   <a href="#supported-platforms">Platforms</a> ·
   <a href="#features">Features</a> ·
   <a href="#productivity-stacks-google--microsoft-at-parity">Google + Microsoft</a> ·
@@ -58,6 +59,87 @@
     <a href="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180">Download the clip</a>.
   </video>
 </p>
+
+## Quick start
+
+Get to a working local agent in under 10 minutes:
+
+1. Install using one channel:
+  - npm: `npm install -g @circuitwall/jarela`
+  - Docker: `docker run -d -p 127.0.0.1:4312:4312 -v jarela-data:/data andrewgewu/jarela`
+  - portable archive: download from [Releases](https://github.com/CircuitWall/jarela/releases/latest)
+2. Start Jarela:
+  - npm install: run `jarela`
+  - source checkout: run `npm run dev` (dev) or `npm run build && npm start` (prod)
+3. Open the app:
+  - dev mode: `http://localhost:3000`
+  - installed/prod mode: `http://127.0.0.1:4312`
+4. Complete first-run setup:
+  - add one provider key (Models/setup screen), then create your first agent
+  - enable tool categories that match your workflow (Mail, Calendar, Files, Web, etc.)
+5. Optionally connect integrations from Connections:
+  - Gmail/Calendar, Outlook/Calendar, GitHub, Atlassian, MCP servers, WhatsApp bridge
+
+For platform-specific install, service/autostart, and operations detail, jump to
+[Installation and runtime details](#installation-and-runtime-details).
+
+## Configuration guide (home + work)
+
+This section gives opinionated starter configs and tool chains you can adapt.
+Pattern that works well: one agent per lane (home, work), each with a narrow
+tool policy and clear trigger source.
+
+### Home setup
+
+Recommended baseline:
+
+- Agent name: `Home assistant`
+- Model: low-cost chat model for routine tasks
+- Tool categories: `Mail`, `Calendar`, `Web`, `Memory`, `Schedule`
+- Bridges: WhatsApp route for family group in `silent_mode` for monitoring, and
+  one direct route with replies enabled for active planning
+
+Popular goals and tool chains:
+
+1. Daily family agenda brief
+  - Chain: `calendar_list_events` -> `gmail_search`/`outlook_search` -> `memory_write`
+  - Result: one morning summary with events + high-priority emails
+2. Trip planning helper
+  - Chain: `web_search` -> `calendar_create_event` -> `gmail_create_draft`/`outlook_create_draft`
+  - Result: compares options, blocks time, drafts confirmation mail
+3. Household reminders
+  - Chain: `schedule_task` -> `memory_read` -> `calendar_create_event`
+  - Result: recurring reminders with memory-backed context
+
+### Work setup
+
+Recommended baseline:
+
+- Agent name: `Work operator`
+- Model: stronger reasoning model for cross-system workflows
+- Tool categories: `Work` (GitHub + Atlassian), `Mail`, `Calendar`, `Files`, `Documents`, `Schedule`
+- Connections: GitHub PAT, Atlassian token, one mail/calendar stack (or both)
+- Safety: keep destructive operations behind approvals and draft-first mail policy
+
+Popular goals and tool chains:
+
+1. Standup prep in 5 minutes
+  - Chain: `jira_search_issues` -> `github_list_pulls` -> `documents_search` -> `memory_write`
+  - Result: compact status grouped by in-progress, blocked, and review-ready
+2. Incident follow-up workflow
+  - Chain: `github_get_issue`/`jira_get_issue` -> `file_write` (draft runbook notes) -> `outlook_create_draft`/`gmail_create_draft`
+  - Result: structured summary plus stakeholder update draft without auto-send
+3. Weekly planning and meeting slots
+  - Chain: `calendar_list_events` -> `outlook_calendar_create_event`/`calendar_create_event` -> `jira_update_issue`
+  - Result: reserves focus blocks and updates ticket state in one pass
+
+### Suggested operating pattern
+
+1. Keep `Home assistant` and `Work operator` separate.
+2. Use `silent_mode` on noisy bridge/group channels so the agent reports important events without replying publicly.
+3. Prefer watcher/scheduled `script` reactions for deterministic automations; use `agent_prompt` when judgment is required.
+4. Store recurring context in memory namespaces (`home/*`, `work/*`) so prompts stay compact.
+5. Start with minimal tool categories, then expand only where needed.
 
 ## What is Jarela?
 
@@ -180,7 +262,7 @@ create an Outlook Calendar invite in the same turn.
   required when the corporate roots are already in the system keychain
   (ADR-0020).
 
-## Quick start
+## Installation and runtime details
 
 Works on **Windows 10/11**, **macOS 12+**, and **Linux** (any modern glibc
 distro). See [Supported platforms](#supported-platforms) for the per-OS
