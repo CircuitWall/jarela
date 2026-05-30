@@ -9,6 +9,29 @@ import { CapBadges } from "./CapBadges";
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
 const CATALOG_PROVIDERS = new Set<string>(["openai", "github-copilot", "anthropic", "gemini", "deepseek"]);
+const DEFAULT_CONTEXT_WINDOW = 8192;
+const DEFAULT_TIER_PROPORTIONS = { hot: 60, warm: 25, facts: 15 };
+
+type Tier = "hot" | "warm" | "facts";
+
+function sanitizeTierPriority(
+  value: ModelConfig["params"]["context_tier_priority"] | undefined,
+): [Tier, Tier, Tier] {
+  if (!Array.isArray(value) || value.length !== 3) return ["hot", "warm", "facts"];
+  const filtered = value.filter((v): v is Tier => v === "hot" || v === "warm" || v === "facts");
+  if (filtered.length !== 3 || new Set(filtered).size !== 3) return ["hot", "warm", "facts"];
+  return [filtered[0], filtered[1], filtered[2]];
+}
+
+function toNumberOrEmpty(v: string): number | undefined {
+  if (!v.trim()) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function fmtInt(n: number): string {
+  return n.toLocaleString();
+}
 
 interface Props {
   model?: ModelConfig;
@@ -35,6 +58,11 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   );
   const [temperature, setTemperature] = useState(String(model?.params.temperature ?? ""));
   const [maxTokens, setMaxTokens] = useState(String(model?.params.max_tokens ?? ""));
+  const [contextWindowTokens, setContextWindowTokens] = useState(String(model?.params.context_window_tokens ?? ""));
+  const [hotRatio, setHotRatio] = useState(String(Math.round((model?.params.context_tier_proportions?.hot ?? (DEFAULT_TIER_PROPORTIONS.hot / 100)) * 100)));
+  const [warmRatio, setWarmRatio] = useState(String(Math.round((model?.params.context_tier_proportions?.warm ?? (DEFAULT_TIER_PROPORTIONS.warm / 100)) * 100)));
+  const [factsRatio, setFactsRatio] = useState(String(Math.round((model?.params.context_tier_proportions?.facts ?? (DEFAULT_TIER_PROPORTIONS.facts / 100)) * 100)));
+  const [tierPriority, setTierPriority] = useState<[Tier, Tier, Tier]>(sanitizeTierPriority(model?.params.context_tier_priority));
   const [isDefault, setIsDefault] = useState(model?.is_default ?? false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -107,11 +135,40 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
     setSaving(true);
     try {
       const params: ModelConfig["params"] = {};
+      const parsedWindow = toNumberOrEmpty(contextWindowTokens);
+      const parsedHot = toNumberOrEmpty(hotRatio);
+      const parsedWarm = toNumberOrEmpty(warmRatio);
+      const parsedFacts = toNumberOrEmpty(factsRatio);
+      const tiers = [parsedHot ?? 0, parsedWarm ?? 0, parsedFacts ?? 0];
+      if (tiers.some((n) => n < 0)) {
+        setError("Tier proportions cannot be negative");
+        setSaving(false);
+        return;
+      }
+      const tierSum = tiers[0] + tiers[1] + tiers[2];
+      if (tierSum <= 0) {
+        setError("Tier proportions must add up to more than 0");
+        setSaving(false);
+        return;
+      }
+      if (new Set(tierPriority).size !== 3) {
+        setError("Tier priority must list hot, warm, and facts exactly once");
+        setSaving(false);
+        return;
+      }
+
       if (apiKey) params.api_key = apiKey;
       if (baseUrl) params.base_url = baseUrl;
       if (parsed_headers) params.extra_headers = parsed_headers;
       if (temperature) params.temperature = Number(temperature);
       if (maxTokens) params.max_tokens = Number(maxTokens);
+      if (parsedWindow && parsedWindow > 0) params.context_window_tokens = Math.floor(parsedWindow);
+      params.context_tier_proportions = {
+        hot: (parsedHot ?? 0) / tierSum,
+        warm: (parsedWarm ?? 0) / tierSum,
+        facts: (parsedFacts ?? 0) / tierSum,
+      };
+      params.context_tier_priority = tierPriority;
       await onSave(name.trim(), { provider, model_id: modelId.trim(), params, is_default: isDefault });
       onClose();
     } catch (e) {
@@ -125,6 +182,29 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   }
 
   const showGitHub = provider === "github-copilot";
+
+  const contextWindow = Math.max(1, Math.floor(toNumberOrEmpty(contextWindowTokens) ?? DEFAULT_CONTEXT_WINDOW));
+  const outputReserve = Math.max(256, Math.min(contextWindow - 1, Math.floor(toNumberOrEmpty(maxTokens) ?? contextWindow * 0.2)));
+  const inputBudget = Math.max(0, contextWindow - outputReserve - Math.min(1200, contextWindow - outputReserve));
+  const hotP = Math.max(0, toNumberOrEmpty(hotRatio) ?? DEFAULT_TIER_PROPORTIONS.hot);
+  const warmP = Math.max(0, toNumberOrEmpty(warmRatio) ?? DEFAULT_TIER_PROPORTIONS.warm);
+  const factsP = Math.max(0, toNumberOrEmpty(factsRatio) ?? DEFAULT_TIER_PROPORTIONS.facts);
+  const totalP = hotP + warmP + factsP || 1;
+  const hotBudget = Math.floor(inputBudget * (hotP / totalP));
+  const warmBudget = Math.floor(inputBudget * (warmP / totalP));
+  const factsBudget = Math.max(0, inputBudget - hotBudget - warmBudget);
+
+  function updatePriority(index: 0 | 1 | 2, value: Tier) {
+    setTierPriority((prev) => {
+      const next: [Tier, Tier, Tier] = [...prev] as [Tier, Tier, Tier];
+      const existing = next.indexOf(value);
+      if (existing !== -1 && existing !== index) {
+        next[existing] = next[index];
+      }
+      next[index] = value;
+      return next;
+    });
+  }
 
   const filteredCatalog = catalog?.filter((m) =>
     !catalogSearch || m.id.toLowerCase().includes(catalogSearch.toLowerCase())
@@ -241,6 +321,67 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               <input type="number" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
                 value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} placeholder="4096" />
             </label>
+          </div>
+
+          <label className="block">
+            <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
+            <input type="number" min="1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
+          </label>
+
+          <div className="rounded-lg border border-border bg-surface-3 p-3 space-y-2">
+            <p className="text-xs text-fg-subtle">Context tiers and resource usage</p>
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block">
+                <span className="text-[11px] text-fg-faint mb-1 block">Hot %</span>
+                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={hotRatio} onChange={(e) => setHotRatio(e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="text-[11px] text-fg-faint mb-1 block">Warm %</span>
+                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={warmRatio} onChange={(e) => setWarmRatio(e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="text-[11px] text-fg-faint mb-1 block">Facts %</span>
+                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={factsRatio} onChange={(e) => setFactsRatio(e.target.value)} />
+              </label>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <label className="block">
+                <span className="text-[11px] text-fg-faint mb-1 block">Priority 1</span>
+                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={tierPriority[0]} onChange={(e) => updatePriority(0, e.target.value as Tier)}>
+                  <option value="hot">hot</option>
+                  <option value="warm">warm</option>
+                  <option value="facts">facts</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[11px] text-fg-faint mb-1 block">Priority 2</span>
+                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={tierPriority[1]} onChange={(e) => updatePriority(1, e.target.value as Tier)}>
+                  <option value="hot">hot</option>
+                  <option value="warm">warm</option>
+                  <option value="facts">facts</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[11px] text-fg-faint mb-1 block">Priority 3</span>
+                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={tierPriority[2]} onChange={(e) => updatePriority(2, e.target.value as Tier)}>
+                  <option value="hot">hot</option>
+                  <option value="warm">warm</option>
+                  <option value="facts">facts</option>
+                </select>
+              </label>
+            </div>
+            <p className="text-[11px] text-fg-faint leading-relaxed">
+              Estimated per-turn allocation: window {fmtInt(contextWindow)} tokens, output reserve {fmtInt(outputReserve)}, input {fmtInt(inputBudget)}.
+              Hot gets about {fmtInt(hotBudget)}, warm {fmtInt(warmBudget)}, facts {fmtInt(factsBudget)} tokens.
+              Higher hot keeps recent messages; higher warm favors recap summaries; higher facts favors durable memory retrieval.
+            </p>
           </div>
 
           <label className="block">
