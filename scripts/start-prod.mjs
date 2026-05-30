@@ -27,4 +27,14 @@ if (process.env.JARELA_HOSTNAME) process.env.HOSTNAME = process.env.JARELA_HOSTN
 process.env.PORT ||= "4312";
 process.env.HOSTNAME ||= "127.0.0.1";
 
+if (process.env.JARELA_PREFLIGHT_OPTIMIZE_CLIENT === "1") {
+  try {
+    const { optimizeClientChunksOnce } = await import("./optimize-client-chunks.mjs");
+    await optimizeClientChunksOnce();
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.warn(`[preflight-optimize] skipped: ${msg}`);
+  }
+}
+
 await import(pathToFileURL(server).href);
