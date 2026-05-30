@@ -387,11 +387,17 @@ interface BridgeContext {
 }
 
 function parseBridgeContext(raw: string): BridgeContext | null {
-  if (!raw.startsWith("[bridge:")) return null;
+  // New bridge framing may include a short prose role-note before the
+  // bracketed metadata block. Accept both old style (starts with [bridge:])
+  // and new style (note + blank line + headers).
+  const start = raw.indexOf("[bridge:");
+  if (start < 0) return null;
+  const src = raw.slice(start);
+
   // Walk the contiguous `[key:value]` prefix line-by-line; stop at the first
-  // blank line (dispatcher always separates the header from the body with one).
+  // blank line (dispatcher separates header from body with one).
   const headers: Record<string, string> = {};
-  const lines = raw.split("\n");
+  const lines = src.split("\n");
   let i = 0;
   for (; i < lines.length; i++) {
     const line = lines[i];
@@ -400,14 +406,16 @@ function parseBridgeContext(raw: string): BridgeContext | null {
     if (!m) return null;
     headers[m[1]] = m[2];
   }
-  if (!headers.bridge || !headers.chat_jid || !headers.chat_type) return null;
+  const chatId = headers.chat_id || headers.chat_jid;
+  const senderId = headers.sender_id || headers.sender_jid || chatId;
+  if (!headers.bridge || !chatId || !headers.chat_type) return null;
   return {
     bridgeId: headers.bridge,
-    chatJid: headers.chat_jid,
-    chatName: headers.chat_name || headers.chat_jid,
+    chatJid: chatId,
+    chatName: headers.chat_name || chatId,
     isGroup: headers.chat_type === "group",
-    senderJid: headers.sender_jid || headers.chat_jid,
-    senderName: headers.sender_name || headers.sender_jid || "Unknown",
+    senderJid: senderId,
+    senderName: headers.sender_name || senderId || "Unknown",
     body: lines.slice(i).join("\n").trimEnd(),
   };
 }
