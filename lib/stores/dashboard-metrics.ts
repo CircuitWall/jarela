@@ -156,6 +156,11 @@ type PricingSnapshotSource = {
   status?: number | null;
   error?: string | null;
   price_signals?: string[];
+  model_rates?: Array<{
+    model_id: string;
+    input_per_1m_usd: number | null;
+    output_per_1m_usd: number | null;
+  }>;
 };
 
 type PricingSnapshot = {
@@ -184,7 +189,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     )
     .all(since) as UsageRow[];
 
-  const { byProvider, generatedAt } = await loadProviderRates();
+  const { byProvider, byProviderModel, generatedAt } = await loadProviderRates();
   const dayMap = seedDayBuckets(now, boundedDays);
   const agentMap = new Map<string, AgentBucket>();
   const providerMap = new Map<string, ProviderBucket>();
@@ -207,7 +212,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     const inputTokens = isInput ? tokenEstimate : 0;
     const outputTokens = isInput ? 0 : tokenEstimate;
 
-    const rates = providerRatesFor(byProvider, row.provider);
+    const rates = modelRatesFor(byProvider, byProviderModel, row.provider, row.model_id);
     const estCost = estimateCostUsd(inputTokens, outputTokens, rates);
 
     dayBucket.inputTokens += inputTokens;
@@ -425,6 +430,27 @@ function providerRatesFor(byProvider: Map<string, ProviderRates>, provider: stri
     ?? { inputPer1M: null, outputPer1M: null, source: "unknown", ok: false, status: null, error: "provider missing in pricing snapshot" };
 }
 
+function modelRatesFor(
+  byProvider: Map<string, ProviderRates>,
+  byProviderModel: Map<string, ProviderRates>,
+  provider: string | null,
+  modelId: string | null,
+): ProviderRates {
+  if (!provider || !modelId) {
+    return providerRatesFor(byProvider, provider);
+  }
+
+  const providerKey = normalizeProvider(provider);
+  const modelKey = modelId.trim().toLowerCase();
+  if (!providerKey || !modelKey) {
+    return providerRatesFor(byProvider, provider);
+  }
+
+  const exact = byProviderModel.get(`${providerKey}::${modelKey}`);
+  if (exact) return exact;
+  return providerRatesFor(byProvider, providerKey);
+}
+
 function summarizeEvents(raw: string): { calls: number; successes: number; errors: number } {
   let events: PersistedToolEvent[] = [];
   try {
@@ -467,10 +493,12 @@ function isErrorPayload(payload: unknown): boolean {
 
 async function loadProviderRates(): Promise<{
   byProvider: Map<string, ProviderRates>;
+  byProviderModel: Map<string, ProviderRates>;
   generatedAt: string | null;
 }> {
   const snapshot = await readPricingSnapshot();
   const out = new Map<string, ProviderRates>();
+  const byProviderModel = new Map<string, ProviderRates>();
   const expectedProviders = ["openai", "anthropic", "google", "deepseek", "cohere"];
 
   for (const provider of expectedProviders) {
@@ -485,7 +513,7 @@ async function loadProviderRates(): Promise<{
   }
 
   if (!snapshot?.sources) {
-    return { byProvider: out, generatedAt: null };
+    return { byProvider: out, byProviderModel, generatedAt: null };
   }
 
   for (const source of snapshot.sources) {
@@ -500,9 +528,22 @@ async function loadProviderRates(): Promise<{
       status: source.status ?? null,
       error: source.error ?? null,
     });
+
+    for (const modelRate of source.model_rates ?? []) {
+      const normalizedModel = modelRate.model_id?.trim().toLowerCase();
+      if (!normalizedModel) continue;
+      byProviderModel.set(`${key}::${normalizedModel}`, {
+        inputPer1M: modelRate.input_per_1m_usd,
+        outputPer1M: modelRate.output_per_1m_usd,
+        source: source.resolved_url ?? source.pricing_url,
+        ok: source.ok !== false,
+        status: source.status ?? null,
+        error: source.error ?? null,
+      });
+    }
   }
 
-  return { byProvider: out, generatedAt: snapshot.generated_at ?? null };
+  return { byProvider: out, byProviderModel, generatedAt: snapshot.generated_at ?? null };
 }
 
 async function readPricingSnapshot(): Promise<PricingSnapshot | null> {

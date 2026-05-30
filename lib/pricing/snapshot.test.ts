@@ -159,4 +159,26 @@ describe("pricing snapshot refresh", () => {
     expect(deepseek?.notes).toContain("Google search");
     expect((deepseek?.price_signals ?? []).length).toBeGreaterThan(0);
   });
+
+  it("extracts model-level rates when model IDs are present", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => "<html>gpt-4o input $5.00 / 1M tokens output $15.00 / 1M tokens</html>",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ force: true, providers: ["openai"] });
+
+    const openai = res.snapshot.sources.find((s) => s.id === "openai");
+    expect(openai).toBeTruthy();
+    const modelRate = (openai?.model_rates ?? []).find((m) => m.model_id === "gpt-4o");
+    expect(modelRate).toBeTruthy();
+    expect(modelRate?.input_per_1m_usd).toBe(5);
+    expect(modelRate?.output_per_1m_usd).toBe(15);
+  });
 });

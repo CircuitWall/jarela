@@ -74,6 +74,12 @@ type FetchAttempt = {
   error: string | null;
 };
 
+type ModelPricingRate = {
+  model_id: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+};
+
 export interface PricingSnapshotSource {
   id: string;
   name: string;
@@ -88,6 +94,7 @@ export interface PricingSnapshotSource {
   content_hash: string | null;
   content_length: number;
   price_signals: string[];
+  model_rates?: ModelPricingRate[];
   error: string | null;
 }
 
@@ -186,18 +193,88 @@ function hashContent(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function extractPriceSignals(html: string): string[] {
-  const plain = html
+function extractPlainText(html: string): string {
+  return html
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function extractPriceSignals(html: string): string[] {
+  const plain = extractPlainText(html);
 
   const hits = plain.match(PRICE_LINE_RE) ?? [];
   const normalized = [...new Set(hits.map((s) => s.trim()))];
   return normalized.slice(0, 40);
+}
+
+function inferRatePair(text: string): { inputPer1M: number | null; outputPer1M: number | null } | null {
+  const labeledInput = /input[^$]{0,24}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
+  const labeledOutput = /output[^$]{0,24}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
+
+  const inputL = labeledInput ? Number(labeledInput[1]) : null;
+  const outputL = labeledOutput ? Number(labeledOutput[1]) : null;
+
+  const tokenRates = [...text.matchAll(/\$\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)\s*(?:1\s*[MK]|million)\s*tokens?/gi)]
+    .map((m) => Number(m[1]))
+    .filter((v) => Number.isFinite(v) && v > 0)
+    .sort((a, b) => a - b);
+
+  const inputPer1M = inputL ?? (tokenRates.length > 0 ? tokenRates[0] : null);
+  const outputPer1M = outputL ?? (tokenRates.length > 1 ? tokenRates[tokenRates.length - 1] : inputPer1M);
+
+  if (inputPer1M == null && outputPer1M == null) return null;
+  return { inputPer1M, outputPer1M };
+}
+
+function modelRegexForSource(sourceId: string): RegExp {
+  const p = toCanonicalProvider(sourceId);
+  if (p === "openai") return /\b(gpt-[a-z0-9.-]+|o[1-4](?:-[a-z0-9.-]+)?)\b/gi;
+  if (p === "anthropic") return /\b(claude-[a-z0-9.-]+)\b/gi;
+  if (p === "google") return /\b(gemini-[a-z0-9.-]+)\b/gi;
+  if (p === "deepseek") return /\b(deepseek-[a-z0-9.-]+)\b/gi;
+  if (p === "cohere") return /\b(command-[a-z0-9.-]+|embed-[a-z0-9.-]+)\b/gi;
+  return /\b([a-z][a-z0-9.-]{2,})\b/gi;
+}
+
+function extractModelRates(sourceId: string, html: string): ModelPricingRate[] {
+  const plain = extractPlainText(html);
+  const re = modelRegexForSource(sourceId);
+  const byModel = new Map<string, ModelPricingRate>();
+
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(plain)) !== null) {
+    const modelId = (m[1] ?? "").trim().toLowerCase();
+    if (!modelId) continue;
+
+    const idx = m.index ?? 0;
+    const start = Math.max(0, idx - 240);
+    const end = Math.min(plain.length, idx + 240);
+    const window = plain.slice(start, end);
+    const pair = inferRatePair(window);
+    if (!pair) continue;
+
+    const existing = byModel.get(modelId);
+    if (!existing) {
+      byModel.set(modelId, {
+        model_id: modelId,
+        input_per_1m_usd: pair.inputPer1M,
+        output_per_1m_usd: pair.outputPer1M,
+      });
+      continue;
+    }
+
+    byModel.set(modelId, {
+      model_id: modelId,
+      input_per_1m_usd: existing.input_per_1m_usd ?? pair.inputPer1M,
+      output_per_1m_usd: existing.output_per_1m_usd ?? pair.outputPer1M,
+    });
+  }
+
+  return [...byModel.values()].slice(0, 80);
 }
 
 function buildGoogleSearchUrl(query: string): string {
@@ -303,6 +380,7 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
         content_hash: hashContent(attempt.body),
         content_length: attempt.body.length,
         price_signals: signals,
+        model_rates: extractModelRates(source.id, attempt.body),
         error: null,
       };
     }
@@ -352,6 +430,7 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
         content_hash: hashContent(attempt.body),
         content_length: attempt.body.length,
         price_signals: signals,
+        model_rates: extractModelRates(source.id, attempt.body),
         error: null,
       };
     }
@@ -381,6 +460,7 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
     content_hash: fallback.body ? hashContent(fallback.body) : null,
     content_length: fallback.body.length,
     price_signals: fallback.body ? extractPriceSignals(fallback.body) : [],
+    model_rates: fallback.body ? extractModelRates(source.id, fallback.body) : [],
     error: fallback.error,
   };
 }
