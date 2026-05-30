@@ -25,6 +25,7 @@ import {
 } from "@/lib/stores/watchers";
 import { registeredTools } from "@/lib/tools/registry";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { truncateBytes } from "@/lib/utils/text";
 import type { TriggerFiring, TriggerHandler, TriggerOutcome } from "../types";
 
 export const WATCHER_KIND = "watcher";
@@ -46,6 +47,22 @@ const DEFAULT_REACTION_DIRECTIVE =
   `Summarise what changed and decide whether the user needs to know. ` +
   `If nothing material changed, you may stay silent.`;
 
+// Watcher tool outputs can be very large (full JSON payloads, long lists).
+// Keep per-side context bounded so one firing cannot consume most of an
+// agent's prompt budget.
+const MAX_RESULT_CONTEXT_BYTES = 3000;
+
+function formatResultForPrompt(raw: string | null): string {
+  if (raw === null) return "(none — first observation)";
+  const bytes = Buffer.byteLength(raw, "utf8");
+  const clipped = truncateBytes(raw, MAX_RESULT_CONTEXT_BYTES);
+  if (!clipped.truncated) return raw;
+  return [
+    clipped.text,
+    `\n… [truncated: showing ${MAX_RESULT_CONTEXT_BYTES} of ${bytes} bytes; full value retained in watcher state]`,
+  ].join("");
+}
+
 function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current: string): string {
   const argsPretty = (() => {
     try { return JSON.stringify(JSON.parse(watcher.tool_args), null, 2); }
@@ -62,10 +79,10 @@ function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current
     `Args: ${argsPretty}`,
     ``,
     `--- Previous result ---`,
-    previous ?? "(none — first observation)",
+    formatResultForPrompt(previous),
     ``,
     `--- Current result ---`,
-    current,
+    formatResultForPrompt(current),
     ``,
     directive,
   ].join("\n");
