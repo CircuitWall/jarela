@@ -7,6 +7,15 @@ import { resolveRoute } from "./router";
 import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
 
+const SILENT_BRIDGE_DIRECTIVE =
+  "[SILENT_BRIDGE] Observer mode is enabled for this route. Never send replies into the external chat. " +
+  "Produce an in-app update only when there is an important event, risk, or user-actionable change. " +
+  "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else.";
+
+function isNoReply(text: string): boolean {
+  return /^\s*NO[_ ]?REPLY\b/i.test(text);
+}
+
 /**
  * Handle one inbound message from a bridge adapter:
  *   1. Resolve the chat → agent route. Unrouted → publish an advisory
@@ -63,9 +72,13 @@ export async function handleInboundMessage(
       sender_name: senderName,
       text: msg.text,
     });
+    const silent = route.silent_mode === 1;
+    const effectivePrompt = silent
+      ? `${promptText}\n\n${SILENT_BRIDGE_DIRECTIVE}`
+      : promptText;
     const prepared = await prepareThreadRun(
       thread.thread_id,
-      promptText,
+      effectivePrompt,
       undefined,
       msg.attachments,
       undefined,
@@ -88,8 +101,6 @@ export async function handleInboundMessage(
     // matches. Default 'counterpart' = agent answers the user's chat
     // partner / group members but stays quiet on the user's own messages.
     // 'user' = inverse — react only to what the paired user typed.
-    const silent = route.silent_mode === 1;
-
     // Show the "composing…" presence on the channel while we drain the
     // LLM stream. Refresh every ~8s because WhatsApp drops the indicator
     // after ~10s if not renewed. We always send a final "paused" in the
@@ -126,9 +137,12 @@ export async function handleInboundMessage(
       }
     }
 
-    persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge");
-
     const reply = assistantContent.trim();
+    const suppressAssistant = silent && (reply.length === 0 || isNoReply(reply));
+    if (!suppressAssistant) {
+      persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge");
+    }
+
     // Outbound reply gate: silent_mode (master switch) AND respond_to
     // (per-role trigger). Both must clear for a message to leave the
     // dispatcher. The WhatsApp adapter also re-checks `route.silent_mode`
@@ -143,17 +157,19 @@ export async function handleInboundMessage(
       }
     }
 
-    publishNotification({
-      type: "bridge_message_received",
-      bridge_id: adapter.bridge_id,
-      remote_jid: msg.remote_jid,
-      push_name: msg.push_name,
-      is_group: msg.is_group,
-      thread_id: thread.thread_id,
-      agent_id: agentId,
-      preview: reply.replace(/\s+/g, " ").slice(0, 120),
-      ts: Date.now(),
-    });
+    if (!silent || !suppressAssistant) {
+      publishNotification({
+        type: "bridge_message_received",
+        bridge_id: adapter.bridge_id,
+        remote_jid: msg.remote_jid,
+        push_name: msg.push_name,
+        is_group: msg.is_group,
+        thread_id: thread.thread_id,
+        agent_id: agentId,
+        preview: suppressAssistant ? "" : reply.replace(/\s+/g, " ").slice(0, 120),
+        ts: Date.now(),
+      });
+    }
   } catch (err) {
     const m = err instanceof Error ? err.message : String(err);
     console.error(`[bridge ${adapter.bridge_id}] dispatcher error on ${msg.remote_jid}:`, m);
