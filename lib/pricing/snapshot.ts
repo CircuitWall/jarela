@@ -5,12 +5,23 @@ import { dirname, resolve } from "node:path";
 const SNAPSHOT_PATH = resolve("docs", "journal", "pricing-snapshot.json");
 const DEFAULT_TTL_DAYS = 3;
 
-const SOURCES = [
+interface SourceDef {
+  id: string;
+  name: string;
+  pricing_url: string;
+  notes: string;
+  fallback_urls?: string[];
+}
+
+const SOURCES: SourceDef[] = [
   {
     id: "openai",
     name: "OpenAI",
     pricing_url: "https://openai.com/api/pricing/",
     notes: "Official pricing page (HTML)",
+    fallback_urls: [
+      "https://platform.openai.com/docs/pricing",
+    ],
   },
   {
     id: "anthropic",
@@ -29,6 +40,9 @@ const SOURCES = [
     name: "DeepSeek",
     pricing_url: "https://platform.deepseek.com/pricing",
     notes: "Official pricing page (HTML)",
+    fallback_urls: [
+      "https://api-docs.deepseek.com/quick_start/pricing",
+    ],
   },
   {
     id: "cohere",
@@ -51,6 +65,7 @@ export interface PricingSnapshotSource {
   id: string;
   name: string;
   pricing_url: string;
+  resolved_url?: string | null;
   notes: string;
   fetched_at: string;
   ok: boolean;
@@ -138,41 +153,70 @@ function extractPriceSignals(html: string): string[] {
   return normalized.slice(0, 40);
 }
 
-async function fetchSource(source: (typeof SOURCES)[number]): Promise<PricingSnapshotSource> {
+async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
   const fetched_at = new Date().toISOString();
-  try {
-    const res = await fetch(source.pricing_url, {
-      headers: {
-        "user-agent": "jarela-pricing-snapshot/2.0 (+dashboard-refresh)",
-        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
+  const urls = [source.pricing_url, ...(source.fallback_urls ?? [])];
+  let lastError: string | null = null;
+  let lastStatus: number | null = null;
+  let lastBody = "";
+  let resolved_url: string | null = null;
 
-    const body = await res.text();
-    return {
-      ...source,
-      fetched_at,
-      ok: res.ok,
-      status: res.status,
-      etag: res.headers.get("etag"),
-      last_modified: res.headers.get("last-modified"),
-      content_hash: hashContent(body),
-      content_length: body.length,
-      price_signals: extractPriceSignals(body),
-      error: null,
-    };
-  } catch (error) {
-    return {
-      ...source,
-      fetched_at,
-      ok: false,
-      status: null,
-      etag: null,
-      last_modified: null,
-      content_hash: null,
-      content_length: 0,
-      price_signals: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "user-agent": "jarela-pricing-snapshot/2.1 (+dashboard-refresh)",
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "accept-language": "en-US,en;q=0.9",
+          referer: "https://github.com/circuitwall/jarela",
+        },
+      });
+
+      const body = await res.text();
+      lastStatus = res.status;
+      lastBody = body;
+
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}`;
+        continue;
+      }
+
+      resolved_url = url;
+      return {
+        id: source.id,
+        name: source.name,
+        pricing_url: source.pricing_url,
+        resolved_url,
+        notes: source.notes,
+        fetched_at,
+        ok: true,
+        status: res.status,
+        etag: res.headers.get("etag"),
+        last_modified: res.headers.get("last-modified"),
+        content_hash: hashContent(body),
+        content_length: body.length,
+        price_signals: extractPriceSignals(body),
+        error: null,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
   }
+
+  return {
+    id: source.id,
+    name: source.name,
+    pricing_url: source.pricing_url,
+    resolved_url,
+    notes: source.notes,
+    fetched_at,
+    ok: false,
+    status: lastStatus,
+    etag: null,
+    last_modified: null,
+    content_hash: lastBody ? hashContent(lastBody) : null,
+    content_length: lastBody.length,
+    price_signals: lastBody ? extractPriceSignals(lastBody) : [],
+    error: lastError,
+  };
 }

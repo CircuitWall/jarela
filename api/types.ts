@@ -257,6 +257,9 @@ export interface DashboardProviderRate {
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
   source: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
 }
 
 export interface DashboardProviderBreakdown {

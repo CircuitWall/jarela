@@ -43,6 +43,9 @@ export interface DashboardProviderRate {
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
   source: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
 }
 
 export interface DashboardProviderBreakdown {
@@ -140,11 +143,18 @@ type ProviderRates = {
   inputPer1M: number | null;
   outputPer1M: number | null;
   source: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
 };
 
 type PricingSnapshotSource = {
   id: string;
   pricing_url: string;
+  resolved_url?: string | null;
+  ok?: boolean;
+  status?: number | null;
+  error?: string | null;
   price_signals?: string[];
 };
 
@@ -367,6 +377,9 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
           input_per_1m_usd: rates.inputPer1M,
           output_per_1m_usd: rates.outputPer1M,
           source: rates.source,
+          ok: rates.ok,
+          status: rates.status,
+          error: rates.error,
         }))
         .sort((a, b) => a.provider.localeCompare(b.provider)),
       notes: "Estimated costs are heuristic: token counts are content-length based and provider rates are inferred from snapshot signals.",
@@ -407,8 +420,9 @@ function estimateCostUsd(inputTokens: number, outputTokens: number, rates: Provi
 }
 
 function providerRatesFor(byProvider: Map<string, ProviderRates>, provider: string | null): ProviderRates {
-  if (!provider) return { inputPer1M: null, outputPer1M: null, source: "unknown" };
-  return byProvider.get(provider.toLowerCase()) ?? { inputPer1M: null, outputPer1M: null, source: "unknown" };
+  if (!provider) return { inputPer1M: null, outputPer1M: null, source: "unknown", ok: false, status: null, error: "no provider assigned" };
+  return byProvider.get(provider.toLowerCase())
+    ?? { inputPer1M: null, outputPer1M: null, source: "unknown", ok: false, status: null, error: "provider missing in pricing snapshot" };
 }
 
 function summarizeEvents(raw: string): { calls: number; successes: number; errors: number } {
@@ -457,6 +471,18 @@ async function loadProviderRates(): Promise<{
 }> {
   const snapshot = await readPricingSnapshot();
   const out = new Map<string, ProviderRates>();
+  const expectedProviders = ["openai", "anthropic", "google", "deepseek", "cohere"];
+
+  for (const provider of expectedProviders) {
+    out.set(provider, {
+      inputPer1M: null,
+      outputPer1M: null,
+      source: "snapshot-missing",
+      ok: false,
+      status: null,
+      error: "provider missing in pricing snapshot",
+    });
+  }
 
   if (!snapshot?.sources) {
     return { byProvider: out, generatedAt: null };
@@ -469,7 +495,10 @@ async function loadProviderRates(): Promise<{
     out.set(key, {
       inputPer1M: parsed.inputPer1M,
       outputPer1M: parsed.outputPer1M,
-      source: source.pricing_url,
+      source: source.resolved_url ?? source.pricing_url,
+      ok: source.ok !== false,
+      status: source.status ?? null,
+      error: source.error ?? null,
     });
   }
 

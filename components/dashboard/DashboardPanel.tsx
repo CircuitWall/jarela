@@ -366,10 +366,24 @@ export function DashboardPanel() {
             <div className="grid md:grid-cols-2 gap-2">
               {data.pricing.rates.map((row) => (
                 <div key={row.provider} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 text-xs">
-                  <div className="text-[var(--text-primary)] font-medium">{row.provider}</div>
+                  <div className="text-[var(--text-primary)] font-medium flex items-center justify-between gap-2">
+                    <span>{row.provider}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                      row.ok
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                    }`}>
+                      {row.ok ? "fetched" : `unavailable${row.status ? ` (${row.status})` : ""}`}
+                    </span>
+                  </div>
                   <div className="text-[var(--text-secondary)]">
                     in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M
                   </div>
+                  {!row.ok && row.error ? (
+                    <div className="mt-1 text-[10px] text-[var(--text-secondary)] truncate" title={row.error}>
+                      {row.error}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
