@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-05-30
+
+### Changed
+
+- **Configuration UI copy clarity improved** across bridge routes, watcher
+  reactions, and scheduled-task reactions so option purpose and mode
+  differences are visible inline without relying on hover-only hints.
+- **README onboarding flow reorganized** with Quick start moved to the top and
+  a practical home/work configuration guide that includes tool-chain recipes
+  for common goals.
+
 ## [0.7.2] - 2026-05-30
 
 ### Added
