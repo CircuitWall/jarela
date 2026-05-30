@@ -6,7 +6,7 @@
 //      tools must be context-free).
 //   3. Hash the stringified result and compare to last_fingerprint.
 //   4. If the hash differs from the previous run, return a TriggerFiring
-//      whose prompt embeds {previous, current} as context for the agent.
+//      whose prompt embeds a compact previous->current diff for the agent.
 //      If it matches (or this is the first run with no previous), record
 //      the fingerprint and skip — no LLM call, no firing.
 //   5. Either way the watcher's next_run_at is advanced by
@@ -48,19 +48,53 @@ const DEFAULT_REACTION_DIRECTIVE =
   `If nothing material changed, you may stay silent.`;
 
 // Watcher tool outputs can be very large (full JSON payloads, long lists).
-// Keep per-side context bounded so one firing cannot consume most of an
+// Keep the diff context bounded so one firing cannot consume most of an
 // agent's prompt budget.
-const MAX_RESULT_CONTEXT_BYTES = 3000;
+const MAX_DIFF_CONTEXT_BYTES = 3500;
 
-function formatResultForPrompt(raw: string | null): string {
-  if (raw === null) return "(none — first observation)";
+function normalizeForDiff(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function buildDiffForPrompt(previous: string | null, current: string): string {
+  if (previous === null) return "+ (first observation baseline established; no diff available)";
+
+  const prev = normalizeForDiff(previous).split(/\r?\n/);
+  const curr = normalizeForDiff(current).split(/\r?\n/);
+
+  let start = 0;
+  while (start < prev.length && start < curr.length && prev[start] === curr[start]) {
+    start += 1;
+  }
+
+  let prevEnd = prev.length - 1;
+  let currEnd = curr.length - 1;
+  while (prevEnd >= start && currEnd >= start && prev[prevEnd] === curr[currEnd]) {
+    prevEnd -= 1;
+    currEnd -= 1;
+  }
+
+  const removed = prev.slice(start, prevEnd + 1);
+  const added = curr.slice(start, currEnd + 1);
+  if (removed.length === 0 && added.length === 0) {
+    return "(no textual diff after normalization)";
+  }
+
+  const hunkHeader = `@@ old:${start + 1}-${Math.max(start, prevEnd + 1)} new:${start + 1}-${Math.max(start, currEnd + 1)} @@`;
+  const raw = [
+    hunkHeader,
+    ...removed.map((l) => `- ${l}`),
+    ...added.map((l) => `+ ${l}`),
+  ].join("\n");
+
   const bytes = Buffer.byteLength(raw, "utf8");
-  const clipped = truncateBytes(raw, MAX_RESULT_CONTEXT_BYTES);
+  const clipped = truncateBytes(raw, MAX_DIFF_CONTEXT_BYTES);
   if (!clipped.truncated) return raw;
-  return [
-    clipped.text,
-    `\n… [truncated: showing ${MAX_RESULT_CONTEXT_BYTES} of ${bytes} bytes; full value retained in watcher state]`,
-  ].join("");
+  return `${clipped.text}\n… [diff truncated: showing ${MAX_DIFF_CONTEXT_BYTES} of ${bytes} bytes; full values retained in watcher state]`;
 }
 
 function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current: string): string {
@@ -69,8 +103,8 @@ function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current
     catch { return watcher.tool_args; }
   })();
   // ADR-0030: a non-null reaction_prompt swaps in for the default directive.
-  // The diff envelope (label/tool/args/previous/current) is unchanged so the
-  // agent always has the change context regardless of the user's instruction.
+  // The diff envelope (label/tool/args/diff) is unchanged so the agent
+  // always has the change context regardless of the user's instruction.
   const directive = watcher.reaction_prompt?.trim() || DEFAULT_REACTION_DIRECTIVE;
   return [
     `Watcher "${watcher.label}" detected a change.`,
@@ -78,11 +112,8 @@ function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current
     `Tool: ${watcher.tool_name}`,
     `Args: ${argsPretty}`,
     ``,
-    `--- Previous result ---`,
-    formatResultForPrompt(previous),
-    ``,
-    `--- Current result ---`,
-    formatResultForPrompt(current),
+    `--- Diff (previous -> current) ---`,
+    buildDiffForPrompt(previous, current),
     ``,
     directive,
   ].join("\n");
