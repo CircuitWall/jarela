@@ -330,6 +330,11 @@ function TaskReactionEditor({
           Script
         </KindPill>
       </div>
+      <p className="text-[10px] text-fg-faint leading-snug">
+        Reaction mode controls what happens when this task fires:
+        <span className="text-fg-subtle"> Agent prompt</span> runs the task&apos;s agent prompt;
+        <span className="text-fg-subtle"> Script</span> runs a built-in reaction script with no LLM chat turn.
+      </p>
       {task.reaction_kind === "script" && (
         <ReactionScriptEditor
           initialScript={task.reaction_script}

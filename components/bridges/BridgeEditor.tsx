@@ -556,6 +556,14 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
         <p className="text-[11px] text-fg-faint py-2">No routes. Inbound messages will be ignored unless you add a catch-all route.</p>
       )}
 
+      {routes.length > 0 && (
+        <p className="text-[10px] text-fg-faint pb-1">
+          Route settings: pick which agent receives this chat, choose whether replies are
+          sent back to chat (Silent mode off) or kept user-side only (Silent mode on), and
+          select who should trigger outbound replies when not silent.
+        </p>
+      )}
+
       {routes.map((r) => {
         const a = agents.find((x) => x.id === r.agent_id) ?? null;
         return (
