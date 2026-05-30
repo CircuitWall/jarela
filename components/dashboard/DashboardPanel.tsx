@@ -2,17 +2,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
-import type { DashboardMetrics } from "@/api/types";
+import type { DashboardCurrencyInfo, DashboardMetrics, UserProfile } from "@/api/types";
 
 type WindowDays = 7 | 14 | 30 | 60;
 
 const WINDOWS: WindowDays[] = [7, 14, 30, 60];
+
+const USD_CURRENCY: DashboardCurrencyInfo = {
+  currency: "USD",
+  rate_from_usd: 1,
+  country_code: null,
+  source: "default",
+  updated_at: "",
+};
 
 export function DashboardPanel() {
   const [days, setDays] = useState<WindowDays>(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardMetrics | null>(null);
+  const [currencyInfo, setCurrencyInfo] = useState<DashboardCurrencyInfo>(USD_CURRENCY);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +41,30 @@ export function DashboardPanel() {
       cancelled = true;
     };
   }, [days]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    api.profile.get()
+      .then((profile: UserProfile) => {
+        const lat = profile.location_lat;
+        const lng = profile.location_lng;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          if (!cancelled) setCurrencyInfo(USD_CURRENCY);
+          return;
+        }
+        return api.dashboard.currency(lat as number, lng as number).then((resolved) => {
+          if (!cancelled) setCurrencyInfo(resolved);
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setCurrencyInfo(USD_CURRENCY);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const series = useMemo(() => data?.series ?? [], [data]);
 
@@ -80,10 +113,19 @@ export function DashboardPanel() {
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <MetricCard label="Input tokens (est)" value={formatInt(data.summary.input_tokens_est)} />
             <MetricCard label="Output tokens (est)" value={formatInt(data.summary.output_tokens_est)} />
-            <MetricCard label="Estimated cost" value={`$${data.summary.estimated_cost_usd.toFixed(4)}`} />
+            <MetricCard
+              label={`Estimated cost (${currencyInfo.currency})`}
+              value={formatMoney(data.summary.estimated_cost_usd, currencyInfo)}
+            />
             <MetricCard label="Tool success rate" value={`${(data.summary.success_rate * 100).toFixed(1)}%`} />
             <MetricCard label="Tool error rate" value={`${(data.summary.error_rate * 100).toFixed(1)}%`} />
           </div>
+
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            {currencyInfo.source === "location"
+              ? `Currency converted from USD to ${currencyInfo.currency} based on saved location.`
+              : "Currency defaults to USD because no location-based currency is available."}
+          </p>
 
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Token usage over time</h3>
@@ -92,7 +134,7 @@ export function DashboardPanel() {
 
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Estimated cost over time</h3>
-            <InteractiveCostChart series={series} />
+            <InteractiveCostChart series={series} currencyInfo={currencyInfo} />
           </section>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -127,7 +169,9 @@ export function DashboardPanel() {
                     <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm text-[var(--text-primary)] truncate">{agent.agent_name}</span>
-                        <span className="text-xs text-[var(--text-secondary)]">${agent.estimated_cost_usd.toFixed(4)}</span>
+                        <span className="text-xs text-[var(--text-secondary)]">
+                          {formatMoney(agent.estimated_cost_usd, currencyInfo)}
+                        </span>
                       </div>
                       <div className="mt-1 text-xs text-[var(--text-secondary)]">
                         {formatInt(agent.message_count)} msgs · {formatInt(agent.input_tokens_est + agent.output_tokens_est)} tokens
@@ -229,19 +273,26 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
   );
 }
 
-function InteractiveCostChart({ series }: { series: DashboardMetrics["series"] }) {
+function InteractiveCostChart({
+  series,
+  currencyInfo,
+}: {
+  series: DashboardMetrics["series"];
+  currencyInfo: DashboardCurrencyInfo;
+}) {
   const [hovered, setHovered] = useState<number | null>(null);
   const width = 720;
   const height = 180;
   const padX = 24;
   const padY = 22;
-  const maxCost = Math.max(0.000001, ...series.map((s) => s.estimated_cost_usd));
+  const maxCost = Math.max(0.000001, ...series.map((s) => convertUsd(s.estimated_cost_usd, currencyInfo)));
 
   const points = series.map((p, idx) => {
     const x = series.length <= 1
       ? width / 2
       : padX + (idx / (series.length - 1)) * (width - (padX * 2));
-    const y = height - padY - ((p.estimated_cost_usd / maxCost) * (height - (padY * 2)));
+    const converted = convertUsd(p.estimated_cost_usd, currencyInfo);
+    const y = height - padY - ((converted / maxCost) * (height - (padY * 2)));
     return { x, y, p, idx };
   });
 
@@ -278,17 +329,41 @@ function InteractiveCostChart({ series }: { series: DashboardMetrics["series"] }
         </svg>
         <div className="absolute right-3 top-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/85 px-2 py-1 text-[11px]">
           {active
-            ? `${active.p.day}  $${active.p.estimated_cost_usd.toFixed(4)}`
+            ? `${active.p.day}  ${formatMoney(active.p.estimated_cost_usd, currencyInfo)}`
             : "Hover points for day cost"}
         </div>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-[var(--text-secondary)]">
-        <span>min: ${Math.min(...series.map((s) => s.estimated_cost_usd)).toFixed(4)}</span>
-        <span className="text-center">max: ${Math.max(...series.map((s) => s.estimated_cost_usd)).toFixed(4)}</span>
-        <span className="text-right">window total: ${series.reduce((sum, s) => sum + s.estimated_cost_usd, 0).toFixed(4)}</span>
+        <span>
+          min: {formatMoney(Math.min(...series.map((s) => s.estimated_cost_usd)), currencyInfo)}
+        </span>
+        <span className="text-center">
+          max: {formatMoney(Math.max(...series.map((s) => s.estimated_cost_usd)), currencyInfo)}
+        </span>
+        <span className="text-right">
+          window total: {formatMoney(series.reduce((sum, s) => sum + s.estimated_cost_usd, 0), currencyInfo)}
+        </span>
       </div>
     </div>
   );
+}
+
+function convertUsd(usd: number, currencyInfo: DashboardCurrencyInfo): number {
+  return usd * (currencyInfo.rate_from_usd || 1);
+}
+
+function formatMoney(usd: number, currencyInfo: DashboardCurrencyInfo): string {
+  const converted = convertUsd(usd, currencyInfo);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyInfo.currency || "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 4,
+    }).format(converted);
+  } catch {
+    return `${(currencyInfo.currency || "USD")} ${converted.toFixed(4)}`;
+  }
 }
 
 function formatInt(value: number): string {

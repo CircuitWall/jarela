@@ -282,6 +282,14 @@ export interface DashboardMetrics {
   };
 }
 
+export interface DashboardCurrencyInfo {
+  currency: string;
+  rate_from_usd: number;
+  country_code: string | null;
+  source: "location" | "default";
+  updated_at: string;
+}
+
 /** One built-in tool category with its current enable state. */
 export interface BuiltinToolCategoryInfo {
   category: string;

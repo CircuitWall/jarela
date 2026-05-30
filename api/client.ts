@@ -10,6 +10,7 @@ import type {
   BridgeRoute,
   BridgeRouteIn,
   BridgeRoutePatch,
+  DashboardCurrencyInfo,
   DashboardMetrics,
   ContentPart,
   EnvAllowlistConfig,
@@ -312,6 +313,10 @@ export const api = {
 
   dashboard: {
     metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
+    currency: (lat: number, lng: number) =>
+      request<DashboardCurrencyInfo>(
+        `/dashboard/currency?lat=${encodeURIComponent(String(lat))}&lng=${encodeURIComponent(String(lng))}`,
+      ),
   },
 
   mcp: {
