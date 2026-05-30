@@ -692,7 +692,7 @@ function ToolCategoryBlock({
       allOn={allOn}
       onToggleAll={(enable) => onToggleCategory(category, enable)}
       headerRef={headerRef}
-      bodyClassName="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
+      bodyClassName="grid grid-cols-1 sm:grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
     >
       {advancedMode ? (
         tools.map((t) => (
@@ -736,11 +736,11 @@ function NormalPermissionControls({
 }) {
   const kinds: ToolPermissionKind[] = ["read", "write", "execute"];
   return (
-    <div className="col-span-2 space-y-2">
+    <div className="col-span-2 space-y-2.5">
       <p className="text-[11px] text-fg-faint leading-snug">
         Quick permissions for {category}. Advanced mode exposes individual functions.
       </p>
-      <div className="grid grid-cols-3 gap-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         {kinds.map((kind) => {
           const names = tools
             .filter((t) => permissionKindForTool(t.name, category) === kind)
@@ -748,7 +748,11 @@ function NormalPermissionControls({
           const selectedCount = names.filter((n) => selected.includes(n)).length;
           const checked = names.length > 0 && selectedCount === names.length;
           return (
-            <label key={kind} className="flex items-center gap-1.5 cursor-pointer rounded border border-border px-2 py-1.5 bg-surface-2">
+            <label key={kind} className={`flex items-center gap-2 cursor-pointer rounded-xl border px-2.5 py-2 transition-colors ${
+              checked
+                ? "border-accent/50 bg-accent/10"
+                : "border-border bg-surface-2 hover:bg-surface-3/70"
+            }`}>
               <input
                 type="checkbox"
                 className="rounded border-border"
@@ -756,8 +760,9 @@ function NormalPermissionControls({
                 disabled={names.length === 0}
                 onChange={(e) => onToggle(kind, e.target.checked)}
               />
-              <span className="text-[11px] text-fg-subtle capitalize">
-                {kind} <span className="text-fg-faint">{selectedCount}/{names.length}</span>
+              <span className="text-[11px] text-fg-subtle capitalize leading-tight">
+                <span className="font-medium">{kind}</span>{" "}
+                <span className="text-fg-faint">{selectedCount}/{names.length}</span>
               </span>
             </label>
           );
@@ -791,7 +796,7 @@ function ToolSelectionSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-1/40">
+    <div className="rounded-xl border border-border bg-surface-1/40">
       <div className="flex items-center gap-2 px-2 py-1.5">
         <button
           type="button"

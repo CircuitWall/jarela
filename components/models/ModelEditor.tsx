@@ -220,8 +220,16 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit model config" : "New model config"}</h3>
           <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
         </div>
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 space-y-3.5">
+          {!isAdvanced && (
+            <div className="rounded-xl border border-border bg-surface-3/60 px-3 py-2.5">
+              <p className="text-[11px] text-fg-faint leading-snug">
+                Normal mode is active. Core model settings are shown here; advanced context tuning and low-level overrides are hidden.
+              </p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Config name</span>
               <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
@@ -315,7 +323,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             </label>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Temperature</span>
               <input type="number" min="0" max="2" step="0.1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"

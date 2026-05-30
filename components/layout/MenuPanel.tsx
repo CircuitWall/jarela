@@ -229,9 +229,9 @@ export function MenuPanel({
       onClick={() => onSetTab(tab)}
       title={TAB_TITLES[tab]}
       aria-label={TAB_TITLES[tab]}
-      className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-lg py-2 px-1 transition-colors ${
+      className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-colors ${
         activeTab === tab
-          ? "bg-surface-3 text-fg ring-1 ring-border"
+          ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
           : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
       }`}
     >
@@ -246,6 +246,18 @@ export function MenuPanel({
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
       {/* Common navigation — the day-to-day surface. */}
+      <div className="px-3 pt-2 pb-1 border-b border-border/60">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-fg-faint">Workspace mode</span>
+          <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
+            isAdvanced
+              ? "border-accent/40 bg-accent/10 text-fg-subtle"
+              : "border-border bg-surface-3 text-fg-faint"
+          }`}>
+            {isAdvanced ? "advanced" : "normal"}
+          </span>
+        </div>
+      </div>
       <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0">
         {COMMON_TABS.map(renderTabButton)}
       </div>
