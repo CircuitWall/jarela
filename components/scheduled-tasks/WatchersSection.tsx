@@ -330,6 +330,11 @@ function ReactionEditor({
           Script
         </KindPill>
       </div>
+      <p className="text-[10px] text-fg-faint leading-snug">
+        Choose how this watcher reacts on change:
+        <span className="text-fg-subtle"> Agent prompt</span> runs the assigned agent with diff context;
+        <span className="text-fg-subtle"> Script</span> runs a built-in automation without an LLM round-trip.
+      </p>
       {watcher.reaction_kind === "script"
         ? (
           <ReactionScriptEditor
