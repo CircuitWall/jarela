@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Brain, Briefcase, CheckCircle2, Code2, Database, ExternalLink, Image, Loader2, Mic, ShieldCheck, Sparkles, UserRound, Wand2, XCircle } from "lucide-react";
+import { Bot, Brain, Briefcase, CheckCircle2, Code2, Database, ExternalLink, Image as ImageIcon, Loader2, Mic, ShieldCheck, Sparkles, UserRound, Wand2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, IntegrationStatus, ModelConfig, UserProfile } from "@/api/types";
@@ -477,7 +477,7 @@ export function OnboardingWizard({ context }: Props) {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(providerSignals.image)}`}>
-                    <div className="inline-flex items-center gap-1"><Image size={12} /> Image</div>
+                    <div className="inline-flex items-center gap-1"><ImageIcon size={12} /> Image</div>
                   </div>
                   <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(providerSignals.voice)}`}>
                     <div className="inline-flex items-center gap-1"><Mic size={12} /> Voice</div>
