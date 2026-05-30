@@ -33,12 +33,7 @@ export function DashboardPanel() {
     };
   }, [days]);
 
-  const chartMeta = useMemo(() => {
-    const series = data?.series ?? [];
-    const maxTokens = series.reduce((max, p) => Math.max(max, p.input_tokens_est + p.output_tokens_est), 0);
-    const maxCost = series.reduce((max, p) => Math.max(max, p.estimated_cost_usd), 0);
-    return { maxTokens, maxCost };
-  }, [data]);
+  const series = useMemo(() => data?.series ?? [], [data]);
 
   return (
     <div className="h-full overflow-y-auto p-4 md:p-6 space-y-4">
@@ -92,42 +87,12 @@ export function DashboardPanel() {
 
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Token usage over time</h3>
-            <div className="h-44 flex items-end gap-1">
-              {data.series.map((point) => {
-                const total = point.input_tokens_est + point.output_tokens_est;
-                const h = chartMeta.maxTokens > 0 ? Math.max(4, Math.round((total / chartMeta.maxTokens) * 160)) : 4;
-                return (
-                  <div key={point.day} className="flex-1 min-w-0 group flex flex-col items-center justify-end">
-                    <div
-                      className="w-full rounded-t bg-gradient-to-t from-cyan-500 to-blue-500/70"
-                      style={{ height: `${h}px` }}
-                      title={`${point.day}: ${formatInt(total)} tokens`}
-                    />
-                    <span className="mt-1 text-[10px] text-[var(--text-secondary)] truncate w-full text-center">
-                      {point.day.slice(5)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <InteractiveTokenChart series={series} />
           </section>
 
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Estimated cost over time</h3>
-            <div className="h-32 flex items-end gap-1">
-              {data.series.map((point) => {
-                const h = chartMeta.maxCost > 0 ? Math.max(3, Math.round((point.estimated_cost_usd / chartMeta.maxCost) * 112)) : 3;
-                return (
-                  <div key={point.day} className="flex-1 min-w-0 flex flex-col items-center justify-end">
-                    <div
-                      className="w-full rounded-t bg-gradient-to-t from-emerald-500 to-teal-500/70"
-                      style={{ height: `${h}px` }}
-                      title={`${point.day}: $${point.estimated_cost_usd.toFixed(4)}`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+            <InteractiveCostChart series={series} />
           </section>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -202,6 +167,126 @@ function MetricCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-3">
       <p className="text-[11px] uppercase tracking-wide text-[var(--text-secondary)]">{label}</p>
       <p className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</p>
+    </div>
+  );
+}
+
+function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const maxTotal = series.reduce((max, p) => Math.max(max, p.input_tokens_est + p.output_tokens_est), 0);
+  const active = hovered != null ? series[hovered] : null;
+
+  if (series.length === 0) {
+    return <p className="text-xs text-[var(--text-secondary)]">No token data yet.</p>;
+  }
+
+  return (
+    <div>
+      <div className="relative h-48 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/40 p-2">
+        <div className="absolute right-2 top-2 text-[11px] text-[var(--text-secondary)]">
+          {active ? `${active.day}  ${formatInt(active.input_tokens_est + active.output_tokens_est)} tokens` : "Hover bars for details"}
+        </div>
+        <div className="h-full flex items-end gap-1 pt-5">
+          {series.map((point, idx) => {
+            const total = point.input_tokens_est + point.output_tokens_est;
+            const totalHeight = maxTotal > 0 ? Math.max(6, Math.round((total / maxTotal) * 150)) : 6;
+            const inputHeight = total > 0 ? Math.max(2, Math.round((point.input_tokens_est / total) * totalHeight)) : 0;
+            const outputHeight = Math.max(2, totalHeight - inputHeight);
+            const isActive = idx === hovered;
+            return (
+              <button
+                key={point.day}
+                type="button"
+                onMouseEnter={() => setHovered(idx)}
+                onMouseLeave={() => setHovered(null)}
+                onFocus={() => setHovered(idx)}
+                onBlur={() => setHovered(null)}
+                className="flex-1 min-w-0 h-full flex flex-col items-center justify-end group"
+                aria-label={`${point.day} tokens`}
+              >
+                <div className={`w-full rounded-t overflow-hidden border transition-all ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
+                  <div className="w-full bg-gradient-to-t from-sky-500 to-cyan-400" style={{ height: `${outputHeight}px` }} />
+                  <div className="w-full bg-gradient-to-t from-indigo-500 to-violet-400" style={{ height: `${inputHeight}px` }} />
+                </div>
+                <span className="mt-1 text-[10px] text-[var(--text-secondary)] truncate w-full text-center">
+                  {point.day.slice(5)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-[var(--text-secondary)]">
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400" />input</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400" />output</span>
+        {active && (
+          <span className="ml-auto text-[var(--text-primary)]">
+            in {formatInt(active.input_tokens_est)} · out {formatInt(active.output_tokens_est)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InteractiveCostChart({ series }: { series: DashboardMetrics["series"] }) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const width = 720;
+  const height = 180;
+  const padX = 24;
+  const padY = 22;
+  const maxCost = Math.max(0.000001, ...series.map((s) => s.estimated_cost_usd));
+
+  const points = series.map((p, idx) => {
+    const x = series.length <= 1
+      ? width / 2
+      : padX + (idx / (series.length - 1)) * (width - (padX * 2));
+    const y = height - padY - ((p.estimated_cost_usd / maxCost) * (height - (padY * 2)));
+    return { x, y, p, idx };
+  });
+
+  const polyline = points.map((pt) => `${pt.x},${pt.y}`).join(" ");
+  const active = hovered != null ? points[hovered] : null;
+
+  if (series.length === 0) {
+    return <p className="text-xs text-[var(--text-secondary)]">No cost data yet.</p>;
+  }
+
+  return (
+    <div>
+      <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/40 p-2">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48" role="img" aria-label="Estimated cost over time">
+          <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="rgba(148,163,184,0.45)" strokeWidth="1" />
+          <line x1={padX} y1={padY} x2={padX} y2={height - padY} stroke="rgba(148,163,184,0.25)" strokeWidth="1" />
+          <polyline fill="none" stroke="rgba(16,185,129,0.95)" strokeWidth="2.6" points={polyline} />
+          {points.map((pt) => {
+            const isActive = pt.idx === hovered;
+            return (
+              <g key={pt.p.day}>
+                {isActive && <line x1={pt.x} y1={padY} x2={pt.x} y2={height - padY} stroke="rgba(20,184,166,0.35)" strokeWidth="1.5" />}
+                <circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={isActive ? 4.8 : 3.2}
+                  fill={isActive ? "rgba(16,185,129,1)" : "rgba(52,211,153,0.85)"}
+                  onMouseEnter={() => setHovered(pt.idx)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              </g>
+            );
+          })}
+        </svg>
+        <div className="absolute right-3 top-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/85 px-2 py-1 text-[11px]">
+          {active
+            ? `${active.p.day}  $${active.p.estimated_cost_usd.toFixed(4)}`
+            : "Hover points for day cost"}
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-[var(--text-secondary)]">
+        <span>min: ${Math.min(...series.map((s) => s.estimated_cost_usd)).toFixed(4)}</span>
+        <span className="text-center">max: ${Math.max(...series.map((s) => s.estimated_cost_usd)).toFixed(4)}</span>
+        <span className="text-right">window total: ${series.reduce((sum, s) => sum + s.estimated_cost_usd, 0).toFixed(4)}</span>
+      </div>
     </div>
   );
 }
