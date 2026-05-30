@@ -269,8 +269,8 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
             {/* Catalog panel */}
             {showCatalog && catalog && (
-              <div className="border border-border rounded-lg overflow-hidden bg-surface-3">
-                <div className="px-2 py-1.5 border-b border-border">
+              <div className="border border-border rounded-xl overflow-hidden bg-surface-3 shadow-sm">
+                <div className="px-2 py-1.5 border-b border-border bg-surface-2/50">
                   <input
                     className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent placeholder-fg-faint"
                     placeholder="Filter models…"
@@ -344,7 +344,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
                   value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
               </label>
 
-              <div className="rounded-lg border border-border bg-surface-3 p-3 space-y-2">
+              <div className="rounded-xl border border-border bg-surface-3 p-3 space-y-2">
                 <p className="text-xs text-fg-subtle">Context tiers and resource usage</p>
                 <div className="grid grid-cols-3 gap-2">
                   <label className="block">
@@ -416,9 +416,9 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
           {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 px-4 pb-4">
+        <div className="flex justify-end gap-2 px-4 pb-4 pt-1 border-t border-border/60">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-50">
             {saving ? "Saving…" : "Save"}
           </button>
         </div>

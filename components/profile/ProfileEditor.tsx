@@ -112,7 +112,8 @@ export function ProfileEditor() {
 
       <PresetPicker value={preset} onChange={setPreset} />
 
-      <div className="pt-4 border-t border-border space-y-2.5">
+      <div className="pt-4 border-t border-border">
+        <div className="rounded-xl border border-border bg-surface-1/40 p-3 space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
           <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-surface-3 text-fg-faint">
@@ -151,12 +152,13 @@ export function ProfileEditor() {
             <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
           </button>
         </div>
+        </div>
       </div>
 
       <button
         onClick={handleSave}
         disabled={saving || !isDirty}
-        className="w-full py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-40"
+        className="w-full py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-40"
       >
         {saving ? "Savingâ€¦" : saved ? "Saved" : "Save profile"}
       </button>
@@ -202,7 +204,7 @@ function PresetPicker({
         Filters the Connections panel so you only see integrations relevant to how
         you use Jarela. Pick &quot;Everything&quot; to see them all.
       </p>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {PRESET_OPTIONS.map((o) => {
           const selected = (value ?? "custom") === o.value;
           return (
@@ -211,9 +213,9 @@ function PresetPicker({
               type="button"
               onClick={() => onChange(o.value)}
               aria-pressed={selected}
-              className={`text-left px-2.5 py-2 rounded-lg border transition-colors ${
+              className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
                 selected
-                  ? "border-accent/60 bg-accent/10 text-fg"
+                  ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
                   : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
               }`}
             >

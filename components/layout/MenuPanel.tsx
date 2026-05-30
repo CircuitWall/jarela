@@ -277,7 +277,7 @@ export function MenuPanel({
             />
           </button>
           {advancedOpen && (
-            <div className="grid grid-cols-4 gap-1.5 px-2 pb-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-2 pb-2">
               {ADVANCED_TABS.map(renderTabButton)}
             </div>
           )}
@@ -293,15 +293,15 @@ export function MenuPanel({
       </div>
 
       {/* Display toggles */}
-      <div className="border-t border-border px-3 py-3 shrink-0">
+      <div className="border-t border-border px-3 py-3 shrink-0 bg-surface-1/30">
         <p className="text-[11px] text-fg-faint mb-1.5 font-medium uppercase tracking-wide">Display</p>
         <div className="flex flex-col gap-1.5">
           <ThemePicker />
-          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted">
+          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
             <input type="checkbox" className="rounded border-border" checked={showTools} onChange={(e) => onShowToolsChange(e.target.checked)} />
             Show tool events
           </label>
-          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted">
+          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
             <input type="checkbox" className="rounded border-border" checked={showThinking} onChange={(e) => onShowThinkingChange(e.target.checked)} />
             Show thinking
           </label>
@@ -322,9 +322,9 @@ function ThemePicker() {
     { value: "system", label: "System", icon: <Monitor size={12} /> },
   ];
   return (
-    <div className="flex items-center gap-2 text-xs text-fg-muted">
+    <div className="flex items-center gap-2 text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
       <span className="shrink-0">Theme</span>
-      <div className="flex flex-1 rounded-md border border-border overflow-hidden">
+      <div className="flex flex-1 rounded-lg border border-border overflow-hidden bg-surface">
         {options.map((o) => (
           <button
             key={o.value}
@@ -332,7 +332,7 @@ function ThemePicker() {
             title={o.label}
             className={`flex-1 inline-flex items-center justify-center gap-1 py-1 text-[11px] transition-colors ${
               theme === o.value
-                ? "bg-surface-3 text-fg"
+                ? "bg-surface-3 text-fg shadow-sm"
                 : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
             }`}
           >

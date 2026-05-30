@@ -696,7 +696,15 @@ function ToolCategoryBlock({
     >
       {advancedMode ? (
         tools.map((t) => (
-          <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
+          <label
+            key={t.name}
+            className={`flex items-center gap-2 cursor-pointer rounded-lg border px-2 py-1.5 transition-colors ${
+              selected.includes(t.name)
+                ? "border-accent/40 bg-accent/10"
+                : "border-border bg-surface-2/80 hover:bg-surface-3/70"
+            }`}
+            title={t.description}
+          >
             <input
               type="checkbox"
               className="rounded border-border"
@@ -736,7 +744,7 @@ function NormalPermissionControls({
 }) {
   const kinds: ToolPermissionKind[] = ["read", "write", "execute"];
   return (
-    <div className="col-span-2 space-y-2.5">
+    <div className="col-span-2 rounded-lg border border-border bg-surface-2/40 p-2.5 space-y-2.5">
       <p className="text-[11px] text-fg-faint leading-snug">
         Quick permissions for {category}. Advanced mode exposes individual functions.
       </p>
@@ -796,8 +804,8 @@ function ToolSelectionSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-surface-1/40">
-      <div className="flex items-center gap-2 px-2 py-1.5">
+    <div className="rounded-xl border border-border bg-surface-1/40 overflow-hidden">
+      <div className="flex items-center gap-2 px-2.5 py-2 bg-surface-2/50">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
