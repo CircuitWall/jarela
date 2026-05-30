@@ -259,6 +259,24 @@ export interface DashboardProviderRate {
   source: string;
 }
 
+export interface DashboardProviderBreakdown {
+  provider: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
+export interface DashboardModelBreakdown {
+  model_config_name: string;
+  provider: string;
+  model_id: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
 export interface DashboardMetrics {
   generated_at: string;
   days: number;
@@ -275,6 +293,8 @@ export interface DashboardMetrics {
   series: DashboardSeriesPoint[];
   top_tools: DashboardToolTop[];
   top_agents: DashboardAgentTop[];
+  by_provider: DashboardProviderBreakdown[];
+  by_model: DashboardModelBreakdown[];
   pricing: {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
@@ -286,7 +306,7 @@ export interface DashboardCurrencyInfo {
   currency: string;
   rate_from_usd: number;
   country_code: string | null;
-  source: "location" | "default";
+  source: "location" | "default" | "manual";
   updated_at: string;
 }
 

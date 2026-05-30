@@ -5,7 +5,7 @@ interface CurrencyResponse {
   currency: string;
   rate_from_usd: number;
   country_code: string | null;
-  source: "location" | "default";
+  source: "location" | "default" | "manual";
   updated_at: string;
 }
 
@@ -16,8 +16,53 @@ let fxCache: { fetchedAt: number; rates: Record<string, number> } | null = null;
 const currencyByCountry = new Map<string, { currency: string; fetchedAt: number }>();
 
 export async function GET(req: NextRequest) {
+  const manualCurrencyRaw = req.nextUrl.searchParams.get("currency");
+  const manualCurrency =
+    manualCurrencyRaw && /^[A-Za-z]{3}$/.test(manualCurrencyRaw)
+      ? manualCurrencyRaw.toUpperCase()
+      : null;
   const lat = Number(req.nextUrl.searchParams.get("lat"));
   const lng = Number(req.nextUrl.searchParams.get("lng"));
+
+  if (manualCurrency) {
+    try {
+      if (manualCurrency === "USD") {
+        return cachedJson<CurrencyResponse>({
+          currency: "USD",
+          rate_from_usd: 1,
+          country_code: null,
+          source: "manual",
+          updated_at: new Date().toISOString(),
+        }, 3600);
+      }
+      const rates = await fetchFxRates();
+      const rate = rates[manualCurrency];
+      if (!rate || !Number.isFinite(rate) || rate <= 0) {
+        return cachedJson<CurrencyResponse>({
+          currency: "USD",
+          rate_from_usd: 1,
+          country_code: null,
+          source: "default",
+          updated_at: new Date().toISOString(),
+        }, 3600);
+      }
+      return cachedJson<CurrencyResponse>({
+        currency: manualCurrency,
+        rate_from_usd: rate,
+        country_code: null,
+        source: "manual",
+        updated_at: new Date().toISOString(),
+      }, 3600);
+    } catch {
+      return cachedJson<CurrencyResponse>({
+        currency: "USD",
+        rate_from_usd: 1,
+        country_code: null,
+        source: "default",
+        updated_at: new Date().toISOString(),
+      }, 3600);
+    }
+  }
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return cachedJson<CurrencyResponse>({

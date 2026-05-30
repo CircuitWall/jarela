@@ -45,6 +45,24 @@ export interface DashboardProviderRate {
   source: string;
 }
 
+export interface DashboardProviderBreakdown {
+  provider: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
+export interface DashboardModelBreakdown {
+  model_config_name: string;
+  provider: string;
+  model_id: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
 export interface DashboardMetrics {
   generated_at: string;
   days: number;
@@ -61,6 +79,8 @@ export interface DashboardMetrics {
   series: DashboardSeriesPoint[];
   top_tools: DashboardToolTop[];
   top_agents: DashboardAgentTop[];
+  by_provider: DashboardProviderBreakdown[];
+  by_model: DashboardModelBreakdown[];
   pricing: {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
@@ -76,6 +96,8 @@ type UsageRow = {
   agent_id: string;
   agent_name: string | null;
   provider: string | null;
+  model_id: string | null;
+  model_config_name: string | null;
 };
 
 type DayBucket = {
@@ -90,6 +112,24 @@ type DayBucket = {
 type AgentBucket = {
   agent_id: string;
   agent_name: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+};
+
+type ProviderBucket = {
+  provider: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+};
+
+type ModelBucket = {
+  model_config_name: string;
+  provider: string;
+  model_id: string;
   message_count: number;
   input_tokens_est: number;
   output_tokens_est: number;
@@ -121,7 +161,9 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   const usageRows = getDb()
     .prepare(
       `SELECT m.created_at, m.role, m.content, m.tool_events, t.agent_id,
-              a.name AS agent_name, mc.provider AS provider
+              a.name AS agent_name, mc.provider AS provider,
+              mc.model_id AS model_id,
+              ta.model_config_name AS model_config_name
          FROM messages m
          JOIN threads t ON t.thread_id = m.thread_id
          LEFT JOIN agent_configs a ON a.id = t.agent_id
@@ -135,6 +177,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   const { byProvider, generatedAt } = await loadProviderRates();
   const dayMap = seedDayBuckets(now, boundedDays);
   const agentMap = new Map<string, AgentBucket>();
+  const providerMap = new Map<string, ProviderBucket>();
+  const modelMap = new Map<string, ModelBucket>();
 
   let totalInput = 0;
   let totalOutput = 0;
@@ -178,6 +222,38 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     agentBucket.output_tokens_est += outputTokens;
     agentBucket.estimated_cost_usd += estCost;
     agentMap.set(row.agent_id, agentBucket);
+
+    const providerName = row.provider?.trim().toLowerCase() || "unassigned";
+    const providerBucket = providerMap.get(providerName) ?? {
+      provider: providerName,
+      message_count: 0,
+      input_tokens_est: 0,
+      output_tokens_est: 0,
+      estimated_cost_usd: 0,
+    };
+    providerBucket.message_count += 1;
+    providerBucket.input_tokens_est += inputTokens;
+    providerBucket.output_tokens_est += outputTokens;
+    providerBucket.estimated_cost_usd += estCost;
+    providerMap.set(providerName, providerBucket);
+
+    const modelConfigName = row.model_config_name?.trim() || "unassigned";
+    const modelId = row.model_id?.trim() || "unknown";
+    const modelKey = `${providerName}::${modelConfigName}::${modelId}`;
+    const modelBucket = modelMap.get(modelKey) ?? {
+      model_config_name: modelConfigName,
+      provider: providerName,
+      model_id: modelId,
+      message_count: 0,
+      input_tokens_est: 0,
+      output_tokens_est: 0,
+      estimated_cost_usd: 0,
+    };
+    modelBucket.message_count += 1;
+    modelBucket.input_tokens_est += inputTokens;
+    modelBucket.output_tokens_est += outputTokens;
+    modelBucket.estimated_cost_usd += estCost;
+    modelMap.set(modelKey, modelBucket);
 
     if (row.tool_events && row.tool_events.length > 1) {
       const usage = summarizeEvents(row.tool_events);
@@ -240,6 +316,28 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       estimated_cost_usd: round4(row.estimated_cost_usd),
     }));
 
+  const by_provider = [...providerMap.values()]
+    .sort((a, b) => {
+      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
+      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+      return a.provider.localeCompare(b.provider);
+    })
+    .map((row) => ({
+      ...row,
+      estimated_cost_usd: round4(row.estimated_cost_usd),
+    }));
+
+  const by_model = [...modelMap.values()]
+    .sort((a, b) => {
+      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
+      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+      return a.model_config_name.localeCompare(b.model_config_name);
+    })
+    .map((row) => ({
+      ...row,
+      estimated_cost_usd: round4(row.estimated_cost_usd),
+    }));
+
   const overallSuccessRate = totalCalls > 0 ? totalSuccesses / totalCalls : 1;
   const overallErrorRate = totalCalls > 0 ? totalErrors / totalCalls : 0;
 
@@ -259,6 +357,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     series,
     top_tools,
     top_agents,
+    by_provider,
+    by_model,
     pricing: {
       snapshot_generated_at: generatedAt,
       rates: [...byProvider.entries()]

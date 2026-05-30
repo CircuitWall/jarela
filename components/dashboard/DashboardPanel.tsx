@@ -5,8 +5,12 @@ import { api } from "@/api/client";
 import type { DashboardCurrencyInfo, DashboardMetrics, UserProfile } from "@/api/types";
 
 type WindowDays = 7 | 14 | 30 | 60;
+type CurrencyMode = "auto" | "manual";
 
 const WINDOWS: WindowDays[] = [7, 14, 30, 60];
+const MANUAL_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CNY", "INR", "BRL", "MXN"] as const;
+const CURRENCY_MODE_KEY = "jarela.dashboard.currency.mode";
+const CURRENCY_PICK_KEY = "jarela.dashboard.currency.pick";
 
 const USD_CURRENCY: DashboardCurrencyInfo = {
   currency: "USD",
@@ -22,6 +26,9 @@ export function DashboardPanel() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardMetrics | null>(null);
   const [currencyInfo, setCurrencyInfo] = useState<DashboardCurrencyInfo>(USD_CURRENCY);
+  const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("auto");
+  const [manualCurrency, setManualCurrency] = useState<string>("USD");
+  const [profileLocation, setProfileLocation] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -43,19 +50,71 @@ export function DashboardPanel() {
   }, [days]);
 
   useEffect(() => {
-    let cancelled = false;
+    try {
+      const savedMode = window.localStorage.getItem(CURRENCY_MODE_KEY);
+      if (savedMode === "auto" || savedMode === "manual") setCurrencyMode(savedMode);
+      const savedCurrency = window.localStorage.getItem(CURRENCY_PICK_KEY);
+      if (savedCurrency && /^[A-Z]{3}$/.test(savedCurrency)) setManualCurrency(savedCurrency);
+    } catch {
+      /* ignore storage failures */
+    }
+  }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CURRENCY_MODE_KEY, currencyMode);
+      window.localStorage.setItem(CURRENCY_PICK_KEY, manualCurrency);
+    } catch {
+      /* ignore storage failures */
+    }
+  }, [currencyMode, manualCurrency]);
+
+  useEffect(() => {
+    let cancelled = false;
     api.profile.get()
       .then((profile: UserProfile) => {
-        const lat = profile.location_lat;
-        const lng = profile.location_lng;
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-          if (!cancelled) setCurrencyInfo(USD_CURRENCY);
-          return;
-        }
-        return api.dashboard.currency(lat as number, lng as number).then((resolved) => {
-          if (!cancelled) setCurrencyInfo(resolved);
+        if (cancelled) return;
+        setProfileLocation({
+          lat: Number.isFinite(profile.location_lat) ? (profile.location_lat as number) : null,
+          lng: Number.isFinite(profile.location_lng) ? (profile.location_lng as number) : null,
         });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setProfileLocation({ lat: null, lng: null });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (currencyMode === "manual") {
+      api.dashboard.currency({ currency: manualCurrency })
+        .then((resolved) => {
+          if (!cancelled) setCurrencyInfo(resolved);
+        })
+        .catch(() => {
+          if (!cancelled) setCurrencyInfo(USD_CURRENCY);
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (!Number.isFinite(profileLocation.lat) || !Number.isFinite(profileLocation.lng)) {
+      setCurrencyInfo(USD_CURRENCY);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    api.dashboard.currency({ lat: profileLocation.lat, lng: profileLocation.lng })
+      .then((resolved) => {
+        if (!cancelled) setCurrencyInfo(resolved);
       })
       .catch(() => {
         if (!cancelled) setCurrencyInfo(USD_CURRENCY);
@@ -64,7 +123,7 @@ export function DashboardPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currencyMode, manualCurrency, profileLocation.lat, profileLocation.lng]);
 
   const series = useMemo(() => data?.series ?? [], [data]);
 
@@ -96,6 +155,28 @@ export function DashboardPanel() {
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
+        <span className="text-xs text-[var(--text-secondary)]">Currency</span>
+        <select
+          value={currencyMode}
+          onChange={(e) => setCurrencyMode(e.target.value as CurrencyMode)}
+          className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+        >
+          <option value="auto">Auto by location</option>
+          <option value="manual">Manual override</option>
+        </select>
+        <select
+          value={manualCurrency}
+          onChange={(e) => setManualCurrency(e.target.value)}
+          disabled={currencyMode !== "manual"}
+          className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)] disabled:opacity-50"
+        >
+          {MANUAL_CURRENCIES.map((code) => (
+            <option key={code} value={code}>{code}</option>
+          ))}
+        </select>
+      </div>
+
       {loading && (
         <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
           Loading dashboard metrics...
@@ -122,7 +203,9 @@ export function DashboardPanel() {
           </div>
 
           <p className="text-[11px] text-[var(--text-secondary)]">
-            {currencyInfo.source === "location"
+            {currencyInfo.source === "manual"
+              ? `Currency manually set to ${currencyInfo.currency}.`
+              : currencyInfo.source === "location"
               ? `Currency converted from USD to ${currencyInfo.currency} based on saved location.`
               : "Currency defaults to USD because no location-based currency is available."}
           </p>
@@ -182,6 +265,57 @@ export function DashboardPanel() {
               </div>
             </section>
           </div>
+
+          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-3">
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">Vendor and model report</h3>
+            <div className="grid lg:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+                <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
+                  By vendor
+                </div>
+                <div className="max-h-56 overflow-auto">
+                  {data.by_provider.length === 0 ? (
+                    <p className="p-3 text-xs text-[var(--text-secondary)]">No vendor breakdown data yet.</p>
+                  ) : (
+                    data.by_provider.slice(0, 12).map((row) => (
+                      <div key={row.provider} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-[var(--text-primary)] capitalize truncate">{row.provider}</span>
+                          <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                          {formatInt(row.message_count)} msgs · {formatInt(row.input_tokens_est + row.output_tokens_est)} tokens
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+                <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
+                  By model config
+                </div>
+                <div className="max-h-56 overflow-auto">
+                  {data.by_model.length === 0 ? (
+                    <p className="p-3 text-xs text-[var(--text-secondary)]">No model breakdown data yet.</p>
+                  ) : (
+                    data.by_model.slice(0, 16).map((row) => (
+                      <div key={`${row.provider}:${row.model_config_name}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm text-[var(--text-primary)] truncate">{row.model_config_name}</span>
+                          <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
+                        </div>
+                        <div className="mt-1 text-[11px] text-[var(--text-secondary)] truncate">
+                          {row.provider}/{row.model_id} · {formatInt(row.message_count)} msgs
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
 
           <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-2">
             <h3 className="text-sm font-medium text-[var(--text-primary)]">Pricing source and assumptions</h3>

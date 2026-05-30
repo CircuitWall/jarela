@@ -313,10 +313,14 @@ export const api = {
 
   dashboard: {
     metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
-    currency: (lat: number, lng: number) =>
-      request<DashboardCurrencyInfo>(
-        `/dashboard/currency?lat=${encodeURIComponent(String(lat))}&lng=${encodeURIComponent(String(lng))}`,
-      ),
+    currency: (opts?: { lat?: number | null; lng?: number | null; currency?: string | null }) => {
+      const qs = new URLSearchParams();
+      if (typeof opts?.lat === "number" && Number.isFinite(opts.lat)) qs.set("lat", String(opts.lat));
+      if (typeof opts?.lng === "number" && Number.isFinite(opts.lng)) qs.set("lng", String(opts.lng));
+      if (opts?.currency) qs.set("currency", opts.currency);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return request<DashboardCurrencyInfo>(`/dashboard/currency${suffix}`);
+    },
   },
 
   mcp: {
