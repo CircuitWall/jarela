@@ -120,6 +120,13 @@ export interface ModelConfig {
     extra_headers?: Record<string, string>;
     temperature?: number;
     max_tokens?: number;
+    context_window_tokens?: number;
+    context_tier_proportions?: {
+      hot?: number;
+      warm?: number;
+      facts?: number;
+    };
+    context_tier_priority?: ["hot" | "warm" | "facts", "hot" | "warm" | "facts", "hot" | "warm" | "facts"];
   };
   is_default: boolean;
   created_at: string;

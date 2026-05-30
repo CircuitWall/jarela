@@ -13,6 +13,12 @@ import { resolveHarness } from "@/lib/agents/harness/resolve";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getAppName } from "@/lib/env/app-config";
 import os from "node:os";
+import { computeContextBudget, formatContextBudgetSummary, takeRecentMessagesWithinBudget } from "@/lib/agents/context-budget";
+import { listMemory } from "@/lib/stores/memory";
+import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { getDefaultModelConfig, getModelConfig } from "@/lib/stores/model-config";
+import { getProvider } from "@/lib/providers";
+import type { ProviderParams } from "@/lib/providers/types";
 
 // Resolve the app name once at module load. Forks set NEXT_PUBLIC_APP_NAME to
 // rebrand the user-visible name the LLM echoes in chat replies; default
@@ -145,7 +151,35 @@ export async function prepareThreadRun(
   const sinceISO = windowHours > 0
     ? new Date(Date.now() - windowHours * 3600_000).toISOString()
     : undefined;
-  const history = getRecentMessagesWindow(thread_id, limit, sinceISO).map((m) => ({
+  const allWindowMessages = getRecentMessagesWindow(thread_id, limit, sinceISO);
+
+  const modelCfg = agentCfg.model_config_name
+    ? getModelConfig(agentCfg.model_config_name)
+    : getDefaultModelConfig();
+  let providerParams: ProviderParams = {};
+  if (modelCfg) {
+    try {
+      providerParams = JSON.parse(modelCfg.params) as ProviderParams;
+    } catch {
+      providerParams = {};
+    }
+  }
+
+  const budget = computeContextBudget({
+    context_window_tokens:
+      typeof providerParams.context_window_tokens === "number"
+        ? providerParams.context_window_tokens
+        : undefined,
+    max_tokens: typeof providerParams.max_tokens === "number" ? providerParams.max_tokens : undefined,
+    context_tier_proportions:
+      typeof providerParams.context_tier_proportions === "object" && providerParams.context_tier_proportions
+        ? (providerParams.context_tier_proportions as { hot?: number; warm?: number; facts?: number })
+        : undefined,
+    context_tier_priority: providerParams.context_tier_priority,
+  });
+
+  const hotMessages = takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
+  const history = hotMessages.map((m) => ({
     role: m.role as "user" | "assistant",
     content: parseContent(m.content),
   }));
@@ -253,11 +287,31 @@ export async function prepareThreadRun(
   const memoryCtx = [
     "--- Memory & recall ---",
     "You have long-term memory across sessions and a fresh recall pass on every turn.",
-    `- The recent ${limit} messages from the last ${windowHours}h are already in your context above.`,
+    `- Hot conversation history is budgeted by model context size: ${formatContextBudgetSummary(budget)}.`,
     "- A semantic search over all stored memory entries + past chat messages was run against the user's turn; matching items appear under \"Relevant context\" below.",
     "- Use memory_write proactively when the user shares a fact, preference, or decision worth remembering. Use memory_read / memory_list to recall stored facts on demand.",
     "- If you want detail from outside the recent window, the user can scroll up — but for facts you've stored explicitly, prefer recall over guessing.",
   ].join("\n");
+
+  const warmSummaryCtx = await buildWarmSummaryContext(
+    allWindowMessages,
+    hotMessages.length,
+    modelCfg?.provider,
+    modelCfg?.model_id,
+    providerParams,
+    budget.tierBudgets.warm,
+  );
+
+  const factsCtx = buildFactsContext(trimmed, budget.tierBudgets.facts);
+
+  const tierCtxByName = {
+    hot: "",
+    warm: warmSummaryCtx,
+    facts: factsCtx,
+  } as const;
+  const tierOrderCtx = budget.tierPriority
+    .map((tier) => tierCtxByName[tier])
+    .filter(Boolean);
 
   // Semantic recall: pull in long-term memory + past messages relevant to this turn.
   // Skip messages from the current thread that are already in the windowed history.
@@ -287,6 +341,7 @@ export async function prepareThreadRun(
     envCtx,
     harnessParts.self_config,
     memoryCtx,
+    ...tierOrderCtx,
     recallCtx,
   ].filter(Boolean);
   let allowedTools: string[] = [];
@@ -308,6 +363,61 @@ export async function prepareThreadRun(
     stream: stallRetryStream(rawStream, thread_id, options, signal, _stallRetriesLeft, allowedTools),
     thread_id,
   };
+}
+
+async function buildWarmSummaryContext(
+  allWindowMessages: readonly { role: string; content: string }[],
+  hotCount: number,
+  providerName: string | undefined,
+  modelId: string | undefined,
+  providerParams: ProviderParams,
+  warmBudgetTokens: number,
+): Promise<string> {
+  if (warmBudgetTokens <= 32) return "";
+  if (!providerName || !modelId) return "";
+  const warmMessages = allWindowMessages.slice(0, Math.max(0, allWindowMessages.length - hotCount));
+  if (warmMessages.length < 2) return "";
+
+  // Keep summary input bounded by the warm budget to avoid recursive prompt bloat.
+  const summaryInputChars = Math.max(0, warmBudgetTokens * 4);
+  const transcript = warmMessages
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .join("\n\n")
+    .slice(-summaryInputChars);
+  if (!transcript.trim()) return "";
+
+  try {
+    const provider = getProvider(providerName);
+    const summary = await summarizeTranscript(provider, modelId, providerParams, transcript);
+    if (!summary) return "";
+    return [
+      "--- Warm context summary ---",
+      "Compressed recap of earlier messages outside the hot window:",
+      summary,
+    ].join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function buildFactsContext(query: string, factsBudgetTokens: number): string {
+  if (factsBudgetTokens <= 16) return "";
+  const charBudget = factsBudgetTokens * 4;
+  const rows = listMemory("facts", query.slice(0, 120), 12);
+  if (rows.length === 0) return "";
+
+  const lines = [
+    "--- Facts memory ---",
+    "Durable fact entries from memory_store namespace=facts:",
+  ];
+  let used = 0;
+  for (const row of rows) {
+    const line = `- ${row.key}: ${String(row.value).slice(0, 220)}`;
+    if (used > 0 && used + line.length > charBudget) break;
+    lines.push(line);
+    used += line.length;
+  }
+  return lines.length > 2 ? lines.join("\n") : "";
 }
 
 // Wraps the raw agent stream with stall-retry logic. Chunks pass through
