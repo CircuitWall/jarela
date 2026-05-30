@@ -387,6 +387,27 @@ export function DashboardPanel() {
                 </div>
               ))}
             </div>
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/35 overflow-hidden">
+              <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
+                Model pricing (detected)
+              </div>
+              <div className="max-h-56 overflow-auto">
+                {data.pricing.model_rates.length === 0 ? (
+                  <p className="p-3 text-xs text-[var(--text-secondary)]">No model-level rates detected from current pricing sources yet.</p>
+                ) : (
+                  data.pricing.model_rates.slice(0, 40).map((row) => (
+                    <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0 transition-colors hover:bg-[var(--bg-primary)]/50">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm text-[var(--text-primary)] truncate">{row.provider}/{row.model_id}</span>
+                        <span className="text-[11px] text-[var(--text-secondary)]">
+                          in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
             <p className="text-[11px] text-[var(--text-secondary)]">{data.pricing.notes}</p>
           </section>
         </>

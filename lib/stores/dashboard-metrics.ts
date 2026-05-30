@@ -48,6 +48,17 @@ export interface DashboardProviderRate {
   error: string | null;
 }
 
+export interface DashboardModelRate {
+  provider: string;
+  model_id: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  source: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+}
+
 export interface DashboardProviderBreakdown {
   provider: string;
   message_count: number;
@@ -87,6 +98,7 @@ export interface DashboardMetrics {
   pricing: {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
+    model_rates: DashboardModelRate[];
     notes: string;
   };
 }
@@ -387,7 +399,27 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
           error: rates.error,
         }))
         .sort((a, b) => a.provider.localeCompare(b.provider)),
-      notes: "Estimated costs are heuristic: token counts are content-length based and provider rates are inferred from snapshot signals.",
+      model_rates: [...byProviderModel.entries()]
+        .map(([key, rates]) => {
+          const splitAt = key.indexOf("::");
+          const provider = splitAt > -1 ? key.slice(0, splitAt) : key;
+          const model_id = splitAt > -1 ? key.slice(splitAt + 2) : "unknown";
+          return {
+            provider,
+            model_id,
+            input_per_1m_usd: rates.inputPer1M,
+            output_per_1m_usd: rates.outputPer1M,
+            source: rates.source,
+            ok: rates.ok,
+            status: rates.status,
+            error: rates.error,
+          } satisfies DashboardModelRate;
+        })
+        .sort((a, b) => {
+          if (a.provider !== b.provider) return a.provider.localeCompare(b.provider);
+          return a.model_id.localeCompare(b.model_id);
+        }),
+      notes: "Estimated costs are heuristic: token counts are content-length based and rates are inferred from pricing page signals (provider-model first, then provider fallback).",
     },
   };
 }
@@ -499,7 +531,7 @@ async function loadProviderRates(): Promise<{
   const snapshot = await readPricingSnapshot();
   const out = new Map<string, ProviderRates>();
   const byProviderModel = new Map<string, ProviderRates>();
-  const expectedProviders = ["openai", "anthropic", "google", "deepseek", "cohere"];
+  const expectedProviders = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot"];
 
   for (const provider of expectedProviders) {
     out.set(provider, {
@@ -558,6 +590,7 @@ async function readPricingSnapshot(): Promise<PricingSnapshot | null> {
 
 function normalizeProvider(id: string): string | null {
   const lower = id.toLowerCase();
+  if (lower.includes("github") || lower.includes("copilot")) return "github-copilot";
   if (lower.includes("google") || lower.includes("gemini")) return "google";
   if (lower.includes("openai")) return "openai";
   if (lower.includes("anthropic")) return "anthropic";

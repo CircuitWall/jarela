@@ -51,6 +51,20 @@ const SOURCES: SourceDef[] = [
     pricing_url: "https://cohere.com/pricing",
     notes: "Official pricing page (HTML)",
   },
+  {
+    id: "github-copilot",
+    name: "GitHub Copilot",
+    pricing_url: "https://github.com/features/copilot/plans",
+    notes: "GitHub Copilot plans page (HTML)",
+    fallback_urls: [
+      "https://github.com/marketplace/models/pricing",
+      "https://docs.github.com/en/billing/concepts/product-billing/github-models",
+    ],
+    search_queries: [
+      "GitHub Copilot pricing",
+      "GitHub Models pricing per token",
+    ],
+  },
 ] as const;
 
 const PRICE_LINE_RE = new RegExp(
@@ -114,6 +128,7 @@ export interface PricingRefreshResult {
 function toCanonicalProvider(id: string): string {
   const lower = id.toLowerCase();
   if (lower.includes("google") || lower.includes("gemini")) return "google";
+  if (lower.includes("github") || lower.includes("copilot")) return "github-copilot";
   if (lower.includes("openai")) return "openai";
   if (lower.includes("anthropic")) return "anthropic";
   if (lower.includes("deepseek")) return "deepseek";
@@ -237,6 +252,7 @@ function modelRegexForSource(sourceId: string): RegExp {
   if (p === "google") return /\b(gemini-[a-z0-9.-]+)\b/gi;
   if (p === "deepseek") return /\b(deepseek-[a-z0-9.-]+)\b/gi;
   if (p === "cohere") return /\b(command-[a-z0-9.-]+|embed-[a-z0-9.-]+)\b/gi;
+  if (p === "github-copilot") return /\b(gpt-[a-z0-9.-]+|o[1-4](?:-[a-z0-9.-]+)?|claude-[a-z0-9.-]+|gemini-[a-z0-9.-]+)\b/gi;
   return /\b([a-z][a-z0-9.-]{2,})\b/gi;
 }
 

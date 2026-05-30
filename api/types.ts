@@ -262,6 +262,17 @@ export interface DashboardProviderRate {
   error: string | null;
 }
 
+export interface DashboardModelRate {
+  provider: string;
+  model_id: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  source: string;
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+}
+
 export interface DashboardProviderBreakdown {
   provider: string;
   message_count: number;
@@ -301,6 +312,7 @@ export interface DashboardMetrics {
   pricing: {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
+    model_rates: DashboardModelRate[];
     notes: string;
   };
 }
