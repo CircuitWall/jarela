@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-05-30
+
+### Changed
+
+- **Release npm tarballs now ship readable browser chunks.**
+  [next.config.ts](next.config.ts) adds an opt-in
+  `JARELA_DISABLE_CLIENT_MINIFICATION=1` mode and
+  [release workflow](.github/workflows/release.yml) enables it for npm publish
+  builds, reducing false-positive obfuscation/minified-code alerts from
+  supply-chain scanners.
+- **Runtime dependency surface reduced.** Moved TypeScript and `@types/*`
+  packages from runtime dependencies to `devDependencies` in
+  [package.json](package.json), trimming non-runtime packages from the
+  published dependency graph.
+
 ## [0.7.0] - 2026-05-30
 
 ### Added
