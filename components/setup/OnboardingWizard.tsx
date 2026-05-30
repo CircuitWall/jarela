@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Brain, Briefcase, CheckCircle2, ExternalLink, Loader2, ShieldCheck, Sparkles, UserRound, Wand2, XCircle } from "lucide-react";
+import { Bot, Brain, Briefcase, CheckCircle2, Code2, Database, ExternalLink, Image, Loader2, Mic, ShieldCheck, Sparkles, UserRound, Wand2, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, IntegrationStatus, ModelConfig, UserProfile } from "@/api/types";
@@ -43,6 +43,49 @@ const PROVIDER_INFO: Record<
     hint: "Lean and capable text setup when you want a simpler provider choice.",
   },
 };
+
+const PROVIDER_SIGNALS: Record<Provider, {
+  image: "strong" | "partial" | "limited";
+  voice: "strong" | "partial" | "limited";
+  embeddings: "strong" | "partial" | "limited";
+  coding: "strong" | "partial" | "limited";
+  recommendation: string;
+}> = {
+  anthropic: {
+    image: "strong",
+    voice: "limited",
+    embeddings: "limited",
+    coding: "strong",
+    recommendation: "Excellent coding copilot style responses; pair with a separate embeddings path if Documents recall is critical.",
+  },
+  openai: {
+    image: "strong",
+    voice: "partial",
+    embeddings: "strong",
+    coding: "strong",
+    recommendation: "Best all-round baseline when you want one provider to cover coding plus embeddings-driven workflows.",
+  },
+  gemini: {
+    image: "strong",
+    voice: "strong",
+    embeddings: "strong",
+    coding: "strong",
+    recommendation: "Strong single-provider setup for multimodal + voice without splitting credentials.",
+  },
+  deepseek: {
+    image: "limited",
+    voice: "limited",
+    embeddings: "limited",
+    coding: "strong",
+    recommendation: "Great text/coding value path; pair with another provider if you need richer multimodal or embeddings.",
+  },
+};
+
+function signalTone(level: "strong" | "partial" | "limited"): string {
+  if (level === "strong") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  if (level === "partial") return "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+  return "border-border bg-surface-3 text-fg-faint";
+}
 
 const PROFILE_PRESETS: Array<{ value: NonNullable<UserProfile["preset"]>; label: string; hint: string }> = [
   { value: "home", label: "Home", hint: "Personal AI, mail, calendar, and everyday tasks" },
@@ -183,6 +226,7 @@ export function OnboardingWizard({ context }: Props) {
   const activeModel = models.find((row) => row.is_default) ?? models[0] ?? null;
   const activeAgent = agents.find((row) => row.is_default) ?? agents[0] ?? null;
   const providerInfo = PROVIDER_INFO[provider];
+  const providerSignals = PROVIDER_SIGNALS[provider];
   const effectiveIntegrations = useMemo(() => {
     if (provider === "gemini" && reuseGoogleKey && apiKey.trim()) {
       const hasGoogle = integrations.some((status) => status.name === "google" && status.configured);
@@ -424,6 +468,30 @@ export function OnboardingWizard({ context }: Props) {
                     <div className="mt-1 text-[11px] text-fg-faint leading-snug">{PROVIDER_INFO[option].hint}</div>
                   </button>
                 ))}
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface-3/70 px-3 py-3 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Provider capability preview</p>
+                  <p className="text-[11px] text-fg-faint">{PROVIDER_INFO[provider].label}</p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(providerSignals.image)}`}>
+                    <div className="inline-flex items-center gap-1"><Image size={12} /> Image</div>
+                  </div>
+                  <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(providerSignals.voice)}`}>
+                    <div className="inline-flex items-center gap-1"><Mic size={12} /> Voice</div>
+                  </div>
+                  <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(providerSignals.embeddings)}`}>
+                    <div className="inline-flex items-center gap-1"><Database size={12} /> Embeddings</div>
+                  </div>
+                  <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(providerSignals.coding)}`}>
+                    <div className="inline-flex items-center gap-1"><Code2 size={12} /> Coding</div>
+                  </div>
+                </div>
+                <p className="text-[11px] leading-snug text-fg-subtle">
+                  <span className="font-medium text-fg">Recommendation:</span> {providerSignals.recommendation}
+                </p>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-3 items-end">
