@@ -161,6 +161,7 @@ export interface ToolPolicy {
 export interface StreamOptions {
   filters?: StreamFilters;
   tool_policy?: ToolPolicy;
+  ui_experience_mode?: "normal" | "advanced";
 }
 
 export interface UserProfile {

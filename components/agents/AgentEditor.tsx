@@ -18,6 +18,24 @@ interface Props {
   onClose: () => void;
 }
 
+type ToolPermissionKind = "read" | "write" | "execute";
+
+const READ_PREFIXES = ["get_", "list_", "search_", "read_", "fetch_", "check_", "status_"];
+const WRITE_PREFIXES = [
+  "create_", "update_", "delete_", "write_", "edit_", "modify_", "move_", "copy_", "mkdir_",
+  "set_", "add_", "remove_", "trash_", "cancel_", "upsert_", "transition_", "upload_",
+];
+const EXECUTE_PREFIXES = ["run_", "exec_", "shell_", "schedule_", "generate_", "trigger_", "propose_"];
+
+function permissionKindForTool(name: string, category?: string): ToolPermissionKind {
+  const n = name.toLowerCase();
+  if (category === "Shell" || n.includes("exec") || n.includes("script")) return "execute";
+  if (EXECUTE_PREFIXES.some((p) => n.startsWith(p))) return "execute";
+  if (WRITE_PREFIXES.some((p) => n.startsWith(p))) return "write";
+  if (READ_PREFIXES.some((p) => n.startsWith(p))) return "read";
+  return "execute";
+}
+
 function Section({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-2">
@@ -159,6 +177,23 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   function toggleCategory(category: string, enable: boolean) {
     const names = allGroupedCategories.find(([c]) => c === category)?.[1].map((t) => t.name) ?? [];
+    if (names.length === 0) return;
+    setSelectedTools((prev) => {
+      if (enable) {
+        const set = new Set(prev);
+        for (const n of names) set.add(n);
+        return [...set];
+      }
+      const remove = new Set(names);
+      return prev.filter((n) => !remove.has(n));
+    });
+  }
+
+  function toggleCategoryPermission(category: string, kind: ToolPermissionKind, enable: boolean) {
+    const toolsInCategory = allGroupedCategories.find(([c]) => c === category)?.[1] ?? [];
+    const names = toolsInCategory
+      .filter((t) => permissionKindForTool(t.name, category) === kind)
+      .map((t) => t.name);
     if (names.length === 0) return;
     setSelectedTools((prev) => {
       if (enable) {
@@ -361,9 +396,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                         key={group}
                         group={group}
                         categories={categories}
+                        advancedMode={isAdvanced}
                         selected={selectedTools}
                         onToggleTool={toggleTool}
                         onToggleCategory={toggleCategory}
+                        onToggleCategoryPermission={toggleCategoryPermission}
                         onToggleGroup={toggleGroup}
                       />
                     ) : (
@@ -372,9 +409,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                           key={category}
                           category={category}
                           tools={catTools}
+                          advancedMode={isAdvanced}
                           selected={selectedTools}
                           onToggleTool={toggleTool}
                           onToggleCategory={toggleCategory}
+                          onToggleCategoryPermission={toggleCategoryPermission}
                         />
                       ))
                     ),
@@ -555,16 +594,20 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 function ToolGroupBlock({
   group,
   categories,
+  advancedMode,
   selected,
   onToggleTool,
   onToggleCategory,
+  onToggleCategoryPermission,
   onToggleGroup,
 }: {
   group: string;
   categories: Array<[string, ToolInfo[]]>;
+  advancedMode: boolean;
   selected: string[];
   onToggleTool: (name: string) => void;
   onToggleCategory: (category: string, enable: boolean) => void;
+  onToggleCategoryPermission: (category: string, kind: ToolPermissionKind, enable: boolean) => void;
   onToggleGroup: (group: string, enable: boolean) => void;
 }) {
   const allTools = categories.flatMap(([, ts]) => ts);
@@ -595,9 +638,11 @@ function ToolGroupBlock({
           key={category}
           category={category}
           tools={catTools}
+          advancedMode={advancedMode}
           selected={selected}
           onToggleTool={onToggleTool}
           onToggleCategory={onToggleCategory}
+          onToggleCategoryPermission={onToggleCategoryPermission}
         />
       ))}
     </ToolSelectionSection>
@@ -611,15 +656,19 @@ function ToolGroupBlock({
 function ToolCategoryBlock({
   category,
   tools,
+  advancedMode,
   selected,
   onToggleTool,
   onToggleCategory,
+  onToggleCategoryPermission,
 }: {
   category: string;
   tools: ToolInfo[];
+  advancedMode: boolean;
   selected: string[];
   onToggleTool: (name: string) => void;
   onToggleCategory: (category: string, enable: boolean) => void;
+  onToggleCategoryPermission: (category: string, kind: ToolPermissionKind, enable: boolean) => void;
 }) {
   const selectedInCat = tools.filter((t) => selected.includes(t.name)).length;
   const allOn = selectedInCat === tools.length;
@@ -645,23 +694,76 @@ function ToolCategoryBlock({
       headerRef={headerRef}
       bodyClassName="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
     >
-      {tools.map((t) => (
-        <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={selected.includes(t.name)}
-            onChange={() => onToggleTool(t.name)}
-          />
-          <span className="min-w-0 flex-1 flex items-center gap-1.5">
-            <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
-              {Math.round((t.stats?.score ?? 1) * 100)}%
+      {advancedMode ? (
+        tools.map((t) => (
+          <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={selected.includes(t.name)}
+              onChange={() => onToggleTool(t.name)}
+            />
+            <span className="min-w-0 flex-1 flex items-center gap-1.5">
+              <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
+                {Math.round((t.stats?.score ?? 1) * 100)}%
+              </span>
             </span>
-          </span>
-        </label>
-      ))}
+          </label>
+        ))
+      ) : (
+        <NormalPermissionControls
+          category={category}
+          tools={tools}
+          selected={selected}
+          onToggle={(kind, enable) => onToggleCategoryPermission(category, kind, enable)}
+        />
+      )}
     </ToolSelectionSection>
+  );
+}
+
+function NormalPermissionControls({
+  category,
+  tools,
+  selected,
+  onToggle,
+}: {
+  category: string;
+  tools: ToolInfo[];
+  selected: string[];
+  onToggle: (kind: ToolPermissionKind, enable: boolean) => void;
+}) {
+  const kinds: ToolPermissionKind[] = ["read", "write", "execute"];
+  return (
+    <div className="col-span-2 space-y-2">
+      <p className="text-[11px] text-fg-faint leading-snug">
+        Quick permissions for {category}. Advanced mode exposes individual functions.
+      </p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {kinds.map((kind) => {
+          const names = tools
+            .filter((t) => permissionKindForTool(t.name, category) === kind)
+            .map((t) => t.name);
+          const selectedCount = names.filter((n) => selected.includes(n)).length;
+          const checked = names.length > 0 && selectedCount === names.length;
+          return (
+            <label key={kind} className="flex items-center gap-1.5 cursor-pointer rounded border border-border px-2 py-1.5 bg-surface-2">
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={checked}
+                disabled={names.length === 0}
+                onChange={(e) => onToggle(kind, e.target.checked)}
+              />
+              <span className="text-[11px] text-fg-subtle capitalize">
+                {kind} <span className="text-fg-faint">{selectedCount}/{names.length}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

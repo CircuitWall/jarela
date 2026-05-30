@@ -215,6 +215,14 @@ export async function prepareThreadRun(
     : null;
 
   const timeCtx = `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
+  const experienceMode = options?.ui_experience_mode === "normal" ? "normal" : "advanced";
+  const experienceCtx = [
+    "--- UX mode ---",
+    `User interface mode: ${experienceMode}.`,
+    experienceMode === "normal"
+      ? "Prefer concise, plain-language explanations and avoid exposing low-level configuration details unless asked."
+      : "User opted into advanced controls; detailed technical explanations are welcome.",
+  ].join("\n");
 
   // Host environment hint so the agent doesn't have to guess platform-specific
   // paths (e.g. iCloud Drive lives at a different default location on Windows
@@ -351,6 +359,7 @@ export async function prepareThreadRun(
     timeCtx,
     envCtx,
     harnessParts.self_config,
+    experienceCtx,
     memoryCtx,
     ...tierOrderCtx,
     recallCtx,
