@@ -13,7 +13,12 @@ import { resolveHarness } from "@/lib/agents/harness/resolve";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getAppName } from "@/lib/env/app-config";
 import os from "node:os";
-import { computeContextBudget, formatContextBudgetSummary, takeRecentMessagesWithinBudget } from "@/lib/agents/context-budget";
+import {
+  computeContextBudget,
+  formatContextBudgetSummary,
+  takeRecentMessagesWithinBudget,
+  truncateLargestMessagesWithinBudget,
+} from "@/lib/agents/context-budget";
 import { listMemory } from "@/lib/stores/memory";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
 import { getDefaultModelConfig, getModelConfig } from "@/lib/stores/model-config";
@@ -179,10 +184,6 @@ export async function prepareThreadRun(
   });
 
   const hotMessages = takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
-  const history = hotMessages.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: parseContent(m.content),
-  }));
 
   // Build agent run config from DB record
   const userProfile = getUserProfile();
@@ -301,6 +302,16 @@ export async function prepareThreadRun(
     providerParams,
     budget.tierBudgets.warm,
   );
+
+  const warmWasExpected = budget.tierBudgets.warm > 32 && (allWindowMessages.length - hotMessages.length) >= 2;
+  const hotMessagesForPrompt = !warmSummaryCtx && warmWasExpected
+    ? truncateLargestMessagesWithinBudget(hotMessages, budget.tierBudgets.hot)
+    : hotMessages;
+
+  const history = hotMessagesForPrompt.map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: parseContent(m.content),
+  }));
 
   const factsCtx = buildFactsContext(trimmed, budget.tierBudgets.facts);
 
