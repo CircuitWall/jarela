@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { DashboardCurrencyInfo, DashboardMetrics, UserProfile } from "@/api/types";
+import { Activity, BarChart3, Coins, ShieldCheck, TrendingUp } from "lucide-react";
 
 type WindowDays = 7 | 14 | 30 | 60;
 type CurrencyMode = "auto" | "manual";
@@ -128,34 +129,41 @@ export function DashboardPanel() {
   const series = useMemo(() => data?.series ?? [], [data]);
 
   return (
-    <div className="h-full overflow-y-auto p-4 md:p-6 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Usage dashboard</h2>
-          <p className="text-xs text-[var(--text-secondary)]">
+    <div className="relative h-full overflow-y-auto p-4 md:p-6 space-y-4">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute top-64 -left-24 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl" />
+      </div>
+
+      <div className="relative rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--bg-secondary)] to-[var(--bg-primary)]/60 p-4 md:p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Usage dashboard</h2>
+            <p className="text-xs text-[var(--text-secondary)] mt-1">
             Estimated token usage, cost, and tool reliability trends.
-          </p>
-        </div>
-        <div className="inline-flex rounded-lg border border-[var(--border)] bg-[var(--bg-secondary)] p-1">
-          {WINDOWS.map((w) => (
-            <button
-              key={w}
-              type="button"
-              onClick={() => setDays(w)}
-              className={
-                "px-2.5 py-1 text-xs rounded-md transition-colors " +
-                (w === days
-                  ? "bg-[var(--accent)] text-white"
-                  : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
-              }
-            >
-              {w}d
-            </button>
-          ))}
+            </p>
+          </div>
+          <div className="inline-flex rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-1 shadow-sm">
+            {WINDOWS.map((w) => (
+              <button
+                key={w}
+                type="button"
+                onClick={() => setDays(w)}
+                className={
+                  "px-2.5 py-1 text-xs rounded-lg transition-all " +
+                  (w === days
+                    ? "bg-[var(--accent)] text-white shadow-sm"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]")
+                }
+              >
+                {w}d
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-2">
+      <div className="relative flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-2.5 shadow-sm">
         <span className="text-xs text-[var(--text-secondary)]">Currency</span>
         <select
           value={currencyMode}
@@ -178,7 +186,7 @@ export function DashboardPanel() {
       </div>
 
       {loading && (
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 text-sm text-[var(--text-secondary)]">
+        <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 text-sm text-[var(--text-secondary)] shadow-sm">
           Loading dashboard metrics...
         </div>
       )}
@@ -192,14 +200,15 @@ export function DashboardPanel() {
       {!loading && !error && data && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <MetricCard label="Input tokens (est)" value={formatInt(data.summary.input_tokens_est)} />
-            <MetricCard label="Output tokens (est)" value={formatInt(data.summary.output_tokens_est)} />
+            <MetricCard label="Input tokens (est)" value={formatInt(data.summary.input_tokens_est)} icon={<BarChart3 size={15} />} />
+            <MetricCard label="Output tokens (est)" value={formatInt(data.summary.output_tokens_est)} icon={<TrendingUp size={15} />} />
             <MetricCard
               label={`Estimated cost (${currencyInfo.currency})`}
               value={formatMoney(data.summary.estimated_cost_usd, currencyInfo)}
+              icon={<Coins size={15} />}
             />
-            <MetricCard label="Tool success rate" value={`${(data.summary.success_rate * 100).toFixed(1)}%`} />
-            <MetricCard label="Tool error rate" value={`${(data.summary.error_rate * 100).toFixed(1)}%`} />
+            <MetricCard label="Tool success rate" value={`${(data.summary.success_rate * 100).toFixed(1)}%`} icon={<ShieldCheck size={15} />} />
+            <MetricCard label="Tool error rate" value={`${(data.summary.error_rate * 100).toFixed(1)}%`} icon={<Activity size={15} />} />
           </div>
 
           <p className="text-[11px] text-[var(--text-secondary)]">
@@ -210,25 +219,25 @@ export function DashboardPanel() {
               : "Currency defaults to USD because no location-based currency is available."}
           </p>
 
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Token usage over time</h3>
             <InteractiveTokenChart series={series} />
           </section>
 
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Estimated cost over time</h3>
             <InteractiveCostChart series={series} currencyInfo={currencyInfo} />
           </section>
 
           <div className="grid md:grid-cols-2 gap-4">
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+            <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
               <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Favorite tools</h3>
               <div className="space-y-2">
                 {data.top_tools.length === 0 ? (
                   <p className="text-xs text-[var(--text-secondary)]">No tool calls recorded yet.</p>
                 ) : (
                   data.top_tools.slice(0, 6).map((tool) => (
-                    <div key={tool.name} className="rounded-lg border border-[var(--border)] px-3 py-2">
+                    <div key={tool.name} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 transition-colors hover:bg-[var(--bg-primary)]/70">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm text-[var(--text-primary)] truncate">{tool.name}</span>
                         <span className="text-xs text-[var(--text-secondary)]">{tool.call_count} calls</span>
@@ -242,14 +251,14 @@ export function DashboardPanel() {
               </div>
             </section>
 
-            <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4">
+            <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
               <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Agent cost hotspots</h3>
               <div className="space-y-2">
                 {data.top_agents.length === 0 ? (
                   <p className="text-xs text-[var(--text-secondary)]">No recent traffic yet.</p>
                 ) : (
                   data.top_agents.slice(0, 6).map((agent) => (
-                    <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] px-3 py-2">
+                    <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 transition-colors hover:bg-[var(--bg-primary)]/70">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm text-[var(--text-primary)] truncate">{agent.agent_name}</span>
                         <span className="text-xs text-[var(--text-secondary)]">
@@ -266,10 +275,10 @@ export function DashboardPanel() {
             </section>
           </div>
 
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-3">
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 space-y-3 shadow-sm">
             <h3 className="text-sm font-medium text-[var(--text-primary)]">Vendor and model report</h3>
             <div className="grid lg:grid-cols-2 gap-3">
-              <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+              <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-primary)]/35">
                 <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
                   By vendor
                 </div>
@@ -278,7 +287,7 @@ export function DashboardPanel() {
                     <p className="p-3 text-xs text-[var(--text-secondary)]">No vendor breakdown data yet.</p>
                   ) : (
                     data.by_provider.slice(0, 12).map((row) => (
-                      <div key={row.provider} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
+                      <div key={row.provider} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0 transition-colors hover:bg-[var(--bg-primary)]/50">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm text-[var(--text-primary)] capitalize truncate">{row.provider}</span>
                           <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
@@ -292,7 +301,7 @@ export function DashboardPanel() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-[var(--border)] overflow-hidden">
+              <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-primary)]/35">
                 <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
                   By model config
                 </div>
@@ -301,7 +310,7 @@ export function DashboardPanel() {
                     <p className="p-3 text-xs text-[var(--text-secondary)]">No model breakdown data yet.</p>
                   ) : (
                     data.by_model.slice(0, 16).map((row) => (
-                      <div key={`${row.provider}:${row.model_config_name}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
+                      <div key={`${row.provider}:${row.model_config_name}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0 transition-colors hover:bg-[var(--bg-primary)]/50">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm text-[var(--text-primary)] truncate">{row.model_config_name}</span>
                           <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
@@ -317,14 +326,14 @@ export function DashboardPanel() {
             </div>
           </section>
 
-          <section className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] p-4 space-y-2">
+          <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 space-y-2 shadow-sm">
             <h3 className="text-sm font-medium text-[var(--text-primary)]">Pricing source and assumptions</h3>
             <p className="text-xs text-[var(--text-secondary)]">
               Snapshot: {data.pricing.snapshot_generated_at ?? "not found"}
             </p>
             <div className="grid md:grid-cols-2 gap-2">
               {data.pricing.rates.map((row) => (
-                <div key={row.provider} className="rounded-lg border border-[var(--border)] px-3 py-2 text-xs">
+                <div key={row.provider} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 text-xs">
                   <div className="text-[var(--text-primary)] font-medium">{row.provider}</div>
                   <div className="text-[var(--text-secondary)]">
                     in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M
@@ -340,10 +349,13 @@ export function DashboardPanel() {
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: string }) {
+function MetricCard({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)] px-3 py-3">
-      <p className="text-[11px] uppercase tracking-wide text-[var(--text-secondary)]">{label}</p>
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+      <p className="text-[11px] uppercase tracking-wide text-[var(--text-secondary)] inline-flex items-center gap-1.5">
+        {icon ? <span className="text-[var(--text-secondary)]">{icon}</span> : null}
+        {label}
+      </p>
       <p className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</p>
     </div>
   );
@@ -360,7 +372,7 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
 
   return (
     <div>
-      <div className="relative h-48 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/40 p-2">
+      <div className="relative h-48 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 p-2 shadow-inner">
         <div className="absolute right-2 top-2 text-[11px] text-[var(--text-secondary)]">
           {active ? `${active.day}  ${formatInt(active.input_tokens_est + active.output_tokens_est)} tokens` : "Hover bars for details"}
         </div>
@@ -439,7 +451,7 @@ function InteractiveCostChart({
 
   return (
     <div>
-      <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/40 p-2">
+      <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 p-2 shadow-inner">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48" role="img" aria-label="Estimated cost over time">
           <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="rgba(148,163,184,0.45)" strokeWidth="1" />
           <line x1={padX} y1={padY} x2={padX} y2={height - padY} stroke="rgba(148,163,184,0.25)" strokeWidth="1" />
