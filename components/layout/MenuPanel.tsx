@@ -2,7 +2,7 @@
 import { Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
-import type { Tab } from "@/contexts/AppContext";
+import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
@@ -191,6 +191,8 @@ export function MenuPanel({
   onShowToolsChange,
   onShowThinkingChange,
 }: Props) {
+  const { state } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
   // boot so the engine room is visible to power users out of the box.
@@ -248,26 +250,27 @@ export function MenuPanel({
         {COMMON_TABS.map(renderTabButton)}
       </div>
 
-      {/* Advanced (collapsible) — configuration / engine room. */}
-      <div className="border-b border-border shrink-0">
-        <button
-          type="button"
-          onClick={toggleAdvanced}
-          aria-expanded={advancedOpen}
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors"
-        >
-          <span className="font-medium">Advanced</span>
-          <ChevronDown
-            size={12}
-            className={`transition-transform ${advancedOpen ? "rotate-0" : "-rotate-90"}`}
-          />
-        </button>
-        {advancedOpen && (
-          <div className="grid grid-cols-4 gap-1.5 px-2 pb-2">
-            {ADVANCED_TABS.map(renderTabButton)}
-          </div>
-        )}
-      </div>
+      {isAdvanced && (
+        <div className="border-b border-border shrink-0">
+          <button
+            type="button"
+            onClick={toggleAdvanced}
+            aria-expanded={advancedOpen}
+            className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors"
+          >
+            <span className="font-medium">Advanced</span>
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${advancedOpen ? "rotate-0" : "-rotate-90"}`}
+            />
+          </button>
+          {advancedOpen && (
+            <div className="grid grid-cols-4 gap-1.5 px-2 pb-2">
+              {ADVANCED_TABS.map(renderTabButton)}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main content area */}
       <div className="flex-1 overflow-y-auto min-h-0">

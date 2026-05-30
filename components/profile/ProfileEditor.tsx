@@ -4,9 +4,12 @@ import { Upload, Plus, Trash2, Shield, MapPin, Globe, Check, Copy } from "lucide
 import { api } from "@/api/client";
 import type { UserProfile, AccessWhitelistEntry, TailscaleStatus } from "@/api/types";
 import { useLocationSharing } from "@/hooks/useLocationSharing";
+import { useAppContext } from "@/contexts/AppContext";
 import { formatRelative } from "@/lib/utils/time";
 
 export function ProfileEditor() {
+  const { state, dispatch } = useAppContext();
+  const mode = state.experienceMode;
   const fileRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [name, setName] = useState("");
@@ -108,6 +111,42 @@ export function ProfileEditor() {
       </p>
 
       <PresetPicker value={preset} onChange={setPreset} />
+
+      <div className="pt-4 border-t border-border space-y-2">
+        <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
+        <p className="text-[11px] text-fg-faint">
+          Choose how much configuration detail is shown in the app.
+          Normal hides technical panels and advanced model controls.
+        </p>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "normal" })}
+            aria-pressed={mode === "normal"}
+            className={`text-left px-2.5 py-2 rounded-lg border transition-colors ${
+              mode === "normal"
+                ? "border-accent/60 bg-accent/10 text-fg"
+                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+            }`}
+          >
+            <div className="text-xs font-medium">Normal</div>
+            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Simpler UI for daily use</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "advanced" })}
+            aria-pressed={mode === "advanced"}
+            className={`text-left px-2.5 py-2 rounded-lg border transition-colors ${
+              mode === "advanced"
+                ? "border-accent/60 bg-accent/10 text-fg"
+                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+            }`}
+          >
+            <div className="text-xs font-medium">Advanced</div>
+            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Show full engine-room settings</div>
+          </button>
+        </div>
+      </div>
 
       <button
         onClick={handleSave}

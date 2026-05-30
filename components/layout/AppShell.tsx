@@ -29,8 +29,11 @@ import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 
+const ADVANCED_TABS = new Set(["connections", "models", "tools", "harness"]);
+
 export function AppShell() {
   const { state, dispatch } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
   useUrlSync();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
     state.activeAgentId,
@@ -54,6 +57,12 @@ export function AppShell() {
   useEffect(() => {
     setMountedTabs((prev) => prev.has(state.activeTab) ? prev : new Set(prev).add(state.activeTab));
   }, [state.activeTab]);
+
+  useEffect(() => {
+    if (!isAdvanced && ADVANCED_TABS.has(state.activeTab)) {
+      dispatch({ type: "SET_TAB", tab: "profile" });
+    }
+  }, [dispatch, isAdvanced, state.activeTab]);
 
   const unreadCount = useUnreadCount();
 
@@ -336,7 +345,7 @@ export function AppShell() {
             <DocumentsPanel />
           </Activity>
         )}
-        {mountedTabs.has("models") && (
+        {isAdvanced && mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
             <ModelsPanel />
           </Activity>
@@ -351,12 +360,12 @@ export function AppShell() {
             <ExtensionsPanel />
           </Activity>
         )}
-        {mountedTabs.has("tools") && (
+        {isAdvanced && mountedTabs.has("tools") && (
           <Activity mode={state.activeTab === "tools" ? "visible" : "hidden"}>
             <ToolsPanel />
           </Activity>
         )}
-        {mountedTabs.has("connections") && (
+        {isAdvanced && mountedTabs.has("connections") && (
           <Activity mode={state.activeTab === "connections" ? "visible" : "hidden"}>
             <ConnectionsPanel />
           </Activity>
@@ -376,7 +385,7 @@ export function AppShell() {
             <ProfilePanel />
           </Activity>
         )}
-        {mountedTabs.has("harness") && (
+        {isAdvanced && mountedTabs.has("harness") && (
           <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
             <HarnessPanel />
           </Activity>

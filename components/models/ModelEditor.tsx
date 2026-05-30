@@ -3,6 +3,7 @@ import { BookOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, ModelConfig } from "@/api/types";
+import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "./CapBadges";
 
@@ -45,6 +46,8 @@ function fmtCtx(n: number | null) {
 }
 
 export function ModelEditor({ model, onSave, onClose }: Props) {
+  const { state } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
   const [provider, setProvider] = useState(model?.provider ?? "anthropic");
@@ -304,11 +307,13 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
           </label>
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
-            <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-              value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://custom-endpoint" />
-          </label>
+          {isAdvanced && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
+              <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://custom-endpoint" />
+            </label>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
@@ -323,72 +328,78 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             </label>
           </div>
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
-            <input type="number" min="1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-              value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
-          </label>
+          {isAdvanced && (
+            <>
+              <label className="block">
+                <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
+                <input type="number" min="1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
+              </label>
 
-          <div className="rounded-lg border border-border bg-surface-3 p-3 space-y-2">
-            <p className="text-xs text-fg-subtle">Context tiers and resource usage</p>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Hot %</span>
-                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={hotRatio} onChange={(e) => setHotRatio(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Warm %</span>
-                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={warmRatio} onChange={(e) => setWarmRatio(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Facts %</span>
-                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={factsRatio} onChange={(e) => setFactsRatio(e.target.value)} />
-              </label>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Priority 1</span>
-                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={tierPriority[0]} onChange={(e) => updatePriority(0, e.target.value as Tier)}>
-                  <option value="hot">hot</option>
-                  <option value="warm">warm</option>
-                  <option value="facts">facts</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Priority 2</span>
-                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={tierPriority[1]} onChange={(e) => updatePriority(1, e.target.value as Tier)}>
-                  <option value="hot">hot</option>
-                  <option value="warm">warm</option>
-                  <option value="facts">facts</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Priority 3</span>
-                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={tierPriority[2]} onChange={(e) => updatePriority(2, e.target.value as Tier)}>
-                  <option value="hot">hot</option>
-                  <option value="warm">warm</option>
-                  <option value="facts">facts</option>
-                </select>
-              </label>
-            </div>
-            <p className="text-[11px] text-fg-faint leading-relaxed">
-              Estimated per-turn allocation: window {fmtInt(contextWindow)} tokens, output reserve {fmtInt(outputReserve)}, input {fmtInt(inputBudget)}.
-              Hot gets about {fmtInt(hotBudget)}, warm {fmtInt(warmBudget)}, facts {fmtInt(factsBudget)} tokens.
-              Higher hot keeps recent messages; higher warm favors recap summaries; higher facts favors durable memory retrieval.
-            </p>
-          </div>
+              <div className="rounded-lg border border-border bg-surface-3 p-3 space-y-2">
+                <p className="text-xs text-fg-subtle">Context tiers and resource usage</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Hot %</span>
+                    <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={hotRatio} onChange={(e) => setHotRatio(e.target.value)} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Warm %</span>
+                    <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={warmRatio} onChange={(e) => setWarmRatio(e.target.value)} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Facts %</span>
+                    <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={factsRatio} onChange={(e) => setFactsRatio(e.target.value)} />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Priority 1</span>
+                    <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={tierPriority[0]} onChange={(e) => updatePriority(0, e.target.value as Tier)}>
+                      <option value="hot">hot</option>
+                      <option value="warm">warm</option>
+                      <option value="facts">facts</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Priority 2</span>
+                    <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={tierPriority[1]} onChange={(e) => updatePriority(1, e.target.value as Tier)}>
+                      <option value="hot">hot</option>
+                      <option value="warm">warm</option>
+                      <option value="facts">facts</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Priority 3</span>
+                    <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={tierPriority[2]} onChange={(e) => updatePriority(2, e.target.value as Tier)}>
+                      <option value="hot">hot</option>
+                      <option value="warm">warm</option>
+                      <option value="facts">facts</option>
+                    </select>
+                  </label>
+                </div>
+                <p className="text-[11px] text-fg-faint leading-relaxed">
+                  Estimated per-turn allocation: window {fmtInt(contextWindow)} tokens, output reserve {fmtInt(outputReserve)}, input {fmtInt(inputBudget)}.
+                  Hot gets about {fmtInt(hotBudget)}, warm {fmtInt(warmBudget)}, facts {fmtInt(factsBudget)} tokens.
+                  Higher hot keeps recent messages; higher warm favors recap summaries; higher facts favors durable memory retrieval.
+                </p>
+              </div>
+            </>
+          )}
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">Extra headers (JSON, optional)</span>
-            <textarea className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-20 resize-none"
-              value={extraHeaders} onChange={(e) => setExtraHeaders(e.target.value)} placeholder='{"X-Custom": "value"}' />
-          </label>
+          {isAdvanced && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Extra headers (JSON, optional)</span>
+              <textarea className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-20 resize-none"
+                value={extraHeaders} onChange={(e) => setExtraHeaders(e.target.value)} placeholder='{"X-Custom": "value"}' />
+            </label>
+          )}
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" className="rounded border-border" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
