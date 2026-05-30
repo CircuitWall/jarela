@@ -65,4 +65,51 @@ describe("pricing snapshot refresh", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(writeFileMock).not.toHaveBeenCalled();
   });
+
+  it("refreshes only requested providers and preserves cached others", async () => {
+    const stale = {
+      generated_at: new Date(Date.now() - (10 * 24 * 60 * 60 * 1000)).toISOString(),
+      disclaimer: "cached",
+      ttl_days: 3,
+      sources: [
+        {
+          id: "openai",
+          name: "OpenAI",
+          pricing_url: "https://openai.com/api/pricing/",
+          notes: "cached",
+          fetched_at: new Date().toISOString(),
+          ok: true,
+          status: 200,
+          etag: null,
+          last_modified: null,
+          content_hash: "old",
+          content_length: 10,
+          price_signals: ["$1.00 / 1M tokens"],
+          error: null,
+        },
+      ],
+    };
+    readFileMock.mockResolvedValueOnce(JSON.stringify(stale));
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => "<html>$0.50 / 1M tokens</html>",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ force: false, ttlDays: 3, providers: ["deepseek"] });
+
+    expect(res.refreshed).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const firstFetchUrl = (fetchMock as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0];
+    expect(firstFetchUrl).toBeDefined();
+    expect(String(firstFetchUrl)).toContain("deepseek");
+    const ids = res.snapshot.sources.map((s) => s.id);
+    expect(ids).toContain("deepseek");
+    expect(ids).toContain("openai");
+    expect(writeFileMock).toHaveBeenCalledTimes(1);
+  });
 });

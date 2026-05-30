@@ -91,9 +91,33 @@ export interface PricingRefreshResult {
   snapshot: PricingSnapshot;
 }
 
-export async function refreshPricingSnapshot(opts?: { force?: boolean; ttlDays?: number }): Promise<PricingRefreshResult> {
+function toCanonicalProvider(id: string): string {
+  const lower = id.toLowerCase();
+  if (lower.includes("google") || lower.includes("gemini")) return "google";
+  if (lower.includes("openai")) return "openai";
+  if (lower.includes("anthropic")) return "anthropic";
+  if (lower.includes("deepseek")) return "deepseek";
+  if (lower.includes("cohere")) return "cohere";
+  return lower;
+}
+
+function sortSourcesByKnownOrder(sources: PricingSnapshotSource[]): PricingSnapshotSource[] {
+  const order = new Map(SOURCES.map((s, i) => [s.id, i]));
+  return [...sources].sort((a, b) => {
+    const ai = order.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const bi = order.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (ai !== bi) return ai - bi;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+export async function refreshPricingSnapshot(opts?: { force?: boolean; ttlDays?: number; providers?: string[] }): Promise<PricingRefreshResult> {
   const force = opts?.force === true;
   const ttlDays = opts?.ttlDays && Number.isFinite(opts.ttlDays) ? Math.max(1, opts.ttlDays) : DEFAULT_TTL_DAYS;
+  const providerFilter = new Set((opts?.providers ?? [])
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)
+    .map(toCanonicalProvider));
 
   const existing = await readPricingSnapshot();
   if (!force && existing) {
@@ -103,10 +127,20 @@ export async function refreshPricingSnapshot(opts?: { force?: boolean; ttlDays?:
     }
   }
 
-  const sources: PricingSnapshotSource[] = [];
-  for (const source of SOURCES) {
+  const selected = providerFilter.size > 0
+    ? SOURCES.filter((s) => providerFilter.has(toCanonicalProvider(s.id)))
+    : SOURCES;
+
+  const fetched: PricingSnapshotSource[] = [];
+  for (const source of selected) {
     const row = await fetchSource(source);
-    sources.push(row);
+    fetched.push(row);
+  }
+
+  let sources: PricingSnapshotSource[] = fetched;
+  if (providerFilter.size > 0 && existing?.sources?.length) {
+    const untouched = existing.sources.filter((s) => !providerFilter.has(toCanonicalProvider(s.id)));
+    sources = sortSourcesByKnownOrder([...fetched, ...untouched]);
   }
 
   const snapshot: PricingSnapshot = {
