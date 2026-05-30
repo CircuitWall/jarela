@@ -76,6 +76,20 @@ const GRADIENTS = [
   "from-fuchsia-500 to-purple-600",
 ];
 
+const TAB_ACCENT: Partial<Record<Tab, string>> = {
+  chat: "from-sky-500/20 to-cyan-500/5",
+  agents: "from-emerald-500/20 to-teal-500/5",
+  memory: "from-indigo-500/20 to-violet-500/5",
+  documents: "from-amber-500/20 to-orange-500/5",
+  tasks: "from-rose-500/20 to-pink-500/5",
+  bridges: "from-blue-500/20 to-indigo-500/5",
+  profile: "from-fuchsia-500/20 to-purple-500/5",
+  connections: "from-cyan-500/20 to-sky-500/5",
+  models: "from-violet-500/20 to-indigo-500/5",
+  tools: "from-emerald-500/20 to-lime-500/5",
+  harness: "from-orange-500/20 to-amber-500/5",
+};
+
 function avatarGradient(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
@@ -229,14 +243,17 @@ export function MenuPanel({
       onClick={() => onSetTab(tab)}
       title={TAB_TITLES[tab]}
       aria-label={TAB_TITLES[tab]}
-      className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-colors ${
+      className={`min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
         activeTab === tab
           ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
-          : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
+          : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50 hover:-translate-y-px"
       }`}
     >
+      {activeTab === tab && (
+        <span className={`absolute inset-0 bg-gradient-to-br ${TAB_ACCENT[tab] ?? "from-accent/20 to-transparent"}`} />
+      )}
       <span className="shrink-0">{TAB_ICONS[tab]}</span>
-      <span className="text-[10px] leading-none truncate max-w-full">{TAB_TITLES[tab]}</span>
+      <span className="text-[10px] leading-none truncate max-w-full relative z-10">{TAB_TITLES[tab]}</span>
     </button>
   );
 
@@ -246,7 +263,7 @@ export function MenuPanel({
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
       {/* Common navigation — the day-to-day surface. */}
-      <div className="px-3 pt-2 pb-1 border-b border-border/60">
+      <div className="px-3 pt-2 pb-1 border-b border-border/60 bg-gradient-to-r from-surface-2/50 to-transparent">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] uppercase tracking-wide text-fg-faint">Workspace mode</span>
           <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
@@ -268,7 +285,7 @@ export function MenuPanel({
             type="button"
             onClick={toggleAdvanced}
             aria-expanded={advancedOpen}
-            className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors"
+            className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors bg-gradient-to-r from-surface-2/40 to-transparent"
           >
             <span className="font-medium">Advanced</span>
             <ChevronDown

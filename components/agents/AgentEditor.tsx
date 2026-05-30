@@ -38,7 +38,7 @@ function permissionKindForTool(name: string, category?: string): ToolPermissionK
 
 function Section({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5 rounded-xl border border-border bg-surface-1/30 p-3">
       <div className="flex items-center gap-2">
         <span className="w-5 h-5 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center shrink-0">
           {step}
@@ -261,7 +261,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
+      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${isAdvanced ? "max-w-2xl" : "max-w-xl"}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit agent" : "New agent"}</h3>

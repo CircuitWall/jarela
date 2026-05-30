@@ -215,7 +215,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
+      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${isAdvanced ? "max-w-2xl" : "max-w-xl"}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit model config" : "New model config"}</h3>
           <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
