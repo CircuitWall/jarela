@@ -51,7 +51,7 @@ function Section({ step, title, children }: { step: number; title: string; child
 }
 
 export function AgentEditor({ agent, models, onSave, onClose }: Props) {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
   const isAdvanced = state.experienceMode === "advanced";
   const isEdit = !!agent;
   const { tools } = useTools();
@@ -257,6 +257,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   const selectedModel = models.find((m) => m.name === modelConfigName);
   const defaultModel = models.find((m) => m.is_default);
+  const hasGeminiModel = models.some((m) => m.provider === "gemini");
   const mbtiPreset = MBTI_PRESETS[adaptiveMbti];
 
   return (
@@ -331,6 +332,28 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
           {/* Step 2: Model */}
           <Section step={2} title="Model">
+            {models.length < 2 && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
+                <p>
+                  Add more model configs if you want feature-specific setups. A second model is useful for Documents embeddings, and a Gemini config is useful if you plan to use voice features heavily.
+                </p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Compatible setup: Gemini is the most natural fit for the built-in voice workflow, while Documents works best with a model/provider that supports embeddings.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      dispatch({ type: "SET_TAB", tab: "models" });
+                    }}
+                    className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
+                  >
+                    Open Models
+                  </button>
+                </div>
+              </div>
+            )}
             <select
               className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
               value={modelConfigName}
@@ -503,6 +526,40 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               When on, the chat input shows a microphone and assistant replies show a play button.
               Requires the Google integration api_key.
             </p>
+            {!hasGeminiModel && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
+                <p>
+                  Tip: add a Gemini model config in Models for a cleaner voice setup and to keep speech-related capabilities separate from your main chat model.
+                </p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Voice also requires a Google integration key in Connections.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      dispatch({ type: "SET_TAB", tab: "models" });
+                    }}
+                    className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
+                  >
+                    Open Models
+                  </button>
+                  {isAdvanced && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        dispatch({ type: "SET_TAB", tab: "connections" });
+                      }}
+                      className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
+                    >
+                      Open Connections
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">TTS model</span>
               <select
