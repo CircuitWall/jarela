@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { DashboardCurrencyInfo, DashboardMetrics, UserProfile } from "@/api/types";
-import { Activity, BarChart3, Coins, ShieldCheck, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Coins, RotateCw, ShieldCheck, TrendingUp } from "lucide-react";
 
 type WindowDays = 7 | 14 | 30 | 60;
 type CurrencyMode = "auto" | "manual";
@@ -30,6 +30,8 @@ export function DashboardPanel() {
   const [currencyMode, setCurrencyMode] = useState<CurrencyMode>("auto");
   const [manualCurrency, setManualCurrency] = useState<string>("USD");
   const [profileLocation, setProfileLocation] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
+  const [refreshingPricing, setRefreshingPricing] = useState(false);
+  const [refreshHint, setRefreshHint] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,6 +51,26 @@ export function DashboardPanel() {
       cancelled = true;
     };
   }, [days]);
+
+  const onRefreshPricing = async () => {
+    setRefreshingPricing(true);
+    setRefreshHint(null);
+    try {
+      const res = await api.dashboard.refreshPricing({ force: true });
+      setRefreshHint(res.refreshed ? "Pricing snapshot refreshed." : "Pricing snapshot already fresh.");
+      setLoading(true);
+      setError(null);
+      const metrics = await api.dashboard.metrics(days);
+      setData(metrics);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to refresh pricing.";
+      setRefreshHint(message);
+      setError(message);
+    } finally {
+      setLoading(false);
+      setRefreshingPricing(false);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -160,7 +182,17 @@ export function DashboardPanel() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={onRefreshPricing}
+            disabled={refreshingPricing}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-1.5 text-xs text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-primary)] disabled:opacity-60"
+          >
+            <RotateCw size={13} className={refreshingPricing ? "animate-spin" : ""} />
+            {refreshingPricing ? "Refreshing..." : "Refresh pricing"}
+          </button>
         </div>
+        {refreshHint ? <p className="mt-2 text-[11px] text-[var(--text-secondary)]">{refreshHint}</p> : null}
       </div>
 
       <div className="relative flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-2.5 shadow-sm">

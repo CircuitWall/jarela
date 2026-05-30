@@ -12,6 +12,7 @@ import type {
   BridgeRoutePatch,
   DashboardCurrencyInfo,
   DashboardMetrics,
+  DashboardPricingRefreshResult,
   ContentPart,
   EnvAllowlistConfig,
   EnvSyncResult,
@@ -313,6 +314,16 @@ export const api = {
 
   dashboard: {
     metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
+    refreshPricing: (opts?: { force?: boolean; ttlDays?: number }) => {
+      const qs = new URLSearchParams();
+      if (opts?.force === true) qs.set("force", "1");
+      if (typeof opts?.ttlDays === "number" && Number.isFinite(opts.ttlDays)) qs.set("ttlDays", String(opts.ttlDays));
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return request<DashboardPricingRefreshResult>(`/dashboard/pricing${suffix}`, {
+        method: "POST",
+        body: "{}",
+      });
+    },
     currency: (opts?: { lat?: number | null; lng?: number | null; currency?: string | null }) => {
       const qs = new URLSearchParams();
       if (typeof opts?.lat === "number" && Number.isFinite(opts.lat)) qs.set("lat", String(opts.lat));

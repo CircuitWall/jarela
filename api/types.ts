@@ -310,6 +310,14 @@ export interface DashboardCurrencyInfo {
   updated_at: string;
 }
 
+export interface DashboardPricingRefreshResult {
+  refreshed: boolean;
+  reason: "forced" | "stale" | "missing" | "fresh";
+  generated_at: string;
+  ttl_days: number;
+  source_count: number;
+}
+
 /** One built-in tool category with its current enable state. */
 export interface BuiltinToolCategoryInfo {
   category: string;
