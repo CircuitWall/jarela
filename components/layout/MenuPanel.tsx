@@ -52,18 +52,17 @@ const TAB_TITLES: Record<Tab, string> = {
   harness: "Harness",
 };
 
-// Two-tier menu. "Common" surfaces the day-to-day verbs (chat, agents,
-// memory, tasks, bridges, profile). "Advanced" hides the engine room
-// (connections, models, tools) behind a collapsible header so first-run
-// users aren't faced with eight cards of config they don't yet need.
+// Two-tier menu. "Common" surfaces the day-to-day verbs plus the most
+// relevant configuration touchpoints (models, tools). "Advanced" hides the
+// less-frequently used engine-room surfaces behind a collapsible header.
 //
 // "connections" is the single home for every auth surface (built-in
 // integrations + MCP server credentials). "tools" is purely about
 // capability presence — what categories of tools the agent may use.
 // The legacy top-level "mcp" and "extensions" tabs remain wired for
 // deep-link back-compat but are hidden here.
-const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "documents", "tasks", "bridges", "profile"];
-const ADVANCED_TABS: Tab[] = ["connections", "models", "tools", "harness"];
+const COMMON_TABS: Tab[] = ["chat", "agents", "documents", "models", "tools", "tasks", "bridges", "profile"];
+const ADVANCED_TABS: Tab[] = ["memory", "connections", "harness"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
@@ -294,7 +293,7 @@ export function MenuPanel({
             />
           </button>
           {advancedOpen && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-2 pb-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 px-2 pb-2">
               {ADVANCED_TABS.map(renderTabButton)}
             </div>
           )}

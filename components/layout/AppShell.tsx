@@ -29,7 +29,7 @@ import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 
-const ADVANCED_TABS = new Set(["connections", "models", "tools", "harness"]);
+const ADVANCED_TABS = new Set(["memory", "connections", "harness"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -335,7 +335,7 @@ export function AppShell() {
             <AgentsPanel />
           </Activity>
         )}
-        {mountedTabs.has("memory") && (
+        {isAdvanced && mountedTabs.has("memory") && (
           <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
             <MemoryPanel />
           </Activity>
@@ -345,7 +345,7 @@ export function AppShell() {
             <DocumentsPanel />
           </Activity>
         )}
-        {isAdvanced && mountedTabs.has("models") && (
+        {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
             <ModelsPanel />
           </Activity>
@@ -360,7 +360,7 @@ export function AppShell() {
             <ExtensionsPanel />
           </Activity>
         )}
-        {isAdvanced && mountedTabs.has("tools") && (
+        {mountedTabs.has("tools") && (
           <Activity mode={state.activeTab === "tools" ? "visible" : "hidden"}>
             <ToolsPanel />
           </Activity>
