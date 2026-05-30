@@ -11,6 +11,7 @@ interface SourceDef {
   pricing_url: string;
   notes: string;
   fallback_urls?: string[];
+  search_queries?: string[];
 }
 
 const SOURCES: SourceDef[] = [
@@ -60,6 +61,18 @@ const PRICE_LINE_RE = new RegExp(
   ].join("|"),
   "gi",
 );
+
+const GOOGLE_RESULT_RE = /href="\/url\?q=([^"&]+)[^"]*"/gi;
+
+type FetchAttempt = {
+  url: string;
+  ok: boolean;
+  status: number | null;
+  body: string;
+  etag: string | null;
+  last_modified: string | null;
+  error: string | null;
+};
 
 export interface PricingSnapshotSource {
   id: string;
@@ -187,70 +200,187 @@ function extractPriceSignals(html: string): string[] {
   return normalized.slice(0, 40);
 }
 
+function buildGoogleSearchUrl(query: string): string {
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
+function parseGoogleResultLinks(html: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+
+  let m: RegExpExecArray | null;
+  while ((m = GOOGLE_RESULT_RE.exec(html)) !== null) {
+    const raw = m[1] ?? "";
+    let url = "";
+    try {
+      url = decodeURIComponent(raw);
+    } catch {
+      continue;
+    }
+    if (!/^https?:\/\//i.test(url)) continue;
+    if (/\/google\./i.test(url)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    out.push(url);
+    if (out.length >= 8) break;
+  }
+
+  return out;
+}
+
+async function fetchHtml(url: string): Promise<FetchAttempt> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "user-agent": "jarela-pricing-snapshot/2.2 (+dashboard-refresh)",
+        accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "en-US,en;q=0.9",
+        referer: "https://github.com/circuitwall/jarela",
+      },
+    });
+
+    const body = await res.text();
+    return {
+      url,
+      ok: res.ok,
+      status: res.status,
+      body,
+      etag: res.headers.get("etag"),
+      last_modified: res.headers.get("last-modified"),
+      error: res.ok ? null : `HTTP ${res.status}`,
+    };
+  } catch (error) {
+    return {
+      url,
+      ok: false,
+      status: null,
+      body: "",
+      etag: null,
+      last_modified: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
   const fetched_at = new Date().toISOString();
   const urls = [source.pricing_url, ...(source.fallback_urls ?? [])];
-  let lastError: string | null = null;
-  let lastStatus: number | null = null;
-  let lastBody = "";
-  let resolved_url: string | null = null;
+  const attempted: FetchAttempt[] = [];
+  let best: FetchAttempt | null = null;
+
+  const remember = (attempt: FetchAttempt) => {
+    attempted.push(attempt);
+    if (!best) {
+      best = attempt;
+      return;
+    }
+    if (attempt.ok && !best.ok) {
+      best = attempt;
+      return;
+    }
+    if (attempt.ok === best.ok && (attempt.body.length > best.body.length)) {
+      best = attempt;
+    }
+  };
 
   for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        headers: {
-          "user-agent": "jarela-pricing-snapshot/2.1 (+dashboard-refresh)",
-          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "accept-language": "en-US,en;q=0.9",
-          referer: "https://github.com/circuitwall/jarela",
-        },
-      });
-
-      const body = await res.text();
-      lastStatus = res.status;
-      lastBody = body;
-
-      if (!res.ok) {
-        lastError = `HTTP ${res.status}`;
-        continue;
-      }
-
-      resolved_url = url;
+    const attempt = await fetchHtml(url);
+    remember(attempt);
+    if (!attempt.ok) continue;
+    const signals = extractPriceSignals(attempt.body);
+    if (signals.length > 0) {
       return {
         id: source.id,
         name: source.name,
         pricing_url: source.pricing_url,
-        resolved_url,
+        resolved_url: attempt.url,
         notes: source.notes,
         fetched_at,
         ok: true,
-        status: res.status,
-        etag: res.headers.get("etag"),
-        last_modified: res.headers.get("last-modified"),
-        content_hash: hashContent(body),
-        content_length: body.length,
-        price_signals: extractPriceSignals(body),
+        status: attempt.status,
+        etag: attempt.etag,
+        last_modified: attempt.last_modified,
+        content_hash: hashContent(attempt.body),
+        content_length: attempt.body.length,
+        price_signals: signals,
         error: null,
       };
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
     }
   }
+
+  const searchQueries = source.search_queries && source.search_queries.length > 0
+    ? source.search_queries
+    : [
+      `${source.name} API pricing per 1M tokens`,
+      `${source.name} model pricing`,
+    ];
+
+  const candidateUrls: string[] = [];
+  const seenCandidates = new Set<string>();
+
+  for (const q of searchQueries) {
+    const searchAttempt = await fetchHtml(buildGoogleSearchUrl(q));
+    remember(searchAttempt);
+    if (!searchAttempt.ok || !searchAttempt.body) continue;
+    const links = parseGoogleResultLinks(searchAttempt.body);
+    for (const link of links) {
+      if (seenCandidates.has(link)) continue;
+      seenCandidates.add(link);
+      candidateUrls.push(link);
+      if (candidateUrls.length >= 6) break;
+    }
+    if (candidateUrls.length >= 6) break;
+  }
+
+  for (const url of candidateUrls.slice(0, 3)) {
+    const attempt = await fetchHtml(url);
+    remember(attempt);
+    if (!attempt.ok) continue;
+    const signals = extractPriceSignals(attempt.body);
+    if (signals.length > 0) {
+      return {
+        id: source.id,
+        name: source.name,
+        pricing_url: source.pricing_url,
+        resolved_url: attempt.url,
+        notes: `${source.notes}; fallback via Google search`,
+        fetched_at,
+        ok: true,
+        status: attempt.status,
+        etag: attempt.etag,
+        last_modified: attempt.last_modified,
+        content_hash: hashContent(attempt.body),
+        content_length: attempt.body.length,
+        price_signals: signals,
+        error: null,
+      };
+    }
+  }
+
+  const fallback = best ?? {
+    url: source.pricing_url,
+    ok: false,
+    status: null,
+    body: "",
+    etag: null,
+    last_modified: null,
+    error: "no fetch attempts completed",
+  };
 
   return {
     id: source.id,
     name: source.name,
     pricing_url: source.pricing_url,
-    resolved_url,
+    resolved_url: fallback.url,
     notes: source.notes,
     fetched_at,
     ok: false,
-    status: lastStatus,
+    status: fallback.status,
     etag: null,
     last_modified: null,
-    content_hash: lastBody ? hashContent(lastBody) : null,
-    content_length: lastBody.length,
-    price_signals: lastBody ? extractPriceSignals(lastBody) : [],
-    error: lastError,
+    content_hash: fallback.body ? hashContent(fallback.body) : null,
+    content_length: fallback.body.length,
+    price_signals: fallback.body ? extractPriceSignals(fallback.body) : [],
+    error: fallback.error,
   };
 }

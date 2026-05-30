@@ -112,4 +112,51 @@ describe("pricing snapshot refresh", () => {
     expect(ids).toContain("openai");
     expect(writeFileMock).toHaveBeenCalledTimes(1);
   });
+
+  it("falls back to Google results when provider pages fail", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+
+    const fallbackUrl = "https://example.com/deepseek-pricing";
+    const searchHtml = `<html><a href="/url?q=${encodeURIComponent(fallbackUrl)}&sa=U">pricing</a></html>`;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("google.com/search")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => searchHtml,
+        };
+      }
+
+      if (url.includes("example.com/deepseek-pricing")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => "<html>$0.14 / 1M tokens input $0.28 / 1M tokens</html>",
+        };
+      }
+
+      return {
+        ok: false,
+        status: 403,
+        headers: new Headers(),
+        text: async () => "blocked",
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ force: true, providers: ["deepseek"] });
+
+    expect(res.refreshed).toBe(true);
+    const deepseek = res.snapshot.sources.find((s) => s.id === "deepseek");
+    expect(deepseek).toBeTruthy();
+    expect(deepseek?.ok).toBe(true);
+    expect(deepseek?.resolved_url).toBe(fallbackUrl);
+    expect(deepseek?.notes).toContain("Google search");
+    expect((deepseek?.price_signals ?? []).length).toBeGreaterThan(0);
+  });
 });
