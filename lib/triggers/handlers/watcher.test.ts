@@ -75,8 +75,11 @@ describe("watcherHandler (ADR-0027)", () => {
     expect(fired.agentId).toBe("a");
     expect(fired.kind).toBe("watcher");
     expect(fired.prompt).toContain('Watcher "change" detected a change');
-    expect(fired.prompt).toContain("v1");
-    expect(fired.prompt).toContain("v2");
+    expect(fired.prompt).toContain("--- Diff (previous -> current) ---");
+    expect(fired.prompt).toContain("- v1");
+    expect(fired.prompt).toContain("+ v2");
+    expect(fired.prompt).not.toContain("--- Previous result ---");
+    expect(fired.prompt).not.toContain("--- Current result ---");
     const after = getWatcher(w.id)!;
     expect(after.last_fired_at).not.toBeNull();
   });
@@ -93,7 +96,7 @@ describe("watcherHandler (ADR-0027)", () => {
     expect(firings).toHaveLength(1);
     const fired = firings[0];
     if (fired.mode !== "prompt") throw new Error("expected prompt firing");
-    expect(fired.prompt).toContain("[truncated: showing");
+    expect(fired.prompt).toContain("[diff truncated: showing");
     expect(fired.prompt.length).toBeLessThan(8000);
   });
 
@@ -139,8 +142,8 @@ describe("watcherHandler (ADR-0027)", () => {
     expect(fired.prompt).toContain("Open a Jira ticket against the broken dashboard.");
     expect(fired.prompt).not.toContain("Summarise what changed");
     // Diff envelope is preserved.
-    expect(fired.prompt).toContain("v1");
-    expect(fired.prompt).toContain("v2");
+    expect(fired.prompt).toContain("- v1");
+    expect(fired.prompt).toContain("+ v2");
   });
 
   it("uses the default directive when reaction_prompt is null", async () => {
