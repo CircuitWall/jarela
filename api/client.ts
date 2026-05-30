@@ -10,6 +10,7 @@ import type {
   BridgeRoute,
   BridgeRouteIn,
   BridgeRoutePatch,
+  DashboardMetrics,
   ContentPart,
   EnvAllowlistConfig,
   EnvSyncResult,
@@ -307,6 +308,10 @@ export const api = {
       else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
       return res;
     },
+  },
+
+  dashboard: {
+    metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
   },
 
   mcp: {

@@ -28,6 +28,7 @@ import { Toaster } from "@/components/ui/Toaster";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
+import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
 const ADVANCED_TABS = new Set(["memory", "connections", "harness"]);
 
@@ -328,6 +329,11 @@ export function AppShell() {
               onMessageSent={onMessageSent}
               onSelectAgent={onSelectAgent}
             />
+          </Activity>
+        )}
+        {mountedTabs.has("dashboard") && (
+          <Activity mode={state.activeTab === "dashboard" ? "visible" : "hidden"}>
+            <DashboardPanel />
           </Activity>
         )}
         {mountedTabs.has("agents") && (

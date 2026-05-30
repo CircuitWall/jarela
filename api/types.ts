@@ -221,6 +221,67 @@ export interface ToolUsefulnessStats {
   last_called_at: string | null;
 }
 
+export interface DashboardSeriesPoint {
+  day: string;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+  tool_calls: number;
+  tool_successes: number;
+  tool_errors: number;
+  success_rate: number;
+  error_rate: number;
+}
+
+export interface DashboardToolTop {
+  name: string;
+  call_count: number;
+  success_count: number;
+  error_count: number;
+  score: number;
+  success_rate: number;
+  last_called_at: string | null;
+}
+
+export interface DashboardAgentTop {
+  agent_id: string;
+  agent_name: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
+export interface DashboardProviderRate {
+  provider: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  source: string;
+}
+
+export interface DashboardMetrics {
+  generated_at: string;
+  days: number;
+  summary: {
+    input_tokens_est: number;
+    output_tokens_est: number;
+    estimated_cost_usd: number;
+    tool_calls: number;
+    tool_successes: number;
+    tool_errors: number;
+    success_rate: number;
+    error_rate: number;
+  };
+  series: DashboardSeriesPoint[];
+  top_tools: DashboardToolTop[];
+  top_agents: DashboardAgentTop[];
+  pricing: {
+    snapshot_generated_at: string | null;
+    rates: DashboardProviderRate[];
+    notes: string;
+  };
+}
+
 /** One built-in tool category with its current enable state. */
 export interface BuiltinToolCategoryInfo {
   category: string;

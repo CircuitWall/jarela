@@ -5,7 +5,7 @@ export type ExperienceMode = "normal" | "advanced";
 
 const EXPERIENCE_MODE_KEY = "jarela.experience.mode";
 
-export type Tab = "chat" | "agents" | "memory" | "documents" | "models" | "mcp" | "extensions" | "tools" | "connections" | "tasks" | "bridges" | "profile" | "harness";
+export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "mcp" | "extensions" | "tools" | "connections" | "tasks" | "bridges" | "profile" | "harness";
 
 interface AppState {
   activeThreadId: string | null;

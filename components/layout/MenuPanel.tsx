@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
+import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
@@ -22,6 +22,7 @@ interface Props {
 
 const TAB_ICONS: Record<Tab, React.ReactNode> = {
   chat: <MessageSquare size={13} />,
+  dashboard: <BarChart3 size={13} />,
   agents: <Bot size={13} />,
   memory: <Brain size={13} />,
   documents: <FolderSearch size={13} />,
@@ -38,6 +39,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
 
 const TAB_TITLES: Record<Tab, string> = {
   chat: "Chat",
+  dashboard: "Dashboard",
   agents: "Agents",
   memory: "Memory",
   documents: "Documents",
@@ -61,7 +63,7 @@ const TAB_TITLES: Record<Tab, string> = {
 // capability presence — what categories of tools the agent may use.
 // The legacy top-level "mcp" and "extensions" tabs remain wired for
 // deep-link back-compat but are hidden here.
-const COMMON_TABS: Tab[] = ["chat", "agents", "documents", "models", "tools", "tasks", "bridges", "profile"];
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "tools", "tasks", "bridges", "profile"];
 const ADVANCED_TABS: Tab[] = ["memory", "connections", "harness"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
@@ -77,6 +79,7 @@ const GRADIENTS = [
 
 const TAB_ACCENT: Partial<Record<Tab, string>> = {
   chat: "from-sky-500/20 to-cyan-500/5",
+  dashboard: "from-cyan-500/20 to-blue-500/5",
   agents: "from-emerald-500/20 to-teal-500/5",
   memory: "from-indigo-500/20 to-violet-500/5",
   documents: "from-amber-500/20 to-orange-500/5",
