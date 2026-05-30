@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { DocumentHit, DocumentSource, DocumentSourceKind, ModelConfig } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
+import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import { FolderPickerDialog } from "./FolderPickerDialog";
 
 // Friendly labels + per-kind field hints. Kept inline (not a separate
@@ -97,7 +98,7 @@ export function DocumentsPanel() {
   const [searching, setSearching] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const hasEnoughModelsForDocs = models.length >= 2;
+  const readiness = computeFeatureReadiness({ models, selectedProvider: undefined, selectedModelId: undefined });
   const hasWorkingEmbeddingModel = embeddingProbe?.ok ?? false;
 
   async function load() {
@@ -310,13 +311,13 @@ export function DocumentsPanel() {
 
         <section className="space-y-2">
           <label className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Embedding model</label>
-          {!hasEnoughModelsForDocs && (
+          {!readiness.documentsReady && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
               <p>
-                Documents work best when you keep a dedicated model config for embeddings. Add another model in Models so search and recall do not depend on your main chat setup alone.
+                Documents need an embeddings-capable model that this installation can already use. Add one in Models if semantic recall is important.
               </p>
               <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-                Compatible setup: a provider/model with embeddings support. If none is available, Documents falls back to substring search only.
+                Compatible setup: OpenAI, Gemini, and GitHub Copilot-backed setups are the main built-in paths here. If none is available, Documents falls back to substring search only.
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button

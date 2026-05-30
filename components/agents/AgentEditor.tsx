@@ -10,6 +10,8 @@ import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "@/components/models/CapBadges";
+import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
+import type { IntegrationStatus } from "@/api/types";
 
 interface Props {
   agent?: AgentConfig;
@@ -78,6 +80,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [defaultHarnessId, setDefaultHarnessId] = useState<string>("builtin:default");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +91,20 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         setDefaultHarnessId(res.default_harness_id);
       })
       .catch(() => { /* harness picker silently empty if fetch fails */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.integrations.list()
+      .then((res) => {
+        if (cancelled) return;
+        setIntegrations(res.statuses);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setIntegrations([]);
+      });
     return () => { cancelled = true; };
   }, []);
 
@@ -257,7 +274,12 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   const selectedModel = models.find((m) => m.name === modelConfigName);
   const defaultModel = models.find((m) => m.is_default);
-  const hasGeminiModel = models.some((m) => m.provider === "gemini");
+  const readiness = computeFeatureReadiness({
+    models,
+    integrations,
+    selectedProvider: selectedModel?.provider,
+    selectedModelId: selectedModel?.model_id,
+  });
   const mbtiPreset = MBTI_PRESETS[adaptiveMbti];
 
   return (
@@ -332,13 +354,13 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
           {/* Step 2: Model */}
           <Section step={2} title="Model">
-            {models.length < 2 && (
+            {!readiness.documentsReady && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
                 <p>
-                  Add more model configs if you want feature-specific setups. A second model is useful for Documents embeddings, and a Gemini config is useful if you plan to use voice features heavily.
+                  Add a model config that the current installation can use for Documents embeddings if you want semantic document recall.
                 </p>
                 <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-                  Compatible setup: Gemini is the most natural fit for the built-in voice workflow, while Documents works best with a model/provider that supports embeddings.
+                  Compatible setup: OpenAI, Gemini, and GitHub Copilot-backed setups are the main built-in paths for embeddings without introducing another billing surface.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
@@ -526,13 +548,13 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               When on, the chat input shows a microphone and assistant replies show a play button.
               Requires the Google integration api_key.
             </p>
-            {!hasGeminiModel && (
+            {!readiness.voiceReady && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
                 <p>
-                  Tip: add a Gemini model config in Models for a cleaner voice setup and to keep speech-related capabilities separate from your main chat model.
+                  Voice is not fully ready at the system level yet.
                 </p>
                 <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-                  Voice also requires a Google integration key in Connections.
+                  Compatible setup: a Gemini model plus the existing Google AI integration. Without both, enabling voice would require extra setup.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
@@ -545,7 +567,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                   >
                     Open Models
                   </button>
-                  {isAdvanced && (
+                  {!readiness.hasGoogleIntegration && isAdvanced && (
                     <button
                       type="button"
                       onClick={() => {

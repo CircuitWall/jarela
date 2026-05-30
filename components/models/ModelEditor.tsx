@@ -2,11 +2,12 @@
 import { BookOpen, Database, Eye, FileText, Globe, MessageSquare, Mic, Wrench, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { CatalogModel, ModelConfig } from "@/api/types";
+import type { CatalogModel, IntegrationStatus, ModelConfig } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "./CapBadges";
-import { modelCapabilities, type ModelCapabilities } from "@/lib/providers/capabilities";
+import type { ModelCapabilities } from "@/lib/providers/capabilities";
+import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -44,10 +45,6 @@ interface Props {
 function fmtCtx(n: number | null) {
   if (!n) return null;
   return n >= 1000000 ? `${n / 1000000}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
-}
-
-function providerLikelySupportsEmbeddings(provider: string): boolean {
-  return new Set(["openai", "gemini", "github-copilot", "mock"]).has(provider.toLowerCase());
 }
 
 function FeatureCard({
@@ -118,6 +115,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -134,6 +132,22 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       })
       .catch(() => {
         // Keep fallback provider list if endpoint fails.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    api.integrations.list()
+      .then((res) => {
+        if (!mounted) return;
+        setIntegrations(res.statuses);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setIntegrations([]);
       });
     return () => {
       mounted = false;
@@ -254,8 +268,13 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const filteredCatalog = catalog?.filter((m) =>
     !catalogSearch || m.id.toLowerCase().includes(catalogSearch.toLowerCase())
   ) ?? [];
-  const inferredCaps: ModelCapabilities | null = modelId.trim() ? modelCapabilities(provider, modelId.trim()) : null;
-  const docsReady = modelId.trim() ? providerLikelySupportsEmbeddings(provider) : false;
+  const readiness = computeFeatureReadiness({
+    models: model ? [model] : [],
+    integrations,
+    selectedProvider: provider,
+    selectedModelId: modelId.trim(),
+  });
+  const inferredCaps: ModelCapabilities | null = readiness.selectedModelCaps;
   const featureCards = inferredCaps ? [
     {
       title: "General chat",
@@ -277,8 +296,10 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
     },
     {
       title: "Voice and audio workflows",
-      description: "Best fit for voice-oriented setups and audio-aware experiences.",
-      enabled: inferredCaps.audio,
+      description: readiness.hasGoogleIntegration
+        ? "Best fit for voice-oriented setups and audio-aware experiences."
+        : "Requires the existing Google AI integration; without it, voice would need extra setup.",
+      enabled: readiness.voiceReady,
       icon: Mic,
     },
     {
@@ -295,8 +316,10 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
     },
     {
       title: "Documents semantic search",
-      description: "Useful for embeddings-backed recall in the Documents panel.",
-      enabled: docsReady,
+      description: readiness.documentsReady
+        ? "Useful for embeddings-backed recall in the Documents panel."
+        : "Needs an embeddings-capable model already available in this installation.",
+      enabled: readiness.documentsReady,
       icon: Database,
     },
   ] : [];
@@ -399,7 +422,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
                 <div>
                   <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide">What This Model Unlocks</p>
                   <p className="text-[11px] text-fg-faint mt-1 leading-snug">
-                    Pick a provider/model once here and the compatible app features light up immediately.
+                    Pick a provider/model once here and the compatible app features light up based on what this installation can already use.
                   </p>
                 </div>
                 <CapBadges provider={provider} modelId={modelId.trim()} size="sm" />
