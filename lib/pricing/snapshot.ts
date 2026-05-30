@@ -70,7 +70,9 @@ const SOURCES: SourceDef[] = [
 const PRICE_LINE_RE = new RegExp(
   [
     String.raw`\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:1\s*[MK]|million|thousand)?\s*(?:input|output)?\s*(?:tokens?|chars?)`,
+    String.raw`\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:M\s*Tok|MTok)`,
     String.raw`(?:input|output)\s*\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:1\s*[MK]|million|thousand)?\s*(?:tokens?|chars?)`,
+    String.raw`(?:input|output)\s*\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:M\s*Tok|MTok)`,
     String.raw`\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:image|minute|request)`,
   ].join("|"),
   "gi",
@@ -233,7 +235,7 @@ function inferRatePair(text: string): { inputPer1M: number | null; outputPer1M: 
   const inputL = labeledInput ? Number(labeledInput[1]) : null;
   const outputL = labeledOutput ? Number(labeledOutput[1]) : null;
 
-  const tokenRates = [...text.matchAll(/\$\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)\s*(?:1\s*[MK]|million)\s*tokens?/gi)]
+  const tokenRates = [...text.matchAll(/\$\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)\s*(?:(?:1\s*[MK]|million)\s*tokens?|M\s*Tok|MTok)/gi)]
     .map((m) => Number(m[1]))
     .filter((v) => Number.isFinite(v) && v > 0)
     .sort((a, b) => a - b);

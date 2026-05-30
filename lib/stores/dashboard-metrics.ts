@@ -602,7 +602,7 @@ function normalizeProvider(id: string): string | null {
 function inferRatesFromSignals(signals: string[]): { inputPer1M: number | null; outputPer1M: number | null } {
   const tokenRates = signals
     .map((s) => {
-      const m = /\$\s*([0-9]+(?:\.[0-9]+)?)\s*\/?\s*1M\s*tokens/i.exec(s);
+      const m = /\$\s*([0-9]+(?:\.[0-9]+)?)\s*\/?\s*(?:1M\s*tokens|M\s*Tok|MTok)/i.exec(s);
       if (!m) return null;
       return Number(m[1]);
     })

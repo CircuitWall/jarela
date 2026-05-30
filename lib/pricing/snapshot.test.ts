@@ -181,4 +181,27 @@ describe("pricing snapshot refresh", () => {
     expect(modelRate?.input_per_1m_usd).toBe(5);
     expect(modelRate?.output_per_1m_usd).toBe(15);
   });
+
+  it("extracts Anthropic MTok pricing signals and model rates", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers(),
+      text: async () => "<html>claude-sonnet-4 input $3 / MTok output $15 / MTok</html>",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ force: true, providers: ["anthropic"] });
+
+    const anthropic = res.snapshot.sources.find((s) => s.id === "anthropic");
+    expect(anthropic).toBeTruthy();
+    expect((anthropic?.price_signals ?? []).some((s) => /MTok/i.test(s))).toBe(true);
+    const modelRate = (anthropic?.model_rates ?? []).find((m) => m.model_id === "claude-sonnet-4");
+    expect(modelRate).toBeTruthy();
+    expect(modelRate?.input_per_1m_usd).toBe(3);
+    expect(modelRate?.output_per_1m_usd).toBe(15);
+  });
 });
