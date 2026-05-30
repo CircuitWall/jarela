@@ -40,6 +40,12 @@ Environment:
   JARELA_VOICE_TIMEOUT_MS      — Gemini voice request timeout (default 60000)
   JARELA_IMAGE_TIMEOUT_MS      — Gemini image request timeout (default 60000)
   JARELA_DISABLE_UPDATE_CHECK  — set to 1 to skip the npm update check
+  JARELA_PREFLIGHT_OPTIMIZE_CLIENT
+                               — set to 1 to run one-time local chunk
+                                 optimization before server boot (default: 1
+                                 for npm/global install, 0 for source checkout)
+  JARELA_FORCE_PREFLIGHT_OPTIMIZE
+                               — set to 1 to force re-running optimization
 `);
 }
 
@@ -110,5 +116,8 @@ if (process.env.JARELA_PORT) process.env.PORT = process.env.JARELA_PORT;
 if (process.env.JARELA_HOSTNAME) process.env.HOSTNAME = process.env.JARELA_HOSTNAME;
 process.env.PORT ||= "4312";
 process.env.HOSTNAME ||= "127.0.0.1";
+if (installedUnderNodeModules) {
+  process.env.JARELA_PREFLIGHT_OPTIMIZE_CLIENT ||= "1";
+}
 process.chdir(root);
 await import(new URL("./start-prod.mjs", import.meta.url).href);
