@@ -8,8 +8,10 @@ import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
 
 const SILENT_BRIDGE_DIRECTIVE =
-  "[SILENT_BRIDGE] Observer mode is enabled for this route. Never send replies into the external chat. " +
-  "Produce an in-app update only when there is an important event, risk, or user-actionable change. " +
+  "[SILENT_BRIDGE] Observer mode is enabled for this route. You are standing on the user's side and monitoring events. " +
+  "Never behave like a participant in the external chat and never draft/imitate a direct chat reply. " +
+  "Write to the user only, as a concise report of important events, risks, or user-actionable changes. " +
+  "Keep tone informational (status/update summary), not conversational. " +
   "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else.";
 
 function isNoReply(text: string): boolean {
