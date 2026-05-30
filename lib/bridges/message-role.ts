@@ -56,6 +56,18 @@ export interface BridgePromptInput {
   text: string;
 }
 
+// Parsed chat-friendly envelope extracted from a bridge prompt body.
+// Used by the chat UI so rendering stays in lockstep with formatter changes.
+export interface BridgePromptContext {
+  bridgeId: string;
+  chatJid: string;
+  chatName: string;
+  isGroup: boolean;
+  senderJid: string;
+  senderName: string;
+  body: string;
+}
+
 /**
  * Build the prompt prefix the agent receives for one bridge-inbound message.
  *
@@ -95,6 +107,40 @@ export function formatBridgePrompt(input: BridgePromptInput): string {
     lines.push(`[participant_name:${input.sender_name}]`);
   }
   return `${note}\n\n${lines.join("\n")}\n\n${input.text}`;
+}
+
+// Parses bridge prompt envelopes rendered by formatBridgePrompt().
+// Back-compat: also accepts legacy keys (chat_jid/sender_jid) and optional
+// prose preface before the [bridge:...] metadata block.
+export function parseBridgePrompt(raw: string): BridgePromptContext | null {
+  const start = raw.indexOf("[bridge:");
+  if (start < 0) return null;
+  const src = raw.slice(start);
+
+  const headers: Record<string, string> = {};
+  const lines = src.split("\n");
+  let i = 0;
+  for (; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === "") { i++; break; }
+    const m = /^\[([a-z_]+):([\s\S]*)\]$/.exec(line);
+    if (!m) return null;
+    headers[m[1]] = m[2];
+  }
+
+  const chatId = headers.chat_id || headers.chat_jid;
+  const senderId = headers.sender_id || headers.sender_jid || chatId;
+  if (!headers.bridge || !chatId || !headers.chat_type) return null;
+
+  return {
+    bridgeId: headers.bridge,
+    chatJid: chatId,
+    chatName: headers.chat_name || chatId,
+    isGroup: headers.chat_type === "group",
+    senderJid: senderId,
+    senderName: headers.sender_name || senderId || "Unknown",
+    body: lines.slice(i).join("\n").trimEnd(),
+  };
 }
 
 function roleNote(role: MessageRole, isGroup: boolean): string {
