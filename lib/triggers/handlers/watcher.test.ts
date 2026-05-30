@@ -81,6 +81,22 @@ describe("watcherHandler (ADR-0027)", () => {
     expect(after.last_fired_at).not.toBeNull();
   });
 
+  it("truncates oversized result payloads in the firing prompt", async () => {
+    const w = createWatcher({
+      agent_id: "a", label: "big", tool_name: "watcher_test_tool", interval_seconds: 60,
+    });
+    fakeResult = "A".repeat(5000);
+    await watcherHandler.getDueFirings(new Date(Date.parse(w.next_run_at) + 1));
+    fakeResult = "B".repeat(5000);
+    const w2 = getWatcher(w.id)!;
+    const firings = await watcherHandler.getDueFirings(new Date(Date.parse(w2.next_run_at) + 1));
+    expect(firings).toHaveLength(1);
+    const fired = firings[0];
+    if (fired.mode !== "prompt") throw new Error("expected prompt firing");
+    expect(fired.prompt).toContain("[truncated: showing");
+    expect(fired.prompt.length).toBeLessThan(8000);
+  });
+
   it("does NOT fire when result is unchanged across polls", async () => {
     const w = createWatcher({
       agent_id: "a", label: "stable", tool_name: "watcher_test_tool", interval_seconds: 60,
