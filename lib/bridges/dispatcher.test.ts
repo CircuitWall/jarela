@@ -107,6 +107,7 @@ describe("handleInboundMessage silent observer mode", () => {
     const promptArg = prepareThreadRunMock.mock.calls[0][1] as string;
     expect(promptArg).toContain("BRIDGE_PROMPT");
     expect(promptArg).toContain("[SILENT_BRIDGE]");
+    expect(promptArg).toContain("standing on the user's side");
 
     expect(persistAssistantMessageMock).not.toHaveBeenCalled();
     expect(adapter.sendText).not.toHaveBeenCalled();
