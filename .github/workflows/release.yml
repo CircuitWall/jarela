@@ -201,6 +201,10 @@ jobs:
 
       - name: Build standalone bundle for npm package
         run: npm run build
+        env:
+          # Keep client chunks readable in the npm tarball to reduce
+          # false-positive obfuscation alerts from supply-chain scanners.
+          JARELA_DISABLE_CLIENT_MINIFICATION: "1"
 
       - name: Verify npm tarball contains runnable standalone bundle
         run: npm run test:package
