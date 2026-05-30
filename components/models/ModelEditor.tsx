@@ -1,11 +1,12 @@
 "use client";
-import { BookOpen, X } from "lucide-react";
+import { BookOpen, Database, Eye, FileText, Globe, MessageSquare, Mic, Wrench, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, ModelConfig } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "./CapBadges";
+import { modelCapabilities, type ModelCapabilities } from "@/lib/providers/capabilities";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -43,6 +44,47 @@ interface Props {
 function fmtCtx(n: number | null) {
   if (!n) return null;
   return n >= 1000000 ? `${n / 1000000}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+}
+
+function providerLikelySupportsEmbeddings(provider: string): boolean {
+  return new Set(["openai", "gemini", "github-copilot", "mock"]).has(provider.toLowerCase());
+}
+
+function FeatureCard({
+  title,
+  description,
+  enabled,
+  icon: Icon,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  icon: typeof MessageSquare;
+}) {
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 transition-colors ${
+      enabled
+        ? "border-emerald-500/30 bg-emerald-500/10"
+        : "border-border bg-surface-3/70"
+    }`}>
+      <div className="flex items-center gap-2">
+        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-md border ${
+          enabled
+            ? "border-emerald-500/30 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+            : "border-border bg-surface text-fg-faint"
+        }`}>
+          <Icon size={14} />
+        </span>
+        <div className="min-w-0">
+          <div className={`text-xs font-medium ${enabled ? "text-fg" : "text-fg-subtle"}`}>{title}</div>
+          <div className={`text-[10px] uppercase tracking-wide ${enabled ? "text-emerald-700 dark:text-emerald-300" : "text-fg-faint"}`}>
+            {enabled ? "ready" : "not detected"}
+          </div>
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] leading-snug text-fg-faint">{description}</p>
+    </div>
+  );
 }
 
 export function ModelEditor({ model, onSave, onClose }: Props) {
@@ -212,6 +254,52 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const filteredCatalog = catalog?.filter((m) =>
     !catalogSearch || m.id.toLowerCase().includes(catalogSearch.toLowerCase())
   ) ?? [];
+  const inferredCaps: ModelCapabilities | null = modelId.trim() ? modelCapabilities(provider, modelId.trim()) : null;
+  const docsReady = modelId.trim() ? providerLikelySupportsEmbeddings(provider) : false;
+  const featureCards = inferredCaps ? [
+    {
+      title: "General chat",
+      description: "Good baseline conversational model for agents and everyday chat.",
+      enabled: true,
+      icon: MessageSquare,
+    },
+    {
+      title: "Images and screenshots",
+      description: "Lets agents inspect screenshots, bridge images, and file attachments visually.",
+      enabled: inferredCaps.vision,
+      icon: Eye,
+    },
+    {
+      title: "Document and file input",
+      description: "Useful when the model needs to read uploaded files and richer document payloads.",
+      enabled: inferredCaps.files,
+      icon: FileText,
+    },
+    {
+      title: "Voice and audio workflows",
+      description: "Best fit for voice-oriented setups and audio-aware experiences.",
+      enabled: inferredCaps.audio,
+      icon: Mic,
+    },
+    {
+      title: "Tool calling",
+      description: "Lets agents use tools reliably for actions, retrieval, and automations.",
+      enabled: inferredCaps.tools,
+      icon: Wrench,
+    },
+    {
+      title: "Built-in web search",
+      description: "Provider-native web retrieval when the selected model supports it.",
+      enabled: inferredCaps.web_search,
+      icon: Globe,
+    },
+    {
+      title: "Documents semantic search",
+      description: "Useful for embeddings-backed recall in the Documents panel.",
+      enabled: docsReady,
+      icon: Database,
+    },
+  ] : [];
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
@@ -304,6 +392,31 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               </div>
             )}
           </div>
+
+          {inferredCaps && (
+            <div className="rounded-xl border border-border bg-surface-3/60 p-3 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold text-fg-muted uppercase tracking-wide">What This Model Unlocks</p>
+                  <p className="text-[11px] text-fg-faint mt-1 leading-snug">
+                    Pick a provider/model once here and the compatible app features light up immediately.
+                  </p>
+                </div>
+                <CapBadges provider={provider} modelId={modelId.trim()} size="sm" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {featureCards.map((feature) => (
+                  <FeatureCard
+                    key={feature.title}
+                    title={feature.title}
+                    description={feature.description}
+                    enabled={feature.enabled}
+                    icon={feature.icon}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
 
 
