@@ -14,6 +14,7 @@ import { ToolList } from "@/components/chat/ToolList";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
+import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
 
 interface ExtractedRef {
   title: string;
@@ -376,56 +377,14 @@ function UserAvatar({ profile }: { profile?: UserProfile | null }) {
 // metadata as a compact header card instead of dumping six bracketed `[key:value]`
 // lines at the top of every bubble. Format is fixed by dispatcher; if either
 // side changes, update both.
-interface BridgeContext {
-  bridgeId: string;
-  chatJid: string;
-  chatName: string;
-  isGroup: boolean;
-  senderJid: string;
-  senderName: string;
-  body: string;
-}
-
-function parseBridgeContext(raw: string): BridgeContext | null {
-  // New bridge framing may include a short prose role-note before the
-  // bracketed metadata block. Accept both old style (starts with [bridge:])
-  // and new style (note + blank line + headers).
-  const start = raw.indexOf("[bridge:");
-  if (start < 0) return null;
-  const src = raw.slice(start);
-
-  // Walk the contiguous `[key:value]` prefix line-by-line; stop at the first
-  // blank line (dispatcher separates header from body with one).
-  const headers: Record<string, string> = {};
-  const lines = src.split("\n");
-  let i = 0;
-  for (; i < lines.length; i++) {
-    const line = lines[i];
-    if (line === "") { i++; break; }
-    const m = /^\[([a-z_]+):([\s\S]*)\]$/.exec(line);
-    if (!m) return null;
-    headers[m[1]] = m[2];
-  }
-  const chatId = headers.chat_id || headers.chat_jid;
-  const senderId = headers.sender_id || headers.sender_jid || chatId;
-  if (!headers.bridge || !chatId || !headers.chat_type) return null;
-  return {
-    bridgeId: headers.bridge,
-    chatJid: chatId,
-    chatName: headers.chat_name || chatId,
-    isGroup: headers.chat_type === "group",
-    senderJid: senderId,
-    senderName: headers.sender_name || senderId || "Unknown",
-    body: lines.slice(i).join("\n").trimEnd(),
-  };
-}
+const parseBridgeContext = parseBridgePrompt;
 
 // Compact header card for inbound bridge messages. Shows sender + chat
 // context as a single line of metadata above the actual message text, so a
 // WhatsApp DM looks like "Alice • DM\n<text>" and a group message looks
 // like "Alice in Family Chat • Group\n<text>". Always on the user-bubble
 // (accent) side because bridge messages are persisted with role=user.
-function BridgeMessageCard({ ctx }: { ctx: BridgeContext }) {
+function BridgeMessageCard({ ctx }: { ctx: BridgePromptContext }) {
   const showChat = ctx.isGroup && ctx.chatName && ctx.chatName !== ctx.senderName;
   return (
     <div className="flex flex-col gap-1.5 min-w-0">
