@@ -48,6 +48,7 @@
     "!public/sw.js",
     "!public/swe-worker-*.js",
     "scripts/jarela-bin.mjs",
+    "scripts/optimize-client-chunks.mjs",
     "scripts/service-install.mjs",
     "scripts/start-prod.mjs",
     "scripts/postbuild.mjs",
