@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 import withSerwistInit from "@serwist/next";
 
+const releaseReadableClientBundles =
+  process.env.JARELA_DISABLE_CLIENT_MINIFICATION === "1";
+
 const nextConfig: NextConfig = {
   // Pin the workspace root to *this* project. Without this, Next walks up
   // looking for a lockfile and trips over the parent ../package-lock.json,
@@ -35,6 +38,18 @@ const nextConfig: NextConfig = {
   ],
   outputFileTracingIncludes: {
     "/**": ["./node_modules/@napi-rs/keyring/**/*"],
+  },
+  // Optional release-mode knob for supply-chain scanners like Socket that
+  // flag heavily minified browser chunks as potential obfuscation.
+  productionBrowserSourceMaps: releaseReadableClientBundles,
+  webpack: (config, { dev, isServer }) => {
+    if (!dev && !isServer && releaseReadableClientBundles) {
+      // Keep browser chunks readable in the published npm tarball.
+      if (config.optimization) {
+        config.optimization.minimize = false;
+      }
+    }
+    return config;
   },
   experimental: {
     // Keep server route bundles readable for supply-chain scanners and
