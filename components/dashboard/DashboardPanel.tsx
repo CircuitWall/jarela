@@ -367,7 +367,14 @@ export function DashboardPanel() {
               {data.pricing.rates.map((row) => (
                 <div key={row.provider} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 text-xs">
                   <div className="text-[var(--text-primary)] font-medium flex items-center justify-between gap-2">
-                    <span>{row.provider}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span>{row.provider}</span>
+                      {row.inferred ? (
+                        <span className="text-[10px] px-1 py-0.5 rounded border border-slate-500/40 bg-slate-500/10 text-slate-700 dark:text-slate-300">
+                          inferred
+                        </span>
+                      ) : null}
+                    </span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
                       row.ok
                         ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
@@ -402,6 +409,9 @@ export function DashboardPanel() {
                         <span className="text-[11px] text-[var(--text-secondary)]">
                           in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}
                         </span>
+                      </div>
+                      <div className="mt-1 text-[10px] text-[var(--text-secondary)]">
+                        {row.inferred ? "inferred" : "explicit"} · confidence {row.confidence}
                       </div>
                     </div>
                   ))

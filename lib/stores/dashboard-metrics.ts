@@ -43,6 +43,8 @@ export interface DashboardProviderRate {
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
   source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
   ok: boolean;
   status: number | null;
   error: string | null;
@@ -54,6 +56,8 @@ export interface DashboardModelRate {
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
   source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
   ok: boolean;
   status: number | null;
   error: string | null;
@@ -155,6 +159,8 @@ type ProviderRates = {
   inputPer1M: number | null;
   outputPer1M: number | null;
   source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
   ok: boolean;
   status: number | null;
   error: string | null;
@@ -172,6 +178,8 @@ type PricingSnapshotSource = {
     model_id: string;
     input_per_1m_usd: number | null;
     output_per_1m_usd: number | null;
+    inferred?: boolean;
+    confidence?: "high" | "medium" | "low";
   }>;
 };
 
@@ -394,6 +402,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
           input_per_1m_usd: rates.inputPer1M,
           output_per_1m_usd: rates.outputPer1M,
           source: rates.source,
+          inferred: rates.inferred,
+          confidence: rates.confidence,
           ok: rates.ok,
           status: rates.status,
           error: rates.error,
@@ -410,6 +420,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
             input_per_1m_usd: rates.inputPer1M,
             output_per_1m_usd: rates.outputPer1M,
             source: rates.source,
+            inferred: rates.inferred,
+            confidence: rates.confidence,
             ok: rates.ok,
             status: rates.status,
             error: rates.error,
@@ -457,9 +469,9 @@ function estimateCostUsd(inputTokens: number, outputTokens: number, rates: Provi
 }
 
 function providerRatesFor(byProvider: Map<string, ProviderRates>, provider: string | null): ProviderRates {
-  if (!provider) return { inputPer1M: null, outputPer1M: null, source: "unknown", ok: false, status: null, error: "no provider assigned" };
+  if (!provider) return { inputPer1M: null, outputPer1M: null, source: "unknown", inferred: true, confidence: "low", ok: false, status: null, error: "no provider assigned" };
   return byProvider.get(provider.toLowerCase())
-    ?? { inputPer1M: null, outputPer1M: null, source: "unknown", ok: false, status: null, error: "provider missing in pricing snapshot" };
+    ?? { inputPer1M: null, outputPer1M: null, source: "unknown", inferred: true, confidence: "low", ok: false, status: null, error: "provider missing in pricing snapshot" };
 }
 
 function modelRatesFor(
@@ -538,6 +550,8 @@ async function loadProviderRates(): Promise<{
       inputPer1M: null,
       outputPer1M: null,
       source: "snapshot-missing",
+      inferred: true,
+      confidence: "low",
       ok: false,
       status: null,
       error: "provider missing in pricing snapshot",
@@ -556,6 +570,8 @@ async function loadProviderRates(): Promise<{
       inputPer1M: parsed.inputPer1M,
       outputPer1M: parsed.outputPer1M,
       source: source.resolved_url ?? source.pricing_url,
+      inferred: parsed.inferred,
+      confidence: parsed.confidence,
       ok: source.ok !== false,
       status: source.status ?? null,
       error: source.error ?? null,
@@ -568,6 +584,8 @@ async function loadProviderRates(): Promise<{
         inputPer1M: modelRate.input_per_1m_usd,
         outputPer1M: modelRate.output_per_1m_usd,
         source: source.resolved_url ?? source.pricing_url,
+        inferred: modelRate.inferred !== false,
+        confidence: modelRate.confidence ?? "low",
         ok: source.ok !== false,
         status: source.status ?? null,
         error: source.error ?? null,
@@ -599,7 +617,12 @@ function normalizeProvider(id: string): string | null {
   return lower || null;
 }
 
-function inferRatesFromSignals(signals: string[]): { inputPer1M: number | null; outputPer1M: number | null } {
+function inferRatesFromSignals(signals: string[]): {
+  inputPer1M: number | null;
+  outputPer1M: number | null;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
+} {
   const tokenRates = signals
     .map((s) => {
       const m = /\$\s*([0-9]+(?:\.[0-9]+)?)\s*\/?\s*(?:1M\s*tokens|M\s*Tok|MTok)/i.exec(s);
@@ -609,17 +632,21 @@ function inferRatesFromSignals(signals: string[]): { inputPer1M: number | null; 
     .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
     .sort((a, b) => a - b);
 
-  if (tokenRates.length === 0) return { inputPer1M: null, outputPer1M: null };
+  if (tokenRates.length === 0) return { inputPer1M: null, outputPer1M: null, inferred: true, confidence: "low" };
   if (tokenRates.length === 1) {
     return {
       inputPer1M: tokenRates[0],
       outputPer1M: tokenRates[0],
+      inferred: true,
+      confidence: "low",
     };
   }
 
   return {
     inputPer1M: tokenRates[0],
     outputPer1M: tokenRates[tokenRates.length - 1],
+    inferred: true,
+    confidence: "medium",
   };
 }
 

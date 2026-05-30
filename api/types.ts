@@ -257,6 +257,8 @@ export interface DashboardProviderRate {
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
   source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
   ok: boolean;
   status: number | null;
   error: string | null;
@@ -268,6 +270,8 @@ export interface DashboardModelRate {
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
   source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
   ok: boolean;
   status: number | null;
   error: string | null;

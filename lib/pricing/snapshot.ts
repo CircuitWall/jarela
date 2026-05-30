@@ -94,6 +94,8 @@ type ModelPricingRate = {
   model_id: string;
   input_per_1m_usd: number | null;
   output_per_1m_usd: number | null;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
 };
 
 export interface PricingSnapshotSource {
@@ -228,7 +230,12 @@ function extractPriceSignals(html: string): string[] {
   return normalized.slice(0, 40);
 }
 
-function inferRatePair(text: string): { inputPer1M: number | null; outputPer1M: number | null } | null {
+function inferRatePair(text: string): {
+  inputPer1M: number | null;
+  outputPer1M: number | null;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
+} | null {
   const labeledInput = /input[^$]{0,24}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
   const labeledOutput = /output[^$]{0,24}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
 
@@ -244,7 +251,12 @@ function inferRatePair(text: string): { inputPer1M: number | null; outputPer1M: 
   const outputPer1M = outputL ?? (tokenRates.length > 1 ? tokenRates[tokenRates.length - 1] : inputPer1M);
 
   if (inputPer1M == null && outputPer1M == null) return null;
-  return { inputPer1M, outputPer1M };
+  const hasExplicitInOut = inputL != null && outputL != null;
+  const inferred = !hasExplicitInOut;
+  const confidence: "high" | "medium" | "low" = hasExplicitInOut
+    ? "high"
+    : (tokenRates.length >= 2 ? "medium" : "low");
+  return { inputPer1M, outputPer1M, inferred, confidence };
 }
 
 function modelRegexForSource(sourceId: string): RegExp {
@@ -281,6 +293,8 @@ function extractModelRates(sourceId: string, html: string): ModelPricingRate[] {
         model_id: modelId,
         input_per_1m_usd: pair.inputPer1M,
         output_per_1m_usd: pair.outputPer1M,
+        inferred: pair.inferred,
+        confidence: pair.confidence,
       });
       continue;
     }
@@ -289,6 +303,10 @@ function extractModelRates(sourceId: string, html: string): ModelPricingRate[] {
       model_id: modelId,
       input_per_1m_usd: existing.input_per_1m_usd ?? pair.inputPer1M,
       output_per_1m_usd: existing.output_per_1m_usd ?? pair.outputPer1M,
+      inferred: existing.inferred && pair.inferred,
+      confidence: existing.confidence === "high" || pair.confidence === "high"
+        ? "high"
+        : (existing.confidence === "medium" || pair.confidence === "medium" ? "medium" : "low"),
     });
   }
 
