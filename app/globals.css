@@ -333,6 +333,35 @@ body {
   display: none;
 }
 
+/* Profile panel scrollbar: subtle track + rounded thumb with clear hover. */
+.profile-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-fg-subtle) 55%, transparent) transparent;
+}
+
+.profile-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.profile-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.profile-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-fg-subtle) 48%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.profile-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-fg-muted) 62%, transparent);
+}
+
+.profile-scrollbar::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--color-accent) 55%, var(--color-fg-muted));
+}
+
 .prose-invert pre {
   background: var(--color-surface-2) !important;
   border-radius: 0.5rem;
