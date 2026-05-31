@@ -97,6 +97,7 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
             key={w.id}
             watcher={w}
             agent={agents[w.agent_id]}
+            agents={agents}
             onCancel={() => cancel(w)}
             onRunNow={() => runNow(w)}
             onChanged={() => void load()}
@@ -108,10 +109,11 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
 }
 
 function WatcherCard({
-  watcher, agent, onCancel, onRunNow, onChanged,
+  watcher, agent, agents, onCancel, onRunNow, onChanged,
 }: {
   watcher: Watcher;
   agent?: AgentConfig;
+  agents: Record<string, AgentConfig>;
   onCancel: () => void;
   onRunNow: () => void;
   onChanged: () => void;
@@ -169,6 +171,35 @@ function WatcherCard({
 
       {expanded && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
+          <Row label="Agent">
+            <select
+              value={watcher.agent_id}
+              onChange={async (e) => {
+                const next = e.target.value;
+                if (next === watcher.agent_id) return;
+                try {
+                  await api.watchers.update(watcher.id, { agent_id: next });
+                  onChanged();
+                } catch (err) {
+                  pushErrorToast({
+                    title: "Couldn't re-assign watcher",
+                    error: err,
+                    context: { panel: "scheduled-tasks", action: "watcher.reassign", watcher_id: watcher.id, target_agent: next },
+                  });
+                }
+              }}
+              className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg"
+            >
+              {Object.values(agents).length === 0 && (
+                <option value={watcher.agent_id}>{watcher.agent_id}</option>
+              )}
+              {Object.values(agents)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+            </select>
+          </Row>
           <Row label="Tool">
             <span className="font-mono">{watcher.tool}</span>
           </Row>
