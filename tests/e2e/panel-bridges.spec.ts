@@ -7,6 +7,8 @@ test.beforeEach(async ({ request, page }) => {
   await seedMockAgent(request);
   await page.addInitScript(() => {
     try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
+    // Bridges panel is gated behind the advanced experience mode (AppShell.tsx).
+    try { localStorage.setItem("jarela.experience.mode", "advanced"); } catch { /* sandbox */ }
   });
   await page.goto("/?tab=bridges");
 });
