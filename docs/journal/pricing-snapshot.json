@@ -1,63 +1,358 @@
 {
-  "generated_at": "2026-05-30T21:15:31.145Z",
+  "generated_at": "2026-05-31T06:23:50.943Z",
   "disclaimer": "No unified stable pricing API exists across providers. Verify final pricing manually on each official page.",
+  "ttl_days": 3,
   "sources": [
     {
       "id": "openai",
       "name": "OpenAI",
       "pricing_url": "https://openai.com/api/pricing/",
+      "resolved_url": "https://platform.openai.com/docs/pricing",
       "notes": "Official pricing page (HTML)",
-      "fetched_at": "2026-05-30T21:15:29.364Z",
-      "ok": false,
-      "status": 403,
-      "etag": null,
-      "last_modified": null,
-      "content_hash": "e505d258d2d6b2c63db72d4c0b2dc4f5e40a9f33db54854678eb37333bd72b79",
-      "content_length": 9844,
-      "price_signals": [],
+      "fetched_at": "2026-05-31T06:23:47.861Z",
+      "ok": true,
+      "status": 200,
+      "etag": "W/\"c3b398a952cd1a4b0bd17985d032c7d5\"",
+      "last_modified": "Sat, 30 May 2026 06:48:42 GMT",
+      "content_hash": "d5108c07100cb828582a7e87e52b26dd51ab0111247ac3c1905734886c18f61b",
+      "content_length": 508445,
+      "price_signals": [
+        "$0.034 / minute",
+        "$0.006 / minute",
+        "$0.003 / minute"
+      ],
+      "model_rates": [
+        {
+          "model_id": "gpt-5.5",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.5-pro",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.4",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.4-mini",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.4-nano",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.4-pro",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-realtime-2",
+          "input_per_1m_usd": 32,
+          "output_per_1m_usd": 32,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-realtime-translate",
+          "input_per_1m_usd": 32,
+          "output_per_1m_usd": 32,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-realtime-1.5",
+          "input_per_1m_usd": 32,
+          "output_per_1m_usd": 32,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-realtime-mini",
+          "input_per_1m_usd": null,
+          "output_per_1m_usd": 32,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gpt-image-2",
+          "input_per_1m_usd": 8,
+          "output_per_1m_usd": 8,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-image-1.5",
+          "input_per_1m_usd": 8,
+          "output_per_1m_usd": 8,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-image-1-mini",
+          "input_per_1m_usd": 8,
+          "output_per_1m_usd": 8,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-4o-transcribe",
+          "input_per_1m_usd": 2.5,
+          "output_per_1m_usd": 2.5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-4o-mini-transcribe",
+          "input_per_1m_usd": 2.5,
+          "output_per_1m_usd": 2.5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.3-codex",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gpt-5.4-cyber",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "o3-deep-research",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "o4-mini-deep-research",
+          "input_per_1m_usd": 5,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "o4-mini-2025-04-16",
+          "input_per_1m_usd": 100,
+          "output_per_1m_usd": 100,
+          "inferred": false,
+          "confidence": "high"
+        }
+      ],
       "error": null
     },
     {
       "id": "anthropic",
       "name": "Anthropic",
       "pricing_url": "https://www.anthropic.com/pricing",
+      "resolved_url": "https://www.anthropic.com/pricing",
       "notes": "Official pricing page (HTML)",
-      "fetched_at": "2026-05-30T21:15:29.488Z",
+      "fetched_at": "2026-05-31T06:23:48.595Z",
       "ok": true,
       "status": 200,
       "etag": null,
-      "last_modified": "Sat, 30 May 2026 03:03:22 GMT",
-      "content_hash": "4b9a7a1cd3772d7a5ab754ff5bb272e4985f2a9cd4caad598c510f3f398d2c6a",
+      "last_modified": "Sat, 30 May 2026 22:36:39 GMT",
+      "content_hash": "1e0d56eb2f12f8b8fcaae0d20a9e85e1a1a970be3741c622b88c1834c6bba0cf",
       "content_length": 1333129,
-      "price_signals": [],
+      "price_signals": [
+        "Input $ 5 / MTok",
+        "Output $ 25 / MTok",
+        "$ 6.25 / MTok",
+        "$ 0.50 / MTok",
+        "Input $ 3 / MTok",
+        "Output $ 15 / MTok",
+        "$ 3.75 / MTok",
+        "$ 0.30 / MTok",
+        "Input $ 1 / MTok",
+        "Output $ 5 / MTok",
+        "$ 1.25 / MTok",
+        "$ 0.10 / MTok",
+        "Input $ 15 / MTok",
+        "Output $ 75 / MTok",
+        "$ 18.75 / MTok",
+        "$ 1.50 / MTok"
+      ],
+      "model_rates": [],
       "error": null
     },
     {
       "id": "google-gemini",
       "name": "Google Gemini",
       "pricing_url": "https://ai.google.dev/gemini-api/docs/pricing",
+      "resolved_url": "https://ai.google.dev/gemini-api/docs/pricing",
       "notes": "Official pricing docs page (HTML)",
-      "fetched_at": "2026-05-30T21:15:29.902Z",
+      "fetched_at": "2026-05-31T06:23:48.971Z",
       "ok": true,
       "status": 200,
       "etag": null,
       "last_modified": "Fri, 29 May 2026 08:39:53 GMT",
-      "content_hash": "98198622c0853e01f1a0664fcaf808959db95b76d226905678c769b934418530",
-      "content_length": 209623,
+      "content_hash": "5402280692fd4ff882cbd5212d24717aa76f20ceb7d3dd520c8baab269f5d5df",
+      "content_length": 209627,
       "price_signals": [
+        "1M tokens in USD Input price Free of charge $1.50",
+        "1M tokens in USD Input price Not available $0.75",
+        "1M tokens in USD Input price Free of charge $2.70",
+        "1M tokens in USD Input price Free of charge $0.25",
+        "1M tokens in USD Input price Free of charge $0.125",
+        "1M tokens in USD Input price Free of charge $0.45",
+        "1M tokens in USD Input price Not available $2.00",
+        "1M tokens in USD Input price Not available $1.00",
+        "1M tokens in USD Input price Not available $3.60",
+        "1M tokens in USD Input price Free of charge $0.75",
+        "1M tokens in USD Input price Not available $0.50",
+        "1M tokens in USD Input price Not available $0.25",
         "$0.045 per image",
         "$0.067 per image",
         "$0.101 per image",
         "$0.151 per image",
+        "1M tokens in USD Input price Free of charge $1.00",
+        "1M tokens in USD Input price Free of charge $0.50",
+        "1M tokens in USD Input price Free of charge $0.90",
         "$0.0011 per image",
         "$0.134 per image",
         "$0.24 per image",
+        "1M tokens in USD Input price Free of charge $1.25",
+        "1M tokens in USD Input price Not available $0.625",
+        "1M tokens in USD Input price Free of charge $2.25",
+        "1M tokens in USD Input price Free of charge $0.30",
+        "1M tokens in USD Input price Not available $0.15",
+        "1M tokens in USD Input price Free of charge $0.54",
+        "1M tokens in USD Input price Not available $0.30",
         "$0.039 per image",
         "$0.0195 per image",
+        "1M tokens in USD Input price Not available $0.54",
         "$0.0702 per image",
+        "1M tokens in USD Input price Free of charge $0.10",
+        "1M tokens in USD Input price Not available $0.05",
+        "1M tokens in USD Input price Free of charge $0.075",
+        "1M tokens in USD Input price Not available $0.0375",
+        "1M tokens in USD Text input price Free of charge $0.20",
         "$0.00012 per image",
-        "$0.00006 per image",
-        "$0.15 / 1M tokens"
+        "1M tokens in USD Text input price Not available $0.10"
+      ],
+      "model_rates": [
+        {
+          "model_id": "gemini-3.5-flash",
+          "input_per_1m_usd": 1.5,
+          "output_per_1m_usd": 1.5,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-3-flash-preview",
+          "input_per_1m_usd": 0.5,
+          "output_per_1m_usd": 10,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gemini-2.5-pro",
+          "input_per_1m_usd": 1.25,
+          "output_per_1m_usd": 1.25,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-2.5-flash",
+          "input_per_1m_usd": 0.3,
+          "output_per_1m_usd": 0.3,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-2.5-flash-lite",
+          "input_per_1m_usd": 0.1,
+          "output_per_1m_usd": 0.1,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-2.5-flash-image",
+          "input_per_1m_usd": 0.5,
+          "output_per_1m_usd": 2,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gemini-2.5-flash-preview-tts",
+          "input_per_1m_usd": null,
+          "output_per_1m_usd": 30,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-2.5-pro-preview-tts",
+          "input_per_1m_usd": 0.25,
+          "output_per_1m_usd": 5,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gemini-2.0-flash",
+          "input_per_1m_usd": 0.5,
+          "output_per_1m_usd": 10,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gemini-2.0-flash-lite",
+          "input_per_1m_usd": 0.07,
+          "output_per_1m_usd": 30,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "gemini-embedding-2",
+          "input_per_1m_usd": 0.2,
+          "output_per_1m_usd": 0.2,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-embedding-001",
+          "input_per_1m_usd": 0.225,
+          "output_per_1m_usd": 0.225,
+          "inferred": true,
+          "confidence": "low"
+        },
+        {
+          "model_id": "gemini-robotics-er-1.6-preview",
+          "input_per_1m_usd": 0.15,
+          "output_per_1m_usd": 0.15,
+          "inferred": true,
+          "confidence": "medium"
+        },
+        {
+          "model_id": "gemini-2.5-computer-use-preview-10-2025",
+          "input_per_1m_usd": 1.25,
+          "output_per_1m_usd": 2.5,
+          "inferred": false,
+          "confidence": "high"
+        }
       ],
       "error": null
     },
@@ -65,28 +360,50 @@
       "id": "deepseek",
       "name": "DeepSeek",
       "pricing_url": "https://platform.deepseek.com/pricing",
+      "resolved_url": "https://api-docs.deepseek.com/quick_start/pricing",
       "notes": "Official pricing page (HTML)",
-      "fetched_at": "2026-05-30T21:15:30.325Z",
-      "ok": false,
-      "status": 403,
-      "etag": null,
-      "last_modified": null,
-      "content_hash": "85f6b2f0733039c8037c1fbd7b8b46b3268971da4aede14d888e6ee84d3c1728",
-      "content_length": 919,
-      "price_signals": [],
+      "fetched_at": "2026-05-31T06:23:49.344Z",
+      "ok": true,
+      "status": 200,
+      "etag": "\"c3de4068060cbec73709f5c9ba00a9aa\"",
+      "last_modified": "Mon, 25 May 2026 12:01:16 GMT",
+      "content_hash": "a06a073701758355c080d89210a32d509243c14325fd24ecb149acc8ca1106f9",
+      "content_length": 21630,
+      "price_signals": [
+        "1M INPUT TOKENS (CACHE HIT) (2) $0.0028",
+        "1M INPUT TOKENS (CACHE MISS) $0.14",
+        "1M OUTPUT TOKENS $0.28"
+      ],
+      "model_rates": [
+        {
+          "model_id": "deepseek-chat",
+          "input_per_1m_usd": 0.0028,
+          "output_per_1m_usd": 0.28,
+          "inferred": false,
+          "confidence": "high"
+        },
+        {
+          "model_id": "deepseek-reasoner",
+          "input_per_1m_usd": 0.14,
+          "output_per_1m_usd": 0.28,
+          "inferred": false,
+          "confidence": "high"
+        }
+      ],
       "error": null
     },
     {
       "id": "cohere",
       "name": "Cohere",
       "pricing_url": "https://cohere.com/pricing",
+      "resolved_url": "https://cohere.com/pricing",
       "notes": "Official pricing page (HTML)",
-      "fetched_at": "2026-05-30T21:15:30.353Z",
+      "fetched_at": "2026-05-31T06:23:50.159Z",
       "ok": true,
       "status": 200,
       "etag": null,
       "last_modified": null,
-      "content_hash": "a04fabd9525e960ddab3e4092a39e832aef667272d13cde2b1de45ccd288bf4b",
+      "content_hash": "f4a42ba6dee1b56477f1b9453a5d9c74f3e636dffe04b477e73106f2b95128ac",
       "content_length": 549108,
       "price_signals": [
         "$1.00/1M tokens",
@@ -100,6 +417,34 @@
         "$2.50/1M tokens",
         "$10.00/1M tokens"
       ],
+      "model_rates": [
+        {
+          "model_id": "command-light",
+          "input_per_1m_usd": 2,
+          "output_per_1m_usd": 0.3,
+          "inferred": false,
+          "confidence": "high"
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "pricing_url": "https://github.com/features/copilot/plans",
+      "resolved_url": "https://github.com/features/copilot/plans",
+      "notes": "GitHub Copilot plans page (HTML)",
+      "fetched_at": "2026-05-31T06:23:50.520Z",
+      "ok": true,
+      "status": 200,
+      "etag": "W/\"f6398975acf70bc9d6f26595f389d3b5\"",
+      "last_modified": null,
+      "content_hash": "69400776ff2b6633bc52d2f075f5bf34e0e36b669575bea10536b80e3012caba",
+      "content_length": 1144020,
+      "price_signals": [
+        "$0.04/request"
+      ],
+      "model_rates": [],
       "error": null
     }
   ]
