@@ -129,7 +129,7 @@ test("manual currency selection persists across reloads", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Usage dashboard" })).toBeVisible({ timeout: 20_000 });
 
   const controlsCard = page
-    .locator("div.sticky.top-2")
+    .locator("div.sticky")
     .filter({ has: page.getByRole("heading", { name: "Usage dashboard" }) })
     .first();
   const modeSelect = controlsCard.locator("select").first();
@@ -143,7 +143,7 @@ test("manual currency selection persists across reloads", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Usage dashboard" })).toBeVisible({ timeout: 20_000 });
 
   const reloadedControls = page
-    .locator("div.sticky.top-2")
+    .locator("div.sticky")
     .filter({ has: page.getByRole("heading", { name: "Usage dashboard" }) })
     .first();
   await expect(reloadedControls.locator("select").first()).toHaveValue("manual");
