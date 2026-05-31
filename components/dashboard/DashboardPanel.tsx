@@ -149,9 +149,14 @@ export function DashboardPanel() {
   }, [currencyMode, manualCurrency, profileLocation.lat, profileLocation.lng]);
 
   const series = useMemo(() => data?.series ?? [], [data]);
+  const windowTokenTotal = (data?.summary.input_tokens_est ?? 0) + (data?.summary.output_tokens_est ?? 0);
+  const activeDays = series.filter((s) => (s.input_tokens_est + s.output_tokens_est) > 0).length;
+  const avgDailyTokens = data ? Math.round(windowTokenTotal / Math.max(data.days, 1)) : 0;
+  const avgDailyCostUsd = data ? data.summary.estimated_cost_usd / Math.max(data.days, 1) : 0;
 
   return (
     <div className="relative h-full overflow-y-auto p-4 md:p-6 space-y-4">
+      <div className="mx-auto max-w-7xl space-y-4">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -top-20 -right-20 w-72 h-72 rounded-full bg-cyan-500/10 blur-3xl" />
         <div className="absolute top-64 -left-24 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl" />
@@ -162,7 +167,7 @@ export function DashboardPanel() {
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Usage dashboard</h2>
             <p className="text-xs text-[var(--text-secondary)] mt-1">
-            Estimated token usage, cost, and tool reliability trends.
+            Cost, token flow, and reliability across your configured models.
             </p>
           </div>
           <div className="inline-flex rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-1 shadow-sm">
@@ -194,6 +199,31 @@ export function DashboardPanel() {
         </div>
         {refreshHint ? <p className="mt-2 text-[11px] text-[var(--text-secondary)]">{refreshHint}</p> : null}
       </div>
+
+      {!loading && !error && data ? (
+        <div className="relative grid gap-2 md:grid-cols-4">
+          <InsightChip
+            label="Window tokens"
+            value={formatInt(windowTokenTotal)}
+            hint={`${formatInt(activeDays)} active day${activeDays === 1 ? "" : "s"} in ${data.days}d`}
+          />
+          <InsightChip
+            label="Avg tokens / day"
+            value={formatInt(avgDailyTokens)}
+            hint="Heuristic from message length"
+          />
+          <InsightChip
+            label="Window cost"
+            value={formatMoney(data.summary.estimated_cost_usd, currencyInfo)}
+            hint="Estimated from pricing snapshot"
+          />
+          <InsightChip
+            label="Avg cost / day"
+            value={formatMoney(avgDailyCostUsd, currencyInfo)}
+            hint="Smoothes short-day spikes"
+          />
+        </div>
+      ) : null}
 
       <div className="relative flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-2.5 shadow-sm">
         <span className="text-xs text-[var(--text-secondary)]">Currency</span>
@@ -269,10 +299,16 @@ export function DashboardPanel() {
                   <p className="text-xs text-[var(--text-secondary)]">No tool calls recorded yet.</p>
                 ) : (
                   data.top_tools.slice(0, 6).map((tool) => (
-                    <div key={tool.name} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 transition-colors hover:bg-[var(--bg-primary)]/70">
+                    <div key={tool.name} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm text-[var(--text-primary)] truncate">{tool.name}</span>
                         <span className="text-xs text-[var(--text-secondary)]">{tool.call_count} calls</span>
+                      </div>
+                      <div className="mt-1 h-1.5 rounded-full bg-[var(--bg-primary)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
+                          style={{ width: `${Math.max(4, Math.min(100, tool.success_rate * 100))}%` }}
+                        />
                       </div>
                       <div className="mt-1 text-xs text-[var(--text-secondary)]">
                         {(tool.success_rate * 100).toFixed(1)}% success · score {tool.score.toFixed(2)}
@@ -290,12 +326,18 @@ export function DashboardPanel() {
                   <p className="text-xs text-[var(--text-secondary)]">No recent traffic yet.</p>
                 ) : (
                   data.top_agents.slice(0, 6).map((agent) => (
-                    <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 transition-colors hover:bg-[var(--bg-primary)]/70">
+                    <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm text-[var(--text-primary)] truncate">{agent.agent_name}</span>
                         <span className="text-xs text-[var(--text-secondary)]">
                           {formatMoney(agent.estimated_cost_usd, currencyInfo)}
                         </span>
+                      </div>
+                      <div className="mt-1 h-1.5 rounded-full bg-[var(--bg-primary)] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-400"
+                          style={{ width: `${Math.max(4, Math.min(100, ((agent.input_tokens_est + agent.output_tokens_est) / Math.max(windowTokenTotal, 1)) * 100))}%` }}
+                        />
                       </div>
                       <div className="mt-1 text-xs text-[var(--text-secondary)]">
                         {formatInt(agent.message_count)} msgs · {formatInt(agent.input_tokens_est + agent.output_tokens_est)} tokens
@@ -319,7 +361,7 @@ export function DashboardPanel() {
                     <p className="p-3 text-xs text-[var(--text-secondary)]">No vendor breakdown data yet.</p>
                   ) : (
                     data.by_provider.slice(0, 12).map((row) => (
-                      <div key={row.provider} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0 transition-colors hover:bg-[var(--bg-primary)]/50">
+                      <div key={row.provider} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm text-[var(--text-primary)] capitalize truncate">{row.provider}</span>
                           <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
@@ -342,7 +384,7 @@ export function DashboardPanel() {
                     <p className="p-3 text-xs text-[var(--text-secondary)]">No model breakdown data yet.</p>
                   ) : (
                     data.by_model.slice(0, 16).map((row) => (
-                      <div key={`${row.provider}:${row.model_config_name}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0 transition-colors hover:bg-[var(--bg-primary)]/50">
+                      <div key={`${row.provider}:${row.model_config_name}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-sm text-[var(--text-primary)] truncate">{row.model_config_name}</span>
                           <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
@@ -383,6 +425,16 @@ export function DashboardPanel() {
                       {row.ok ? "fetched" : `unavailable${row.status ? ` (${row.status})` : ""}`}
                     </span>
                   </div>
+                  {safeHttpUrl(row.source) ? (
+                    <a
+                      href={row.source}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-0.5 inline-block text-[10px] text-cyan-600 hover:underline dark:text-cyan-400"
+                    >
+                      View pricing source
+                    </a>
+                  ) : null}
                   <div className="text-[var(--text-secondary)]">
                     in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M
                   </div>
@@ -403,7 +455,7 @@ export function DashboardPanel() {
                   <p className="p-3 text-xs text-[var(--text-secondary)]">No model-level rates detected from current pricing sources yet.</p>
                 ) : (
                   data.pricing.model_rates.slice(0, 40).map((row) => (
-                    <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0 transition-colors hover:bg-[var(--bg-primary)]/50">
+                    <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-sm text-[var(--text-primary)] truncate">{row.provider}/{row.model_id}</span>
                         <span className="text-[11px] text-[var(--text-secondary)]">
@@ -422,18 +474,29 @@ export function DashboardPanel() {
           </section>
         </>
       )}
+      </div>
     </div>
   );
 }
 
 function MetricCard({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
-      <p className="text-[11px] uppercase tracking-wide text-[var(--text-secondary)] inline-flex items-center gap-1.5">
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/95 px-3 py-3 shadow-sm">
+      <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)] inline-flex items-center gap-1.5">
         {icon ? <span className="text-[var(--text-secondary)]">{icon}</span> : null}
         {label}
       </p>
-      <p className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</p>
+      <p className="mt-1 text-lg font-semibold text-[var(--text-primary)] leading-tight">{value}</p>
+    </div>
+  );
+}
+
+function InsightChip({ label, value, hint }: { label: string; value: string; hint: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/80 px-3 py-2.5 shadow-sm">
+      <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{label}</div>
+      <div className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</div>
+      <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{hint}</div>
     </div>
   );
 }
@@ -461,15 +524,12 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
             const outputHeight = Math.max(2, totalHeight - inputHeight);
             const isActive = idx === hovered;
             return (
-              <button
+              <div
                 key={point.day}
-                type="button"
                 onMouseEnter={() => setHovered(idx)}
                 onMouseLeave={() => setHovered(null)}
-                onFocus={() => setHovered(idx)}
-                onBlur={() => setHovered(null)}
-                className="flex-1 min-w-0 h-full flex flex-col items-center justify-end group"
-                aria-label={`${point.day} tokens`}
+                className="flex-1 min-w-0 h-full flex flex-col items-center justify-end"
+                aria-label={`${point.day} tokens (informational)`}
               >
                 <div className={`w-full rounded-t overflow-hidden border transition-all ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
                   <div className="w-full bg-gradient-to-t from-sky-500 to-cyan-400" style={{ height: `${outputHeight}px` }} />
@@ -478,7 +538,7 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
                 <span className="mt-1 text-[10px] text-[var(--text-secondary)] truncate w-full text-center">
                   {point.day.slice(5)}
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -573,6 +633,16 @@ function InteractiveCostChart({
 
 function convertUsd(usd: number, currencyInfo: DashboardCurrencyInfo): number {
   return usd * (currencyInfo.rate_from_usd || 1);
+}
+
+function safeHttpUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function formatMoney(usd: number, currencyInfo: DashboardCurrencyInfo): string {
