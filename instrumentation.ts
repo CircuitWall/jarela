@@ -5,30 +5,37 @@
 // and any errors are surfaced at boot rather than on first agent turn.
 
 export async function register() {
+  // Dev server should stay render-first; skip eager bootstrapping to avoid
+  // pulling optional Node-only integrations into the dev compiler.
+  if (process.env.NODE_ENV === "development") return;
+
   // Only run server-side (nodejs runtime); the edge runtime can't `require`
   // arbitrary files from disk.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
+  // Resolve startup-only modules at runtime so webpack doesn't try to trace
+  // their Node-only dependency graphs for non-node runtimes.
+  const req = (0, eval)("require") as NodeRequire;
+
   // Install SIGINT/SIGTERM handlers before any subsystem spins up so a
   // signal that arrives during boot still drains cleanly.
-  const { registerShutdownHandlers } = await import("@/lib/lifecycle/shutdown");
+  const { registerShutdownHandlers } = req("./lib/lifecycle/shutdown") as typeof import("@/lib/lifecycle/shutdown");
   registerShutdownHandlers();
 
-  // Dynamic import so this module stays edge-safe.
-  const { initTools } = await import("@/lib/tools");
+  const { initTools } = req("./lib/tools") as typeof import("@/lib/tools");
   initTools();
 
   // Boot trigger handlers (scheduled-task is registered eagerly; the
   // fs-watch + fast-sweep handlers need an explicit start() call to
   // attach their watchers). Importing the module also wires the
   // built-in scripts.
-  const triggers = await import("@/lib/triggers");
+  const triggers = req("./lib/triggers") as typeof import("@/lib/triggers");
   await triggers.startAllTriggerHandlers();
 
   // Boot the scheduler unconditionally so trigger handlers (fs-watch,
   // fast remote sweep) get fan-out ticks even if no thread / event /
   // scheduled-task call has lazily started it yet.
-  const { startScheduler } = await import("@/lib/scheduler");
+  const { startScheduler } = req("./lib/scheduler") as typeof import("@/lib/scheduler");
   startScheduler();
 
   // Loud warning if the server is bound to a non-loopback interface
@@ -57,8 +64,8 @@ function warnIfExposedBind(): void {
   // binding 0.0.0.0 to the pod's network namespace and reverse-proxying
   // in front of it.
   try {
-     
-    const fs: typeof import("node:fs") = require("node:fs");
+    const req = (0, eval)("require") as NodeRequire;
+    const fs = req("fs") as typeof import("node:fs");
     if (fs.existsSync("/.dockerenv")) return;
   } catch {
     // not on a POSIX runtime, ignore
