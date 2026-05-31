@@ -10,6 +10,13 @@ type CurrencyMode = "auto" | "manual";
 
 const WINDOWS: WindowDays[] = [7, 14, 30, 60];
 const MANUAL_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CNY", "INR", "BRL", "MXN"] as const;
+const TOOL_SORT_OPTIONS = [
+  { value: "best", label: "Sort: best first" },
+  { value: "calls_desc", label: "Sort: most calls" },
+  { value: "errors_desc", label: "Sort: most errors" },
+  { value: "error_rate_desc", label: "Sort: highest error rate" },
+  { value: "name_asc", label: "Sort: name A->Z" },
+] as const;
 const MODEL_SORT_OPTIONS = [
   { value: "model_asc", label: "Sort: model A->Z" },
   { value: "input_desc", label: "Sort: highest input rate" },
@@ -372,12 +379,17 @@ export function DashboardPanel() {
                   value={toolSort}
                   onChange={(e) => setToolSort(e.target.value as typeof toolSort)}
                   className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                  style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-primary)" }}
                 >
-                  <option value="best">Sort: best first</option>
-                  <option value="calls_desc">Sort: most calls</option>
-                  <option value="errors_desc">Sort: most errors</option>
-                  <option value="error_rate_desc">Sort: highest error rate</option>
-                  <option value="name_asc">Sort: name A→Z</option>
+                  {TOOL_SORT_OPTIONS.map((opt) => (
+                    <option
+                      key={opt.value}
+                      value={opt.value}
+                      style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-secondary)" }}
+                    >
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-2">
