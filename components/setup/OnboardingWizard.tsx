@@ -7,6 +7,7 @@ import type { AgentConfig, IntegrationStatus, ModelConfig, UserProfile } from "@
 import { useAppContext } from "@/contexts/AppContext";
 import { getAppName } from "@/lib/env/app-config";
 import { ModelFeatureGuide } from "@/components/models/ModelFeatureGuide";
+import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
 type Provider = "anthropic" | "openai" | "gemini" | "deepseek";
 
@@ -413,10 +414,11 @@ export function OnboardingWizard({ context }: Props) {
 
               <label className="block">
                 <span className="text-xs text-fg-subtle mb-1 block">About you</span>
-                <textarea
-                  className="h-24 w-full resize-none rounded-xl border border-border bg-surface-3 px-3 py-2 text-sm"
+                <MarkdownTextarea
+                  className="min-h-[6rem] w-full resize-y rounded-xl border border-border bg-surface-3 px-3 py-2 text-sm"
                   value={about}
-                  onChange={(e) => setAbout(e.target.value)}
+                  onChange={setAbout}
+                  rows={4}
                   placeholder="What should your assistant know about how you work and what you care about?"
                 />
               </label>

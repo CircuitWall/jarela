@@ -9,6 +9,7 @@ import { humanizeCron } from "@/lib/utils/cron";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { WatchersSection } from "./WatchersSection";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
+import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
@@ -450,11 +451,12 @@ function TaskEditor({
         </select>
       </Row>
       <Row label="Prompt">
-        <textarea
+        <MarkdownTextarea
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={setPrompt}
           rows={3}
-          className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg font-mono"
+          monospace
+          className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg resize-y"
         />
       </Row>
       <Row label="Description">
