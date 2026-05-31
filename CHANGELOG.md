@@ -85,6 +85,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with unit tests.
 - Mode-aware UI polish unified across panels; border noise reduced on
   inner elements.
+- New shared helpers consolidate widespread duplication:
+  [hooks/useEscapeKey.ts](hooks/useEscapeKey.ts) replaces the
+  hand-rolled `keydown` listener in 5 modal editors;
+  [lib/api/sse.ts](lib/api/sse.ts) centralises Server-Sent Event
+  response headers; six API routes adopt `validateBody()` /
+  `errorResponse()` / `notFoundResponse()` from
+  [lib/api/responses.ts](lib/api/responses.ts) in place of inline
+  `req.json()` + `safeParse` boilerplate.
 
 ## [0.7.3] - 2026-05-30
 
