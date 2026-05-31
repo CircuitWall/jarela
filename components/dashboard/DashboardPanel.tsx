@@ -291,12 +291,12 @@ export function DashboardPanel() {
         </div>
       ) : null}
 
-      <div className="relative flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 px-3 py-2.5 shadow-sm">
+      <div className="relative flex flex-wrap items-center gap-2 px-1 py-1">
         <span className="text-xs text-[var(--text-secondary)]">Currency</span>
         <select
           value={currencyMode}
           onChange={(e) => setCurrencyMode(e.target.value as CurrencyMode)}
-          className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+          className="rounded-md bg-[var(--bg-primary)]/60 px-2 py-1 text-xs text-[var(--text-primary)]"
         >
           <option value="auto">Auto by location</option>
           <option value="manual">Manual override</option>
@@ -305,7 +305,7 @@ export function DashboardPanel() {
           value={manualCurrency}
           onChange={(e) => setManualCurrency(e.target.value)}
           disabled={currencyMode !== "manual"}
-          className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)] disabled:opacity-50"
+          className="rounded-md bg-[var(--bg-primary)]/60 px-2 py-1 text-xs text-[var(--text-primary)] disabled:opacity-50"
         >
           {MANUAL_CURRENCIES.map((code) => (
             <option key={code} value={code}>{code}</option>
@@ -383,7 +383,7 @@ export function DashboardPanel() {
                   <p className="text-xs text-[var(--text-secondary)]">No tool calls recorded yet.</p>
                 ) : (
                   sortedTools.map((tool) => (
-                    <div key={tool.name} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2">
+                    <div key={tool.name} className="rounded-lg bg-[var(--bg-primary)]/35 px-3 py-2">
                       <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                         <div className="min-w-0">
                           <div className="truncate text-sm text-[var(--text-primary)]">{tool.name}</div>
@@ -391,12 +391,12 @@ export function DashboardPanel() {
                             score {tool.score.toFixed(2)} · {(tool.success_rate * 100).toFixed(1)}% success · {tool.call_count} calls · {tool.error_count} errors
                           </div>
                         </div>
-                        <span className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                           tool.score >= 0.85
-                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                             : tool.score >= 0.65
-                            ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                            : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                            : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
                         }`}>
                           {tool.score >= 0.85 ? "keep" : tool.score >= 0.65 ? "review" : "consider disable"}
                         </span>
@@ -447,11 +447,11 @@ export function DashboardPanel() {
             <p className="text-xs text-[var(--text-secondary)]">
               Snapshot: {data.pricing.snapshot_generated_at ?? "not found"}
             </p>
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/35 overflow-hidden">
-              <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
+            <div className="rounded-lg bg-[var(--bg-primary)]/25 overflow-hidden">
+              <div className="px-3 py-2 text-xs font-medium text-[var(--text-primary)]">
                 Model pricing (detected)
               </div>
-              <div className="border-b border-[var(--border)] px-3 py-2">
+              <div className="px-3 pb-2">
                 <div className="grid gap-2 md:grid-cols-[160px_160px_1fr_190px]">
                   <select
                     value={modelVendorFilter}
@@ -525,23 +525,23 @@ export function DashboardPanel() {
                             </span>
                           </div>
                           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
-                            <span className={`rounded-full border px-1.5 py-0.5 ${
+                            <span className={`rounded-full px-1.5 py-0.5 font-medium ${
                               row.inferred
-                                ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                             }`}>
                               {row.inferred ? "inferred" : "explicit"}
                             </span>
-                            <span className={`rounded-full border px-1.5 py-0.5 ${
+                            <span className={`rounded-full px-1.5 py-0.5 font-medium ${
                               row.confidence === "high"
-                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
                                 : row.confidence === "medium"
-                                ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                                : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                                ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                : "bg-rose-500/15 text-rose-700 dark:text-rose-300"
                             }`}>
                               {row.confidence}
                             </span>
-                            <span className="rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/60 px-1.5 py-0.5 text-[var(--text-secondary)]">
+                            <span className="rounded-full bg-[var(--bg-primary)]/60 px-1.5 py-0.5 text-[var(--text-secondary)]">
                               {detectModelFunctionality(row.model_id)}
                             </span>
                             {safeHttpUrl(row.source) ? (
@@ -549,7 +549,7 @@ export function DashboardPanel() {
                                 href={row.source}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="ml-auto rounded-full border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-700 hover:bg-cyan-500/20 dark:text-cyan-300"
+                                className="ml-auto rounded-full bg-cyan-500/15 px-1.5 py-0.5 text-cyan-700 hover:bg-cyan-500/25 dark:text-cyan-300"
                               >
                                 source ↗
                               </a>
@@ -573,7 +573,7 @@ export function DashboardPanel() {
 
 function MetricCard({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/95 px-3 py-3 shadow-sm">
+    <div className="rounded-xl bg-[var(--bg-secondary)]/70 px-3 py-3">
       <p className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)] inline-flex items-center gap-1.5">
         {icon ? <span className="text-[var(--text-secondary)]">{icon}</span> : null}
         {label}
@@ -585,7 +585,7 @@ function MetricCard({ label, value, icon }: { label: string; value: string; icon
 
 function InsightChip({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-secondary)]/80 px-3 py-2.5 shadow-sm">
+    <div className="rounded-xl bg-[var(--bg-secondary)]/55 px-3 py-2.5">
       <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{label}</div>
       <div className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</div>
       <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{hint}</div>
@@ -717,10 +717,10 @@ function SharedDonutChart({
       </div>
 
       <div
-        className={`mt-2 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] tracking-wide transition-opacity ${
+        className={`mt-2 inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[10px] tracking-wide transition-opacity ${
           active
-            ? "border-[var(--border)] bg-[var(--bg-primary)]/60 text-[var(--text-primary)] opacity-100"
-            : "border-transparent bg-transparent text-[var(--text-secondary)] opacity-60"
+            ? "bg-[var(--bg-primary)]/60 text-[var(--text-primary)] opacity-100"
+            : "bg-transparent text-[var(--text-secondary)] opacity-60"
         }`}
       >
         {active ? (
@@ -886,10 +886,10 @@ function BreakdownPiePanel({
               key={slice.id}
               onMouseEnter={() => setHovered(slice.idx)}
               onMouseLeave={() => setHovered(null)}
-              className={`rounded-md border px-2.5 py-2 ${
+              className={`rounded-md px-2.5 py-2 ${
                 hovered === slice.idx
-                  ? "border-[var(--accent)]/50 bg-[var(--bg-primary)]/70"
-                  : "border-[var(--border)] bg-[var(--bg-primary)]/45"
+                  ? "bg-[var(--bg-primary)]/70"
+                  : "bg-[var(--bg-primary)]/35"
               }`}
             >
               <div className="flex items-center justify-between gap-2">
@@ -929,12 +929,12 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
 
   return (
     <div>
-      <div className="relative h-48 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 p-2 shadow-inner">
+      <div className="relative h-48 rounded-xl bg-[var(--bg-primary)]/35 p-2">
         <div
-          className={`absolute right-2 top-2 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] tracking-wide transition-opacity ${
+          className={`absolute right-2 top-2 inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[10px] tracking-wide transition-opacity ${
             active
-              ? "border-[var(--border)] bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
-              : "border-transparent text-[var(--text-secondary)] opacity-60"
+              ? "bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
+              : "text-[var(--text-secondary)] opacity-60"
           }`}
         >
           {active
@@ -1042,7 +1042,7 @@ function InteractiveCostChart({
 
   return (
     <div>
-      <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 p-2 shadow-inner">
+      <div className="relative rounded-xl bg-[var(--bg-primary)]/35 p-2">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48" role="img" aria-label="Estimated cost over time">
           {[0.25, 0.5, 0.75].map((frac) => {
             const y = padY + (1 - frac) * (height - padY * 2);
@@ -1110,10 +1110,10 @@ function InteractiveCostChart({
           })}
         </svg>
         <div
-          className={`absolute right-3 top-3 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] tracking-wide transition-opacity ${
+          className={`absolute right-3 top-3 inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[10px] tracking-wide transition-opacity ${
             active
-              ? "border-[var(--border)] bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
-              : "border-transparent text-[var(--text-secondary)] opacity-60"
+              ? "bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
+              : "text-[var(--text-secondary)] opacity-60"
           }`}
         >
           {active
