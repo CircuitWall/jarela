@@ -595,7 +595,7 @@ function AgentCostPie({
   const total = agents.reduce((sum, a) => sum + Math.max(0, a.estimated_cost_usd), 0);
   const donutRadius = 60;
   const donutStroke = 28;
-  const segmentGap = 0.04;
+  const segmentGap = 0.028;
   const cx = 92;
   const cy = 92;
   const fractions = agents.map((agent) => {
@@ -627,22 +627,54 @@ function AgentCostPie({
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[190px_1fr]">
       <div className="relative mx-auto w-[190px]">
         <svg viewBox="0 0 184 184" className="h-[190px] w-[190px]" role="img" aria-label="Agent cost share pie chart">
-          <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.20)" strokeWidth={donutStroke} />
+          <defs>
+            <filter id="agentDonutShadow" x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="1.1" stdDeviation="0.8" floodColor="rgba(2,6,23,0.42)" />
+            </filter>
+            <radialGradient id="agentCenterFill" cx="50%" cy="38%" r="70%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
+              <stop offset="100%" stopColor="rgba(241,245,249,0.95)" />
+            </radialGradient>
+          </defs>
+          <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={donutStroke} />
           {slices.map((slice) => (
-            <path
-              key={slice.agent.agent_id}
-              d={slice.path}
-              fill="none"
-              stroke={slice.color}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={hovered === slice.idx ? donutStroke + 2 : donutStroke}
-              opacity={hovered == null || hovered === slice.idx ? 0.95 : 0.45}
-              onMouseEnter={() => setHovered(slice.idx)}
-              onMouseLeave={() => setHovered(null)}
-            />
+            <g key={slice.agent.agent_id} filter="url(#agentDonutShadow)">
+              <path
+                d={slice.path}
+                fill="none"
+                stroke="rgba(2,6,23,0.40)"
+                strokeLinecap="butt"
+                strokeLinejoin="round"
+                strokeWidth={(hovered === slice.idx ? donutStroke + 2 : donutStroke) + 1.5}
+                transform="translate(0 1.1)"
+                opacity={hovered == null || hovered === slice.idx ? 0.26 : 0.16}
+                onMouseEnter={() => setHovered(slice.idx)}
+                onMouseLeave={() => setHovered(null)}
+              />
+              <path
+                d={slice.path}
+                fill="none"
+                stroke={slice.color}
+                strokeLinecap="butt"
+                strokeLinejoin="round"
+                strokeWidth={hovered === slice.idx ? donutStroke + 2 : donutStroke}
+                opacity={hovered == null || hovered === slice.idx ? 0.96 : 0.5}
+                onMouseEnter={() => setHovered(slice.idx)}
+                onMouseLeave={() => setHovered(null)}
+              />
+              <path
+                d={slice.path}
+                fill="none"
+                stroke="rgba(255,255,255,0.22)"
+                strokeLinecap="butt"
+                strokeWidth="2"
+                opacity={hovered == null || hovered === slice.idx ? 0.8 : 0.35}
+                onMouseEnter={() => setHovered(slice.idx)}
+                onMouseLeave={() => setHovered(null)}
+              />
+            </g>
           ))}
-          <circle cx={cx} cy={cy} r={42} fill="rgba(248,250,252,0.97)" />
+          <circle cx={cx} cy={cy} r={42} fill="url(#agentCenterFill)" stroke="rgba(15,23,42,0.14)" strokeWidth="1" />
         </svg>
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
           <div className="max-w-[84px]">
@@ -712,9 +744,10 @@ function BreakdownPiePanel({
   const total = items.reduce((sum, item) => sum + Math.max(0, item.cost), 0);
   const donutRadius = 41;
   const donutStroke = 22;
-  const segmentGap = 0.045;
+  const segmentGap = 0.03;
   const cx = 64;
   const cy = 64;
+  const idBase = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const fractions = items.map((item) => {
     const value = Math.max(0, item.cost);
     return total > 0 ? value / total : 1 / items.length;
@@ -746,22 +779,54 @@ function BreakdownPiePanel({
       <div className="grid grid-cols-[136px_1fr] gap-3">
         <div className="relative">
           <svg viewBox="0 0 128 128" className="h-[136px] w-[136px]" role="img" aria-label={`${title} pie chart`}>
-            <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.20)" strokeWidth={donutStroke} />
+            <defs>
+              <filter id={`${idBase}-shadow`} x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="0.8" stdDeviation="0.6" floodColor="rgba(2,6,23,0.36)" />
+              </filter>
+              <radialGradient id={`${idBase}-center`} cx="50%" cy="38%" r="70%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
+                <stop offset="100%" stopColor="rgba(241,245,249,0.95)" />
+              </radialGradient>
+            </defs>
+            <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={donutStroke} />
             {slices.map((slice) => (
-              <path
-                key={slice.id}
-                d={slice.path}
-                fill="none"
-                stroke={slice.color}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={hovered === slice.idx ? donutStroke + 1.5 : donutStroke}
-                opacity={hovered == null || hovered === slice.idx ? 0.95 : 0.45}
-                onMouseEnter={() => setHovered(slice.idx)}
-                onMouseLeave={() => setHovered(null)}
-              />
+              <g key={slice.id} filter={`url(#${idBase}-shadow)`}>
+                <path
+                  d={slice.path}
+                  fill="none"
+                  stroke="rgba(2,6,23,0.40)"
+                  strokeLinecap="butt"
+                  strokeLinejoin="round"
+                  strokeWidth={(hovered === slice.idx ? donutStroke + 1.5 : donutStroke) + 1.2}
+                  transform="translate(0 0.8)"
+                  opacity={hovered == null || hovered === slice.idx ? 0.24 : 0.14}
+                  onMouseEnter={() => setHovered(slice.idx)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+                <path
+                  d={slice.path}
+                  fill="none"
+                  stroke={slice.color}
+                  strokeLinecap="butt"
+                  strokeLinejoin="round"
+                  strokeWidth={hovered === slice.idx ? donutStroke + 1.5 : donutStroke}
+                  opacity={hovered == null || hovered === slice.idx ? 0.96 : 0.5}
+                  onMouseEnter={() => setHovered(slice.idx)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+                <path
+                  d={slice.path}
+                  fill="none"
+                  stroke="rgba(255,255,255,0.2)"
+                  strokeLinecap="butt"
+                  strokeWidth="1.8"
+                  opacity={hovered == null || hovered === slice.idx ? 0.75 : 0.3}
+                  onMouseEnter={() => setHovered(slice.idx)}
+                  onMouseLeave={() => setHovered(null)}
+                />
+              </g>
             ))}
-            <circle cx={cx} cy={cy} r={28} fill="rgba(248,250,252,0.97)" />
+            <circle cx={cx} cy={cy} r={28} fill={`url(#${idBase}-center)`} stroke="rgba(15,23,42,0.14)" strokeWidth="1" />
           </svg>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
             <div className="max-w-[56px]">
