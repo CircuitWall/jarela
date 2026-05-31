@@ -228,7 +228,7 @@ export function DashboardPanel() {
         <div className="absolute top-64 -left-24 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <div className="sticky top-2 z-20 rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--bg-secondary)]/95 to-[var(--bg-primary)]/75 p-4 md:p-5 shadow-sm backdrop-blur">
+      <div className="sticky top-0 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-1 border-b border-[var(--border)] bg-[var(--bg-primary)]/92 px-4 md:px-6 py-3 md:py-4 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] backdrop-blur-md">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Usage dashboard</h2>
@@ -509,29 +509,50 @@ export function DashboardPanel() {
                 ) : (
                   groupedModelRates.map(([provider, rows]) => (
                     <div key={provider} className="border-b border-[var(--border)]/60 last:border-b-0">
-                      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--bg-secondary)]/95 px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] backdrop-blur">
+                      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-l-2 border-l-cyan-500/70 bg-[var(--bg-secondary)]/95 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] backdrop-blur">
                         <span>{provider}</span>
-                        <span className="text-[var(--text-secondary)]">{rows.length} model{rows.length === 1 ? "" : "s"}</span>
+                        <span className="rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/60 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-[var(--text-secondary)]">
+                          {rows.length} model{rows.length === 1 ? "" : "s"}
+                        </span>
                       </div>
                       {rows.map((row) => (
-                        <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-t border-[var(--border)]/40">
+                        <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-t border-[var(--border)]/40 hover:bg-[var(--bg-primary)]/35 transition-colors">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-sm text-[var(--text-primary)] truncate">{row.model_id}</span>
-                            <span className="text-[11px] text-[var(--text-secondary)]">
-                              in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}
+                            <span className="text-[11px] tabular-nums text-[var(--text-secondary)]">
+                              in <span className="text-[var(--text-primary)]">${row.input_per_1m_usd?.toFixed(2) ?? "n/a"}</span>
+                              {" · "}out <span className="text-[var(--text-primary)]">${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}</span>
                             </span>
                           </div>
-                          <div className="mt-1 text-[10px] text-[var(--text-secondary)] flex items-center gap-2">
-                            <span>{row.inferred ? "inferred" : "explicit"}</span>
-                            <span>·</span>
-                            <span>confidence {row.confidence}</span>
-                            <span>·</span>
-                            <span>{detectModelFunctionality(row.model_id)}</span>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">
+                            <span className={`rounded-full border px-1.5 py-0.5 ${
+                              row.inferred
+                                ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            }`}>
+                              {row.inferred ? "inferred" : "explicit"}
+                            </span>
+                            <span className={`rounded-full border px-1.5 py-0.5 ${
+                              row.confidence === "high"
+                                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                                : row.confidence === "medium"
+                                ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                            }`}>
+                              {row.confidence}
+                            </span>
+                            <span className="rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/60 px-1.5 py-0.5 text-[var(--text-secondary)]">
+                              {detectModelFunctionality(row.model_id)}
+                            </span>
                             {safeHttpUrl(row.source) ? (
-                              <>
-                                <span>·</span>
-                                <a href={row.source} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline dark:text-cyan-400">source</a>
-                              </>
+                              <a
+                                href={row.source}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="ml-auto rounded-full border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 text-cyan-700 hover:bg-cyan-500/20 dark:text-cyan-300"
+                              >
+                                source ↗
+                              </a>
                             ) : null}
                           </div>
                         </div>
@@ -646,12 +667,12 @@ function SharedDonutChart({
         <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full" role="img" aria-label={ariaLabel}>
           <defs>
             <radialGradient id={`${uid}-center`} cx="50%" cy="38%" r="70%">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.99)" />
-              <stop offset="100%" stopColor="rgba(226,232,240,0.96)" />
+              <stop offset="0%" stopColor="var(--bg-secondary)" stopOpacity="0.98" />
+              <stop offset="100%" stopColor="var(--bg-primary)" stopOpacity="0.92" />
             </radialGradient>
           </defs>
 
-          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={stroke} />
+          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(148,163,184,0.18)" strokeWidth={stroke} />
 
           {segments.map((segment) => (
             <g key={segment.id}>
@@ -683,20 +704,34 @@ function SharedDonutChart({
             </g>
           ))}
 
-          <circle cx={cx} cy={cy} r={innerRadius} fill={`url(#${uid}-center)`} stroke="rgba(15,23,42,0.14)" strokeWidth="1" />
+          <circle cx={cx} cy={cy} r={innerRadius} fill={`url(#${uid}-center)`} stroke="rgba(148,163,184,0.20)" strokeWidth="1" />
         </svg>
 
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
           <div className="max-w-[70%]">
-            <div className={`${size >= 170 ? "text-sm" : "text-xs"} font-semibold leading-tight text-slate-900 truncate`}>
+            <div className={`${size >= 170 ? "text-sm" : "text-xs"} font-semibold leading-tight text-[var(--text-primary)] truncate`}>
               {centerAmount}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="mt-2 h-8 rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 text-center text-[11px] leading-8 text-[var(--text-secondary)] backdrop-blur-sm">
-        {active ? `${active.label}  ${(active.fraction * 100).toFixed(1)}%` : "Hover a segment"}
+      <div
+        className={`mt-2 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] tracking-wide transition-opacity ${
+          active
+            ? "border-[var(--border)] bg-[var(--bg-primary)]/60 text-[var(--text-primary)] opacity-100"
+            : "border-transparent bg-transparent text-[var(--text-secondary)] opacity-60"
+        }`}
+      >
+        {active ? (
+          <>
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: active.color }} />
+            <span className="max-w-[160px] truncate">{active.label}</span>
+            <span className="font-medium">{(active.fraction * 100).toFixed(1)}%</span>
+          </>
+        ) : (
+          <span>hover a segment</span>
+        )}
       </div>
     </div>
   );
@@ -895,15 +930,24 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
   return (
     <div>
       <div className="relative h-48 rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 p-2 shadow-inner">
-        <div className="absolute right-2 top-2 text-[11px] text-[var(--text-secondary)]">
-          {active ? `${active.day}  ${formatInt(active.input_tokens_est + active.output_tokens_est)} tokens` : "Hover bars for details"}
+        <div
+          className={`absolute right-2 top-2 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] tracking-wide transition-opacity ${
+            active
+              ? "border-[var(--border)] bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
+              : "border-transparent text-[var(--text-secondary)] opacity-60"
+          }`}
+        >
+          {active
+            ? `${active.day} · ${formatInt(active.input_tokens_est + active.output_tokens_est)} tokens`
+            : "hover bars for details"}
         </div>
         <div className="h-full flex items-end gap-1 pt-5">
           {series.map((point, idx) => {
             const total = point.input_tokens_est + point.output_tokens_est;
-            const totalHeight = maxTotal > 0 ? Math.max(6, Math.round((total / maxTotal) * 150)) : 6;
-            const inputHeight = total > 0 ? Math.max(2, Math.round((point.input_tokens_est / total) * totalHeight)) : 0;
-            const outputHeight = Math.max(2, totalHeight - inputHeight);
+            const hasData = total > 0;
+            const totalHeight = hasData && maxTotal > 0 ? Math.max(4, Math.round((total / maxTotal) * 150)) : 0;
+            const inputHeight = hasData ? Math.round((point.input_tokens_est / total) * totalHeight) : 0;
+            const outputHeight = hasData ? Math.max(0, totalHeight - inputHeight) : 0;
             const isActive = idx === hovered;
             return (
               <div
@@ -914,22 +958,32 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
                 aria-label={`${point.day} tokens (informational)`}
               >
                 <div className={`w-full rounded-t overflow-hidden border transition-colors ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
-                  <div
-                    className="w-full bg-gradient-to-t from-sky-500 to-cyan-400"
-                    style={{
-                      height: barsReady ? `${outputHeight}px` : "0px",
-                      transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18}ms`,
-                    }}
-                  />
-                  <div
-                    className="w-full bg-gradient-to-t from-indigo-500 to-violet-400"
-                    style={{
-                      height: barsReady ? `${inputHeight}px` : "0px",
-                      transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
-                    }}
-                  />
+                  {hasData ? (
+                    <>
+                      <div
+                        className="w-full bg-gradient-to-t from-sky-500 to-cyan-400"
+                        style={{
+                          height: barsReady ? `${outputHeight}px` : "0px",
+                          transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18}ms`,
+                        }}
+                      />
+                      <div
+                        className="w-full bg-gradient-to-t from-indigo-500 to-violet-400"
+                        style={{
+                          height: barsReady ? `${inputHeight}px` : "0px",
+                          transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <div
+                      className="w-full rounded-full bg-[var(--border)]/60"
+                      style={{ height: "2px" }}
+                      aria-hidden
+                    />
+                  )}
                 </div>
-                <span className="mt-1 text-[10px] text-[var(--text-secondary)] truncate w-full text-center">
+                <span className={`mt-1 text-[10px] truncate w-full text-center ${hasData ? "text-[var(--text-secondary)]" : "text-[var(--text-secondary)]/50"}`}>
                   {point.day.slice(5)}
                 </span>
               </div>
@@ -990,6 +1044,37 @@ function InteractiveCostChart({
     <div>
       <div className="relative rounded-xl border border-[var(--border)] bg-[var(--bg-primary)]/45 p-2 shadow-inner">
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48" role="img" aria-label="Estimated cost over time">
+          {[0.25, 0.5, 0.75].map((frac) => {
+            const y = padY + (1 - frac) * (height - padY * 2);
+            return (
+              <line
+                key={frac}
+                x1={padX}
+                y1={y}
+                x2={width - padX}
+                y2={y}
+                stroke="rgba(148,163,184,0.12)"
+                strokeWidth="1"
+                strokeDasharray="3 4"
+              />
+            );
+          })}
+          {[0.5, 1].map((frac) => {
+            const y = padY + (1 - frac) * (height - padY * 2);
+            const value = maxCost * frac;
+            return (
+              <text
+                key={`tick-${frac}`}
+                x={padX - 4}
+                y={y + 3}
+                textAnchor="end"
+                fill="currentColor"
+                className="fill-[var(--text-secondary)] text-[8px]"
+              >
+                {formatMoneyCompact(value / (currencyInfo.rate_from_usd || 1), currencyInfo)}
+              </text>
+            );
+          })}
           <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="rgba(148,163,184,0.45)" strokeWidth="1" />
           <line x1={padX} y1={padY} x2={padX} y2={height - padY} stroke="rgba(148,163,184,0.25)" strokeWidth="1" />
           <polyline
@@ -1024,10 +1109,16 @@ function InteractiveCostChart({
             );
           })}
         </svg>
-        <div className="absolute right-3 top-3 rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/85 px-2 py-1 text-[11px]">
+        <div
+          className={`absolute right-3 top-3 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[10px] tracking-wide transition-opacity ${
+            active
+              ? "border-[var(--border)] bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
+              : "border-transparent text-[var(--text-secondary)] opacity-60"
+          }`}
+        >
           {active
-            ? `${active.p.day}  ${formatMoney(active.p.estimated_cost_usd, currencyInfo)}`
-            : "Hover points for day cost"}
+            ? `${active.p.day} · ${formatMoney(active.p.estimated_cost_usd, currencyInfo)}`
+            : "hover points for day cost"}
         </div>
       </div>
       <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-[var(--text-secondary)]">
