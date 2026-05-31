@@ -19,7 +19,7 @@ import { ConnectionsPanel } from "@/components/connections/ConnectionsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { HarnessPanel } from "@/components/harness/HarnessPanel";
-import { TopProgressBar } from "@/components/ui/TopProgressBar";
+import { HeaderActivity } from "@/components/ui/HeaderActivity";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
@@ -193,7 +193,6 @@ export function AppShell() {
 
   return (
     <div className="h-screen h-[100dvh] flex flex-col text-fg overflow-hidden px-safe">
-      <TopProgressBar />
       <NotificationStatus />
       <Toaster />
       <ServerStatus />
@@ -306,6 +305,7 @@ export function AppShell() {
             </div>
           )}
         </div>
+        <HeaderActivity />
         <button
           onClick={() => { setShowMenu((v) => !v); }}
           className={`control-tap ml-auto relative p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}

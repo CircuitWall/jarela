@@ -1,8 +1,9 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, submitRun, subscribeRun } from "@/api/client";
 import type { ContentPart, SSEEventType, StreamOptions } from "@/api/types";
 import type { ToolEvent } from "@/components/chat/ToolList";
+import { pushActivity } from "@/lib/ui/loading";
 
 export type { ToolEvent };
 
@@ -19,6 +20,28 @@ export function useSSE(onDone?: () => void) {
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadIdRef = useRef<string | null>(null);
+  // Live "what is the agent doing" label, surfaced in the app header. The
+  // slot stays open for the duration of one run; we mutate its label as
+  // tool calls come and go so the header text updates in place without
+  // pushing/popping (which would flicker stacked activities).
+  const activityRef = useRef<ReturnType<typeof pushActivity> | null>(null);
+  const activeToolsRef = useRef<Map<string, string>>(new Map());
+
+  const openActivity = useCallback((initial: string) => {
+    activityRef.current?.clear();
+    activeToolsRef.current.clear();
+    activityRef.current = pushActivity(initial);
+  }, []);
+
+  const closeActivity = useCallback(() => {
+    activityRef.current?.clear();
+    activityRef.current = null;
+    activeToolsRef.current.clear();
+  }, []);
+
+  // Always release the activity label if the hook unmounts mid-run, so a
+  // dangling "thinking…" can't outlive its session.
+  useEffect(() => closeActivity, [closeActivity]);
 
   const consume = useCallback(async (
     iterable: AsyncIterable<string>,
@@ -27,20 +50,28 @@ export function useSSE(onDone?: () => void) {
       const event = JSON.parse(raw) as SSEEventType;
       if (event.type === "text_delta") {
         setStreamingContent((p) => p + event.delta);
+        activityRef.current?.set("Responding…");
       } else if (event.type === "thinking_delta") {
         setThinkingContent((p) => p + event.delta);
+        if (activeToolsRef.current.size === 0) activityRef.current?.set("Thinking…");
       } else if (event.type === "tool_call") {
         setToolEvents((prev) => [
           ...prev,
           { id: event.id, phase: "call", name: event.name, payload: event.arguments },
         ]);
+        activeToolsRef.current.set(event.id, event.name);
+        activityRef.current?.set(`Using ${event.name}…`);
       } else if (event.type === "tool_result") {
         setToolEvents((prev) => [
           ...prev,
           { id: event.id, phase: "result", name: event.name, payload: event.result },
         ]);
+        activeToolsRef.current.delete(event.id);
+        const remaining = activeToolsRef.current.values().next().value as string | undefined;
+        activityRef.current?.set(remaining ? `Using ${remaining}…` : "Thinking…");
       } else if (event.type === "done") {
         setStreaming(false);
+        closeActivity();
         // Don't clear streamingContent here — it would cause a visual gap
         // between "stream done" and "refetched messages arrived" where the
         // assistant bubble disappears for ~100ms. The consumer (ChatView)
@@ -55,11 +86,12 @@ export function useSSE(onDone?: () => void) {
         setStreaming(false);
         setStreamingContent("");
         setThinkingContent("");
+        closeActivity();
         setError(event.message);
         break;
       }
     }
-  }, [onDone]);
+  }, [onDone, closeActivity]);
 
   const start = useCallback(async (
     threadId: string,
@@ -76,6 +108,7 @@ export function useSSE(onDone?: () => void) {
     setThinkingContent("");
     setToolEvents([]);
     setError(null);
+    openActivity("Sending…");
 
     try {
       // Command: register the run server-side. 202 = we own this turn; 409
@@ -95,9 +128,10 @@ export function useSSE(onDone?: () => void) {
       setStreaming(false);
       setStreamingContent("");
       setThinkingContent("");
+      closeActivity();
       return { accepted: false };
     }
-  }, [consume]);
+  }, [consume, openActivity, closeActivity]);
 
   // Stop the active run. Three-part: (1) tell the server to abort the
   // agent stream so the LangGraph loop unwinds; (2) tear down local
@@ -117,9 +151,10 @@ export function useSSE(onDone?: () => void) {
     setStreaming(false);
     // Keep streamingContent and thinkingContent visible until the next
     // start()/attach() — same pattern as the `done` branch in consume().
+    closeActivity();
     abortRef.current?.abort();
     onDone?.();
-  }, [onDone]);
+  }, [onDone, closeActivity]);
 
   // Attach to an in-flight run for the given thread (server-side run kept
   // going because the user switched away, or because this is a fresh
@@ -138,6 +173,7 @@ export function useSSE(onDone?: () => void) {
     setThinkingContent("");
     setToolEvents([]);
     setError(null);
+    openActivity("Reconnecting…");
 
     try {
       await consume(subscribeRun(threadId, ctrl.signal));
@@ -147,11 +183,12 @@ export function useSSE(onDone?: () => void) {
       // "no run to attach to" (server returns 404, EventSource fails to
       // open) — completely normal when navigating into an idle session.
       setStreaming(false);
+      closeActivity();
       if ((err as Error).name !== "AbortError") {
         onDone?.();
       }
     }
-  }, [consume, onDone]);
+  }, [consume, onDone, openActivity, closeActivity]);
 
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
