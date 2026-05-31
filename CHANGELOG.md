@@ -7,6 +7,85 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-05-31
+
+### Added
+
+- **Usage & cost analytics dashboard.** New top-level Dashboard panel
+  ([components/dashboard/DashboardPanel.tsx](components/dashboard/DashboardPanel.tsx))
+  with token/cost overtime charts, segmented sortable pricing and tool views,
+  per-model and per-function breakdowns, an interactive donut chart for
+  category share, and animated pie/timeline rerenders. Helpers live in
+  [lib/dashboard/](lib/dashboard/) with full unit-test coverage.
+- **Guided onboarding wizard** ([components/setup/OnboardingWizard.tsx](components/setup/OnboardingWizard.tsx))
+  with an inline mode picker (Normal / Advanced) and per-provider capability
+  guidance so first-time users land on a working setup quickly.
+- **Normal vs. Advanced experience modes.** Centralized mode toggle pill
+  ([components/layout/MenuPanel.tsx](components/layout/MenuPanel.tsx)),
+  default to Normal mode, mode-aware panel layouts, agent normal-mode
+  permission buckets, and an expert toggle inside the model editor.
+- **Live pricing extraction** ([lib/pricing/](lib/pricing/)) with an
+  LLM-based rate extractor, extraction policy + confidence metadata,
+  Google-search fallback when provider pages fail, preference for
+  provider-model rates in cost estimates, and a refreshable provider
+  pricing snapshot ([docs/journal/pricing-snapshot.json](docs/journal/pricing-snapshot.json)).
+- **Currency-aware cost display.** Dashboard converts costs to the user's
+  local currency with an Auto/Manual override picker.
+- **Humanized cron schedules** on the Scheduled Tasks panel
+  ([lib/utils/cron.ts](lib/utils/cron.ts)) — e.g. `0 9 * * 1-5` renders as
+  "weekdays at 09:00" next to the raw expression.
+- **Per-sub connection counts** (e.g. "4/7") on the Connections panel.
+
+### Changed
+
+- **Connections tab promoted to Common**, Bridges deferred to Advanced; the
+  Memory tab now lives behind the Advanced disclosure to reduce first-run
+  cognitive load.
+- **Centralized model feature-compatibility cues** ([components/models/CapBadges.tsx](components/models/CapBadges.tsx))
+  with descriptive tooltips on every capability icon.
+- **Centralized system feature-readiness** indicators across surfaces so the
+  same readiness signal renders identically in the model picker, agent
+  editor, and onboarding wizard.
+- **Dashboard panel polish:** sticky controls bar pinned to the scrollport
+  with a glass effect, mask on header, donut strokes use `var(--border)`,
+  cleaner pricing accents using `var(--accent)`, and consistent control
+  ergonomics across all dashboard surfaces.
+- **Agent/model row actions** fade in at 40% opacity by default and reach
+  full opacity on hover/focus so they are discoverable on desktop without
+  scanning the row first.
+
+### Fixed
+
+- **Production boot regression** ([instrumentation.ts](instrumentation.ts) +
+  [instrumentation-node.ts](instrumentation-node.ts)). Node-only imports
+  (lifecycle/shutdown, tools, triggers, scheduler, exposed-bind warning) are
+  now loaded via dynamic `await import()` only when
+  `NEXT_RUNTIME === "nodejs"`, fixing a 500-at-boot regression where ESM
+  `require` was undefined.
+- **Dev-mode service worker** no longer eager-bootstraps the server or
+  serves stale chunks.
+- **Setup wizard** is now gated behind first-run and no longer reappears
+  after profile completion.
+- **Profile location display** — collapsed double-encoded UTF-8 bytes
+  (`Â·` / `Â±`) back to proper `·` / `±`.
+- **Light-mode crypto fallback banner** contrast restored.
+- **Dashboard fixes:** sticky controls glass effect, hover-induced control
+  resizing, model attribution fallbacks, token chart input/output contrast,
+  favorite-tools and model sort options rendering reliably, aliased models
+  mapping to pricing rates, small-window cost visibility preserved, donut
+  overlap removed.
+- **Pricing parsers** correctly detect DeepSeek unit-first token prices and
+  Anthropic MTok rates.
+- **Agent context handling:** prefix-based permission mapping enforced;
+  hot-context truncation on warm fallback miss.
+
+### Refactored
+
+- Pure dashboard helpers extracted into [lib/dashboard/](lib/dashboard/)
+  with unit tests.
+- Mode-aware UI polish unified across panels; border noise reduced on
+  inner elements.
+
 ## [0.7.3] - 2026-05-30
 
 ### Changed
