@@ -549,6 +549,12 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("harness_id")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN harness_id TEXT");
   }
+  // Per-agent delegation whitelist (JSON array of agent ids). NULL or empty
+  // array means the agent cannot delegate. Read by lib/tools/delegate.ts to
+  // gate the delegate_to_agent tool.
+  if (!names.has("delegate_targets")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN delegate_targets TEXT");
+  }
 }
 
 /**

@@ -28,6 +28,7 @@ export interface AgentConfigRow {
   voice_auto_speak: number;          // 1 = auto-play reply when user sent voice
   display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
   harness_id: string | null;         // ADR-0033: per-agent harness override; NULL = inherit global default
+  delegate_targets: string | null;   // JSON string[] of agent ids this agent may delegate to; NULL/'[]' = none
   created_at: string;
   updated_at: string;
 }
@@ -78,6 +79,23 @@ export interface UpsertAgentInput {
   voice_stt_model?: string;
   voice_auto_speak?: boolean;
   harness_id?: string | null;
+  delegate_targets?: string[];
+}
+
+/**
+ * Parse the JSON-encoded delegate whitelist into a deduped string[]. Returns
+ * an empty array for NULL, blank, or malformed JSON (delegation is opt-in).
+ */
+export function parseDelegateTargets(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const ids = parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+    return Array.from(new Set(ids));
+  } catch {
+    return [];
+  }
 }
 
 export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
@@ -99,15 +117,19 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
     input.harness_id === undefined
       ? (existing?.harness_id ?? null)
       : (input.harness_id && input.harness_id.length > 0 ? input.harness_id : null);
+  // delegate_targets: undefined = keep existing; explicit empty array clears.
+  const delegateTargets = input.delegate_targets === undefined
+    ? (existing?.delegate_targets ?? null)
+    : JSON.stringify(Array.from(new Set(input.delegate_targets.filter((id) => id && id !== input.id))));
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
          history_limit, history_window_hours, never_reply,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
-         harness_id,
+         harness_id, delegate_targets,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -145,6 +167,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
         ? (existing?.voice_auto_speak ?? 1)
         : (input.voice_auto_speak ? 1 : 0),
       harnessId,
+      delegateTargets,
       created_at,
       t,
     );

@@ -161,7 +161,11 @@ export async function* streamWithConfig(
       { messages: toBaseMessages(messages, runCfg?.system_prompt) },
       {
         streamMode: ["messages", "updates"],
-        configurable: { thread_id: threadId },
+        configurable: {
+          thread_id: threadId,
+          delegation_depth: runCfg?.delegation?.depth ?? 0,
+          delegation_ancestors: runCfg?.delegation?.ancestors ?? [],
+        },
         // LangGraph counts EACH node visit (model call + each tool call) as a
         // step. File-organization, multi-search-and-fetch, and any task that
         // pairs every action with a verify call (file_move + file_stat, etc.)

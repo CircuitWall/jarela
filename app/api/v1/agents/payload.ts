@@ -31,6 +31,7 @@ export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAge
     voice_stt_model: body.voice_stt_model,
     voice_auto_speak: body.voice_auto_speak,
     harness_id: body.harness_id,
+    delegate_targets: body.delegate_targets,
   };
 }
 
@@ -63,5 +64,6 @@ export function toUpdateAgentInput(
     voice_stt_model: body.voice_stt_model,
     voice_auto_speak: body.voice_auto_speak,
     harness_id: "harness_id" in body ? body.harness_id : undefined,
+    delegate_targets: "delegate_targets" in body ? body.delegate_targets : undefined,
   };
 }
