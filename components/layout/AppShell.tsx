@@ -222,23 +222,41 @@ export function AppShell() {
         }}
       >
         <div className="relative flex items-center gap-2 select-none" ref={agentPickerRef}>
-          {/* Logo is blue-on-transparent. In dark mode the blue gets lost
-              against the dark glass, so we drop the color and lift the
-              alpha to white — `brightness-0` flattens to black, `invert`
-              flips it to white, alpha channel is preserved by both. */}
           <button
             type="button"
             onClick={() => setShowAgentPicker((v) => !v)}
             className="control-tap inline-flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-3/60 transition-colors"
-            title="Select active agent"
+            title={activeAgent ? `Active agent: ${activeAgent.name} — click to switch` : "Select active agent"}
             aria-haspopup="menu"
             aria-expanded={showAgentPicker}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-mark-transparent.png" alt="" className="h-6 w-auto dark:brightness-0 dark:invert" />
-            <span className="text-fg font-semibold tracking-tight">{getAppName()}</span>
-            <span className="text-xs text-fg-faint max-w-[11rem] truncate hidden sm:inline">
-              {activeAgent?.name ?? "select agent"}
+            {activeAgent?.icon ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={activeAgent.icon}
+                alt=""
+                className="h-6 w-6 rounded-md object-cover shrink-0"
+              />
+            ) : activeAgent ? (
+              <span
+                aria-hidden
+                className="h-6 w-6 rounded-md bg-surface-3 text-[11px] font-semibold text-fg-subtle inline-flex items-center justify-center shrink-0"
+              >
+                {activeAgent.name.charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              // No active agent yet — fall back to the app mark. Blue-on-
+              // transparent loses contrast against the dark glass, so we
+              // flatten + invert it in dark mode (alpha is preserved).
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src="/logo-mark-transparent.png"
+                alt=""
+                className="h-6 w-auto dark:brightness-0 dark:invert"
+              />
+            )}
+            <span className="text-fg font-semibold tracking-tight truncate max-w-[12rem] sm:max-w-[16rem]">
+              {activeAgent?.name ?? getAppName()}
             </span>
             <ChevronDown size={14} className={`text-fg-faint transition-transform ${showAgentPicker ? "rotate-180" : ""}`} />
           </button>
