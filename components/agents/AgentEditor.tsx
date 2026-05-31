@@ -567,7 +567,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                   >
                     Open Models
                   </button>
-                  {!readiness.hasGoogleIntegration && isAdvanced && (
+                  {!readiness.hasGoogleIntegration && (
                     <button
                       type="button"
                       onClick={() => {

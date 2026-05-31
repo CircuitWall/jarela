@@ -54,7 +54,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activeThreadId: null,
     activeAgentId: null,
     activeTab: "chat",
-    experienceMode: "advanced",
+    experienceMode: "normal",
     selectedItem: {},
   });
 

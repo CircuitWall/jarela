@@ -76,12 +76,15 @@ const TAB_SHORT: Record<Tab, string> = {
 // less-frequently used engine-room surfaces behind a collapsible header.
 //
 // "connections" is the single home for every auth surface (built-in
-// integrations + MCP server credentials). "tools" is purely about
-// capability presence — what categories of tools the agent may use.
-// The legacy top-level "mcp" and "extensions" tabs remain wired for
-// deep-link back-compat but are hidden here.
-const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "tools", "tasks", "bridges", "profile"];
-const ADVANCED_TABS: Tab[] = ["memory", "connections", "harness"];
+// integrations + MCP server credentials) and lives in Common so normal-mode
+// users can wire Gmail, Google, GitHub etc. without flipping modes. "tools"
+// is purely about capability presence — what categories of tools the agent
+// may use. "bridges" (mobile companion pairing) sits in Advanced since most
+// users won't pair a phone on first setup. The legacy top-level "mcp" and
+// "extensions" tabs remain wired for deep-link back-compat but are hidden
+// here.
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "tools", "connections", "tasks", "profile"];
+const ADVANCED_TABS: Tab[] = ["memory", "bridges", "harness"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
@@ -224,8 +227,11 @@ export function MenuPanel({
   onShowToolsChange,
   onShowThinkingChange,
 }: Props) {
-  const { state } = useAppContext();
+  const { state, dispatch } = useAppContext();
   const isAdvanced = state.experienceMode === "advanced";
+  const toggleMode = () => {
+    dispatch({ type: "SET_EXPERIENCE_MODE", mode: isAdvanced ? "normal" : "advanced" });
+  };
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
   // boot so the engine room is visible to power users out of the box.
@@ -287,13 +293,19 @@ export function MenuPanel({
       <div className="px-3 pt-2 pb-1 border-b border-border/60 bg-gradient-to-r from-surface-2/50 to-transparent">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] uppercase tracking-wide text-fg-faint">Workspace mode</span>
-          <span className={`text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border ${
-            isAdvanced
-              ? "border-accent/40 bg-accent/10 text-fg-subtle"
-              : "border-border bg-surface-3 text-fg-faint"
-          }`}>
+          <button
+            type="button"
+            onClick={toggleMode}
+            title={`Switch to ${isAdvanced ? "normal" : "advanced"} mode`}
+            aria-label={`Switch to ${isAdvanced ? "normal" : "advanced"} mode`}
+            className={`control-tap text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
+              isAdvanced
+                ? "border-accent/40 bg-accent/10 text-fg-subtle hover:bg-accent/20"
+                : "border-border bg-surface-3 text-fg-faint hover:text-fg-muted hover:border-border-strong"
+            }`}
+          >
             {isAdvanced ? "advanced" : "normal"}
-          </span>
+          </button>
         </div>
       </div>
       <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0">

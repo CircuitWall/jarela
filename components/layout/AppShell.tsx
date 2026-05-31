@@ -30,7 +30,7 @@ import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
-const ADVANCED_TABS = new Set(["memory", "connections", "harness"]);
+const ADVANCED_TABS = new Set(["memory", "bridges", "harness"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -371,7 +371,7 @@ export function AppShell() {
             <ToolsPanel />
           </Activity>
         )}
-        {isAdvanced && mountedTabs.has("connections") && (
+        {mountedTabs.has("connections") && (
           <Activity mode={state.activeTab === "connections" ? "visible" : "hidden"}>
             <ConnectionsPanel />
           </Activity>
@@ -381,7 +381,7 @@ export function AppShell() {
             <ScheduledTasksPanel />
           </Activity>
         )}
-        {mountedTabs.has("bridges") && (
+        {isAdvanced && mountedTabs.has("bridges") && (
           <Activity mode={state.activeTab === "bridges" ? "visible" : "hidden"}>
             <BridgesPanel />
           </Activity>
