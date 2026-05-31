@@ -18,6 +18,7 @@ export interface StreamOptions {
   filters?: StreamFilters;
   tool_policy?: ToolPolicy;
   agent_run_config?: AgentRunConfig;
+  ui_experience_mode?: "normal" | "advanced";
 }
 
 export interface StreamChunk {

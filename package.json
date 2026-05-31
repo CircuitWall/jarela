@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/jarela",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
@@ -79,6 +79,7 @@
     "security:link-preview": "node scripts/check-link-preview-version.mjs",
     "security:routes": "node scripts/check-route-bundles.mjs",
     "security:ci": "npm run security:audit && npm run security:secrets && npm run security:link-preview",
+    "pricing:snapshot": "node scripts/snapshot-pricing.mjs",
     "test:package": "node scripts/check-npm-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",

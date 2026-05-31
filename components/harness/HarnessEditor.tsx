@@ -1,6 +1,7 @@
 "use client";
 import { ChevronDown, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import {
   DEFAULT_HARNESS_ID,
   HARNESS_SECTION_KEYS,
@@ -55,11 +56,7 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
     [builtins],
   );
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   function patchSection(key: HarnessSectionKey, patch: Partial<HarnessSection>) {
     setSections((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));

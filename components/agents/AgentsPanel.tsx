@@ -104,7 +104,7 @@ export function AgentsPanel() {
                 <p className="text-[11px] text-fg-faint truncate">{a.identity}</p>
               )}
             </div>
-            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+            <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
               <button
                 onClick={() => setEditing(a)}
                 className="p-1 text-fg-muted hover:text-fg transition-colors"

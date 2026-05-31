@@ -1,10 +1,13 @@
 "use client";
 import { BookOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
-import type { CatalogModel, ModelConfig } from "@/api/types";
+import type { CatalogModel, IntegrationStatus, ModelConfig } from "@/api/types";
+import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "./CapBadges";
+import { ModelFeatureGuide } from "./ModelFeatureGuide";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -45,6 +48,12 @@ function fmtCtx(n: number | null) {
 }
 
 export function ModelEditor({ model, onSave, onClose }: Props) {
+  const { state } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
+  // Per-editor opt-in so a normal-mode user can reveal the engine-room
+  // fields for one model without flipping the global workspace mode.
+  const [showExpert, setShowExpert] = useState(false);
+  const expertVisible = isAdvanced || showExpert;
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
   const [provider, setProvider] = useState(model?.provider ?? "anthropic");
@@ -73,12 +82,9 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [catalogSearch, setCatalogSearch] = useState("");
+  const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   useEffect(() => {
     let mounted = true;
@@ -89,6 +95,22 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       })
       .catch(() => {
         // Keep fallback provider list if endpoint fails.
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    api.integrations.list()
+      .then((res) => {
+        if (!mounted) return;
+        setIntegrations(res.statuses);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setIntegrations([]);
       });
     return () => {
       mounted = false;
@@ -212,13 +234,24 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
+      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${expertVisible ? "max-w-2xl" : "max-w-xl"}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit model config" : "New model config"}</h3>
           <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
         </div>
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+        <div className="p-4 space-y-3.5">
+          {!isAdvanced && (
+            <button
+              type="button"
+              onClick={() => setShowExpert((v) => !v)}
+              aria-expanded={showExpert}
+              className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors inline-flex items-center gap-1"
+            >
+              {showExpert ? "Hide advanced fields" : "Show advanced fields (context tuning, base URL, headers)"}
+            </button>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Config name</span>
               <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
@@ -258,8 +291,8 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
             {/* Catalog panel */}
             {showCatalog && catalog && (
-              <div className="border border-border rounded-lg overflow-hidden bg-surface-3">
-                <div className="px-2 py-1.5 border-b border-border">
+              <div className="border border-border rounded-xl overflow-hidden bg-surface-3 shadow-sm">
+                <div className="px-2 py-1.5 border-b border-border bg-surface-2/50">
                   <input
                     className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent placeholder-fg-faint"
                     placeholder="Filter models…"
@@ -294,6 +327,8 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             )}
           </div>
 
+          <ModelFeatureGuide provider={provider} modelId={modelId} models={model ? [model] : []} integrations={integrations} />
+
 
 
           {showGitHub && <GitHubCopilotAuth />}
@@ -304,13 +339,15 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
           </label>
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
-            <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-              value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://custom-endpoint" />
-          </label>
+          {expertVisible && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
+              <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://custom-endpoint" />
+            </label>
+          )}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Temperature</span>
               <input type="number" min="0" max="2" step="0.1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
@@ -323,72 +360,78 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             </label>
           </div>
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
-            <input type="number" min="1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-              value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
-          </label>
+          {expertVisible && (
+            <>
+              <label className="block">
+                <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
+                <input type="number" min="1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
+              </label>
 
-          <div className="rounded-lg border border-border bg-surface-3 p-3 space-y-2">
-            <p className="text-xs text-fg-subtle">Context tiers and resource usage</p>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Hot %</span>
-                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={hotRatio} onChange={(e) => setHotRatio(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Warm %</span>
-                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={warmRatio} onChange={(e) => setWarmRatio(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Facts %</span>
-                <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={factsRatio} onChange={(e) => setFactsRatio(e.target.value)} />
-              </label>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Priority 1</span>
-                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={tierPriority[0]} onChange={(e) => updatePriority(0, e.target.value as Tier)}>
-                  <option value="hot">hot</option>
-                  <option value="warm">warm</option>
-                  <option value="facts">facts</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Priority 2</span>
-                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={tierPriority[1]} onChange={(e) => updatePriority(1, e.target.value as Tier)}>
-                  <option value="hot">hot</option>
-                  <option value="warm">warm</option>
-                  <option value="facts">facts</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-[11px] text-fg-faint mb-1 block">Priority 3</span>
-                <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={tierPriority[2]} onChange={(e) => updatePriority(2, e.target.value as Tier)}>
-                  <option value="hot">hot</option>
-                  <option value="warm">warm</option>
-                  <option value="facts">facts</option>
-                </select>
-              </label>
-            </div>
-            <p className="text-[11px] text-fg-faint leading-relaxed">
-              Estimated per-turn allocation: window {fmtInt(contextWindow)} tokens, output reserve {fmtInt(outputReserve)}, input {fmtInt(inputBudget)}.
-              Hot gets about {fmtInt(hotBudget)}, warm {fmtInt(warmBudget)}, facts {fmtInt(factsBudget)} tokens.
-              Higher hot keeps recent messages; higher warm favors recap summaries; higher facts favors durable memory retrieval.
-            </p>
-          </div>
+              <div className="rounded-xl border border-border bg-surface-3 p-3 space-y-2">
+                <p className="text-xs text-fg-subtle">Context tiers and resource usage</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Hot %</span>
+                    <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={hotRatio} onChange={(e) => setHotRatio(e.target.value)} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Warm %</span>
+                    <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={warmRatio} onChange={(e) => setWarmRatio(e.target.value)} />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Facts %</span>
+                    <input type="number" min="0" className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={factsRatio} onChange={(e) => setFactsRatio(e.target.value)} />
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Priority 1</span>
+                    <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={tierPriority[0]} onChange={(e) => updatePriority(0, e.target.value as Tier)}>
+                      <option value="hot">hot</option>
+                      <option value="warm">warm</option>
+                      <option value="facts">facts</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Priority 2</span>
+                    <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={tierPriority[1]} onChange={(e) => updatePriority(1, e.target.value as Tier)}>
+                      <option value="hot">hot</option>
+                      <option value="warm">warm</option>
+                      <option value="facts">facts</option>
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] text-fg-faint mb-1 block">Priority 3</span>
+                    <select className="w-full bg-surface text-fg text-xs rounded px-2 py-1 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                      value={tierPriority[2]} onChange={(e) => updatePriority(2, e.target.value as Tier)}>
+                      <option value="hot">hot</option>
+                      <option value="warm">warm</option>
+                      <option value="facts">facts</option>
+                    </select>
+                  </label>
+                </div>
+                <p className="text-[11px] text-fg-faint leading-relaxed">
+                  Estimated per-turn allocation: window {fmtInt(contextWindow)} tokens, output reserve {fmtInt(outputReserve)}, input {fmtInt(inputBudget)}.
+                  Hot gets about {fmtInt(hotBudget)}, warm {fmtInt(warmBudget)}, facts {fmtInt(factsBudget)} tokens.
+                  Higher hot keeps recent messages; higher warm favors recap summaries; higher facts favors durable memory retrieval.
+                </p>
+              </div>
+            </>
+          )}
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">Extra headers (JSON, optional)</span>
-            <textarea className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-20 resize-none"
-              value={extraHeaders} onChange={(e) => setExtraHeaders(e.target.value)} placeholder='{"X-Custom": "value"}' />
-          </label>
+          {expertVisible && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">Extra headers (JSON, optional)</span>
+              <textarea className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-20 resize-none"
+                value={extraHeaders} onChange={(e) => setExtraHeaders(e.target.value)} placeholder='{"X-Custom": "value"}' />
+            </label>
+          )}
 
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" className="rounded border-border" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} />
@@ -397,9 +440,9 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
           {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
         </div>
-        <div className="flex justify-end gap-2 px-4 pb-4">
+        <div className="flex justify-end gap-2 px-4 pb-4 pt-1 border-t border-border/60">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
-          <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50">
+          <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-50">
             {saving ? "Saving…" : "Save"}
           </button>
         </div>

@@ -4,6 +4,7 @@ import {
   normalizeTierPriority,
   normalizeTierProportions,
   takeRecentMessagesWithinBudget,
+  truncateLargestMessagesWithinBudget,
   estimateTokens,
 } from "./context-budget";
 import type { MessageRow } from "@/lib/stores/threads";
@@ -124,5 +125,25 @@ describe("takeRecentMessagesWithinBudget", () => {
     const out = takeRecentMessagesWithinBudget(rows, 8);
     expect(out.at(-1)?.content).toBe("latest");
     expect(out.length).toBeGreaterThan(0);
+  });
+});
+
+describe("truncateLargestMessagesWithinBudget", () => {
+  it("returns input unchanged when already within budget", () => {
+    const rows = [msg("short"), msg("also short")];
+    const out = truncateLargestMessagesWithinBudget(rows, 40);
+    expect(out.map((r) => r.content)).toEqual(rows.map((r) => r.content));
+  });
+
+  it("truncates the largest message until the total fits budget", () => {
+    const rows = [
+      msg("tiny"),
+      msg("x".repeat(2000)),
+      msg("recent note"),
+    ];
+    const out = truncateLargestMessagesWithinBudget(rows, 120);
+    const total = out.reduce((sum, r) => sum + estimateTokens(r.content), 0);
+    expect(total).toBeLessThanOrEqual(120);
+    expect(out[1].content).toContain("[truncated for context budget]");
   });
 });

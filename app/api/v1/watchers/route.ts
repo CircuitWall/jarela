@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createWatcher, listWatchers, type WatcherRow } from "@/lib/stores/watchers";
 import { registeredTools } from "@/lib/tools/registry";
 import { startScheduler } from "@/lib/scheduler";
+import { createdResponse, errorResponse, validateBody } from "@/lib/api/responses";
 
 function rowResponse(r: WatcherRow) {
   let args: unknown;
@@ -57,13 +58,8 @@ const CreateSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  let body: unknown;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
-  const parsed = CreateSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
-  }
+  const parsed = await validateBody(req, CreateSchema);
+  if (parsed instanceof NextResponse) return parsed;
   const {
     agent_id,
     label,
@@ -75,10 +71,10 @@ export async function POST(req: NextRequest) {
     reaction_kind,
     reaction_script,
     reaction_script_args,
-  } = parsed.data;
+  } = parsed;
   const exists = registeredTools().find((t) => t.name === tool);
   if (!exists) {
-    return NextResponse.json({ error: `tool "${tool}" is not a built-in tool` }, { status: 400 });
+    return errorResponse(`tool "${tool}" is not a built-in tool`);
   }
   try {
     const row = createWatcher({
@@ -94,8 +90,8 @@ export async function POST(req: NextRequest) {
       reaction_script_args,
     });
     startScheduler();
-    return NextResponse.json(rowResponse(row), { status: 201 });
+    return createdResponse(rowResponse(row));
   } catch (e) {
-    return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 400 });
+    return errorResponse(e instanceof Error ? e.message : String(e));
   }
 }

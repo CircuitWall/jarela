@@ -123,6 +123,16 @@ export default defineConfig({
         // Misc utilities that are runtime-only (Date.now-driven or thrown-error helpers).
         "lib/utils/error.ts",
         "lib/utils/time.ts",
+        // Resolves OS-bound Google API credentials from the integration store + env.
+        "lib/utils/google-api.ts",
+        // Dashboard metrics aggregator — heavy SQLite-backed read store.
+        // Exercised end-to-end by the Dashboard panel; pure helpers in
+        // lib/dashboard/ are unit-tested separately.
+        "lib/stores/dashboard-metrics.ts",
+        // LLM pricing extractor — hits a live provider boundary in production.
+        // The pure helpers (readEnvelope/normalizeRow/preparePageForLlm) are
+        // covered via the __testing export in llm-extract.test.ts.
+        "lib/pricing/llm-extract.ts",
         // Notification hub uses node-notifier; OS-bound.
         "lib/notifications/**",
         // Streaming WebSocket plumbing tied to ws lifecycle.

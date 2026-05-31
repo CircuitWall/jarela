@@ -25,6 +25,7 @@ const config = [
     ignores: [
       "node_modules/**",
       ".next/**",
+      "coverage/**",
       "public/sw.js",
       "public/swe-worker-*.js",
       "public/workbox-*.js",

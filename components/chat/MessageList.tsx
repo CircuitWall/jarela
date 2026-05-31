@@ -250,7 +250,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4"
+        className="flex-1 overflow-y-auto px-4 py-4 panel-scrollbar"
         style={{
           // Fade the top and bottom 24px of the scroll viewport so messages
           // dissolve under the glass chrome instead of slamming into a hard
@@ -276,7 +276,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
                 <button
                   type="button"
                   onClick={reset}
-                  className="text-xs px-2.5 py-1 rounded-md border border-border bg-surface-2 text-fg-muted hover:text-fg hover:bg-surface-3 transition-colors"
+                  className="control-tap text-xs px-2.5 py-1 rounded-md border border-border bg-surface-2 text-fg-muted hover:text-fg hover:bg-surface-3 transition-colors"
                 >
                   Show all messages
                 </button>

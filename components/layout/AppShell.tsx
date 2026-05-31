@@ -28,9 +28,13 @@ import { Toaster } from "@/components/ui/Toaster";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
+import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
+
+const ADVANCED_TABS = new Set(["memory", "bridges", "harness"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
   useUrlSync();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
     state.activeAgentId,
@@ -54,6 +58,12 @@ export function AppShell() {
   useEffect(() => {
     setMountedTabs((prev) => prev.has(state.activeTab) ? prev : new Set(prev).add(state.activeTab));
   }, [state.activeTab]);
+
+  useEffect(() => {
+    if (!isAdvanced && ADVANCED_TABS.has(state.activeTab)) {
+      dispatch({ type: "SET_TAB", tab: "profile" });
+    }
+  }, [dispatch, isAdvanced, state.activeTab]);
 
   const unreadCount = useUnreadCount();
 
@@ -219,7 +229,7 @@ export function AppShell() {
           <button
             type="button"
             onClick={() => setShowAgentPicker((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-3/60 transition-colors"
+            className="control-tap inline-flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-surface-3/60 transition-colors"
             title="Select active agent"
             aria-haspopup="menu"
             aria-expanded={showAgentPicker}
@@ -235,7 +245,7 @@ export function AppShell() {
           {showAgentPicker && (
             <div
               role="menu"
-              className="absolute top-full left-0 mt-2 w-[min(24rem,calc(100vw-2rem))] max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-surface-2/95 backdrop-blur-md shadow-2xl p-1.5"
+              className="panel-scrollbar absolute top-full left-0 mt-2 w-[min(24rem,calc(100vw-2rem))] max-h-[55vh] overflow-y-auto rounded-xl border border-border bg-surface-2/95 backdrop-blur-md shadow-2xl p-1.5"
             >
               {agents.length === 0 ? (
                 <p className="text-xs text-fg-faint px-2 py-2">No agents available yet.</p>
@@ -253,7 +263,7 @@ export function AppShell() {
                         dispatch({ type: "SET_TAB", tab: "chat" });
                         setShowAgentPicker(false);
                       }}
-                      className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm transition-colors ${
+                      className={`control-tap w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left text-sm transition-colors ${
                         selected
                           ? "bg-surface-3 text-fg"
                           : "text-fg-muted hover:bg-surface-3/60 hover:text-fg"
@@ -280,7 +290,7 @@ export function AppShell() {
         </div>
         <button
           onClick={() => { setShowMenu((v) => !v); }}
-          className={`ml-auto relative p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
+          className={`control-tap ml-auto relative p-2.5 rounded transition-colors ${showMenu ? "text-fg bg-surface-3" : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"}`}
           title={unreadCount > 0 ? `${unreadCount} new ${unreadCount === 1 ? "alert" : "alerts"}` : "Menu"}
         >
           <Menu size={21} />
@@ -321,12 +331,17 @@ export function AppShell() {
             />
           </Activity>
         )}
+        {mountedTabs.has("dashboard") && (
+          <Activity mode={state.activeTab === "dashboard" ? "visible" : "hidden"}>
+            <DashboardPanel />
+          </Activity>
+        )}
         {mountedTabs.has("agents") && (
           <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
             <AgentsPanel />
           </Activity>
         )}
-        {mountedTabs.has("memory") && (
+        {isAdvanced && mountedTabs.has("memory") && (
           <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
             <MemoryPanel />
           </Activity>
@@ -366,7 +381,7 @@ export function AppShell() {
             <ScheduledTasksPanel />
           </Activity>
         )}
-        {mountedTabs.has("bridges") && (
+        {isAdvanced && mountedTabs.has("bridges") && (
           <Activity mode={state.activeTab === "bridges" ? "visible" : "hidden"}>
             <BridgesPanel />
           </Activity>
@@ -376,7 +391,7 @@ export function AppShell() {
             <ProfilePanel />
           </Activity>
         )}
-        {mountedTabs.has("harness") && (
+        {isAdvanced && mountedTabs.has("harness") && (
           <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
             <HarnessPanel />
           </Activity>

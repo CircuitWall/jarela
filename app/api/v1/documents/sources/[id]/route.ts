@@ -7,6 +7,7 @@ import {
   updateDocumentSource,
 } from "@/lib/stores/document-sources";
 import { notifyTriggerHandlers } from "@/lib/triggers";
+import { notFoundResponse, validateBody } from "@/lib/api/responses";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ const PatchSchema = z.object({
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const row = getDocumentSource(id);
-  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!row) return notFoundResponse();
   return NextResponse.json({
     id: row.id,
     path: row.path,
@@ -36,16 +37,10 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 export async function PATCH(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  let body: unknown;
-  try { body = await req.json(); } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  const parsed = PatchSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
-  }
-  const row = updateDocumentSource(id, parsed.data);
-  if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
+  const parsed = await validateBody(req, PatchSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const row = updateDocumentSource(id, parsed);
+  if (!row) return notFoundResponse();
   await notifyTriggerHandlers("source_changed");
   return NextResponse.json({
     id: row.id,
@@ -65,7 +60,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
   const ok = deleteDocumentSource(id);
-  if (!ok) return NextResponse.json({ error: "not found" }, { status: 404 });
+  if (!ok) return notFoundResponse();
   await notifyTriggerHandlers("source_changed");
   return NextResponse.json({ deleted: true });
 }

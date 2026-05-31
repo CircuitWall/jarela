@@ -1,8 +1,8 @@
 "use client";
-import { Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
+import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
-import type { Tab } from "@/contexts/AppContext";
+import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
@@ -22,6 +22,7 @@ interface Props {
 
 const TAB_ICONS: Record<Tab, React.ReactNode> = {
   chat: <MessageSquare size={13} />,
+  dashboard: <BarChart3 size={13} />,
   agents: <Bot size={13} />,
   memory: <Brain size={13} />,
   documents: <FolderSearch size={13} />,
@@ -38,6 +39,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
 
 const TAB_TITLES: Record<Tab, string> = {
   chat: "Chat",
+  dashboard: "Dashboard",
   agents: "Agents",
   memory: "Memory",
   documents: "Documents",
@@ -52,18 +54,37 @@ const TAB_TITLES: Record<Tab, string> = {
   harness: "Harness",
 };
 
-// Two-tier menu. "Common" surfaces the day-to-day verbs (chat, agents,
-// memory, tasks, bridges, profile). "Advanced" hides the engine room
-// (connections, models, tools) behind a collapsible header so first-run
-// users aren't faced with eight cards of config they don't yet need.
+const TAB_SHORT: Record<Tab, string> = {
+  chat: "Chat",
+  dashboard: "Dash",
+  agents: "AI",
+  memory: "Mem",
+  documents: "Docs",
+  models: "Model",
+  mcp: "MCP",
+  extensions: "Ext",
+  tools: "Tools",
+  connections: "Conn",
+  tasks: "Tasks",
+  bridges: "Bridge",
+  profile: "Me",
+  harness: "Test",
+};
+
+// Two-tier menu. "Common" surfaces the day-to-day verbs plus the most
+// relevant configuration touchpoints (models, tools). "Advanced" hides the
+// less-frequently used engine-room surfaces behind a collapsible header.
 //
 // "connections" is the single home for every auth surface (built-in
-// integrations + MCP server credentials). "tools" is purely about
-// capability presence — what categories of tools the agent may use.
-// The legacy top-level "mcp" and "extensions" tabs remain wired for
-// deep-link back-compat but are hidden here.
-const COMMON_TABS: Tab[] = ["chat", "agents", "memory", "documents", "tasks", "bridges", "profile"];
-const ADVANCED_TABS: Tab[] = ["connections", "models", "tools", "harness"];
+// integrations + MCP server credentials) and lives in Common so normal-mode
+// users can wire Gmail, Google, GitHub etc. without flipping modes. "tools"
+// is purely about capability presence — what categories of tools the agent
+// may use. "bridges" (mobile companion pairing) sits in Advanced since most
+// users won't pair a phone on first setup. The legacy top-level "mcp" and
+// "extensions" tabs remain wired for deep-link back-compat but are hidden
+// here.
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "tools", "connections", "tasks", "profile"];
+const ADVANCED_TABS: Tab[] = ["memory", "bridges", "harness"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
@@ -75,6 +96,21 @@ const GRADIENTS = [
   "from-rose-500 to-pink-600",
   "from-fuchsia-500 to-purple-600",
 ];
+
+const TAB_ACCENT: Partial<Record<Tab, string>> = {
+  chat: "from-sky-500/20 to-cyan-500/5",
+  dashboard: "from-cyan-500/20 to-blue-500/5",
+  agents: "from-emerald-500/20 to-teal-500/5",
+  memory: "from-indigo-500/20 to-violet-500/5",
+  documents: "from-amber-500/20 to-orange-500/5",
+  tasks: "from-rose-500/20 to-pink-500/5",
+  bridges: "from-blue-500/20 to-indigo-500/5",
+  profile: "from-fuchsia-500/20 to-purple-500/5",
+  connections: "from-cyan-500/20 to-sky-500/5",
+  models: "from-violet-500/20 to-indigo-500/5",
+  tools: "from-emerald-500/20 to-lime-500/5",
+  harness: "from-orange-500/20 to-amber-500/5",
+};
 
 function avatarGradient(id: string): string {
   let h = 0;
@@ -191,6 +227,11 @@ export function MenuPanel({
   onShowToolsChange,
   onShowThinkingChange,
 }: Props) {
+  const { state, dispatch } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
+  const toggleMode = () => {
+    dispatch({ type: "SET_EXPERIENCE_MODE", mode: isAdvanced ? "normal" : "advanced" });
+  };
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
   // boot so the engine room is visible to power users out of the box.
@@ -227,14 +268,19 @@ export function MenuPanel({
       onClick={() => onSetTab(tab)}
       title={TAB_TITLES[tab]}
       aria-label={TAB_TITLES[tab]}
-      className={`min-w-0 flex flex-col items-center justify-center gap-1 rounded-lg py-2 px-1 transition-colors ${
+      aria-current={activeTab === tab ? "page" : undefined}
+      className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
         activeTab === tab
-          ? "bg-surface-3 text-fg ring-1 ring-border"
-          : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
+          ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
+          : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50 hover:-translate-y-px"
       }`}
     >
+      {activeTab === tab && (
+        <span className={`absolute inset-0 bg-gradient-to-br ${TAB_ACCENT[tab] ?? "from-accent/20 to-transparent"}`} />
+      )}
       <span className="shrink-0">{TAB_ICONS[tab]}</span>
-      <span className="text-[10px] leading-none truncate max-w-full">{TAB_TITLES[tab]}</span>
+      <span className="text-[10px] leading-none truncate max-w-full relative z-10 max-[380px]:hidden">{TAB_TITLES[tab]}</span>
+      <span className="text-[10px] leading-none truncate max-w-full relative z-10 min-[381px]:hidden">{TAB_SHORT[tab]}</span>
     </button>
   );
 
@@ -244,33 +290,52 @@ export function MenuPanel({
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
       {/* Common navigation — the day-to-day surface. */}
+      <div className="px-3 pt-2 pb-1 border-b border-border/60 bg-gradient-to-r from-surface-2/50 to-transparent">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] uppercase tracking-wide text-fg-faint">Workspace mode</span>
+          <button
+            type="button"
+            onClick={toggleMode}
+            title={`Switch to ${isAdvanced ? "normal" : "advanced"} mode`}
+            aria-label={`Switch to ${isAdvanced ? "normal" : "advanced"} mode`}
+            className={`control-tap text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
+              isAdvanced
+                ? "border-accent/40 bg-accent/10 text-fg-subtle hover:bg-accent/20"
+                : "border-border bg-surface-3 text-fg-faint hover:text-fg-muted hover:border-border-strong"
+            }`}
+          >
+            {isAdvanced ? "advanced" : "normal"}
+          </button>
+        </div>
+      </div>
       <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0">
         {COMMON_TABS.map(renderTabButton)}
       </div>
 
-      {/* Advanced (collapsible) — configuration / engine room. */}
-      <div className="border-b border-border shrink-0">
-        <button
-          type="button"
-          onClick={toggleAdvanced}
-          aria-expanded={advancedOpen}
-          className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors"
-        >
-          <span className="font-medium">Advanced</span>
-          <ChevronDown
-            size={12}
-            className={`transition-transform ${advancedOpen ? "rotate-0" : "-rotate-90"}`}
-          />
-        </button>
-        {advancedOpen && (
-          <div className="grid grid-cols-4 gap-1.5 px-2 pb-2">
-            {ADVANCED_TABS.map(renderTabButton)}
-          </div>
-        )}
-      </div>
+      {isAdvanced && (
+        <div className="border-b border-border shrink-0">
+          <button
+            type="button"
+            onClick={toggleAdvanced}
+            aria-expanded={advancedOpen}
+            className="control-tap w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors bg-gradient-to-r from-surface-2/40 to-transparent"
+          >
+            <span className="font-medium">Advanced</span>
+            <ChevronDown
+              size={12}
+              className={`transition-transform ${advancedOpen ? "rotate-0" : "-rotate-90"}`}
+            />
+          </button>
+          {advancedOpen && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 px-2 pb-2">
+              {ADVANCED_TABS.map(renderTabButton)}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main content area */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0 panel-scrollbar">
         <AgentSessionList
           activeAgentId={agentId}
           onSelect={(id) => { onAgentChange(id); onSetTab("chat"); onClose(); }}
@@ -278,15 +343,15 @@ export function MenuPanel({
       </div>
 
       {/* Display toggles */}
-      <div className="border-t border-border px-3 py-3 shrink-0">
+      <div className="border-t border-border px-3 py-3 shrink-0 bg-surface-1/30">
         <p className="text-[11px] text-fg-faint mb-1.5 font-medium uppercase tracking-wide">Display</p>
         <div className="flex flex-col gap-1.5">
           <ThemePicker />
-          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted">
+          <label className="control-tap inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
             <input type="checkbox" className="rounded border-border" checked={showTools} onChange={(e) => onShowToolsChange(e.target.checked)} />
             Show tool events
           </label>
-          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted">
+          <label className="control-tap inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
             <input type="checkbox" className="rounded border-border" checked={showThinking} onChange={(e) => onShowThinkingChange(e.target.checked)} />
             Show thinking
           </label>
@@ -307,17 +372,17 @@ function ThemePicker() {
     { value: "system", label: "System", icon: <Monitor size={12} /> },
   ];
   return (
-    <div className="flex items-center gap-2 text-xs text-fg-muted">
+    <div className="flex items-center gap-2 text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
       <span className="shrink-0">Theme</span>
-      <div className="flex flex-1 rounded-md border border-border overflow-hidden">
+      <div className="flex flex-1 rounded-lg border border-border overflow-hidden bg-surface">
         {options.map((o) => (
           <button
             key={o.value}
             onClick={() => setTheme(o.value)}
             title={o.label}
-            className={`flex-1 inline-flex items-center justify-center gap-1 py-1 text-[11px] transition-colors ${
+            className={`control-tap flex-1 inline-flex items-center justify-center gap-1 py-1 text-[11px] transition-colors ${
               theme === o.value
-                ? "bg-surface-3 text-fg"
+                ? "bg-surface-3 text-fg shadow-sm"
                 : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
             }`}
           >

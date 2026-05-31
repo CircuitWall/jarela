@@ -1,14 +1,18 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { AgentConfig, AgentConfigIn, Harness, ModelConfig, ToolInfo } from "@/api/types";
 import { api } from "@/api/client";
+import { useAppContext } from "@/contexts/AppContext";
 import { useTools } from "@/hooks/useTools";
 import { MBTI_PRESETS, MBTI_TYPES, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice/constants";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "@/components/models/CapBadges";
+import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
+import type { IntegrationStatus } from "@/api/types";
 
 interface Props {
   agent?: AgentConfig;
@@ -17,9 +21,27 @@ interface Props {
   onClose: () => void;
 }
 
+type ToolPermissionKind = "read" | "write" | "execute";
+
+const READ_PREFIXES = ["get_", "list_", "search_", "read_", "fetch_", "check_", "status_"];
+const WRITE_PREFIXES = [
+  "create_", "update_", "delete_", "write_", "edit_", "modify_", "move_", "copy_", "mkdir_",
+  "set_", "add_", "remove_", "trash_", "cancel_", "upsert_", "transition_", "upload_",
+];
+const EXECUTE_PREFIXES = ["run_", "exec_", "execute_", "shell_", "script_", "schedule_", "generate_", "trigger_", "propose_"];
+
+function permissionKindForTool(name: string, category?: string): ToolPermissionKind {
+  const n = name.toLowerCase();
+  if (READ_PREFIXES.some((p) => n.startsWith(p))) return "read";
+  if (WRITE_PREFIXES.some((p) => n.startsWith(p))) return "write";
+  if (category === "Shell") return "execute";
+  if (EXECUTE_PREFIXES.some((p) => n.startsWith(p))) return "execute";
+  return "execute";
+}
+
 function Section({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5 rounded-xl border border-border bg-surface-1/30 p-3">
       <div className="flex items-center gap-2">
         <span className="w-5 h-5 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center shrink-0">
           {step}
@@ -32,6 +54,8 @@ function Section({ step, title, children }: { step: number; title: string; child
 }
 
 export function AgentEditor({ agent, models, onSave, onClose }: Props) {
+  const { state, dispatch } = useAppContext();
+  const isAdvanced = state.experienceMode === "advanced";
   const isEdit = !!agent;
   const { tools } = useTools();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -57,6 +81,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [defaultHarnessId, setDefaultHarnessId] = useState<string>("builtin:default");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,10 +96,20 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   }, []);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    let cancelled = false;
+    api.integrations.list()
+      .then((res) => {
+        if (cancelled) return;
+        setIntegrations(res.statuses);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setIntegrations([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEscapeKey(onClose);
 
   function handleIconFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -168,6 +203,23 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
     });
   }
 
+  function toggleCategoryPermission(category: string, kind: ToolPermissionKind, enable: boolean) {
+    const toolsInCategory = allGroupedCategories.find(([c]) => c === category)?.[1] ?? [];
+    const names = toolsInCategory
+      .filter((t) => permissionKindForTool(t.name, category) === kind)
+      .map((t) => t.name);
+    if (names.length === 0) return;
+    setSelectedTools((prev) => {
+      if (enable) {
+        const set = new Set(prev);
+        for (const n of names) set.add(n);
+        return [...set];
+      }
+      const remove = new Set(names);
+      return prev.filter((n) => !remove.has(n));
+    });
+  }
+
   function toggleGroup(group: string, enable: boolean) {
     const names = (groupedTools.find((g) => g.group === group)?.categories ?? [])
       .flatMap(([, ts]) => ts.map((t) => t.name));
@@ -219,11 +271,17 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   const selectedModel = models.find((m) => m.name === modelConfigName);
   const defaultModel = models.find((m) => m.is_default);
+  const readiness = computeFeatureReadiness({
+    models,
+    integrations,
+    selectedProvider: selectedModel?.provider,
+    selectedModelId: selectedModel?.model_id,
+  });
   const mbtiPreset = MBTI_PRESETS[adaptiveMbti];
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
+      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${isAdvanced ? "max-w-2xl" : "max-w-xl"}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit agent" : "New agent"}</h3>
@@ -293,6 +351,28 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
           {/* Step 2: Model */}
           <Section step={2} title="Model">
+            {!readiness.documentsReady && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
+                <p>
+                  Add a model config that the current installation can use for Documents embeddings if you want semantic document recall.
+                </p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Compatible setup: OpenAI, Gemini, and GitHub Copilot-backed setups are the main built-in paths for embeddings without introducing another billing surface.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      dispatch({ type: "SET_TAB", tab: "models" });
+                    }}
+                    className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
+                  >
+                    Open Models
+                  </button>
+                </div>
+              </div>
+            )}
             <select
               className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
               value={modelConfigName}
@@ -358,9 +438,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                         key={group}
                         group={group}
                         categories={categories}
+                        advancedMode={isAdvanced}
                         selected={selectedTools}
                         onToggleTool={toggleTool}
                         onToggleCategory={toggleCategory}
+                        onToggleCategoryPermission={toggleCategoryPermission}
                         onToggleGroup={toggleGroup}
                       />
                     ) : (
@@ -369,9 +451,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                           key={category}
                           category={category}
                           tools={catTools}
+                          advancedMode={isAdvanced}
                           selected={selectedTools}
                           onToggleTool={toggleTool}
                           onToggleCategory={toggleCategory}
+                          onToggleCategoryPermission={toggleCategoryPermission}
                         />
                       ))
                     ),
@@ -385,32 +469,36 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
           {/* Step 4: Advanced */}
           <Section step={4} title="Advanced settings">
-            <label className="block">
-              <span className="text-xs text-fg-subtle mb-1 block">Harness</span>
-              <select
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                value={harnessId}
-                onChange={(e) => setHarnessId(e.target.value)}
-              >
-                <option value="">
-                  Use global default
-                  {(() => {
-                    const def = harnesses.find((h) => h.id === defaultHarnessId);
-                    return def ? ` (${def.name})` : "";
-                  })()}
-                </option>
-                {harnesses.map((h) => (
-                  <option key={h.id} value={h.id}>
-                    {h.name}{h.builtin ? " (built-in)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <p className="text-[11px] text-fg-faint">
-              Behavioral scaffolding (output formatting, citation rules, anti-fabrication, self-config) injected into this agent&apos;s system prompt.
-            </p>
+            {isAdvanced && (
+              <>
+                <label className="block">
+                  <span className="text-xs text-fg-subtle mb-1 block">Harness</span>
+                  <select
+                    className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                    value={harnessId}
+                    onChange={(e) => setHarnessId(e.target.value)}
+                  >
+                    <option value="">
+                      Use global default
+                      {(() => {
+                        const def = harnesses.find((h) => h.id === defaultHarnessId);
+                        return def ? ` (${def.name})` : "";
+                      })()}
+                    </option>
+                    {harnesses.map((h) => (
+                      <option key={h.id} value={h.id}>
+                        {h.name}{h.builtin ? " (built-in)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="text-[11px] text-fg-faint">
+                  Behavioral scaffolding (output formatting, citation rules, anti-fabrication, self-config) injected into this agent&apos;s system prompt.
+                </p>
 
-            <hr className="border-border/60 my-2" />
+                <hr className="border-border/60 my-2" />
+              </>
+            )}
 
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
@@ -457,6 +545,40 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               When on, the chat input shows a microphone and assistant replies show a play button.
               Requires the Google integration api_key.
             </p>
+            {!readiness.voiceReady && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
+                <p>
+                  Voice is not fully ready at the system level yet.
+                </p>
+                <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+                  Compatible setup: a Gemini model plus the existing Google AI integration. Without both, enabling voice would require extra setup.
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      dispatch({ type: "SET_TAB", tab: "models" });
+                    }}
+                    className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
+                  >
+                    Open Models
+                  </button>
+                  {!readiness.hasGoogleIntegration && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        dispatch({ type: "SET_TAB", tab: "connections" });
+                      }}
+                      className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
+                    >
+                      Open Connections
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">TTS model</span>
               <select
@@ -548,16 +670,20 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 function ToolGroupBlock({
   group,
   categories,
+  advancedMode,
   selected,
   onToggleTool,
   onToggleCategory,
+  onToggleCategoryPermission,
   onToggleGroup,
 }: {
   group: string;
   categories: Array<[string, ToolInfo[]]>;
+  advancedMode: boolean;
   selected: string[];
   onToggleTool: (name: string) => void;
   onToggleCategory: (category: string, enable: boolean) => void;
+  onToggleCategoryPermission: (category: string, kind: ToolPermissionKind, enable: boolean) => void;
   onToggleGroup: (group: string, enable: boolean) => void;
 }) {
   const allTools = categories.flatMap(([, ts]) => ts);
@@ -588,9 +714,11 @@ function ToolGroupBlock({
           key={category}
           category={category}
           tools={catTools}
+          advancedMode={advancedMode}
           selected={selected}
           onToggleTool={onToggleTool}
           onToggleCategory={onToggleCategory}
+          onToggleCategoryPermission={onToggleCategoryPermission}
         />
       ))}
     </ToolSelectionSection>
@@ -604,15 +732,19 @@ function ToolGroupBlock({
 function ToolCategoryBlock({
   category,
   tools,
+  advancedMode,
   selected,
   onToggleTool,
   onToggleCategory,
+  onToggleCategoryPermission,
 }: {
   category: string;
   tools: ToolInfo[];
+  advancedMode: boolean;
   selected: string[];
   onToggleTool: (name: string) => void;
   onToggleCategory: (category: string, enable: boolean) => void;
+  onToggleCategoryPermission: (category: string, kind: ToolPermissionKind, enable: boolean) => void;
 }) {
   const selectedInCat = tools.filter((t) => selected.includes(t.name)).length;
   const allOn = selectedInCat === tools.length;
@@ -636,25 +768,91 @@ function ToolCategoryBlock({
       allOn={allOn}
       onToggleAll={(enable) => onToggleCategory(category, enable)}
       headerRef={headerRef}
-      bodyClassName="grid grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
+      bodyClassName="grid grid-cols-1 sm:grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
     >
-      {tools.map((t) => (
-        <label key={t.name} className="flex items-center gap-1.5 cursor-pointer" title={t.description}>
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={selected.includes(t.name)}
-            onChange={() => onToggleTool(t.name)}
-          />
-          <span className="min-w-0 flex-1 flex items-center gap-1.5">
-            <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
-            <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
-              {Math.round((t.stats?.score ?? 1) * 100)}%
+      {advancedMode ? (
+        tools.map((t) => (
+          <label
+            key={t.name}
+            className={`flex items-center gap-2 cursor-pointer rounded-lg border px-2 py-1.5 transition-colors ${
+              selected.includes(t.name)
+                ? "border-accent/40 bg-accent/10"
+                : "border-border bg-surface-2/80 hover:bg-surface-3/70"
+            }`}
+            title={t.description}
+          >
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={selected.includes(t.name)}
+              onChange={() => onToggleTool(t.name)}
+            />
+            <span className="min-w-0 flex-1 flex items-center gap-1.5">
+              <span className="font-mono text-[11px] text-fg-muted truncate">{t.name}</span>
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(t.stats?.score ?? 1)}`}>
+                {Math.round((t.stats?.score ?? 1) * 100)}%
+              </span>
             </span>
-          </span>
-        </label>
-      ))}
+          </label>
+        ))
+      ) : (
+        <NormalPermissionControls
+          category={category}
+          tools={tools}
+          selected={selected}
+          onToggle={(kind, enable) => onToggleCategoryPermission(category, kind, enable)}
+        />
+      )}
     </ToolSelectionSection>
+  );
+}
+
+function NormalPermissionControls({
+  category,
+  tools,
+  selected,
+  onToggle,
+}: {
+  category: string;
+  tools: ToolInfo[];
+  selected: string[];
+  onToggle: (kind: ToolPermissionKind, enable: boolean) => void;
+}) {
+  const kinds: ToolPermissionKind[] = ["read", "write", "execute"];
+  return (
+    <div className="col-span-2 rounded-lg border border-border bg-surface-2/40 p-2.5 space-y-2.5">
+      <p className="text-[11px] text-fg-faint leading-snug">
+        Quick permissions for {category}. Advanced mode exposes individual functions.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {kinds.map((kind) => {
+          const names = tools
+            .filter((t) => permissionKindForTool(t.name, category) === kind)
+            .map((t) => t.name);
+          const selectedCount = names.filter((n) => selected.includes(n)).length;
+          const checked = names.length > 0 && selectedCount === names.length;
+          return (
+            <label key={kind} className={`flex items-center gap-2 cursor-pointer rounded-xl border px-2.5 py-2 transition-colors ${
+              checked
+                ? "border-accent/50 bg-accent/10"
+                : "border-border bg-surface-2 hover:bg-surface-3/70"
+            }`}>
+              <input
+                type="checkbox"
+                className="rounded border-border"
+                checked={checked}
+                disabled={names.length === 0}
+                onChange={(e) => onToggle(kind, e.target.checked)}
+              />
+              <span className="text-[11px] text-fg-subtle capitalize leading-tight">
+                <span className="font-medium">{kind}</span>{" "}
+                <span className="text-fg-faint">{selectedCount}/{names.length}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -682,8 +880,8 @@ function ToolSelectionSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border bg-surface-1/40">
-      <div className="flex items-center gap-2 px-2 py-1.5">
+    <div className="rounded-xl border border-border bg-surface-1/40 overflow-hidden">
+      <div className="flex items-center gap-2 px-2.5 py-2 bg-surface-2/50">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}

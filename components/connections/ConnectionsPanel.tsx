@@ -1,7 +1,9 @@
 "use client";
+import { useEffect, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { IntegrationsPanel } from "@/components/integrations/IntegrationsPanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
+import { api } from "@/api/client";
 
 // "Connections" is the single home for every auth surface — built-in
 // integrations (Gmail, Atlassian, GitHub, …) AND MCP server credentials.
@@ -18,10 +20,41 @@ const SUB_TITLES: Record<Sub, string> = {
   mcp: "MCP servers",
 };
 
+type Counts = { connected: number; total: number };
+
 export function ConnectionsPanel() {
   const { state, dispatch } = useAppContext();
   const raw = state.selectedItem.connections;
   const active: Sub = raw === "mcp" ? "mcp" : "builtin";
+
+  // Lightweight per-sub counts so the user sees at a glance which surface
+  // still has work to do. The child panels do their own authoritative
+  // fetches; this just powers the header badges.
+  const [counts, setCounts] = useState<Record<Sub, Counts | null>>({ builtin: null, mcp: null });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [ints, mcps] = await Promise.all([
+          api.integrations.list(),
+          api.mcp.list(),
+        ]);
+        if (cancelled) return;
+        const builtin: Counts = {
+          connected: ints.statuses.filter((s) => s.configured).length,
+          total: ints.definitions.length,
+        };
+        const mcp: Counts = {
+          connected: mcps.filter((m) => m.enabled !== false).length,
+          total: mcps.length,
+        };
+        setCounts({ builtin, mcp });
+      } catch {
+        /* counts are best-effort; child panels surface real errors */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const setSub = (s: Sub) =>
     dispatch({ type: "SET_SELECTION", tab: "connections", itemId: s });
@@ -35,6 +68,7 @@ export function ConnectionsPanel() {
       >
         {(["builtin", "mcp"] as Sub[]).map((s) => {
           const selected = s === active;
+          const c = counts[s];
           return (
             <button
               key={s}
@@ -43,13 +77,26 @@ export function ConnectionsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s)}
               className={
-                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors " +
+                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors inline-flex items-center gap-2 " +
                 (selected
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
                   : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
               }
             >
-              {SUB_TITLES[s]}
+              <span>{SUB_TITLES[s]}</span>
+              {c && (
+                <span
+                  className={
+                    "text-[10px] px-1.5 py-0.5 rounded-full border " +
+                    (c.connected > 0
+                      ? "border-accent/40 bg-accent/10 text-[var(--text-primary)]"
+                      : "border-[var(--border)] bg-transparent text-[var(--text-secondary)]")
+                  }
+                  aria-label={`${c.connected} of ${c.total} connected`}
+                >
+                  {c.connected}/{c.total}
+                </span>
+              )}
             </button>
           );
         })}

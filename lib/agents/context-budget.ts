@@ -111,6 +111,42 @@ export function takeRecentMessagesWithinBudget(messages: readonly MessageRow[], 
   return chosen.reverse();
 }
 
+export function truncateLargestMessagesWithinBudget(messages: readonly MessageRow[], tokenBudget: number): MessageRow[] {
+  if (messages.length === 0) return [];
+  if (tokenBudget <= 0) return messages.slice(-1);
+
+  const out = messages.map((m) => ({ ...m }));
+  let tokens = out.map((m) => estimateTokens(transcriptText(m.content)));
+  let total = tokens.reduce((a, b) => a + b, 0);
+  if (total <= tokenBudget) return out;
+
+  // Keep shrinking the largest message until the aggregate fits the budget.
+  // This is a last-resort guardrail for pathological long turns.
+  while (total > tokenBudget) {
+    let idx = 0;
+    for (let i = 1; i < tokens.length; i += 1) {
+      if (tokens[i] > tokens[idx]) idx = i;
+    }
+    const cur = tokens[idx];
+    if (cur <= 1) break;
+
+    const needed = total - tokenBudget;
+    const nextTokens = Math.max(1, cur - needed);
+    const nextChars = Math.max(8, nextTokens * 4 - 32);
+    const raw = transcriptText(out[idx].content).replace(/\s+/g, " ").trim();
+    const suffix = " [truncated for context budget]";
+    const clipped = raw.length > nextChars
+      ? `${raw.slice(0, Math.max(1, nextChars)).trimEnd()}${suffix}`
+      : raw;
+
+    out[idx] = { ...out[idx], content: clipped };
+    tokens[idx] = estimateTokens(clipped);
+    total = tokens.reduce((a, b) => a + b, 0);
+  }
+
+  return out;
+}
+
 export function formatContextBudgetSummary(budget: ContextBudget): string {
   const parts = [
     `window ${budget.contextWindowTokens} tokens`,

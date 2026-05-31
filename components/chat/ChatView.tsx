@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
+import { useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading } from "@/lib/ui/loading";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { InputBar } from "./InputBar";
@@ -40,6 +41,7 @@ interface Props {
 }
 
 export function ChatView({ threadId, agentId, sessionLoading, sessionError, showTools, showThinking, onMessageSent, onSelectAgent }: Props) {
+  const { state } = useAppContext();
   const [messages, setMessages] = useState<Message[]>([]);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
   const [input, setInput] = useState("");
@@ -314,7 +316,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     const { accepted } = await start(
       threadId,
       text,
-      { filters: { include_tools: showTools, include_thinking: showThinking } },
+      {
+        filters: { include_tools: showTools, include_thinking: showThinking },
+        ui_experience_mode: state.experienceMode,
+      },
       atts.length ? atts : undefined,
     );
     if (!accepted) {

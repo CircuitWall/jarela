@@ -161,6 +161,7 @@ export interface ToolPolicy {
 export interface StreamOptions {
   filters?: StreamFilters;
   tool_policy?: ToolPolicy;
+  ui_experience_mode?: "normal" | "advanced";
 }
 
 export interface UserProfile {
@@ -218,6 +219,122 @@ export interface ToolUsefulnessStats {
   score: number;
   never_used: boolean;
   last_called_at: string | null;
+}
+
+export interface DashboardSeriesPoint {
+  day: string;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+  tool_calls: number;
+  tool_successes: number;
+  tool_errors: number;
+  success_rate: number;
+  error_rate: number;
+}
+
+export interface DashboardToolTop {
+  name: string;
+  call_count: number;
+  success_count: number;
+  error_count: number;
+  score: number;
+  success_rate: number;
+  last_called_at: string | null;
+}
+
+export interface DashboardAgentTop {
+  agent_id: string;
+  agent_name: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
+export interface DashboardProviderRate {
+  provider: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+}
+
+export interface DashboardModelRate {
+  provider: string;
+  model_id: string;
+  input_per_1m_usd: number | null;
+  output_per_1m_usd: number | null;
+  source: string;
+  inferred: boolean;
+  confidence: "high" | "medium" | "low";
+  ok: boolean;
+  status: number | null;
+  error: string | null;
+}
+
+export interface DashboardProviderBreakdown {
+  provider: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
+export interface DashboardModelBreakdown {
+  model_config_name: string;
+  provider: string;
+  model_id: string;
+  message_count: number;
+  input_tokens_est: number;
+  output_tokens_est: number;
+  estimated_cost_usd: number;
+}
+
+export interface DashboardMetrics {
+  generated_at: string;
+  days: number;
+  summary: {
+    input_tokens_est: number;
+    output_tokens_est: number;
+    estimated_cost_usd: number;
+    tool_calls: number;
+    tool_successes: number;
+    tool_errors: number;
+    success_rate: number;
+    error_rate: number;
+  };
+  series: DashboardSeriesPoint[];
+  top_tools: DashboardToolTop[];
+  top_agents: DashboardAgentTop[];
+  by_provider: DashboardProviderBreakdown[];
+  by_model: DashboardModelBreakdown[];
+  pricing: {
+    snapshot_generated_at: string | null;
+    rates: DashboardProviderRate[];
+    model_rates: DashboardModelRate[];
+    notes: string;
+  };
+}
+
+export interface DashboardCurrencyInfo {
+  currency: string;
+  rate_from_usd: number;
+  country_code: string | null;
+  source: "location" | "default" | "manual";
+  updated_at: string;
+}
+
+export interface DashboardPricingRefreshResult {
+  refreshed: boolean;
+  reason: "forced" | "stale" | "missing" | "fresh";
+  generated_at: string;
+  ttl_days: number;
+  source_count: number;
 }
 
 /** One built-in tool category with its current enable state. */

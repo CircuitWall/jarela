@@ -1,6 +1,7 @@
 "use client";
 import { X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { MemoryItem } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
 
@@ -18,11 +19,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
   const [saving, setSaving] = useState(false);
   const isEdit = !!item;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   async function handleSave() {
     setError(null);
