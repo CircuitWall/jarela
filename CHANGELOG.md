@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-05-31
+
+### Added
+
+- **Live action text in app header.** A small label next to the agent
+  picker shows what the active agent is doing in real time — `Sending…`
+  on submit, `Thinking…` on reasoning deltas, `Using <tool>…` while a
+  tool runs, `Responding…` when text streams back — and clears on
+  done/error/stop. Replaces the indeterminate top progress strip
+  ([components/ui/HeaderActivity.tsx](components/ui/HeaderActivity.tsx),
+  [lib/ui/loading.ts](lib/ui/loading.ts), [hooks/useSSE.ts](hooks/useSSE.ts)).
+- **Active agent identity in app header.** The header now displays the
+  active agent's icon and name next to the picker, falling back to the
+  app mark when no agent is selected
+  ([components/layout/AppShell.tsx](components/layout/AppShell.tsx)).
+- **PWA title-bar theming.** Desktop PWA window chrome and mobile
+  browser address bars match the active color theme
+  ([app/layout.tsx](app/layout.tsx)).
+
+### Fixed
+
+- Playwright e2e specs aligned with the advanced-mode gating and menu
+  reorganization introduced in 0.8.0.
+
 ## [0.8.0] - 2026-05-31
 
 ### Added
