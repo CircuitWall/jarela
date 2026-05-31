@@ -267,7 +267,7 @@ export function DashboardPanel() {
         <div className="absolute top-64 -left-24 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <div className="relative rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--bg-secondary)] to-[var(--bg-primary)]/60 p-4 md:p-5 shadow-sm">
+      <div className="sticky top-2 z-20 rounded-2xl border border-[var(--border)] bg-gradient-to-br from-[var(--bg-secondary)]/95 to-[var(--bg-primary)]/75 p-4 md:p-5 shadow-sm backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Usage dashboard</h2>
