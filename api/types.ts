@@ -34,6 +34,12 @@ export interface AgentConfig {
    * `builtin:`; user-created customs are prefixed `custom:`.
    */
   harness_id: string | null;
+  /**
+   * IDs of other agents this agent is allowed to hand subtasks to via the
+   * built-in `delegate_to_agent` tool. Empty array (default) disables
+   * delegation even if the tool itself is enabled.
+   */
+  delegate_targets: string[];
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +67,7 @@ export interface AgentConfigIn {
   voice_stt_model?: string;
   voice_auto_speak?: boolean;
   harness_id?: string | null;
+  delegate_targets?: string[];
 }
 
 export interface ThreadSummary {

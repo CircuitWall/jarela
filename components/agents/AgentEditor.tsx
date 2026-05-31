@@ -79,6 +79,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [harnessId, setHarnessId] = useState<string>(agent?.harness_id ?? "");
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [defaultHarnessId, setDefaultHarnessId] = useState<string>("builtin:default");
+  const [delegateTargets, setDelegateTargets] = useState<string[]>(agent?.delegate_targets ?? []);
+  const [otherAgents, setOtherAgents] = useState<AgentConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
@@ -108,6 +110,17 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
       });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.agents.list()
+      .then((list) => {
+        if (cancelled) return;
+        setOtherAgents(list.filter((a) => a.id !== agent?.id));
+      })
+      .catch(() => { /* delegate picker stays empty if fetch fails */ });
+    return () => { cancelled = true; };
+  }, [agent?.id]);
 
   useEscapeKey(onClose);
 
@@ -256,6 +269,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         voice_stt_model: voiceSttModel,
         voice_auto_speak: voiceAutoSpeak,
         harness_id: harnessId || null,
+        delegate_targets: delegateTargets,
       });
       onClose();
     } catch (e) {
@@ -464,6 +478,63 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               </>
             )}
           </Section>
+
+          {/* Delegates — only meaningful when delegate_to_agent is enabled. */}
+          {(() => {
+            const canDelegate = selectedTools.includes("delegate_to_agent");
+            if (!canDelegate && delegateTargets.length === 0) return null;
+            return (
+              <>
+                <hr className="border-border" />
+                <Section step={4} title="Delegates">
+                  <p className="text-[11px] text-fg-faint">
+                    Other agents this one may hand subtasks to via <code>delegate_to_agent</code>.
+                    {!canDelegate && (
+                      <span className="text-amber-700 dark:text-amber-400">
+                        {" "}Enable the <code>delegate_to_agent</code> tool above for these to take effect.
+                      </span>
+                    )}
+                  </p>
+                  {otherAgents.length === 0 ? (
+                    <p className="text-xs text-fg-faint">No other agents to delegate to yet.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {otherAgents.map((a) => {
+                        const checked = delegateTargets.includes(a.id);
+                        return (
+                          <label
+                            key={a.id}
+                            className="flex items-start gap-2 p-1.5 rounded hover:bg-surface-3/50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setDelegateTargets((prev) =>
+                                  prev.includes(a.id)
+                                    ? prev.filter((x) => x !== a.id)
+                                    : [...prev, a.id],
+                                )
+                              }
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-fg">{a.name}</div>
+                              {a.identity && (
+                                <div className="text-[11px] text-fg-faint truncate">
+                                  {a.identity.split("\n")[0]}
+                                </div>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Section>
+              </>
+            );
+          })()}
 
           <hr className="border-border" />
 
