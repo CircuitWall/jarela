@@ -81,6 +81,23 @@ export interface DashboardModelBreakdown {
   estimated_cost_usd: number;
 }
 
+export interface DashboardDayBreakdown {
+  day: string;
+  summary: {
+    input_tokens_est: number;
+    output_tokens_est: number;
+    estimated_cost_usd: number;
+    tool_calls: number;
+    tool_successes: number;
+    tool_errors: number;
+    success_rate: number;
+    error_rate: number;
+  };
+  top_agents: DashboardAgentTop[];
+  by_provider: DashboardProviderBreakdown[];
+  by_model: DashboardModelBreakdown[];
+}
+
 export interface DashboardMetrics {
   generated_at: string;
   days: number;
@@ -99,6 +116,7 @@ export interface DashboardMetrics {
   top_agents: DashboardAgentTop[];
   by_provider: DashboardProviderBreakdown[];
   by_model: DashboardModelBreakdown[];
+  breakdowns_by_day: Record<string, DashboardDayBreakdown>;
   pricing: {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];
@@ -221,6 +239,23 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   const agentMap = new Map<string, AgentBucket>();
   const providerMap = new Map<string, ProviderBucket>();
   const modelMap = new Map<string, ModelBucket>();
+  // Per-day breakdown maps. Populated lazily — only days that saw traffic
+  // get an entry. Each entry mirrors the global agent/provider/model maps
+  // but scoped to that day so the UI can re-slice when a day is selected.
+  type DayBreakdownBucket = {
+    agents: Map<string, AgentBucket>;
+    providers: Map<string, ProviderBucket>;
+    models: Map<string, ModelBucket>;
+  };
+  const dayBreakdownMap = new Map<string, DayBreakdownBucket>();
+  const ensureDayBreakdown = (day: string): DayBreakdownBucket => {
+    let entry = dayBreakdownMap.get(day);
+    if (!entry) {
+      entry = { agents: new Map(), providers: new Map(), models: new Map() };
+      dayBreakdownMap.set(day, entry);
+    }
+    return entry;
+  };
 
   let totalInput = 0;
   let totalOutput = 0;
@@ -296,6 +331,49 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     modelBucket.output_tokens_est += outputTokens;
     modelBucket.estimated_cost_usd += estCost;
     modelMap.set(modelKey, modelBucket);
+
+    const dayBreakdown = ensureDayBreakdown(day);
+    const dayAgent = dayBreakdown.agents.get(row.agent_id) ?? {
+      agent_id: row.agent_id,
+      agent_name: agentName,
+      message_count: 0,
+      input_tokens_est: 0,
+      output_tokens_est: 0,
+      estimated_cost_usd: 0,
+    };
+    dayAgent.message_count += 1;
+    dayAgent.input_tokens_est += inputTokens;
+    dayAgent.output_tokens_est += outputTokens;
+    dayAgent.estimated_cost_usd += estCost;
+    dayBreakdown.agents.set(row.agent_id, dayAgent);
+
+    const dayProvider = dayBreakdown.providers.get(providerName) ?? {
+      provider: providerName,
+      message_count: 0,
+      input_tokens_est: 0,
+      output_tokens_est: 0,
+      estimated_cost_usd: 0,
+    };
+    dayProvider.message_count += 1;
+    dayProvider.input_tokens_est += inputTokens;
+    dayProvider.output_tokens_est += outputTokens;
+    dayProvider.estimated_cost_usd += estCost;
+    dayBreakdown.providers.set(providerName, dayProvider);
+
+    const dayModel = dayBreakdown.models.get(modelKey) ?? {
+      model_config_name: modelConfigName,
+      provider: providerName,
+      model_id: modelId,
+      message_count: 0,
+      input_tokens_est: 0,
+      output_tokens_est: 0,
+      estimated_cost_usd: 0,
+    };
+    dayModel.message_count += 1;
+    dayModel.input_tokens_est += inputTokens;
+    dayModel.output_tokens_est += outputTokens;
+    dayModel.estimated_cost_usd += estCost;
+    dayBreakdown.models.set(modelKey, dayModel);
 
     if (row.tool_events && row.tool_events.length > 1) {
       const usage = summarizeEvents(row.tool_events);
@@ -383,6 +461,45 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   const overallSuccessRate = totalCalls > 0 ? totalSuccesses / totalCalls : 1;
   const overallErrorRate = totalCalls > 0 ? totalErrors / totalCalls : 0;
 
+  const seriesByDay = new Map(series.map((s) => [s.day, s]));
+  const breakdowns_by_day: Record<string, DashboardDayBreakdown> = {};
+  for (const [day, bucket] of dayBreakdownMap.entries()) {
+    const dayPoint = seriesByDay.get(day);
+    const dayAgents = [...bucket.agents.values()]
+      .sort((a, b) => {
+        if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
+        if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+        return a.agent_name.localeCompare(b.agent_name);
+      })
+      .slice(0, 8);
+    const dayProviders = [...bucket.providers.values()].sort((a, b) => {
+      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
+      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+      return a.provider.localeCompare(b.provider);
+    });
+    const dayModels = [...bucket.models.values()].sort((a, b) => {
+      if (b.estimated_cost_usd !== a.estimated_cost_usd) return b.estimated_cost_usd - a.estimated_cost_usd;
+      if (b.message_count !== a.message_count) return b.message_count - a.message_count;
+      return a.model_config_name.localeCompare(b.model_config_name);
+    });
+    breakdowns_by_day[day] = {
+      day,
+      summary: {
+        input_tokens_est: dayPoint?.input_tokens_est ?? 0,
+        output_tokens_est: dayPoint?.output_tokens_est ?? 0,
+        estimated_cost_usd: dayPoint?.estimated_cost_usd ?? 0,
+        tool_calls: dayPoint?.tool_calls ?? 0,
+        tool_successes: dayPoint?.tool_successes ?? 0,
+        tool_errors: dayPoint?.tool_errors ?? 0,
+        success_rate: dayPoint?.success_rate ?? 1,
+        error_rate: dayPoint?.error_rate ?? 0,
+      },
+      top_agents: dayAgents,
+      by_provider: dayProviders,
+      by_model: dayModels,
+    };
+  }
+
   return {
     generated_at: now.toISOString(),
     days: boundedDays,
@@ -401,6 +518,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     top_agents,
     by_provider,
     by_model,
+    breakdowns_by_day,
     pricing: {
       snapshot_generated_at: generatedAt,
       rates: [...byProvider.entries()]
