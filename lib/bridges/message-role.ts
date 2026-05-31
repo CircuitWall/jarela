@@ -54,6 +54,12 @@ export interface BridgePromptInput {
   sender_name: string;
   /** The raw message text the user / counterpart / agent sent. */
   text: string;
+  /**
+   * Route-level silent (observer) mode. When true, the agent must not
+   * reply on the chat — it can only surface internal status updates to
+   * the paired user. See `roleNote` for the exact instructions.
+   */
+  silent?: boolean;
 }
 
 // Parsed chat-friendly envelope extracted from a bridge prompt body.
@@ -91,7 +97,7 @@ export interface BridgePromptContext {
  * convention. Both are stable across adapters.
  */
 export function formatBridgePrompt(input: BridgePromptInput): string {
-  const note = roleNote(input.role, input.is_group);
+  const note = roleNote(input.role, input.is_group, input.silent === true);
   const lines = [
     `[bridge:${input.bridge_id}]`,
     `[chat_id:${input.chat_id}]`,
@@ -143,7 +149,20 @@ export function parseBridgePrompt(raw: string): BridgePromptContext | null {
   };
 }
 
-function roleNote(role: MessageRole, isGroup: boolean): string {
+function roleNote(role: MessageRole, isGroup: boolean, silent: boolean): string {
+  if (silent) {
+    // Observer mode overrides the per-role framing: the agent is forbidden
+    // from speaking on the chat regardless of who sent the inbound message.
+    // It only reports internally to the paired user.
+    if (role === "agent") {
+      return "The message below is your own prior output, surfaced again because the bridge adapter could not suppress its echo. Use it only as a record of what you previously said — do not respond to it.";
+    }
+    return (
+      "Silent / observer mode is enabled for this route. You are standing on the paired user's side and only monitoring the chat — you must NEVER write to the chat, draft a chat reply, or imitate a participant. " +
+      "Report only to the paired user, as a concise internal summary of important events, risks, or user-actionable changes (informational tone, not conversational). " +
+      "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else."
+    );
+  }
   switch (role) {
     case "user":
       return "The paired user themselves sent the message below in this conversation. Treat it as the user's own reaction/input to the prior chat — they are speaking to the other party, not directly to you. Use it to update your understanding of the user's intent.";
