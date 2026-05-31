@@ -15,7 +15,7 @@ export function ProfilePanel() {
 
   if (isNormal && showWizard) {
     return (
-      <div className="h-full overflow-y-auto profile-scrollbar">
+      <div className="h-full overflow-y-auto profile-scrollbar panel-scrollbar">
         <div className="max-w-3xl mx-auto w-full px-4 pt-4">
           <div className="rounded-xl border border-border bg-surface-2/70 px-3 py-2 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs text-fg-muted">
@@ -57,7 +57,7 @@ export function ProfilePanel() {
           </button>
         )}
       </div>
-      <div ref={containerRef} className="flex-1 overflow-y-auto profile-scrollbar max-w-lg mx-auto w-full">
+      <div ref={containerRef} className="flex-1 overflow-y-auto profile-scrollbar panel-scrollbar max-w-lg mx-auto w-full">
         <ProfileEditor />
       </div>
     </div>

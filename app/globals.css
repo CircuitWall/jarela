@@ -291,6 +291,23 @@ body {
 /* Disable the blue tap flash on iOS / Android; we use explicit :active styles. */
 * { -webkit-tap-highlight-color: transparent; }
 
+/* Consistent keyboard focus affordance across interactive controls. */
+:where(button, [role="button"], a[href], input, select, textarea):focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-accent) 75%, white 10%);
+  outline-offset: 2px;
+}
+
+/* Adaptive hit-target helper: compact on desktop, finger-friendly on touch. */
+.control-tap {
+  min-height: 2rem;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .control-tap {
+    min-height: 2.5rem;
+  }
+}
+
 /* iOS auto-zooms when an input/textarea has font-size < 16px. Lift form fields
    to 16px on phones to suppress the zoom, but keep desktop's denser typography. */
 @media (max-width: 640px) {
@@ -331,6 +348,35 @@ body {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Reusable subtle scrollbar treatment for scrollable panels. */
+.panel-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-fg-subtle) 55%, transparent) transparent;
+}
+
+.panel-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-fg-subtle) 48%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.panel-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-fg-muted) 62%, transparent);
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb:active {
+  background: color-mix(in srgb, var(--color-accent) 55%, var(--color-fg-muted));
 }
 
 /* Profile panel scrollbar: subtle track + rounded thumb with clear hover. */

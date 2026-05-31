@@ -54,6 +54,23 @@ const TAB_TITLES: Record<Tab, string> = {
   harness: "Harness",
 };
 
+const TAB_SHORT: Record<Tab, string> = {
+  chat: "Chat",
+  dashboard: "Dash",
+  agents: "AI",
+  memory: "Mem",
+  documents: "Docs",
+  models: "Model",
+  mcp: "MCP",
+  extensions: "Ext",
+  tools: "Tools",
+  connections: "Conn",
+  tasks: "Tasks",
+  bridges: "Bridge",
+  profile: "Me",
+  harness: "Test",
+};
+
 // Two-tier menu. "Common" surfaces the day-to-day verbs plus the most
 // relevant configuration touchpoints (models, tools). "Advanced" hides the
 // less-frequently used engine-room surfaces behind a collapsible header.
@@ -245,7 +262,8 @@ export function MenuPanel({
       onClick={() => onSetTab(tab)}
       title={TAB_TITLES[tab]}
       aria-label={TAB_TITLES[tab]}
-      className={`min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
+      aria-current={activeTab === tab ? "page" : undefined}
+      className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
         activeTab === tab
           ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
           : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50 hover:-translate-y-px"
@@ -255,7 +273,8 @@ export function MenuPanel({
         <span className={`absolute inset-0 bg-gradient-to-br ${TAB_ACCENT[tab] ?? "from-accent/20 to-transparent"}`} />
       )}
       <span className="shrink-0">{TAB_ICONS[tab]}</span>
-      <span className="text-[10px] leading-none truncate max-w-full relative z-10">{TAB_TITLES[tab]}</span>
+      <span className="text-[10px] leading-none truncate max-w-full relative z-10 max-[380px]:hidden">{TAB_TITLES[tab]}</span>
+      <span className="text-[10px] leading-none truncate max-w-full relative z-10 min-[381px]:hidden">{TAB_SHORT[tab]}</span>
     </button>
   );
 
@@ -287,7 +306,7 @@ export function MenuPanel({
             type="button"
             onClick={toggleAdvanced}
             aria-expanded={advancedOpen}
-            className="w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors bg-gradient-to-r from-surface-2/40 to-transparent"
+            className="control-tap w-full flex items-center justify-between px-3 py-2 text-[11px] uppercase tracking-wide text-fg-faint hover:text-fg-muted transition-colors bg-gradient-to-r from-surface-2/40 to-transparent"
           >
             <span className="font-medium">Advanced</span>
             <ChevronDown
@@ -304,7 +323,7 @@ export function MenuPanel({
       )}
 
       {/* Main content area */}
-      <div className="flex-1 overflow-y-auto min-h-0">
+      <div className="flex-1 overflow-y-auto min-h-0 panel-scrollbar">
         <AgentSessionList
           activeAgentId={agentId}
           onSelect={(id) => { onAgentChange(id); onSetTab("chat"); onClose(); }}
@@ -316,11 +335,11 @@ export function MenuPanel({
         <p className="text-[11px] text-fg-faint mb-1.5 font-medium uppercase tracking-wide">Display</p>
         <div className="flex flex-col gap-1.5">
           <ThemePicker />
-          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
+          <label className="control-tap inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
             <input type="checkbox" className="rounded border-border" checked={showTools} onChange={(e) => onShowToolsChange(e.target.checked)} />
             Show tool events
           </label>
-          <label className="inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
+          <label className="control-tap inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
             <input type="checkbox" className="rounded border-border" checked={showThinking} onChange={(e) => onShowThinkingChange(e.target.checked)} />
             Show thinking
           </label>
@@ -349,7 +368,7 @@ function ThemePicker() {
             key={o.value}
             onClick={() => setTheme(o.value)}
             title={o.label}
-            className={`flex-1 inline-flex items-center justify-center gap-1 py-1 text-[11px] transition-colors ${
+            className={`control-tap flex-1 inline-flex items-center justify-center gap-1 py-1 text-[11px] transition-colors ${
               theme === o.value
                 ? "bg-surface-3 text-fg shadow-sm"
                 : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
