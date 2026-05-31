@@ -22,8 +22,16 @@ export const metadata: Metadata = {
 // Next 15+ requires themeColor (and color-scheme, viewport, etc.) to live in
 // the viewport export, not metadata. The /_not-found warning came from Next
 // inheriting this same layout — moving it here fixes both routes at once.
+// Match the installed-PWA window chrome (desktop title bar, mobile address
+// bar, splash) to the active surface color. Two entries let the OS pick
+// based on prefers-color-scheme; the runtime ThemeContext / pre-paint
+// script overrides this single <meta name="theme-color"> tag when the
+// user picks an explicit light/dark mode.
 export const viewport: Viewport = {
-  themeColor: "#2563eb",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -38,10 +46,31 @@ export const viewport: Viewport = {
 // some module-resolution paths, tripping "Element type is invalid".)
 // Falls back to "system", which then defers to prefers-color-scheme.
 const themeBootstrap = `(() => {
+  var LIGHT = "#ffffff", DARK = "#09090b";
+  function resolve(t) {
+    if (t === "light") return LIGHT;
+    if (t === "dark") return DARK;
+    try {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? DARK : LIGHT;
+    } catch (e) { return DARK; }
+  }
   try {
     var t = localStorage.getItem("jarela-theme");
     if (t !== "light" && t !== "dark" && t !== "system") t = "system";
     document.documentElement.setAttribute("data-theme", t);
+    // Collapse any media-scoped theme-color metas Next emits to a single tag
+    // so the PWA window chrome matches the user's explicit choice (not just
+    // prefers-color-scheme). ThemeContext keeps this in sync on change.
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    for (var i = 1; i < metas.length; i++) metas[i].parentNode.removeChild(metas[i]);
+    var meta = metas[0];
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "theme-color");
+      document.head.appendChild(meta);
+    }
+    meta.removeAttribute("media");
+    meta.setAttribute("content", resolve(t));
   } catch (e) {
     document.documentElement.setAttribute("data-theme", "system");
   }
