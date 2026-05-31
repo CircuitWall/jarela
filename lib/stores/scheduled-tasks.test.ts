@@ -155,4 +155,18 @@ describe("scheduled-tasks store (ADR-0032)", () => {
     expect(fetched.reaction_script).toBe("reaction.test");
     expect(fetched.reaction_script_args).toBe(JSON.stringify({ hello: "world" }));
   });
+
+  it("updateScheduledTask: re-associates a task to a different agent without rescheduling", () => {
+    const t = createScheduledTask({
+      agent_id: "a",
+      prompt: "p",
+      kind: "cron",
+      schedule: "0 * * * *",
+    });
+    const originalNext = t.next_run_at;
+    const updated = updateScheduledTask(t.id, { agent_id: "b" })!;
+    expect(updated.agent_id).toBe("b");
+    expect(updated.next_run_at).toBe(originalNext);
+    expect(updated.prompt).toBe("p");
+  });
 });

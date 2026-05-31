@@ -89,7 +89,7 @@ export function ScheduledTasksPanel() {
           </div>
         )}
         {sorted.map((t) => (
-          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} onChanged={() => void load()} />
+          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} agents={agents} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} onChanged={() => void load()} />
         ))}
         <WatchersSection agents={agents} />
       </div>
@@ -98,10 +98,11 @@ export function ScheduledTasksPanel() {
 }
 
 function TaskCard({
-  task, agent, onCancel, onRunNow, onChanged,
+  task, agent, agents, onCancel, onRunNow, onChanged,
 }: {
   task: ScheduledTask;
   agent?: AgentConfig;
+  agents: Record<string, AgentConfig>;
   onCancel: () => void;
   onRunNow: () => void;
   onChanged: () => void;
@@ -162,7 +163,7 @@ function TaskCard({
       {expanded && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
           {editing ? (
-            <TaskEditor task={task} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
+            <TaskEditor task={task} agents={agents} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
           ) : (
             <>
           {task.reaction_kind === "agent_prompt" && (
@@ -375,12 +376,14 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 // (ISO conversion happens on save); for "cron" it's a free-text cron expr
 // the server validates with cron-parser.
 function TaskEditor({
-  task, onCancel, onSaved,
+  task, agents, onCancel, onSaved,
 }: {
   task: ScheduledTask;
+  agents: Record<string, AgentConfig>;
   onCancel: () => void;
   onSaved: () => void;
 }) {
+  const [agentId, setAgentId] = useState(task.agent_id);
   const [prompt, setPrompt] = useState(task.prompt);
   const [description, setDescription] = useState(task.description ?? "");
   const [kind, setKind] = useState<"once" | "cron">(task.kind);
@@ -408,6 +411,7 @@ function TaskEditor({
     setSaving(true);
     try {
       await api.scheduledTasks.update(task.id, {
+        agent_id: agentId,
         prompt: trimmedPrompt,
         description: description.trim() ? description.trim() : null,
         kind,
@@ -429,6 +433,22 @@ function TaskEditor({
 
   return (
     <div className="space-y-2">
+      <Row label="Agent">
+        <select
+          value={agentId}
+          onChange={(e) => setAgentId(e.target.value)}
+          className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg"
+        >
+          {Object.values(agents).length === 0 && (
+            <option value={agentId}>{agentId}</option>
+          )}
+          {Object.values(agents)
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((a) => (
+              <option key={a.id} value={a.id}>{a.name}</option>
+            ))}
+        </select>
+      </Row>
       <Row label="Prompt">
         <textarea
           value={prompt}
