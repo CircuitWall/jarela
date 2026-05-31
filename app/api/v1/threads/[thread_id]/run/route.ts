@@ -11,6 +11,7 @@ import { broadcast, finishRun, startRun, subscribe, abortRun, getRun } from "@/l
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { sseResponse } from "@/lib/api/sse";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -194,15 +195,5 @@ function attachStream(
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-      // Disable proxy buffering (nginx/tailscale-serve sometimes coalesces
-      // small chunks without this; the SSE framing relies on each event
-      // hitting the wire as soon as it's enqueued).
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return sseResponse(stream);
 }

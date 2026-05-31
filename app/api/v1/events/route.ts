@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { recentSince, subscribe } from "@/lib/notifications/bus";
 import { startScheduler } from "@/lib/scheduler";
 import { startAllBridges } from "@/lib/bridges/runtime";
+import { sseResponse } from "@/lib/api/sse";
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
@@ -64,11 +65,5 @@ export function GET(req: NextRequest) {
     cancel() { /* alive flag flips on next enqueue attempt */ },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
+  return sseResponse(stream, { disableProxyBuffering: false });
 }
