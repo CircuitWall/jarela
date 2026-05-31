@@ -74,7 +74,7 @@ export function ModelsPanel() {
                   <CapBadges provider={m.provider} modelId={m.model_id} />
                 </div>
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+              <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
                 {!m.is_default && (
                   <button onClick={() => handleSetDefault(m)} className="p-1 text-fg-subtle hover:text-yellow-700 dark:hover:text-yellow-400 transition-colors" title="Set as default">
                     <Star size={13} />

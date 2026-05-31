@@ -13,7 +13,12 @@ import { resolveHarness } from "@/lib/agents/harness/resolve";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getAppName } from "@/lib/env/app-config";
 import os from "node:os";
-import { computeContextBudget, formatContextBudgetSummary, takeRecentMessagesWithinBudget } from "@/lib/agents/context-budget";
+import {
+  computeContextBudget,
+  formatContextBudgetSummary,
+  takeRecentMessagesWithinBudget,
+  truncateLargestMessagesWithinBudget,
+} from "@/lib/agents/context-budget";
 import { listMemory } from "@/lib/stores/memory";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
 import { getDefaultModelConfig, getModelConfig } from "@/lib/stores/model-config";
@@ -179,10 +184,6 @@ export async function prepareThreadRun(
   });
 
   const hotMessages = takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
-  const history = hotMessages.map((m) => ({
-    role: m.role as "user" | "assistant",
-    content: parseContent(m.content),
-  }));
 
   // Build agent run config from DB record
   const userProfile = getUserProfile();
@@ -214,6 +215,14 @@ export async function prepareThreadRun(
     : null;
 
   const timeCtx = `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
+  const experienceMode = options?.ui_experience_mode === "normal" ? "normal" : "advanced";
+  const experienceCtx = [
+    "--- UX mode ---",
+    `User interface mode: ${experienceMode}.`,
+    experienceMode === "normal"
+      ? "Prefer concise, plain-language explanations and avoid exposing low-level configuration details unless asked."
+      : "User opted into advanced controls; detailed technical explanations are welcome.",
+  ].join("\n");
 
   // Host environment hint so the agent doesn't have to guess platform-specific
   // paths (e.g. iCloud Drive lives at a different default location on Windows
@@ -302,6 +311,16 @@ export async function prepareThreadRun(
     budget.tierBudgets.warm,
   );
 
+  const warmWasExpected = budget.tierBudgets.warm > 32 && (allWindowMessages.length - hotMessages.length) >= 2;
+  const hotMessagesForPrompt = !warmSummaryCtx && warmWasExpected
+    ? truncateLargestMessagesWithinBudget(hotMessages, budget.tierBudgets.hot)
+    : hotMessages;
+
+  const history = hotMessagesForPrompt.map((m) => ({
+    role: m.role as "user" | "assistant",
+    content: parseContent(m.content),
+  }));
+
   const factsCtx = buildFactsContext(trimmed, budget.tierBudgets.facts);
 
   const tierCtxByName = {
@@ -340,6 +359,7 @@ export async function prepareThreadRun(
     timeCtx,
     envCtx,
     harnessParts.self_config,
+    experienceCtx,
     memoryCtx,
     ...tierOrderCtx,
     recallCtx,

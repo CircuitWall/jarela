@@ -5,6 +5,7 @@ import {
   disabledCategories,
   setCategoryEnabled,
 } from "@/lib/stores/builtin-tools";
+import { errorResponse, validateBody } from "@/lib/api/responses";
 
 // All built-in categories the registry knows about, with their tool count
 // and current enabled state. Default-enabled (no row = on). Used by the
@@ -55,17 +56,11 @@ const PatchSchema = z.object({
 });
 
 export async function PATCH(req: NextRequest) {
-  let body: unknown;
-  try { body = await req.json(); } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  const parsed = PatchSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
-  }
-  const { category, enabled } = parsed.data;
+  const parsed = await validateBody(req, PatchSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const { category, enabled } = parsed;
   if (!ALL_VALID_CATEGORIES.has(category)) {
-    return NextResponse.json({ error: `unknown category: ${category}` }, { status: 400 });
+    return errorResponse(`unknown category: ${category}`);
   }
   setCategoryEnabled(category as BuiltinCategory, enabled);
   return NextResponse.json({ category, enabled });

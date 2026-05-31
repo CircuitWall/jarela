@@ -10,6 +10,9 @@ import type {
   BridgeRoute,
   BridgeRouteIn,
   BridgeRoutePatch,
+  DashboardCurrencyInfo,
+  DashboardMetrics,
+  DashboardPricingRefreshResult,
   ContentPart,
   EnvAllowlistConfig,
   EnvSyncResult,
@@ -306,6 +309,28 @@ export const api = {
       if (taskListCache.data) setTaskListCache(taskListCache.data.filter((t) => t.agent_id !== agent_id));
       else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
       return res;
+    },
+  },
+
+  dashboard: {
+    metrics: (days = 30) => request<DashboardMetrics>(`/dashboard/metrics?days=${encodeURIComponent(String(days))}`),
+    refreshPricing: (opts?: { force?: boolean; ttlDays?: number }) => {
+      const qs = new URLSearchParams();
+      if (opts?.force === true) qs.set("force", "1");
+      if (typeof opts?.ttlDays === "number" && Number.isFinite(opts.ttlDays)) qs.set("ttlDays", String(opts.ttlDays));
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return request<DashboardPricingRefreshResult>(`/dashboard/pricing${suffix}`, {
+        method: "POST",
+        body: "{}",
+      });
+    },
+    currency: (opts?: { lat?: number | null; lng?: number | null; currency?: string | null }) => {
+      const qs = new URLSearchParams();
+      if (typeof opts?.lat === "number" && Number.isFinite(opts.lat)) qs.set("lat", String(opts.lat));
+      if (typeof opts?.lng === "number" && Number.isFinite(opts.lng)) qs.set("lng", String(opts.lng));
+      if (opts?.currency) qs.set("currency", opts.currency);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return request<DashboardCurrencyInfo>(`/dashboard/currency${suffix}`);
     },
   },
 
