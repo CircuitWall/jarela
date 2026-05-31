@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { llmExtractModelRates, type LlmModelRate } from "./llm-extract";
 
 const SNAPSHOT_PATH = resolve("docs", "journal", "pricing-snapshot.json");
 const DEFAULT_TTL_DAYS = 3;
@@ -376,6 +377,43 @@ async function fetchHtml(url: string): Promise<FetchAttempt> {
   }
 }
 
+async function safeLlmExtract(
+  source: SourceDef,
+  resolvedUrl: string,
+  html: string,
+): Promise<LlmModelRate[] | null> {
+  if (process.env.JARELA_PRICING_LLM_EXTRACT === "0") return null;
+  try {
+    return await llmExtractModelRates({
+      sourceId: source.id,
+      sourceName: source.name,
+      resolvedUrl,
+      html,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function mergeModelRates(
+  regex: ModelPricingRate[],
+  llm: LlmModelRate[] | null,
+): ModelPricingRate[] {
+  if (!llm || llm.length === 0) return regex;
+  const merged = new Map<string, ModelPricingRate>();
+  for (const row of regex) merged.set(row.model_id, row);
+  // LLM wins per model_id: its confidence ladder is stricter (prompt-enforced)
+  // and it can read context the regex window misses. Regex rows for models
+  // the LLM didn't return stay as a safety net.
+  for (const row of llm) merged.set(row.model_id, row);
+  return [...merged.values()].slice(0, 100);
+}
+
+function noteWithExtractor(base: string, llm: LlmModelRate[] | null): string {
+  if (!llm) return base;
+  return `${base}; LLM-extracted (${llm.length} model${llm.length === 1 ? "" : "s"})`;
+}
+
 async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
   const fetched_at = new Date().toISOString();
   const urls = [source.pricing_url, ...(source.fallback_urls ?? [])];
@@ -402,14 +440,16 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
     remember(attempt);
     if (!attempt.ok) continue;
     const signals = extractPriceSignals(attempt.body);
-    const modelRates = extractModelRates(source.id, attempt.body);
+    const regexRates = extractModelRates(source.id, attempt.body);
+    const llmRates = await safeLlmExtract(source, attempt.url, attempt.body);
+    const modelRates = mergeModelRates(regexRates, llmRates);
     if (signals.length > 0 || modelRates.length > 0) {
       return {
         id: source.id,
         name: source.name,
         pricing_url: source.pricing_url,
         resolved_url: attempt.url,
-        notes: source.notes,
+        notes: noteWithExtractor(source.notes, llmRates),
         fetched_at,
         ok: true,
         status: attempt.status,
@@ -453,14 +493,16 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
     remember(attempt);
     if (!attempt.ok) continue;
     const signals = extractPriceSignals(attempt.body);
-    const modelRates = extractModelRates(source.id, attempt.body);
+    const regexRates = extractModelRates(source.id, attempt.body);
+    const llmRates = await safeLlmExtract(source, attempt.url, attempt.body);
+    const modelRates = mergeModelRates(regexRates, llmRates);
     if (signals.length > 0 || modelRates.length > 0) {
       return {
         id: source.id,
         name: source.name,
         pricing_url: source.pricing_url,
         resolved_url: attempt.url,
-        notes: `${source.notes}; fallback via Google search`,
+        notes: `${noteWithExtractor(source.notes, llmRates)}; fallback via Google search`,
         fetched_at,
         ok: true,
         status: attempt.status,
