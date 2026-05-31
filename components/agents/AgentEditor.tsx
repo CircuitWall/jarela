@@ -55,7 +55,7 @@ function Section({ step, title, children }: { step: number; title: string; child
 
 export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const { state, dispatch } = useAppContext();
-  const isAdvanced = state.experienceMode === "advanced";
+  const isFullMode = state.experienceMode === "full";
   const isEdit = !!agent;
   const { tools } = useTools();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -281,7 +281,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${isAdvanced ? "max-w-2xl" : "max-w-xl"}`}>
+      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${isFullMode ? "max-w-2xl" : "max-w-xl"}`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit agent" : "New agent"}</h3>
@@ -438,7 +438,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                         key={group}
                         group={group}
                         categories={categories}
-                        advancedMode={isAdvanced}
+                        advancedMode={isFullMode}
                         selected={selectedTools}
                         onToggleTool={toggleTool}
                         onToggleCategory={toggleCategory}
@@ -451,7 +451,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                           key={category}
                           category={category}
                           tools={catTools}
-                          advancedMode={isAdvanced}
+                          advancedMode={isFullMode}
                           selected={selectedTools}
                           onToggleTool={toggleTool}
                           onToggleCategory={toggleCategory}
@@ -469,7 +469,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
           {/* Step 4: Advanced */}
           <Section step={4} title="Advanced settings">
-            {isAdvanced && (
+            {isFullMode && (
               <>
                 <label className="block">
                   <span className="text-xs text-fg-subtle mb-1 block">Harness</span>

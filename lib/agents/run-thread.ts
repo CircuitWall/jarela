@@ -215,13 +215,16 @@ export async function prepareThreadRun(
     : null;
 
   const timeCtx = `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
-  const experienceMode = options?.ui_experience_mode === "normal" ? "normal" : "advanced";
+  // Accept both the new ("essential"/"full") and legacy ("normal"/"advanced")
+  // labels so an older client speaking to a newer server still works.
+  const rawMode = options?.ui_experience_mode;
+  const experienceMode = rawMode === "essential" || rawMode === "normal" ? "essential" : "full";
   const experienceCtx = [
     "--- UX mode ---",
     `User interface mode: ${experienceMode}.`,
-    experienceMode === "normal"
+    experienceMode === "essential"
       ? "Prefer concise, plain-language explanations and avoid exposing low-level configuration details unless asked."
-      : "User opted into advanced controls; detailed technical explanations are welcome.",
+      : "User opted into the full / advanced UI; detailed technical explanations are welcome.",
   ].join("\n");
 
   // Host environment hint so the agent doesn't have to guess platform-specific

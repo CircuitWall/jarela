@@ -353,7 +353,7 @@ export function OnboardingWizard({ context }: Props) {
           )}
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">
-              {fullScreen ? "First launch setup" : state.experienceMode === "normal" ? "Guided setup" : "Profile"}
+              {fullScreen ? "First launch setup" : state.experienceMode === "essential" ? "Guided setup" : "Profile"}
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight">
               {fullScreen ? `Set up ${getAppName()} once` : "Set up your assistant"}
@@ -362,7 +362,7 @@ export function OnboardingWizard({ context }: Props) {
               Configure your profile, choose a model, and create a first agent from one screen. As you change the model, the feature icons below light up to show what the provider and model actually ship.
             </p>
             <div className="mt-4 flex flex-col sm:flex-row gap-2 max-w-xl">
-              {(["normal", "advanced"] as const).map((mode) => (
+              {(["essential", "full"] as const).map((mode) => (
                 <button
                   key={mode}
                   type="button"
@@ -374,9 +374,9 @@ export function OnboardingWizard({ context }: Props) {
                       : "border-border bg-surface-2 hover:border-border-strong"
                   }`}
                 >
-                  <div className="text-sm font-medium capitalize">{mode === "normal" ? "Guided" : "Full controls"}</div>
+                  <div className="text-sm font-medium capitalize">{mode === "essential" ? "Guided" : "Full controls"}</div>
                   <div className="mt-0.5 text-[11px] text-fg-faint leading-snug">
-                    {mode === "normal"
+                    {mode === "essential"
                       ? "Curated panels and a simpler model editor."
                       : "Every panel, context tuning, and engine-room toggles."}
                   </div>

@@ -8,12 +8,12 @@ import { ProfileEditor } from "./ProfileEditor";
 
 export function ProfilePanel() {
   const { state } = useAppContext();
-  const isNormal = state.experienceMode === "normal";
+  const isEssential = state.experienceMode === "essential";
   const containerRef = useRef<HTMLDivElement>(null);
   const [showWizard, setShowWizard] = useState(false);
   useDeepLinkScroll("profile", "profile", containerRef);
 
-  if (isNormal && showWizard) {
+  if (isEssential && showWizard) {
     return (
       <div className="h-full overflow-y-auto profile-scrollbar panel-scrollbar">
         <div className="max-w-3xl mx-auto w-full px-4 pt-4">
@@ -45,7 +45,7 @@ export function ProfilePanel() {
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
         <User size={14} className="text-fg-subtle" />
         <h2 className="text-sm font-semibold text-fg">User Profile</h2>
-        {isNormal && (
+        {isEssential && (
           <button
             type="button"
             onClick={() => {
