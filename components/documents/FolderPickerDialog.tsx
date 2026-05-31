@@ -1,6 +1,7 @@
 "use client";
 import { ArrowUp, Check, Folder, FolderOpen, Home, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
 
 interface Props {
@@ -42,11 +43,7 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
 
   useEffect(() => { void navigate(initialPath); }, [initialPath, navigate]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   function jumpToPath(e: React.FormEvent) {
     e.preventDefault();

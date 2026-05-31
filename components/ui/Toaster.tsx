@@ -29,7 +29,11 @@ export function Toaster() {
 
   return (
     <div
-      className="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 pointer-events-none w-[360px] max-w-[calc(100vw-2rem)]"
+      className="fixed z-50 flex flex-col-reverse gap-2 pointer-events-none w-[360px] max-w-[calc(100vw-2rem)]"
+      style={{
+        right: "max(1rem, calc(env(safe-area-inset-right) + 0.5rem))",
+        bottom: "max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))",
+      }}
       aria-live="polite"
     >
       {visible.map((t) => (
@@ -177,7 +181,7 @@ function ToastCard({ toast }: { toast: Toast }) {
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-              className="mt-1.5 inline-flex items-center gap-1 text-[10px] text-rose-700 dark:text-rose-300/90 hover:text-rose-900 dark:hover:text-rose-200"
+              className="control-tap mt-1.5 inline-flex items-center gap-1 text-[10px] text-rose-700 dark:text-rose-300/90 hover:text-rose-900 dark:hover:text-rose-200"
               aria-expanded={expanded}
             >
               {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -187,7 +191,7 @@ function ToastCard({ toast }: { toast: Toast }) {
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); close(); }}
-          className="opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity p-0.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
+          className="control-tap opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity px-1.5 -mr-1 -mt-0.5 text-fg-faint hover:text-fg"
           aria-label="Dismiss"
         >
           <X size={13} />
@@ -208,7 +212,7 @@ function ToastCard({ toast }: { toast: Toast }) {
               <button
                 type="button"
                 onClick={onCopy}
-                className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-surface-3 hover:bg-surface-4 text-fg border border-border"
+                className="control-tap inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-surface-3 hover:bg-surface-4 text-fg border border-border"
               >
                 <Copy size={11} />
                 {copied ? "Copied" : "Copy report"}
@@ -216,7 +220,7 @@ function ToastCard({ toast }: { toast: Toast }) {
               <button
                 type="button"
                 onClick={onReport}
-                className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white"
+                className="control-tap inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white"
                 title="Opens a pre-filled GitHub issue"
               >
                 <ExternalLink size={11} />

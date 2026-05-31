@@ -35,6 +35,19 @@ const nextConfig: NextConfig = {
     "@whiskeysockets/baileys",
     "baileys",
     "undici",
+    // MCP stdio client and its transitive shell-resolver pull in
+    // `child_process`/`fs` via cross-spawn/which/isexe. Keep them external
+    // so Next's dev compiler doesn't try to trace them into the browser
+    // bundle (which can't resolve node-builtins).
+    "@modelcontextprotocol/sdk",
+    "@langchain/mcp-adapters",
+    "cross-spawn",
+    "which",
+    "isexe",
+    // sharp + detect-libc reach for `fs`/`child_process` via the WhatsApp
+    // bridge's media helpers.
+    "sharp",
+    "detect-libc",
   ],
   outputFileTracingIncludes: {
     "/**": ["./node_modules/@napi-rs/keyring/**/*"],

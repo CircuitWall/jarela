@@ -4,9 +4,12 @@ import { Upload, Plus, Trash2, Shield, MapPin, Globe, Check, Copy } from "lucide
 import { api } from "@/api/client";
 import type { UserProfile, AccessWhitelistEntry, TailscaleStatus } from "@/api/types";
 import { useLocationSharing } from "@/hooks/useLocationSharing";
+import { useAppContext } from "@/contexts/AppContext";
 import { formatRelative } from "@/lib/utils/time";
 
 export function ProfileEditor() {
+  const { state, dispatch } = useAppContext();
+  const mode = state.experienceMode;
   const fileRef = useRef<HTMLInputElement>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [name, setName] = useState("");
@@ -109,10 +112,53 @@ export function ProfileEditor() {
 
       <PresetPicker value={preset} onChange={setPreset} />
 
+      <div className="pt-4 border-t border-border">
+        <div className="rounded-xl border border-border bg-surface-1/40 p-3 space-y-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
+          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-surface-3 text-fg-faint">
+            {mode}
+          </span>
+        </div>
+        <p className="text-[11px] text-fg-faint leading-snug">
+          Choose how much configuration detail is shown in the app.
+          Normal hides technical panels and advanced model controls.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "normal" })}
+            aria-pressed={mode === "normal"}
+            className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+              mode === "normal"
+                ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
+                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+            }`}
+          >
+            <div className="text-xs font-medium">Normal</div>
+            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Cleaner layout, fewer technical controls</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "advanced" })}
+            aria-pressed={mode === "advanced"}
+            className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+              mode === "advanced"
+                ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
+                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+            }`}
+          >
+            <div className="text-xs font-medium">Advanced</div>
+            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
+          </button>
+        </div>
+        </div>
+      </div>
+
       <button
         onClick={handleSave}
         disabled={saving || !isDirty}
-        className="w-full py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-40"
+        className="w-full py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-40"
       >
         {saving ? "Savingâ€¦" : saved ? "Saved" : "Save profile"}
       </button>
@@ -158,7 +204,7 @@ function PresetPicker({
         Filters the Connections panel so you only see integrations relevant to how
         you use Jarela. Pick &quot;Everything&quot; to see them all.
       </p>
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {PRESET_OPTIONS.map((o) => {
           const selected = (value ?? "custom") === o.value;
           return (
@@ -167,9 +213,9 @@ function PresetPicker({
               type="button"
               onClick={() => onChange(o.value)}
               aria-pressed={selected}
-              className={`text-left px-2.5 py-2 rounded-lg border transition-colors ${
+              className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
                 selected
-                  ? "border-accent/60 bg-accent/10 text-fg"
+                  ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
                   : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
               }`}
             >
@@ -267,10 +313,10 @@ function LocationSharing({
                 {profile!.location_lat!.toFixed(5)}, {profile!.location_lng!.toFixed(5)}
               </span>
               {profile?.location_accuracy_m != null && (
-                <span className="text-fg-faint"> Â· Â±{Math.round(profile.location_accuracy_m)}m</span>
+                <span className="text-fg-faint"> · ±{Math.round(profile.location_accuracy_m)}m</span>
               )}
               {updatedAt && (
-                <span className="text-fg-faint"> Â· {timeAgo(updatedAt)}</span>
+                <span className="text-fg-faint"> · {formatRelative(updatedAt)}</span>
               )}
             </>
           ) : (
@@ -282,10 +328,6 @@ function LocationSharing({
       {error && <p className="text-rose-700 dark:text-rose-400 text-[11px]">{error}</p>}
     </div>
   );
-}
-
-function timeAgo(iso: string): string {
-  return formatRelative(iso);
 }
 
 function AccessWhitelist() {
@@ -377,9 +419,9 @@ function AccessWhitelist() {
             <div className="flex-1 min-w-0">
               <div className="font-mono text-fg truncate">{e.identity}</div>
               <div className="text-[10px] text-fg-faint">
-                {e.display_name ? `${e.display_name} Â· ` : ""}
+                {e.display_name ? `${e.display_name} · ` : ""}
                 added {new Date(e.added_at).toLocaleString()}
-                {e.last_seen_at ? ` Â· last seen ${new Date(e.last_seen_at).toLocaleString()}` : " Â· never seen"}
+                {e.last_seen_at ? ` · last seen ${new Date(e.last_seen_at).toLocaleString()}` : " · never seen"}
               </div>
             </div>
             <button
