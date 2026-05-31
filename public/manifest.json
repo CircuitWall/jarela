@@ -6,8 +6,8 @@
   "scope": "/",
   "display": "standalone",
   "display_override": ["minimal-ui", "standalone"],
-  "background_color": "#0f172a",
-  "theme_color": "#2563eb",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
   "edge_side_panel": {
     "preferred_width": 480
   },
