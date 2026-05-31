@@ -147,6 +147,7 @@ export function deleteWatcher(id: string): boolean {
 }
 
 export interface UpdateWatcherInput {
+  agent_id?: string;
   label?: string;
   interval_seconds?: number;
   enabled?: boolean;
@@ -211,12 +212,13 @@ export function updateWatcher(id: string, patch: UpdateWatcherInput): WatcherRow
   getDb()
     .prepare(
       `UPDATE watchers
-       SET label=?, interval_seconds=?, next_run_at=?, enabled=?, silent=?,
+       SET agent_id=?, label=?, interval_seconds=?, next_run_at=?, enabled=?, silent=?,
            reaction_prompt=?, reaction_kind=?, reaction_script=?, reaction_script_args=?,
            updated_at=?
        WHERE id=?`,
     )
     .run(
+      patch.agent_id ?? existing.agent_id,
       patch.label ?? existing.label,
       interval,
       nextRunAt,
