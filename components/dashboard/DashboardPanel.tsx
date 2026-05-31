@@ -577,15 +577,34 @@ function convertUsd(usd: number, currencyInfo: DashboardCurrencyInfo): number {
 
 function formatMoney(usd: number, currencyInfo: DashboardCurrencyInfo): string {
   const converted = convertUsd(usd, currencyInfo);
+  const abs = Math.abs(converted);
+  const useMicroPrecision = abs > 0 && abs < 0.01;
+  const minFractionDigits = useMicroPrecision ? 4 : 2;
+  const maxFractionDigits = useMicroPrecision ? 8 : 4;
+
+  if (abs > 0 && abs < 0.000001) {
+    try {
+      const floor = new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: currencyInfo.currency || "USD",
+        minimumFractionDigits: 6,
+        maximumFractionDigits: 6,
+      }).format(0.000001);
+      return `< ${floor}`;
+    } catch {
+      return `${(currencyInfo.currency || "USD")} < 0.000001`;
+    }
+  }
+
   try {
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: currencyInfo.currency || "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 4,
+      minimumFractionDigits: minFractionDigits,
+      maximumFractionDigits: maxFractionDigits,
     }).format(converted);
   } catch {
-    return `${(currencyInfo.currency || "USD")} ${converted.toFixed(4)}`;
+    return `${(currencyInfo.currency || "USD")} ${converted.toFixed(maxFractionDigits)}`;
   }
 }
 

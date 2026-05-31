@@ -310,7 +310,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       day,
       input_tokens_est: b.inputTokens,
       output_tokens_est: b.outputTokens,
-      estimated_cost_usd: round4(b.estimatedCost),
+      estimated_cost_usd: b.estimatedCost,
       tool_calls: b.toolCalls,
       tool_successes: b.toolSuccesses,
       tool_errors: b.toolErrors,
@@ -348,7 +348,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     .slice(0, 8)
     .map((row) => ({
       ...row,
-      estimated_cost_usd: round4(row.estimated_cost_usd),
+      estimated_cost_usd: row.estimated_cost_usd,
     }));
 
   const by_provider = [...providerMap.values()]
@@ -359,7 +359,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     })
     .map((row) => ({
       ...row,
-      estimated_cost_usd: round4(row.estimated_cost_usd),
+      estimated_cost_usd: row.estimated_cost_usd,
     }));
 
   const by_model = [...modelMap.values()]
@@ -370,7 +370,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     })
     .map((row) => ({
       ...row,
-      estimated_cost_usd: round4(row.estimated_cost_usd),
+      estimated_cost_usd: row.estimated_cost_usd,
     }));
 
   const overallSuccessRate = totalCalls > 0 ? totalSuccesses / totalCalls : 1;
@@ -382,7 +382,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     summary: {
       input_tokens_est: totalInput,
       output_tokens_est: totalOutput,
-      estimated_cost_usd: round4(totalCost),
+      estimated_cost_usd: totalCost,
       tool_calls: totalCalls,
       tool_successes: totalSuccesses,
       tool_errors: totalErrors,
