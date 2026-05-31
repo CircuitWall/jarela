@@ -1,6 +1,7 @@
 "use client";
 import { BookOpen, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
 import type { CatalogModel, IntegrationStatus, ModelConfig } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
@@ -83,11 +84,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [catalogSearch, setCatalogSearch] = useState("");
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   useEffect(() => {
     let mounted = true;

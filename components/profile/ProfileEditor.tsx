@@ -316,7 +316,7 @@ function LocationSharing({
                 <span className="text-fg-faint"> · ±{Math.round(profile.location_accuracy_m)}m</span>
               )}
               {updatedAt && (
-                <span className="text-fg-faint"> · {timeAgo(updatedAt)}</span>
+                <span className="text-fg-faint"> · {formatRelative(updatedAt)}</span>
               )}
             </>
           ) : (
@@ -328,10 +328,6 @@ function LocationSharing({
       {error && <p className="text-rose-700 dark:text-rose-400 text-[11px]">{error}</p>}
     </div>
   );
-}
-
-function timeAgo(iso: string): string {
-  return formatRelative(iso);
 }
 
 function AccessWhitelist() {

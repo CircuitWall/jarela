@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
-import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
+import { formatRelative } from "@/lib/utils/time";
 import { humanizeCron } from "@/lib/utils/cron";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { WatchersSection } from "./WatchersSection";
@@ -110,8 +110,8 @@ function TaskCard({
   const [running, setRunning] = useState(false);
   const [editing, setEditing] = useState(false);
   const isCron = task.kind === "cron";
-  const nextRun = formatRelative(task.next_run_at);
-  const lastRun = task.last_run_at ? formatRelative(task.last_run_at) : null;
+  const nextRun = formatRelative(task.next_run_at, { collapseSeconds: true });
+  const lastRun = task.last_run_at ? formatRelative(task.last_run_at, { collapseSeconds: true }) : null;
   const overdue = !task.last_error && new Date(task.next_run_at).getTime() < Date.now() - 60_000;
 
   return (
@@ -368,10 +368,6 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <div className="flex-1 min-w-0">{children}</div>
     </div>
   );
-}
-
-function formatRelative(iso: string): string {
-  return sharedFormatRelative(iso, { collapseSeconds: true });
 }
 
 // Editable form for an existing task. Keeps inline within the expanded

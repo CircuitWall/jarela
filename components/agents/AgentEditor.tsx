@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, X, Upload } from "lucide-react";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 import type { AgentConfig, AgentConfigIn, Harness, ModelConfig, ToolInfo } from "@/api/types";
 import { api } from "@/api/client";
 import { useAppContext } from "@/contexts/AppContext";
@@ -108,11 +109,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeKey(onClose);
 
   function handleIconFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
