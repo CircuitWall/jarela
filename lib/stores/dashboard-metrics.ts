@@ -497,9 +497,57 @@ function modelRatesFor(
     return providerRatesFor(byProvider, provider);
   }
 
-  const exact = byProviderModel.get(`${providerKey}::${modelKey}`);
-  if (exact) return exact;
+  const candidates = modelAliasCandidates(providerKey, modelKey);
+  for (const candidate of candidates) {
+    const exact = byProviderModel.get(`${providerKey}::${candidate}`);
+    if (exact) return exact;
+  }
+
+  // GitHub Copilot model configs proxy multiple upstream providers.
+  // If no direct copilot model rate exists, fall back to the upstream
+  // provider/model inferred from the model id.
+  if (providerKey === "github-copilot") {
+    const upstream = inferProviderFromModelId(modelKey);
+    if (upstream) {
+      const upstreamCandidates = modelAliasCandidates(upstream, modelKey);
+      for (const candidate of upstreamCandidates) {
+        const viaUpstreamModel = byProviderModel.get(`${upstream}::${candidate}`);
+        if (viaUpstreamModel) return viaUpstreamModel;
+      }
+      return providerRatesFor(byProvider, upstream);
+    }
+  }
+
   return providerRatesFor(byProvider, providerKey);
+}
+
+function modelAliasCandidates(provider: string, modelId: string): string[] {
+  const out = new Set<string>();
+  const id = modelId.trim().toLowerCase();
+  if (!id) return [];
+  out.add(id);
+
+  if (provider === "deepseek") {
+    if (/reasoner/.test(id) || /r1/.test(id)) {
+      out.add("deepseek-reasoner");
+    }
+    if (/chat/.test(id) || /v[0-9]/.test(id) || /coder/.test(id)) {
+      out.add("deepseek-chat");
+    }
+  }
+
+  return [...out];
+}
+
+function inferProviderFromModelId(modelId: string): string | null {
+  const id = modelId.trim().toLowerCase();
+  if (!id) return null;
+  if (id.startsWith("gpt-") || /^o[1-4](?:-|$)/.test(id)) return "openai";
+  if (id.startsWith("claude-")) return "anthropic";
+  if (id.startsWith("gemini-")) return "google";
+  if (id.startsWith("deepseek-")) return "deepseek";
+  if (id.startsWith("command-") || id.startsWith("embed-")) return "cohere";
+  return null;
 }
 
 function summarizeEvents(raw: string): { calls: number; successes: number; errors: number } {
@@ -573,13 +621,27 @@ async function loadProviderRates(): Promise<{
     const key = normalizeProvider(source.id);
     if (!key) continue;
     const parsed = inferRatesFromSignals(source.price_signals ?? []);
+    const modelInputRates = (source.model_rates ?? [])
+      .map((m) => m.input_per_1m_usd)
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
+      .sort((a, b) => a - b);
+    const modelOutputRates = (source.model_rates ?? [])
+      .map((m) => m.output_per_1m_usd)
+      .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
+      .sort((a, b) => a - b);
+
+    const providerInput = parsed.inputPer1M ?? (modelInputRates[0] ?? null);
+    const providerOutput = parsed.outputPer1M ?? (modelOutputRates[0] ?? null);
+    const providerDerivedFromModels = parsed.inputPer1M == null && parsed.outputPer1M == null
+      && (providerInput != null || providerOutput != null);
+
     out.set(key, {
-      inputPer1M: parsed.inputPer1M,
-      outputPer1M: parsed.outputPer1M,
+      inputPer1M: providerInput,
+      outputPer1M: providerOutput,
       source: source.resolved_url ?? source.pricing_url,
-      inferred: parsed.inferred,
-      confidence: parsed.confidence,
-      ok: source.ok !== false,
+      inferred: providerDerivedFromModels ? true : parsed.inferred,
+      confidence: providerDerivedFromModels ? "medium" : parsed.confidence,
+      ok: source.ok !== false || providerDerivedFromModels,
       status: source.status ?? null,
       error: source.error ?? null,
     });
