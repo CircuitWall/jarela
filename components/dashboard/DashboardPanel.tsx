@@ -32,6 +32,10 @@ export function DashboardPanel() {
   const [profileLocation, setProfileLocation] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
   const [refreshingPricing, setRefreshingPricing] = useState(false);
   const [refreshHint, setRefreshHint] = useState<string | null>(null);
+  const [toolSort, setToolSort] = useState<"best" | "calls_desc" | "errors_desc" | "error_rate_desc" | "name_asc">("best");
+  const [modelVendorFilter, setModelVendorFilter] = useState<string>("all");
+  const [modelSearch, setModelSearch] = useState<string>("");
+  const [modelSort, setModelSort] = useState<"model_asc" | "input_desc" | "output_desc" | "confidence_desc">("model_asc");
 
   useEffect(() => {
     let cancelled = false;
@@ -149,6 +153,65 @@ export function DashboardPanel() {
   }, [currencyMode, manualCurrency, profileLocation.lat, profileLocation.lng]);
 
   const series = useMemo(() => data?.series ?? [], [data]);
+  const filteredModelRates = useMemo(() => {
+    if (!data) return [];
+    const query = modelSearch.trim().toLowerCase();
+    const rows = data.pricing.model_rates.filter((row) => {
+      if (modelVendorFilter !== "all" && row.provider !== modelVendorFilter) return false;
+      if (!query) return true;
+      return `${row.provider}/${row.model_id}`.toLowerCase().includes(query);
+    });
+
+    const confidenceRank = (c: "high" | "medium" | "low") => (c === "high" ? 3 : c === "medium" ? 2 : 1);
+    rows.sort((a, b) => {
+      if (modelSort === "input_desc") {
+        return (b.input_per_1m_usd ?? -1) - (a.input_per_1m_usd ?? -1);
+      }
+      if (modelSort === "output_desc") {
+        return (b.output_per_1m_usd ?? -1) - (a.output_per_1m_usd ?? -1);
+      }
+      if (modelSort === "confidence_desc") {
+        const rankDiff = confidenceRank(b.confidence) - confidenceRank(a.confidence);
+        if (rankDiff !== 0) return rankDiff;
+      }
+      return a.model_id.localeCompare(b.model_id);
+    });
+
+    return rows;
+  }, [data, modelVendorFilter, modelSearch, modelSort]);
+
+  const groupedModelRates = useMemo(() => {
+    const grouped = new Map<string, DashboardMetrics["pricing"]["model_rates"]>();
+    for (const row of filteredModelRates) {
+      const arr = grouped.get(row.provider) ?? [];
+      arr.push(row);
+      grouped.set(row.provider, arr);
+    }
+    return [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filteredModelRates]);
+  const sortedTools = useMemo(() => {
+    if (!data) return [];
+    const rows = [...data.top_tools];
+    rows.sort((a, b) => {
+      if (toolSort === "calls_desc") {
+        if (b.call_count !== a.call_count) return b.call_count - a.call_count;
+      } else if (toolSort === "errors_desc") {
+        if (b.error_count !== a.error_count) return b.error_count - a.error_count;
+      } else if (toolSort === "error_rate_desc") {
+        const aRate = a.call_count > 0 ? a.error_count / a.call_count : 0;
+        const bRate = b.call_count > 0 ? b.error_count / b.call_count : 0;
+        if (bRate !== aRate) return bRate - aRate;
+      } else if (toolSort === "name_asc") {
+        return a.name.localeCompare(b.name);
+      } else {
+        if (b.score !== a.score) return b.score - a.score;
+        if (b.success_rate !== a.success_rate) return b.success_rate - a.success_rate;
+        if (b.call_count !== a.call_count) return b.call_count - a.call_count;
+      }
+      return a.name.localeCompare(b.name);
+    });
+    return rows;
+  }, [data, toolSort]);
   const windowTokenTotal = (data?.summary.input_tokens_est ?? 0) + (data?.summary.output_tokens_est ?? 0);
   const activeDays = series.filter((s) => (s.input_tokens_est + s.output_tokens_est) > 0).length;
   const avgDailyTokens = data ? Math.round(windowTokenTotal / Math.max(data.days, 1)) : 0;
@@ -293,25 +356,42 @@ export function DashboardPanel() {
 
           <div className="grid md:grid-cols-2 gap-4">
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
-              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Favorite tools</h3>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-medium text-[var(--text-primary)]">Favorite tools</h3>
+                <select
+                  value={toolSort}
+                  onChange={(e) => setToolSort(e.target.value as typeof toolSort)}
+                  className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                >
+                  <option value="best">Sort: best first</option>
+                  <option value="calls_desc">Sort: most calls</option>
+                  <option value="errors_desc">Sort: most errors</option>
+                  <option value="error_rate_desc">Sort: highest error rate</option>
+                  <option value="name_asc">Sort: name A→Z</option>
+                </select>
+              </div>
               <div className="space-y-2">
-                {data.top_tools.length === 0 ? (
+                {sortedTools.length === 0 ? (
                   <p className="text-xs text-[var(--text-secondary)]">No tool calls recorded yet.</p>
                 ) : (
-                  data.top_tools.slice(0, 6).map((tool) => (
+                  sortedTools.map((tool) => (
                     <div key={tool.name} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-[var(--text-primary)] truncate">{tool.name}</span>
-                        <span className="text-xs text-[var(--text-secondary)]">{tool.call_count} calls</span>
-                      </div>
-                      <div className="mt-1 h-1.5 rounded-full bg-[var(--bg-primary)] overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
-                          style={{ width: `${Math.max(4, Math.min(100, tool.success_rate * 100))}%` }}
-                        />
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                        {(tool.success_rate * 100).toFixed(1)}% success · score {tool.score.toFixed(2)}
+                      <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm text-[var(--text-primary)]">{tool.name}</div>
+                          <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">
+                            score {tool.score.toFixed(2)} · {(tool.success_rate * 100).toFixed(1)}% success · {tool.call_count} calls · {tool.error_count} errors
+                          </div>
+                        </div>
+                        <span className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                          tool.score >= 0.85
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : tool.score >= 0.65
+                            ? "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                        }`}>
+                          {tool.score >= 0.85 ? "keep" : tool.score >= 0.65 ? "review" : "consider disable"}
+                        </span>
                       </div>
                     </div>
                   ))
@@ -321,82 +401,36 @@ export function DashboardPanel() {
 
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
               <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Agent cost hotspots</h3>
-              <div className="space-y-2">
-                {data.top_agents.length === 0 ? (
-                  <p className="text-xs text-[var(--text-secondary)]">No recent traffic yet.</p>
-                ) : (
-                  data.top_agents.slice(0, 6).map((agent) => (
-                    <div key={agent.agent_id} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-[var(--text-primary)] truncate">{agent.agent_name}</span>
-                        <span className="text-xs text-[var(--text-secondary)]">
-                          {formatMoney(agent.estimated_cost_usd, currencyInfo)}
-                        </span>
-                      </div>
-                      <div className="mt-1 h-1.5 rounded-full bg-[var(--bg-primary)] overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-violet-500 to-indigo-400"
-                          style={{ width: `${Math.max(4, Math.min(100, ((agent.input_tokens_est + agent.output_tokens_est) / Math.max(windowTokenTotal, 1)) * 100))}%` }}
-                        />
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--text-secondary)]">
-                        {formatInt(agent.message_count)} msgs · {formatInt(agent.input_tokens_est + agent.output_tokens_est)} tokens
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
+              <AgentCostPie agents={data.top_agents.slice(0, 6)} currencyInfo={currencyInfo} />
             </section>
           </div>
 
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 space-y-3 shadow-sm">
             <h3 className="text-sm font-medium text-[var(--text-primary)]">Vendor and model report</h3>
             <div className="grid lg:grid-cols-2 gap-3">
-              <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-primary)]/35">
-                <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
-                  By vendor
-                </div>
-                <div className="max-h-56 overflow-auto">
-                  {data.by_provider.length === 0 ? (
-                    <p className="p-3 text-xs text-[var(--text-secondary)]">No vendor breakdown data yet.</p>
-                  ) : (
-                    data.by_provider.slice(0, 12).map((row) => (
-                      <div key={row.provider} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm text-[var(--text-primary)] capitalize truncate">{row.provider}</span>
-                          <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
-                          {formatInt(row.message_count)} msgs · {formatInt(row.input_tokens_est + row.output_tokens_est)} tokens
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <BreakdownPiePanel
+                title="By vendor"
+                emptyLabel="No vendor breakdown data yet."
+                items={data.by_provider.slice(0, 12).map((row) => ({
+                  id: row.provider,
+                  label: row.provider,
+                  cost: row.estimated_cost_usd,
+                  detail: `${formatInt(row.message_count)} msgs · ${formatInt(row.input_tokens_est + row.output_tokens_est)} tokens`,
+                }))}
+                currencyInfo={currencyInfo}
+              />
 
-              <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-[var(--bg-primary)]/35">
-                <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
-                  By model config
-                </div>
-                <div className="max-h-56 overflow-auto">
-                  {data.by_model.length === 0 ? (
-                    <p className="p-3 text-xs text-[var(--text-secondary)]">No model breakdown data yet.</p>
-                  ) : (
-                    data.by_model.slice(0, 16).map((row) => (
-                      <div key={`${row.provider}:${row.model_config_name}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm text-[var(--text-primary)] truncate">{row.model_config_name}</span>
-                          <span className="text-xs text-[var(--text-secondary)]">{formatMoney(row.estimated_cost_usd, currencyInfo)}</span>
-                        </div>
-                        <div className="mt-1 text-[11px] text-[var(--text-secondary)] truncate">
-                          {row.provider}/{row.model_id} · {formatInt(row.message_count)} msgs
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
+              <BreakdownPiePanel
+                title="By model config"
+                emptyLabel="No model breakdown data yet."
+                items={data.by_model.slice(0, 16).map((row) => ({
+                  id: `${row.provider}:${row.model_config_name}:${row.model_id}`,
+                  label: row.model_config_name,
+                  cost: row.estimated_cost_usd,
+                  detail: `${row.provider}/${row.model_id} · ${formatInt(row.message_count)} msgs`,
+                }))}
+                currencyInfo={currencyInfo}
+              />
             </div>
           </section>
 
@@ -405,66 +439,71 @@ export function DashboardPanel() {
             <p className="text-xs text-[var(--text-secondary)]">
               Snapshot: {data.pricing.snapshot_generated_at ?? "not found"}
             </p>
-            <div className="grid md:grid-cols-2 gap-2">
-              {data.pricing.rates.map((row) => (
-                <div key={row.provider} className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 py-2 text-xs">
-                  <div className="text-[var(--text-primary)] font-medium flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5">
-                      <span>{row.provider}</span>
-                      {row.inferred ? (
-                        <span className="text-[10px] px-1 py-0.5 rounded border border-slate-500/40 bg-slate-500/10 text-slate-700 dark:text-slate-300">
-                          inferred
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                      row.ok
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-                    }`}>
-                      {row.ok ? "fetched" : `unavailable${row.status ? ` (${row.status})` : ""}`}
-                    </span>
-                  </div>
-                  {safeHttpUrl(row.source) ? (
-                    <a
-                      href={row.source}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-0.5 inline-block text-[10px] text-cyan-600 hover:underline dark:text-cyan-400"
-                    >
-                      View pricing source
-                    </a>
-                  ) : null}
-                  <div className="text-[var(--text-secondary)]">
-                    in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"} / 1M
-                  </div>
-                  {!row.ok && row.error ? (
-                    <div className="mt-1 text-[10px] text-[var(--text-secondary)] truncate" title={row.error}>
-                      {row.error}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
             <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/35 overflow-hidden">
               <div className="px-3 py-2 border-b border-[var(--border)] text-xs font-medium text-[var(--text-primary)]">
                 Model pricing (detected)
               </div>
-              <div className="max-h-56 overflow-auto">
-                {data.pricing.model_rates.length === 0 ? (
-                  <p className="p-3 text-xs text-[var(--text-secondary)]">No model-level rates detected from current pricing sources yet.</p>
+              <div className="border-b border-[var(--border)] px-3 py-2">
+                <div className="grid gap-2 md:grid-cols-[160px_1fr_180px]">
+                  <select
+                    value={modelVendorFilter}
+                    onChange={(e) => setModelVendorFilter(e.target.value)}
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                  >
+                    <option value="all">All vendors</option>
+                    {[...new Set((data?.pricing.model_rates ?? []).map((r) => r.provider))].sort().map((provider) => (
+                      <option key={provider} value={provider}>{provider}</option>
+                    ))}
+                  </select>
+                  <input
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    placeholder="Filter models (e.g. gpt, gemini, deepseek)"
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                  />
+                  <select
+                    value={modelSort}
+                    onChange={(e) => setModelSort(e.target.value as typeof modelSort)}
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                  >
+                    <option value="model_asc">Sort: model A→Z</option>
+                    <option value="input_desc">Sort: highest input rate</option>
+                    <option value="output_desc">Sort: highest output rate</option>
+                    <option value="confidence_desc">Sort: confidence</option>
+                  </select>
+                </div>
+              </div>
+              <div className="max-h-72 overflow-auto">
+                {filteredModelRates.length === 0 ? (
+                  <p className="p-3 text-xs text-[var(--text-secondary)]">No model rates match the selected filters.</p>
                 ) : (
-                  data.pricing.model_rates.slice(0, 40).map((row) => (
-                    <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-b border-[var(--border)]/60 last:border-b-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-[var(--text-primary)] truncate">{row.provider}/{row.model_id}</span>
-                        <span className="text-[11px] text-[var(--text-secondary)]">
-                          in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}
-                        </span>
+                  groupedModelRates.map(([provider, rows]) => (
+                    <div key={provider} className="border-b border-[var(--border)]/60 last:border-b-0">
+                      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 bg-[var(--bg-secondary)]/95 px-3 py-1.5 text-[11px] font-medium text-[var(--text-primary)] backdrop-blur">
+                        <span>{provider}</span>
+                        <span className="text-[var(--text-secondary)]">{rows.length} model{rows.length === 1 ? "" : "s"}</span>
                       </div>
-                      <div className="mt-1 text-[10px] text-[var(--text-secondary)]">
-                        {row.inferred ? "inferred" : "explicit"} · confidence {row.confidence}
-                      </div>
+                      {rows.map((row) => (
+                        <div key={`${row.provider}:${row.model_id}`} className="px-3 py-2 border-t border-[var(--border)]/40">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm text-[var(--text-primary)] truncate">{row.model_id}</span>
+                            <span className="text-[11px] text-[var(--text-secondary)]">
+                              in ${row.input_per_1m_usd?.toFixed(2) ?? "n/a"} · out ${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-[10px] text-[var(--text-secondary)] flex items-center gap-2">
+                            <span>{row.inferred ? "inferred" : "explicit"}</span>
+                            <span>·</span>
+                            <span>confidence {row.confidence}</span>
+                            {safeHttpUrl(row.source) ? (
+                              <>
+                                <span>·</span>
+                                <a href={row.source} target="_blank" rel="noreferrer" className="text-cyan-600 hover:underline dark:text-cyan-400">source</a>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ))
                 )}
@@ -497,6 +536,239 @@ function InsightChip({ label, value, hint }: { label: string; value: string; hin
       <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">{label}</div>
       <div className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</div>
       <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{hint}</div>
+    </div>
+  );
+}
+
+function AgentCostPie({
+  agents,
+  currencyInfo,
+}: {
+  agents: DashboardMetrics["top_agents"];
+  currencyInfo: DashboardCurrencyInfo;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  if (agents.length === 0) {
+    return <p className="text-xs text-[var(--text-secondary)]">No recent traffic yet.</p>;
+  }
+
+  const colors = [
+    "#22c55e",
+    "#06b6d4",
+    "#3b82f6",
+    "#8b5cf6",
+    "#f59e0b",
+    "#ef4444",
+  ];
+
+  const total = agents.reduce((sum, a) => sum + Math.max(0, a.estimated_cost_usd), 0);
+  const radius = 78;
+  const cx = 92;
+  const cy = 92;
+  const fractions = agents.map((agent) => {
+    const value = Math.max(0, agent.estimated_cost_usd);
+    return total > 0 ? value / total : 1 / agents.length;
+  });
+
+  const slices = agents.map((agent, idx) => {
+    const value = Math.max(0, agent.estimated_cost_usd);
+    const fraction = fractions[idx];
+    const startAngle = -Math.PI / 2 + fractions.slice(0, idx).reduce((sum, f) => sum + f, 0) * Math.PI * 2;
+    const sweep = fraction * Math.PI * 2;
+    const endAngle = startAngle + sweep;
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    const x1 = cx + radius * Math.cos(startAngle);
+    const y1 = cy + radius * Math.sin(startAngle);
+    const x2 = cx + radius * Math.cos(endAngle);
+    const y2 = cy + radius * Math.sin(endAngle);
+    return {
+      idx,
+      agent,
+      value,
+      fraction,
+      path: `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+      color: colors[idx % colors.length],
+    };
+  });
+
+  const active = hovered != null ? slices[hovered] : null;
+
+  return (
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[190px_1fr]">
+      <div className="relative mx-auto w-[190px]">
+        <svg viewBox="0 0 184 184" className="h-[190px] w-[190px]" role="img" aria-label="Agent cost share pie chart">
+          <circle cx={cx} cy={cy} r={radius} fill="rgba(148,163,184,0.12)" />
+          {slices.map((slice) => (
+            <path
+              key={slice.agent.agent_id}
+              d={slice.path}
+              fill={slice.color}
+              opacity={hovered == null || hovered === slice.idx ? 0.95 : 0.45}
+              stroke="rgba(15,23,42,0.45)"
+              strokeWidth="1"
+              onMouseEnter={() => setHovered(slice.idx)}
+              onMouseLeave={() => setHovered(null)}
+            />
+          ))}
+          <circle cx={cx} cy={cy} r={46} fill="var(--bg-secondary)" />
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">Window cost</div>
+            <div className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{formatMoney(total, currencyInfo)}</div>
+            {active ? (
+              <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
+                {(active.fraction * 100).toFixed(1)}% {active.agent.agent_name}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {slices.map((slice) => (
+          <div
+            key={slice.agent.agent_id}
+            onMouseEnter={() => setHovered(slice.idx)}
+            onMouseLeave={() => setHovered(null)}
+            className={`rounded-lg border px-3 py-2 transition-colors ${
+              hovered === slice.idx
+                ? "border-[var(--accent)]/50 bg-[var(--bg-primary)]/70"
+                : "border-[var(--border)] bg-[var(--bg-primary)]/45"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex min-w-0 items-center gap-2 text-sm text-[var(--text-primary)]">
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: slice.color }} />
+                <span className="truncate">{slice.agent.agent_name}</span>
+              </span>
+              <span className="text-xs text-[var(--text-secondary)]">{formatMoney(slice.value, currencyInfo)}</span>
+            </div>
+            <div className="mt-1 text-xs text-[var(--text-secondary)]">
+              {(slice.fraction * 100).toFixed(1)}% · {formatInt(slice.agent.message_count)} msgs · {formatInt(slice.agent.input_tokens_est + slice.agent.output_tokens_est)} tokens
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BreakdownPiePanel({
+  title,
+  items,
+  currencyInfo,
+  emptyLabel,
+}: {
+  title: string;
+  items: Array<{ id: string; label: string; cost: number; detail: string }>;
+  currencyInfo: DashboardCurrencyInfo;
+  emptyLabel: string;
+}) {
+  const [hovered, setHovered] = useState<number | null>(null);
+  const palette = ["#14b8a6", "#22c55e", "#3b82f6", "#8b5cf6", "#f59e0b", "#ef4444", "#06b6d4", "#84cc16"];
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/35 p-3">
+        <div className="text-xs font-medium text-[var(--text-primary)]">{title}</div>
+        <p className="mt-2 text-xs text-[var(--text-secondary)]">{emptyLabel}</p>
+      </div>
+    );
+  }
+
+  const total = items.reduce((sum, item) => sum + Math.max(0, item.cost), 0);
+  const r = 52;
+  const cx = 64;
+  const cy = 64;
+  const fractions = items.map((item) => {
+    const value = Math.max(0, item.cost);
+    return total > 0 ? value / total : 1 / items.length;
+  });
+
+  const slices = items.map((item, idx) => {
+    const value = Math.max(0, item.cost);
+    const fraction = fractions[idx];
+    const startAngle = -Math.PI / 2 + fractions.slice(0, idx).reduce((sum, f) => sum + f, 0) * Math.PI * 2;
+    const sweep = fraction * Math.PI * 2;
+    const endAngle = startAngle + sweep;
+    const largeArc = sweep > Math.PI ? 1 : 0;
+    const x1 = cx + r * Math.cos(startAngle);
+    const y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle);
+    const y2 = cy + r * Math.sin(endAngle);
+    return {
+      ...item,
+      idx,
+      value,
+      fraction,
+      color: palette[idx % palette.length],
+      path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+    };
+  });
+
+  const active = hovered != null ? slices[hovered] : null;
+
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/35 p-3">
+      <div className="mb-2 text-xs font-medium text-[var(--text-primary)]">{title}</div>
+      <div className="grid grid-cols-[136px_1fr] gap-3">
+        <div className="relative">
+          <svg viewBox="0 0 128 128" className="h-[136px] w-[136px]" role="img" aria-label={`${title} pie chart`}>
+            <circle cx={cx} cy={cy} r={r} fill="rgba(148,163,184,0.12)" />
+            {slices.map((slice) => (
+              <path
+                key={slice.id}
+                d={slice.path}
+                fill={slice.color}
+                opacity={hovered == null || hovered === slice.idx ? 0.95 : 0.45}
+                stroke="rgba(15,23,42,0.45)"
+                strokeWidth="1"
+                onMouseEnter={() => setHovered(slice.idx)}
+                onMouseLeave={() => setHovered(null)}
+              />
+            ))}
+            <circle cx={cx} cy={cy} r={30} fill="var(--bg-secondary)" />
+          </svg>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">Total</div>
+              <div className="mt-0.5 text-[11px] font-semibold text-[var(--text-primary)]">{formatMoney(total, currencyInfo)}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
+          {slices.map((slice) => (
+            <div
+              key={slice.id}
+              onMouseEnter={() => setHovered(slice.idx)}
+              onMouseLeave={() => setHovered(null)}
+              className={`rounded-md border px-2.5 py-2 ${
+                hovered === slice.idx
+                  ? "border-[var(--accent)]/50 bg-[var(--bg-primary)]/70"
+                  : "border-[var(--border)] bg-[var(--bg-primary)]/45"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex min-w-0 items-center gap-1.5 text-xs text-[var(--text-primary)]">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: slice.color }} />
+                  <span className="truncate">{slice.label}</span>
+                </span>
+                <span className="text-[11px] text-[var(--text-secondary)]">{formatMoney(slice.value, currencyInfo)}</span>
+              </div>
+              <div className="mt-0.5 text-[10px] text-[var(--text-secondary)] truncate">
+                {(slice.fraction * 100).toFixed(1)}% · {slice.detail}
+              </div>
+            </div>
+          ))}
+          {active ? (
+            <div className="text-[10px] text-[var(--text-secondary)]">
+              Highlighted: {active.label} ({(active.fraction * 100).toFixed(1)}%)
+            </div>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
