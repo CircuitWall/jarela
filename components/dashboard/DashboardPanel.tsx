@@ -634,6 +634,7 @@ function SharedDonutChart({
   onHoverChange: (index: number | null) => void;
 }) {
   const uid = useId().replace(/:/g, "");
+  const [animCycle, setAnimCycle] = useState(0);
   const stroke = size >= 170 ? 26 : 20;
   const padding = Math.ceil(stroke / 2) + 6;
   const cx = size / 2;
@@ -642,6 +643,11 @@ function SharedDonutChart({
   const innerRadius = Math.max(14, radius - (stroke / 2) + 2);
   const gap = 0.03;
   const total = slices.reduce((sum, s) => sum + Math.max(0, s.value), 0);
+  const animationSignature = slices.map((slice) => `${slice.id}:${slice.value.toFixed(6)}`).join("|");
+
+  useEffect(() => {
+    setAnimCycle((v) => v + 1);
+  }, [animationSignature]);
 
   const segments = slices.map((slice, idx) => {
     const value = Math.max(0, slice.value);
@@ -678,66 +684,41 @@ function SharedDonutChart({
 
         <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full" role="img" aria-label={ariaLabel}>
           <defs>
-            <linearGradient id={`${uid}-track`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="rgba(148,163,184,0.18)" />
-              <stop offset="100%" stopColor="rgba(100,116,139,0.35)" />
-            </linearGradient>
             <radialGradient id={`${uid}-center`} cx="50%" cy="38%" r="70%">
               <stop offset="0%" stopColor="rgba(255,255,255,0.99)" />
               <stop offset="100%" stopColor="rgba(226,232,240,0.96)" />
             </radialGradient>
-            <filter id={`${uid}-segment-shadow`} x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="1.2" stdDeviation="0.9" floodColor="rgba(2,6,23,0.34)" />
-            </filter>
-            {segments.map((segment) => (
-              <linearGradient key={segment.id} id={`${uid}-seg-${segment.idx}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor={shiftHex(segment.color, 0.22)} />
-                <stop offset="56%" stopColor={segment.color} />
-                <stop offset="100%" stopColor={shiftHex(segment.color, -0.2)} />
-              </linearGradient>
-            ))}
           </defs>
 
-          <circle cx={cx} cy={cy} r={radius} fill="none" stroke={`url(#${uid}-track)`} strokeWidth={stroke} />
+          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={stroke} />
 
           {segments.map((segment) => (
-            <g key={segment.id} filter={`url(#${uid}-segment-shadow)`}>
+            <g key={segment.id}>
               <path
+                key={`${segment.id}-${animCycle}`}
                 d={segment.path}
                 fill="none"
-                stroke="rgba(2,6,23,0.3)"
-                strokeLinecap="butt"
-                strokeLinejoin="round"
-                strokeWidth={(hovered === segment.idx ? stroke + 2 : stroke) + 1.1}
-                transform="translate(0 0.9)"
-                opacity={hovered == null || hovered === segment.idx ? 0.2 : 0.1}
-                style={{ transition: "opacity 180ms ease, stroke-width 180ms ease" }}
-                onMouseEnter={() => onHoverChange(segment.idx)}
-                onMouseLeave={() => onHoverChange(null)}
-              />
-              <path
-                d={segment.path}
-                fill="none"
-                stroke={`url(#${uid}-seg-${segment.idx})`}
+                stroke={segment.color}
                 strokeLinecap="butt"
                 strokeLinejoin="round"
                 strokeWidth={hovered === segment.idx ? stroke + 2 : stroke}
+                pathLength={100}
+                strokeDasharray={100}
+                strokeDashoffset={100}
                 opacity={hovered == null || hovered === segment.idx ? 0.97 : 0.54}
                 style={{ transition: "opacity 180ms ease, stroke-width 180ms ease" }}
                 onMouseEnter={() => onHoverChange(segment.idx)}
                 onMouseLeave={() => onHoverChange(null)}
-              />
-              <path
-                d={segment.path}
-                fill="none"
-                stroke="rgba(255,255,255,0.24)"
-                strokeLinecap="butt"
-                strokeWidth="1.6"
-                opacity={hovered == null || hovered === segment.idx ? 0.74 : 0.34}
-                style={{ transition: "opacity 180ms ease" }}
-                onMouseEnter={() => onHoverChange(segment.idx)}
-                onMouseLeave={() => onHoverChange(null)}
-              />
+              >
+                <animate
+                  attributeName="stroke-dashoffset"
+                  from="100"
+                  to="0"
+                  dur="620ms"
+                  begin={`${segment.idx * 65}ms`}
+                  fill="freeze"
+                />
+              </path>
             </g>
           ))}
 
@@ -935,8 +916,16 @@ function BreakdownPiePanel({
 
 function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] }) {
   const [hovered, setHovered] = useState<number | null>(null);
+  const [barsReady, setBarsReady] = useState(false);
   const maxTotal = series.reduce((max, p) => Math.max(max, p.input_tokens_est + p.output_tokens_est), 0);
   const active = hovered != null ? series[hovered] : null;
+  const animationSignature = series.map((s) => `${s.day}:${s.input_tokens_est}:${s.output_tokens_est}`).join("|");
+
+  useEffect(() => {
+    setBarsReady(false);
+    const frame = requestAnimationFrame(() => setBarsReady(true));
+    return () => cancelAnimationFrame(frame);
+  }, [animationSignature]);
 
   if (series.length === 0) {
     return <p className="text-xs text-[var(--text-secondary)]">No token data yet.</p>;
@@ -964,8 +953,20 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
                 aria-label={`${point.day} tokens (informational)`}
               >
                 <div className={`w-full rounded-t overflow-hidden border transition-colors ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
-                  <div className="w-full bg-gradient-to-t from-sky-500 to-cyan-400" style={{ height: `${outputHeight}px` }} />
-                  <div className="w-full bg-gradient-to-t from-indigo-500 to-violet-400" style={{ height: `${inputHeight}px` }} />
+                  <div
+                    className="w-full bg-gradient-to-t from-sky-500 to-cyan-400"
+                    style={{
+                      height: barsReady ? `${outputHeight}px` : "0px",
+                      transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18}ms`,
+                    }}
+                  />
+                  <div
+                    className="w-full bg-gradient-to-t from-indigo-500 to-violet-400"
+                    style={{
+                      height: barsReady ? `${inputHeight}px` : "0px",
+                      transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
+                    }}
+                  />
                 </div>
                 <span className="mt-1 text-[10px] text-[var(--text-secondary)] truncate w-full text-center">
                   {point.day.slice(5)}
@@ -996,6 +997,7 @@ function InteractiveCostChart({
   currencyInfo: DashboardCurrencyInfo;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
+  const [lineAnimCycle, setLineAnimCycle] = useState(0);
   const width = 720;
   const height = 180;
   const padX = 24;
@@ -1013,6 +1015,11 @@ function InteractiveCostChart({
 
   const polyline = points.map((pt) => `${pt.x},${pt.y}`).join(" ");
   const active = hovered != null ? points[hovered] : null;
+  const animationSignature = series.map((s) => `${s.day}:${s.estimated_cost_usd}`).join("|");
+
+  useEffect(() => {
+    setLineAnimCycle((v) => v + 1);
+  }, [animationSignature]);
 
   if (series.length === 0) {
     return <p className="text-xs text-[var(--text-secondary)]">No cost data yet.</p>;
@@ -1024,20 +1031,34 @@ function InteractiveCostChart({
         <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-48" role="img" aria-label="Estimated cost over time">
           <line x1={padX} y1={height - padY} x2={width - padX} y2={height - padY} stroke="rgba(148,163,184,0.45)" strokeWidth="1" />
           <line x1={padX} y1={padY} x2={padX} y2={height - padY} stroke="rgba(148,163,184,0.25)" strokeWidth="1" />
-          <polyline fill="none" stroke="rgba(16,185,129,0.95)" strokeWidth="2.6" points={polyline} />
+          <polyline
+            key={`cost-line-${lineAnimCycle}`}
+            fill="none"
+            stroke="rgba(16,185,129,0.95)"
+            strokeWidth="2.6"
+            points={polyline}
+            pathLength={100}
+            strokeDasharray={100}
+            strokeDashoffset={100}
+          >
+            <animate attributeName="stroke-dashoffset" from="100" to="0" dur="700ms" fill="freeze" />
+          </polyline>
           {points.map((pt) => {
             const isActive = pt.idx === hovered;
             return (
               <g key={pt.p.day}>
                 {isActive && <line x1={pt.x} y1={padY} x2={pt.x} y2={height - padY} stroke="rgba(20,184,166,0.35)" strokeWidth="1.5" />}
                 <circle
+                  key={`${pt.p.day}-${lineAnimCycle}`}
                   cx={pt.x}
                   cy={pt.y}
                   r={3.8}
                   fill={isActive ? "rgba(16,185,129,1)" : "rgba(52,211,153,0.85)"}
                   onMouseEnter={() => setHovered(pt.idx)}
                   onMouseLeave={() => setHovered(null)}
-                />
+                >
+                  <animate attributeName="r" from="0" to="3.8" dur="260ms" begin={`${pt.idx * 28}ms`} fill="freeze" />
+                </circle>
               </g>
             );
           })}
