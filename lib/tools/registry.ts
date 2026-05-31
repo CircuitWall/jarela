@@ -15,7 +15,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 
 export type ToolCategory =
   | "Memory" | "Documents" | "Files" | "Shell" | "Web" | "Images" | "Voice"
-  | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar" | "Config" | "MCP";
+  | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar" | "Config" | "Agent" | "MCP";
 
 // Optional parent grouping for the Agent editor sidebar.
 export type ToolGroup = "Work" | null;
@@ -24,7 +24,7 @@ export type ToolGroup = "Work" | null;
 // one header in the Agent editor; everything else is a top-level category.
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
   Memory: null, Documents: null, Files: null, Shell: null, Web: null, Images: null, Voice: null,
-  Schedule: null, Config: null, Mail: null, Calendar: null,
+  Schedule: null, Config: null, Mail: null, Calendar: null, Agent: null,
   Atlassian: "Work", JiraAlign: "Work", GitHub: "Work",
 };
 

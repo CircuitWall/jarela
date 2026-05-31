@@ -25,3 +25,4 @@ import "./gmail";
 import "./calendar";
 import "./outlook";
 import "./outlook-calendar";
+import "./delegate";

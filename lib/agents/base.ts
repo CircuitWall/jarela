@@ -12,6 +12,17 @@ export interface AgentRunConfig {
   system_prompt: string;
   allowed_tools: string[];   // empty = all tools
   model_config_name: string | null;
+  /**
+   * Set when this run is the body of a `delegate_to_agent` tool call.
+   * Read by the delegate tool itself to enforce depth + cycle limits when
+   * a delegated child agent tries to delegate further. Public callers leave
+   * this undefined; the delegate tool sets it when recursively invoking
+   * `prepareThreadRun`.
+   */
+  delegation?: {
+    depth: number;
+    ancestors: readonly string[]; // chain of parent agent ids, oldest first
+  };
 }
 
 export interface StreamOptions {

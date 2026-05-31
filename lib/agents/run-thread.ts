@@ -3,7 +3,7 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getRecentMessagesWindow, getThread, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
-import { getAgentConfig } from "@/lib/stores/agent-configs";
+import { getAgentConfig, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
@@ -82,6 +82,13 @@ export interface PreparedThreadRun {
 // user a clear manual recovery path ("continue").
 const MAX_STALL_AUTO_RETRIES = 1;
 
+// Hard cap on how deep an A → B → C delegation chain can go via the
+// `delegate_to_agent` built-in tool. Public callers start at depth 0; the
+// delegate tool increments before recursively invoking prepareThreadRun. At
+// depth >= MAX_DELEGATION_DEPTH the tool refuses with `depth_exceeded` so a
+// mis-configured agent network can't runaway.
+export const MAX_DELEGATION_DEPTH = 2;
+
 function parseContent(raw: string): string | ContentPart[] {
   if (!raw.startsWith("[")) return raw;
   try {
@@ -123,6 +130,11 @@ export async function prepareThreadRun(
   // Surfaces in the chat panel's category-filter toolbar (e.g.
   // 'scheduled_task', 'bridge', 'synthetic'). undefined = ordinary chat.
   userCategory: string | null = null,
+  // Internal: delegation chain context. Set by the `delegate_to_agent` tool
+  // when it recursively invokes prepareThreadRun for a child agent. Depth
+  // gates the recursion via MAX_DELEGATION_DEPTH; ancestors gates cycles.
+  _delegationDepth: number = 0,
+  _delegationAncestors: readonly string[] = [],
 ): Promise<PreparedThreadRun> {
   // Lazy-start the scheduler when any agent activity occurs so previously
   // saved scheduled tasks resume firing across server restarts.
@@ -372,12 +384,42 @@ export async function prepareThreadRun(
     allowedTools = JSON.parse(agentCfg.tools) as string[];
   } catch { /* keep empty */ }
 
+  // Delegates roster: if the agent can hand off via delegate_to_agent, nudge
+  // it to (a) tell the user who it's handing to and why, and (b) only use
+  // delegates listed below. Without this the LLM treats the tool as opaque.
+  const delegateIds = parseDelegateTargets(agentCfg.delegate_targets);
+  const canDelegate =
+    delegateIds.length > 0 && allowedTools.includes("delegate_to_agent");
+  if (canDelegate) {
+    const lines = delegateIds
+      .map((id) => {
+        const child = getAgentConfig(id);
+        if (!child) return null;
+        const firstLine = (child.identity || child.instructions || "").split("\n")[0].slice(0, 120);
+        return `  - ${child.id} — ${child.name}${firstLine ? `: ${firstLine}` : ""}`;
+      })
+      .filter(Boolean) as string[];
+    if (lines.length > 0) {
+      systemParts.push(
+        [
+          "--- Available delegates ---",
+          "You can hand subtasks to these other agents via the `delegate_to_agent` tool. Only delegate when the target agent has specialized knowledge or tools you lack — don't delegate trivial subtasks.",
+          "BEFORE you call delegate_to_agent, briefly tell the user in one sentence which agent you're handing to and why. The user will see the tool card with the delegate's name, task, and final result.",
+          ...lines,
+        ].join("\n"),
+      );
+    }
+  }
+
   const streamOpts: StreamOptions = {
     ...options,
     agent_run_config: {
       system_prompt: systemParts.join("\n\n"),
       allowed_tools: allowedTools,
       model_config_name: agentCfg.model_config_name ?? null,
+      delegation: _delegationDepth > 0 || _delegationAncestors.length > 0
+        ? { depth: _delegationDepth, ancestors: _delegationAncestors }
+        : undefined,
     },
   };
 
