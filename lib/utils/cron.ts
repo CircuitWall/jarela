@@ -9,9 +9,6 @@ export function humanizeCron(expr: string): string | null {
   if (parts.length !== 5) return null;
   const [minute, hour, dom, month, dow] = parts;
 
-  const time = formatTime(minute, hour);
-  if (!time) return null;
-
   // every minute / every N minutes
   if (hour === "*" && dom === "*" && month === "*" && dow === "*") {
     if (minute === "*") return "every minute";
@@ -29,6 +26,9 @@ export function humanizeCron(expr: string): string | null {
     const step = parseStep(hour);
     if (step) return `every ${step} hours at :${pad(minute)}`;
   }
+
+  const time = formatTime(minute, hour);
+  if (!time) return null;
 
   // weekday(s) at HH:MM
   if (dom === "*" && month === "*" && dow !== "*") {
