@@ -24,7 +24,7 @@ test.beforeEach(async ({ request, page }) => {
     try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
     // Seed advanced experience mode so the Advanced section + Memory/Bridges/Harness
     // tabs render in the menu panel (gated in AppShell.tsx + MenuPanel.tsx).
-    try { localStorage.setItem("jarela.experience.mode", "advanced"); } catch { /* sandbox */ }
+    try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }
   });
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
