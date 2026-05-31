@@ -19,9 +19,13 @@ const TOOL_SORT_OPTIONS = [
 ] as const;
 const MODEL_SORT_OPTIONS = [
   { value: "model_asc", label: "Sort: model A->Z" },
+  { value: "model_desc", label: "Sort: model Z->A" },
   { value: "input_desc", label: "Sort: highest input rate" },
+  { value: "input_asc", label: "Sort: lowest input rate" },
   { value: "output_desc", label: "Sort: highest output rate" },
+  { value: "output_asc", label: "Sort: lowest output rate" },
   { value: "confidence_desc", label: "Sort: confidence" },
+  { value: "confidence_asc", label: "Sort: lowest confidence" },
 ] as const;
 const CURRENCY_MODE_KEY = "jarela.dashboard.currency.mode";
 const CURRENCY_PICK_KEY = "jarela.dashboard.currency.pick";
@@ -47,8 +51,11 @@ export function DashboardPanel() {
   const [refreshHint, setRefreshHint] = useState<string | null>(null);
   const [toolSort, setToolSort] = useState<"best" | "calls_desc" | "errors_desc" | "error_rate_desc" | "name_asc">("best");
   const [modelVendorFilter, setModelVendorFilter] = useState<string>("all");
+  const [modelFunctionFilter, setModelFunctionFilter] = useState<string>("all");
   const [modelSearch, setModelSearch] = useState<string>("");
-  const [modelSort, setModelSort] = useState<"model_asc" | "input_desc" | "output_desc" | "confidence_desc">("model_asc");
+  const [modelSort, setModelSort] = useState<
+    "model_asc" | "model_desc" | "input_desc" | "input_asc" | "output_desc" | "output_asc" | "confidence_desc" | "confidence_asc"
+  >("model_asc");
 
   useEffect(() => {
     let cancelled = false;
@@ -171,27 +178,41 @@ export function DashboardPanel() {
     const query = modelSearch.trim().toLowerCase();
     const rows = data.pricing.model_rates.filter((row) => {
       if (modelVendorFilter !== "all" && row.provider !== modelVendorFilter) return false;
+      if (modelFunctionFilter !== "all" && detectModelFunctionality(row.model_id) !== modelFunctionFilter) return false;
       if (!query) return true;
       return `${row.provider}/${row.model_id}`.toLowerCase().includes(query);
     });
 
     const confidenceRank = (c: "high" | "medium" | "low") => (c === "high" ? 3 : c === "medium" ? 2 : 1);
     rows.sort((a, b) => {
+      if (modelSort === "model_desc") {
+        return b.model_id.localeCompare(a.model_id);
+      }
       if (modelSort === "input_desc") {
         return (b.input_per_1m_usd ?? -1) - (a.input_per_1m_usd ?? -1);
+      }
+      if (modelSort === "input_asc") {
+        return (a.input_per_1m_usd ?? Number.POSITIVE_INFINITY) - (b.input_per_1m_usd ?? Number.POSITIVE_INFINITY);
       }
       if (modelSort === "output_desc") {
         return (b.output_per_1m_usd ?? -1) - (a.output_per_1m_usd ?? -1);
       }
+      if (modelSort === "output_asc") {
+        return (a.output_per_1m_usd ?? Number.POSITIVE_INFINITY) - (b.output_per_1m_usd ?? Number.POSITIVE_INFINITY);
+      }
       if (modelSort === "confidence_desc") {
         const rankDiff = confidenceRank(b.confidence) - confidenceRank(a.confidence);
+        if (rankDiff !== 0) return rankDiff;
+      }
+      if (modelSort === "confidence_asc") {
+        const rankDiff = confidenceRank(a.confidence) - confidenceRank(b.confidence);
         if (rankDiff !== 0) return rankDiff;
       }
       return a.model_id.localeCompare(b.model_id);
     });
 
     return rows;
-  }, [data, modelVendorFilter, modelSearch, modelSort]);
+  }, [data, modelVendorFilter, modelFunctionFilter, modelSearch, modelSort]);
 
   const groupedModelRates = useMemo(() => {
     const grouped = new Map<string, DashboardMetrics["pricing"]["model_rates"]>();
@@ -204,6 +225,10 @@ export function DashboardPanel() {
   }, [filteredModelRates]);
   const modelVendors = useMemo(
     () => [...new Set((data?.pricing.model_rates ?? []).map((r) => r.provider))].sort(),
+    [data],
+  );
+  const modelFunctionalities = useMemo(
+    () => [...new Set((data?.pricing.model_rates ?? []).map((r) => detectModelFunctionality(r.model_id)))].sort(),
     [data],
   );
   const sortedTools = useMemo(() => {
@@ -466,7 +491,7 @@ export function DashboardPanel() {
                 Model pricing (detected)
               </div>
               <div className="border-b border-[var(--border)] px-3 py-2">
-                <div className="grid gap-2 md:grid-cols-[160px_1fr_180px]">
+                <div className="grid gap-2 md:grid-cols-[160px_160px_1fr_190px]">
                   <select
                     value={modelVendorFilter}
                     onChange={(e) => setModelVendorFilter(e.target.value)}
@@ -477,6 +502,19 @@ export function DashboardPanel() {
                     {modelVendors.map((provider) => (
                       <option key={provider} value={provider} style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-secondary)" }}>
                         {provider}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={modelFunctionFilter}
+                    onChange={(e) => setModelFunctionFilter(e.target.value)}
+                    className="rounded-md border border-[var(--border)] bg-[var(--bg-primary)] px-2 py-1 text-xs text-[var(--text-primary)]"
+                    style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-primary)" }}
+                  >
+                    <option value="all" style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-secondary)" }}>All functions</option>
+                    {modelFunctionalities.map((func) => (
+                      <option key={func} value={func} style={{ color: "var(--text-primary)", backgroundColor: "var(--bg-secondary)" }}>
+                        {func}
                       </option>
                     ))}
                   </select>
@@ -526,6 +564,8 @@ export function DashboardPanel() {
                             <span>{row.inferred ? "inferred" : "explicit"}</span>
                             <span>·</span>
                             <span>confidence {row.confidence}</span>
+                            <span>·</span>
+                            <span>{detectModelFunctionality(row.model_id)}</span>
                             {safeHttpUrl(row.source) ? (
                               <>
                                 <span>·</span>
@@ -1082,4 +1122,17 @@ function formatMoneyCompact(usd: number, currencyInfo: DashboardCurrencyInfo): s
 
 function formatInt(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
+}
+
+function detectModelFunctionality(modelId: string): string {
+  const id = modelId.toLowerCase();
+  if (/(embed|embedding|text-embedding|voyage-)/.test(id)) return "embeddings";
+  if (/(rerank|rank)/.test(id)) return "reranking";
+  if (/(moderation|safety)/.test(id)) return "moderation";
+  if (/(image|vision|multimodal|omni|vl)/.test(id)) return "multimodal";
+  if (/(audio|speech|tts|stt|whisper)/.test(id)) return "audio";
+  if (/(code|coder|coding)/.test(id)) return "coding";
+  if (/(reason|thinking|r1|o1|o3|deepthink)/.test(id)) return "reasoning";
+  if (/(chat|instruct|gpt|claude|gemini|command|llama|mistral|qwen)/.test(id)) return "chat";
+  return "other";
 }
