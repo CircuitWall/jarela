@@ -228,7 +228,7 @@ export function DashboardPanel() {
         <div className="absolute top-64 -left-24 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <div className="sticky -top-4 md:-top-6 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-1 border-b border-[var(--border)] bg-[var(--bg-primary)]/70 px-4 md:px-6 py-3 md:py-4 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-[var(--bg-primary)]/55">
+      <div className="sticky top-0 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-2 border-b border-[var(--border)] bg-[var(--bg-primary)]/85 px-4 md:px-6 py-3 md:py-4 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-[var(--bg-primary)]/70 [mask-image:linear-gradient(to_bottom,black_85%,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,black_85%,transparent)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Usage dashboard</h2>
@@ -509,7 +509,7 @@ export function DashboardPanel() {
                 ) : (
                   groupedModelRates.map(([provider, rows]) => (
                     <div key={provider} className="border-b border-[var(--border)]/60 last:border-b-0">
-                      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-l-2 border-l-cyan-500/70 bg-[var(--bg-secondary)]/95 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] backdrop-blur">
+                      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-l-2 border-l-[var(--accent)] bg-[var(--bg-secondary)]/95 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] backdrop-blur">
                         <span>{provider}</span>
                         <span className="rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/60 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-[var(--text-secondary)]">
                           {rows.length} model{rows.length === 1 ? "" : "s"}
@@ -704,7 +704,7 @@ function SharedDonutChart({
             </g>
           ))}
 
-          <circle cx={cx} cy={cy} r={innerRadius} fill={`url(#${uid}-center)`} stroke="rgba(148,163,184,0.20)" strokeWidth="1" />
+          <circle cx={cx} cy={cy} r={innerRadius} fill={`url(#${uid}-center)`} stroke="var(--border)" strokeWidth="1" />
         </svg>
 
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
@@ -975,13 +975,7 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
                         }}
                       />
                     </>
-                  ) : (
-                    <div
-                      className="w-full rounded-full bg-[var(--border)]/60"
-                      style={{ height: "2px" }}
-                      aria-hidden
-                    />
-                  )}
+                  ) : null}
                 </div>
                 <span className={`mt-1 text-[10px] truncate w-full text-center ${hasData ? "text-[var(--text-secondary)]" : "text-[var(--text-secondary)]/50"}`}>
                   {point.day.slice(5)}
@@ -1059,7 +1053,7 @@ function InteractiveCostChart({
               />
             );
           })}
-          {[0.5, 1].map((frac) => {
+          {[0.25, 0.5, 0.75, 1].map((frac) => {
             const y = padY + (1 - frac) * (height - padY * 2);
             const value = maxCost * frac;
             return (
@@ -1121,15 +1115,12 @@ function InteractiveCostChart({
             : "hover points for day cost"}
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-[var(--text-secondary)]">
-        <span>
-          min: {formatMoney(Math.min(...series.map((s) => s.estimated_cost_usd)), currencyInfo)}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-[var(--text-secondary)]">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />daily cost
         </span>
-        <span className="text-center">
-          max: {formatMoney(Math.max(...series.map((s) => s.estimated_cost_usd)), currencyInfo)}
-        </span>
-        <span className="text-right">
-          window total: {formatMoney(series.reduce((sum, s) => sum + s.estimated_cost_usd, 0), currencyInfo)}
+        <span className="tabular-nums text-[var(--text-primary)]">
+          window total {formatMoney(series.reduce((sum, s) => sum + s.estimated_cost_usd, 0), currencyInfo)}
         </span>
       </div>
     </div>
