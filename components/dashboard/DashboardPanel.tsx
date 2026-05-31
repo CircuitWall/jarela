@@ -593,7 +593,9 @@ function AgentCostPie({
   ];
 
   const total = agents.reduce((sum, a) => sum + Math.max(0, a.estimated_cost_usd), 0);
-  const radius = 78;
+  const donutRadius = 60;
+  const donutStroke = 28;
+  const segmentGap = 0.04;
   const cx = 92;
   const cy = 92;
   const fractions = agents.map((agent) => {
@@ -606,18 +608,15 @@ function AgentCostPie({
     const fraction = fractions[idx];
     const startAngle = -Math.PI / 2 + fractions.slice(0, idx).reduce((sum, f) => sum + f, 0) * Math.PI * 2;
     const sweep = fraction * Math.PI * 2;
-    const endAngle = startAngle + sweep;
-    const largeArc = sweep > Math.PI ? 1 : 0;
-    const x1 = cx + radius * Math.cos(startAngle);
-    const y1 = cy + radius * Math.sin(startAngle);
-    const x2 = cx + radius * Math.cos(endAngle);
-    const y2 = cy + radius * Math.sin(endAngle);
+    const gap = Math.min(segmentGap, sweep * 0.45);
+    const arcStart = startAngle + gap / 2;
+    const arcEnd = startAngle + sweep - gap / 2;
     return {
       idx,
       agent,
       value,
       fraction,
-      path: `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+      path: arcPath(cx, cy, donutRadius, arcStart, arcEnd),
       color: colors[idx % colors.length],
     };
   });
@@ -628,27 +627,29 @@ function AgentCostPie({
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[190px_1fr]">
       <div className="relative mx-auto w-[190px]">
         <svg viewBox="0 0 184 184" className="h-[190px] w-[190px]" role="img" aria-label="Agent cost share pie chart">
-          <circle cx={cx} cy={cy} r={radius} fill="rgba(148,163,184,0.12)" />
+          <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.20)" strokeWidth={donutStroke} />
           {slices.map((slice) => (
             <path
               key={slice.agent.agent_id}
               d={slice.path}
-              fill={slice.color}
+              fill="none"
+              stroke={slice.color}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={hovered === slice.idx ? donutStroke + 2 : donutStroke}
               opacity={hovered == null || hovered === slice.idx ? 0.95 : 0.45}
-              stroke="rgba(15,23,42,0.45)"
-              strokeWidth="1"
               onMouseEnter={() => setHovered(slice.idx)}
               onMouseLeave={() => setHovered(null)}
             />
           ))}
-          <circle cx={cx} cy={cy} r={46} fill="var(--bg-secondary)" />
+          <circle cx={cx} cy={cy} r={42} fill="rgba(248,250,252,0.97)" />
         </svg>
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">Window cost</div>
-            <div className="mt-1 text-sm font-semibold text-[var(--text-primary)]">{formatMoney(total, currencyInfo)}</div>
+          <div className="max-w-[84px]">
+            <div className="text-[9px] uppercase tracking-[0.08em] leading-tight text-slate-600">Window cost</div>
+            <div className="mt-0.5 text-[12px] leading-tight font-semibold text-slate-900 truncate">{formatMoneyCompact(total, currencyInfo)}</div>
             {active ? (
-              <div className="mt-1 text-[11px] text-[var(--text-secondary)]">
+              <div className="mt-0.5 text-[10px] leading-tight text-slate-700 truncate">
                 {(active.fraction * 100).toFixed(1)}% {active.agent.agent_name}
               </div>
             ) : null}
@@ -709,7 +710,9 @@ function BreakdownPiePanel({
   }
 
   const total = items.reduce((sum, item) => sum + Math.max(0, item.cost), 0);
-  const r = 52;
+  const donutRadius = 41;
+  const donutStroke = 22;
+  const segmentGap = 0.045;
   const cx = 64;
   const cy = 64;
   const fractions = items.map((item) => {
@@ -722,19 +725,16 @@ function BreakdownPiePanel({
     const fraction = fractions[idx];
     const startAngle = -Math.PI / 2 + fractions.slice(0, idx).reduce((sum, f) => sum + f, 0) * Math.PI * 2;
     const sweep = fraction * Math.PI * 2;
-    const endAngle = startAngle + sweep;
-    const largeArc = sweep > Math.PI ? 1 : 0;
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
+    const gap = Math.min(segmentGap, sweep * 0.45);
+    const arcStart = startAngle + gap / 2;
+    const arcEnd = startAngle + sweep - gap / 2;
     return {
       ...item,
       idx,
       value,
       fraction,
       color: palette[idx % palette.length],
-      path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+      path: arcPath(cx, cy, donutRadius, arcStart, arcEnd),
     };
   });
 
@@ -746,25 +746,27 @@ function BreakdownPiePanel({
       <div className="grid grid-cols-[136px_1fr] gap-3">
         <div className="relative">
           <svg viewBox="0 0 128 128" className="h-[136px] w-[136px]" role="img" aria-label={`${title} pie chart`}>
-            <circle cx={cx} cy={cy} r={r} fill="rgba(148,163,184,0.12)" />
+            <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.20)" strokeWidth={donutStroke} />
             {slices.map((slice) => (
               <path
                 key={slice.id}
                 d={slice.path}
-                fill={slice.color}
+                fill="none"
+                stroke={slice.color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={hovered === slice.idx ? donutStroke + 1.5 : donutStroke}
                 opacity={hovered == null || hovered === slice.idx ? 0.95 : 0.45}
-                stroke="rgba(15,23,42,0.45)"
-                strokeWidth="1"
                 onMouseEnter={() => setHovered(slice.idx)}
                 onMouseLeave={() => setHovered(null)}
               />
             ))}
-            <circle cx={cx} cy={cy} r={30} fill="var(--bg-secondary)" />
+            <circle cx={cx} cy={cy} r={28} fill="rgba(248,250,252,0.97)" />
           </svg>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
-            <div>
-              <div className="text-[10px] uppercase tracking-[0.12em] text-[var(--text-secondary)]">Total</div>
-              <div className="mt-0.5 text-[11px] font-semibold text-[var(--text-primary)]">{formatMoney(total, currencyInfo)}</div>
+            <div className="max-w-[56px]">
+              <div className="text-[8px] uppercase tracking-[0.08em] leading-tight text-slate-600">Total</div>
+              <div className="mt-0.5 text-[10px] leading-tight font-semibold text-slate-900 truncate">{formatMoneyCompact(total, currencyInfo)}</div>
             </div>
           </div>
         </div>
@@ -938,6 +940,19 @@ function convertUsd(usd: number, currencyInfo: DashboardCurrencyInfo): number {
   return usd * (currencyInfo.rate_from_usd || 1);
 }
 
+function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
+  if (!(endAngle > startAngle)) {
+    return "";
+  }
+
+  const x1 = cx + r * Math.cos(startAngle);
+  const y1 = cy + r * Math.sin(startAngle);
+  const x2 = cx + r * Math.cos(endAngle);
+  const y2 = cy + r * Math.sin(endAngle);
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`;
+}
+
 function safeHttpUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
@@ -978,6 +993,25 @@ function formatMoney(usd: number, currencyInfo: DashboardCurrencyInfo): string {
     }).format(converted);
   } catch {
     return `${(currencyInfo.currency || "USD")} ${converted.toFixed(maxFractionDigits)}`;
+  }
+}
+
+function formatMoneyCompact(usd: number, currencyInfo: DashboardCurrencyInfo): string {
+  const converted = convertUsd(usd, currencyInfo);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyInfo.currency || "USD",
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(converted);
+  } catch {
+    const sign = converted < 0 ? "-" : "";
+    const abs = Math.abs(converted);
+    if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(1)}B`;
+    if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
+    if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`;
+    return `${sign}${abs.toFixed(2)}`;
   }
 }
 
