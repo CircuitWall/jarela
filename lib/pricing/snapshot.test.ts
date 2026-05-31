@@ -204,4 +204,56 @@ describe("pricing snapshot refresh", () => {
     expect(modelRate?.input_per_1m_usd).toBe(3);
     expect(modelRate?.output_per_1m_usd).toBe(15);
   });
+
+  it("extracts DeepSeek unit-first token pricing from docs fallback", async () => {
+    readFileMock.mockRejectedValueOnce(new Error("ENOENT"));
+
+    const deepseekHtml = `
+      <html>
+        deepseek-chat
+        1M INPUT TOKENS (CACHE MISS) $0.14
+        1M OUTPUT TOKENS $0.28
+      </html>
+    `;
+
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("platform.deepseek.com")) {
+        return {
+          ok: false,
+          status: 403,
+          headers: new Headers(),
+          text: async () => "blocked",
+        };
+      }
+      if (url.includes("api-docs.deepseek.com")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          text: async () => deepseekHtml,
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: new Headers(),
+        text: async () => "missing",
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { refreshPricingSnapshot } = await import("./snapshot");
+    const res = await refreshPricingSnapshot({ force: true, providers: ["deepseek"] });
+
+    const deepseek = res.snapshot.sources.find((s) => s.id === "deepseek");
+    expect(deepseek).toBeTruthy();
+    expect(deepseek?.ok).toBe(true);
+    expect(deepseek?.resolved_url).toContain("api-docs.deepseek.com/quick_start/pricing");
+    expect((deepseek?.price_signals ?? []).some((s) => /1M\s+INPUT\s+TOKENS/i.test(s))).toBe(true);
+    const modelRate = (deepseek?.model_rates ?? []).find((m) => m.model_id === "deepseek-chat");
+    expect(modelRate).toBeTruthy();
+    expect(modelRate?.input_per_1m_usd).toBe(0.14);
+    expect(modelRate?.output_per_1m_usd).toBe(0.28);
+  });
 });

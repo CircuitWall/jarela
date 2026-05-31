@@ -73,6 +73,7 @@ const PRICE_LINE_RE = new RegExp(
     String.raw`\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:M\s*Tok|MTok)`,
     String.raw`(?:input|output)\s*\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:1\s*[MK]|million|thousand)?\s*(?:tokens?|chars?)`,
     String.raw`(?:input|output)\s*\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:M\s*Tok|MTok)`,
+    String.raw`(?:1\s*[MK]|million|thousand)\s*(?:input|output)?\s*(?:tokens?|chars?)[^$]{0,48}\$\s*\d+(?:\.\d+)?`,
     String.raw`\$\s*\d+(?:\.\d+)?\s*(?:/|per)\s*(?:image|minute|request)`,
   ].join("|"),
   "gi",
@@ -236,14 +237,14 @@ function inferRatePair(text: string): {
   inferred: boolean;
   confidence: "high" | "medium" | "low";
 } | null {
-  const labeledInput = /input[^$]{0,24}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
-  const labeledOutput = /output[^$]{0,24}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
+  const labeledInput = /input[^$]{0,72}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
+  const labeledOutput = /output[^$]{0,72}\$\s*([0-9]+(?:\.[0-9]+)?)/i.exec(text);
 
   const inputL = labeledInput ? Number(labeledInput[1]) : null;
   const outputL = labeledOutput ? Number(labeledOutput[1]) : null;
 
-  const tokenRates = [...text.matchAll(/\$\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)\s*(?:(?:1\s*[MK]|million)\s*tokens?|M\s*Tok|MTok)/gi)]
-    .map((m) => Number(m[1]))
+  const tokenRates = [...text.matchAll(/(?:\$\s*([0-9]+(?:\.[0-9]+)?)\s*(?:\/|per)\s*(?:(?:1\s*[MK]|million|thousand)\s*tokens?|M\s*Tok|MTok))|(?:(?:1\s*[MK]|million|thousand)\s*(?:input|output)?\s*tokens?[^$]{0,72}\$\s*([0-9]+(?:\.[0-9]+)?))/gi)]
+    .map((m) => Number((m[1] ?? m[2] ?? "").trim()))
     .filter((v) => Number.isFinite(v) && v > 0)
     .sort((a, b) => a - b);
 
@@ -401,7 +402,8 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
     remember(attempt);
     if (!attempt.ok) continue;
     const signals = extractPriceSignals(attempt.body);
-    if (signals.length > 0) {
+    const modelRates = extractModelRates(source.id, attempt.body);
+    if (signals.length > 0 || modelRates.length > 0) {
       return {
         id: source.id,
         name: source.name,
@@ -416,7 +418,7 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
         content_hash: hashContent(attempt.body),
         content_length: attempt.body.length,
         price_signals: signals,
-        model_rates: extractModelRates(source.id, attempt.body),
+        model_rates: modelRates,
         error: null,
       };
     }
@@ -451,7 +453,8 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
     remember(attempt);
     if (!attempt.ok) continue;
     const signals = extractPriceSignals(attempt.body);
-    if (signals.length > 0) {
+    const modelRates = extractModelRates(source.id, attempt.body);
+    if (signals.length > 0 || modelRates.length > 0) {
       return {
         id: source.id,
         name: source.name,
@@ -466,7 +469,7 @@ async function fetchSource(source: SourceDef): Promise<PricingSnapshotSource> {
         content_hash: hashContent(attempt.body),
         content_length: attempt.body.length,
         price_signals: signals,
-        model_rates: extractModelRates(source.id, attempt.body),
+        model_rates: modelRates,
         error: null,
       };
     }
