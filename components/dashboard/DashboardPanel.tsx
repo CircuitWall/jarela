@@ -662,52 +662,79 @@ function SharedDonutChart({
   });
 
   const active = hovered != null ? segments[hovered] : null;
+  const glowColor = active?.color ?? "#22c55e";
 
   return (
     <div className="flex flex-col items-center">
       <div className="relative" style={{ width: `${size}px`, height: `${size}px` }}>
+        <div
+          className="pointer-events-none absolute inset-4 rounded-full blur-2xl"
+          style={{
+            background: `radial-gradient(circle, ${withAlpha(glowColor, 0.28)} 0%, transparent 72%)`,
+            opacity: active ? 0.85 : 0.55,
+            transition: "opacity 180ms ease",
+          }}
+        />
+
         <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full" role="img" aria-label={ariaLabel}>
           <defs>
+            <linearGradient id={`${uid}-track`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="rgba(148,163,184,0.18)" />
+              <stop offset="100%" stopColor="rgba(100,116,139,0.35)" />
+            </linearGradient>
             <radialGradient id={`${uid}-center`} cx="50%" cy="38%" r="70%">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
-              <stop offset="100%" stopColor="rgba(241,245,249,0.95)" />
+              <stop offset="0%" stopColor="rgba(255,255,255,0.99)" />
+              <stop offset="100%" stopColor="rgba(226,232,240,0.96)" />
             </radialGradient>
+            <filter id={`${uid}-segment-shadow`} x="-20%" y="-20%" width="140%" height="140%">
+              <feDropShadow dx="0" dy="1.2" stdDeviation="0.9" floodColor="rgba(2,6,23,0.34)" />
+            </filter>
+            {segments.map((segment) => (
+              <linearGradient key={segment.id} id={`${uid}-seg-${segment.idx}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor={shiftHex(segment.color, 0.22)} />
+                <stop offset="56%" stopColor={segment.color} />
+                <stop offset="100%" stopColor={shiftHex(segment.color, -0.2)} />
+              </linearGradient>
+            ))}
           </defs>
 
-          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={stroke} />
+          <circle cx={cx} cy={cy} r={radius} fill="none" stroke={`url(#${uid}-track)`} strokeWidth={stroke} />
 
           {segments.map((segment) => (
-            <g key={segment.id}>
+            <g key={segment.id} filter={`url(#${uid}-segment-shadow)`}>
               <path
                 d={segment.path}
                 fill="none"
-                stroke="rgba(2,6,23,0.34)"
+                stroke="rgba(2,6,23,0.3)"
                 strokeLinecap="butt"
                 strokeLinejoin="round"
-                strokeWidth={(hovered === segment.idx ? stroke + 2 : stroke) + 1.2}
+                strokeWidth={(hovered === segment.idx ? stroke + 2 : stroke) + 1.1}
                 transform="translate(0 0.9)"
-                opacity={hovered == null || hovered === segment.idx ? 0.23 : 0.12}
+                opacity={hovered == null || hovered === segment.idx ? 0.2 : 0.1}
+                style={{ transition: "opacity 180ms ease, stroke-width 180ms ease" }}
                 onMouseEnter={() => onHoverChange(segment.idx)}
                 onMouseLeave={() => onHoverChange(null)}
               />
               <path
                 d={segment.path}
                 fill="none"
-                stroke={segment.color}
+                stroke={`url(#${uid}-seg-${segment.idx})`}
                 strokeLinecap="butt"
                 strokeLinejoin="round"
                 strokeWidth={hovered === segment.idx ? stroke + 2 : stroke}
-                opacity={hovered == null || hovered === segment.idx ? 0.96 : 0.5}
+                opacity={hovered == null || hovered === segment.idx ? 0.97 : 0.54}
+                style={{ transition: "opacity 180ms ease, stroke-width 180ms ease" }}
                 onMouseEnter={() => onHoverChange(segment.idx)}
                 onMouseLeave={() => onHoverChange(null)}
               />
               <path
                 d={segment.path}
                 fill="none"
-                stroke="rgba(255,255,255,0.2)"
+                stroke="rgba(255,255,255,0.24)"
                 strokeLinecap="butt"
                 strokeWidth="1.6"
-                opacity={hovered == null || hovered === segment.idx ? 0.72 : 0.3}
+                opacity={hovered == null || hovered === segment.idx ? 0.74 : 0.34}
+                style={{ transition: "opacity 180ms ease" }}
                 onMouseEnter={() => onHoverChange(segment.idx)}
                 onMouseLeave={() => onHoverChange(null)}
               />
@@ -726,8 +753,8 @@ function SharedDonutChart({
         </div>
       </div>
 
-      <div className="mt-2 h-8 text-center text-[11px] leading-tight text-[var(--text-secondary)]">
-        {active ? `${active.label} · ${(active.fraction * 100).toFixed(1)}%` : "Hover a segment"}
+      <div className="mt-2 h-8 rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/45 px-3 text-center text-[11px] leading-8 text-[var(--text-secondary)] backdrop-blur-sm">
+        {active ? `${active.label}  ${(active.fraction * 100).toFixed(1)}%` : "Hover a segment"}
       </div>
     </div>
   );
@@ -1051,6 +1078,37 @@ function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle
   const y2 = cy + r * Math.sin(endAngle);
   const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
   return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`;
+}
+
+function parseHexColor(value: string): [number, number, number] | null {
+  const hex = value.trim();
+  if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return null;
+  const normalized = hex.length === 4
+    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
+    : hex;
+  const raw = normalized.slice(1);
+  const r = Number.parseInt(raw.slice(0, 2), 16);
+  const g = Number.parseInt(raw.slice(2, 4), 16);
+  const b = Number.parseInt(raw.slice(4, 6), 16);
+  return [r, g, b];
+}
+
+function shiftHex(value: string, amount: number): string {
+  const rgb = parseHexColor(value);
+  if (!rgb) return value;
+  const t = Math.max(-1, Math.min(1, amount));
+  const shiftChannel = (channel: number): number => {
+    if (t >= 0) return Math.round(channel + ((255 - channel) * t));
+    return Math.round(channel * (1 + t));
+  };
+  return `rgb(${shiftChannel(rgb[0])}, ${shiftChannel(rgb[1])}, ${shiftChannel(rgb[2])})`;
+}
+
+function withAlpha(value: string, alpha: number): string {
+  const rgb = parseHexColor(value);
+  if (!rgb) return `rgba(34,197,94,${alpha})`;
+  const a = Math.max(0, Math.min(1, alpha));
+  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
 }
 
 function safeHttpUrl(value: string | null | undefined): string | null {
