@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { DashboardCurrencyInfo, DashboardMetrics, UserProfile } from "@/api/types";
 import { Activity, BarChart3, Coins, RotateCw, ShieldCheck, TrendingUp } from "lucide-react";
@@ -611,6 +611,128 @@ function InsightChip({ label, value, hint }: { label: string; value: string; hin
   );
 }
 
+type DonutSlice = {
+  id: string;
+  label: string;
+  value: number;
+  color: string;
+};
+
+function SharedDonutChart({
+  ariaLabel,
+  size,
+  centerAmount,
+  slices,
+  hovered,
+  onHoverChange,
+}: {
+  ariaLabel: string;
+  size: number;
+  centerAmount: string;
+  slices: DonutSlice[];
+  hovered: number | null;
+  onHoverChange: (index: number | null) => void;
+}) {
+  const uid = useId().replace(/:/g, "");
+  const stroke = size >= 170 ? 26 : 20;
+  const padding = Math.ceil(stroke / 2) + 6;
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = Math.max(16, (size - (padding * 2) - stroke) / 2);
+  const innerRadius = Math.max(14, radius - (stroke / 2) + 2);
+  const gap = 0.03;
+  const total = slices.reduce((sum, s) => sum + Math.max(0, s.value), 0);
+
+  const segments = slices.map((slice, idx) => {
+    const value = Math.max(0, slice.value);
+    const fraction = total > 0 ? value / total : 1 / Math.max(1, slices.length);
+    const startAngle = -Math.PI / 2 + slices
+      .slice(0, idx)
+      .reduce((sum, s) => sum + (total > 0 ? Math.max(0, s.value) / total : 1 / Math.max(1, slices.length)), 0) * Math.PI * 2;
+    const sweep = fraction * Math.PI * 2;
+    const gapSafe = Math.min(gap, sweep * 0.45);
+    const arcStart = startAngle + (gapSafe / 2);
+    const arcEnd = startAngle + sweep - (gapSafe / 2);
+    return {
+      ...slice,
+      idx,
+      fraction,
+      path: arcPath(cx, cy, radius, arcStart, arcEnd),
+    };
+  });
+
+  const active = hovered != null ? segments[hovered] : null;
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative" style={{ width: `${size}px`, height: `${size}px` }}>
+        <svg viewBox={`0 0 ${size} ${size}`} className="h-full w-full" role="img" aria-label={ariaLabel}>
+          <defs>
+            <radialGradient id={`${uid}-center`} cx="50%" cy="38%" r="70%">
+              <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
+              <stop offset="100%" stopColor="rgba(241,245,249,0.95)" />
+            </radialGradient>
+          </defs>
+
+          <circle cx={cx} cy={cy} r={radius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={stroke} />
+
+          {segments.map((segment) => (
+            <g key={segment.id}>
+              <path
+                d={segment.path}
+                fill="none"
+                stroke="rgba(2,6,23,0.34)"
+                strokeLinecap="butt"
+                strokeLinejoin="round"
+                strokeWidth={(hovered === segment.idx ? stroke + 2 : stroke) + 1.2}
+                transform="translate(0 0.9)"
+                opacity={hovered == null || hovered === segment.idx ? 0.23 : 0.12}
+                onMouseEnter={() => onHoverChange(segment.idx)}
+                onMouseLeave={() => onHoverChange(null)}
+              />
+              <path
+                d={segment.path}
+                fill="none"
+                stroke={segment.color}
+                strokeLinecap="butt"
+                strokeLinejoin="round"
+                strokeWidth={hovered === segment.idx ? stroke + 2 : stroke}
+                opacity={hovered == null || hovered === segment.idx ? 0.96 : 0.5}
+                onMouseEnter={() => onHoverChange(segment.idx)}
+                onMouseLeave={() => onHoverChange(null)}
+              />
+              <path
+                d={segment.path}
+                fill="none"
+                stroke="rgba(255,255,255,0.2)"
+                strokeLinecap="butt"
+                strokeWidth="1.6"
+                opacity={hovered == null || hovered === segment.idx ? 0.72 : 0.3}
+                onMouseEnter={() => onHoverChange(segment.idx)}
+                onMouseLeave={() => onHoverChange(null)}
+              />
+            </g>
+          ))}
+
+          <circle cx={cx} cy={cy} r={innerRadius} fill={`url(#${uid}-center)`} stroke="rgba(15,23,42,0.14)" strokeWidth="1" />
+        </svg>
+
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
+          <div className="max-w-[70%]">
+            <div className={`${size >= 170 ? "text-sm" : "text-xs"} font-semibold leading-tight text-slate-900 truncate`}>
+              {centerAmount}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-2 h-8 text-center text-[11px] leading-tight text-[var(--text-secondary)]">
+        {active ? `${active.label} · ${(active.fraction * 100).toFixed(1)}%` : "Hover a segment"}
+      </div>
+    </div>
+  );
+}
+
 function AgentCostPie({
   agents,
   currencyInfo,
@@ -633,11 +755,6 @@ function AgentCostPie({
   ];
 
   const total = agents.reduce((sum, a) => sum + Math.max(0, a.estimated_cost_usd), 0);
-  const donutRadius = 60;
-  const donutStroke = 28;
-  const segmentGap = 0.028;
-  const cx = 92;
-  const cy = 92;
   const fractions = agents.map((agent) => {
     const value = Math.max(0, agent.estimated_cost_usd);
     return total > 0 ? value / total : 1 / agents.length;
@@ -646,88 +763,30 @@ function AgentCostPie({
   const slices = agents.map((agent, idx) => {
     const value = Math.max(0, agent.estimated_cost_usd);
     const fraction = fractions[idx];
-    const startAngle = -Math.PI / 2 + fractions.slice(0, idx).reduce((sum, f) => sum + f, 0) * Math.PI * 2;
-    const sweep = fraction * Math.PI * 2;
-    const gap = Math.min(segmentGap, sweep * 0.45);
-    const arcStart = startAngle + gap / 2;
-    const arcEnd = startAngle + sweep - gap / 2;
     return {
       idx,
       agent,
       value,
       fraction,
-      path: arcPath(cx, cy, donutRadius, arcStart, arcEnd),
       color: colors[idx % colors.length],
     };
   });
 
-  const active = hovered != null ? slices[hovered] : null;
-
   return (
     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[190px_1fr]">
-      <div className="relative mx-auto w-[190px]">
-        <svg viewBox="0 0 184 184" className="h-[190px] w-[190px]" role="img" aria-label="Agent cost share pie chart">
-          <defs>
-            <filter id="agentDonutShadow" x="-20%" y="-20%" width="140%" height="140%">
-              <feDropShadow dx="0" dy="1.1" stdDeviation="0.8" floodColor="rgba(2,6,23,0.42)" />
-            </filter>
-            <radialGradient id="agentCenterFill" cx="50%" cy="38%" r="70%">
-              <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
-              <stop offset="100%" stopColor="rgba(241,245,249,0.95)" />
-            </radialGradient>
-          </defs>
-          <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={donutStroke} />
-          {slices.map((slice) => (
-            <g key={slice.agent.agent_id} filter="url(#agentDonutShadow)">
-              <path
-                d={slice.path}
-                fill="none"
-                stroke="rgba(2,6,23,0.40)"
-                strokeLinecap="butt"
-                strokeLinejoin="round"
-                strokeWidth={(hovered === slice.idx ? donutStroke + 2 : donutStroke) + 1.5}
-                transform="translate(0 1.1)"
-                opacity={hovered == null || hovered === slice.idx ? 0.26 : 0.16}
-                onMouseEnter={() => setHovered(slice.idx)}
-                onMouseLeave={() => setHovered(null)}
-              />
-              <path
-                d={slice.path}
-                fill="none"
-                stroke={slice.color}
-                strokeLinecap="butt"
-                strokeLinejoin="round"
-                strokeWidth={hovered === slice.idx ? donutStroke + 2 : donutStroke}
-                opacity={hovered == null || hovered === slice.idx ? 0.96 : 0.5}
-                onMouseEnter={() => setHovered(slice.idx)}
-                onMouseLeave={() => setHovered(null)}
-              />
-              <path
-                d={slice.path}
-                fill="none"
-                stroke="rgba(255,255,255,0.22)"
-                strokeLinecap="butt"
-                strokeWidth="2"
-                opacity={hovered == null || hovered === slice.idx ? 0.8 : 0.35}
-                onMouseEnter={() => setHovered(slice.idx)}
-                onMouseLeave={() => setHovered(null)}
-              />
-            </g>
-          ))}
-          <circle cx={cx} cy={cy} r={42} fill="url(#agentCenterFill)" stroke="rgba(15,23,42,0.14)" strokeWidth="1" />
-        </svg>
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
-          <div className="max-w-[84px]">
-            <div className="text-[9px] uppercase tracking-[0.08em] leading-tight text-slate-600">Window cost</div>
-            <div className="mt-0.5 text-[12px] leading-tight font-semibold text-slate-900 truncate">{formatMoneyCompact(total, currencyInfo)}</div>
-            {active ? (
-              <div className="mt-0.5 text-[10px] leading-tight text-slate-700 truncate">
-                {(active.fraction * 100).toFixed(1)}% {active.agent.agent_name}
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </div>
+      <SharedDonutChart
+        ariaLabel="Agent cost share pie chart"
+        size={190}
+        centerAmount={formatMoneyCompact(total, currencyInfo)}
+        hovered={hovered}
+        onHoverChange={setHovered}
+        slices={slices.map((slice) => ({
+          id: slice.agent.agent_id,
+          label: slice.agent.agent_name,
+          value: slice.value,
+          color: slice.color,
+        }))}
+      />
 
       <div className="space-y-2">
         {slices.map((slice) => (
@@ -782,12 +841,6 @@ function BreakdownPiePanel({
   }
 
   const total = items.reduce((sum, item) => sum + Math.max(0, item.cost), 0);
-  const donutRadius = 41;
-  const donutStroke = 22;
-  const segmentGap = 0.03;
-  const cx = 64;
-  const cy = 64;
-  const idBase = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const fractions = items.map((item) => {
     const value = Math.max(0, item.cost);
     return total > 0 ? value / total : 1 / items.length;
@@ -796,85 +849,32 @@ function BreakdownPiePanel({
   const slices = items.map((item, idx) => {
     const value = Math.max(0, item.cost);
     const fraction = fractions[idx];
-    const startAngle = -Math.PI / 2 + fractions.slice(0, idx).reduce((sum, f) => sum + f, 0) * Math.PI * 2;
-    const sweep = fraction * Math.PI * 2;
-    const gap = Math.min(segmentGap, sweep * 0.45);
-    const arcStart = startAngle + gap / 2;
-    const arcEnd = startAngle + sweep - gap / 2;
     return {
       ...item,
       idx,
       value,
       fraction,
       color: palette[idx % palette.length],
-      path: arcPath(cx, cy, donutRadius, arcStart, arcEnd),
     };
   });
-
-  const active = hovered != null ? slices[hovered] : null;
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-primary)]/35 p-3">
       <div className="mb-2 text-xs font-medium text-[var(--text-primary)]">{title}</div>
       <div className="grid grid-cols-[136px_1fr] gap-3">
-        <div className="relative">
-          <svg viewBox="0 0 128 128" className="h-[136px] w-[136px]" role="img" aria-label={`${title} pie chart`}>
-            <defs>
-              <filter id={`${idBase}-shadow`} x="-20%" y="-20%" width="140%" height="140%">
-                <feDropShadow dx="0" dy="0.8" stdDeviation="0.6" floodColor="rgba(2,6,23,0.36)" />
-              </filter>
-              <radialGradient id={`${idBase}-center`} cx="50%" cy="38%" r="70%">
-                <stop offset="0%" stopColor="rgba(255,255,255,0.98)" />
-                <stop offset="100%" stopColor="rgba(241,245,249,0.95)" />
-              </radialGradient>
-            </defs>
-            <circle cx={cx} cy={cy} r={donutRadius} fill="none" stroke="rgba(148,163,184,0.22)" strokeWidth={donutStroke} />
-            {slices.map((slice) => (
-              <g key={slice.id} filter={`url(#${idBase}-shadow)`}>
-                <path
-                  d={slice.path}
-                  fill="none"
-                  stroke="rgba(2,6,23,0.40)"
-                  strokeLinecap="butt"
-                  strokeLinejoin="round"
-                  strokeWidth={(hovered === slice.idx ? donutStroke + 1.5 : donutStroke) + 1.2}
-                  transform="translate(0 0.8)"
-                  opacity={hovered == null || hovered === slice.idx ? 0.24 : 0.14}
-                  onMouseEnter={() => setHovered(slice.idx)}
-                  onMouseLeave={() => setHovered(null)}
-                />
-                <path
-                  d={slice.path}
-                  fill="none"
-                  stroke={slice.color}
-                  strokeLinecap="butt"
-                  strokeLinejoin="round"
-                  strokeWidth={hovered === slice.idx ? donutStroke + 1.5 : donutStroke}
-                  opacity={hovered == null || hovered === slice.idx ? 0.96 : 0.5}
-                  onMouseEnter={() => setHovered(slice.idx)}
-                  onMouseLeave={() => setHovered(null)}
-                />
-                <path
-                  d={slice.path}
-                  fill="none"
-                  stroke="rgba(255,255,255,0.2)"
-                  strokeLinecap="butt"
-                  strokeWidth="1.8"
-                  opacity={hovered == null || hovered === slice.idx ? 0.75 : 0.3}
-                  onMouseEnter={() => setHovered(slice.idx)}
-                  onMouseLeave={() => setHovered(null)}
-                />
-              </g>
-            ))}
-            <circle cx={cx} cy={cy} r={28} fill={`url(#${idBase}-center)`} stroke="rgba(15,23,42,0.14)" strokeWidth="1" />
-          </svg>
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-center">
-            <div className="max-w-[56px]">
-              <div className="text-[8px] uppercase tracking-[0.08em] leading-tight text-slate-600">Total</div>
-              <div className="mt-0.5 text-[10px] leading-tight font-semibold text-slate-900 truncate">{formatMoneyCompact(total, currencyInfo)}</div>
-            </div>
-          </div>
-        </div>
+        <SharedDonutChart
+          ariaLabel={`${title} pie chart`}
+          size={136}
+          centerAmount={formatMoneyCompact(total, currencyInfo)}
+          hovered={hovered}
+          onHoverChange={setHovered}
+          slices={slices.map((slice) => ({
+            id: slice.id,
+            label: slice.label,
+            value: slice.value,
+            color: slice.color,
+          }))}
+        />
 
         <div className="max-h-56 space-y-1.5 overflow-auto pr-1">
           {slices.map((slice) => (
@@ -900,11 +900,6 @@ function BreakdownPiePanel({
               </div>
             </div>
           ))}
-          {active ? (
-            <div className="text-[10px] text-[var(--text-secondary)]">
-              Highlighted: {active.label} ({(active.fraction * 100).toFixed(1)}%)
-            </div>
-          ) : null}
         </div>
       </div>
     </div>
