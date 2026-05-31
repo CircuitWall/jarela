@@ -4,6 +4,24 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { DashboardCurrencyInfo, DashboardMetrics, UserProfile } from "@/api/types";
 import { Activity, BarChart3, Coins, RotateCw, ShieldCheck, TrendingUp } from "lucide-react";
+import { withAlpha } from "@/lib/dashboard/color";
+import { arcPath } from "@/lib/dashboard/geometry";
+import { detectModelFunctionality } from "@/lib/dashboard/classify";
+import {
+  convertUsd,
+  formatInt,
+  formatMoney,
+  formatMoneyCompact,
+  safeHttpUrl,
+} from "@/lib/dashboard/format";
+import {
+  filterModelRates,
+  groupModelRatesByVendor,
+  sortModelRates,
+  sortTools,
+  type ModelSort,
+  type ToolSort,
+} from "@/lib/dashboard/sort";
 
 type WindowDays = 7 | 14 | 30 | 60;
 type CurrencyMode = "auto" | "manual";
@@ -49,13 +67,11 @@ export function DashboardPanel() {
   const [profileLocation, setProfileLocation] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null });
   const [refreshingPricing, setRefreshingPricing] = useState(false);
   const [refreshHint, setRefreshHint] = useState<string | null>(null);
-  const [toolSort, setToolSort] = useState<"best" | "calls_desc" | "errors_desc" | "error_rate_desc" | "name_asc">("best");
+  const [toolSort, setToolSort] = useState<ToolSort>("best");
   const [modelVendorFilter, setModelVendorFilter] = useState<string>("all");
   const [modelFunctionFilter, setModelFunctionFilter] = useState<string>("all");
   const [modelSearch, setModelSearch] = useState<string>("");
-  const [modelSort, setModelSort] = useState<
-    "model_asc" | "model_desc" | "input_desc" | "input_asc" | "output_desc" | "output_asc" | "confidence_desc" | "confidence_asc"
-  >("model_asc");
+  const [modelSort, setModelSort] = useState<ModelSort>("model_asc");
 
   useEffect(() => {
     let cancelled = false;
@@ -175,54 +191,18 @@ export function DashboardPanel() {
   const series = useMemo(() => data?.series ?? [], [data]);
   const filteredModelRates = useMemo(() => {
     if (!data) return [];
-    const query = modelSearch.trim().toLowerCase();
-    const rows = data.pricing.model_rates.filter((row) => {
-      if (modelVendorFilter !== "all" && row.provider !== modelVendorFilter) return false;
-      if (modelFunctionFilter !== "all" && detectModelFunctionality(row.model_id) !== modelFunctionFilter) return false;
-      if (!query) return true;
-      return `${row.provider}/${row.model_id}`.toLowerCase().includes(query);
+    const filtered = filterModelRates(data.pricing.model_rates, {
+      vendor: modelVendorFilter,
+      functionality: modelFunctionFilter,
+      search: modelSearch,
     });
-
-    const confidenceRank = (c: "high" | "medium" | "low") => (c === "high" ? 3 : c === "medium" ? 2 : 1);
-    rows.sort((a, b) => {
-      if (modelSort === "model_desc") {
-        return b.model_id.localeCompare(a.model_id);
-      }
-      if (modelSort === "input_desc") {
-        return (b.input_per_1m_usd ?? -1) - (a.input_per_1m_usd ?? -1);
-      }
-      if (modelSort === "input_asc") {
-        return (a.input_per_1m_usd ?? Number.POSITIVE_INFINITY) - (b.input_per_1m_usd ?? Number.POSITIVE_INFINITY);
-      }
-      if (modelSort === "output_desc") {
-        return (b.output_per_1m_usd ?? -1) - (a.output_per_1m_usd ?? -1);
-      }
-      if (modelSort === "output_asc") {
-        return (a.output_per_1m_usd ?? Number.POSITIVE_INFINITY) - (b.output_per_1m_usd ?? Number.POSITIVE_INFINITY);
-      }
-      if (modelSort === "confidence_desc") {
-        const rankDiff = confidenceRank(b.confidence) - confidenceRank(a.confidence);
-        if (rankDiff !== 0) return rankDiff;
-      }
-      if (modelSort === "confidence_asc") {
-        const rankDiff = confidenceRank(a.confidence) - confidenceRank(b.confidence);
-        if (rankDiff !== 0) return rankDiff;
-      }
-      return a.model_id.localeCompare(b.model_id);
-    });
-
-    return rows;
+    return sortModelRates(filtered, modelSort);
   }, [data, modelVendorFilter, modelFunctionFilter, modelSearch, modelSort]);
 
-  const groupedModelRates = useMemo(() => {
-    const grouped = new Map<string, DashboardMetrics["pricing"]["model_rates"]>();
-    for (const row of filteredModelRates) {
-      const arr = grouped.get(row.provider) ?? [];
-      arr.push(row);
-      grouped.set(row.provider, arr);
-    }
-    return [...grouped.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [filteredModelRates]);
+  const groupedModelRates = useMemo(
+    () => groupModelRatesByVendor(filteredModelRates),
+    [filteredModelRates],
+  );
   const modelVendors = useMemo(
     () => [...new Set((data?.pricing.model_rates ?? []).map((r) => r.provider))].sort(),
     [data],
@@ -233,26 +213,7 @@ export function DashboardPanel() {
   );
   const sortedTools = useMemo(() => {
     if (!data) return [];
-    const rows = [...data.top_tools];
-    rows.sort((a, b) => {
-      if (toolSort === "calls_desc") {
-        if (b.call_count !== a.call_count) return b.call_count - a.call_count;
-      } else if (toolSort === "errors_desc") {
-        if (b.error_count !== a.error_count) return b.error_count - a.error_count;
-      } else if (toolSort === "error_rate_desc") {
-        const aRate = a.call_count > 0 ? a.error_count / a.call_count : 0;
-        const bRate = b.call_count > 0 ? b.error_count / b.call_count : 0;
-        if (bRate !== aRate) return bRate - aRate;
-      } else if (toolSort === "name_asc") {
-        return a.name.localeCompare(b.name);
-      } else {
-        if (b.score !== a.score) return b.score - a.score;
-        if (b.success_rate !== a.success_rate) return b.success_rate - a.success_rate;
-        if (b.call_count !== a.call_count) return b.call_count - a.call_count;
-      }
-      return a.name.localeCompare(b.name);
-    });
-    return rows;
+    return sortTools(data.top_tools, toolSort);
   }, [data, toolSort]);
   const windowTokenTotal = (data?.summary.input_tokens_est ?? 0) + (data?.summary.output_tokens_est ?? 0);
   const activeDays = series.filter((s) => (s.input_tokens_est + s.output_tokens_est) > 0).length;
@@ -1084,129 +1045,4 @@ function InteractiveCostChart({
   );
 }
 
-function convertUsd(usd: number, currencyInfo: DashboardCurrencyInfo): number {
-  return usd * (currencyInfo.rate_from_usd || 1);
-}
 
-function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
-  if (!(endAngle > startAngle)) {
-    return "";
-  }
-
-  const x1 = cx + r * Math.cos(startAngle);
-  const y1 = cy + r * Math.sin(startAngle);
-  const x2 = cx + r * Math.cos(endAngle);
-  const y2 = cy + r * Math.sin(endAngle);
-  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
-  return `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}`;
-}
-
-function parseHexColor(value: string): [number, number, number] | null {
-  const hex = value.trim();
-  if (!/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(hex)) return null;
-  const normalized = hex.length === 4
-    ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`
-    : hex;
-  const raw = normalized.slice(1);
-  const r = Number.parseInt(raw.slice(0, 2), 16);
-  const g = Number.parseInt(raw.slice(2, 4), 16);
-  const b = Number.parseInt(raw.slice(4, 6), 16);
-  return [r, g, b];
-}
-
-function shiftHex(value: string, amount: number): string {
-  const rgb = parseHexColor(value);
-  if (!rgb) return value;
-  const t = Math.max(-1, Math.min(1, amount));
-  const shiftChannel = (channel: number): number => {
-    if (t >= 0) return Math.round(channel + ((255 - channel) * t));
-    return Math.round(channel * (1 + t));
-  };
-  return `rgb(${shiftChannel(rgb[0])}, ${shiftChannel(rgb[1])}, ${shiftChannel(rgb[2])})`;
-}
-
-function withAlpha(value: string, alpha: number): string {
-  const rgb = parseHexColor(value);
-  if (!rgb) return `rgba(34,197,94,${alpha})`;
-  const a = Math.max(0, Math.min(1, alpha));
-  return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
-}
-
-function safeHttpUrl(value: string | null | undefined): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
-function formatMoney(usd: number, currencyInfo: DashboardCurrencyInfo): string {
-  const converted = convertUsd(usd, currencyInfo);
-  const abs = Math.abs(converted);
-  const useMicroPrecision = abs > 0 && abs < 0.01;
-  const minFractionDigits = useMicroPrecision ? 4 : 2;
-  const maxFractionDigits = useMicroPrecision ? 8 : 4;
-
-  if (abs > 0 && abs < 0.000001) {
-    try {
-      const floor = new Intl.NumberFormat(undefined, {
-        style: "currency",
-        currency: currencyInfo.currency || "USD",
-        minimumFractionDigits: 6,
-        maximumFractionDigits: 6,
-      }).format(0.000001);
-      return `< ${floor}`;
-    } catch {
-      return `${(currencyInfo.currency || "USD")} < 0.000001`;
-    }
-  }
-
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currencyInfo.currency || "USD",
-      minimumFractionDigits: minFractionDigits,
-      maximumFractionDigits: maxFractionDigits,
-    }).format(converted);
-  } catch {
-    return `${(currencyInfo.currency || "USD")} ${converted.toFixed(maxFractionDigits)}`;
-  }
-}
-
-function formatMoneyCompact(usd: number, currencyInfo: DashboardCurrencyInfo): string {
-  const converted = convertUsd(usd, currencyInfo);
-  try {
-    return new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency: currencyInfo.currency || "USD",
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(converted);
-  } catch {
-    const sign = converted < 0 ? "-" : "";
-    const abs = Math.abs(converted);
-    if (abs >= 1_000_000_000) return `${sign}${(abs / 1_000_000_000).toFixed(1)}B`;
-    if (abs >= 1_000_000) return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
-    if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`;
-    return `${sign}${abs.toFixed(2)}`;
-  }
-}
-
-function formatInt(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
-function detectModelFunctionality(modelId: string): string {
-  const id = modelId.toLowerCase();
-  if (/(embed|embedding|text-embedding|voyage-)/.test(id)) return "embeddings";
-  if (/(rerank|rank)/.test(id)) return "reranking";
-  if (/(moderation|safety)/.test(id)) return "moderation";
-  if (/(image|vision|multimodal|omni|vl)/.test(id)) return "multimodal";
-  if (/(audio|speech|tts|stt|whisper)/.test(id)) return "audio";
-  if (/(code|coder|coding)/.test(id)) return "coding";
-  if (/(reason|thinking|r1|o1|o3|deepthink)/.test(id)) return "reasoning";
-  if (/(chat|instruct|gpt|claude|gemini|command|llama|mistral|qwen)/.test(id)) return "chat";
-  return "other";
-}
