@@ -7,13 +7,6 @@ import { resolveRoute } from "./router";
 import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
 
-const SILENT_BRIDGE_DIRECTIVE =
-  "[SILENT_BRIDGE] Observer mode is enabled for this route. You are standing on the user's side and monitoring events. " +
-  "Never behave like a participant in the external chat and never draft/imitate a direct chat reply. " +
-  "Write to the user only, as a concise report of important events, risks, or user-actionable changes. " +
-  "Keep tone informational (status/update summary), not conversational. " +
-  "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else.";
-
 function isNoReply(text: string): boolean {
   return /^\s*NO[_ ]?REPLY\b/i.test(text);
 }
@@ -64,6 +57,7 @@ export async function handleInboundMessage(
     const chatName = msg.chat_name ?? msg.push_name ?? "unknown";
     const senderJid = msg.participant_jid ?? msg.remote_jid;
     const senderName = msg.sender_name ?? msg.push_name ?? senderJid;
+    const silent = route.silent_mode === 1;
     const promptText = formatBridgePrompt({
       bridge_id: adapter.bridge_id,
       chat_id: msg.remote_jid,
@@ -73,14 +67,11 @@ export async function handleInboundMessage(
       sender_id: senderJid,
       sender_name: senderName,
       text: msg.text,
+      silent,
     });
-    const silent = route.silent_mode === 1;
-    const effectivePrompt = silent
-      ? `${promptText}\n\n${SILENT_BRIDGE_DIRECTIVE}`
-      : promptText;
     const prepared = await prepareThreadRun(
       thread.thread_id,
-      effectivePrompt,
+      promptText,
       undefined,
       msg.attachments,
       undefined,
