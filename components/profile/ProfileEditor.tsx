@@ -313,10 +313,10 @@ function LocationSharing({
                 {profile!.location_lat!.toFixed(5)}, {profile!.location_lng!.toFixed(5)}
               </span>
               {profile?.location_accuracy_m != null && (
-                <span className="text-fg-faint"> Â· Â±{Math.round(profile.location_accuracy_m)}m</span>
+                <span className="text-fg-faint"> · ±{Math.round(profile.location_accuracy_m)}m</span>
               )}
               {updatedAt && (
-                <span className="text-fg-faint"> Â· {timeAgo(updatedAt)}</span>
+                <span className="text-fg-faint"> · {timeAgo(updatedAt)}</span>
               )}
             </>
           ) : (
@@ -423,9 +423,9 @@ function AccessWhitelist() {
             <div className="flex-1 min-w-0">
               <div className="font-mono text-fg truncate">{e.identity}</div>
               <div className="text-[10px] text-fg-faint">
-                {e.display_name ? `${e.display_name} Â· ` : ""}
+                {e.display_name ? `${e.display_name} · ` : ""}
                 added {new Date(e.added_at).toLocaleString()}
-                {e.last_seen_at ? ` Â· last seen ${new Date(e.last_seen_at).toLocaleString()}` : " Â· never seen"}
+                {e.last_seen_at ? ` · last seen ${new Date(e.last_seen_at).toLocaleString()}` : " · never seen"}
               </div>
             </div>
             <button
