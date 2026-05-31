@@ -293,24 +293,46 @@ export function DashboardPanel() {
 
       <div className="relative flex flex-wrap items-center gap-2 px-1 py-1">
         <span className="text-xs text-[var(--text-secondary)]">Currency</span>
-        <select
-          value={currencyMode}
-          onChange={(e) => setCurrencyMode(e.target.value as CurrencyMode)}
-          className="rounded-md bg-[var(--bg-primary)]/60 px-2 py-1 text-xs text-[var(--text-primary)]"
-        >
-          <option value="auto">Auto by location</option>
-          <option value="manual">Manual override</option>
-        </select>
-        <select
-          value={manualCurrency}
-          onChange={(e) => setManualCurrency(e.target.value)}
-          disabled={currencyMode !== "manual"}
-          className="rounded-md bg-[var(--bg-primary)]/60 px-2 py-1 text-xs text-[var(--text-primary)] disabled:opacity-50"
-        >
-          {MANUAL_CURRENCIES.map((code) => (
-            <option key={code} value={code}>{code}</option>
-          ))}
-        </select>
+        <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--bg-secondary)]/80 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setCurrencyMode("auto")}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              currencyMode === "auto"
+                ? "bg-[var(--accent)] text-white"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            Auto
+          </button>
+          <button
+            type="button"
+            onClick={() => setCurrencyMode("manual")}
+            className={`px-2 py-0.5 rounded transition-colors ${
+              currencyMode === "manual"
+                ? "bg-[var(--accent)] text-white"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            Manual
+          </button>
+        </div>
+        {currencyMode === "manual" ? (
+          <select
+            value={manualCurrency}
+            onChange={(e) => setManualCurrency(e.target.value)}
+            className="rounded-md bg-[var(--bg-primary)]/60 px-2 py-1 text-xs text-[var(--text-primary)]"
+          >
+            {MANUAL_CURRENCIES.map((code) => (
+              <option key={code} value={code}>{code}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-[11px] text-[var(--text-secondary)]">
+            using <span className="text-[var(--text-primary)] font-medium">{currencyInfo.currency}</span>
+            {currencyInfo.country_code ? ` (${currencyInfo.country_code})` : ""}
+          </span>
+        )}
       </div>
 
       {loading && (
