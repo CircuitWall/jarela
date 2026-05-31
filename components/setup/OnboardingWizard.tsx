@@ -351,7 +351,7 @@ export function OnboardingWizard({ context }: Props) {
             // eslint-disable-next-line @next/next/no-img-element
             <img src="/logo-mark-transparent.png" alt="" className="mt-1 h-11 w-auto" />
           )}
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">
               {fullScreen ? "First launch setup" : state.experienceMode === "normal" ? "Guided setup" : "Profile"}
             </p>
@@ -361,6 +361,28 @@ export function OnboardingWizard({ context }: Props) {
             <p className="mt-2 max-w-2xl text-sm text-fg-subtle leading-relaxed">
               Configure your profile, choose a model, and create a first agent from one screen. As you change the model, the feature icons below light up to show what the provider and model actually ship.
             </p>
+            <div className="mt-4 flex flex-col sm:flex-row gap-2 max-w-xl">
+              {(["normal", "advanced"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode })}
+                  aria-pressed={state.experienceMode === mode}
+                  className={`flex-1 rounded-xl border px-3 py-2.5 text-left transition-colors ${
+                    state.experienceMode === mode
+                      ? "border-accent/60 bg-accent/15 shadow-sm"
+                      : "border-border bg-surface-2 hover:border-border-strong"
+                  }`}
+                >
+                  <div className="text-sm font-medium capitalize">{mode === "normal" ? "Guided" : "Full controls"}</div>
+                  <div className="mt-0.5 text-[11px] text-fg-faint leading-snug">
+                    {mode === "normal"
+                      ? "Curated panels and a simpler model editor."
+                      : "Every panel, context tuning, and engine-room toggles."}
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -387,26 +409,6 @@ export function OnboardingWizard({ context }: Props) {
                     placeholder="Your name"
                   />
                 </label>
-                <div className="space-y-1.5">
-                  <span className="text-xs text-fg-subtle block">Experience mode</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(["normal", "advanced"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode })}
-                        className={`rounded-xl border px-3 py-2 text-left transition-colors ${
-                          state.experienceMode === mode
-                            ? "border-accent/60 bg-accent/15 shadow-sm"
-                            : "border-border bg-surface-3"
-                        }`}
-                      >
-                        <div className="text-xs font-medium capitalize">{mode}</div>
-                        <div className="mt-0.5 text-[10px] text-fg-faint">{mode === "normal" ? "Simpler day-to-day setup" : "Full controls and tuning"}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
               </div>
 
               <label className="block">

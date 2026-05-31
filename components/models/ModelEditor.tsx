@@ -49,6 +49,10 @@ function fmtCtx(n: number | null) {
 export function ModelEditor({ model, onSave, onClose }: Props) {
   const { state } = useAppContext();
   const isAdvanced = state.experienceMode === "advanced";
+  // Per-editor opt-in so a normal-mode user can reveal the engine-room
+  // fields for one model without flipping the global workspace mode.
+  const [showExpert, setShowExpert] = useState(false);
+  const expertVisible = isAdvanced || showExpert;
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
   const [provider, setProvider] = useState(model?.provider ?? "anthropic");
@@ -233,18 +237,21 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${isAdvanced ? "max-w-2xl" : "max-w-xl"}`}>
+      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${expertVisible ? "max-w-2xl" : "max-w-xl"}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="text-sm font-semibold text-fg">{isEdit ? "Edit model config" : "New model config"}</h3>
           <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
         </div>
         <div className="p-4 space-y-3.5">
           {!isAdvanced && (
-            <div className="rounded-xl border border-border bg-surface-3/60 px-3 py-2.5">
-              <p className="text-[11px] text-fg-faint leading-snug">
-                Normal mode is active. Core model settings are shown here; advanced context tuning and low-level overrides are hidden.
-              </p>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowExpert((v) => !v)}
+              aria-expanded={showExpert}
+              className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors inline-flex items-center gap-1"
+            >
+              {showExpert ? "Hide advanced fields" : "Show advanced fields (context tuning, base URL, headers)"}
+            </button>
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -335,7 +342,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
           </label>
 
-          {isAdvanced && (
+          {expertVisible && (
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
               <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
@@ -356,7 +363,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             </label>
           </div>
 
-          {isAdvanced && (
+          {expertVisible && (
             <>
               <label className="block">
                 <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
@@ -421,7 +428,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             </>
           )}
 
-          {isAdvanced && (
+          {expertVisible && (
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Extra headers (JSON, optional)</span>
               <textarea className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-20 resize-none"
