@@ -961,7 +961,7 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
                   {hasData ? (
                     <>
                       <div
-                        className="w-full bg-gradient-to-t from-sky-500 to-cyan-400"
+                        className="w-full bg-gradient-to-t from-amber-500 to-amber-300"
                         style={{
                           height: barsReady ? `${outputHeight}px` : "0px",
                           transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18}ms`,
@@ -993,7 +993,7 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-[var(--text-secondary)]">
         <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400" />input</span>
-        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-cyan-400" />output</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" />output</span>
         {active && (
           <span className="ml-auto text-[var(--text-primary)]">
             in {formatInt(active.input_tokens_est)} · out {formatInt(active.output_tokens_est)}
