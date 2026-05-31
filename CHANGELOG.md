@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-05-31
+
+### Added
+
+- **Dashboard day drill-down.** Click any day on the “Estimated cost
+  over time” chart to narrow the agent / vendor / model breakdown
+  pies, the headline metric cards, and the message-count details to
+  that day only. Click the same point or the “clear” pill to restore
+  the window view; changing the time window resets the selection. The
+  selected point gets a larger dot, a pulsing halo and a vertical
+  guide; the line and slice animations replay on selection change so
+  the eye can re-anchor on the new context. Per-day breakdowns are
+  computed server-side (`breakdowns_by_day` on `DashboardMetrics`) so
+  the picker is instant
+  ([components/dashboard/DashboardPanel.tsx](components/dashboard/DashboardPanel.tsx),
+  [lib/stores/dashboard-metrics.ts](lib/stores/dashboard-metrics.ts)).
+
+### Fixed
+
+- **Bridge counterpart replies now speak in the user’s voice.** When an
+  agent answers an inbound bridge message from the user’s counterpart
+  (1:1 or group), the prompt now instructs the agent to respond on the
+  user’s behalf in their voice, following the agent’s persona and
+  instructions, instead of introducing itself as an assistant
+  ([lib/bridges/message-role.ts](lib/bridges/message-role.ts)).
+
+### Changed
+
+- **Silent-mode framing folded into the bridge prompt envelope.**
+  Silent / observer routes used to have a separate `[SILENT_BRIDGE]`
+  directive appended after the per-role framing, which could contradict
+  the role note (e.g. “respond on the user’s behalf” vs. “never write
+  to the chat”). Silent is now a first-class flag on
+  `formatBridgePrompt`; when set, the observer-mode note replaces the
+  per-role note so the agent sees exactly one framing sentence
+  ([lib/bridges/message-role.ts](lib/bridges/message-role.ts),
+  [lib/bridges/dispatcher.ts](lib/bridges/dispatcher.ts)).
+
 ## [0.8.1] - 2026-05-31
 
 ### Added
