@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import type { AgentConfig, ScheduledTask } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
+import { humanizeCron } from "@/lib/utils/cron";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { WatchersSection } from "./WatchersSection";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
@@ -129,6 +130,9 @@ function TaskCard({
               <span className="font-mono">
                 {isCron ? task.schedule : new Date(task.schedule).toLocaleString()}
               </span>
+              {isCron && humanizeCron(task.schedule) && (
+                <span className="text-fg-muted">({humanizeCron(task.schedule)})</span>
+              )}
               <span>·</span>
               <span className={overdue ? "text-amber-700 dark:text-amber-400" : ""}>
                 {overdue ? "overdue" : `next: ${nextRun}`}
@@ -184,6 +188,9 @@ function TaskCard({
           </Row>
           <Row label={isCron ? "Cron" : "When"}>
             <span className="font-mono">{task.schedule}</span>
+            {isCron && humanizeCron(task.schedule) && (
+              <span className="ml-1 text-fg-faint">({humanizeCron(task.schedule)})</span>
+            )}
             {!isCron && (
               <span className="ml-1 text-fg-faint">({new Date(task.schedule).toLocaleString()})</span>
             )}
