@@ -228,7 +228,7 @@ export function DashboardPanel() {
         <div className="absolute top-64 -left-24 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl" />
       </div>
 
-      <div className="sticky -top-4 md:-top-6 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-1 border-b border-[var(--border)] bg-[var(--bg-primary)] px-4 md:px-6 py-3 md:py-4 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)]">
+      <div className="sticky -top-4 md:-top-6 z-20 -mx-4 md:-mx-6 -mt-4 md:-mt-6 mb-1 border-b border-[var(--border)] bg-[var(--bg-primary)]/70 px-4 md:px-6 py-3 md:py-4 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.45)] backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-[var(--bg-primary)]/55">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold tracking-tight text-[var(--text-primary)]">Usage dashboard</h2>
