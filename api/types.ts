@@ -297,6 +297,23 @@ export interface DashboardModelBreakdown {
   estimated_cost_usd: number;
 }
 
+export interface DashboardDayBreakdown {
+  day: string;
+  summary: {
+    input_tokens_est: number;
+    output_tokens_est: number;
+    estimated_cost_usd: number;
+    tool_calls: number;
+    tool_successes: number;
+    tool_errors: number;
+    success_rate: number;
+    error_rate: number;
+  };
+  top_agents: DashboardAgentTop[];
+  by_provider: DashboardProviderBreakdown[];
+  by_model: DashboardModelBreakdown[];
+}
+
 export interface DashboardMetrics {
   generated_at: string;
   days: number;
@@ -315,6 +332,7 @@ export interface DashboardMetrics {
   top_agents: DashboardAgentTop[];
   by_provider: DashboardProviderBreakdown[];
   by_model: DashboardModelBreakdown[];
+  breakdowns_by_day: Record<string, DashboardDayBreakdown>;
   pricing: {
     snapshot_generated_at: string | null;
     rates: DashboardProviderRate[];

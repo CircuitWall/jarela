@@ -72,6 +72,7 @@ export function DashboardPanel() {
   const [modelFunctionFilter, setModelFunctionFilter] = useState<string>("all");
   const [modelSearch, setModelSearch] = useState<string>("");
   const [modelSort, setModelSort] = useState<ModelSort>("model_asc");
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -189,6 +190,24 @@ export function DashboardPanel() {
   }, [currencyMode, manualCurrency, profileLocation.lat, profileLocation.lng]);
 
   const series = useMemo(() => data?.series ?? [], [data]);
+  const dayBreakdown = useMemo(() => {
+    if (!data || !selectedDay) return null;
+    return data.breakdowns_by_day[selectedDay] ?? null;
+  }, [data, selectedDay]);
+  // Drop the day selection whenever the underlying window changes, otherwise
+  // the breakdown would silently keep showing stale numbers (or nothing) for
+  // a day that no longer falls inside the new window.
+  useEffect(() => {
+    setSelectedDay(null);
+  }, [days]);
+
+  // Effective slices: when a day is selected, replace the window-wide
+  // top_agents / by_provider / by_model with that day's slices so the
+  // pies and lists animate to the new values.
+  const effectiveTopAgents = dayBreakdown?.top_agents ?? data?.top_agents ?? [];
+  const effectiveByProvider = dayBreakdown?.by_provider ?? data?.by_provider ?? [];
+  const effectiveByModel = dayBreakdown?.by_model ?? data?.by_model ?? [];
+  const effectiveSummary = dayBreakdown?.summary ?? data?.summary;
   const filteredModelRates = useMemo(() => {
     if (!data) return [];
     const filtered = filterModelRates(data.pricing.model_rates, {
@@ -350,15 +369,15 @@ export function DashboardPanel() {
       {!loading && !error && data && (
         <>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            <MetricCard label="Input tokens (est)" value={formatInt(data.summary.input_tokens_est)} icon={<BarChart3 size={15} />} />
-            <MetricCard label="Output tokens (est)" value={formatInt(data.summary.output_tokens_est)} icon={<TrendingUp size={15} />} />
+            <MetricCard label={selectedDay ? `Input tokens on ${selectedDay}` : "Input tokens (est)"} value={formatInt(effectiveSummary?.input_tokens_est ?? 0)} icon={<BarChart3 size={15} />} />
+            <MetricCard label={selectedDay ? `Output tokens on ${selectedDay}` : "Output tokens (est)"} value={formatInt(effectiveSummary?.output_tokens_est ?? 0)} icon={<TrendingUp size={15} />} />
             <MetricCard
-              label={`Estimated cost (${currencyInfo.currency})`}
-              value={formatMoney(data.summary.estimated_cost_usd, currencyInfo)}
+              label={selectedDay ? `Cost on ${selectedDay} (${currencyInfo.currency})` : `Estimated cost (${currencyInfo.currency})`}
+              value={formatMoney(effectiveSummary?.estimated_cost_usd ?? 0, currencyInfo)}
               icon={<Coins size={15} />}
             />
-            <MetricCard label="Tool success rate" value={`${(data.summary.success_rate * 100).toFixed(1)}%`} icon={<ShieldCheck size={15} />} />
-            <MetricCard label="Tool error rate" value={`${(data.summary.error_rate * 100).toFixed(1)}%`} icon={<Activity size={15} />} />
+            <MetricCard label="Tool success rate" value={`${((effectiveSummary?.success_rate ?? 1) * 100).toFixed(1)}%`} icon={<ShieldCheck size={15} />} />
+            <MetricCard label="Tool error rate" value={`${((effectiveSummary?.error_rate ?? 0) * 100).toFixed(1)}%`} icon={<Activity size={15} />} />
           </div>
 
           <p className="text-[11px] text-[var(--text-secondary)]">
@@ -375,8 +394,28 @@ export function DashboardPanel() {
           </section>
 
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
-            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Estimated cost over time</h3>
-            <InteractiveCostChart series={series} currencyInfo={currencyInfo} />
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">Estimated cost over time</h3>
+              {selectedDay ? (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDay(null)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-[var(--accent)]/40 bg-[var(--accent)]/10 px-2.5 py-1 text-[11px] text-[var(--text-primary)] transition-colors hover:bg-[var(--accent)]/20"
+                  aria-label="Clear day selection"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                  Showing breakdown for {selectedDay} · clear
+                </button>
+              ) : (
+                <span className="text-[11px] text-[var(--text-secondary)]">Click a day to narrow the breakdown</span>
+              )}
+            </div>
+            <InteractiveCostChart
+              series={series}
+              currencyInfo={currencyInfo}
+              selectedDay={selectedDay}
+              onSelectDay={(day) => setSelectedDay((prev) => (prev === day ? null : day))}
+            />
           </section>
 
           <div className="grid md:grid-cols-2 gap-4">
@@ -430,18 +469,29 @@ export function DashboardPanel() {
             </section>
 
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
-              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Agent cost hotspots</h3>
-              <AgentCostPie agents={data.top_agents.slice(0, 6)} currencyInfo={currencyInfo} />
+              <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">
+                Agent cost hotspots
+                {selectedDay ? <span className="ml-2 text-[11px] text-[var(--text-secondary)]">on {selectedDay}</span> : null}
+              </h3>
+              <AgentCostPie
+                key={`agents-${selectedDay ?? "all"}`}
+                agents={effectiveTopAgents.slice(0, 6)}
+                currencyInfo={currencyInfo}
+              />
             </section>
           </div>
 
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 space-y-3 shadow-sm">
-            <h3 className="text-sm font-medium text-[var(--text-primary)]">Vendor and model report</h3>
+            <h3 className="text-sm font-medium text-[var(--text-primary)]">
+              Vendor and model report
+              {selectedDay ? <span className="ml-2 text-[11px] text-[var(--text-secondary)]">scoped to {selectedDay}</span> : null}
+            </h3>
             <div className="grid lg:grid-cols-2 gap-3">
               <BreakdownPiePanel
+                key={`vendor-${selectedDay ?? "all"}`}
                 title="By vendor"
-                emptyLabel="No vendor breakdown data yet."
-                items={data.by_provider.slice(0, 12).map((row) => ({
+                emptyLabel={selectedDay ? `No vendor activity on ${selectedDay}.` : "No vendor breakdown data yet."}
+                items={effectiveByProvider.slice(0, 12).map((row) => ({
                   id: row.provider,
                   label: row.provider,
                   cost: row.estimated_cost_usd,
@@ -451,9 +501,10 @@ export function DashboardPanel() {
               />
 
               <BreakdownPiePanel
+                key={`model-${selectedDay ?? "all"}`}
                 title="By model config"
-                emptyLabel="No model breakdown data yet."
-                items={data.by_model.slice(0, 16).map((row) => ({
+                emptyLabel={selectedDay ? `No model activity on ${selectedDay}.` : "No model breakdown data yet."}
+                items={effectiveByModel.slice(0, 16).map((row) => ({
                   id: `${row.provider}:${row.model_config_name}:${row.model_id}`,
                   label: row.model_config_name,
                   cost: row.estimated_cost_usd,
@@ -1023,9 +1074,13 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
 function InteractiveCostChart({
   series,
   currencyInfo,
+  selectedDay,
+  onSelectDay,
 }: {
   series: DashboardMetrics["series"];
   currencyInfo: DashboardCurrencyInfo;
+  selectedDay?: string | null;
+  onSelectDay?: (day: string) => void;
 }) {
   const [hovered, setHovered] = useState<number | null>(null);
   const [lineAnimCycle, setLineAnimCycle] = useState(0);
@@ -1046,11 +1101,13 @@ function InteractiveCostChart({
 
   const polyline = points.map((pt) => `${pt.x},${pt.y}`).join(" ");
   const active = hovered != null ? points[hovered] : null;
+  const selectedIdx = selectedDay ? points.findIndex((pt) => pt.p.day === selectedDay) : -1;
+  const selected = selectedIdx >= 0 ? points[selectedIdx] : null;
   const animationSignature = series.map((s) => `${s.day}:${s.estimated_cost_usd}`).join("|");
 
   useEffect(() => {
     setLineAnimCycle((v) => v + 1);
-  }, [animationSignature]);
+  }, [animationSignature, selectedDay]);
 
   if (series.length === 0) {
     return <p className="text-xs text-[var(--text-secondary)]">No cost data yet.</p>;
@@ -1107,19 +1164,48 @@ function InteractiveCostChart({
           </polyline>
           {points.map((pt) => {
             const isActive = pt.idx === hovered;
+            const isSelected = pt.idx === selectedIdx;
             return (
               <g key={pt.p.day}>
-                {isActive && <line x1={pt.x} y1={padY} x2={pt.x} y2={height - padY} stroke="rgba(20,184,166,0.35)" strokeWidth="1.5" />}
+                {(isActive || isSelected) && (
+                  <line
+                    x1={pt.x}
+                    y1={padY}
+                    x2={pt.x}
+                    y2={height - padY}
+                    stroke={isSelected ? "rgba(34,197,94,0.55)" : "rgba(20,184,166,0.35)"}
+                    strokeWidth={isSelected ? 1.8 : 1.5}
+                  />
+                )}
+                {isSelected && (
+                  <circle
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={8}
+                    fill="none"
+                    stroke="rgba(34,197,94,0.85)"
+                    strokeWidth={1.5}
+                  >
+                    <animate attributeName="r" from="3.8" to="9" dur="800ms" repeatCount="indefinite" />
+                    <animate attributeName="opacity" from="0.9" to="0" dur="800ms" repeatCount="indefinite" />
+                  </circle>
+                )}
                 <circle
                   key={`${pt.p.day}-${lineAnimCycle}`}
                   cx={pt.x}
                   cy={pt.y}
-                  r={3.8}
-                  fill={isActive ? "rgba(16,185,129,1)" : "rgba(52,211,153,0.85)"}
+                  r={isSelected ? 5 : 3.8}
+                  fill={isSelected
+                    ? "rgba(34,197,94,1)"
+                    : isActive
+                      ? "rgba(16,185,129,1)"
+                      : "rgba(52,211,153,0.85)"}
+                  className={onSelectDay ? "cursor-pointer" : undefined}
                   onMouseEnter={() => setHovered(pt.idx)}
                   onMouseLeave={() => setHovered(null)}
+                  onClick={() => onSelectDay?.(pt.p.day)}
                 >
-                  <animate attributeName="r" from="0" to="3.8" dur="260ms" begin={`${pt.idx * 28}ms`} fill="freeze" />
+                  <animate attributeName="r" from="0" to={isSelected ? 5 : 3.8} dur="260ms" begin={`${pt.idx * 28}ms`} fill="freeze" />
                 </circle>
               </g>
             );
@@ -1127,14 +1213,16 @@ function InteractiveCostChart({
         </svg>
         <div
           className={`absolute right-3 top-3 inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[10px] tracking-wide transition-opacity ${
-            active
+            active || selected
               ? "bg-[var(--bg-secondary)]/85 text-[var(--text-primary)] opacity-100"
               : "text-[var(--text-secondary)] opacity-60"
           }`}
         >
           {active
             ? `${active.p.day} · ${formatMoney(active.p.estimated_cost_usd, currencyInfo)}`
-            : "hover points for day cost"}
+            : selected
+              ? `selected ${selected.p.day} · ${formatMoney(selected.p.estimated_cost_usd, currencyInfo)}`
+              : "click a day to narrow breakdown"}
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-3 text-[11px] text-[var(--text-secondary)]">
