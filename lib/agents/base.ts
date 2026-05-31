@@ -18,7 +18,9 @@ export interface StreamOptions {
   filters?: StreamFilters;
   tool_policy?: ToolPolicy;
   agent_run_config?: AgentRunConfig;
-  ui_experience_mode?: "normal" | "advanced";
+  // Back-compat: pre-rename clients may still send "normal" / "advanced".
+  // Server-side normalization lives in lib/agents/run-thread.ts.
+  ui_experience_mode?: "essential" | "full" | "normal" | "advanced";
 }
 
 export interface StreamChunk {

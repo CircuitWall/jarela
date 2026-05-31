@@ -49,11 +49,11 @@ function fmtCtx(n: number | null) {
 
 export function ModelEditor({ model, onSave, onClose }: Props) {
   const { state } = useAppContext();
-  const isAdvanced = state.experienceMode === "advanced";
+  const isFullMode = state.experienceMode === "full";
   // Per-editor opt-in so a normal-mode user can reveal the engine-room
   // fields for one model without flipping the global workspace mode.
   const [showExpert, setShowExpert] = useState(false);
-  const expertVisible = isAdvanced || showExpert;
+  const expertVisible = isFullMode || showExpert;
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
   const [provider, setProvider] = useState(model?.provider ?? "anthropic");
@@ -240,7 +240,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
         </div>
         <div className="p-4 space-y-3.5">
-          {!isAdvanced && (
+          {!isFullMode && (
             <button
               type="button"
               onClick={() => setShowExpert((v) => !v)}

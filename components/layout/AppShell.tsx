@@ -34,7 +34,7 @@ const ADVANCED_TABS = new Set(["memory", "bridges", "harness"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
-  const isAdvanced = state.experienceMode === "advanced";
+  const isFullMode = state.experienceMode === "full";
   useUrlSync();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
     state.activeAgentId,
@@ -60,10 +60,10 @@ export function AppShell() {
   }, [state.activeTab]);
 
   useEffect(() => {
-    if (!isAdvanced && ADVANCED_TABS.has(state.activeTab)) {
+    if (!isFullMode && ADVANCED_TABS.has(state.activeTab)) {
       dispatch({ type: "SET_TAB", tab: "profile" });
     }
-  }, [dispatch, isAdvanced, state.activeTab]);
+  }, [dispatch, isFullMode, state.activeTab]);
 
   const unreadCount = useUnreadCount();
 
@@ -359,7 +359,7 @@ export function AppShell() {
             <AgentsPanel />
           </Activity>
         )}
-        {isAdvanced && mountedTabs.has("memory") && (
+        {isFullMode && mountedTabs.has("memory") && (
           <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
             <MemoryPanel />
           </Activity>
@@ -399,7 +399,7 @@ export function AppShell() {
             <ScheduledTasksPanel />
           </Activity>
         )}
-        {isAdvanced && mountedTabs.has("bridges") && (
+        {isFullMode && mountedTabs.has("bridges") && (
           <Activity mode={state.activeTab === "bridges" ? "visible" : "hidden"}>
             <BridgesPanel />
           </Activity>
@@ -409,7 +409,7 @@ export function AppShell() {
             <ProfilePanel />
           </Activity>
         )}
-        {isAdvanced && mountedTabs.has("harness") && (
+        {isFullMode && mountedTabs.has("harness") && (
           <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
             <HarnessPanel />
           </Activity>

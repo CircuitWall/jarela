@@ -36,7 +36,7 @@ test("Normal mode keeps Profile editor and opens wizard only on demand", async (
   expect(seeded.ok()).toBeTruthy();
 
   await page.evaluate(() => {
-    try { localStorage.setItem("jarela.experience.mode", "normal"); } catch { /* sandbox */ }
+    try { localStorage.setItem("jarela.experience.mode", "essential"); } catch { /* sandbox */ }
   });
   await page.reload();
 

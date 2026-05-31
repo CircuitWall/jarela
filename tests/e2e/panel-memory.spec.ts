@@ -8,7 +8,7 @@ test.beforeEach(async ({ request, page }) => {
   await page.addInitScript(() => {
     try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
     // Memory panel is gated behind the advanced experience mode (AppShell.tsx).
-    try { localStorage.setItem("jarela.experience.mode", "advanced"); } catch { /* sandbox */ }
+    try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }
   });
   await page.goto("/?tab=memory");
 });

@@ -1,9 +1,17 @@
 "use client";
 import { createContext, useContext, useEffect, useReducer, type ReactNode } from "react";
 
-export type ExperienceMode = "normal" | "advanced";
+export type ExperienceMode = "essential" | "full";
 
 const EXPERIENCE_MODE_KEY = "jarela.experience.mode";
+
+// Back-compat: pre-rename builds stored "normal" / "advanced". Read those
+// values silently so an upgrade does not reset the user's choice.
+function parseStoredMode(raw: string | null): ExperienceMode | null {
+  if (raw === "essential" || raw === "normal") return "essential";
+  if (raw === "full" || raw === "advanced") return "full";
+  return null;
+}
 
 export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "mcp" | "extensions" | "tools" | "connections" | "tasks" | "bridges" | "profile" | "harness";
 
@@ -54,14 +62,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     activeThreadId: null,
     activeAgentId: null,
     activeTab: "chat",
-    experienceMode: "normal",
+    experienceMode: "essential",
     selectedItem: {},
   });
 
   useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(EXPERIENCE_MODE_KEY);
-      if (stored === "normal" || stored === "advanced") {
+      const stored = parseStoredMode(window.localStorage.getItem(EXPERIENCE_MODE_KEY));
+      if (stored) {
         dispatch({ type: "SET_EXPERIENCE_MODE", mode: stored });
       }
     } catch {

@@ -228,9 +228,9 @@ export function MenuPanel({
   onShowThinkingChange,
 }: Props) {
   const { state, dispatch } = useAppContext();
-  const isAdvanced = state.experienceMode === "advanced";
+  const isFullMode = state.experienceMode === "full";
   const toggleMode = () => {
-    dispatch({ type: "SET_EXPERIENCE_MODE", mode: isAdvanced ? "normal" : "advanced" });
+    dispatch({ type: "SET_EXPERIENCE_MODE", mode: isFullMode ? "essential" : "full" });
   };
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
@@ -296,15 +296,15 @@ export function MenuPanel({
           <button
             type="button"
             onClick={toggleMode}
-            title={`Switch to ${isAdvanced ? "normal" : "advanced"} mode`}
-            aria-label={`Switch to ${isAdvanced ? "normal" : "advanced"} mode`}
+            title={`Switch to ${isFullMode ? "essential" : "full"} mode`}
+            aria-label={`Switch to ${isFullMode ? "essential" : "full"} mode`}
             className={`control-tap text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
-              isAdvanced
+              isFullMode
                 ? "border-accent/40 bg-accent/10 text-fg-subtle hover:bg-accent/20"
                 : "border-border bg-surface-3 text-fg-faint hover:text-fg-muted hover:border-border-strong"
             }`}
           >
-            {isAdvanced ? "advanced" : "normal"}
+            {isFullMode ? "full" : "essential"}
           </button>
         </div>
       </div>
@@ -312,7 +312,7 @@ export function MenuPanel({
         {COMMON_TABS.map(renderTabButton)}
       </div>
 
-      {isAdvanced && (
+      {isFullMode && (
         <div className="border-b border-border shrink-0">
           <button
             type="button"

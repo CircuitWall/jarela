@@ -122,33 +122,33 @@ export function ProfileEditor() {
         </div>
         <p className="text-[11px] text-fg-faint leading-snug">
           Choose how much configuration detail is shown in the app.
-          Normal hides technical panels and advanced model controls.
+          Essential hides technical panels and advanced model controls.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "normal" })}
-            aria-pressed={mode === "normal"}
+            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "essential" })}
+            aria-pressed={mode === "essential"}
             className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-              mode === "normal"
+              mode === "essential"
                 ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
                 : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
             }`}
           >
-            <div className="text-xs font-medium">Normal</div>
+            <div className="text-xs font-medium">Essential</div>
             <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Cleaner layout, fewer technical controls</div>
           </button>
           <button
             type="button"
-            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "advanced" })}
-            aria-pressed={mode === "advanced"}
+            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "full" })}
+            aria-pressed={mode === "full"}
             className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-              mode === "advanced"
+              mode === "full"
                 ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
                 : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
             }`}
           >
-            <div className="text-xs font-medium">Advanced</div>
+            <div className="text-xs font-medium">Full</div>
             <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
           </button>
         </div>
