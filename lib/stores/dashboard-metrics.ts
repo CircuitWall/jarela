@@ -198,12 +198,19 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       `SELECT m.created_at, m.role, m.content, m.tool_events, t.agent_id,
               a.name AS agent_name, mc.provider AS provider,
               mc.model_id AS model_id,
-              ta.model_config_name AS model_config_name
+                  COALESCE(ta.model_config_name, a.model_config_name, dmc.name) AS model_config_name
          FROM messages m
          JOIN threads t ON t.thread_id = m.thread_id
          LEFT JOIN agent_configs a ON a.id = t.agent_id
          LEFT JOIN task_assignments ta ON ta.agent_id = t.agent_id
-         LEFT JOIN model_configs mc ON mc.name = ta.model_config_name
+         LEFT JOIN model_configs dmc ON dmc.name = (
+           SELECT name
+           FROM model_configs
+           WHERE is_default = 1
+           ORDER BY updated_at DESC
+           LIMIT 1
+         )
+         LEFT JOIN model_configs mc ON mc.name = COALESCE(ta.model_config_name, a.model_config_name, dmc.name)
         WHERE m.created_at >= ?
         ORDER BY m.created_at ASC`,
     )
