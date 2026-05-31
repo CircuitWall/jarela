@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteScheduledTask, updateScheduledTask } from "@/lib/stores/scheduled-tasks";
+import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { rowResponse } from "../_response";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
 
 type Params = { params: Promise<{ id: string }> };
 
 const PatchSchema = z.object({
+  agent_id: z.string().min(1).optional(),
   prompt: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
   kind: z.enum(["once", "cron"]).optional(),
@@ -23,6 +25,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const parsed = await validateBody(req, PatchSchema);
   if (parsed instanceof NextResponse) return parsed;
+  if (parsed.agent_id !== undefined && !getAgentConfig(parsed.agent_id)) {
+    return errorResponse(`Agent "${parsed.agent_id}" not found`);
+  }
   try {
     const updated = updateScheduledTask(id, parsed);
     if (!updated) return notFoundResponse();
