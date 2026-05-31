@@ -250,7 +250,7 @@ export function DashboardPanel() {
                 type="button"
                 onClick={() => setDays(w)}
                 className={
-                  "px-2.5 py-1 text-xs rounded-lg transition-all " +
+                  "px-2.5 py-1 text-xs rounded-lg transition-colors " +
                   (w === days
                     ? "bg-[var(--accent)] text-white shadow-sm"
                     : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]")
@@ -822,7 +822,7 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
                 className="flex-1 min-w-0 h-full flex flex-col items-center justify-end"
                 aria-label={`${point.day} tokens (informational)`}
               >
-                <div className={`w-full rounded-t overflow-hidden border transition-all ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
+                <div className={`w-full rounded-t overflow-hidden border transition-colors ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
                   <div className="w-full bg-gradient-to-t from-sky-500 to-cyan-400" style={{ height: `${outputHeight}px` }} />
                   <div className="w-full bg-gradient-to-t from-indigo-500 to-violet-400" style={{ height: `${inputHeight}px` }} />
                 </div>
@@ -892,7 +892,7 @@ function InteractiveCostChart({
                 <circle
                   cx={pt.x}
                   cy={pt.y}
-                  r={isActive ? 4.8 : 3.2}
+                  r={3.8}
                   fill={isActive ? "rgba(16,185,129,1)" : "rgba(52,211,153,0.85)"}
                   onMouseEnter={() => setHovered(pt.idx)}
                   onMouseLeave={() => setHovered(null)}
