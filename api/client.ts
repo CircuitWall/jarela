@@ -417,7 +417,7 @@ export const api = {
       request<ScheduledTask[]>(`/scheduled-tasks${agent_id ? `?agent_id=${encodeURIComponent(agent_id)}` : ""}`),
     // ADR-0032 — patch supports the reaction discriminator. Mirrors the
     // watchers.update shape; explicit reaction_kind triggers a full replace.
-    update: (id: string, patch: Partial<Pick<ScheduledTask, "prompt" | "description" | "kind" | "schedule" | "enabled" | "silent">> & {
+    update: (id: string, patch: Partial<Pick<ScheduledTask, "agent_id" | "prompt" | "description" | "kind" | "schedule" | "enabled" | "silent">> & {
       reaction_kind?: "agent_prompt" | "script";
       reaction_script?: string | null;
       reaction_script_args?: Record<string, unknown> | null;

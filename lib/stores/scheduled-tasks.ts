@@ -141,6 +141,7 @@ export function deleteScheduledTask(id: string): boolean {
 }
 
 export interface UpdateScheduledTaskInput {
+  agent_id?: string;
   prompt?: string;
   description?: string | null;
   kind?: ScheduleKind;
@@ -212,11 +213,12 @@ export function updateScheduledTask(id: string, patch: UpdateScheduledTaskInput)
   getDb()
     .prepare(
       `UPDATE scheduled_tasks SET
-         prompt=?, description=?, kind=?, schedule=?, next_run_at=?, enabled=?, silent=?, last_error=?,
+         agent_id=?, prompt=?, description=?, kind=?, schedule=?, next_run_at=?, enabled=?, silent=?, last_error=?,
          reaction_kind=?, reaction_script=?, reaction_script_args=?, updated_at=?
        WHERE id=?`,
     )
     .run(
+      patch.agent_id === undefined ? existing.agent_id : patch.agent_id,
       nextPrompt,
       patch.description === undefined ? existing.description : patch.description,
       nextKind,
