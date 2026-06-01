@@ -15,14 +15,19 @@ type Subscriber = (chunk: StreamChunk) => void;
 
 const MAX_BUFFERED = 4000;        // text_delta chunks accumulate fast; cap them
 const RECENT_TTL_MS = 5 * 60_000; // keep finished runs visible for 5 min
-// Hard wall-clock ceiling on a single run. If a run is still flagged
-// "running" after this much time, the registry assumes the driver
-// crashed without calling finishRun() (caller forgot a try/finally, the
-// async IIFE rejected silently, etc.) and force-evicts it. Without this
-// safety net a single missed finishRun() pins the thread as
-// run_in_flight forever — every subsequent user submit comes back 409
-// and the user thinks the agent is "stuck" or "not responding".
-// Override with JARELA_RUN_MAX_MS for very long agent loops.
+// Idle (no-progress) ceiling: if no chunk has been broadcast for this
+// long the registry assumes the LLM/tool call wedged and force-finishes
+// the run. This is the user-perceived "stream is dead" signal and is
+// short by design — long legitimate turns keep streaming text/tool
+// chunks, so they reset the idle clock on every broadcast(). The
+// wall-clock ceiling (runMaxMs) is the absolute safety net for the
+// degenerate case where broadcast() is never called at all (or fires
+// faster than the idle window forever).
+// Override with JARELA_RUN_IDLE_MS / JARELA_RUN_MAX_MS.
+function runIdleMs(): number {
+  const raw = Number(process.env.JARELA_RUN_IDLE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 90_000;
+}
 function runMaxMs(): number {
   const raw = Number(process.env.JARELA_RUN_MAX_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 15 * 60_000;
@@ -42,6 +47,9 @@ export interface ActiveRun {
   // disconnects), we signal this controller so the LangGraph stream cancels
   // itself instead of running to completion in the background.
   abort: AbortController;
+  // Last activity timestamp — bumped on every broadcast() so the idle
+  // watchdog can tell live progress from a wedged stream.
+  last_chunk_at: number;
 }
 
 const runs = new Map<string, ActiveRun>();
@@ -52,37 +60,64 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
   if (existing && existing.status === "running") {
     throw new Error(`A run is already active for thread ${thread_id}`);
   }
+  const now = Date.now();
   const run: ActiveRun = {
     thread_id,
     agent_id,
-    started_at: Date.now(),
+    started_at: now,
     finished_at: null,
     status: "running",
     events: [],
     subscribers: new Set(),
     final_text: "",
     abort: new AbortController(),
+    last_chunk_at: now,
   };
   runs.set(thread_id, run);
-  // Wall-clock watchdog (see runMaxMs comment). If the driver forgets to
-  // call finishRun() the entry would sit as "running" forever — auto-evict
-  // to "error" so the next POST is accepted and the user is unblocked.
-  const max = runMaxMs();
+  scheduleIdleWatchdog(run);
+  scheduleMaxWatchdog(run);
+  return run;
+}
+
+// Self-rearming idle watchdog. Fires when no chunk has arrived for
+// `idleMs`; otherwise reschedules itself for `(last_chunk_at + idleMs) -
+// now`. We never carry a handle on the run — the closure just bails if
+// the run is no longer the registry's entry or no longer running.
+function scheduleIdleWatchdog(run: ActiveRun): void {
+  const idleMs = runIdleMs();
+  const fireIn = Math.max(0, (run.last_chunk_at + idleMs) - Date.now());
   setTimeout(() => {
-    const cur = runs.get(thread_id);
+    const cur = runs.get(run.thread_id);
     if (cur !== run) return;
     if (run.status !== "running") return;
-    console.warn(`[run-registry] watchdog: force-finishing leaked run for thread ${thread_id} after ${max}ms`);
+    const idle = Date.now() - run.last_chunk_at;
+    if (idle < idleMs) {
+      scheduleIdleWatchdog(run);
+      return;
+    }
+    console.warn(`[run-registry] idle watchdog: force-finishing stalled run for thread ${run.thread_id} after ${idle}ms of no progress`);
+    try { run.abort.abort("run_idle_timeout"); } catch { /* */ }
+    finishRun(run, "error");
+  }, fireIn).unref?.();
+}
+
+function scheduleMaxWatchdog(run: ActiveRun): void {
+  const max = runMaxMs();
+  setTimeout(() => {
+    const cur = runs.get(run.thread_id);
+    if (cur !== run) return;
+    if (run.status !== "running") return;
+    console.warn(`[run-registry] wall-clock watchdog: force-finishing run for thread ${run.thread_id} after ${max}ms`);
     try { run.abort.abort("run_watchdog_timeout"); } catch { /* */ }
     finishRun(run, "error");
   }, max).unref?.();
-  return run;
 }
 
 export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   // Identity-check: a superseded run must not smear trailing chunks onto
   // the replacement entry in the registry.
   if (runs.get(run.thread_id) !== run) return;
+  run.last_chunk_at = Date.now();
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
   }
