@@ -147,24 +147,39 @@ sequenceDiagram
     participant UI as Web UI
     participant G as Origin Guard
     participant API as /api/v1/threads/:id/run
+    participant PIN as /api/v1/threads/:id/context-pin
     participant AG as Agent Runtime
     participant DB as SQLite
     participant LLM as LLM Provider
 
+    U->>UI: drags context boundary line
+    UI->>PIN: PATCH { hot_since } (ADR-0042)
+    PIN->>DB: UPDATE threads.hot_since
+    PIN-->>UI: { hot_since, warm_summary, ... }
+    Note over UI: Card shows placeholder<br/>until next run recomputes summary
+
     U->>UI: types message
-    UI->>G: POST /threads/:id/run (submit)
+    UI->>G: POST /threads/:id/run (submit, hot_since)
     G->>G: check Origin / Sec-Fetch-Site
     G->>API: forward if same-origin
-    API->>AG: startRun + invoke(threadId, msg)
+    API->>AG: startRun + invoke(threadId, msg, hot_since)
+    AG->>DB: load checkpoint + thread.hot_since
+    AG->>AG: buildHistoryWindow honours hot_since
+    opt warm_summary_before ≠ hot_since
+        AG->>LLM: summarise older messages
+        LLM-->>AG: summary
+        AG->>DB: setThreadWarmSummary
+    end
     API-->>UI: 202 Accepted
     UI->>API: GET /threads/:id/run (EventSource subscribe)
-    AG->>DB: load checkpoint
     AG->>LLM: stream completion
     LLM-->>AG: tokens
     AG-->>API: broadcast chunks (run-registry)
     API-->>UI: SSE: text_delta / tool_call / done
     UI-->>U: render
     AG->>DB: save checkpoint
+    UI->>API: GET /threads/:id (refetch incl. warm_summary)
+    UI-->>U: warm summary card hydrates
 ```
 
 ## Key Flow — Inbound bridge message (WhatsApp)

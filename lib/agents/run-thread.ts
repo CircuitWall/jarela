@@ -1,7 +1,7 @@
 import { streamWithConfig } from "@/lib/agents/llm";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
-import { addMessage, getThread, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getThread, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
@@ -121,12 +121,21 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     : getDefaultModelConfig();
   const providerParams = getModelParams(modelCfg);
 
+  // ADR-0042. Persist the user-chosen boundary before we build the window so
+  // the history fetch and the cached-summary lookup both see the same pin.
+  // `null` clears the pin; `undefined` leaves whatever's already on the row.
+  if (req.hot_since !== undefined) {
+    setThreadContextPin(req.thread_id, req.hot_since);
+  }
+  const effectiveHotSince = req.hot_since !== undefined ? req.hot_since : (thread.hot_since ?? null);
+
   const historyWindow = await buildHistoryWindow(
     req.thread_id,
     agentCfg,
     providerParams,
     trimmed,
     { providerName: modelCfg?.provider, modelId: modelCfg?.model_id },
+    effectiveHotSince,
   );
 
   const allowedTools = getAgentTools(agentCfg);
