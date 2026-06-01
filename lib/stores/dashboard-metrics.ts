@@ -263,7 +263,13 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   // back to the old estimate path unchanged.
   const snapshotThreadIds = new Set<string>();
   for (const r of usageRows) {
-    if (r.mu_input_tokens != null) snapshotThreadIds.add(r.thread_id);
+    // A row with provider tokens (input_tokens > 0) is the authoritative
+    // count the dashboard cares about. Snapshot-only rows persisted for
+    // the per-tier context-usage bar carry input_tokens=0 + cost_usd=null
+    // and must NOT suppress the content-length estimate for that thread.
+    if (r.mu_input_tokens != null && r.mu_input_tokens > 0) {
+      snapshotThreadIds.add(r.thread_id);
+    }
   }
 
   const { byProvider, byProviderModel, byModel, generatedAt } = await loadProviderRates();
