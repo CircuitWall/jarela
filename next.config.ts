@@ -34,6 +34,11 @@ const nextConfig: NextConfig = {
     "@napi-rs/keyring",
     "@whiskeysockets/baileys",
     "baileys",
+    // libsignal is a transitive baileys dep that does `require('crypto')`
+    // (the Node builtin). Without externalising it, Next 16 webpack tries
+    // to bundle it into the instrumentation hook and fails to resolve the
+    // bare 'crypto' specifier — every dev request then 500s.
+    "libsignal",
     "undici",
     // MCP stdio client and its transitive shell-resolver pull in
     // `child_process`/`fs` via cross-spawn/which/isexe. Keep them external
@@ -61,12 +66,27 @@ const nextConfig: NextConfig = {
   // Optional release-mode knob for supply-chain scanners like Socket that
   // flag heavily minified browser chunks as potential obfuscation.
   productionBrowserSourceMaps: releaseReadableClientBundles,
-  webpack: (config, { dev, isServer }) => {
+  webpack: (config, { dev, isServer, nextRuntime }) => {
     if (!dev && !isServer && releaseReadableClientBundles) {
       // Keep browser chunks readable in the published npm tarball.
       if (config.optimization) {
         config.optimization.minimize = false;
       }
+    }
+    // Next 16 compiles `instrumentation.ts` for every runtime (nodejs +
+    // edge + the browser bootstrap). The runtime gate inside the file
+    // (`if (NEXT_RUNTIME !== 'nodejs') return`) blocks execution but does
+    // not stop webpack from statically tracing `instrumentation-node.ts`
+    // and its node-only graph (baileys, libsignal, MCP stdio, sharp, …),
+    // which then chokes on `node:child_process` / `node:crypto` / etc.
+    // For non-nodejs targets, stub the bootstrap to an empty module.
+    if (!isServer || nextRuntime !== "nodejs") {
+      const path = require("path") as typeof import("path");
+      config.resolve = config.resolve ?? {};
+      config.resolve.alias = {
+        ...(config.resolve.alias as Record<string, unknown> | undefined),
+        [path.resolve(__dirname, "instrumentation-node.ts")]: false,
+      };
     }
     return config;
   },
