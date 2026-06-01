@@ -719,7 +719,13 @@ export function subscribeRun(
     // we ignored that case the consumer would hang on the waiter forever
     // and the UI activity label ("Reconnecting…") would never clear.
     let everOpened = false;
-    es.onopen = () => { everOpened = true; };
+    es.onopen = () => {
+      everOpened = true;
+      if (connectTimer !== null) {
+        clearTimeout(connectTimer);
+        connectTimer = null;
+      }
+    };
     es.onerror = () => {
       if (es.readyState === EventSource.CLOSED) {
         done = true;
@@ -734,8 +740,27 @@ export function subscribeRun(
       // else: ignore — EventSource will try to reconnect.
     };
 
+    // Connect-timeout safety net: if onopen hasn't fired within 8s the
+    // server is unreachable (DNS, TLS handshake stuck, proxy black-holing
+    // the GET, …). EventSource alone won't surface that — it stays in
+    // CONNECTING forever, retrying silently. Force the iterator to fail so
+    // the caller's catch/finally can release the UI gate.
+    let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      connectTimer = null;
+      if (!everOpened && !done) {
+        streamError = new Error("EventSource connect timeout");
+        done = true;
+        try { es.close(); } catch { /* */ }
+        notify();
+      }
+    }, 8_000);
+
     const onAbort = () => {
       done = true;
+      if (connectTimer !== null) {
+        clearTimeout(connectTimer);
+        connectTimer = null;
+      }
       try { es.close(); } catch { /* */ }
       notify();
     };
@@ -752,6 +777,7 @@ export function subscribeRun(
       }
       if (streamError) throw streamError;
     } finally {
+      if (connectTimer !== null) clearTimeout(connectTimer);
       signal.removeEventListener("abort", onAbort);
       try { es.close(); } catch { /* */ }
     }
