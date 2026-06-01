@@ -281,6 +281,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureWatchersReactionKindColumns(db);
   ensureScheduledTasksReactionKindColumns(db);
   ensureMessageUsageTable(db);
+  ensureMessageUsageTierColumns(db);
   ensureThreadContextPinColumns(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
@@ -656,6 +657,24 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   if (!names.has("warm_summary"))            db.exec("ALTER TABLE threads ADD COLUMN warm_summary TEXT");
   if (!names.has("warm_summary_before"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before TEXT");
   if (!names.has("warm_summary_computed_at")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_computed_at TEXT");
+}
+
+// Per-tier input-token breakdown so the chat UI can show actual
+// hot/warm/facts/overhead consumption per turn (not just the proportional
+// budget). All eight columns are nullable so legacy rows simply render an
+// "unknown" bar. Re-derivation isn't possible after the fact (the
+// history-window state isn't preserved), so backfill is intentionally NULL.
+function ensureMessageUsageTierColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(message_usage)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("hot_tokens"))            db.exec("ALTER TABLE message_usage ADD COLUMN hot_tokens INTEGER");
+  if (!names.has("warm_tokens"))           db.exec("ALTER TABLE message_usage ADD COLUMN warm_tokens INTEGER");
+  if (!names.has("facts_tokens"))          db.exec("ALTER TABLE message_usage ADD COLUMN facts_tokens INTEGER");
+  if (!names.has("overhead_tokens"))       db.exec("ALTER TABLE message_usage ADD COLUMN overhead_tokens INTEGER");
+  if (!names.has("hot_budget_tokens"))     db.exec("ALTER TABLE message_usage ADD COLUMN hot_budget_tokens INTEGER");
+  if (!names.has("warm_budget_tokens"))    db.exec("ALTER TABLE message_usage ADD COLUMN warm_budget_tokens INTEGER");
+  if (!names.has("facts_budget_tokens"))   db.exec("ALTER TABLE message_usage ADD COLUMN facts_budget_tokens INTEGER");
+  if (!names.has("context_window_tokens")) db.exec("ALTER TABLE message_usage ADD COLUMN context_window_tokens INTEGER");
 }
 
 function seedAgentConfigs(db: DatabaseSync): void {
