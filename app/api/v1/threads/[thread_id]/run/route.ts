@@ -88,28 +88,60 @@ export async function POST(req: NextRequest, { params }: Params) {
   // Drive the agent to completion regardless of client connection. Events
   // go to the registry; the GET subscriber (and any reattaching clients)
   // receive them via subscribe().
+  //
+  // CRITICAL: finishRun() MUST run no matter what — if it doesn't, the
+  // run is pinned as "running" forever, every subsequent POST returns
+  // 409 run_in_flight, and the user sees a silently-dead chat. The TTL
+  // eviction is scheduled inside finishRun(), so a leaked entry never
+  // self-heals. Wrap the whole body in try/finally.
   void (async () => {
-    const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
-      onChunk: (chunk) => broadcast(active, chunk),
-    });
-    // If the stream threw mid-iteration, collectStream returns terminal="error"
-    // but no `error` chunk was broadcast — surface one to subscribers.
-    if (collected.terminal === "error" && collected.errorMessage) {
+    let terminal: "done" | "error" = "error";
+    let assistantContent = "";
+    try {
+      const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
+        onChunk: (chunk) => broadcast(active, chunk),
+      });
+      assistantContent = collected.assistantContent;
+      terminal = collected.terminal;
+      // If the stream threw mid-iteration, collectStream returns terminal="error"
+      // but no `error` chunk was broadcast — surface one to subscribers.
+      if (collected.terminal === "error" && collected.errorMessage) {
+        broadcast(active, {
+          type: "error",
+          data: { message: collected.errorMessage, code: "stream_error" },
+        });
+      }
+      try {
+        persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null);
+      } catch (persistErr) {
+        // Persistence failure must not strand the run — surface and continue
+        // to finishRun in the finally block.
+        terminal = "error";
+        broadcast(active, {
+          type: "error",
+          data: { message: `persist failed: ${(persistErr as Error).message}`, code: "persist_error" },
+        });
+      }
+    } catch (err) {
+      // Unhandled throw from collectStream / the underlying stream. Without
+      // this catch, finishRun would never run and the registry entry would
+      // stick as "running" indefinitely (see CRITICAL note above).
+      terminal = "error";
       broadcast(active, {
         type: "error",
-        data: { message: collected.errorMessage, code: "stream_error" },
+        data: { message: (err as Error).message ?? String(err), code: "run_crashed" },
+      });
+    } finally {
+      finishRun(active, terminal);
+      publishNotification({
+        type: "run_completed",
+        thread_id,
+        agent_id: thread?.agent_id ?? null,
+        status: terminal,
+        preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+        ts: Date.now(),
       });
     }
-    persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null);
-    finishRun(active, collected.terminal);
-    publishNotification({
-      type: "run_completed",
-      thread_id,
-      agent_id: thread?.agent_id ?? null,
-      status: collected.terminal,
-      preview: collected.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
-      ts: Date.now(),
-    });
   })();
 
   return new Response(
