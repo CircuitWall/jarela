@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-01
+
+### Changed
+
+- **iOS standalone PWA now follows the active theme in the status bar.**
+  Switched `apple-mobile-web-app-status-bar-style` to
+  `black-translucent` and declared `apple-mobile-web-app-capable`, so
+  the iOS status bar overlays the AppShell header (already padded with
+  `env(safe-area-inset-top)` via `--app-safe-top`) and inherits the
+  current light / dark surface color instead of forcing a static black
+  or white bar. Safari ignores the manifest's `theme_color` once an app
+  is installed to the home screen, so this is the only knob iOS
+  actually respects ([app/layout.tsx](app/layout.tsx)).
+
 ## [0.9.1] - 2026-06-01
 
 ### Fixed
