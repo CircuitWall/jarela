@@ -584,6 +584,13 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("delegate_targets")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN delegate_targets TEXT");
   }
+  // ADR-0043 — per-agent override of context_tier_proportions. JSON-encoded
+  // `{ hot, warm, facts }` (any positive numbers — `normalizeTierProportions`
+  // divides by sum, so the UI can ship raw weights instead of demanding
+  // sum=100 from the user). NULL = inherit from the model config.
+  if (!names.has("context_tier_proportions")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN context_tier_proportions TEXT");
+  }
 }
 
 /**
