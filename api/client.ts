@@ -214,6 +214,15 @@ export const api = {
     // any UI queue-drain hook (e.g. ChatView) still fires.
     abortRun: (thread_id: string) =>
       request<{ aborted: boolean }>(`/threads/${thread_id}/run`, { method: "DELETE" }),
+    // ADR-0042. Move the explicit hot/warm context boundary on this thread.
+    // Pass `null` to clear the pin and let the agent's default window apply.
+    // Fire-and-forget from the chat — UI updates optimistically and the
+    // returned shape just confirms server-side state for resync if needed.
+    setContextPin: (thread_id: string, hot_since: string | null) =>
+      request<import("./types").ThreadContextPin>(
+        `/threads/${thread_id}/context-pin`,
+        { method: "PATCH", body: JSON.stringify({ hot_since }) },
+      ),
   },
 
   memory: {
@@ -629,11 +638,12 @@ export async function submitRun(
   signal: AbortSignal,
   stream_options?: StreamOptions,
   attachments?: ContentPart[],
+  hot_since?: string | null,
 ): Promise<SubmitResult> {
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, stream_options, attachments }),
+    body: JSON.stringify({ message, stream_options, attachments, hot_since }),
     signal,
   });
   // 2xx = accepted (currently always 202); 409 = already running. We treat
