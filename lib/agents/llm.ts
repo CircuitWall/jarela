@@ -128,7 +128,7 @@ export async function* streamWithConfig(
   const announcedToolIds = new Set<string>();
   let pendingAIChunk: AIMessageChunk | null = null;
   let totalOutputTokens = 0;
-  // ADR-0038: accumulate real per-call provider usage across the react loop
+  // ADR-0041: accumulate real per-call provider usage across the react loop
   // so the `done` chunk can carry authoritative token counts for snapshot.
   // Each LLM call inside the multi-step loop yields its own usage chunk via
   // JarelaChatModel; we sum them so the final figure covers the whole turn.
@@ -185,7 +185,7 @@ export async function* streamWithConfig(
       if (mode === "messages") {
         const [chunk] = payload as [BaseMessage, unknown];
         if (chunk instanceof AIMessageChunk) {
-          // ADR-0038: capture provider-reported token usage when present.
+          // ADR-0041: capture provider-reported token usage when present.
           const usage = chunk.usage_metadata;
           if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
             usageInputTokens += usage.input_tokens ?? 0;

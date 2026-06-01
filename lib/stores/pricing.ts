@@ -1,4 +1,4 @@
-// Sync pricing lookups for both write-time cost snapshots (ADR-0038
+// Sync pricing lookups for both write-time cost snapshots (ADR-0041
 // `message_usage`) and read-time dashboard aggregation.
 //
 // The previous live in `lib/stores/dashboard-metrics.ts` was async because

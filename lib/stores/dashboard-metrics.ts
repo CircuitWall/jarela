@@ -136,7 +136,7 @@ type UsageRow = {
   provider: string | null;
   model_id: string | null;
   model_config_name: string | null;
-  // ADR-0038: when present, these snapshotted values are authoritative
+  // ADR-0041: when present, these snapshotted values are authoritative
   // for this assistant turn. Provider/model/agent_name override the JOIN.
   mu_input_tokens: number | null;
   mu_output_tokens: number | null;
@@ -254,7 +254,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     )
     .all(since) as UsageRow[];
 
-  // ADR-0038: when an assistant turn has a snapshot, its `input_tokens`
+  // ADR-0041: when an assistant turn has a snapshot, its `input_tokens`
   // already accounts for the entire prompt the model saw — so we must NOT
   // also count this thread's user messages via the content-length estimate
   // or we double-count. Track which threads have any snapshot in the
@@ -301,7 +301,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     const dayBucket = dayMap.get(day);
     if (!dayBucket) continue;
 
-    // ADR-0038: prefer snapshot when present. Snapshot rows are
+    // ADR-0041: prefer snapshot when present. Snapshot rows are
     // authoritative for tokens, $, AND attribution (provider/model/agent
     // name) for that assistant turn — they survive reassignment, rename,
     // and pricing-snapshot refresh.

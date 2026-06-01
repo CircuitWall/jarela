@@ -19,7 +19,7 @@ export interface CollectedRun {
   toolEvents: PersistedToolEvent[];
   terminal: "done" | "error";
   errorMessage?: string;
-  // ADR-0038: provider-reported token usage + model/provider snapshot from
+  // ADR-0041: provider-reported token usage + model/provider snapshot from
   // the terminal `done` chunk. Undefined when the stream errored out before
   // a usage event arrived (or the provider didn't report one).
   usage?: AssistantUsageSnapshot;

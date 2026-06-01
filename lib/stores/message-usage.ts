@@ -1,4 +1,4 @@
-// ADR-0038. Immutable per-assistant-turn snapshot of LLM usage.
+// ADR-0041. Immutable per-assistant-turn snapshot of LLM usage.
 //
 // Written once when an assistant turn is persisted (see
 // `persistAssistantMessage` in lib/agents/run-thread.ts). Never updated.

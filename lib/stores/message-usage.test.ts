@@ -12,7 +12,7 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-describe("message_usage snapshot store (ADR-0038)", () => {
+describe("message_usage snapshot store (ADR-0041)", () => {
   it("records and reads back a usage snapshot", () => {
     recordMessageUsage({
       message_id: "m1",

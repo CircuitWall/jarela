@@ -201,7 +201,7 @@ export class JarelaChatModel extends BaseChatModel {
       } else if (event.type === "stop") {
         stopReason = event.reason;
       } else if (event.type === "usage") {
-        // ADR-0038: surface real provider token counts on the final
+        // ADR-0041: surface real provider token counts on the final
         // AIMessageChunk via LangChain's standard `usage_metadata` field so
         // the agent loop can snapshot them into message_usage.
         emittedAny = true;

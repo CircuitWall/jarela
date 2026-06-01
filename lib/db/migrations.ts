@@ -285,11 +285,11 @@ export function runMigrations(db: DatabaseSync): void {
   seedAgentConfigs(db);
 }
 
-// ADR-0038. Immutable per-assistant-turn snapshot of LLM usage. Written once
+// ADR-0041. Immutable per-assistant-turn snapshot of LLM usage. Written once
 // alongside addMessage(...,"assistant",...) and never updated, so the
 // dashboard's token/$ aggregates are not retroactively rewritten when the
 // user reassigns an agent's model, renames a model config, or refreshes
-// pricing. See docs/adr/0038-immutable-message-usage.md.
+// pricing. See docs/adr/0041-immutable-message-usage.md.
 function ensureMessageUsageTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS message_usage (
