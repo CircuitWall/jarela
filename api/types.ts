@@ -281,6 +281,20 @@ export interface ToolUsefulnessStats {
   last_called_at: string | null;
 }
 
+export interface DashboardTierTokens {
+  hot_tokens: number;
+  warm_tokens: number;
+  facts_tokens: number;
+  overhead_tokens: number;
+  measured_input_tokens: number;
+}
+
+export interface DashboardDataQuality {
+  measured_messages: number;
+  estimated_messages: number;
+  measured_pct: number;
+}
+
 export interface DashboardSeriesPoint {
   day: string;
   input_tokens_est: number;
@@ -291,6 +305,7 @@ export interface DashboardSeriesPoint {
   tool_errors: number;
   success_rate: number;
   error_rate: number;
+  tier_tokens: DashboardTierTokens;
 }
 
 export interface DashboardToolTop {
@@ -366,6 +381,7 @@ export interface DashboardDayBreakdown {
     tool_errors: number;
     success_rate: number;
     error_rate: number;
+    tier_tokens: DashboardTierTokens;
   };
   top_agents: DashboardAgentTop[];
   by_provider: DashboardProviderBreakdown[];
@@ -384,6 +400,8 @@ export interface DashboardMetrics {
     tool_errors: number;
     success_rate: number;
     error_rate: number;
+    tier_tokens: DashboardTierTokens;
+    data_quality: DashboardDataQuality;
   };
   series: DashboardSeriesPoint[];
   top_tools: DashboardToolTop[];
