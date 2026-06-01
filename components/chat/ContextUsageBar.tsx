@@ -51,9 +51,9 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
   if (!hasTierBreakdown) {
     const usedPct = Math.min(100, (usage.input_tokens / cap) * 100);
     return (
-      <div className="mt-1 w-full max-w-[320px]">
+      <div className="w-full">
         <div
-          className="h-1.5 w-full overflow-hidden rounded-full bg-surface-3 border border-border"
+          className="h-[3px] w-full overflow-hidden bg-surface-3"
           title={`${usage.input_tokens.toLocaleString()} / ${cap.toLocaleString()} input tokens (${usedPct.toFixed(1)}%) — tier breakdown unavailable on legacy rows`}
         >
           <div className="h-full bg-fg-faint/40" style={{ width: `${usedPct}%` }} />
@@ -80,7 +80,7 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
   const toPct = (n: number) => (cap > 0 ? (n / cap) * 100 : 0);
 
   return (
-    <div className="mt-1 w-full max-w-[320px]">
+    <div className="w-full">
       <button
         type="button"
         onClick={() => setShowDetails((v) => !v)}
@@ -96,7 +96,7 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           "Click to expand numbers.",
         ].join("\n")}
       >
-        <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-3 border border-border">
+        <div className="flex h-[3px] w-full overflow-hidden bg-surface-3">
           <Slot widthPct={toPct(hotBudget)}     usedPct={hotBudget   > 0 ? (hotUsed   / hotBudget)   * 100 : 0} fill="bg-accent/70"    empty="bg-accent/15"    overflow={hotUsed   > hotBudget} title={`Hot — recent messages\n${hotUsed.toLocaleString()} / ${hotBudget.toLocaleString()} tokens used (${hotBudget > 0 ? Math.round((hotUsed/hotBudget)*100) : 0}%)`} />
           <Slot widthPct={toPct(warmBudget)}    usedPct={warmBudget  > 0 ? (warmUsed  / warmBudget)  * 100 : 0} fill="bg-amber-500/70" empty="bg-amber-500/15" overflow={warmUsed  > warmBudget} title={`Warm — summarised older history\n${warmUsed.toLocaleString()} / ${warmBudget.toLocaleString()} tokens used (${warmBudget > 0 ? Math.round((warmUsed/warmBudget)*100) : 0}%)`} />
           <Slot widthPct={toPct(factsBudget)}   usedPct={factsBudget > 0 ? (factsUsed / factsBudget) * 100 : 0} fill="bg-teal-500/70"  empty="bg-teal-500/15"  overflow={factsUsed > factsBudget} title={`Facts — retrieved memory + recall\n${factsUsed.toLocaleString()} / ${factsBudget.toLocaleString()} tokens used (${factsBudget > 0 ? Math.round((factsUsed/factsBudget)*100) : 0}%)`} />
@@ -105,7 +105,7 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
         </div>
       </button>
       {showDetails && (
-        <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-fg-faint">
+        <div className="mt-1 px-2 pb-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-fg-faint">
           <Row label="Hot"      color="text-accent"    used={hotUsed}      budget={hotBudget}      hint="Recent messages kept verbatim" />
           <Row label="Warm"     color="text-amber-500" used={warmUsed}     budget={warmBudget}     hint="Older history compressed into rolling summary" />
           <Row label="Facts"    color="text-teal-500"  used={factsUsed}    budget={factsBudget}    hint="Retrieved long-term memory + recall snippets" />
