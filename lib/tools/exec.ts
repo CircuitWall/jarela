@@ -3,6 +3,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
+import { checkExecAllowed, resolveSafetyMode } from "./safety";
 
 const MAX_OUTPUT_BYTES = 8_000;
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -40,11 +41,14 @@ function runLocalCommand(
 
   const timeout = Math.min(options.timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
 
-  if (!options.allow_unsafe && isBlockedCommand(command)) {
-    return JSON.stringify({
-      exit_code: 126,
-      stderr: "Command blocked by safety policy. Pass allow_unsafe=true only when you fully trust the command.",
-    });
+  const mode = resolveSafetyMode();
+  const gate = checkExecAllowed(command, {
+    mode,
+    allowUnsafe: options.allow_unsafe,
+    blockedByPattern: isBlockedCommand(command),
+  });
+  if (!gate.allowed) {
+    return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
   }
 
   const cwd = options.cwd?.trim() ? options.cwd : process.cwd();
