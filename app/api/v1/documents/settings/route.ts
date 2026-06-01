@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getEmbeddingModelConfigName, setEmbeddingModelConfigName } from "@/lib/stores/app-settings";
-import { getModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 
@@ -26,12 +26,7 @@ async function probeEmbeddingModelConfig(name: string | null) {
   if (!cfg) {
     return { ok: false, provider: "", model_id: "", error: `unknown model config: ${name}` };
   }
-  let params: ProviderParams;
-  try {
-    params = JSON.parse(cfg.params) as ProviderParams;
-  } catch {
-    return { ok: false, provider: cfg.provider, model_id: cfg.model_id, error: "invalid model params json" };
-  }
+  const params: ProviderParams = getModelParams(cfg);
 
   const provider = getProvider(cfg.provider);
   if (!provider.embed) {
