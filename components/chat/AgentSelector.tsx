@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
+import { Select } from "@/components/ui/Select";
 
 const GRADIENTS = [
   "bg-gradient-to-br from-violet-500 to-indigo-600",
@@ -68,8 +69,10 @@ export function AgentSelector({ value, onChange, disabled }: Props) {
             {selected.name.charAt(0).toUpperCase()}
           </div>
         ) : null}
-        <select
-          className="flex-1 bg-surface-3 text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+        <Select
+          size="sm"
+          className="flex-1"
+          full={false}
           value={value ?? ""}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled || agents.length === 0}
@@ -82,7 +85,7 @@ export function AgentSelector({ value, onChange, disabled }: Props) {
               </option>
             );
           })}
-        </select>
+        </Select>
         {otherUnread > 0 && (
           <span
             className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-[10px] font-bold text-white flex items-center justify-center leading-none"

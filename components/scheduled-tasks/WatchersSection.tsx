@@ -8,6 +8,7 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { Select } from "@/components/ui/Select";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -97,6 +98,7 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
             key={w.id}
             watcher={w}
             agent={agents[w.agent_id]}
+            agents={agents}
             onCancel={() => cancel(w)}
             onRunNow={() => runNow(w)}
             onChanged={() => void load()}
@@ -108,10 +110,11 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
 }
 
 function WatcherCard({
-  watcher, agent, onCancel, onRunNow, onChanged,
+  watcher, agent, agents, onCancel, onRunNow, onChanged,
 }: {
   watcher: Watcher;
   agent?: AgentConfig;
+  agents: Record<string, AgentConfig>;
   onCancel: () => void;
   onRunNow: () => void;
   onChanged: () => void;
@@ -169,6 +172,35 @@ function WatcherCard({
 
       {expanded && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
+          <Row label="Agent">
+            <Select
+              size="sm"
+              value={watcher.agent_id}
+              onChange={async (e) => {
+                const next = e.target.value;
+                if (next === watcher.agent_id) return;
+                try {
+                  await api.watchers.update(watcher.id, { agent_id: next });
+                  onChanged();
+                } catch (err) {
+                  pushErrorToast({
+                    title: "Couldn't re-assign watcher",
+                    error: err,
+                    context: { panel: "scheduled-tasks", action: "watcher.reassign", watcher_id: watcher.id, target_agent: next },
+                  });
+                }
+              }}
+            >
+              {Object.values(agents).length === 0 && (
+                <option value={watcher.agent_id}>{watcher.agent_id}</option>
+              )}
+              {Object.values(agents)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+            </Select>
+          </Row>
           <Row label="Tool">
             <span className="font-mono">{watcher.tool}</span>
           </Row>

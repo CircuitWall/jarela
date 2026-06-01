@@ -12,6 +12,7 @@ import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capab
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "@/components/models/CapBadges";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { Select } from "@/components/ui/Select";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import type { IntegrationStatus } from "@/api/types";
 
@@ -390,8 +391,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 </div>
               </div>
             )}
-            <select
-              className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            <Select
               value={modelConfigName}
               onChange={(e) => setModelConfigName(e.target.value)}
             >
@@ -412,7 +412,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                   </option>
                 );
               })}
-            </select>
+            </Select>
             {selectedModel && (
               <div className="space-y-1">
                 <p className="text-[11px] text-fg-faint">
@@ -547,8 +547,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
               <>
                 <label className="block">
                   <span className="text-xs text-fg-subtle mb-1 block">Harness</span>
-                  <select
-                    className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                  <Select
                     value={harnessId}
                     onChange={(e) => setHarnessId(e.target.value)}
                   >
@@ -564,7 +563,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                         {h.name}{h.builtin ? " (built-in)" : ""}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                 </label>
                 <p className="text-[11px] text-fg-faint">
                   Behavioral scaffolding (output formatting, citation rules, anti-fabrication, self-config) injected into this agent&apos;s system prompt.
@@ -586,8 +585,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">MBTI preset</span>
-              <select
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              <Select
                 value={adaptiveMbti}
                 onChange={(e) => setAdaptiveMbti(e.target.value as MbtiType)}
                 disabled={!adaptivePersonaEnabled}
@@ -597,7 +595,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                     {t} - {MBTI_PRESETS[t].label}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
 
             <p className="text-[11px] text-fg-faint">
@@ -655,8 +653,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
             )}
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">TTS model</span>
-              <select
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              <Select
                 value={voiceModel}
                 onChange={(e) => setVoiceModel(e.target.value)}
                 disabled={!voiceEnabled}
@@ -664,12 +661,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 {GEMINI_TTS_MODELS.map((m) => (
                   <option key={m.id} value={m.id}>{m.id} — {m.label}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Voice</span>
-              <select
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              <Select
                 value={voiceName}
                 onChange={(e) => setVoiceName(e.target.value)}
                 disabled={!voiceEnabled}
@@ -677,12 +673,11 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 {GEMINI_VOICES.map((v) => (
                   <option key={v.id} value={v.id}>{v.label}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Transcription model</span>
-              <select
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              <Select
                 value={voiceSttModel}
                 onChange={(e) => setVoiceSttModel(e.target.value)}
                 disabled={!voiceEnabled}
@@ -690,7 +685,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 {GEMINI_STT_MODELS.map((m) => (
                   <option key={m.id} value={m.id}>{m.id} — {m.label}</option>
                 ))}
-              </select>
+              </Select>
             </label>
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input

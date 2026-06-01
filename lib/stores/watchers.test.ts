@@ -118,6 +118,15 @@ describe("watchers store (ADR-0027)", () => {
     expect(intervalUpdated.next_run_at).not.toBe(beforeNext);
   });
 
+  it("updateWatcher re-assigns the watcher to a different agent without rescheduling", () => {
+    const w = createWatcher({ agent_id: "a", label: "w", tool_name: "t", interval_seconds: 60 });
+    const beforeNext = w.next_run_at;
+    const reassigned = updateWatcher(w.id, { agent_id: "b" })!;
+    expect(reassigned.agent_id).toBe("b");
+    expect(reassigned.next_run_at).toBe(beforeNext);
+    expect(reassigned.label).toBe("w");
+  });
+
   // ADR-0030 — per-watcher reaction prompt.
   describe("reaction_prompt (ADR-0030)", () => {
     it("defaults to null when not provided", () => {

@@ -6,6 +6,7 @@ import { useMemory } from "@/hooks/useMemory";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { MemoryEditor } from "./MemoryEditor";
 import { MemoryValuePreview } from "./MemoryValuePreview";
+import { Select } from "@/components/ui/Select";
 
 function useDebounce<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
@@ -44,11 +45,10 @@ export function MemoryPanel() {
             <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 pl-7 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
               placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
           </div>
-          <select className="bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-            value={nsFilter} onChange={(e) => setNsFilter(e.target.value)}>
+          <Select full={false} value={nsFilter} onChange={(e) => setNsFilter(e.target.value)}>
             <option value="">All namespaces</option>
             {namespaces.map((ns) => <option key={ns} value={ns}>{ns}</option>)}
-          </select>
+          </Select>
         </div>
       </div>
       <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">

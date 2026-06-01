@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteWatcher, updateWatcher } from "@/lib/stores/watchers";
+import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
 
 type Params = { params: Promise<{ id: string }> };
 
 const PatchSchema = z.object({
+  agent_id: z.string().min(1).optional(),
   label: z.string().min(1).optional(),
   interval_seconds: z.number().int().min(60).optional(),
   enabled: z.boolean().optional(),
@@ -24,6 +26,9 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const parsed = await validateBody(req, PatchSchema);
   if (parsed instanceof NextResponse) return parsed;
+  if (parsed.agent_id !== undefined && !getAgentConfig(parsed.agent_id)) {
+    return errorResponse(`Agent "${parsed.agent_id}" not found`);
+  }
   try {
     const row = updateWatcher(id, parsed);
     if (!row) return notFoundResponse();

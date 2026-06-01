@@ -450,6 +450,7 @@ export const api = {
     update: (
       id: string,
       patch: Partial<{
+        agent_id: string;
         label: string;
         interval_seconds: number;
         enabled: boolean;
