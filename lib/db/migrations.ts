@@ -280,8 +280,36 @@ export function runMigrations(db: DatabaseSync): void {
   ensureWatchersReactionPromptColumn(db);
   ensureWatchersReactionKindColumns(db);
   ensureScheduledTasksReactionKindColumns(db);
+  ensureMessageUsageTable(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
+}
+
+// ADR-0038. Immutable per-assistant-turn snapshot of LLM usage. Written once
+// alongside addMessage(...,"assistant",...) and never updated, so the
+// dashboard's token/$ aggregates are not retroactively rewritten when the
+// user reassigns an agent's model, renames a model config, or refreshes
+// pricing. See docs/adr/0038-immutable-message-usage.md.
+function ensureMessageUsageTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS message_usage (
+      message_id               TEXT PRIMARY KEY,
+      thread_id                TEXT NOT NULL,
+      agent_id                 TEXT NOT NULL,
+      agent_name               TEXT NOT NULL,
+      provider                 TEXT NOT NULL,
+      model_id                 TEXT NOT NULL,
+      model_config_name        TEXT,
+      input_tokens             INTEGER NOT NULL,
+      output_tokens            INTEGER NOT NULL,
+      input_rate_usd_per_mtok  REAL,
+      output_rate_usd_per_mtok REAL,
+      cost_usd                 REAL NOT NULL,
+      created_at               TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_usage_created_at ON message_usage(created_at);
+    CREATE INDEX IF NOT EXISTS idx_message_usage_agent_id   ON message_usage(agent_id);
+  `);
 }
 
 function ensureEmbeddingColumns(db: DatabaseSync): void {  // Embeddings stored as JSON-encoded float[] in TEXT to keep migration simple.

@@ -99,6 +99,7 @@ export const delegateToAgentTool = tool(
         collected.usedTools,
         collected.toolEvents,
         "delegation",
+        collected.usage ?? null,
       );
 
       return JSON.stringify({

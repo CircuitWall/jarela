@@ -128,6 +128,13 @@ export async function* streamWithConfig(
   const announcedToolIds = new Set<string>();
   let pendingAIChunk: AIMessageChunk | null = null;
   let totalOutputTokens = 0;
+  // ADR-0038: accumulate real per-call provider usage across the react loop
+  // so the `done` chunk can carry authoritative token counts for snapshot.
+  // Each LLM call inside the multi-step loop yields its own usage chunk via
+  // JarelaChatModel; we sum them so the final figure covers the whole turn.
+  let usageInputTokens = 0;
+  let usageOutputTokens = 0;
+  let sawUsage = false;
   // Tracks whether the model hit max_tokens mid-stream. JarelaChatModel tags
   // the final chunk with additional_kwargs.stop_reason="length" when this
   // happens; we surface a non-fatal warning before `done` so the user knows
@@ -178,6 +185,13 @@ export async function* streamWithConfig(
       if (mode === "messages") {
         const [chunk] = payload as [BaseMessage, unknown];
         if (chunk instanceof AIMessageChunk) {
+          // ADR-0038: capture provider-reported token usage when present.
+          const usage = chunk.usage_metadata;
+          if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
+            usageInputTokens += usage.input_tokens ?? 0;
+            usageOutputTokens += usage.output_tokens ?? 0;
+            sawUsage = true;
+          }
           if (typeof chunk.content === "string" && chunk.content) {
             // After a tool result, the next AI text starts a new conceptual
             // turn. Insert a paragraph break so the pre-tool plan and the
@@ -254,7 +268,12 @@ export async function* streamWithConfig(
         type: "done",
         data: {
           message_id: `llm-${threadId}-${Date.now()}`,
-          usage: { input_tokens: 0, output_tokens: totalOutputTokens },
+          usage: sawUsage
+            ? { input_tokens: usageInputTokens, output_tokens: usageOutputTokens, source: "provider" }
+            : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
+          provider: cfg.provider,
+          model_id: cfg.model_id,
+          model_config_name: cfg.name,
           aborted: true,
         },
       };
@@ -314,7 +333,12 @@ export async function* streamWithConfig(
     type: "done",
     data: {
       message_id: `llm-${threadId}-${Date.now()}`,
-      usage: { input_tokens: 0, output_tokens: totalOutputTokens },
+      usage: sawUsage
+        ? { input_tokens: usageInputTokens, output_tokens: usageOutputTokens, source: "provider" }
+        : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
+      provider: cfg.provider,
+      model_id: cfg.model_id,
+      model_config_name: cfg.name,
     },
   };
 }

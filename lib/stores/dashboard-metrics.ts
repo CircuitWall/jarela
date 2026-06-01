@@ -130,11 +130,22 @@ type UsageRow = {
   role: string;
   content: string;
   tool_events: string | null;
+  thread_id: string;
   agent_id: string;
   agent_name: string | null;
   provider: string | null;
   model_id: string | null;
   model_config_name: string | null;
+  // ADR-0038: when present, these snapshotted values are authoritative
+  // for this assistant turn. Provider/model/agent_name override the JOIN.
+  mu_input_tokens: number | null;
+  mu_output_tokens: number | null;
+  mu_cost_usd: number | null;
+  mu_provider: string | null;
+  mu_model_id: string | null;
+  mu_model_config_name: string | null;
+  mu_agent_id: string | null;
+  mu_agent_name: string | null;
 };
 
 type DayBucket = {
@@ -213,10 +224,18 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
 
   const usageRows = getDb()
     .prepare(
-      `SELECT m.created_at, m.role, m.content, m.tool_events, t.agent_id,
+      `SELECT m.created_at, m.role, m.content, m.tool_events, m.thread_id, t.agent_id,
               a.name AS agent_name, mc.provider AS provider,
               mc.model_id AS model_id,
-                  COALESCE(ta.model_config_name, a.model_config_name, dmc.name) AS model_config_name
+                  COALESCE(ta.model_config_name, a.model_config_name, dmc.name) AS model_config_name,
+              mu.input_tokens     AS mu_input_tokens,
+              mu.output_tokens    AS mu_output_tokens,
+              mu.cost_usd         AS mu_cost_usd,
+              mu.provider         AS mu_provider,
+              mu.model_id         AS mu_model_id,
+              mu.model_config_name AS mu_model_config_name,
+              mu.agent_id         AS mu_agent_id,
+              mu.agent_name       AS mu_agent_name
          FROM messages m
          JOIN threads t ON t.thread_id = m.thread_id
          LEFT JOIN agent_configs a ON a.id = t.agent_id
@@ -229,10 +248,23 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
            LIMIT 1
          )
          LEFT JOIN model_configs mc ON mc.name = COALESCE(ta.model_config_name, a.model_config_name, dmc.name)
+         LEFT JOIN message_usage mu ON mu.message_id = m.msg_id
         WHERE m.created_at >= ?
         ORDER BY m.created_at ASC`,
     )
     .all(since) as UsageRow[];
+
+  // ADR-0038: when an assistant turn has a snapshot, its `input_tokens`
+  // already accounts for the entire prompt the model saw — so we must NOT
+  // also count this thread's user messages via the content-length estimate
+  // or we double-count. Track which threads have any snapshot in the
+  // window and suppress their user-side estimates wholesale. Threads with
+  // zero snapshots (legacy data, or recorded before the migration) fall
+  // back to the old estimate path unchanged.
+  const snapshotThreadIds = new Set<string>();
+  for (const r of usageRows) {
+    if (r.mu_input_tokens != null) snapshotThreadIds.add(r.thread_id);
+  }
 
   const { byProvider, byProviderModel, generatedAt } = await loadProviderRates();
   const dayMap = seedDayBuckets(now, boundedDays);
@@ -269,13 +301,43 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     const dayBucket = dayMap.get(day);
     if (!dayBucket) continue;
 
-    const tokenEstimate = estimateTokens(row.content);
-    const isInput = row.role === "user";
-    const inputTokens = isInput ? tokenEstimate : 0;
-    const outputTokens = isInput ? 0 : tokenEstimate;
+    // ADR-0038: prefer snapshot when present. Snapshot rows are
+    // authoritative for tokens, $, AND attribution (provider/model/agent
+    // name) for that assistant turn — they survive reassignment, rename,
+    // and pricing-snapshot refresh.
+    const hasSnapshot = row.mu_input_tokens != null;
+    const threadHasSnapshot = snapshotThreadIds.has(row.thread_id);
 
-    const rates = modelRatesFor(byProvider, byProviderModel, row.provider, row.model_id);
-    const estCost = estimateCostUsd(inputTokens, outputTokens, rates);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let estCost = 0;
+    let attribProvider: string | null = row.provider;
+    let attribModelId: string | null = row.model_id;
+    let attribModelConfig: string | null = row.model_config_name;
+    let attribAgentId: string = row.agent_id;
+    let attribAgentName: string | null = row.agent_name;
+
+    if (hasSnapshot) {
+      inputTokens = row.mu_input_tokens ?? 0;
+      outputTokens = row.mu_output_tokens ?? 0;
+      estCost = row.mu_cost_usd ?? 0;
+      attribProvider = row.mu_provider ?? attribProvider;
+      attribModelId = row.mu_model_id ?? attribModelId;
+      attribModelConfig = row.mu_model_config_name ?? attribModelConfig;
+      attribAgentId = row.mu_agent_id ?? attribAgentId;
+      attribAgentName = row.mu_agent_name ?? attribAgentName;
+    } else if (row.role === "user" && threadHasSnapshot) {
+      // Suppressed: snapshotted assistant turns in this thread already
+      // capture this user message's tokens in their input_tokens.
+      // Still contributes message_count via the rest of the loop.
+    } else {
+      const tokenEstimate = estimateTokens(row.content);
+      const isInput = row.role === "user";
+      inputTokens = isInput ? tokenEstimate : 0;
+      outputTokens = isInput ? 0 : tokenEstimate;
+      const rates = modelRatesFor(byProvider, byProviderModel, row.provider, row.model_id);
+      estCost = estimateCostUsd(inputTokens, outputTokens, rates);
+    }
 
     dayBucket.inputTokens += inputTokens;
     dayBucket.outputTokens += outputTokens;
@@ -285,9 +347,9 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     totalOutput += outputTokens;
     totalCost += estCost;
 
-    const agentName = row.agent_name?.trim() || row.agent_id;
-    const agentBucket = agentMap.get(row.agent_id) ?? {
-      agent_id: row.agent_id,
+    const agentName = attribAgentName?.trim() || attribAgentId;
+    const agentBucket = agentMap.get(attribAgentId) ?? {
+      agent_id: attribAgentId,
       agent_name: agentName,
       message_count: 0,
       input_tokens_est: 0,
@@ -298,9 +360,9 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     agentBucket.input_tokens_est += inputTokens;
     agentBucket.output_tokens_est += outputTokens;
     agentBucket.estimated_cost_usd += estCost;
-    agentMap.set(row.agent_id, agentBucket);
+    agentMap.set(attribAgentId, agentBucket);
 
-    const providerName = row.provider?.trim().toLowerCase() || "unassigned";
+    const providerName = attribProvider?.trim().toLowerCase() || "unassigned";
     const providerBucket = providerMap.get(providerName) ?? {
       provider: providerName,
       message_count: 0,
@@ -314,8 +376,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     providerBucket.estimated_cost_usd += estCost;
     providerMap.set(providerName, providerBucket);
 
-    const modelConfigName = row.model_config_name?.trim() || "unassigned";
-    const modelId = row.model_id?.trim() || "unknown";
+    const modelConfigName = attribModelConfig?.trim() || "unassigned";
+    const modelId = attribModelId?.trim() || "unknown";
     const modelKey = `${providerName}::${modelConfigName}::${modelId}`;
     const modelBucket = modelMap.get(modelKey) ?? {
       model_config_name: modelConfigName,
@@ -333,8 +395,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     modelMap.set(modelKey, modelBucket);
 
     const dayBreakdown = ensureDayBreakdown(day);
-    const dayAgent = dayBreakdown.agents.get(row.agent_id) ?? {
-      agent_id: row.agent_id,
+    const dayAgent = dayBreakdown.agents.get(attribAgentId) ?? {
+      agent_id: attribAgentId,
       agent_name: agentName,
       message_count: 0,
       input_tokens_est: 0,
@@ -345,7 +407,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     dayAgent.input_tokens_est += inputTokens;
     dayAgent.output_tokens_est += outputTokens;
     dayAgent.estimated_cost_usd += estCost;
-    dayBreakdown.agents.set(row.agent_id, dayAgent);
+    dayBreakdown.agents.set(attribAgentId, dayAgent);
 
     const dayProvider = dayBreakdown.providers.get(providerName) ?? {
       provider: providerName,

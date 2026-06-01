@@ -57,6 +57,7 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
         collected.usedTools,
         collected.toolEvents,
         category,
+        collected.usage ?? null,
       );
     }
     return {

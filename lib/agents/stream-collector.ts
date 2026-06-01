@@ -11,6 +11,7 @@
 
 import type { StreamChunk } from "@/lib/agents/base";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
+import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 
 export interface CollectedRun {
   assistantContent: string;
@@ -18,6 +19,10 @@ export interface CollectedRun {
   toolEvents: PersistedToolEvent[];
   terminal: "done" | "error";
   errorMessage?: string;
+  // ADR-0038: provider-reported token usage + model/provider snapshot from
+  // the terminal `done` chunk. Undefined when the stream errored out before
+  // a usage event arrived (or the provider didn't report one).
+  usage?: AssistantUsageSnapshot;
 }
 
 export interface CollectStreamOptions {
@@ -75,6 +80,21 @@ export async function collectStream(
           return result;
         }
         case "done": {
+          const d = chunk.data as {
+            usage?: { input_tokens?: number; output_tokens?: number; source?: string };
+            provider?: string;
+            model_id?: string;
+            model_config_name?: string | null;
+          };
+          if (d?.usage && d.provider && d.model_id && d.usage.source === "provider") {
+            result.usage = {
+              input_tokens: d.usage.input_tokens ?? 0,
+              output_tokens: d.usage.output_tokens ?? 0,
+              provider: d.provider,
+              model_id: d.model_id,
+              model_config_name: d.model_config_name ?? null,
+            };
+          }
           return result;
         }
         // thinking_delta and unknown types are pass-through (already

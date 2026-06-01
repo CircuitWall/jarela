@@ -95,7 +95,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         data: { message: collected.errorMessage, code: "stream_error" },
       });
     }
-    persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents);
+    persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null);
     finishRun(active, collected.terminal);
     publishNotification({
       type: "run_completed",

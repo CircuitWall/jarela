@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Immutable per-message LLM usage telemetry (ADR-0038).** Each
+  assistant turn now snapshots its real provider-reported input /
+  output tokens, the provider + model + agent + model-config name in
+  effect, AND the pricing rates used to compute its $ cost into a new
+  `message_usage` table. The dashboard prefers the snapshot when
+  present, so reassigning an agent's model, renaming a model config,
+  or refreshing the pricing snapshot no longer rewrites historical
+  cost figures. Pre-existing messages without a snapshot keep using
+  the content-length estimate as before
+  ([docs/adr/0038-immutable-message-usage.md](docs/adr/0038-immutable-message-usage.md),
+  [lib/stores/message-usage.ts](lib/stores/message-usage.ts),
+  [lib/stores/pricing.ts](lib/stores/pricing.ts),
+  [lib/stores/dashboard-metrics.ts](lib/stores/dashboard-metrics.ts)).
+
 ## [0.8.2] - 2026-05-31
 
 ### Added
