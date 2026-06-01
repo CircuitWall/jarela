@@ -390,4 +390,44 @@ describe("modelRatesFor", () => {
       expect(modelRatesFor(tables, "github-copilot", "unknown-model").inputPer1M).toBe(2);
     });
   });
+
+  describe("aggregator-agnostic model_id fallback", () => {
+    it("resolves by model id alone when the configured provider has no per-model rate", () => {
+      seedSnapshot({
+        sources: [
+          { id: "openrouter", pricing_url: "https://x", ok: true },
+          {
+            id: "anthropic",
+            pricing_url: "https://y",
+            ok: true,
+            model_rates: [{ model_id: "claude-opus-4-7", input_per_1m_usd: 15, output_per_1m_usd: 75 }],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      // openrouter is unknown to normalizeProvider and exposes no per-model
+      // rate; the lookup must still resolve via the byModel index using the
+      // anthropic-published rate for the same id.
+      const rates = modelRatesFor(tables, "openrouter", "claude-opus-4-7");
+      expect(rates.inputPer1M).toBe(15);
+      expect(rates.outputPer1M).toBe(75);
+    });
+
+    it("returns model_id-only hit when provider is null", () => {
+      seedSnapshot({
+        sources: [
+          {
+            id: "anthropic",
+            pricing_url: "https://x",
+            ok: true,
+            model_rates: [{ model_id: "claude-sonnet-4-6", input_per_1m_usd: 3, output_per_1m_usd: 15 }],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      const rates = modelRatesFor(tables, null, "claude-sonnet-4-6");
+      expect(rates.inputPer1M).toBe(3);
+      expect(rates.outputPer1M).toBe(15);
+    });
+  });
 });

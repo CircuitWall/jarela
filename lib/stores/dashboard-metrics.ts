@@ -266,7 +266,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     if (r.mu_input_tokens != null) snapshotThreadIds.add(r.thread_id);
   }
 
-  const { byProvider, byProviderModel, generatedAt } = await loadProviderRates();
+  const { byProvider, byProviderModel, byModel, generatedAt } = await loadProviderRates();
   const dayMap = seedDayBuckets(now, boundedDays);
   const agentMap = new Map<string, AgentBucket>();
   const providerMap = new Map<string, ProviderBucket>();
@@ -335,7 +335,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       const isInput = row.role === "user";
       inputTokens = isInput ? tokenEstimate : 0;
       outputTokens = isInput ? 0 : tokenEstimate;
-      const rates = modelRatesFor(byProvider, byProviderModel, row.provider, row.model_id);
+      const rates = modelRatesFor(byProvider, byProviderModel, byModel, row.provider, row.model_id);
       estCost = estimateCostUsd(inputTokens, outputTokens, rates);
     }
 
@@ -664,41 +664,54 @@ function providerRatesFor(byProvider: Map<string, ProviderRates>, provider: stri
 function modelRatesFor(
   byProvider: Map<string, ProviderRates>,
   byProviderModel: Map<string, ProviderRates>,
+  byModel: Map<string, ProviderRates>,
   provider: string | null,
   modelId: string | null,
 ): ProviderRates {
-  if (!provider || !modelId) {
+  if (!modelId) {
     return providerRatesFor(byProvider, provider);
   }
-
-  const providerKey = normalizeProvider(provider);
   const modelKey = modelId.trim().toLowerCase();
-  if (!providerKey || !modelKey) {
-    return providerRatesFor(byProvider, provider);
-  }
+  if (!modelKey) return providerRatesFor(byProvider, provider);
 
-  const candidates = modelAliasCandidates(providerKey, modelKey);
-  for (const candidate of candidates) {
-    const exact = byProviderModel.get(`${providerKey}::${candidate}`);
-    if (exact) return exact;
-  }
-
-  // GitHub Copilot model configs proxy multiple upstream providers.
-  // If no direct copilot model rate exists, fall back to the upstream
-  // provider/model inferred from the model id.
-  if (providerKey === "github-copilot") {
-    const upstream = inferProviderFromModelId(modelKey);
-    if (upstream) {
-      const upstreamCandidates = modelAliasCandidates(upstream, modelKey);
-      for (const candidate of upstreamCandidates) {
-        const viaUpstreamModel = byProviderModel.get(`${upstream}::${candidate}`);
-        if (viaUpstreamModel) return viaUpstreamModel;
+  // 1. Prefer (provider, model_id) when both are present.
+  if (provider) {
+    const providerKey = normalizeProvider(provider);
+    if (providerKey) {
+      const candidates = modelAliasCandidates(providerKey, modelKey);
+      for (const candidate of candidates) {
+        const exact = byProviderModel.get(`${providerKey}::${candidate}`);
+        if (exact) return exact;
       }
-      return providerRatesFor(byProvider, upstream);
+      // GitHub Copilot model configs proxy multiple upstream providers.
+      // If no direct copilot model rate exists, fall back to the upstream
+      // provider/model inferred from the model id.
+      if (providerKey === "github-copilot") {
+        const upstream = inferProviderFromModelId(modelKey);
+        if (upstream) {
+          const upstreamCandidates = modelAliasCandidates(upstream, modelKey);
+          for (const candidate of upstreamCandidates) {
+            const viaUpstreamModel = byProviderModel.get(`${upstream}::${candidate}`);
+            if (viaUpstreamModel) return viaUpstreamModel;
+          }
+          const upstreamProviderRate = byProvider.get(upstream);
+          if (upstreamProviderRate && upstreamProviderRate.ok) return upstreamProviderRate;
+        }
+      }
     }
   }
 
-  return providerRatesFor(byProvider, providerKey);
+  // 2. Aggregator-agnostic fallback: lookup by model_id alone. Covers
+  //    cases where the configured provider doesn't publish per-model
+  //    pricing but the same model id is rated by its upstream vendor.
+  for (const candidate of modelAliasCandidates(provider ? (normalizeProvider(provider) ?? "") : "", modelKey)) {
+    const viaModel = byModel.get(candidate);
+    if (viaModel) return viaModel;
+  }
+  const directModel = byModel.get(modelKey);
+  if (directModel) return directModel;
+
+  return providerRatesFor(byProvider, provider);
 }
 
 function modelAliasCandidates(provider: string, modelId: string): string[] {
@@ -773,11 +786,13 @@ function isErrorPayload(payload: unknown): boolean {
 async function loadProviderRates(): Promise<{
   byProvider: Map<string, ProviderRates>;
   byProviderModel: Map<string, ProviderRates>;
+  byModel: Map<string, ProviderRates>;
   generatedAt: string | null;
 }> {
   const snapshot = await readPricingSnapshot();
   const out = new Map<string, ProviderRates>();
   const byProviderModel = new Map<string, ProviderRates>();
+  const byModel = new Map<string, ProviderRates>();
   const expectedProviders = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot"];
 
   for (const provider of expectedProviders) {
@@ -794,7 +809,7 @@ async function loadProviderRates(): Promise<{
   }
 
   if (!snapshot?.sources) {
-    return { byProvider: out, byProviderModel, generatedAt: null };
+    return { byProvider: out, byProviderModel, byModel, generatedAt: null };
   }
 
   for (const source of snapshot.sources) {
@@ -829,7 +844,7 @@ async function loadProviderRates(): Promise<{
     for (const modelRate of source.model_rates ?? []) {
       const normalizedModel = modelRate.model_id?.trim().toLowerCase();
       if (!normalizedModel) continue;
-      byProviderModel.set(`${key}::${normalizedModel}`, {
+      const entry: ProviderRates = {
         inputPer1M: modelRate.input_per_1m_usd,
         outputPer1M: modelRate.output_per_1m_usd,
         source: source.resolved_url ?? source.pricing_url,
@@ -838,11 +853,25 @@ async function loadProviderRates(): Promise<{
         ok: source.ok !== false,
         status: source.status ?? null,
         error: source.error ?? null,
-      });
+      };
+      byProviderModel.set(`${key}::${normalizedModel}`, entry);
+      const existing = byModel.get(normalizedModel);
+      if (!existing || isBetterRate(entry, existing)) {
+        byModel.set(normalizedModel, entry);
+      }
     }
   }
 
-  return { byProvider: out, byProviderModel, generatedAt: snapshot.generated_at ?? null };
+  return { byProvider: out, byProviderModel, byModel, generatedAt: snapshot.generated_at ?? null };
+}
+
+function isBetterRate(next: ProviderRates, prev: ProviderRates): boolean {
+  const nextHas = next.inputPer1M != null || next.outputPer1M != null;
+  const prevHas = prev.inputPer1M != null || prev.outputPer1M != null;
+  if (nextHas && !prevHas) return true;
+  if (!nextHas && prevHas) return false;
+  const rank = { high: 2, medium: 1, low: 0 } as const;
+  return rank[next.confidence] > rank[prev.confidence];
 }
 
 async function readPricingSnapshot(): Promise<PricingSnapshot | null> {
