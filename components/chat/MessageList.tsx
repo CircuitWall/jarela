@@ -43,9 +43,13 @@ interface Props {
   warmSummaryComputedAt?: string | null;
   onSetContextPin?: (hot_since: string | null) => void;
   streaming?: boolean;
+  // Thread-level context window cap, forwarded to each MessageBubble so
+  // the ContextUsageBar has a baseline for rows whose own usage snapshot
+  // predates the per-row column.
+  contextWindowTokens?: number | null;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, onSetContextPin, streaming }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, onSetContextPin, streaming, contextWindowTokens }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
@@ -354,6 +358,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
                 userProfile={userProfile}
                 showAvatar={startsTurn}
                 showToolEvents={filters.tool_use}
+                contextWindowTokens={contextWindowTokens ?? null}
               />
             </div>,
           );

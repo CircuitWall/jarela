@@ -111,11 +111,37 @@ export interface Message {
   // messages). The chat-panel filter toolbar lets the user toggle each
   // category on/off; persistence is the same regardless.
   category?: string | null;
+  // Per-turn usage snapshot from message_usage (assistant turns only).
+  // Lets the chat UI render a context-window utilisation bar without
+  // re-querying. Absent for user turns and for assistant rows persisted
+  // before message_usage existed.
+  usage?: MessageUsage | null;
+}
+
+export interface MessageUsage {
+  input_tokens: number;
+  output_tokens: number;
+  // Per-tier input-token breakdown + the budget cap each tier was given,
+  // captured at history-window assembly time. NULL on legacy rows persisted
+  // before ADR-0044 wired this up — the chat UI falls back to a proportional
+  // visualisation in that case.
+  hot_tokens: number | null;
+  warm_tokens: number | null;
+  facts_tokens: number | null;
+  overhead_tokens: number | null;
+  hot_budget_tokens: number | null;
+  warm_budget_tokens: number | null;
+  facts_budget_tokens: number | null;
+  context_window_tokens: number | null;
 }
 
 export interface ThreadDetail extends ThreadSummary {
   messages: Message[];
   has_more: boolean;
+  // Effective context-window size (in tokens) for this thread's current
+  // agent + model config. Used by the chat UI to scale the per-turn
+  // context-usage bar against the same cap the agent applies at run time.
+  context_window_tokens?: number | null;
   // ADR-0042 — explicit context boundary + cached warm summary. NULL on
   // threads with no pin (the agent's history_window_hours default applies).
   // The summary is fresh iff `warm_summary_before === hot_since`; the chat
