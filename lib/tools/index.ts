@@ -47,17 +47,6 @@ export {
   type ToolGroup,
 } from "./registry";
 
-// Look up a tool's safety class. Built-in tools have a declared capability;
-// external (JARELA_TOOLS_DIR) and MCP tools default to "execute" — the
-// conservative choice until manifest-level overrides land (ADR-0038).
-export function getToolCapability(name: string, source: "builtin" | "mcp"): Capability {
-  const builtin = registeredCapability(name);
-  if (builtin) return builtin;
-  if (source === "mcp") return "execute";
-  // External tool: same conservative default.
-  return "execute";
-}
-
 const ALL_BUILTINS: StructuredToolInterface[] = registeredTools();
 export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = registeredNames();
 
@@ -67,16 +56,37 @@ function loadExternal() {
   return loadExternalTools(BUILTIN_TOOL_NAMES);
 }
 
-export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
+export type ToolSource = "builtin" | "external" | "mcp";
+
+// Resolve a tool's origin from its name. Used to label rows in the tools
+// API and to route metadata lookups. Returns "mcp" for any name that is
+// neither a registered built-in nor an external (JARELA_TOOLS_DIR) tool —
+// matches today's behavior where MCP tools are everything else.
+export function getToolSource(name: string): ToolSource {
+  if (BUILTIN_TOOL_NAMES.has(name)) return "builtin";
+  if (loadExternal().tools.some((t) => t.name === name)) return "external";
+  return "mcp";
+}
+
+// Look up a tool's safety class. Built-in tools have a declared capability;
+// external (JARELA_TOOLS_DIR) and MCP tools default to "execute" — the
+// conservative choice until manifest-level overrides land (ADR-0038).
+// Source is derived internally so callers can't mis-tag external tools as
+// MCP (or vice versa).
+export function getToolCapability(name: string): Capability {
+  return registeredCapability(name) ?? "execute";
+}
+
+export function getToolCategory(name: string): ToolCategory {
   const builtin = registeredCategory(name);
   if (builtin) return builtin;
   const ext = loadExternal().categories.get(name);
   if (ext) return ext;
-  return source === "mcp" ? "MCP" : "Config";
+  return getToolSource(name) === "mcp" ? "MCP" : "Config";
 }
 
-export function getToolGroup(name: string, source: "builtin" | "mcp"): ToolGroup {
-  const cat = getToolCategory(name, source);
+export function getToolGroup(name: string): ToolGroup {
+  const cat = getToolCategory(name);
   if (cat === "MCP") return null;
   return registeredGroup(name) ?? null;
 }
