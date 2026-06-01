@@ -96,6 +96,23 @@ export function computeContextBudget(config: ContextBudgetConfig): ContextBudget
   };
 }
 
+/**
+ * Roll unused tier headroom into the spill pool that the next tier in
+ * priority order will draw from. Each tier receives `softCap + incomingSpill`
+ * to spend; whatever it doesn't use becomes the next tier's `incomingSpill`.
+ *
+ * Pure: no allocation order is assumed — callers walk `tierPriority` and
+ * decide the data-flow ordering separately.
+ */
+export function applyTierSpill(
+  softCap: number,
+  incomingSpill: number,
+  used: number,
+): { cap: number; spill: number } {
+  const cap = softCap + incomingSpill;
+  return { cap, spill: Math.max(0, cap - used) };
+}
+
 export function takeRecentMessagesWithinBudget(messages: readonly MessageRow[], tokenBudget: number): MessageRow[] {
   if (tokenBudget <= 0 || messages.length === 0) return [];
   const chosen: MessageRow[] = [];
