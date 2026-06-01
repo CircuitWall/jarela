@@ -80,4 +80,5 @@ export const memoryDeleteTool = tool(
   },
 );
 
-registerTools("Memory", [memoryReadTool, memoryWriteTool, memoryListTool, memoryDeleteTool]);
+registerTools("Memory", "read", [memoryReadTool, memoryListTool]);
+registerTools("Memory", "write", [memoryWriteTool, memoryDeleteTool]);

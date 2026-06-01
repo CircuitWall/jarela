@@ -3075,36 +3075,33 @@ function simplifyADF(adf: unknown): string {
   }
 }
 
-registerTools("Atlassian", [
+registerTools("Atlassian", "read", [
   jiraSearchTool, jiraGetIssueTool, jiraFindUserTool,
-  jiraCreateIssueTool, jiraCreateIssuesBulkTool, jiraUpdateIssueTool,
-  jiraAddCommentTool, jiraTransitionsTool,
-  jiraLinkIssuesTool, jiraAddRemoteLinkTool, jiraDeleteLinkTool,
-  jiraUploadAttachmentTool, jiraDeleteIssueTool,
-  // Agile (ADR-0035): boards, sprints, backlog, rank
   jiraListBoardsTool, jiraGetBoardTool,
   jiraListSprintsTool, jiraGetSprintTool,
-  jiraCreateSprintTool, jiraUpdateSprintTool, jiraDeleteSprintTool,
-  jiraMoveIssuesToSprintTool, jiraMoveIssuesToBacklogTool,
-  jiraRankIssuesTool,
-  // Issue extras (ADR-0035): comments CRUD, worklogs, attachments, changelog
-  jiraGetCommentsTool, jiraUpdateCommentTool, jiraDeleteCommentTool,
-  jiraGetAttachmentContentTool, jiraDeleteAttachmentTool,
-  jiraAddWorklogTool, jiraListWorklogsTool, jiraGetChangelogTool,
-  // Project metadata (ADR-0035): projects, versions, components, generic enums
+  jiraGetCommentsTool, jiraGetAttachmentContentTool,
+  jiraListWorklogsTool, jiraGetChangelogTool,
   jiraListProjectsTool, jiraGetProjectTool,
-  jiraListVersionsTool, jiraCreateVersionTool, jiraUpdateVersionTool,
-  jiraListComponentsTool, jiraCreateComponentTool,
-  jiraListMetaTool,
+  jiraListVersionsTool, jiraListComponentsTool, jiraListMetaTool,
   confluenceSearchTool, confluenceGetPageTool,
   confluenceGetPageByTitleTool, confluenceGetPageChildrenTool,
   confluenceGetPageAncestorsTool, confluenceListSpacesTool,
   confluenceGetCommentsTool, confluenceListAttachmentsTool,
   confluenceGetLabelsTool, confluenceGetAttachmentContentTool,
+]);
+registerTools("Atlassian", "execute", [
+  jiraCreateIssueTool, jiraCreateIssuesBulkTool, jiraUpdateIssueTool,
+  jiraAddCommentTool, jiraTransitionsTool,
+  jiraLinkIssuesTool, jiraAddRemoteLinkTool, jiraDeleteLinkTool,
+  jiraUploadAttachmentTool, jiraDeleteIssueTool,
+  jiraCreateSprintTool, jiraUpdateSprintTool, jiraDeleteSprintTool,
+  jiraMoveIssuesToSprintTool, jiraMoveIssuesToBacklogTool, jiraRankIssuesTool,
+  jiraUpdateCommentTool, jiraDeleteCommentTool, jiraDeleteAttachmentTool,
+  jiraAddWorklogTool,
+  jiraCreateVersionTool, jiraUpdateVersionTool, jiraCreateComponentTool,
   confluenceCreatePageTool, confluenceUpdatePageTool,
   confluenceAddCommentTool, confluenceMovePageTool,
   confluenceUploadAttachmentTool, confluenceAddLabelTool,
-  // Confluence gap-fillers (ADR-0035)
   confluenceDeletePageTool, confluenceUpdateCommentTool, confluenceDeleteCommentTool,
   confluenceRemoveLabelTool, confluenceDeleteAttachmentTool,
 ]);

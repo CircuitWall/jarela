@@ -117,4 +117,4 @@ export const generateVoiceTool = tool(
   },
 );
 
-registerTools("Voice", [generateVoiceTool]);
+registerTools("Voice", "execute", [generateVoiceTool]);

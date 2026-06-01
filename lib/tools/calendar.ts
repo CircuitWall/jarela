@@ -348,7 +348,9 @@ export const calendarDeleteEventTool = tool(
   },
 );
 
-registerTools("Calendar", [
+registerTools("Calendar", "read", [
   calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
+]);
+registerTools("Calendar", "execute", [
   calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
 ]);

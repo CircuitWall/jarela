@@ -158,4 +158,5 @@ export const cancelScheduledTaskTool = tool(
   },
 );
 
-registerTools("Schedule", [scheduleTaskTool, listScheduledTasksTool, cancelScheduledTaskTool]);
+registerTools("Schedule", "read", [listScheduledTasksTool]);
+registerTools("Schedule", "write", [scheduleTaskTool, cancelScheduledTaskTool]);

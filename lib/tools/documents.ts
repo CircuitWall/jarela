@@ -115,7 +115,8 @@ export const documentsAddLocalSource = tool(
   },
 );
 
-registerTools("Documents", [documentsSearch, documentsListSources, documentsAddLocalSource]);
+registerTools("Documents", "read", [documentsSearch, documentsListSources]);
+registerTools("Documents", "write", [documentsAddLocalSource]);
 
 // ── Remote document sources (ADR-0026) ──────────────────────────────────────
 //
@@ -261,7 +262,7 @@ export const documentsIndexUrl = tool(
   },
 );
 
-registerTools("Documents", [
+registerTools("Documents", "write", [
   documentsAddRemoteSource,
   documentsRemoveSource,
   documentsReindexSource,

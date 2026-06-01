@@ -940,15 +940,19 @@ export const githubSearchCodeTool = tool(
   },
 );
 
-registerTools("GitHub", [
-  // Issues
-  githubSearchIssuesTool, githubGetIssueTool, githubCreateIssueTool,
-  githubUpdateIssueTool, githubAddCommentTool, githubListIssueCommentsTool,
-  // Pull requests
+registerTools("GitHub", "read", [
+  // Issues — read
+  githubSearchIssuesTool, githubGetIssueTool, githubListIssueCommentsTool,
+  // Pull requests — read
   githubListPullsTool, githubGetPullTool,
-  githubCreatePullTool, githubUpdatePullTool, githubMergePullTool,
-  githubRequestReviewersTool, githubCreateReviewTool,
   githubListPullFilesTool, githubListPullReviewsTool,
   // Repo content
   githubGetRepoTool, githubListBranchesTool, githubGetFileTool, githubSearchCodeTool,
+]);
+registerTools("GitHub", "execute", [
+  // Issues — write/execute
+  githubCreateIssueTool, githubUpdateIssueTool, githubAddCommentTool,
+  // Pull requests — write/execute
+  githubCreatePullTool, githubUpdatePullTool, githubMergePullTool,
+  githubRequestReviewersTool, githubCreateReviewTool,
 ]);
