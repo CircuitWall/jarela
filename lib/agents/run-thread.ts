@@ -16,6 +16,7 @@ import {
 } from "@/lib/agents/prepare";
 import { recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/pricing";
+import { estimateTokens } from "@/lib/agents/context-budget";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -55,6 +56,21 @@ function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promis
 export interface PreparedThreadRun {
   stream: AsyncIterable<StreamChunk>;
   thread_id: string;
+  // Snapshot of how the per-turn context window was allocated and consumed.
+  // Forwarded to `persistAssistantMessage` so message_usage carries the
+  // per-tier breakdown the chat UI uses for its diagnostic context bar.
+  context_snapshot?: ContextUsageSnapshot;
+}
+
+export interface ContextUsageSnapshot {
+  context_window_tokens: number;
+  hot_tokens: number;
+  warm_tokens: number;
+  facts_tokens: number;
+  overhead_tokens: number;
+  hot_budget_tokens: number;
+  warm_budget_tokens: number;
+  facts_budget_tokens: number;
 }
 
 // Max times we'll auto-retry a single user turn when the model emits a
@@ -188,9 +204,22 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const rawStream = streamWithConfig(req.thread_id, historyWindow.history, streamOpts, req.signal);
   const retriesLeft = req._stall_retries_left ?? MAX_STALL_AUTO_RETRIES;
+  // Overhead = the assembled system prompt + per-message scaffolding, which
+  // is more accurate than the budget's static overhead allowance.
+  const overheadTokens = estimateTokens(systemPrompt);
   return {
     stream: stallRetryStream(rawStream, req, allowedTools, retriesLeft),
     thread_id: req.thread_id,
+    context_snapshot: {
+      context_window_tokens: historyWindow.budget.contextWindowTokens,
+      hot_tokens: historyWindow.tierUsage.hot_tokens,
+      warm_tokens: historyWindow.tierUsage.warm_tokens,
+      facts_tokens: historyWindow.tierUsage.facts_tokens,
+      overhead_tokens: overheadTokens,
+      hot_budget_tokens: historyWindow.budget.tierBudgets.hot,
+      warm_budget_tokens: historyWindow.budget.tierBudgets.warm,
+      facts_budget_tokens: historyWindow.budget.tierBudgets.facts,
+    },
   };
 }
 
@@ -320,6 +349,7 @@ export function persistAssistantMessage(
   toolEvents?: readonly PersistedToolEvent[],
   category: string | null = null,
   usage?: AssistantUsageSnapshot | null,
+  contextSnapshot?: ContextUsageSnapshot | null,
 ): void {
   const trimmed = content.trim();
   // Append a small, persistent footer listing which tools actually ran this
@@ -391,6 +421,18 @@ export function persistAssistantMessage(
           input_rate_usd_per_mtok: rates.inputPer1M,
           output_rate_usd_per_mtok: rates.outputPer1M,
           cost_usd: cost,
+          tier_usage: contextSnapshot
+            ? {
+                hot_tokens: contextSnapshot.hot_tokens,
+                warm_tokens: contextSnapshot.warm_tokens,
+                facts_tokens: contextSnapshot.facts_tokens,
+                overhead_tokens: contextSnapshot.overhead_tokens,
+                hot_budget_tokens: contextSnapshot.hot_budget_tokens,
+                warm_budget_tokens: contextSnapshot.warm_budget_tokens,
+                facts_budget_tokens: contextSnapshot.facts_budget_tokens,
+                context_window_tokens: contextSnapshot.context_window_tokens,
+              }
+            : null,
         });
       } catch (err) {
         console.error("[message_usage] snapshot failed", err);
