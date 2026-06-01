@@ -31,10 +31,14 @@ const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify
 // SSE-GET-reattach trio into one transport.
 export async function POST(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
-  const { message, attachments, stream_options } = (await req.json()) as {
+  const { message, attachments, stream_options, hot_since } = (await req.json()) as {
     message: string;
     attachments?: ContentPart[];
     stream_options?: StreamOptions;
+    // ADR-0042 — explicit context boundary the chat picked. ISO timestamp,
+    // null to clear the pin, omitted to leave whatever's already persisted
+    // on the thread.
+    hot_since?: string | null;
   };
 
   // Connection-level handoff (NOT a kill). If a run is already in flight
@@ -63,6 +67,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       options: stream_options,
       attachments,
       signal: active.abort.signal,
+      hot_since,
     });
   } catch (err) {
     // Prep failure (unknown agent, model misconfig, …) — drop the run we

@@ -4,6 +4,7 @@ import { ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
+import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 
 interface SystemNotice {
@@ -31,9 +32,20 @@ interface Props {
   onLoadMore?: () => void;
   queuedMessages?: QueuedMessageView[];
   onRemoveQueued?: (id: string) => void;
+  // ADR-0042 — explicit context boundary state. The boundary divider is
+  // rendered in the message stream right after the last message older than
+  // `hotSince` (or above the first loaded message when the pin sits earlier
+  // than the visible window). The warm-summary card sits directly above
+  // the divider and shows the latest persisted recap.
+  hotSince?: string | null;
+  warmSummary?: string | null;
+  warmSummaryBefore?: string | null;
+  warmSummaryComputedAt?: string | null;
+  onSetContextPin?: (hot_since: string | null) => void;
+  streaming?: boolean;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, onSetContextPin, streaming }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
@@ -284,26 +296,70 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
             )}
           </div>
         )}
-      {visibleMessages.map((msg, i) => {
-        const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
-        return (
-          <div
-            key={msg.id}
-            id={`msg-${msg.id}`}
-            data-message-id={msg.id}
-            className={startsTurn && i > 0 ? "mt-3" : undefined}
-          >
-            <MessageBubble
-              message={msg}
-              threadId={threadId ?? null}
-              agentConfig={agentConfig}
-              userProfile={userProfile}
-              showAvatar={startsTurn}
-              showToolEvents={filters.tool_use}
+      {(() => {
+        // ADR-0042. The boundary divider + warm summary card live INSIDE the
+        // message stream so they scroll with content (not above as a fixed
+        // banner). `boundaryIndex` is the index of the first hot message in
+        // the visible list; everything before it is older-than-pin and gets
+        // covered by the warm summary card sitting above the divider.
+        const boundaryIndex = hotSince
+          ? visibleMessages.findIndex((m) => m.created_at >= hotSince)
+          : -1;
+        const hasBoundary = !!hotSince && boundaryIndex !== -1;
+        const olderInVisible = hasBoundary ? boundaryIndex : 0;
+        // "+ N more we don't know about yet" — older pages are likely unloaded.
+        const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
+
+        const renderBoundary = (key: string) => (
+          <div key={key}>
+            <WarmSummaryCard
+              olderCount={olderCountLabel}
+              summary={warmSummary ?? null}
+              summaryBefore={warmSummaryBefore ?? null}
+              hotSince={hotSince ?? null}
+              computedAt={warmSummaryComputedAt ?? null}
+              streaming={!!streaming}
+            />
+            <ContextBoundaryDivider
+              canIncludeMore={hasMore || olderInVisible > 0}
+              hiddenCount={olderCountLabel}
+              onIncludeMore={() => {
+                // Bump the pin to the oldest visible message so the entire
+                // current viewport becomes hot, AND request the next older
+                // page so the user can keep scrolling for context.
+                if (visibleMessages.length > 0 && onSetContextPin) {
+                  onSetContextPin(visibleMessages[0].created_at);
+                }
+                if (hasMore && onLoadMore) onLoadMore();
+              }}
             />
           </div>
         );
-      })}
+
+        return visibleMessages.flatMap((msg, i) => {
+          const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
+          const nodes = [] as React.ReactNode[];
+          if (hasBoundary && i === boundaryIndex) nodes.push(renderBoundary(`boundary-${msg.id}`));
+          nodes.push(
+            <div
+              key={msg.id}
+              id={`msg-${msg.id}`}
+              data-message-id={msg.id}
+              className={startsTurn && i > 0 ? "mt-3" : undefined}
+            >
+              <MessageBubble
+                message={msg}
+                threadId={threadId ?? null}
+                agentConfig={agentConfig}
+                userProfile={userProfile}
+                showAvatar={startsTurn}
+                showToolEvents={filters.tool_use}
+              />
+            </div>,
+          );
+          return nodes;
+        });
+      })()}
       {thinkingContent && filters.thinking && <ThinkingLine text={thinkingContent} />}
       {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}
       {streamingContent && (
