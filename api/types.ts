@@ -40,6 +40,13 @@ export interface AgentConfig {
    * delegation even if the tool itself is enabled.
    */
   delegate_targets: string[];
+  /**
+   * ADR-0043 — per-agent override of the hot/warm/facts split. Any positive
+   * numbers; the backend divides by sum so the UI can ship raw weights and
+   * never has to reconcile to 100. NULL/missing = inherit the model config's
+   * value.
+   */
+  context_tier_proportions: { hot: number; warm: number; facts: number } | null;
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +75,8 @@ export interface AgentConfigIn {
   voice_auto_speak?: boolean;
   harness_id?: string | null;
   delegate_targets?: string[];
+  // null = clear and inherit from the model; undefined = leave as-is.
+  context_tier_proportions?: { hot: number; warm: number; facts: number } | null;
 }
 
 export interface ThreadSummary {

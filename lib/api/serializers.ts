@@ -3,7 +3,7 @@
 // list and item shapes from drifting (they were copy-pasted before).
 
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
-import { parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentTierProportions, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import type { BridgeRow } from "@/lib/stores/bridges";
 import type { McpServerRow } from "@/lib/stores/mcp-servers";
 import { parseJsonSafe } from "@/lib/utils/json";
@@ -34,6 +34,7 @@ export function agentToResponse(a: AgentConfigRow) {
     voice_auto_speak: !!a.voice_auto_speak,
     harness_id: a.harness_id,
     delegate_targets: parseDelegateTargets(a.delegate_targets),
+    context_tier_proportions: getAgentTierProportions(a),
     created_at: a.created_at,
     updated_at: a.updated_at,
   };

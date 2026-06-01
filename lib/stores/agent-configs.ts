@@ -29,8 +29,40 @@ export interface AgentConfigRow {
   display_filters: string | null;    // JSON: Partial<DisplayFilters>; NULL = inherit defaults (ADR-0022)
   harness_id: string | null;         // ADR-0033: per-agent harness override; NULL = inherit global default
   delegate_targets: string | null;   // JSON string[] of agent ids this agent may delegate to; NULL/'[]' = none
+  // ADR-0043. JSON-encoded `{ hot, warm, facts }` — any positive numbers; the
+  // backend divides by sum so the UI can ship raw weights and never has to
+  // reconcile to 100. NULL = inherit the model config's value.
+  context_tier_proportions: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface AgentTierProportions {
+  hot: number;
+  warm: number;
+  facts: number;
+}
+
+/**
+ * Parse the JSON-encoded per-agent override of context tier proportions.
+ * Returns `null` for NULL, blank, malformed JSON, or any payload that
+ * doesn't have three finite non-negative numeric fields. Callers fall
+ * back to the model config's value (or built-in defaults) on null.
+ */
+export function getAgentTierProportions(row: AgentConfigRow): AgentTierProportions | null {
+  const raw = row.context_tier_proportions;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Partial<AgentTierProportions>;
+    const hot = Number(parsed.hot);
+    const warm = Number(parsed.warm);
+    const facts = Number(parsed.facts);
+    if (![hot, warm, facts].every((n) => Number.isFinite(n) && n >= 0)) return null;
+    if (hot + warm + facts <= 0) return null;
+    return { hot, warm, facts };
+  } catch {
+    return null;
+  }
 }
 
 export function listAgentConfigs(): AgentConfigRow[] {
@@ -80,6 +112,9 @@ export interface UpsertAgentInput {
   voice_auto_speak?: boolean;
   harness_id?: string | null;
   delegate_targets?: string[];
+  // ADR-0043. Pass `null` to clear the override and inherit from the model.
+  // Pass `undefined` to keep whatever's already on the row (PATCH semantics).
+  context_tier_proportions?: AgentTierProportions | null;
 }
 
 /**
@@ -139,15 +174,28 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
   const delegateTargets = input.delegate_targets === undefined
     ? (existing?.delegate_targets ?? null)
     : JSON.stringify(Array.from(new Set(input.delegate_targets.filter((id) => id && id !== input.id))));
+  // context_tier_proportions: undefined = keep existing; null = clear and
+  // inherit from the model; object = serialise as JSON. Negative values are
+  // clamped to 0 so the upsert can't poison the column with bad data.
+  const tierProportions =
+    input.context_tier_proportions === undefined
+      ? (existing?.context_tier_proportions ?? null)
+      : input.context_tier_proportions === null
+        ? null
+        : JSON.stringify({
+            hot: Math.max(0, Number(input.context_tier_proportions.hot) || 0),
+            warm: Math.max(0, Number(input.context_tier_proportions.warm) || 0),
+            facts: Math.max(0, Number(input.context_tier_proportions.facts) || 0),
+          });
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
          history_limit, history_window_hours, never_reply,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
-         harness_id, delegate_targets,
+         harness_id, delegate_targets, context_tier_proportions,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -186,6 +234,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
         : (input.voice_auto_speak ? 1 : 0),
       harnessId,
       delegateTargets,
+      tierProportions,
       created_at,
       t,
     );
