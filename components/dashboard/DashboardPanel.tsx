@@ -422,6 +422,12 @@ export function DashboardPanel() {
             />
           </section>
 
+          <ContextTierSection
+            tierTokens={effectiveSummary?.tier_tokens}
+            dataQuality={data.summary.data_quality}
+            scope={selectedDay ?? `last ${data.days} days`}
+          />
+
           <div className="grid md:grid-cols-2 gap-4">
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -667,6 +673,101 @@ function InsightChip({ label, value, hint }: { label: string; value: string; hin
       <div className="mt-1 text-base font-semibold text-[var(--text-primary)]">{value}</div>
       <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">{hint}</div>
     </div>
+  );
+}
+
+// Per-tier breakdown of measured input tokens (system prompt / facts /
+// warm / hot). Driven by message_usage snapshot rows only — legacy turns
+// without a snapshot contribute zero, so the data-quality chip surfaces
+// what fraction of the window is actually represented here.
+const TIER_COLORS: Record<"hot" | "warm" | "facts" | "overhead", string> = {
+  hot: "#22d3ee",
+  warm: "#f59e0b",
+  facts: "#a78bfa",
+  overhead: "#94a3b8",
+};
+const TIER_LABELS: Record<"hot" | "warm" | "facts" | "overhead", string> = {
+  hot: "Hot (recent turns)",
+  warm: "Warm (older summarised)",
+  facts: "Facts / memory",
+  overhead: "System prompt + tools",
+};
+
+function ContextTierSection({
+  tierTokens,
+  dataQuality,
+  scope,
+}: {
+  tierTokens: import("@/api/types").DashboardTierTokens | undefined;
+  dataQuality: import("@/api/types").DashboardDataQuality | undefined;
+  scope: string;
+}) {
+  const total = tierTokens?.measured_input_tokens ?? 0;
+  const measuredPct = dataQuality ? Math.round(dataQuality.measured_pct * 100) : 0;
+  const hot = tierTokens?.hot_tokens ?? 0;
+  const warm = tierTokens?.warm_tokens ?? 0;
+  const facts = tierTokens?.facts_tokens ?? 0;
+  const overhead = tierTokens?.overhead_tokens ?? 0;
+  return (
+    <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-medium text-[var(--text-primary)]">Context input breakdown</h3>
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            Where the input budget went for {scope}. Measured from provider usage payloads.
+          </p>
+        </div>
+        {dataQuality ? (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/70 px-2.5 py-1 text-[11px] text-[var(--text-secondary)]"
+            title={`${dataQuality.measured_messages} measured · ${dataQuality.estimated_messages} estimated`}
+          >
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ background: measuredPct >= 90 ? "#22c55e" : measuredPct >= 50 ? "#f59e0b" : "#ef4444" }}
+            />
+            {measuredPct}% measured
+          </span>
+        ) : null}
+      </div>
+      {total === 0 ? (
+        <p className="text-xs text-[var(--text-secondary)]">
+          No measured turns in this window yet. New assistant runs persist a per-tier snapshot that will appear here.
+        </p>
+      ) : (
+        <div>
+          <div className="flex h-3 w-full overflow-hidden rounded-full bg-[var(--bg-primary)]/60" role="img" aria-label="Per-tier input token breakdown">
+            {(["overhead", "facts", "warm", "hot"] as const).map((tier) => {
+              const value = tier === "hot" ? hot : tier === "warm" ? warm : tier === "facts" ? facts : overhead;
+              if (value <= 0) return null;
+              return (
+                <div
+                  key={tier}
+                  style={{ width: `${(value / total) * 100}%`, background: TIER_COLORS[tier] }}
+                  title={`${TIER_LABELS[tier]}: ${formatInt(value)} tokens (${Math.round((value / total) * 100)}%)`}
+                />
+              );
+            })}
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+            {(["hot", "warm", "facts", "overhead"] as const).map((tier) => {
+              const value = tier === "hot" ? hot : tier === "warm" ? warm : tier === "facts" ? facts : overhead;
+              const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+              return (
+                <div key={tier} className="rounded-lg bg-[var(--bg-primary)]/40 px-2.5 py-2">
+                  <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                    <span className="inline-block h-2 w-2 rounded-sm" style={{ background: TIER_COLORS[tier] }} />
+                    <span className="truncate">{TIER_LABELS[tier]}</span>
+                  </div>
+                  <div className="mt-1 font-semibold text-[var(--text-primary)]">{formatInt(value)}</div>
+                  <div className="text-[10px] text-[var(--text-secondary)]">{pct}%</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
