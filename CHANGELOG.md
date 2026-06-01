@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-06-01
+
+### Changed
+
+- **Threads GET serializer extracted into `lib/api/serializers.ts`.**
+  The per-message `usage` and `context_window_tokens` shaping that the
+  `ContextUsageBar` consumes was inlined in the route, untestable, and
+  prone to drift. The route now delegates to
+  `messageToResponse` / `messageUsageToResponse` /
+  `resolveContextWindowTokens`, each with unit coverage in
+  [lib/api/serializers.test.ts](lib/api/serializers.test.ts). No wire
+  contract change.
+
+### Fixed
+
+- **`delegate_to_agent` test signature** updated for the new
+  `contextSnapshot` argument added to `persistAssistantMessage` in #112
+  ([lib/tools/delegate.test.ts](lib/tools/delegate.test.ts)).
+
 ## [0.9.2] - 2026-06-01
 
 ### Changed
