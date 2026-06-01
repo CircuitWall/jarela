@@ -359,6 +359,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
                 showAvatar={startsTurn}
                 showToolEvents={filters.tool_use}
                 contextWindowTokens={contextWindowTokens ?? null}
+                isLatest={i === visibleMessages.length - 1 && !streamingContent}
               />
             </div>,
           );
