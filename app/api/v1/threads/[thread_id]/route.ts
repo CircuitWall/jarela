@@ -4,6 +4,7 @@ import {
   getMessagesAfter,
   getMessagesPage,
   getThread,
+  type MessageRow,
 } from "@/lib/stores/threads";
 import { getMessageUsageByIds } from "@/lib/stores/message-usage";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
@@ -53,8 +54,9 @@ export async function GET(req: NextRequest, { params }: Params) {
   const agentCfg = getAgentConfig(thread.agent_id);
   const modelCfg = agentCfg?.model_config_name ? getModelConfig(agentCfg.model_config_name) : null;
   const modelParams = modelCfg ? getModelParams(modelCfg) : null;
+  const rawCtx = modelParams?.context_window_tokens;
   const contextWindowTokens = resolveContextWindowTokens(
-    modelParams?.context_window_tokens,
+    typeof rawCtx === "number" ? rawCtx : null,
     DEFAULT_CONTEXT_WINDOW_TOKENS,
   );
 
