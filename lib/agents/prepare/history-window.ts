@@ -12,12 +12,15 @@ import { getRecentMessagesWindow } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import {
+  applyTierSpill,
   computeContextBudget,
+  estimateTokens,
   takeRecentMessagesWithinBudget,
   truncateLargestMessagesWithinBudget,
   type ContextBudget,
 } from "@/lib/agents/context-budget";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import type { MessageRow } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
 import { getProvider } from "@/lib/providers";
 import type { ContentPart } from "@/lib/tools/types";
@@ -62,32 +65,72 @@ export async function buildHistoryWindow(
     context_tier_priority: providerParams.context_tier_priority,
   });
 
-  const hotMessages = takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
-  const warmSummaryCtx = await buildWarmSummary(
-    allWindowMessages,
-    hotMessages.length,
-    modelInfo.providerName,
-    modelInfo.modelId,
-    providerParams,
-    budget.tierBudgets.warm,
-  );
+  // Walk tiers in the configured priority order, threading the unused-token
+  // spill from each tier into the next so leftover headroom isn't wasted.
+  // Default priority [hot, warm, facts] makes this identical to the natural
+  // data-flow order; non-default priorities still respect the data-flow
+  // dependency (warm needs hot's slice) by falling back to hot's soft cap
+  // when warm is asked to evaluate before hot has run.
+  let spill = 0;
+  let hotMessages: MessageRow[] | undefined;
+  let hotCap = 0;
+  let warmSummaryCtx = "";
+  let factsCtx = "";
+
+  for (const tier of budget.tierPriority) {
+    if (tier === "hot") {
+      ({ cap: hotCap } = applyTierSpill(budget.tierBudgets.hot, spill, 0));
+      hotMessages = takeRecentMessagesWithinBudget(allWindowMessages, hotCap);
+      const used = sumMessageTokens(hotMessages);
+      ({ spill } = applyTierSpill(budget.tierBudgets.hot, spill, used));
+    } else if (tier === "warm") {
+      const warmCap = budget.tierBudgets.warm + spill;
+      // If priority evaluates warm before hot, do a provisional hot slice at
+      // hot's soft cap so we know which messages to summarise. Hot's later
+      // pass may then absorb more (its cap will include any warm spill back),
+      // and the warm summary will harmlessly cover a few messages hot also
+      // includes — better than not summarising at all.
+      const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
+      warmSummaryCtx = await buildWarmSummary(
+        allWindowMessages,
+        hotForSlice.length,
+        modelInfo.providerName,
+        modelInfo.modelId,
+        providerParams,
+        warmCap,
+      );
+      const used = estimateTokens(warmSummaryCtx);
+      ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
+    } else {
+      const factsCap = budget.tierBudgets.facts + spill;
+      factsCtx = buildFactsContext(trimmedMessage, factsCap);
+      const used = estimateTokens(factsCtx);
+      ({ spill } = applyTierSpill(budget.tierBudgets.facts, spill, used));
+    }
+  }
+
+  // Hot is always evaluated above (priority always contains all three tiers),
+  // but TypeScript can't see that. Default to an empty list defensively.
+  const hotMessagesResolved = hotMessages ?? [];
 
   // If the warm tier was expected but failed to summarise, fall back to
   // truncating the largest hot messages so the older context isn't silently
   // dropped — better to clip overlong messages than lose them entirely.
-  const warmWasExpected = budget.tierBudgets.warm > 32 && (allWindowMessages.length - hotMessages.length) >= 2;
+  const warmWasExpected = budget.tierBudgets.warm > 32 && (allWindowMessages.length - hotMessagesResolved.length) >= 2;
   const hotMessagesForPrompt = !warmSummaryCtx && warmWasExpected
-    ? truncateLargestMessagesWithinBudget(hotMessages, budget.tierBudgets.hot)
-    : hotMessages;
+    ? truncateLargestMessagesWithinBudget(hotMessagesResolved, hotCap || budget.tierBudgets.hot)
+    : hotMessagesResolved;
 
   const history = hotMessagesForPrompt.map((m) => ({
     role: m.role as "user" | "assistant",
     content: parseContent(m.content),
   }));
 
-  const factsCtx = buildFactsContext(trimmedMessage, budget.tierBudgets.facts);
-
   return { history, budget, warmSummaryCtx, factsCtx };
+}
+
+function sumMessageTokens(messages: readonly MessageRow[]): number {
+  return messages.reduce((acc, m) => acc + estimateTokens(transcriptText(m.content)), 0);
 }
 
 // Recover ContentPart[] from messages that were stored as JSON-encoded

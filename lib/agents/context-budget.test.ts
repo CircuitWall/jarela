@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  applyTierSpill,
   computeContextBudget,
   normalizeTierPriority,
   normalizeTierProportions,
@@ -125,6 +126,34 @@ describe("takeRecentMessagesWithinBudget", () => {
     const out = takeRecentMessagesWithinBudget(rows, 8);
     expect(out.at(-1)?.content).toBe("latest");
     expect(out.length).toBeGreaterThan(0);
+  });
+});
+
+describe("applyTierSpill", () => {
+  it("offers softCap + incomingSpill and forwards the unused remainder", () => {
+    // First tier in a priority walk: nothing has spilled in yet.
+    const a = applyTierSpill(1000, 0, 600);
+    expect(a).toEqual({ cap: 1000, spill: 400 });
+
+    // Second tier inherits the 400 unused tokens on top of its own 500 cap.
+    const b = applyTierSpill(500, a.spill, 700);
+    expect(b).toEqual({ cap: 900, spill: 200 });
+
+    // Third tier: starved of its own budget but rescued by the 200 spilled.
+    const c = applyTierSpill(0, b.spill, 150);
+    expect(c).toEqual({ cap: 200, spill: 50 });
+  });
+
+  it("clamps spill at zero when a tier overruns its effective cap", () => {
+    // takeRecentMessagesWithinBudget can return one message even when its
+    // tokens exceed the cap, so `used > cap` is reachable in practice.
+    const r = applyTierSpill(100, 50, 400);
+    expect(r).toEqual({ cap: 150, spill: 0 });
+  });
+
+  it("returns the soft cap untouched when the tier consumes nothing", () => {
+    const r = applyTierSpill(500, 200, 0);
+    expect(r).toEqual({ cap: 700, spill: 700 });
   });
 });
 
