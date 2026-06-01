@@ -1149,16 +1149,18 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       )}
             </div>
           )}
+          {!isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
+            <div className="-mx-4 -mb-3 mt-3">
+              <ContextUsageBar
+                usage={message.usage}
+                fallbackContextWindow={contextWindowTokens ?? 0}
+              />
+            </div>
+          ) : null}
         </div>
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
         )}
-        {!isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
-          <ContextUsageBar
-            usage={message.usage}
-            fallbackContextWindow={contextWindowTokens ?? 0}
-          />
-        ) : null}
         {refs.length > 0 && <RefsFooter refs={refs} />}
       </div>
     </div>
