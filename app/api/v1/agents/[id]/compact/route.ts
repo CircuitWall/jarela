@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getOrCreateAgentThread, getMessages, clearThreadMessages } from "@/lib/stores/threads";
-import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import { putMemory } from "@/lib/stores/memory";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -30,12 +30,7 @@ export async function POST(_req: Request, { params }: Params) {
     return NextResponse.json({ error: "No model configured" }, { status: 400 });
   }
 
-  let providerParams: ProviderParams;
-  try {
-    providerParams = JSON.parse(cfg.params) as ProviderParams;
-  } catch {
-    return NextResponse.json({ error: "Invalid model params" }, { status: 500 });
-  }
+  const providerParams: ProviderParams = getModelParams(cfg);
 
   // Build transcript (text-flattened so base64 image data doesn't poison the
   // summarization prompt) BEFORE touching the thread. If anything below fails

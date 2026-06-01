@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deleteModelConfig, upsertModelConfig } from "@/lib/stores/model-config";
+import { deleteModelConfig, getModelParams, upsertModelConfig } from "@/lib/stores/model-config";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -9,7 +9,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     provider: string; model_id: string; params?: Record<string, unknown>; is_default?: boolean;
   };
   const r = upsertModelConfig(name, provider, model_id, p, is_default);
-  return NextResponse.json({ ...r, params: JSON.parse(r.params), is_default: Boolean(r.is_default) });
+  return NextResponse.json({ ...r, params: getModelParams(r), is_default: Boolean(r.is_default) });
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
