@@ -107,6 +107,22 @@ export interface Message {
 export interface ThreadDetail extends ThreadSummary {
   messages: Message[];
   has_more: boolean;
+  // ADR-0042 — explicit context boundary + cached warm summary. NULL on
+  // threads with no pin (the agent's history_window_hours default applies).
+  // The summary is fresh iff `warm_summary_before === hot_since`; the chat
+  // UI uses that comparison to decide whether to show the live summary or
+  // a "will appear after your next reply" placeholder.
+  hot_since?: string | null;
+  warm_summary?: string | null;
+  warm_summary_before?: string | null;
+  warm_summary_computed_at?: string | null;
+}
+
+export interface ThreadContextPin {
+  hot_since: string | null;
+  warm_summary: string | null;
+  warm_summary_before: string | null;
+  warm_summary_computed_at: string | null;
 }
 
 export interface MemoryItem {

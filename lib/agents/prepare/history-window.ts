@@ -8,7 +8,7 @@
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { getRecentMessagesWindow } from "@/lib/stores/threads";
+import { getRecentMessagesWindow, getThread, setThreadWarmSummary } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import {
@@ -37,6 +37,13 @@ export interface ResolvedHistoryWindow {
  * message list (already JSON-content-parsed), the context budget, and
  * the warm-summary + facts context strings ready to slot into the system
  * prompt.
+ *
+ * `hotSince` (ADR-0042) is the user's explicit context boundary. When set,
+ * it overrides the agent's `history_window_hours`-derived bound so the
+ * boundary line in the chat is the source of truth for what enters hot.
+ * When fresh, the cached `warm_summary` on the thread is reused; when the
+ * boundary has moved since the last summary was computed (or no summary
+ * exists), the warm tier re-summarises and the new text is persisted.
  */
 export async function buildHistoryWindow(
   thread_id: string,
@@ -44,13 +51,26 @@ export async function buildHistoryWindow(
   providerParams: ProviderParams,
   trimmedMessage: string,
   modelInfo: { providerName?: string; modelId?: string },
+  hotSince?: string | null,
 ): Promise<ResolvedHistoryWindow> {
   const limit = agentCfg.history_limit ?? 50;
   const windowHours = agentCfg.history_window_hours ?? 8;
-  const sinceISO = windowHours > 0
-    ? new Date(Date.now() - windowHours * 3600_000).toISOString()
-    : undefined;
+  // Explicit pin wins over the agent default. NULL/undefined falls back to
+  // the time-window heuristic; existing threads with no pin behave exactly
+  // as they did before this ADR landed.
+  const sinceISO = hotSince
+    ? hotSince
+    : windowHours > 0
+      ? new Date(Date.now() - windowHours * 3600_000).toISOString()
+      : undefined;
   const allWindowMessages = getRecentMessagesWindow(thread_id, limit, sinceISO);
+
+  // Reuse the persisted warm summary when the boundary it covers still
+  // matches the current pin — saves an LLM call on every turn that doesn't
+  // change the boundary.
+  const cached = hotSince ? getThread(thread_id) : null;
+  const cachedSummaryFresh =
+    !!cached?.warm_summary && cached.warm_summary_before === hotSince;
 
   const budget = computeContextBudget({
     context_window_tokens:
@@ -85,20 +105,33 @@ export async function buildHistoryWindow(
       ({ spill } = applyTierSpill(budget.tierBudgets.hot, spill, used));
     } else if (tier === "warm") {
       const warmCap = budget.tierBudgets.warm + spill;
-      // If priority evaluates warm before hot, do a provisional hot slice at
-      // hot's soft cap so we know which messages to summarise. Hot's later
-      // pass may then absorb more (its cap will include any warm spill back),
-      // and the warm summary will harmlessly cover a few messages hot also
-      // includes — better than not summarising at all.
-      const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
-      warmSummaryCtx = await buildWarmSummary(
-        allWindowMessages,
-        hotForSlice.length,
-        modelInfo.providerName,
-        modelInfo.modelId,
-        providerParams,
-        warmCap,
-      );
+      if (cachedSummaryFresh && cached?.warm_summary) {
+        // Pin-stable turn: don't pay the summariser tax again.
+        warmSummaryCtx = cached.warm_summary;
+      } else {
+        // If priority evaluates warm before hot, do a provisional hot slice at
+        // hot's soft cap so we know which messages to summarise. Hot's later
+        // pass may then absorb more (its cap will include any warm spill back),
+        // and the warm summary will harmlessly cover a few messages hot also
+        // includes — better than not summarising at all.
+        const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
+        warmSummaryCtx = await buildWarmSummary(
+          allWindowMessages,
+          hotForSlice.length,
+          modelInfo.providerName,
+          modelInfo.modelId,
+          providerParams,
+          warmCap,
+        );
+        // Persist the freshly-computed summary keyed on the boundary it
+        // covers, so the chat UI can render it on the next page load and
+        // subsequent same-pin turns can short-circuit the LLM call. Skipped
+        // when there's no explicit pin because the time-windowed boundary
+        // shifts every turn — caching it would never hit.
+        if (warmSummaryCtx && hotSince) {
+          setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince);
+        }
+      }
       const used = estimateTokens(warmSummaryCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
     } else {
