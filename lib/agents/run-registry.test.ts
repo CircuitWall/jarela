@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun } from "./run-registry";
+import { startRun, finishRun, getRun, broadcast } from "./run-registry";
+import type { StreamChunk } from "./base";
+
+const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: s } } as StreamChunk);
 
 describe("run-registry watchdog", () => {
   beforeEach(() => {
@@ -50,6 +53,42 @@ describe("run-registry watchdog", () => {
     } finally {
       if (prev === undefined) delete process.env.JARELA_RUN_MAX_MS;
       else process.env.JARELA_RUN_MAX_MS = prev;
+    }
+  });
+
+  it("force-finishes a stalled run after JARELA_RUN_IDLE_MS of no progress", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-idle-${Date.now()}`;
+      const run = startRun(tid, null);
+      vi.advanceTimersByTime(5_000 + 10);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  it("does not fire idle watchdog while broadcast keeps streaming", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-stream-${Date.now()}`;
+      const run = startRun(tid, null);
+      // Stream a chunk every 2s for 12s — total elapsed > idleMs but
+      // never idle for >5s in a row.
+      for (let i = 0; i < 6; i++) {
+        vi.advanceTimersByTime(2_000);
+        broadcast(run, delta("x"));
+      }
+      expect(run.status).toBe("running");
+      // Now go quiet and confirm it fires.
+      vi.advanceTimersByTime(5_000 + 10);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
     }
   });
 });
