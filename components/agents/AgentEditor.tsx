@@ -807,7 +807,9 @@ function ToolGroupBlock({
   const selectedInGroup = allTools.filter((t) => selected.includes(t.name)).length;
   const allOn = selectedInGroup === allTools.length;
   const someOn = selectedInGroup > 0 && !allOn;
-  const [open, setOpen] = useState(selectedInGroup > 0);
+  // Collapsed by default to keep the editor compact on small / PWA viewports;
+  // the header still surfaces the selected/total count.
+  const [open, setOpen] = useState(false);
   const headerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -844,8 +846,8 @@ function ToolGroupBlock({
 
 // Collapsible per-category block with a tri-state header checkbox. The
 // header toggle flips the entire category on/off; individual tool checkboxes
-// stay available for fine-grained control. Collapsed-by-default when no tool
-// in the category is selected, to keep the editor compact.
+// stay available for fine-grained control. Collapsed by default to keep the
+// editor short on mobile / PWA viewports.
 function ToolCategoryBlock({
   category,
   tools,
@@ -866,7 +868,8 @@ function ToolCategoryBlock({
   const selectedInCat = tools.filter((t) => selected.includes(t.name)).length;
   const allOn = selectedInCat === tools.length;
   const someOn = selectedInCat > 0 && !allOn;
-  const [open, setOpen] = useState(selectedInCat > 0);
+  // Collapsed by default — see ToolGroupBlock comment.
+  const [open, setOpen] = useState(false);
   const headerRef = useRef<HTMLInputElement>(null);
 
   // Render the tri-state indeterminate dash via the DOM property (React
