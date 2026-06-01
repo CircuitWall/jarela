@@ -31,6 +31,17 @@ export interface ResolvedHistoryWindow {
   budget: ContextBudget;
   warmSummaryCtx: string;
   factsCtx: string;
+  // Per-tier *actual* input-token consumption derived from the assembled
+  // window. Lets the chat UI render a diagnostic context-usage bar that
+  // shows which tier is starving so the user can rebalance the agent's
+  // hot/warm/facts split. Overhead is the system-prompt-side allowance
+  // (caller may overwrite with a more precise measurement before persist).
+  tierUsage: {
+    hot_tokens: number;
+    warm_tokens: number;
+    facts_tokens: number;
+    overhead_tokens: number;
+  };
 }
 
 /**
@@ -160,7 +171,25 @@ export async function buildHistoryWindow(
     content: parseContent(m.content),
   }));
 
-  return { history, budget, warmSummaryCtx, factsCtx };
+  // Re-measure hot AFTER any truncation so the recorded usage matches what
+  // actually went into the prompt. Warm/facts are already finalised above.
+  const hotTokensFinal = hotMessagesForPrompt.reduce(
+    (acc, m) => acc + estimateTokens(transcriptText(m.content)),
+    0,
+  );
+
+  return {
+    history,
+    budget,
+    warmSummaryCtx,
+    factsCtx,
+    tierUsage: {
+      hot_tokens: hotTokensFinal,
+      warm_tokens: estimateTokens(warmSummaryCtx),
+      facts_tokens: estimateTokens(factsCtx),
+      overhead_tokens: budget.overheadTokens,
+    },
+  };
 }
 
 function sumMessageTokens(messages: readonly MessageRow[]): number {
