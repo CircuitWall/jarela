@@ -3,7 +3,7 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getThread, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
-import { getAgentConfig, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentConfig, getAgentTierProportions, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
@@ -119,7 +119,16 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const modelCfg = agentCfg.model_config_name
     ? getModelConfig(agentCfg.model_config_name)
     : getDefaultModelConfig();
-  const providerParams = getModelParams(modelCfg);
+  const baseProviderParams = getModelParams(modelCfg);
+
+  // ADR-0043 — per-agent override of context_tier_proportions. The agent's
+  // value, when set, replaces the model's default for THIS run only; the
+  // stream LLM call below still uses the unmodified params. Splitting them
+  // keeps the override scoped to the budget computation.
+  const agentTierProportions = getAgentTierProportions(agentCfg);
+  const providerParams = agentTierProportions
+    ? { ...baseProviderParams, context_tier_proportions: agentTierProportions }
+    : baseProviderParams;
 
   // ADR-0042. Persist the user-chosen boundary before we build the window so
   // the history fetch and the cached-summary lookup both see the same pin.
