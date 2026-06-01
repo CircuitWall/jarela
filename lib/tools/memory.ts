@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { getMemory, putMemory, listMemory } from "@/lib/stores/memory";
+import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
 import { registerTools } from "./registry";
 
 export const memoryReadTool = tool(
@@ -64,4 +64,20 @@ export const memoryListTool = tool(
   },
 );
 
-registerTools("Memory", [memoryReadTool, memoryWriteTool, memoryListTool]);
+export const memoryDeleteTool = tool(
+  async ({ namespace, key }) => {
+    const removed = deleteMemory(namespace, key);
+    return JSON.stringify({ ok: true, namespace, key, removed });
+  },
+  {
+    name: "memory_delete",
+    description:
+      "Delete a single memory entry by namespace and key. Returns { removed: true } if a row was removed, { removed: false } if no matching row existed. Bulk deletion by namespace is not supported by this tool — list-then-delete-loop if needed.",
+    schema: z.object({
+      namespace: z.string().describe("Memory namespace"),
+      key: z.string().describe("Key within the namespace"),
+    }),
+  },
+);
+
+registerTools("Memory", [memoryReadTool, memoryWriteTool, memoryListTool, memoryDeleteTool]);
