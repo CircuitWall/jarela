@@ -7,6 +7,7 @@ import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
+import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -389,12 +390,14 @@ function ReactionPromptEditor({
 
   return (
     <div className="space-y-1">
-      <textarea
+      <MarkdownTextarea
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={setValue}
         rows={3}
+        monospace
+        maxLength={REACTION_PROMPT_MAX}
         placeholder="Default: summarise what changed and decide whether the user needs to know."
-        className="w-full text-[11px] font-mono rounded border border-border bg-surface-1 px-2 py-1 text-fg-muted focus:outline-none focus:border-fg-muted resize-y"
+        className="w-full text-[11px] rounded border border-border bg-surface-1 px-2 py-1 text-fg-muted focus:outline-none focus:border-fg-muted resize-y"
       />
       <div className="flex items-center gap-2 text-[10px] text-fg-faint">
         <span className={tooLong ? "text-rose-700 dark:text-rose-400" : ""}>
