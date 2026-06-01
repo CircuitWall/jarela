@@ -10,9 +10,11 @@ process.env.JARELA_DB_DIR = tmpRoot;
 
 const {
   upsertAgentConfig,
+  getAgentConfig,
   getAgentDisplayFilters,
   updateAgentDisplayFilters,
   getAgentTools,
+  getAgentTierProportions,
   DISPLAY_FILTER_DEFAULTS,
 } = await import("./agent-configs");
 
@@ -107,5 +109,87 @@ describe("getAgentTools", () => {
 
   it("filters non-string entries", () => {
     expect(getAgentTools({ tools: JSON.stringify(["a", 1, null, "b", ""]) })).toEqual(["a", "b"]);
+  });
+});
+
+describe("agent context-tier proportions (ADR-0043)", () => {
+  beforeEach(() => {
+    seedAgent("tier-test");
+    upsertAgentConfig({
+      id: "tier-test",
+      name: "tier-test",
+      identity: "",
+      instructions: "",
+      tools: [],
+      context_tier_proportions: null,
+    });
+  });
+
+  it("returns null for a fresh agent — no override means inherit from model", () => {
+    const row = getAgentConfig("tier-test")!;
+    expect(getAgentTierProportions(row)).toBeNull();
+  });
+
+  it("round-trips raw weights without forcing the user to sum to 100", () => {
+    upsertAgentConfig({
+      id: "tier-test",
+      name: "tier-test",
+      identity: "",
+      instructions: "",
+      tools: [],
+      context_tier_proportions: { hot: 6, warm: 2.5, facts: 1.5 },
+    });
+    expect(getAgentTierProportions(getAgentConfig("tier-test")!)).toEqual({
+      hot: 6,
+      warm: 2.5,
+      facts: 1.5,
+    });
+  });
+
+  it("treats `null` on upsert as a clear-the-override action", () => {
+    upsertAgentConfig({
+      id: "tier-test",
+      name: "tier-test",
+      identity: "",
+      instructions: "",
+      tools: [],
+      context_tier_proportions: { hot: 7, warm: 2, facts: 1 },
+    });
+    upsertAgentConfig({
+      id: "tier-test",
+      name: "tier-test",
+      identity: "",
+      instructions: "",
+      tools: [],
+      context_tier_proportions: null,
+    });
+    expect(getAgentTierProportions(getAgentConfig("tier-test")!)).toBeNull();
+  });
+
+  it("rejects payloads where the three fields don't add up to a positive sum", () => {
+    upsertAgentConfig({
+      id: "tier-test",
+      name: "tier-test",
+      identity: "",
+      instructions: "",
+      tools: [],
+      // Stored as JSON, then parsed back. After clamping negatives to 0 the
+      // sum is 0 — `getAgentTierProportions` returns null and the caller
+      // falls back to the model default.
+      context_tier_proportions: { hot: 0, warm: -1, facts: 0 },
+    });
+    expect(getAgentTierProportions(getAgentConfig("tier-test")!)).toBeNull();
+  });
+
+  it("ignores malformed JSON in the column", () => {
+    expect(
+      getAgentTierProportions({ context_tier_proportions: "not json" } as never),
+    ).toBeNull();
+    expect(
+      getAgentTierProportions({ context_tier_proportions: "" } as never),
+    ).toBeNull();
+    expect(
+      getAgentTierProportions({ context_tier_proportions: null } as never),
+    ).toBeNull();
   });
 });
