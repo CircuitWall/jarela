@@ -389,17 +389,8 @@ export function DashboardPanel() {
           </p>
 
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
-            <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Token usage over time</h3>
-            <InteractiveTokenChart
-              series={series}
-              selectedDay={selectedDay}
-              onSelectDay={(day) => setSelectedDay((prev) => (prev === day ? null : day))}
-            />
-          </section>
-
-          <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-medium text-[var(--text-primary)]">Estimated cost over time</h3>
+              <h3 className="text-sm font-medium text-[var(--text-primary)]">Tokens &amp; cost over time</h3>
               {selectedDay ? (
                 <button
                   type="button"
@@ -414,12 +405,19 @@ export function DashboardPanel() {
                 <span className="text-[11px] text-[var(--text-secondary)]">Click a day to narrow the breakdown</span>
               )}
             </div>
-            <InteractiveCostChart
+            <InteractiveTokenChart
               series={series}
-              currencyInfo={currencyInfo}
               selectedDay={selectedDay}
               onSelectDay={(day) => setSelectedDay((prev) => (prev === day ? null : day))}
             />
+            <div className="mt-3 border-t border-[var(--border)]/60 pt-3">
+              <InteractiveCostChart
+                series={series}
+                currencyInfo={currencyInfo}
+                selectedDay={selectedDay}
+                onSelectDay={(day) => setSelectedDay((prev) => (prev === day ? null : day))}
+              />
+            </div>
           </section>
 
           <div className="grid md:grid-cols-2 gap-4">
