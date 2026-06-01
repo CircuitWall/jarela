@@ -1,5 +1,5 @@
 import { getProvider } from "@/lib/providers";
-import { getModelConfig, getDefaultModelConfig, listModelConfigs, type ModelConfigRow } from "@/lib/stores/model-config";
+import { getModelConfig, getDefaultModelConfig, getModelParams, listModelConfigs, type ModelConfigRow } from "@/lib/stores/model-config";
 import { getEmbeddingModelConfigName } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
@@ -28,8 +28,7 @@ async function resolveEmbeddingClient(): Promise<{
     params: ProviderParams;
   } | null {
     if (!cfg) return null;
-    let params: ProviderParams;
-    try { params = JSON.parse(cfg.params) as ProviderParams; } catch { return null; }
+    const params: ProviderParams = getModelParams(cfg);
     const provider = getProvider(cfg.provider);
     if (!provider.embed) return null;
     // Default to a small embedding model for the OpenAI-compatible providers if
