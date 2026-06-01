@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-01
+
 ### Added
 
 - **Immutable per-message LLM usage telemetry (ADR-0038).** Each
@@ -22,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [lib/stores/message-usage.ts](lib/stores/message-usage.ts),
   [lib/stores/pricing.ts](lib/stores/pricing.ts),
   [lib/stores/dashboard-metrics.ts](lib/stores/dashboard-metrics.ts)).
+- **Clickable token-usage bars.** Bars on the “Token usage over
+  time” chart now filter the dashboard breakdown to that day, the
+  same as the cost timeline. Click the same bar (or the cost-chart
+  clear pill) to restore the window view
+  ([components/dashboard/DashboardPanel.tsx](components/dashboard/DashboardPanel.tsx)).
 
 ## [0.8.2] - 2026-05-31
 
