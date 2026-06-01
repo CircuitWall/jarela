@@ -145,4 +145,4 @@ export const delegateToAgentTool = tool(
   },
 );
 
-registerTools("Agent", [delegateToAgentTool]);
+registerTools("Agent", "execute", [delegateToAgentTool]);

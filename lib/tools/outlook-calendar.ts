@@ -338,8 +338,9 @@ export const outlookCalendarDeleteEventTool = tool(
   },
 );
 
-registerTools("Calendar", [
-  outlookCalendarListCalendarsTool, outlookCalendarListEventsTool,
-  outlookCalendarGetEventTool, outlookCalendarCreateEventTool,
-  outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
+registerTools("Calendar", "read", [
+  outlookCalendarListCalendarsTool, outlookCalendarListEventsTool, outlookCalendarGetEventTool,
+]);
+registerTools("Calendar", "execute", [
+  outlookCalendarCreateEventTool, outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool,
 ]);

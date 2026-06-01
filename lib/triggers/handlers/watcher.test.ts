@@ -41,7 +41,7 @@ const fakeTool = tool(
 describe("watcherHandler (ADR-0027)", () => {
   beforeEach(() => {
     _resetRegistry();
-    registerTools("Schedule", [fakeTool]);
+    registerTools("Schedule", "read", [fakeTool]);
     for (const w of listWatchers()) deleteWatcher(w.id);
     fakeResult = "v1";
     fakeThrows = null;

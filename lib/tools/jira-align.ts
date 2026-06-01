@@ -584,10 +584,11 @@ function escapeOData(s: string): string {
   return s.replace(/'/g, "''");
 }
 
-registerTools("JiraAlign", [
+registerTools("JiraAlign", "read", [
   jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
+  jiraAlignListEntitiesTool, jiraAlignGetEntityTool,
+]);
+registerTools("JiraAlign", "execute", [
   jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
   jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
-  // Hierarchy entity listing (ADR-0035)
-  jiraAlignListEntitiesTool, jiraAlignGetEntityTool,
 ]);

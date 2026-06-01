@@ -157,4 +157,4 @@ export const webSearchTool = tool(
   },
 );
 
-registerTools("Web", [webSearchTool]);
+registerTools("Web", "read", [webSearchTool]);

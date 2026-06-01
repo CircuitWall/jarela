@@ -187,4 +187,4 @@ export const generateImageTool = tool(
   },
 );
 
-registerTools("Images", [generateImageTool]);
+registerTools("Images", "execute", [generateImageTool]);

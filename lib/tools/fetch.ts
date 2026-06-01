@@ -186,4 +186,4 @@ export const webFetchTool = tool(
   },
 );
 
-registerTools("Web", [webFetchTool]);
+registerTools("Web", "read", [webFetchTool]);

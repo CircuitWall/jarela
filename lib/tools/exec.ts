@@ -111,4 +111,4 @@ export const shellExecTool = tool(
   },
 );
 
-registerTools("Shell", [localExecTool, shellExecTool]);
+registerTools("Shell", "execute", [localExecTool, shellExecTool]);

@@ -4,7 +4,7 @@
  * To add a new tool:
  *   1. Copy this file to lib/tools/your-tool.ts
  *   2. Rename `myTool`, update name/description/schema, implement the function
- *   3. Call `registerTools("<Category>", [myTool])` at the bottom (see below)
+ *   3. Call `registerTools("<Category>", "<read|write|execute>", [myTool])` at the bottom (see below)
  *   4. Add `import "./your-tool";` to lib/tools/builtins.ts
  *
  * Tools follow the LangChain StructuredTool convention:
@@ -48,6 +48,7 @@ export const myTool = tool(
   },
 );
 
-// Pick the category your tool belongs to. See lib/tools/registry.ts for the
-// full list of valid categories.
-// registerTools("Web", [myTool]);
+// Pick the category (topical group) and capability (read/write/execute,
+// safety class — see ADR-0038) your tool belongs to. The full list lives in
+// lib/tools/registry.ts.
+// registerTools("Web", "read", [myTool]);
