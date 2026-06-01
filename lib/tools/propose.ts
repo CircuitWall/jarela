@@ -103,4 +103,5 @@ function safeParse(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
 }
 
-registerTools("Config", [proposeConfigChangeTool, checkProposalTool]);
+registerTools("Config", "read", [checkProposalTool]);
+registerTools("Config", "write", [proposeConfigChangeTool]);

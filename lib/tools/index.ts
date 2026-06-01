@@ -6,7 +6,7 @@
 //
 // To add a new built-in tool:
 //   1. Copy lib/tools/template.ts to lib/tools/<name>.ts and implement it.
-//   2. Call `registerTools("<Category>", [yourTool, ...])` at the bottom.
+//   2. Call `registerTools("<Category>", "<read|write|execute>", [yourTool, ...])` at the bottom.
 //   3. Add `import "./<name>";` to lib/tools/builtins.ts.
 //
 // That's it — no central array to update, no parallel category map.
@@ -22,7 +22,9 @@ import {
   registeredTools,
   registeredNames,
   registeredCategory,
+  registeredCapability,
   registeredGroup,
+  type Capability,
   type ToolCategory,
   type ToolGroup,
 } from "./registry";
@@ -38,7 +40,12 @@ import { disabledCategories } from "@/lib/stores/builtin-tools";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
-export { registerTools, type ToolCategory, type ToolGroup } from "./registry";
+export {
+  registerTools,
+  type Capability,
+  type ToolCategory,
+  type ToolGroup,
+} from "./registry";
 
 const ALL_BUILTINS: StructuredToolInterface[] = registeredTools();
 export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = registeredNames();
@@ -49,16 +56,37 @@ function loadExternal() {
   return loadExternalTools(BUILTIN_TOOL_NAMES);
 }
 
-export function getToolCategory(name: string, source: "builtin" | "mcp"): ToolCategory {
+export type ToolSource = "builtin" | "external" | "mcp";
+
+// Resolve a tool's origin from its name. Used to label rows in the tools
+// API and to route metadata lookups. Returns "mcp" for any name that is
+// neither a registered built-in nor an external (JARELA_TOOLS_DIR) tool —
+// matches today's behavior where MCP tools are everything else.
+export function getToolSource(name: string): ToolSource {
+  if (BUILTIN_TOOL_NAMES.has(name)) return "builtin";
+  if (loadExternal().tools.some((t) => t.name === name)) return "external";
+  return "mcp";
+}
+
+// Look up a tool's safety class. Built-in tools have a declared capability;
+// external (JARELA_TOOLS_DIR) and MCP tools default to "execute" — the
+// conservative choice until manifest-level overrides land (ADR-0038).
+// Source is derived internally so callers can't mis-tag external tools as
+// MCP (or vice versa).
+export function getToolCapability(name: string): Capability {
+  return registeredCapability(name) ?? "execute";
+}
+
+export function getToolCategory(name: string): ToolCategory {
   const builtin = registeredCategory(name);
   if (builtin) return builtin;
   const ext = loadExternal().categories.get(name);
   if (ext) return ext;
-  return source === "mcp" ? "MCP" : "Config";
+  return getToolSource(name) === "mcp" ? "MCP" : "Config";
 }
 
-export function getToolGroup(name: string, source: "builtin" | "mcp"): ToolGroup {
-  const cat = getToolCategory(name, source);
+export function getToolGroup(name: string): ToolGroup {
+  const cat = getToolCategory(name);
   if (cat === "MCP") return null;
   return registeredGroup(name) ?? null;
 }
