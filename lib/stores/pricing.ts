@@ -47,6 +47,12 @@ type PricingSnapshot = {
 export interface PricingTables {
   byProvider: Map<string, ProviderRates>;
   byProviderModel: Map<string, ProviderRates>;
+  // Aggregator-agnostic: lookup by model_id alone. Some providers proxy
+  // upstream models (github-copilot, openrouter-style aggregators) and
+  // don't expose per-model pricing themselves, so we also index every
+  // model_rate by its model id. First-write wins; subsequent same-id
+  // entries only overwrite when they improve confidence or fill a null.
+  byModel: Map<string, ProviderRates>;
   generatedAt: string | null;
 }
 
@@ -75,6 +81,7 @@ export function getPricingTables(): PricingTables {
 
   const byProvider = new Map<string, ProviderRates>();
   const byProviderModel = new Map<string, ProviderRates>();
+  const byModel = new Map<string, ProviderRates>();
 
   for (const provider of EXPECTED_PROVIDERS) {
     byProvider.set(provider, {
@@ -122,7 +129,7 @@ export function getPricingTables(): PricingTables {
       for (const modelRate of source.model_rates ?? []) {
         const normalizedModel = modelRate.model_id?.trim().toLowerCase();
         if (!normalizedModel) continue;
-        byProviderModel.set(`${key}::${normalizedModel}`, {
+        const entry: ProviderRates = {
           inputPer1M: modelRate.input_per_1m_usd,
           outputPer1M: modelRate.output_per_1m_usd,
           source: source.resolved_url ?? source.pricing_url,
@@ -131,7 +138,15 @@ export function getPricingTables(): PricingTables {
           ok: source.ok !== false,
           status: source.status ?? null,
           error: source.error ?? null,
-        });
+        };
+        byProviderModel.set(`${key}::${normalizedModel}`, entry);
+        // Aggregator-agnostic index. Prefer entries with actual numbers and
+        // higher confidence so that, e.g., anthropic's authoritative rate
+        // for `claude-opus-4-7` beats a copilot proxy guess for the same id.
+        const existing = byModel.get(normalizedModel);
+        if (!existing || isBetterRate(entry, existing)) {
+          byModel.set(normalizedModel, entry);
+        }
       }
     }
   }
@@ -139,6 +154,7 @@ export function getPricingTables(): PricingTables {
   const tables: PricingTables = {
     byProvider,
     byProviderModel,
+    byModel,
     generatedAt: snapshot?.generated_at ?? null,
   };
   cached = { mtimeMs, tables };
@@ -165,29 +181,63 @@ export function modelRatesFor(
   provider: string | null,
   modelId: string | null,
 ): ProviderRates {
-  if (!provider || !modelId) return providerRatesFor(tables, provider);
-  const providerKey = normalizeProvider(provider);
+  if (!modelId) return providerRatesFor(tables, provider);
   const modelKey = modelId.trim().toLowerCase();
-  if (!providerKey || !modelKey) return providerRatesFor(tables, provider);
+  if (!modelKey) return providerRatesFor(tables, provider);
 
-  const candidates = modelAliasCandidates(providerKey, modelKey);
-  for (const candidate of candidates) {
-    const exact = tables.byProviderModel.get(`${providerKey}::${candidate}`);
-    if (exact) return exact;
-  }
-
-  if (providerKey === "github-copilot") {
-    const upstream = inferProviderFromModelId(modelKey);
-    if (upstream) {
-      const upstreamCandidates = modelAliasCandidates(upstream, modelKey);
-      for (const candidate of upstreamCandidates) {
-        const viaUpstreamModel = tables.byProviderModel.get(`${upstream}::${candidate}`);
-        if (viaUpstreamModel) return viaUpstreamModel;
+  // 1. Prefer (provider, model_id) when both are known — authoritative.
+  if (provider) {
+    const providerKey = normalizeProvider(provider);
+    if (providerKey) {
+      const candidates = modelAliasCandidates(providerKey, modelKey);
+      for (const candidate of candidates) {
+        const exact = tables.byProviderModel.get(`${providerKey}::${candidate}`);
+        if (exact) return exact;
       }
-      return providerRatesFor(tables, upstream);
+
+      // github-copilot (and similar aggregators) re-expose upstream models
+      // without their own pricing entry. Resolve via the inferred upstream
+      // vendor before falling back to plain model lookup.
+      if (providerKey === "github-copilot") {
+        const upstream = inferProviderFromModelId(modelKey);
+        if (upstream) {
+          const upstreamCandidates = modelAliasCandidates(upstream, modelKey);
+          for (const candidate of upstreamCandidates) {
+            const viaUpstreamModel = tables.byProviderModel.get(`${upstream}::${candidate}`);
+            if (viaUpstreamModel) return viaUpstreamModel;
+          }
+          // Upstream had no per-model rate either — try its provider-level
+          // rate before falling through to the model-only index.
+          const upstreamProviderRate = tables.byProvider.get(upstream);
+          if (upstreamProviderRate && upstreamProviderRate.ok) return upstreamProviderRate;
+        }
+      }
     }
   }
-  return providerRatesFor(tables, providerKey);
+
+  // 2. Aggregator fallback: lookup by model_id alone. Covers the case where
+  //    the user-configured provider doesn't publish per-model pricing but the
+  //    same id is rated by its upstream vendor in the snapshot.
+  for (const candidate of modelAliasCandidates(provider ? (normalizeProvider(provider) ?? "") : "", modelKey)) {
+    const viaModel = tables.byModel.get(candidate);
+    if (viaModel) return viaModel;
+  }
+  const directModel = tables.byModel.get(modelKey);
+  if (directModel) return directModel;
+
+  // 3. Provider-level rate (or "no provider assigned" error).
+  return providerRatesFor(tables, provider);
+}
+
+// Tie-breaker for the byModel index when multiple sources rate the same id.
+// Prefer entries that actually have numbers and the higher confidence band.
+function isBetterRate(next: ProviderRates, prev: ProviderRates): boolean {
+  const nextHas = next.inputPer1M != null || next.outputPer1M != null;
+  const prevHas = prev.inputPer1M != null || prev.outputPer1M != null;
+  if (nextHas && !prevHas) return true;
+  if (!nextHas && prevHas) return false;
+  const rank = { high: 2, medium: 1, low: 0 } as const;
+  return rank[next.confidence] > rank[prev.confidence];
 }
 
 export function normalizeProvider(id: string): string | null {
