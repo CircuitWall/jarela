@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Copy, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -408,6 +408,110 @@ function UserAvatar({ profile }: { profile?: UserProfile | null }) {
 // lines at the top of every bubble. Format is fixed by dispatcher; if either
 // side changes, update both.
 const parseBridgeContext = parseBridgePrompt;
+
+const SILENT_TRIGGER_RE = /\n+\[SILENT_TRIGGER\][^\n]*(?:\n(?!\n).*)*$/;
+
+interface ScheduledTaskCardData {
+  kind: "scheduled_task";
+  prompt: string;
+  silent: boolean;
+}
+
+interface WatcherCardData {
+  kind: "watcher";
+  label: string;
+  tool: string;
+  args: string;
+  diff: string;
+  directive: string;
+  silent: boolean;
+}
+
+type TriggerCardData = ScheduledTaskCardData | WatcherCardData;
+
+// Strip the `[SILENT_TRIGGER] …` envelope that runTriggerAgent appends
+// in silent mode so the card can render the user's original prompt and
+// surface a separate "Silent" pill instead of leaking framework prose.
+function stripSilentEnvelope(text: string): { text: string; silent: boolean } {
+  const m = SILENT_TRIGGER_RE.exec(text);
+  if (!m) return { text, silent: false };
+  return { text: text.slice(0, m.index).trimEnd(), silent: true };
+}
+
+function parseTriggerMessage(category: string | null | undefined, raw: string): TriggerCardData | null {
+  if (category === "scheduled_task") {
+    const { text, silent } = stripSilentEnvelope(raw);
+    return { kind: "scheduled_task", prompt: text, silent };
+  }
+  if (category === "watcher") {
+    const { text, silent } = stripSilentEnvelope(raw);
+    const headerRe = /^Watcher\s+"([^"]*)"\s+detected a change\.\s*\n+Tool:\s*([^\n]+)\s*\nArgs:\s*([\s\S]*?)\n+---\s*Diff[^\n]*---\s*\n([\s\S]*?)\n\n([\s\S]*)$/;
+    const m = headerRe.exec(text);
+    if (!m) return null;
+    return {
+      kind: "watcher",
+      label: m[1],
+      tool: m[2].trim(),
+      args: m[3].trim(),
+      diff: m[4].trim(),
+      directive: m[5].trim(),
+      silent,
+    };
+  }
+  return null;
+}
+
+// Compact header card for trigger-originated user messages (scheduled
+// tasks + watchers, ADR-0027/ADR-0032). Surfaces the trigger type with
+// an icon + label so the operator can tell at a glance that the prompt
+// came from automation and not from them. Watchers additionally expose
+// the diff context in a collapsed section to keep large diffs out of
+// the main bubble height.
+function TriggerMessageCard({ data }: { data: TriggerCardData }) {
+  const [diffOpen, setDiffOpen] = useState(false);
+  const Icon = data.kind === "scheduled_task" ? Clock : Eye;
+  const label = data.kind === "scheduled_task" ? "Scheduled task" : `Watcher: ${data.label || "(unnamed)"}`;
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="flex items-center gap-1.5 text-[11px] text-white/85 min-w-0">
+        <Icon size={11} className="shrink-0" />
+        <span className="font-medium truncate">{label}</span>
+        {data.kind === "watcher" && (
+          <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
+            {data.tool}
+          </span>
+        )}
+        {data.silent && (
+          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0" title="Silent trigger: reply only if material">
+            <EyeOff size={9} />
+            silent
+          </span>
+        )}
+      </div>
+      {data.kind === "watcher" && (
+        <button
+          type="button"
+          onClick={() => setDiffOpen((v) => !v)}
+          className="flex items-center gap-1 text-left text-[11px] text-white/75 hover:text-white/95"
+          aria-expanded={diffOpen}
+          title={diffOpen ? "Hide diff" : "Show diff"}
+        >
+          <ChevronRight size={11} className={`shrink-0 transition-transform ${diffOpen ? "rotate-90" : ""}`} />
+          <span>Change context</span>
+        </button>
+      )}
+      {data.kind === "watcher" && diffOpen && (
+        <div className="ml-4 flex flex-col gap-1">
+          <pre className="m-0 px-2 py-1.5 rounded bg-black/25 text-[11px] leading-snug whitespace-pre-wrap break-words text-white/90 max-h-72 overflow-auto">{data.args}</pre>
+          <pre className="m-0 px-2 py-1.5 rounded bg-black/25 text-[11px] leading-snug whitespace-pre-wrap break-words text-white/90 max-h-96 overflow-auto">{data.diff}</pre>
+        </div>
+      )}
+      <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
+        {data.kind === "scheduled_task" ? data.prompt : data.directive}
+      </p>
+    </div>
+  );
+}
 
 // Compact header card for inbound bridge messages. Shows sender + chat
 // context as a single line of metadata above the actual message text, so a
@@ -1099,6 +1203,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
           {typeof parsed === "string" ? (
             isUser ? (
               (() => {
+                const category = "category" in message ? message.category : null;
+                const trigger = parseTriggerMessage(category, parsed);
+                if (trigger) return <TriggerMessageCard data={trigger} />;
                 const bridge = parseBridgeContext(parsed);
                 if (bridge) return <BridgeMessageCard ctx={bridge} />;
                 const ctx = parseCapturedContext(parsed);
