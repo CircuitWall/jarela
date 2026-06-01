@@ -12,6 +12,13 @@ const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
   created_at: string; updated_at: string; message_count: number;
+  // ADR-0042 — explicit context pin + cached warm summary. NULL on threads
+  // that haven't had the boundary moved away from the agent default. The
+  // summary is fresh only when warm_summary_before === hot_since.
+  hot_since?: string | null;
+  warm_summary?: string | null;
+  warm_summary_before?: string | null;
+  warm_summary_computed_at?: string | null;
 }
 export interface MessageRow {
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
@@ -181,4 +188,29 @@ export function touchThread(thread_id: string, firstMsg?: string): void {
   getDb()
     .prepare("UPDATE threads SET updated_at=?, title=COALESCE(title,?) WHERE thread_id=?")
     .run(t, firstMsg ? firstMsg.slice(0, 80) : null, thread_id);
+}
+
+// ADR-0042. Move the user's explicit boundary between hot and warm context.
+// Pass `null` to clear the pin and let the agent's default window apply
+// again. Persisting the pin here keeps it stable across reloads and devices.
+export function setThreadContextPin(thread_id: string, hot_since: string | null): void {
+  getDb()
+    .prepare("UPDATE threads SET hot_since=? WHERE thread_id=?")
+    .run(hot_since, thread_id);
+}
+
+// Cache the latest warm-tier summary alongside the boundary it covers. The
+// chat UI considers the summary fresh only when `warm_summary_before` matches
+// the current `hot_since`; any boundary change triggers a re-summarise on the
+// next run rather than a synchronous LLM call here.
+export function setThreadWarmSummary(
+  thread_id: string,
+  summary: string,
+  before: string | null,
+): void {
+  getDb()
+    .prepare(
+      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=? WHERE thread_id=?",
+    )
+    .run(summary, before, now(), thread_id);
 }

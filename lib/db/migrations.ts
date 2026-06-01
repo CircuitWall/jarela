@@ -281,6 +281,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureWatchersReactionKindColumns(db);
   ensureScheduledTasksReactionKindColumns(db);
   ensureMessageUsageTable(db);
+  ensureThreadContextPinColumns(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
 }
@@ -629,6 +630,25 @@ function ensureTaskAssignmentColumns(db: DatabaseSync): void {
   if (!names.has("deny_tools")) {
     db.exec("ALTER TABLE task_assignments ADD COLUMN deny_tools TEXT NOT NULL DEFAULT '[]'");
   }
+}
+
+// ADR-0042 — explicit per-thread context pin + persisted warm summary.
+// hot_since: ISO timestamp of the boundary the user has chosen to include in
+//   the agent's hot context. NULL = no explicit pin → buildHistoryWindow falls
+//   back to the agent's history_window_hours default.
+// warm_summary: latest LLM-summarised recap of messages older than
+//   warm_summary_before. The chat UI renders this as an inline card above the
+//   boundary divider so the user can see what the agent had to compress.
+// warm_summary_before: the boundary the cached summary covers. The summary is
+//   considered fresh only when warm_summary_before === hot_since; otherwise
+//   the next run will re-summarise and overwrite both.
+function ensureThreadContextPinColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(threads)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("hot_since"))               db.exec("ALTER TABLE threads ADD COLUMN hot_since TEXT");
+  if (!names.has("warm_summary"))            db.exec("ALTER TABLE threads ADD COLUMN warm_summary TEXT");
+  if (!names.has("warm_summary_before"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before TEXT");
+  if (!names.has("warm_summary_computed_at")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_computed_at TEXT");
 }
 
 function seedAgentConfigs(db: DatabaseSync): void {
