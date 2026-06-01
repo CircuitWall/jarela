@@ -390,7 +390,11 @@ export function DashboardPanel() {
 
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
             <h3 className="text-sm font-medium text-[var(--text-primary)] mb-3">Token usage over time</h3>
-            <InteractiveTokenChart series={series} />
+            <InteractiveTokenChart
+              series={series}
+              selectedDay={selectedDay}
+              onSelectDay={(day) => setSelectedDay((prev) => (prev === day ? null : day))}
+            />
           </section>
 
           <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
@@ -983,7 +987,15 @@ function BreakdownPiePanel({
   );
 }
 
-function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] }) {
+function InteractiveTokenChart({
+  series,
+  selectedDay,
+  onSelectDay,
+}: {
+  series: DashboardMetrics["series"];
+  selectedDay?: string | null;
+  onSelectDay?: (day: string) => void;
+}) {
   const [hovered, setHovered] = useState<number | null>(null);
   const [barsReady, setBarsReady] = useState(false);
   const maxTotal = series.reduce((max, p) => Math.max(max, p.input_tokens_est + p.output_tokens_est), 0);
@@ -1022,15 +1034,33 @@ function InteractiveTokenChart({ series }: { series: DashboardMetrics["series"] 
             const inputHeight = hasData ? Math.round((point.input_tokens_est / total) * totalHeight) : 0;
             const outputHeight = hasData ? Math.max(0, totalHeight - inputHeight) : 0;
             const isActive = idx === hovered;
+            const isSelected = selectedDay === point.day;
+            const clickable = !!onSelectDay && hasData;
             return (
               <div
                 key={point.day}
                 onMouseEnter={() => setHovered(idx)}
                 onMouseLeave={() => setHovered(null)}
-                className="flex-1 min-w-0 h-full flex flex-col items-center justify-end"
-                aria-label={`${point.day} tokens (informational)`}
+                onClick={clickable ? () => onSelectDay!(point.day) : undefined}
+                role={clickable ? "button" : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onKeyDown={clickable ? (e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    onSelectDay!(point.day);
+                  }
+                } : undefined}
+                className={`flex-1 min-w-0 h-full flex flex-col items-center justify-end ${clickable ? "cursor-pointer" : ""}`}
+                aria-label={`${point.day} tokens${clickable ? " — click to filter" : " (informational)"}`}
+                aria-pressed={clickable ? isSelected : undefined}
               >
-                <div className={`w-full rounded-t overflow-hidden border transition-colors ${isActive ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]" : "border-transparent"}`}>
+                <div className={`w-full rounded-t overflow-hidden border transition-colors ${
+                  isSelected
+                    ? "border-[var(--accent)]/70 shadow-[0_0_0_1px_var(--accent)]"
+                    : isActive
+                    ? "border-cyan-300/60 shadow-[0_0_0_1px_rgba(34,211,238,0.35)]"
+                    : "border-transparent"
+                }`}>
                   {hasData ? (
                     <>
                       <div

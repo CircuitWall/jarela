@@ -200,6 +200,23 @@ export class JarelaChatModel extends BaseChatModel {
         });
       } else if (event.type === "stop") {
         stopReason = event.reason;
+      } else if (event.type === "usage") {
+        // ADR-0041: surface real provider token counts on the final
+        // AIMessageChunk via LangChain's standard `usage_metadata` field so
+        // the agent loop can snapshot them into message_usage.
+        emittedAny = true;
+        yield new ChatGenerationChunk({
+          message: new AIMessageChunk({
+            content: "",
+            usage_metadata: {
+              input_tokens: event.input_tokens ?? 0,
+              output_tokens: event.output_tokens ?? 0,
+              total_tokens: event.total_tokens
+                ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0),
+            },
+          }),
+          text: "",
+        });
       }
     }
     // Provider ended the stream without emitting any text, thinking, or tool
