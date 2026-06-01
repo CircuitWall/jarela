@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-06-02
+
+### Added
+
+- **Stacked per-tier token + cost breakdown in the dashboard chart**
+  ([#119](https://github.com/CircuitWall/jarela/pull/119)). The unified
+  chart now stacks `system / history / live / output` segments and
+  surfaces a data-quality chip so operators can spot tiers that fell
+  back to estimation.
+- **`JARELA_TOOL_SAFETY` tiers for exec + file ops**
+  ([#121](https://github.com/CircuitWall/jarela/pull/121)). Adds a
+  capability-flagged safety ladder so risky tools (shell exec, file
+  writes) can be gated independently per deployment.
+- **Idle-progress watchdog in the run-registry**
+  ([#123](https://github.com/CircuitWall/jarela/pull/123)). Force-
+  finishes runs that stop emitting progress for `JARELA_RUN_IDLE_MS`,
+  complementing the existing wall-clock watchdog.
+- **System prompt now nudges the agent about indexed documents**
+  ([#125](https://github.com/CircuitWall/jarela/pull/125)). When the
+  workspace has documents indexed, the prompt mentions the
+  `documents_search` tool so agents recall RAG before answering from
+  parametric memory.
+- **Trigger-originated chat messages now render as metadata cards**
+  ([#127](https://github.com/CircuitWall/jarela/pull/127)). Scheduled
+  tasks (ADR-0032) and watchers (ADR-0027) get a Clock / Eye header,
+  a tool-name pill, a `silent` pill when the firing was silent, and a
+  collapsible "Change context" section for watcher diffs. Falls back to
+  plain rendering if the prompt text doesn't parse cleanly.
+
+### Fixed
+
+- **Collapse tool-permission categories by default in the agent editor**
+  ([#118](https://github.com/CircuitWall/jarela/pull/118)) so the
+  panel doesn't open with a wall of toggles.
+- **Clear stuck "reconnecting…" state when reattach returns 404**
+  ([#120](https://github.com/CircuitWall/jarela/pull/120)).
+- **Guarantee `finishRun` + add watchdog for leaked runs**
+  ([#122](https://github.com/CircuitWall/jarela/pull/122)) so
+  abandoned runs can't keep the registry marked `running` forever.
+- **Harden SSE run subscription against hung streaming gate**
+  ([#124](https://github.com/CircuitWall/jarela/pull/124)).
+- **Stabilise two pre-existing e2e flakes**
+  ([#126](https://github.com/CircuitWall/jarela/pull/126)). The
+  context-bar legend test now scopes its locator by `[data-message-id]`
+  so parallel sibling tests can't cross-pollute, and the profile
+  test uses `page.goto("/?tab=profile")` instead of `page.reload()`
+  to deflake mobile-safari.
+
 ## [0.9.3] - 2026-06-01
 
 ### Changed
