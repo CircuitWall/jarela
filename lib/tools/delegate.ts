@@ -73,17 +73,13 @@ export const delegateToAgentTool = tool(
     const startedAt = Date.now();
 
     try {
-      const prepared = await prepareThreadRun(
-        childThread.thread_id,
-        task,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        "delegation",
-        ctx.depth + 1,
-        [...ctx.ancestors, ctx.parentAgentId],
-      );
+      const prepared = await prepareThreadRun({
+        thread_id: childThread.thread_id,
+        message: task,
+        user_category: "delegation",
+        _delegation_depth: ctx.depth + 1,
+        _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
+      });
       const collected = await collectStream(prepared.stream);
       const elapsed_ms = Date.now() - startedAt;
 

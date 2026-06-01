@@ -41,15 +41,11 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
     : firing.prompt;
 
   try {
-    const prepared = await prepareThreadRun(
-      thread.thread_id,
-      effectivePrompt,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      category,
-    );
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: effectivePrompt,
+      user_category: category,
+    });
     const collected = await collectStream(prepared.stream);
     const replyText = collected.assistantContent.trim();
     const isNoReply = firing.silent === true && /^\s*NO[_ ]?REPLY\b/i.test(replyText);
