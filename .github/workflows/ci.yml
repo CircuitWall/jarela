@@ -118,10 +118,15 @@ jobs:
         # Downstream jobs (integration, e2e) reuse this instead of re-running
         # `next build`. `npm start` reads from .next/standalone/, which
         # postbuild has already hydrated with public/ + .next/static.
+        # include-hidden-files is required: the bundle has its own nested
+        # .next/ (BUILD_ID, server/, static/) that v4 would otherwise strip
+        # as a hidden path, leaving the standalone server unable to find the
+        # production build at runtime.
         uses: actions/upload-artifact@v4
         with:
           name: next-standalone
           path: .next/standalone
+          include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
 
