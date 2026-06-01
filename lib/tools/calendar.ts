@@ -193,12 +193,19 @@ export const calendarGetEventTool = tool(
 
 export const calendarCreateEventTool = tool(
   async ({
-    calendar_id, summary, start_iso, end_iso, description, location,
+    calendar_id, summary, subject, start_iso, end_iso, description, location,
     attendees, time_zone, add_meet_link,
   }) => {
     const auth = resolveGoogleAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
     const cal = encodeURIComponent(calendar_id ?? "primary");
+
+    // `subject` is accepted as an alias for `summary` so agents trained on
+    // Outlook vocabulary don't fail the schema on first try.
+    const eventSummary = summary ?? subject;
+    if (!eventSummary) {
+      return JSON.stringify({ error: "summary (or subject) is required" });
+    }
 
     interface EventBody {
       summary: string;
@@ -212,7 +219,7 @@ export const calendarCreateEventTool = tool(
       };
     }
     const body: EventBody = {
-      summary,
+      summary: eventSummary,
       start: { dateTime: start_iso, ...(time_zone ? { timeZone: time_zone } : {}) },
       end: { dateTime: end_iso, ...(time_zone ? { timeZone: time_zone } : {}) },
     };
@@ -253,7 +260,8 @@ export const calendarCreateEventTool = tool(
       "`add_meet_link: true` to provision a Google Meet URL on the event.",
     schema: z.object({
       calendar_id: z.string().optional().describe("Calendar id (default: 'primary')"),
-      summary: z.string().min(1).describe("Event title shown on the calendar"),
+      summary: z.string().min(1).optional().describe("Event title shown on the calendar (alias: subject)"),
+      subject: z.string().min(1).optional().describe("Alias for summary (Outlook vocabulary)"),
       start_iso: z.string().describe("Start datetime, RFC3339"),
       end_iso: z.string().describe("End datetime, RFC3339 (must be after start)"),
       description: z.string().optional().describe("Long-form event body (markdown not rendered)"),
@@ -267,7 +275,7 @@ export const calendarCreateEventTool = tool(
 
 export const calendarUpdateEventTool = tool(
   async ({
-    calendar_id, event_id, summary, start_iso, end_iso, description, location,
+    calendar_id, event_id, summary, subject, start_iso, end_iso, description, location,
     attendees, time_zone,
   }) => {
     const auth = resolveGoogleAuth();
@@ -276,7 +284,8 @@ export const calendarUpdateEventTool = tool(
     const eid = encodeURIComponent(event_id);
 
     const patch: Record<string, unknown> = {};
-    if (summary !== undefined) patch.summary = summary;
+    const eventSummary = summary ?? subject;
+    if (eventSummary !== undefined) patch.summary = eventSummary;
     if (description !== undefined) patch.description = description;
     if (location !== undefined) patch.location = location;
     if (start_iso !== undefined) {
@@ -310,7 +319,8 @@ export const calendarUpdateEventTool = tool(
     schema: z.object({
       calendar_id: z.string().optional().describe("Calendar id (default: 'primary')"),
       event_id: z.string().describe("Event id"),
-      summary: z.string().optional().describe("New event title"),
+      summary: z.string().optional().describe("New event title (alias: subject)"),
+      subject: z.string().optional().describe("Alias for summary (Outlook vocabulary)"),
       start_iso: z.string().optional().describe("New start datetime, RFC3339"),
       end_iso: z.string().optional().describe("New end datetime, RFC3339"),
       description: z.string().optional().describe("New event body"),

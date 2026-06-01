@@ -185,11 +185,18 @@ export const outlookCalendarGetEventTool = tool(
 
 export const outlookCalendarCreateEventTool = tool(
   async ({
-    calendar_id, subject, start_iso, end_iso, description, location,
+    calendar_id, subject, summary, start_iso, end_iso, description, location,
     attendees, time_zone, add_teams_link,
   }) => {
     const auth = resolveMicrosoftAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
+
+    // `summary` is accepted as an alias for `subject` so agents trained on
+    // Google Calendar's vocabulary don't fail the schema on first try.
+    const eventSubject = subject ?? summary;
+    if (!eventSubject) {
+      return JSON.stringify({ error: "subject (or summary) is required" });
+    }
 
     interface EventBody {
       subject: string;
@@ -206,7 +213,7 @@ export const outlookCalendarCreateEventTool = tool(
     // caller omits time_zone (matches the list endpoint's behavior).
     const tz = time_zone ?? "UTC";
     const body: EventBody = {
-      subject,
+      subject: eventSubject,
       start: { dateTime: start_iso, timeZone: tz },
       end: { dateTime: end_iso, timeZone: tz },
     };
@@ -246,7 +253,8 @@ export const outlookCalendarCreateEventTool = tool(
       "Teams meetings via Graph).",
     schema: z.object({
       calendar_id: z.string().optional().describe("Calendar id (default: user's default calendar)"),
-      subject: z.string().min(1).describe("Event title shown on the calendar"),
+      subject: z.string().min(1).optional().describe("Event title shown on the calendar (alias: summary)"),
+      summary: z.string().min(1).optional().describe("Alias for subject (Google Calendar vocabulary)"),
       start_iso: z.string().describe("Start datetime, RFC3339"),
       end_iso: z.string().describe("End datetime, RFC3339 (must be after start)"),
       description: z.string().optional().describe("Long-form event body (plain text)"),
@@ -260,7 +268,7 @@ export const outlookCalendarCreateEventTool = tool(
 
 export const outlookCalendarUpdateEventTool = tool(
   async ({
-    event_id, subject, start_iso, end_iso, description, location,
+    event_id, subject, summary, start_iso, end_iso, description, location,
     attendees, time_zone,
   }) => {
     const auth = resolveMicrosoftAuth();
@@ -268,7 +276,8 @@ export const outlookCalendarUpdateEventTool = tool(
 
     const tz = time_zone ?? "UTC";
     const patch: Record<string, unknown> = {};
-    if (subject !== undefined) patch.subject = subject;
+    const eventSubject = subject ?? summary;
+    if (eventSubject !== undefined) patch.subject = eventSubject;
     if (description !== undefined) patch.body = { contentType: "text", content: description };
     if (location !== undefined) patch.location = { displayName: location };
     if (start_iso !== undefined) patch.start = { dateTime: start_iso, timeZone: tz };
@@ -303,7 +312,8 @@ export const outlookCalendarUpdateEventTool = tool(
       "list, so include everyone who should remain.",
     schema: z.object({
       event_id: z.string().describe("Event id"),
-      subject: z.string().optional().describe("New event title"),
+      subject: z.string().optional().describe("New event title (alias: summary)"),
+      summary: z.string().optional().describe("Alias for subject (Google Calendar vocabulary)"),
       start_iso: z.string().optional().describe("New start datetime, RFC3339"),
       end_iso: z.string().optional().describe("New end datetime, RFC3339"),
       description: z.string().optional().describe("New event body (plain text)"),
