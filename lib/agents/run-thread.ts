@@ -14,6 +14,8 @@ import {
   resolveExperienceMode,
   type ThreadRunRequest,
 } from "@/lib/agents/prepare";
+import { recordMessageUsage } from "@/lib/stores/message-usage";
+import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/pricing";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -285,12 +287,21 @@ async function* stallRetryStream(
   for await (const chunk of retry.stream) yield chunk;
 }
 
+export interface AssistantUsageSnapshot {
+  input_tokens: number;
+  output_tokens: number;
+  provider: string;
+  model_id: string;
+  model_config_name: string | null;
+}
+
 export function persistAssistantMessage(
   thread_id: string,
   content: string,
   usedTools?: readonly string[],
   toolEvents?: readonly PersistedToolEvent[],
   category: string | null = null,
+  usage?: AssistantUsageSnapshot | null,
 ): void {
   const trimmed = content.trim();
   // Append a small, persistent footer listing which tools actually ran this
@@ -332,9 +343,40 @@ export function persistAssistantMessage(
   // has already heard.
   const persisted = stripAutoplayHints(final);
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
-    addMessage(thread_id, "assistant", persisted, sanitizedEvents, category);
+    const row = addMessage(thread_id, "assistant", persisted, sanitizedEvents, category);
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
+    }
+    // ADR-0041: snapshot real provider token usage + the pricing in effect
+    // right now. Skip when we don't have authoritative token counts —
+    // recording zero would poison the dashboard's snapshot path and force a
+    // fallback that doesn't exist.
+    if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
+      try {
+        const thread = getThread(thread_id);
+        const agentId = thread?.agent_id ?? "";
+        const agent = agentId ? getAgentConfig(agentId) : null;
+        const agentName = agent?.name ?? agentId;
+        const tables = getPricingTables();
+        const rates = modelRatesFor(tables, usage.provider, usage.model_id);
+        const cost = estimateCostUsd(usage.input_tokens, usage.output_tokens, rates);
+        recordMessageUsage({
+          message_id: row.msg_id,
+          thread_id,
+          agent_id: agentId,
+          agent_name: agentName,
+          provider: usage.provider,
+          model_id: usage.model_id,
+          model_config_name: usage.model_config_name,
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
+          input_rate_usd_per_mtok: rates.inputPer1M,
+          output_rate_usd_per_mtok: rates.outputPer1M,
+          cost_usd: cost,
+        });
+      } catch (err) {
+        console.error("[message_usage] snapshot failed", err);
+      }
     }
   }
 }
