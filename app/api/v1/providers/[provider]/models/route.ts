@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/providers";
 import { listModelConfigs, getModelParams } from "@/lib/stores/model-config";
 import type { ProviderCatalogModel, ProviderParams } from "@/lib/providers/types";
+import {
+  getKnownContextLength,
+  getKnownMaxOutputTokens,
+} from "@/lib/providers/known-context-windows";
 
 export interface CatalogModel {
   id: string;
@@ -101,8 +105,8 @@ async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
     .filter((m) => chatPrefixes.some((p) => m.id.startsWith(p)))
     .map((m): CatalogModel => ({
       id: m.id,
-      context_length: null,
-      max_output_tokens: null,
+      context_length: getKnownContextLength("openai", m.id),
+      max_output_tokens: getKnownMaxOutputTokens("openai", m.id),
       hosted_on: "azure/openai",
       capabilities: {
         vision:    m.id.includes("vision") || m.id.startsWith("gpt-4"),
@@ -185,8 +189,8 @@ async function fetchCopilotChatCatalog(sessionToken: string): Promise<CatalogMod
 
   return data.data.map((m): CatalogModel => ({
     id: m.id,
-    context_length: null,
-    max_output_tokens: null,
+    context_length: getKnownContextLength("github-copilot", m.id),
+    max_output_tokens: getKnownMaxOutputTokens("github-copilot", m.id),
     hosted_on: "github",
     capabilities: {
       vision: m.capabilities?.supports?.vision ?? false,
@@ -228,8 +232,8 @@ function githubCopilotKnownModels(): CatalogModel[] {
   // stored, exchange failed, etc.). Keep in sync with Copilot's current line-up.
   const v = (id: string, vision = false, tools = true): CatalogModel => ({
     id,
-    context_length: null,
-    max_output_tokens: null,
+    context_length: getKnownContextLength("github-copilot", id),
+    max_output_tokens: getKnownMaxOutputTokens("github-copilot", id),
     hosted_on: "github",
     capabilities: { vision, tools, streaming: true, json_mode: false, web_search: false, audio: false, files: vision },
   });
