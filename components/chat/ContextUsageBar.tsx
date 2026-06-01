@@ -86,23 +86,34 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
         onClick={() => setShowDetails((v) => !v)}
         className="block w-full text-left"
         aria-label={`Context usage: ${fmtTokens(hotUsed + warmUsed + factsUsed + overheadUsed)} of ${fmtTokens(cap)} tokens`}
-        title="Click for per-tier breakdown"
+        title={[
+          `Context window: ${cap.toLocaleString()} tokens (the model's full capacity)`,
+          `This turn's prompt used ${(hotUsed + warmUsed + factsUsed + overheadUsed).toLocaleString()} tokens`,
+          `Reply generated: ${usage.output_tokens.toLocaleString()} tokens`,
+          "",
+          "Each coloured slot's width = budget for that tier; filled portion = actually used.",
+          "Red = tier overflowed its budget. Grey tail = headroom reserved for the reply.",
+          "Click to expand numbers.",
+        ].join("\n")}
       >
         <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-surface-3 border border-border">
-          <Slot widthPct={toPct(hotBudget)}     usedPct={hotBudget   > 0 ? (hotUsed   / hotBudget)   * 100 : 0} fill="bg-accent/70"    empty="bg-accent/15"    overflow={hotUsed   > hotBudget} />
-          <Slot widthPct={toPct(warmBudget)}    usedPct={warmBudget  > 0 ? (warmUsed  / warmBudget)  * 100 : 0} fill="bg-amber-500/70" empty="bg-amber-500/15" overflow={warmUsed  > warmBudget} />
-          <Slot widthPct={toPct(factsBudget)}   usedPct={factsBudget > 0 ? (factsUsed / factsBudget) * 100 : 0} fill="bg-teal-500/70"  empty="bg-teal-500/15"  overflow={factsUsed > factsBudget} />
-          <Slot widthPct={toPct(overheadBudget)} usedPct={100}                                                  fill="bg-fg-faint/60"  empty="bg-fg-faint/15"  overflow={false} />
-          {trailing > 0 && <div className="h-full bg-surface-3" style={{ width: `${toPct(trailing)}%` }} aria-hidden />}
+          <Slot widthPct={toPct(hotBudget)}     usedPct={hotBudget   > 0 ? (hotUsed   / hotBudget)   * 100 : 0} fill="bg-accent/70"    empty="bg-accent/15"    overflow={hotUsed   > hotBudget} title={`Hot — recent messages\n${hotUsed.toLocaleString()} / ${hotBudget.toLocaleString()} tokens used (${hotBudget > 0 ? Math.round((hotUsed/hotBudget)*100) : 0}%)`} />
+          <Slot widthPct={toPct(warmBudget)}    usedPct={warmBudget  > 0 ? (warmUsed  / warmBudget)  * 100 : 0} fill="bg-amber-500/70" empty="bg-amber-500/15" overflow={warmUsed  > warmBudget} title={`Warm — summarised older history\n${warmUsed.toLocaleString()} / ${warmBudget.toLocaleString()} tokens used (${warmBudget > 0 ? Math.round((warmUsed/warmBudget)*100) : 0}%)`} />
+          <Slot widthPct={toPct(factsBudget)}   usedPct={factsBudget > 0 ? (factsUsed / factsBudget) * 100 : 0} fill="bg-teal-500/70"  empty="bg-teal-500/15"  overflow={factsUsed > factsBudget} title={`Facts — retrieved memory + recall\n${factsUsed.toLocaleString()} / ${factsBudget.toLocaleString()} tokens used (${factsBudget > 0 ? Math.round((factsUsed/factsBudget)*100) : 0}%)`} />
+          <Slot widthPct={toPct(overheadBudget)} usedPct={100}                                                  fill="bg-fg-faint/60"  empty="bg-fg-faint/15"  overflow={false} title={`Overhead — system prompt + scaffolding\n${overheadUsed.toLocaleString()} tokens (no budget — measured after assembly)`} />
+          {trailing > 0 && <div className="h-full bg-surface-3" style={{ width: `${toPct(trailing)}%` }} aria-hidden title={`Reserved for reply: ${trailing.toLocaleString()} tokens (${Math.round((trailing/cap)*100)}% of window)`} />}
         </div>
       </button>
       {showDetails && (
         <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-fg-faint">
-          <Row label="Hot"      color="text-accent"    used={hotUsed}      budget={hotBudget} />
-          <Row label="Warm"     color="text-amber-500" used={warmUsed}     budget={warmBudget} />
-          <Row label="Facts"    color="text-teal-500"  used={factsUsed}    budget={factsBudget} />
-          <Row label="Overhead" color="text-fg-muted"  used={overheadUsed} budget={overheadUsed} />
-          <span className="col-span-2 mt-0.5 border-t border-border pt-0.5">
+          <Row label="Hot"      color="text-accent"    used={hotUsed}      budget={hotBudget}      hint="Recent messages kept verbatim" />
+          <Row label="Warm"     color="text-amber-500" used={warmUsed}     budget={warmBudget}     hint="Older history compressed into rolling summary" />
+          <Row label="Facts"    color="text-teal-500"  used={factsUsed}    budget={factsBudget}    hint="Retrieved long-term memory + recall snippets" />
+          <Row label="Overhead" color="text-fg-muted"  used={overheadUsed} budget={overheadUsed}   hint="System prompt + per-message scaffolding" />
+          <span
+            className="col-span-2 mt-0.5 border-t border-border pt-0.5"
+            title={`Output: tokens the model generated in its reply.\nWindow: total context capacity of this model.`}
+          >
             Output: {fmtTokens(usage.output_tokens)} · Window: {fmtTokens(cap)}
           </span>
         </div>
@@ -111,11 +122,11 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
   );
 }
 
-function Slot({ widthPct, usedPct, fill, empty, overflow }: { widthPct: number; usedPct: number; fill: string; empty: string; overflow: boolean }) {
+function Slot({ widthPct, usedPct, fill, empty, overflow, title }: { widthPct: number; usedPct: number; fill: string; empty: string; overflow: boolean; title?: string }) {
   if (widthPct <= 0) return null;
   const filledOfSlot = Math.min(100, Math.max(0, usedPct));
   return (
-    <div className={`relative h-full ${empty}`} style={{ width: `${widthPct}%` }}>
+    <div className={`relative h-full ${empty}`} style={{ width: `${widthPct}%` }} title={title}>
       <div
         className={`absolute inset-y-0 left-0 ${overflow ? "bg-rose-500/80" : fill}`}
         style={{ width: `${filledOfSlot}%` }}
@@ -124,10 +135,10 @@ function Slot({ widthPct, usedPct, fill, empty, overflow }: { widthPct: number; 
   );
 }
 
-function Row({ label, color, used, budget }: { label: string; color: string; used: number; budget: number }) {
+function Row({ label, color, used, budget, hint }: { label: string; color: string; used: number; budget: number; hint?: string }) {
   const pct = budget > 0 ? Math.min(999, Math.round((used / budget) * 100)) : 0;
   return (
-    <span>
+    <span title={hint}>
       <span className={color}>{label}</span> {fmtTokens(used)}
       <span className="text-fg-faint/70"> / {fmtTokens(budget)} ({pct}%)</span>
     </span>
