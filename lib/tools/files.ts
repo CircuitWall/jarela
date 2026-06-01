@@ -669,7 +669,7 @@ export const fileStatTool = tool(
   },
 );
 
-registerTools("Files", [
-  fileReadTool, fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool,
-  fileDeleteTool, fileListTool, fileMkdirTool, fileStatTool,
+registerTools("Files", "read", [fileReadTool, fileListTool, fileStatTool]);
+registerTools("Files", "write", [
+  fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool, fileDeleteTool, fileMkdirTool,
 ]);

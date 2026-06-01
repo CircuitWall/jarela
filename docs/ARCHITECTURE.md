@@ -108,7 +108,7 @@ flowchart LR
     A[API Route /api/v1/*] --> G0[Origin Guard<br/>lib/auth]
     G0 --> B[Agent Factory<br/>lib/agents]
     B --> C[Provider Adapter<br/>lib/providers]
-    B --> D[Tool Registry<br/>lib/tools]
+    B --> D[Tool Registry<br/>lib/tools<br/>category × capability]
     B --> E[MCP Client<br/>lib/mcp]
     C --> F[(LLM Provider)]
     C --> XP[External providers<br/>~/.jarela/providers/*.cjs<br/>hot-loaded]
@@ -224,6 +224,33 @@ the agent proposes `upsert_harness` to create or modify a custom preset, and
 `update_agent` (with `harness_id`) to point an agent at it. Built-in harnesses
 remain read-only and the global default pointer stays UI-only — both invariants
 enforced inside `applyAction`.
+
+### Tool registry — category × capability
+
+Every built-in tool registers with the [tool registry](../lib/tools/registry.ts)
+on two orthogonal axes ([ADR-0038](./adr/0038-tool-capability-axis.md)):
+
+* **`ToolCategory`** — topical group (`Memory`, `Files`, `Mail`, `Atlassian`,
+  …). Drives the Agent editor sidebar layout. Says nothing about safety.
+* **`Capability`** — safety class (`read` | `write` | `execute`).
+  * `read`: pure observation, no mutations anywhere (`memory_read`,
+    `web_fetch`, `jira_search`).
+  * `write`: mutates local Jarela-owned state — SQLite tables, the file
+    store, files in user-controlled directories (`memory_write`,
+    `file_write`, `schedule_task`, `documents_add_local_source`).
+  * `execute`: invokes external systems with side effects users see
+    outside Jarela, OR runs arbitrary code (`local_exec`,
+    `generate_image`, `delegate_to_agent`, `jira_create_issue`,
+    `gmail_create_draft`).
+
+Files with mixed capabilities (memory, files, schedule, atlassian, github,
+gmail, outlook, calendar) call `registerTools` once per capability bucket.
+External (`JARELA_TOOLS_DIR`) and MCP tools default to `execute` until a
+manifest field overrides it. Consumers — a planned per-capability approval
+gate, UI badges, the ADR-0037 validator's citation rules — switch on the
+three values exhaustively. The `capability-coverage.test.ts` runtime check
+asserts every registered tool has a capability so a new tool cannot land
+uncategorised.
 
 ### Output validator (anti-fabrication)
 

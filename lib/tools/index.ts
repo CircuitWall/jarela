@@ -6,7 +6,7 @@
 //
 // To add a new built-in tool:
 //   1. Copy lib/tools/template.ts to lib/tools/<name>.ts and implement it.
-//   2. Call `registerTools("<Category>", [yourTool, ...])` at the bottom.
+//   2. Call `registerTools("<Category>", "<read|write|execute>", [yourTool, ...])` at the bottom.
 //   3. Add `import "./<name>";` to lib/tools/builtins.ts.
 //
 // That's it — no central array to update, no parallel category map.
@@ -22,7 +22,9 @@ import {
   registeredTools,
   registeredNames,
   registeredCategory,
+  registeredCapability,
   registeredGroup,
+  type Capability,
   type ToolCategory,
   type ToolGroup,
 } from "./registry";
@@ -38,7 +40,23 @@ import { disabledCategories } from "@/lib/stores/builtin-tools";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
-export { registerTools, type ToolCategory, type ToolGroup } from "./registry";
+export {
+  registerTools,
+  type Capability,
+  type ToolCategory,
+  type ToolGroup,
+} from "./registry";
+
+// Look up a tool's safety class. Built-in tools have a declared capability;
+// external (JARELA_TOOLS_DIR) and MCP tools default to "execute" — the
+// conservative choice until manifest-level overrides land (ADR-0038).
+export function getToolCapability(name: string, source: "builtin" | "mcp"): Capability {
+  const builtin = registeredCapability(name);
+  if (builtin) return builtin;
+  if (source === "mcp") return "execute";
+  // External tool: same conservative default.
+  return "execute";
+}
 
 const ALL_BUILTINS: StructuredToolInterface[] = registeredTools();
 export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = registeredNames();

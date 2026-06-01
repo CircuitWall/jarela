@@ -217,9 +217,5 @@ function safeParse(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
 }
 
-registerTools("Schedule", [
-  scheduleWatcherTool,
-  listWatchersTool,
-  cancelWatcherTool,
-  listReactionScriptsTool,
-]);
+registerTools("Schedule", "read", [listWatchersTool, listReactionScriptsTool]);
+registerTools("Schedule", "write", [scheduleWatcherTool, cancelWatcherTool]);
