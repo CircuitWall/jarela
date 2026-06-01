@@ -96,10 +96,14 @@ describe("delegate_to_agent tool", () => {
       "child-thread", "child reply", ["web_search"], [], "delegation",
     );
     // Recursion args: depth 1, ancestors = [parent]
-    const call = prepareThreadRunMock.mock.calls[0];
-    expect(call[6]).toBe("delegation");
-    expect(call[7]).toBe(1);
-    expect(call[8]).toEqual(["parent"]);
+    const req = prepareThreadRunMock.mock.calls[0][0] as {
+      user_category?: string;
+      _delegation_depth?: number;
+      _delegation_ancestors?: readonly string[];
+    };
+    expect(req.user_category).toBe("delegation");
+    expect(req._delegation_depth).toBe(1);
+    expect(req._delegation_ancestors).toEqual(["parent"]);
   });
 
   it("refuses targets not in the delegate roster", async () => {

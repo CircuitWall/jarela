@@ -104,8 +104,8 @@ describe("handleInboundMessage silent observer mode", () => {
     await handleInboundMessage(adapter, msg);
 
     expect(prepareThreadRunMock).toHaveBeenCalled();
-    const promptArg = prepareThreadRunMock.mock.calls[0][1] as string;
-    expect(promptArg).toContain("BRIDGE_PROMPT");
+    const reqArg = prepareThreadRunMock.mock.calls[0][0] as { message: string };
+    expect(reqArg.message).toContain("BRIDGE_PROMPT");
     // Silent-mode framing now lives inside formatBridgePrompt (mocked
     // above) — assert the dispatcher forwards the silent flag to it.
     const fmtArg = formatBridgePromptMock.mock.calls[0][0] as { silent?: boolean };
