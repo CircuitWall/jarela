@@ -39,16 +39,24 @@ test("clicking the context-usage bar toggles the per-tier legend", async ({ page
   const marker = `pw-bar-toggle-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   await sendMockReply(page, marker);
 
-  const bar = page.getByRole("button", { name: /Context usage: .* of .* tokens/ }).last();
+  // Tests in this file share the DB, so `.last()` could resolve to a
+  // sibling test's bar. Anchor to the assistant bubble that contains
+  // THIS test's marker, then scope both the bar and its legend inside it.
+  const bubble = page
+    .locator("[data-message-id]")
+    .filter({ hasText: marker })
+    .last();
+  const bar = bubble.getByRole("button", { name: /Context usage: .* of .* tokens/ });
   await expect(bar).toBeVisible({ timeout: 15_000 });
 
-  // Legend rows aren't in the DOM until the bar is clicked.
-  await expect(page.getByText(/Output: .* · Window: /)).toHaveCount(0);
+  const legend = bubble.getByText(/Output: .* · Window: /);
+
+  await expect(legend).toHaveCount(0);
   await bar.click();
-  await expect(page.getByText(/Output: .* · Window: /).first()).toBeVisible();
+  await expect(legend.first()).toBeVisible();
   // Toggle off.
   await bar.click();
-  await expect(page.getByText(/Output: .* · Window: /)).toHaveCount(0);
+  await expect(legend).toHaveCount(0);
 });
 
 test("the just-streamed bubble stays expanded after the stream finalises", async ({ page }) => {
