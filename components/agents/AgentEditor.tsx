@@ -13,6 +13,7 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "@/components/models/CapBadges";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Select } from "@/components/ui/Select";
+import { TierProportionBar } from "./TierProportionBar";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import type { IntegrationStatus } from "@/api/types";
 
@@ -82,6 +83,13 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
   const [defaultHarnessId, setDefaultHarnessId] = useState<string>("builtin:default");
   const [delegateTargets, setDelegateTargets] = useState<string[]>(agent?.delegate_targets ?? []);
+  // ADR-0043. Per-agent override of the hot/warm/facts split. `null` =
+  // inherit from the model. The bar displays the effective value either
+  // way; `tierOverride` only flips to non-null once the user actually
+  // drags a handle, so saving an unmodified agent keeps the inherit state.
+  const [tierOverride, setTierOverride] = useState<{ hot: number; warm: number; facts: number } | null>(
+    agent?.context_tier_proportions ?? null,
+  );
   const [otherAgents, setOtherAgents] = useState<AgentConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -272,6 +280,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         voice_auto_speak: voiceAutoSpeak,
         harness_id: harnessId || null,
         delegate_targets: delegateTargets,
+        context_tier_proportions: tierOverride,
       });
       onClose();
     } catch (e) {
@@ -572,6 +581,45 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 <hr className="border-border/60 my-2" />
               </>
             )}
+
+            {/* ADR-0043. Per-agent override of the hot / warm / facts split.
+                Bar shows the effective value (override or model fallback);
+                "Inherit from model" link clears the override. */}
+            {(() => {
+              const fallback = {
+                hot: selectedModel?.params?.context_tier_proportions?.hot ?? 60,
+                warm: selectedModel?.params?.context_tier_proportions?.warm ?? 25,
+                facts: selectedModel?.params?.context_tier_proportions?.facts ?? 15,
+              };
+              const value = tierOverride ?? fallback;
+              const isOverriding = tierOverride !== null;
+              return (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-fg-subtle">Context tier split</span>
+                    {isOverriding ? (
+                      <button
+                        type="button"
+                        onClick={() => setTierOverride(null)}
+                        className="text-[11px] text-fg-faint hover:text-accent transition-colors"
+                      >
+                        Inherit from model
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-fg-faint italic">
+                        {selectedModel ? `inheriting from ${selectedModel.name}` : "using built-in defaults"}
+                      </span>
+                    )}
+                  </div>
+                  <TierProportionBar
+                    value={value}
+                    onChange={(next) => setTierOverride(next)}
+                  />
+                </div>
+              );
+            })()}
+
+            <hr className="border-border/60 my-2" />
 
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input
