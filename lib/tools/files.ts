@@ -4,6 +4,7 @@ import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
+import { checkFsAllowed, resolveSafetyMode } from "./safety";
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
@@ -90,6 +91,11 @@ function jarelaDataDir(): string {
 }
 
 function assertSafePath(abs: string, op: "read" | "write"): void {
+  const mode = resolveSafetyMode();
+  const gate = checkFsAllowed(op, { mode });
+  if (!gate.allowed) throw new Error(gate.reason);
+  // bypass mode disables every guard, including the credential denylist.
+  if (mode === "bypass") return;
   if (process.env.JARELA_ALLOW_SENSITIVE_FILES === "1") return;
   for (const base of sensitiveBase()) {
     if (isInside(abs, base)) {
