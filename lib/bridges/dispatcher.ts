@@ -114,11 +114,13 @@ export async function handleInboundMessage(
     let assistantContent = "";
     const usedTools: string[] = [];
     const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
+    let assistantUsage: import("@/lib/agents/run-thread").AssistantUsageSnapshot | null = null;
     try {
       const collected = await collectStream(prepared.stream);
       assistantContent = collected.assistantContent;
       usedTools.push(...collected.usedTools);
       toolEvents.push(...collected.toolEvents);
+      assistantUsage = collected.usage ?? null;
     } finally {
       typingActive = false;
       clearInterval(typingTimer);
@@ -130,7 +132,7 @@ export async function handleInboundMessage(
     const reply = assistantContent.trim();
     const suppressAssistant = silent && (reply.length === 0 || isNoReply(reply));
     if (!suppressAssistant) {
-      persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge");
+      persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge", assistantUsage);
     }
 
     // Outbound reply gate: silent_mode (master switch) AND respond_to
