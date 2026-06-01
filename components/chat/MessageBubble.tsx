@@ -11,6 +11,7 @@ import { Bot, Check, ChevronRight, Copy, Link as LinkIcon, Link2, Loader2, Messa
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
+import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
@@ -217,11 +218,22 @@ function CollapsibleLong({
   const innerRef = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
   const [open, setOpen] = useState(false);
+  // Latched true once the first measurement saw content fit; from that point
+  // the user is actively reading (streaming, paste, lazy-loaded image), so
+  // crossing the threshold later must NOT snap the bubble closed.
+  const firstFitRef = useRef(false);
 
   useEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    const check = () => setOverflows(el.scrollHeight > threshold + 24);
+    const check = () => {
+      const over = el.scrollHeight > threshold + 24;
+      setOverflows(over);
+      if (!firstFitRef.current && !over) {
+        firstFitRef.current = true;
+        setOpen(true);
+      }
+    };
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
@@ -317,6 +329,9 @@ type Props = {
   // When false, suppress the inline ToolList for this message. Driven by
   // the chat-panel filter toolbar's `tool_use` toggle.
   showToolEvents?: boolean;
+  // Thread-level fallback for the ContextUsageBar baseline when a row's
+  // usage snapshot predates the per-row context_window_tokens column.
+  contextWindowTokens?: number | null;
 };
 
 const GRADIENTS = [
@@ -844,7 +859,7 @@ function messageTextForCopy(content: string | ContentPart[]): string {
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null }: Props) {
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -1123,6 +1138,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
         )}
+        {!isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (
+          <ContextUsageBar
+            usage={message.usage}
+            fallbackContextWindow={contextWindowTokens ?? 0}
+          />
+        ) : null}
         {refs.length > 0 && <RefsFooter refs={refs} />}
       </div>
     </div>

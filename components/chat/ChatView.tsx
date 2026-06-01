@@ -64,6 +64,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [warmSummary, setWarmSummary] = useState<string | null>(null);
   const [warmSummaryBefore, setWarmSummaryBefore] = useState<string | null>(null);
   const [warmSummaryComputedAt, setWarmSummaryComputedAt] = useState<string | null>(null);
+  // Thread-level effective context window cap, used as the ContextUsageBar
+  // baseline. Re-fetched on every thread load alongside hot_since / warm
+  // summary state so a model swap is reflected immediately.
+  const [contextWindowTokens, setContextWindowTokens] = useState<number | null>(null);
 
   const addNotice = (text: string) =>
     setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
@@ -179,6 +183,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(d.warm_summary ?? null);
       setWarmSummaryBefore(d.warm_summary_before ?? null);
       setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
+      setContextWindowTokens(d.context_window_tokens ?? null);
       clearStreamingRef.current();
       if (pendingAutoSpeakRef.current) {
         pendingAutoSpeakRef.current = false;
@@ -241,6 +246,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         setWarmSummary(d.warm_summary ?? null);
         setWarmSummaryBefore(d.warm_summary_before ?? null);
         setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
+        setContextWindowTokens(d.context_window_tokens ?? null);
       }).catch(console.error);
     }
     window.addEventListener("jarela:thread-updated", handler);
@@ -265,6 +271,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(null);
       setWarmSummaryBefore(null);
       setWarmSummaryComputedAt(null);
+      setContextWindowTokens(null);
       return;
     }
     let cancelled = false;
@@ -277,6 +284,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     setWarmSummary(null);
     setWarmSummaryBefore(null);
     setWarmSummaryComputedAt(null);
+    setContextWindowTokens(null);
     api.threads.get(threadId).then((d) => {
       if (cancelled) return;
       setMessages(d.messages);
@@ -285,6 +293,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(d.warm_summary ?? null);
       setWarmSummaryBefore(d.warm_summary_before ?? null);
       setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
+      setContextWindowTokens(d.context_window_tokens ?? null);
     }).catch((err) => { if (!cancelled) console.error(err); })
       .finally(() => {
         if (cancelled) return;
@@ -491,6 +500,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         warmSummaryComputedAt={warmSummaryComputedAt}
         onSetContextPin={setContextPin}
         streaming={streaming}
+        contextWindowTokens={contextWindowTokens}
       />
 
       {error && (
