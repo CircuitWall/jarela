@@ -422,12 +422,6 @@ export function DashboardPanel() {
             />
           </section>
 
-          <ContextTierSection
-            tierTokens={effectiveSummary?.tier_tokens}
-            dataQuality={data.summary.data_quality}
-            scope={selectedDay ?? `last ${data.days} days`}
-          />
-
           <div className="grid md:grid-cols-2 gap-4">
             <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -676,100 +670,13 @@ function InsightChip({ label, value, hint }: { label: string; value: string; hin
   );
 }
 
-// Per-tier breakdown of measured input tokens (system prompt / facts /
-// warm / hot). Driven by message_usage snapshot rows only — legacy turns
-// without a snapshot contribute zero, so the data-quality chip surfaces
-// what fraction of the window is actually represented here.
+// Per-tier breakdown colors shared by the stacked token chart legend.
 const TIER_COLORS: Record<"hot" | "warm" | "facts" | "overhead", string> = {
   hot: "#22d3ee",
   warm: "#f59e0b",
   facts: "#a78bfa",
   overhead: "#94a3b8",
 };
-const TIER_LABELS: Record<"hot" | "warm" | "facts" | "overhead", string> = {
-  hot: "Hot (recent turns)",
-  warm: "Warm (older summarised)",
-  facts: "Facts / memory",
-  overhead: "System prompt + tools",
-};
-
-function ContextTierSection({
-  tierTokens,
-  dataQuality,
-  scope,
-}: {
-  tierTokens: import("@/api/types").DashboardTierTokens | undefined;
-  dataQuality: import("@/api/types").DashboardDataQuality | undefined;
-  scope: string;
-}) {
-  const total = tierTokens?.measured_input_tokens ?? 0;
-  const measuredPct = dataQuality ? Math.round(dataQuality.measured_pct * 100) : 0;
-  const hot = tierTokens?.hot_tokens ?? 0;
-  const warm = tierTokens?.warm_tokens ?? 0;
-  const facts = tierTokens?.facts_tokens ?? 0;
-  const overhead = tierTokens?.overhead_tokens ?? 0;
-  return (
-    <section className="rounded-2xl border border-[var(--border)] bg-[var(--bg-secondary)]/90 p-4 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-medium text-[var(--text-primary)]">Context input breakdown</h3>
-          <p className="text-[11px] text-[var(--text-secondary)]">
-            Where the input budget went for {scope}. Measured from provider usage payloads.
-          </p>
-        </div>
-        {dataQuality ? (
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/70 px-2.5 py-1 text-[11px] text-[var(--text-secondary)]"
-            title={`${dataQuality.measured_messages} measured · ${dataQuality.estimated_messages} estimated`}
-          >
-            <span
-              className="inline-block h-1.5 w-1.5 rounded-full"
-              style={{ background: measuredPct >= 90 ? "#22c55e" : measuredPct >= 50 ? "#f59e0b" : "#ef4444" }}
-            />
-            {measuredPct}% measured
-          </span>
-        ) : null}
-      </div>
-      {total === 0 ? (
-        <p className="text-xs text-[var(--text-secondary)]">
-          No measured turns in this window yet. New assistant runs persist a per-tier snapshot that will appear here.
-        </p>
-      ) : (
-        <div>
-          <div className="flex h-3 w-full overflow-hidden rounded-full bg-[var(--bg-primary)]/60" role="img" aria-label="Per-tier input token breakdown">
-            {(["overhead", "facts", "warm", "hot"] as const).map((tier) => {
-              const value = tier === "hot" ? hot : tier === "warm" ? warm : tier === "facts" ? facts : overhead;
-              if (value <= 0) return null;
-              return (
-                <div
-                  key={tier}
-                  style={{ width: `${(value / total) * 100}%`, background: TIER_COLORS[tier] }}
-                  title={`${TIER_LABELS[tier]}: ${formatInt(value)} tokens (${Math.round((value / total) * 100)}%)`}
-                />
-              );
-            })}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
-            {(["hot", "warm", "facts", "overhead"] as const).map((tier) => {
-              const value = tier === "hot" ? hot : tier === "warm" ? warm : tier === "facts" ? facts : overhead;
-              const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-              return (
-                <div key={tier} className="rounded-lg bg-[var(--bg-primary)]/40 px-2.5 py-2">
-                  <div className="flex items-center gap-1.5 text-[var(--text-secondary)]">
-                    <span className="inline-block h-2 w-2 rounded-sm" style={{ background: TIER_COLORS[tier] }} />
-                    <span className="truncate">{TIER_LABELS[tier]}</span>
-                  </div>
-                  <div className="mt-1 font-semibold text-[var(--text-primary)]">{formatInt(value)}</div>
-                  <div className="text-[10px] text-[var(--text-secondary)]">{pct}%</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
 
 type DonutSlice = {
   id: string;
@@ -1134,6 +1041,15 @@ function InteractiveTokenChart({
             const totalHeight = hasData && maxTotal > 0 ? Math.max(4, Math.round((total / maxTotal) * 150)) : 0;
             const inputHeight = hasData ? Math.round((point.input_tokens_est / total) * totalHeight) : 0;
             const outputHeight = hasData ? Math.max(0, totalHeight - inputHeight) : 0;
+            // Subdivide the input portion by measured tier breakdown when the
+            // day has at least one snapshotted assistant turn. Legacy days
+            // (measured_input_tokens === 0) fall back to a solid violet block.
+            const tier = point.tier_tokens;
+            const tierTotal = tier?.measured_input_tokens ?? 0;
+            const hotPx = tierTotal > 0 ? Math.round((tier.hot_tokens / tierTotal) * inputHeight) : 0;
+            const warmPx = tierTotal > 0 ? Math.round((tier.warm_tokens / tierTotal) * inputHeight) : 0;
+            const factsPx = tierTotal > 0 ? Math.round((tier.facts_tokens / tierTotal) * inputHeight) : 0;
+            const overheadPx = tierTotal > 0 ? Math.max(0, inputHeight - hotPx - warmPx - factsPx) : 0;
             const isActive = idx === hovered;
             const isSelected = selectedDay === point.day;
             const clickable = !!onSelectDay && hasData;
@@ -1171,13 +1087,50 @@ function InteractiveTokenChart({
                           transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18}ms`,
                         }}
                       />
-                      <div
-                        className="w-full bg-gradient-to-t from-indigo-500 to-violet-400"
-                        style={{
-                          height: barsReady ? `${inputHeight}px` : "0px",
-                          transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
-                        }}
-                      />
+                      {tierTotal > 0 ? (
+                        <>
+                          <div
+                            className="w-full"
+                            style={{
+                              background: TIER_COLORS.hot,
+                              height: barsReady ? `${hotPx}px` : "0px",
+                              transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
+                            }}
+                          />
+                          <div
+                            className="w-full"
+                            style={{
+                              background: TIER_COLORS.warm,
+                              height: barsReady ? `${warmPx}px` : "0px",
+                              transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 42}ms`,
+                            }}
+                          />
+                          <div
+                            className="w-full"
+                            style={{
+                              background: TIER_COLORS.facts,
+                              height: barsReady ? `${factsPx}px` : "0px",
+                              transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 54}ms`,
+                            }}
+                          />
+                          <div
+                            className="w-full"
+                            style={{
+                              background: TIER_COLORS.overhead,
+                              height: barsReady ? `${overheadPx}px` : "0px",
+                              transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 66}ms`,
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <div
+                          className="w-full bg-gradient-to-t from-indigo-500 to-violet-400"
+                          style={{
+                            height: barsReady ? `${inputHeight}px` : "0px",
+                            transition: `height 420ms cubic-bezier(0.2, 0.8, 0.2, 1) ${idx * 18 + 30}ms`,
+                          }}
+                        />
+                      )}
                     </>
                   ) : null}
                 </div>
@@ -1190,11 +1143,17 @@ function InteractiveTokenChart({
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-[var(--text-secondary)]">
-        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400" />input</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TIER_COLORS.hot }} />hot</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TIER_COLORS.warm }} />warm</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TIER_COLORS.facts }} />facts</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: TIER_COLORS.overhead }} />overhead</span>
+        <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400" />input (est)</span>
         <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" />output</span>
         {active && (
           <span className="ml-auto text-[var(--text-primary)]">
-            in {formatInt(active.input_tokens_est)} · out {formatInt(active.output_tokens_est)}
+            {active.tier_tokens.measured_input_tokens > 0
+              ? `hot ${formatInt(active.tier_tokens.hot_tokens)} · warm ${formatInt(active.tier_tokens.warm_tokens)} · facts ${formatInt(active.tier_tokens.facts_tokens)} · overhead ${formatInt(active.tier_tokens.overhead_tokens)} · out ${formatInt(active.output_tokens_est)}`
+              : `in ${formatInt(active.input_tokens_est)} · out ${formatInt(active.output_tokens_est)}`}
           </span>
         )}
       </div>
