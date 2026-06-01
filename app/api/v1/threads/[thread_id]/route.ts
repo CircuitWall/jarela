@@ -4,11 +4,11 @@ import {
   getMessagesAfter,
   getMessagesPage,
   getThread,
-  type MessageRow,
 } from "@/lib/stores/threads";
 import { getMessageUsageByIds } from "@/lib/stores/message-usage";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -53,9 +53,10 @@ export async function GET(req: NextRequest, { params }: Params) {
   const agentCfg = getAgentConfig(thread.agent_id);
   const modelCfg = agentCfg?.model_config_name ? getModelConfig(agentCfg.model_config_name) : null;
   const modelParams = modelCfg ? getModelParams(modelCfg) : null;
-  const cwRaw = modelParams?.context_window_tokens;
-  const contextWindowTokens =
-    typeof cwRaw === "number" && cwRaw > 0 ? cwRaw : DEFAULT_CONTEXT_WINDOW_TOKENS;
+  const contextWindowTokens = resolveContextWindowTokens(
+    modelParams?.context_window_tokens,
+    DEFAULT_CONTEXT_WINDOW_TOKENS,
+  );
 
   return NextResponse.json({
     ...thread,
@@ -64,43 +65,9 @@ export async function GET(req: NextRequest, { params }: Params) {
     // `category` tag and apply the chat-panel filter toolbar on the
     // render side. Keeping the raw transcript over the wire means audit
     // history is reachable from any client without round-trip params.
-    messages: messages.map((m) => {
-      const u = usageById.get(m.msg_id);
-      return {
-        id: m.msg_id,
-        role: m.role,
-        content: m.content,
-        created_at: m.created_at,
-        tool_events: parseToolEvents(m.tool_events),
-        category: m.category ?? null,
-        usage: u
-          ? {
-              input_tokens: u.input_tokens,
-              output_tokens: u.output_tokens,
-              hot_tokens: u.hot_tokens,
-              warm_tokens: u.warm_tokens,
-              facts_tokens: u.facts_tokens,
-              overhead_tokens: u.overhead_tokens,
-              hot_budget_tokens: u.hot_budget_tokens,
-              warm_budget_tokens: u.warm_budget_tokens,
-              facts_budget_tokens: u.facts_budget_tokens,
-              context_window_tokens: u.context_window_tokens,
-            }
-          : null,
-      };
-    }),
+    messages: messages.map((m) => messageToResponse(m, usageById)),
     has_more,
   });
-}
-
-function parseToolEvents(raw: string | null | undefined) {
-  if (!raw) return undefined;
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
