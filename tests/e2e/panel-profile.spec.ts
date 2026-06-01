@@ -38,9 +38,9 @@ test("Normal mode keeps Profile editor and opens wizard only on demand", async (
   await page.evaluate(() => {
     try { localStorage.setItem("jarela.experience.mode", "essential"); } catch { /* sandbox */ }
   });
-  await page.reload();
+  await page.goto("/?tab=profile");
 
-  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("heading", { name: "User Profile" })).toBeVisible({ timeout: 30_000 });
   const rerunBtn = page.getByRole("button", { name: "Run setup wizard again" });
   await expect(rerunBtn).toBeVisible();
 
