@@ -49,6 +49,12 @@ const nextConfig: NextConfig = {
     "sharp",
     "detect-libc",
   ],
+  // Workaround for Next 16 + @serwist/next: when the config is wrapped by
+  // withSerwist, the built-in default `generateBuildId: () => null` is not
+  // merged in, and `next build` throws "TypeError: generate is not a
+  // function" at the generate-buildid step. Defining it explicitly here
+  // restores the default behaviour (Next falls back to nanoid).
+  generateBuildId: async () => null,
   outputFileTracingIncludes: {
     "/**": ["./node_modules/@napi-rs/keyring/**/*"],
   },
