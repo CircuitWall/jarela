@@ -210,18 +210,26 @@ function CollapsibleLong({
   children,
   threshold = 480,
   accent,
+  streaming = false,
+  defaultOpen = false,
 }: {
   children: React.ReactNode;
   threshold?: number;
   accent: boolean;
+  streaming?: boolean;
+  defaultOpen?: boolean;
 }) {
   const innerRef = useRef<HTMLDivElement>(null);
   const [overflows, setOverflows] = useState(false);
-  const [open, setOpen] = useState(false);
-  // Latched true once the first measurement saw content fit; from that point
-  // the user is actively reading (streaming, paste, lazy-loaded image), so
-  // crossing the threshold later must NOT snap the bubble closed.
-  const firstFitRef = useRef(false);
+  const [open, setOpen] = useState(defaultOpen);
+  // Latched true once the user has been treated as "actively reading" this
+  // bubble — either the first measurement saw the content fit, OR the
+  // bubble was ever observed streaming, OR it was rendered as the latest
+  // turn (just streamed, the user is mid-read). From that point, growing
+  // past the threshold or remounting must NOT snap it closed.
+  const firstFitRef = useRef(defaultOpen);
+  const wasStreamingRef = useRef(false);
+  if (streaming) wasStreamingRef.current = true;
 
   useEffect(() => {
     const el = innerRef.current;
@@ -229,16 +237,18 @@ function CollapsibleLong({
     const check = () => {
       const over = el.scrollHeight > threshold + 24;
       setOverflows(over);
-      if (!firstFitRef.current && !over) {
-        firstFitRef.current = true;
-        setOpen(true);
+      if (!firstFitRef.current) {
+        if (!over || wasStreamingRef.current || defaultOpen) {
+          firstFitRef.current = true;
+          setOpen(true);
+        }
       }
     };
     check();
     const ro = new ResizeObserver(check);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [threshold]);
+  }, [threshold, defaultOpen]);
 
   const collapsed = overflows && !open;
 
@@ -332,6 +342,11 @@ type Props = {
   // Thread-level fallback for the ContextUsageBar baseline when a row's
   // usage snapshot predates the per-row context_window_tokens column.
   contextWindowTokens?: number | null;
+  // True for the very last message in the rendered list. The just-streamed
+  // assistant turn the user is currently reading must NOT auto-collapse
+  // when its persisted version mounts (different component instance from
+  // the streaming bubble, so the streaming-latch can't carry over).
+  isLatest?: boolean;
 };
 
 const GRADIENTS = [
@@ -859,7 +874,7 @@ function messageTextForCopy(content: string | ContentPart[]): string {
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false }: Props) {
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -1095,7 +1110,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 );
               })()
             ) : (
-              <CollapsibleLong accent={false}>
+              <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
                 <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} />
               </CollapsibleLong>
             )
