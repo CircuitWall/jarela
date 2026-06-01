@@ -12,6 +12,7 @@ const {
   upsertAgentConfig,
   getAgentDisplayFilters,
   updateAgentDisplayFilters,
+  getAgentTools,
   DISPLAY_FILTER_DEFAULTS,
 } = await import("./agent-configs");
 
@@ -80,5 +81,31 @@ describe("agent display filters (ADR-0022)", () => {
     seedAgent("filter-other");
     updateAgentDisplayFilters("filter-test", { thinking: false });
     expect(getAgentDisplayFilters("filter-other")).toEqual(DISPLAY_FILTER_DEFAULTS);
+  });
+});
+
+describe("getAgentTools", () => {
+  it("returns the agent's tool list", () => {
+    upsertAgentConfig({
+      id: "tools-test", name: "tools-test", identity: "", instructions: "",
+      tools: ["file_read", "memory_write"],
+    });
+    const cfg = { tools: JSON.stringify(["file_read", "memory_write"]) };
+    expect(getAgentTools(cfg)).toEqual(["file_read", "memory_write"]);
+  });
+
+  it("returns [] for null/undefined cfg", () => {
+    expect(getAgentTools(null)).toEqual([]);
+    expect(getAgentTools(undefined)).toEqual([]);
+  });
+
+  it("returns [] for blank or malformed JSON", () => {
+    expect(getAgentTools({ tools: "" })).toEqual([]);
+    expect(getAgentTools({ tools: "not json" })).toEqual([]);
+    expect(getAgentTools({ tools: "{\"not\":\"array\"}" })).toEqual([]);
+  });
+
+  it("filters non-string entries", () => {
+    expect(getAgentTools({ tools: JSON.stringify(["a", 1, null, "b", ""]) })).toEqual(["a", "b"]);
   });
 });

@@ -32,6 +32,9 @@ vi.mock("@/lib/stores/model-config", () => ({
   // the default can't embed. These tests mock the default directly, so an
   // empty list is the right shape — no fallback row should ever match.
   listModelConfigs: () => [],
+  // The real getModelParams parses cfg.params as JSON; tests pass `"{}"` so
+  // returning {} matches the production shape.
+  getModelParams: () => ({}),
 }));
 
 const { embedBestEffort } = await import("./index");

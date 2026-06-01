@@ -1,5 +1,5 @@
 import { getProvider } from "@/lib/providers";
-import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 
 export type LlmModelRate = {
@@ -141,13 +141,12 @@ export async function llmExtractModelRates(input: LlmExtractInput): Promise<LlmM
   if (!cfg) return null;
 
   let provider: ModelProvider;
-  let params: ProviderParams;
   try {
     provider = getProvider(cfg.provider);
-    params = JSON.parse(cfg.params) as ProviderParams;
   } catch {
     return null;
   }
+  const params: ProviderParams = getModelParams(cfg);
   if (typeof provider.invoke !== "function") return null;
 
   const page = preparePageForLlm(input.html);

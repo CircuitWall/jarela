@@ -8,7 +8,7 @@ import {
 } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { getProvider } from "@/lib/providers";
-import { getModelConfig, getDefaultModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
@@ -84,13 +84,7 @@ export async function* streamWithConfig(
     return;
   }
 
-  let params: ProviderParams;
-  try {
-    params = JSON.parse(cfg.params) as ProviderParams;
-  } catch {
-    yield { type: "error", data: { message: `Model config "${cfg.name}" has invalid JSON params.`, code: "config_parse_error" } };
-    return;
-  }
+  const params: ProviderParams = getModelParams(cfg);
 
   const provider = getProvider(cfg.provider);
 

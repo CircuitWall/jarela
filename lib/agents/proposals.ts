@@ -7,7 +7,7 @@ import { getMcpServer, upsertMcpServer, type McpHttpSpec, type McpServerInput, t
 import { invalidateMcpTools } from "@/lib/mcp/client";
 import { applyVariables } from "@/lib/mcp/registry";
 import { getUpstreamByName } from "@/lib/mcp/upstream-registry";
-import { getAgentConfig, upsertAgentConfig } from "@/lib/stores/agent-configs";
+import { getAgentConfig, getAgentTools, upsertAgentConfig } from "@/lib/stores/agent-configs";
 import type { ActionKind } from "@/lib/stores/pending-actions";
 import { getManifest } from "@/lib/integrations/registry";
 import { saveIntegration, INTEGRATIONS } from "@/lib/stores/integrations";
@@ -142,7 +142,7 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     icon: existing.icon,
     identity: p.identity ?? existing.identity,
     instructions: p.instructions ?? existing.instructions,
-    tools: JSON.parse(existing.tools) as string[],
+    tools: getAgentTools(existing),
     model_config_name: existing.model_config_name,
     history_limit: p.history_limit ?? existing.history_limit,
     history_window_hours: p.history_window_hours ?? existing.history_window_hours,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/providers";
-import { listModelConfigs } from "@/lib/stores/model-config";
+import { listModelConfigs, getModelParams } from "@/lib/stores/model-config";
 import type { ProviderCatalogModel, ProviderParams } from "@/lib/providers/types";
 
 export interface CatalogModel {
@@ -76,14 +76,7 @@ async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[
   if (!provider.listModels) return [];
 
   const cfg = listModelConfigs().find((c) => c.provider === providerName);
-  let params: ProviderParams = {};
-  if (cfg) {
-    try {
-      params = JSON.parse(cfg.params) as ProviderParams;
-    } catch {
-      params = {};
-    }
-  }
+  const params: ProviderParams = getModelParams(cfg);
   const models = await provider.listModels(params);
   return models as ProviderCatalogModel[];
 }
@@ -93,7 +86,7 @@ async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[
 async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
   const cfg = listModelConfigs().find((c) => c.provider === "openai");
   if (!cfg) throw new Error("No OpenAI model config found.");
-  const params = JSON.parse(cfg.params) as Record<string, unknown>;
+  const params = getModelParams(cfg);
   const apiKey = (params.api_key as string | undefined) ?? process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OpenAI: no api_key configured.");
 
@@ -152,7 +145,7 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
   //    token or a non-PAT credential that supports exchange.
   const cfg = listModelConfigs().find((c) => c.provider === "github-copilot");
   if (cfg) {
-    const params = JSON.parse(cfg.params) as Record<string, unknown>;
+    const params = getModelParams(cfg);
     const sessionTok = (params.copilot_session_token as string | undefined)?.trim();
     if (sessionTok) {
       try {
