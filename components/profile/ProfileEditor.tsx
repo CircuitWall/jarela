@@ -6,6 +6,7 @@ import type { UserProfile, AccessWhitelistEntry, TailscaleStatus } from "@/api/t
 import { useLocationSharing } from "@/hooks/useLocationSharing";
 import { useAppContext } from "@/contexts/AppContext";
 import { formatRelative } from "@/lib/utils/time";
+import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
 export function ProfileEditor() {
   const { state, dispatch } = useAppContext();
@@ -98,10 +99,11 @@ export function ProfileEditor() {
       {/* About */}
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">About me</span>
-        <textarea
-          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-28 resize-none"
+        <MarkdownTextarea
+          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent min-h-[7rem] resize-y"
           value={about}
-          onChange={(e) => setAbout(e.target.value)}
+          onChange={setAbout}
+          rows={5}
           placeholder="Senior engineer at Acme Corp. Prefers concise answers. Working on a payments platformâ€¦"
         />
       </label>

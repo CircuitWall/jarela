@@ -11,6 +11,7 @@ import { GEMINI_TTS_MODELS, GEMINI_STT_MODELS, GEMINI_VOICES } from "@/lib/voice
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { CapBadges } from "@/components/models/CapBadges";
+import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import type { IntegrationStatus } from "@/api/types";
 
@@ -343,19 +344,21 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
             </div>
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Persona</span>
-              <textarea
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
+              <MarkdownTextarea
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent min-h-[4rem] resize-y"
                 value={identity}
-                onChange={(e) => setIdentity(e.target.value)}
+                onChange={setIdentity}
+                rows={3}
                 placeholder="You are a senior TypeScript engineer with deep expertise in React and Next.js…"
               />
             </label>
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Instructions</span>
-              <textarea
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
+              <MarkdownTextarea
+                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent min-h-[4rem] resize-y"
                 value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
+                onChange={setInstructions}
+                rows={3}
                 placeholder="Focus on code review, suggest best practices, and explain your reasoning…"
               />
             </label>

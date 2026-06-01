@@ -2,6 +2,7 @@
 import { ChevronDown, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import {
   DEFAULT_HARNESS_ID,
   HARNESS_SECTION_KEYS,
@@ -165,11 +166,12 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
                   </div>
                   {isOpen && (
                     <div className="px-3 pb-3">
-                      <textarea
-                        className="w-full bg-surface text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono resize-y"
+                      <MarkdownTextarea
+                        className="w-full bg-surface text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent resize-y"
                         value={section.body}
-                        onChange={(e) => patchSection(key, { body: e.target.value })}
+                        onChange={(body) => patchSection(key, { body })}
                         rows={10}
+                        monospace
                         placeholder="Section body…"
                       />
                     </div>
