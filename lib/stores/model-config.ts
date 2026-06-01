@@ -1,5 +1,6 @@
 import { getDb } from "@/lib/db";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
+import type { ProviderParams } from "@/lib/providers/types";
 
 const now = () => new Date().toISOString();
 
@@ -49,4 +50,23 @@ export function upsertModelConfig(
 
 export function deleteModelConfig(name: string): boolean {
   return (getDb().prepare("DELETE FROM model_configs WHERE name=?").run(name) as { changes: number }).changes > 0;
+}
+
+/**
+ * Decode the JSON-encoded provider params (api_key, model overrides, etc.).
+ * Returns an empty object on NULL/blank/malformed JSON. Callers that
+ * previously did `JSON.parse(cfg.params)` inline should switch to this
+ * getter so the serialization contract stays owned by this store.
+ */
+export function getModelParams(cfg: Pick<ModelConfigRow, "params"> | null | undefined): ProviderParams {
+  if (!cfg?.params) return {};
+  try {
+    const parsed = JSON.parse(cfg.params);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as ProviderParams;
+    }
+    return {};
+  } catch {
+    return {};
+  }
 }

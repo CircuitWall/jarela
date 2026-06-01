@@ -86,6 +86,24 @@ export interface UpsertAgentInput {
  * Parse the JSON-encoded delegate whitelist into a deduped string[]. Returns
  * an empty array for NULL, blank, or malformed JSON (delegation is opt-in).
  */
+/**
+ * Parse the agent's tool allowlist (`tools` column, stored as a JSON string).
+ * Returns an empty array on NULL/blank/malformed JSON — same defensive shape
+ * as parseDelegateTargets. Callers that previously did `JSON.parse(cfg.tools)`
+ * inline should switch to this getter so the serialization contract stays
+ * owned by this store.
+ */
+export function getAgentTools(cfg: Pick<AgentConfigRow, "tools"> | null | undefined): string[] {
+  if (!cfg?.tools) return [];
+  try {
+    const parsed = JSON.parse(cfg.tools);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function parseDelegateTargets(raw: string | null | undefined): string[] {
   if (!raw) return [];
   try {

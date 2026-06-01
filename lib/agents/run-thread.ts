@@ -3,7 +3,7 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getRecentMessagesWindow, getThread, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
-import { getAgentConfig, parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentConfig, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
@@ -21,7 +21,7 @@ import {
 } from "@/lib/agents/context-budget";
 import { listMemory } from "@/lib/stores/memory";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
-import { getDefaultModelConfig, getModelConfig } from "@/lib/stores/model-config";
+import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 
@@ -173,14 +173,7 @@ export async function prepareThreadRun(
   const modelCfg = agentCfg.model_config_name
     ? getModelConfig(agentCfg.model_config_name)
     : getDefaultModelConfig();
-  let providerParams: ProviderParams = {};
-  if (modelCfg) {
-    try {
-      providerParams = JSON.parse(modelCfg.params) as ProviderParams;
-    } catch {
-      providerParams = {};
-    }
-  }
+  const providerParams: ProviderParams = getModelParams(modelCfg);
 
   const budget = computeContextBudget({
     context_window_tokens:
@@ -379,10 +372,7 @@ export async function prepareThreadRun(
     ...tierOrderCtx,
     recallCtx,
   ].filter(Boolean);
-  let allowedTools: string[] = [];
-  try {
-    allowedTools = JSON.parse(agentCfg.tools) as string[];
-  } catch { /* keep empty */ }
+  const allowedTools: string[] = getAgentTools(agentCfg);
 
   // Delegates roster: if the agent can hand off via delegate_to_agent, nudge
   // it to (a) tell the user who it's handing to and why, and (b) only use
@@ -681,16 +671,10 @@ const STALL_PATTERNS: RegExp[] = [
 // list if the thread or agent config has gone away (the validator then
 // flags any `(via foo)` citation as unregistered, which is the safe default).
 function lookupAllowedToolsForThread(thread_id: string): string[] {
-  try {
-    const thread = getThread(thread_id);
-    if (!thread) return [];
-    const agentCfg = getAgentConfig(thread.agent_id);
-    if (!agentCfg) return [];
-    const parsed = JSON.parse(agentCfg.tools) as unknown;
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
-  } catch {
-    return [];
-  }
+  const thread = getThread(thread_id);
+  if (!thread) return [];
+  const agentCfg = getAgentConfig(thread.agent_id);
+  return getAgentTools(agentCfg);
 }
 
 export function looksLikeStall(text: string): boolean {
