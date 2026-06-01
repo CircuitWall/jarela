@@ -8,7 +8,7 @@ import {
 } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { getProvider } from "@/lib/providers";
-import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getModelConfig, getDefaultModelConfig, getModelParams, upsertModelConfig } from "@/lib/stores/model-config";
 import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
@@ -306,6 +306,47 @@ export async function* streamWithConfig(
         "max_tokens was too low for a reasoning model, or the connection dropped mid-stream. " +
         "Check the model config and retry.";
       code = "empty_response";
+    } else if (isContextOverflowError(rawMsg)) {
+      // Hit the model's input window. Either the assumed/known context size
+      // is bigger than what the provider actually serves on this tier, the
+      // user's plan is throttled, or the conversation legitimately overflowed.
+      // Either way the budget calculator's assumption was optimistic — tell
+      // the user how to recover instead of dumping the provider stack.
+      const observed = parseContextLimitFromError(rawMsg);
+      if (observed && observed.limit > 0) {
+        // Self-correct: persist the provider-reported limit back to the
+        // model config so the next turn's budget calculator uses it. We
+        // shrink by 10% as a safety margin (tokenisers disagree and tool
+        // results we don't yet count add overhead). Only writes when the
+        // new value is smaller than what's stored — never grows blindly.
+        try {
+          const current = typeof params.context_window_tokens === "number"
+            ? params.context_window_tokens
+            : Number.POSITIVE_INFINITY;
+          const corrected = Math.max(2048, Math.floor(observed.limit * 0.9));
+          if (corrected < current) {
+            const nextParams = { ...params, context_window_tokens: corrected };
+            upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
+            console.warn(
+              `[llm] context-window self-correct for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
+              `provider reported ${observed.limit} tokens; persisted context_window_tokens=${corrected}`,
+            );
+          }
+        } catch (persistErr) {
+          console.error("[llm] failed to self-correct context_window_tokens", persistErr);
+        }
+        friendly =
+          `The request exceeded the model's context window (provider reported ~${observed.limit.toLocaleString()} tokens` +
+          (observed.requested ? `, request had ~${observed.requested.toLocaleString()}` : "") +
+          `). Persisted the corrected window on this model config; retry the turn or trim history.`;
+      } else {
+        friendly =
+          "The request exceeded the model's context window. " +
+          "Trim history (lower `history_limit` / `history_window_hours` on the agent), " +
+          "pin a smaller `context_window_tokens` in the model config so the budget calculator " +
+          "leaves more headroom, or start a new thread.";
+      }
+      code = "context_length_exceeded";
     } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
       code = "max_tokens_exhausted";
     }
@@ -341,4 +382,80 @@ export async function* streamWithConfig(
       model_config_name: cfg.name,
     },
   };
+}
+
+// Detect provider error messages that indicate the request exceeded the
+// model's input/context window. Patterns sourced from OpenAI, Anthropic,
+// Gemini, DeepSeek, and the Copilot proxy.
+export function isContextOverflowError(msg: string): boolean {
+  if (!msg) return false;
+  return (
+    /context[_ ]length[_ ]exceeded/i.test(msg) ||
+    /maximum context length/i.test(msg) ||
+    /context window/i.test(msg) ||
+    /prompt is too long/i.test(msg) ||
+    /input(?:'s)? token count.*exceeds/i.test(msg) ||
+    /exceeds the maximum number of tokens/i.test(msg) ||
+    /request too large.*tokens/i.test(msg) ||
+    /too many input tokens/i.test(msg) ||
+    /string too long/i.test(msg)
+  );
+}
+
+// Extract the model's actual context-window size (and, when present, the
+// request size) from a provider error message. Provider phrasings observed:
+//   OpenAI:     "maximum context length is 128000 tokens. However, your
+//                messages resulted in 213998 tokens"
+//   OpenAI:     "This model's maximum context length is 8192 tokens, however
+//                you requested 9000 tokens"
+//   Anthropic:  "prompt is too long: 235812 tokens > 200000 maximum"
+//   Gemini:     "The input token count (1234567) exceeds the maximum number
+//                of tokens allowed (1048576)"
+//   DeepSeek:   "Range of input length should be [1, 65536]"
+// Returns null when no number pair can be confidently extracted.
+export function parseContextLimitFromError(
+  msg: string,
+): { limit: number; requested?: number } | null {
+  if (!msg) return null;
+  const num = (s: string) => parseInt(s.replace(/[,_\s]/g, ""), 10);
+
+  // OpenAI "maximum context length is X tokens" (+ optional "resulted in Y" / "requested Y")
+  const openai = msg.match(
+    /maximum context length is\s+([\d,_\s]+)\s*tokens?[\s\S]*?(?:resulted in|requested)\s+([\d,_\s]+)/i,
+  );
+  if (openai) {
+    const limit = num(openai[1]);
+    const requested = num(openai[2]);
+    if (limit > 0) return { limit, requested: requested > 0 ? requested : undefined };
+  }
+  const openaiNoReq = msg.match(/maximum context length is\s+([\d,_\s]+)/i);
+  if (openaiNoReq) {
+    const limit = num(openaiNoReq[1]);
+    if (limit > 0) return { limit };
+  }
+
+  // Anthropic "prompt is too long: N tokens > M maximum"
+  const anthropic = msg.match(/prompt is too long:\s*([\d,_\s]+)\s*tokens?\s*>\s*([\d,_\s]+)/i);
+  if (anthropic) {
+    const requested = num(anthropic[1]);
+    const limit = num(anthropic[2]);
+    if (limit > 0) return { limit, requested: requested > 0 ? requested : undefined };
+  }
+
+  // Gemini "input token count (N) exceeds the maximum number of tokens allowed (M)"
+  const gemini = msg.match(/input token count\s*\(([\d,_\s]+)\)[\s\S]*?\(([\d,_\s]+)\)/i);
+  if (gemini) {
+    const requested = num(gemini[1]);
+    const limit = num(gemini[2]);
+    if (limit > 0) return { limit, requested: requested > 0 ? requested : undefined };
+  }
+
+  // DeepSeek "Range of input length should be [1, N]"
+  const deepseek = msg.match(/range of input length should be\s*\[\s*\d+\s*,\s*([\d,_\s]+)\s*\]/i);
+  if (deepseek) {
+    const limit = num(deepseek[1]);
+    if (limit > 0) return { limit };
+  }
+
+  return null;
 }
