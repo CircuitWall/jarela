@@ -69,15 +69,12 @@ export async function handleInboundMessage(
       text: msg.text,
       silent,
     });
-    const prepared = await prepareThreadRun(
-      thread.thread_id,
-      promptText,
-      undefined,
-      msg.attachments,
-      undefined,
-      undefined,
-      "bridge", // userCategory
-    );
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: promptText,
+      attachments: msg.attachments,
+      user_category: "bridge",
+    });
 
     // Silent mode: suppress *any* outbound signal — no reply, no typing
     // indicator. The typing presence itself is a tell that an agent is

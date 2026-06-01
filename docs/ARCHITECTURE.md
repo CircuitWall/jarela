@@ -125,6 +125,8 @@ flowchart LR
     B --> K[Memory Store<br/>lib/stores]
     B --> HR[Harness Resolver<br/>lib/agents/harness]
     HR --> K
+    B --> PR[Prepare<br/>lib/agents/prepare<br/>system prompt + history window]
+    PR --> B
     B --> OV[Output Validator<br/>lib/agents/output-validator]
     OV -.post-turn check.-> B
     K --> CR[Crypto Envelope<br/>lib/crypto]
