@@ -25,7 +25,7 @@ RST  := \033[0m
 
 .PHONY: help install dev build start lint test test-full icons clean \
         install-task uninstall-task start-task stop-task restart-task \
-        logs status push
+        logs status push bump update
 
 help:
 	@printf "$(CYAN)Jarela task runner$(RST) (macOS / Linux)\n"
@@ -46,7 +46,9 @@ help:
 	@printf "  $(YEL)restart-task$(RST)    Stop then start the LaunchAgent\n"
 	@printf "  $(YEL)logs$(RST)            Tail the installed-task log file (Ctrl+C to stop)\n"
 	@printf "  $(YEL)status$(RST)          Show LaunchAgent state + listener on :$(PORT)\n"
-	@printf "  $(YEL)push$(RST)            git push current branch to the jarela remote\n\n"
+	@printf "  $(YEL)push$(RST)            git push current branch to the jarela remote\n"
+	@printf "  $(YEL)bump$(RST)            Auto-detect MAJOR/MINOR/PATCH from commits, rewrite package.json + CHANGELOG\n"
+	@printf "  $(YEL)update$(RST)          Pull + rebuild (source) or `npm i -g @circuitwall/jarela@latest` (installed), then kick the LaunchAgent if loaded\n\n"
 	@printf "$(DGY)Data dir: $(DATA_DIR)$(RST)\n"
 	@printf "$(DGY)Override with JARELA_DB_DIR$(RST)\n"
 
@@ -196,3 +198,37 @@ status:
 push:
 	@branch=$$(git rev-parse --abbrev-ref HEAD); \
 	 git push jarela "$$branch"
+
+# Auto-detect MAJOR/MINOR/PATCH from commits since the last v* tag, write the
+# new version into package.json + promote [Unreleased] in CHANGELOG.md. Leaves
+# changes uncommitted so the user runs through the release-PR flow in
+# CONTRIBUTING.md. Override with `make bump VERSION=1.2.3`.
+bump:
+	@VERSION="$(VERSION)" node "$(REPO_ROOT)/scripts/bump.mjs"
+
+# Pull + rebuild a source checkout, or `npm i -g` an installed copy, then
+# kick the LaunchAgent if one is loaded so the running service picks up the
+# new build. Refuses to touch a source tree with uncommitted changes — fix
+# or stash them first.
+update:
+	@set -e; \
+	if [ -d .git ]; then \
+	  if [ -n "$$(git status --porcelain)" ]; then \
+	    printf "$(RED)[update] working tree is dirty — commit or stash first.$(RST)\n"; \
+	    git status --short; exit 1; \
+	  fi; \
+	  printf "$(CYAN)[update]$(RST) source checkout — git pull --ff-only + npm install + npm run build\n"; \
+	  git pull --ff-only; \
+	  npm install --no-audit --no-fund; \
+	  npm run build; \
+	else \
+	  printf "$(CYAN)[update]$(RST) installed copy — npm install -g @circuitwall/jarela@latest\n"; \
+	  npm install -g @circuitwall/jarela@latest; \
+	fi; \
+	if launchctl print "gui/$$(id -u)/$(LABEL)" >/dev/null 2>&1; then \
+	  printf "$(CYAN)[update]$(RST) restarting LaunchAgent $(LABEL)...\n"; \
+	  launchctl kickstart -k "gui/$$(id -u)/$(LABEL)"; \
+	  printf "$(GRN)[update] done — service restarted.$(RST)\n"; \
+	else \
+	  printf "$(YEL)[update]$(RST) no LaunchAgent loaded — restart your dev / `make start` session manually.\n"; \
+	fi
