@@ -7,6 +7,24 @@ import type { PersistedToolEvent } from "@/lib/stores/threads";
 const CHARS_PER_TOKEN = 4;
 const DEFAULT_WINDOW_DAYS = 30;
 
+export interface DashboardTierTokens {
+  hot_tokens: number;
+  warm_tokens: number;
+  facts_tokens: number;
+  overhead_tokens: number;
+  /** Sum of the four tiers — convenience for stacked-bar totals. */
+  measured_input_tokens: number;
+}
+
+export interface DashboardDataQuality {
+  /** Assistant turns in the window that have an immutable message_usage snapshot. */
+  measured_messages: number;
+  /** Assistant turns falling back to content-length estimates. */
+  estimated_messages: number;
+  /** measured / (measured + estimated), 0..1; 1 when no traffic. */
+  measured_pct: number;
+}
+
 export interface DashboardSeriesPoint {
   day: string;
   input_tokens_est: number;
@@ -17,6 +35,11 @@ export interface DashboardSeriesPoint {
   tool_errors: number;
   success_rate: number;
   error_rate: number;
+  /** Per-tier breakdown of authoritative snapshot input tokens for the
+   *  day. Zero for legacy rows with no message_usage entry — these are
+   *  surfaced via the `data_quality` chip instead so users know the bar
+   *  reflects only measured traffic. */
+  tier_tokens: DashboardTierTokens;
 }
 
 export interface DashboardToolTop {
@@ -92,6 +115,7 @@ export interface DashboardDayBreakdown {
     tool_errors: number;
     success_rate: number;
     error_rate: number;
+    tier_tokens: DashboardTierTokens;
   };
   top_agents: DashboardAgentTop[];
   by_provider: DashboardProviderBreakdown[];
@@ -110,6 +134,8 @@ export interface DashboardMetrics {
     tool_errors: number;
     success_rate: number;
     error_rate: number;
+    tier_tokens: DashboardTierTokens;
+    data_quality: DashboardDataQuality;
   };
   series: DashboardSeriesPoint[];
   top_tools: DashboardToolTop[];
@@ -146,6 +172,17 @@ type UsageRow = {
   mu_model_config_name: string | null;
   mu_agent_id: string | null;
   mu_agent_name: string | null;
+  mu_hot_tokens: number | null;
+  mu_warm_tokens: number | null;
+  mu_facts_tokens: number | null;
+  mu_overhead_tokens: number | null;
+};
+
+type TierBucket = {
+  hot: number;
+  warm: number;
+  facts: number;
+  overhead: number;
 };
 
 type DayBucket = {
@@ -155,6 +192,7 @@ type DayBucket = {
   toolCalls: number;
   toolSuccesses: number;
   toolErrors: number;
+  tier: TierBucket;
 };
 
 type AgentBucket = {
@@ -235,7 +273,11 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
               mu.model_id         AS mu_model_id,
               mu.model_config_name AS mu_model_config_name,
               mu.agent_id         AS mu_agent_id,
-              mu.agent_name       AS mu_agent_name
+              mu.agent_name       AS mu_agent_name,
+              mu.hot_tokens       AS mu_hot_tokens,
+              mu.warm_tokens      AS mu_warm_tokens,
+              mu.facts_tokens     AS mu_facts_tokens,
+              mu.overhead_tokens  AS mu_overhead_tokens
          FROM messages m
          JOIN threads t ON t.thread_id = m.thread_id
          LEFT JOIN agent_configs a ON a.id = t.agent_id
@@ -301,6 +343,11 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   let totalCalls = 0;
   let totalSuccesses = 0;
   let totalErrors = 0;
+  const tierTotals: TierBucket = { hot: 0, warm: 0, facts: 0, overhead: 0 };
+  // Data-quality counters: only assistant turns are eligible since
+  // user/system rows never carry a message_usage snapshot by design.
+  let measuredAssistantMessages = 0;
+  let estimatedAssistantMessages = 0;
 
   for (const row of usageRows) {
     const day = row.created_at.slice(0, 10);
@@ -332,6 +379,22 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       attribModelConfig = row.mu_model_config_name ?? attribModelConfig;
       attribAgentId = row.mu_agent_id ?? attribAgentId;
       attribAgentName = row.mu_agent_name ?? attribAgentName;
+      if (row.role === "assistant") measuredAssistantMessages += 1;
+      // Accumulate tier breakdown — null columns (legacy snapshots
+      // before the tier wire-up) contribute zero, which is the right
+      // behaviour for a stacked bar that visualises *known* tier split.
+      const hot = row.mu_hot_tokens ?? 0;
+      const warm = row.mu_warm_tokens ?? 0;
+      const facts = row.mu_facts_tokens ?? 0;
+      const overhead = row.mu_overhead_tokens ?? 0;
+      tierTotals.hot += hot;
+      tierTotals.warm += warm;
+      tierTotals.facts += facts;
+      tierTotals.overhead += overhead;
+      dayBucket.tier.hot += hot;
+      dayBucket.tier.warm += warm;
+      dayBucket.tier.facts += facts;
+      dayBucket.tier.overhead += overhead;
     } else if (row.role === "user" && threadHasSnapshot) {
       // Suppressed: snapshotted assistant turns in this thread already
       // capture this user message's tokens in their input_tokens.
@@ -343,6 +406,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       outputTokens = isInput ? 0 : tokenEstimate;
       const rates = modelRatesFor(byProvider, byProviderModel, byModel, row.provider, row.model_id);
       estCost = estimateCostUsd(inputTokens, outputTokens, rates);
+      if (row.role === "assistant") estimatedAssistantMessages += 1;
     }
 
     dayBucket.inputTokens += inputTokens;
@@ -469,6 +533,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       tool_errors: b.toolErrors,
       success_rate: round4(successRate),
       error_rate: round4(errorRate),
+      tier_tokens: tierBucketToTokens(b.tier),
     } satisfies DashboardSeriesPoint;
   });
 
@@ -561,6 +626,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
         tool_errors: dayPoint?.tool_errors ?? 0,
         success_rate: dayPoint?.success_rate ?? 1,
         error_rate: dayPoint?.error_rate ?? 0,
+        tier_tokens: dayPoint?.tier_tokens ?? emptyTierTokens(),
       },
       top_agents: dayAgents,
       by_provider: dayProviders,
@@ -580,6 +646,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       tool_errors: totalErrors,
       success_rate: round4(overallSuccessRate),
       error_rate: round4(overallErrorRate),
+      tier_tokens: tierBucketToTokens(tierTotals),
+      data_quality: computeDataQuality(measuredAssistantMessages, estimatedAssistantMessages),
     },
     series,
     top_tools,
@@ -641,9 +709,33 @@ function seedDayBuckets(now: Date, days: number): Map<string, DayBucket> {
       toolCalls: 0,
       toolSuccesses: 0,
       toolErrors: 0,
+      tier: { hot: 0, warm: 0, facts: 0, overhead: 0 },
     });
   }
   return out;
+}
+
+function emptyTierTokens(): DashboardTierTokens {
+  return { hot_tokens: 0, warm_tokens: 0, facts_tokens: 0, overhead_tokens: 0, measured_input_tokens: 0 };
+}
+
+function tierBucketToTokens(b: TierBucket): DashboardTierTokens {
+  return {
+    hot_tokens: b.hot,
+    warm_tokens: b.warm,
+    facts_tokens: b.facts,
+    overhead_tokens: b.overhead,
+    measured_input_tokens: b.hot + b.warm + b.facts + b.overhead,
+  };
+}
+
+export function computeDataQuality(measured: number, estimated: number): DashboardDataQuality {
+  const total = measured + estimated;
+  return {
+    measured_messages: measured,
+    estimated_messages: estimated,
+    measured_pct: total === 0 ? 1 : round4(measured / total),
+  };
 }
 
 function estimateTokens(text: string): number {
