@@ -126,11 +126,21 @@ export function useSSE(onDone?: () => void) {
       if ((err as Error).name !== "AbortError") {
         setError(String(err));
       }
-      setStreaming(false);
-      setStreamingContent("");
-      setThinkingContent("");
-      closeActivity();
       return { accepted: false };
+    } finally {
+      // Always release the gate when the stream ends — defends against the
+      // consume() loop returning without ever observing a terminal `done`
+      // event (e.g. the EventSource closed cleanly with zero events). If
+      // we relied solely on the `done` branch inside consume(), the chat
+      // would stay locked behind the Stop button forever.
+      //
+      // We intentionally do NOT clear streamingContent / thinkingContent
+      // here — the consumer (ChatView) swaps them for the persisted
+      // assistant bubble once the refetch lands; clearing now would yank
+      // the text out from under the user. The next start()/attach() resets
+      // them.
+      setStreaming(false);
+      closeActivity();
     }
   }, [consume, openActivity, closeActivity]);
 
@@ -179,15 +189,18 @@ export function useSSE(onDone?: () => void) {
     try {
       await consume(subscribeRun(threadId, ctrl.signal));
     } catch (err) {
-      // Attach failures are non-fatal — clear the gate and let the consumer
-      // drain anything queued during session load. The common case is
-      // "no run to attach to" (server returns 404, EventSource fails to
-      // open) — completely normal when navigating into an idle session.
-      setStreaming(false);
-      closeActivity();
       if ((err as Error).name !== "AbortError") {
         onDone?.();
       }
+    } finally {
+      // Always release the optimistic gate when the stream ends — whether
+      // via terminal `done`/`error` event, a thrown failure, or a clean
+      // EventSource close with no events (idle thread, server returned 404
+      // so the iterator exited without yielding). Without this, navigating
+      // into an idle thread leaves streaming=true forever: the Stop button
+      // hangs in the composer and the "Reconnecting…" badge never clears.
+      setStreaming(false);
+      closeActivity();
     }
   }, [consume, onDone, openActivity, closeActivity]);
 

@@ -156,8 +156,14 @@ export async function POST(req: NextRequest, { params }: Params) {
 // `EventSource` — never `fetch().body.getReader()`, which is unreliable on
 // iOS Safari for long-lived streaming responses.
 //
-// Returns 404 with no body if there's no run to attach to (run never
-// existed, or it finished + TTL-evicted before the GET arrived).
+// Emits a single synthetic `done` event and closes when there's no run to
+// attach to (run never existed, or it finished + TTL-evicted before the GET
+// arrived). We deliberately do NOT return 404 here: browsers map a 404 SSE
+// response onto `EventSource.onerror` with no terminal event, which trips
+// EventSource's auto-reconnect logic and leaves the client in a "stream
+// open but silent" state — UIs gating on a `done` event hang forever
+// showing the Stop/Reconnecting affordances. A 200 with `data: {"type":
+// "done"}\n\n` makes the iterator drain cleanly on every transport.
 //
 // `show_tools` / `show_thinking` query params let the caller suppress
 // chunk types it doesn't want to render. Defaults: both on. The full
@@ -165,14 +171,23 @@ export async function POST(req: NextRequest, { params }: Params) {
 // agent run config are run-wide settings, not per-subscriber filters).
 export async function GET(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
-  const run = getRun(thread_id);
-  if (!run) return new Response(null, { status: 404 });
-
   const showTools = req.nextUrl.searchParams.get("show_tools") !== "false";
   const showThinking = req.nextUrl.searchParams.get("show_thinking") !== "false";
   const stream_options: StreamOptions = {
     filters: { include_tools: showTools, include_thinking: showThinking },
   };
+
+  const run = getRun(thread_id);
+  if (!run) {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(sse({ type: "done" }));
+        controller.close();
+      },
+    });
+    return sseResponse(stream);
+  }
+
   return attachStream(thread_id, stream_options);
 }
 
