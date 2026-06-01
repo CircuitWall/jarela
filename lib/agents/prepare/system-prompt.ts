@@ -10,6 +10,7 @@ import os from "node:os";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { listIntegrations } from "@/lib/stores/integrations";
+import { listEnabledDocumentSources, getDocumentSourceStats } from "@/lib/stores/document-sources";
 import { buildAdaptivePersonaContext } from "@/lib/agents/adaptive-persona";
 import { resolveHarness } from "@/lib/agents/harness/resolve";
 import {
@@ -49,6 +50,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     adaptivePersonaCtx,
     buildUserContext(),
     buildIntegrationsContext(),
+    buildDocumentsContext(),
     harnessParts.capabilities,
     harnessParts.plan_first,
     harnessParts.presentation,
@@ -201,5 +203,33 @@ function buildDelegatesContext(lines: string[]): string {
     "You can hand subtasks to these other agents via the `delegate_to_agent` tool. Only delegate when the target agent has specialized knowledge or tools you lack — don't delegate trivial subtasks.",
     "BEFORE you call delegate_to_agent, briefly tell the user in one sentence which agent you're handing to and why. The user will see the tool card with the delegate's name, task, and final result.",
     ...lines,
+  ].join("\n");
+}
+
+// Surface indexed Documents so the model knows the RAG corpus exists.
+// Without this nudge agents almost never call `documents_search` — they have
+// no signal that any local content is searchable. Gated on actually-indexed
+// chunks (not just configured sources) so an empty/erroring source doesn't
+// produce false advertising.
+function buildDocumentsContext(): string {
+  const sources = listEnabledDocumentSources();
+  if (sources.length === 0) return "";
+
+  let totalChunks = 0;
+  const lines: string[] = [];
+  for (const s of sources) {
+    const stats = getDocumentSourceStats(s.id);
+    if (stats.chunk_count === 0) continue;
+    totalChunks += stats.chunk_count;
+    const label = s.label ?? s.path;
+    lines.push(`- ${label} (${s.kind}, ${stats.chunk_count} chunks)`);
+  }
+  if (totalChunks === 0) return "";
+
+  return [
+    "--- Indexed documents ---",
+    `The user has ${totalChunks} indexed chunks across ${lines.length} document source(s) available to you:`,
+    ...lines,
+    "Call `documents_search` whenever the user asks about local files, notes, project docs, or any content that sounds like it lives in one of these sources. Prefer it over guessing from training data. Use `documents_list_sources` to enumerate, and pass `source_id` to scope a search.",
   ].join("\n");
 }
