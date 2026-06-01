@@ -713,9 +713,19 @@ export function subscribeRun(
     // it as a hard error if the *first* connect attempt fails (no successful
     // 'open' ever fired) — anything after that is a recoverable drop and
     // the server's replay buffer will deliver missed chunks on reconnect.
+    // EXCEPT when the browser flips readyState to CLOSED — that's the spec's
+    // terminal state (e.g. the reconnect attempt got a 404 because the run
+    // finished + TTL-evicted), and no further events will ever arrive. If
+    // we ignored that case the consumer would hang on the waiter forever
+    // and the UI activity label ("Reconnecting…") would never clear.
     let everOpened = false;
     es.onopen = () => { everOpened = true; };
     es.onerror = () => {
+      if (es.readyState === EventSource.CLOSED) {
+        done = true;
+        notify();
+        return;
+      }
       if (!everOpened) {
         streamError = new Error("EventSource failed to open");
         done = true;
