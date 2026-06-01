@@ -57,7 +57,13 @@ export async function POST(req: NextRequest, { params }: Params) {
   const active = startRun(thread_id, thread?.agent_id ?? null);
   let prepared;
   try {
-    prepared = await prepareThreadRun(thread_id, message, stream_options, attachments, active.abort.signal);
+    prepared = await prepareThreadRun({
+      thread_id,
+      message,
+      options: stream_options,
+      attachments,
+      signal: active.abort.signal,
+    });
   } catch (err) {
     // Prep failure (unknown agent, model misconfig, …) — drop the run we
     // just registered and surface a synchronous error to the caller.
