@@ -395,29 +395,37 @@ export function persistAssistantMessage(
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
     }
-    // ADR-0041: snapshot real provider token usage + the pricing in effect
-    // right now. Skip when we don't have authoritative token counts —
-    // recording zero would poison the dashboard's snapshot path and force a
-    // fallback that doesn't exist.
-    if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
+    // ADR-0041 wrote provider-reported token usage when available. The
+    // per-tier context snapshot (hot/warm/facts/overhead) is computed
+    // locally and is meaningful even when the provider didn't emit a
+    // usage event (custom proxies, mid-stream errors, providers that
+    // omit usage on tool turns), so persist the row whenever EITHER side
+    // has data. The cost/rate columns simply stay null when there are
+    // no provider tokens to price.
+    const hasProviderUsage = !!(usage && (usage.input_tokens > 0 || usage.output_tokens > 0));
+    if (hasProviderUsage || contextSnapshot) {
       try {
         const thread = getThread(thread_id);
         const agentId = thread?.agent_id ?? "";
         const agent = agentId ? getAgentConfig(agentId) : null;
         const agentName = agent?.name ?? agentId;
         const tables = getPricingTables();
-        const rates = modelRatesFor(tables, usage.provider, usage.model_id);
-        const cost = estimateCostUsd(usage.input_tokens, usage.output_tokens, rates);
+        const rates = hasProviderUsage
+          ? modelRatesFor(tables, usage!.provider, usage!.model_id)
+          : { inputPer1M: null, outputPer1M: null };
+        const cost = hasProviderUsage
+          ? estimateCostUsd(usage!.input_tokens, usage!.output_tokens, rates)
+          : 0;
         recordMessageUsage({
           message_id: row.msg_id,
           thread_id,
           agent_id: agentId,
           agent_name: agentName,
-          provider: usage.provider,
-          model_id: usage.model_id,
-          model_config_name: usage.model_config_name,
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
+          provider: hasProviderUsage ? usage!.provider : "",
+          model_id: hasProviderUsage ? usage!.model_id : "",
+          model_config_name: hasProviderUsage ? usage!.model_config_name : null,
+          input_tokens: hasProviderUsage ? usage!.input_tokens : 0,
+          output_tokens: hasProviderUsage ? usage!.output_tokens : 0,
           input_rate_usd_per_mtok: rates.inputPer1M,
           output_rate_usd_per_mtok: rates.outputPer1M,
           cost_usd: cost,
