@@ -8,6 +8,7 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { Select } from "@/components/ui/Select";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -172,7 +173,8 @@ function WatcherCard({
       {expanded && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
           <Row label="Agent">
-            <select
+            <Select
+              size="sm"
               value={watcher.agent_id}
               onChange={async (e) => {
                 const next = e.target.value;
@@ -188,7 +190,6 @@ function WatcherCard({
                   });
                 }
               }}
-              className="w-full rounded border border-border bg-surface-1 px-2 py-1 text-[12px] text-fg"
             >
               {Object.values(agents).length === 0 && (
                 <option value={watcher.agent_id}>{watcher.agent_id}</option>
@@ -198,7 +199,7 @@ function WatcherCard({
                 .map((a) => (
                   <option key={a.id} value={a.id}>{a.name}</option>
                 ))}
-            </select>
+            </Select>
           </Row>
           <Row label="Tool">
             <span className="font-mono">{watcher.tool}</span>
