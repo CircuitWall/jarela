@@ -23,6 +23,7 @@ import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-s
 import type { MessageRow } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
 import { getProvider } from "@/lib/providers";
+import { getKnownContextLength } from "@/lib/providers/known-context-windows";
 import type { ContentPart } from "@/lib/tools/types";
 
 export interface ResolvedHistoryWindow {
@@ -76,7 +77,7 @@ export async function buildHistoryWindow(
     context_window_tokens:
       typeof providerParams.context_window_tokens === "number"
         ? providerParams.context_window_tokens
-        : undefined,
+        : resolveFallbackContextWindow(modelInfo),
     max_tokens: typeof providerParams.max_tokens === "number" ? providerParams.max_tokens : undefined,
     context_tier_proportions:
       typeof providerParams.context_tier_proportions === "object" && providerParams.context_tier_proportions
@@ -164,6 +165,17 @@ export async function buildHistoryWindow(
 
 function sumMessageTokens(messages: readonly MessageRow[]): number {
   return messages.reduce((acc, m) => acc + estimateTokens(transcriptText(m.content)), 0);
+}
+
+// When the agent's model config doesn't pin `context_window_tokens`, fall
+// back to the web-sourced known-models table keyed by (provider, model_id).
+// Returns undefined when the model is unrecognised — the budget calculator
+// then uses its hard-coded 8k default.
+function resolveFallbackContextWindow(
+  modelInfo: { providerName?: string; modelId?: string },
+): number | undefined {
+  if (!modelInfo.providerName || !modelInfo.modelId) return undefined;
+  return getKnownContextLength(modelInfo.providerName, modelInfo.modelId) ?? undefined;
 }
 
 // Recover ContentPart[] from messages that were stored as JSON-encoded
