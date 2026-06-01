@@ -57,6 +57,13 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
   const [agentConfigLoading, setAgentConfigLoading] = useState(false);
+  // ADR-0042 — explicit context boundary + persisted warm summary. NULL on
+  // threads with no pin (fall back to the agent's history_window_hours
+  // default); a timestamp when the user has chosen where the line sits.
+  const [hotSince, setHotSince] = useState<string | null>(null);
+  const [warmSummary, setWarmSummary] = useState<string | null>(null);
+  const [warmSummaryBefore, setWarmSummaryBefore] = useState<string | null>(null);
+  const [warmSummaryComputedAt, setWarmSummaryComputedAt] = useState<string | null>(null);
 
   const addNotice = (text: string) =>
     setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
@@ -165,6 +172,13 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         setMessages(d.messages);
         setHasMore(d.has_more);
       }
+      // The thread metadata is spread on every GET, so the warm summary the
+      // run just (re)computed lands here — chat card refreshes without a
+      // second round-trip.
+      setHotSince(d.hot_since ?? null);
+      setWarmSummary(d.warm_summary ?? null);
+      setWarmSummaryBefore(d.warm_summary_before ?? null);
+      setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
       clearStreamingRef.current();
       if (pendingAutoSpeakRef.current) {
         pendingAutoSpeakRef.current = false;
@@ -221,6 +235,12 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
           setMessages(d.messages);
           setHasMore(d.has_more);
         }
+        // Cross-device path: another client may have moved the boundary or
+        // recomputed the summary. Refresh both unconditionally.
+        setHotSince(d.hot_since ?? null);
+        setWarmSummary(d.warm_summary ?? null);
+        setWarmSummaryBefore(d.warm_summary_before ?? null);
+        setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
       }).catch(console.error);
     }
     window.addEventListener("jarela:thread-updated", handler);
@@ -241,6 +261,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setNotices([]);
       setHasMore(false);
       setMessagesLoading(false);
+      setHotSince(null);
+      setWarmSummary(null);
+      setWarmSummaryBefore(null);
+      setWarmSummaryComputedAt(null);
       return;
     }
     let cancelled = false;
@@ -249,10 +273,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     // messages while the new fetch is in flight.
     setMessages([]);
     setHasMore(false);
+    setHotSince(null);
+    setWarmSummary(null);
+    setWarmSummaryBefore(null);
+    setWarmSummaryComputedAt(null);
     api.threads.get(threadId).then((d) => {
       if (cancelled) return;
       setMessages(d.messages);
       setHasMore(d.has_more);
+      setHotSince(d.hot_since ?? null);
+      setWarmSummary(d.warm_summary ?? null);
+      setWarmSummaryBefore(d.warm_summary_before ?? null);
+      setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
     }).catch((err) => { if (!cancelled) console.error(err); })
       .finally(() => {
         if (cancelled) return;
@@ -266,6 +298,32 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       });
     return () => { cancelled = true; };
   }, [threadId, attach]);
+
+  // ADR-0042. Move the user's boundary line. Optimistic update so the chat
+  // chrome (boundary divider + summary card) reacts instantly; PATCH then
+  // confirms server-side. Boundary moves invalidate the cached summary —
+  // we clear it locally too so the UI shows a placeholder until the next
+  // run refreshes it.
+  const setContextPin = useCallback(async (next: string | null) => {
+    if (!threadId) return;
+    setHotSince(next);
+    if (warmSummaryBefore !== next) {
+      setWarmSummary(null);
+      setWarmSummaryBefore(null);
+      setWarmSummaryComputedAt(null);
+    }
+    try {
+      const updated = await api.threads.setContextPin(threadId, next);
+      // Resync from server in case of cross-device drift between optimistic
+      // local update and server-confirmed state.
+      setHotSince(updated.hot_since);
+      setWarmSummary(updated.warm_summary);
+      setWarmSummaryBefore(updated.warm_summary_before);
+      setWarmSummaryComputedAt(updated.warm_summary_computed_at);
+    } catch (err) {
+      console.error("setContextPin failed", err);
+    }
+  }, [threadId, warmSummaryBefore]);
 
   const loadOlder = useCallback(async () => {
     if (!threadId || loadingMore || !hasMore || messages.length === 0) return;
@@ -321,6 +379,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         ui_experience_mode: state.experienceMode,
       },
       atts.length ? atts : undefined,
+      hotSince,
     );
     if (!accepted) {
       // The server rejected this submission because another run was already
@@ -426,6 +485,12 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         onLoadMore={loadOlder}
         queuedMessages={queue.map((q) => ({ id: q.id, text: q.text, attachmentCount: q.attachments.length }))}
         onRemoveQueued={removeQueued}
+        hotSince={hotSince}
+        warmSummary={warmSummary}
+        warmSummaryBefore={warmSummaryBefore}
+        warmSummaryComputedAt={warmSummaryComputedAt}
+        onSetContextPin={setContextPin}
+        streaming={streaming}
       />
 
       {error && (
