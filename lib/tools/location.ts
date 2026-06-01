@@ -49,4 +49,4 @@ export const getUserLocationTool = tool(
   },
 );
 
-registerTools("Web", [getUserLocationTool]);
+registerTools("Web", "read", [getUserLocationTool]);

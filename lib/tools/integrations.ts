@@ -72,4 +72,4 @@ export const getIntegrationSetupTool = tool(
   },
 );
 
-registerTools("Config", [listIntegrationsTool, getIntegrationSetupTool]);
+registerTools("Config", "read", [listIntegrationsTool, getIntegrationSetupTool]);

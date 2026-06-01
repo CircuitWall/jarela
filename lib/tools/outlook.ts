@@ -308,7 +308,9 @@ export const outlookTrashMessageTool = tool(
   },
 );
 
-registerTools("Mail", [
+registerTools("Mail", "read", [
   outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
+]);
+registerTools("Mail", "execute", [
   outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
 ]);

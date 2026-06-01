@@ -356,7 +356,9 @@ export const gmailTrashMessageTool = tool(
   },
 );
 
-registerTools("Mail", [
+registerTools("Mail", "read", [
   gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
+]);
+registerTools("Mail", "execute", [
   gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
 ]);
