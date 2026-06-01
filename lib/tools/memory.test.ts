@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,12 +14,16 @@ afterAll(() => {
 
 const { memoryReadTool, memoryWriteTool, memoryDeleteTool, memoryListTool } =
   await import("./memory");
-const { putMemory, getMemory } = await import("@/lib/stores/memory");
+const { putMemory, getMemory, listMemory, deleteMemory } = await import("@/lib/stores/memory");
 
 beforeEach(() => {
-  // Each test starts from an empty DB dir so cross-test state doesn't leak.
-  rmSync(tmpRoot, { recursive: true, force: true });
-  mkdirSync(tmpRoot, { recursive: true });
+  // Clear rows between tests via the store API. We deliberately do NOT
+  // rm the tmpdir here: SQLite holds open file handles to the .db and
+  // on Windows that makes rmSync flaky with EPERM, which would block
+  // the pre-commit hook for every contributor on Windows.
+  for (const row of listMemory(undefined, undefined, 1000)) {
+    deleteMemory(row.namespace, row.key);
+  }
 });
 
 describe("memoryDeleteTool", () => {
