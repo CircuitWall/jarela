@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-06-01
+
+### Changed
+
+- **iOS standalone PWA now follows the active theme in the status bar.**
+  Switched `apple-mobile-web-app-status-bar-style` to
+  `black-translucent` and declared `apple-mobile-web-app-capable`, so
+  the iOS status bar overlays the AppShell header (already padded with
+  `env(safe-area-inset-top)` via `--app-safe-top`) and inherits the
+  current light / dark surface color instead of forcing a static black
+  or white bar. Safari ignores the manifest's `theme_color` once an app
+  is installed to the home screen, so this is the only knob iOS
+  actually respects ([app/layout.tsx](app/layout.tsx)).
+
+## [0.9.1] - 2026-06-01
+
+### Fixed
+
+- **Per-turn context-usage bar now actually persists.**
+  `message_usage.cost_usd` is `NOT NULL` in the schema, so snapshot-only
+  inserts (provider didn't report token usage) were silently rejected
+  and the bar never rendered. Default the fallback cost to `0` so the
+  row lands
+  ([lib/agents/run-thread.ts](lib/agents/run-thread.ts),
+  [lib/stores/message-usage.ts](lib/stores/message-usage.ts)).
+- **Last assistant bubble no longer auto-collapses mid-read.** The
+  streaming bubble and the persisted bubble are two different React
+  instances (`key={msg.id}` remounts when the stream finalises), so
+  the streaming-aware “keep open” latch never carried over.
+  `MessageList` now passes `isLatest` to the last visible message and
+  `CollapsibleLong` treats it as `defaultOpen`
+  ([components/chat/MessageBubble.tsx](components/chat/MessageBubble.tsx),
+  [components/chat/MessageList.tsx](components/chat/MessageList.tsx)).
+- **`dashboard-metrics` snapshot gate** no longer suppresses
+  content-length cost estimates for rows whose snapshot has
+  `input_tokens = 0`
+  ([lib/stores/dashboard-metrics.ts](lib/stores/dashboard-metrics.ts)).
+
+### Changed
+
+- **Context-usage bar visuals.** Bar is now a 3px strip flush along
+  the assistant bubble’s bottom edge, clipped by the bubble’s
+  rounded corners — no more floating pill below the message. Every
+  segment (Hot / Warm / Facts / Overhead slots, reservation tail,
+  footer) carries a native tooltip explaining how to read it
+  ([components/chat/ContextUsageBar.tsx](components/chat/ContextUsageBar.tsx),
+  [components/chat/MessageBubble.tsx](components/chat/MessageBubble.tsx)).
+- **Next 16 webpack tracing** aliases `instrumentation-node.ts` to
+  `false` for non-Node targets and adds `libsignal` to
+  `serverExternalPackages` so the baileys / MCP / sharp graph stops
+  leaking into edge and browser bundles
+  ([next.config.ts](next.config.ts)).
+
 ## [0.9.0] - 2026-06-01
 
 ### Added

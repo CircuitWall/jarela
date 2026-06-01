@@ -17,6 +17,19 @@ export const metadata: Metadata = {
     ],
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
+  // iOS standalone-mode PWA chrome. Safari ignores the manifest's
+  // `theme_color` once the app is installed to the home screen and only
+  // honors these Apple-specific tags. `black-translucent` is the only
+  // value that produces an arbitrary status-bar color: the bar overlays
+  // the page and whatever paints under it (the AppShell top bar, which
+  // already pads itself with env(safe-area-inset-top) via --app-safe-top)
+  // becomes the visible status-bar background. So the top bar's surface
+  // color follows the active light/dark theme automatically.
+  appleWebApp: {
+    capable: true,
+    title: getAppName(),
+    statusBarStyle: "black-translucent",
+  },
 };
 
 // Next 15+ requires themeColor (and color-scheme, viewport, etc.) to live in
