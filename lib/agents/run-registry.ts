@@ -15,6 +15,18 @@ type Subscriber = (chunk: StreamChunk) => void;
 
 const MAX_BUFFERED = 4000;        // text_delta chunks accumulate fast; cap them
 const RECENT_TTL_MS = 5 * 60_000; // keep finished runs visible for 5 min
+// Hard wall-clock ceiling on a single run. If a run is still flagged
+// "running" after this much time, the registry assumes the driver
+// crashed without calling finishRun() (caller forgot a try/finally, the
+// async IIFE rejected silently, etc.) and force-evicts it. Without this
+// safety net a single missed finishRun() pins the thread as
+// run_in_flight forever — every subsequent user submit comes back 409
+// and the user thinks the agent is "stuck" or "not responding".
+// Override with JARELA_RUN_MAX_MS for very long agent loops.
+function runMaxMs(): number {
+  const raw = Number(process.env.JARELA_RUN_MAX_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 15 * 60_000;
+}
 
 export interface ActiveRun {
   thread_id: string;
@@ -52,6 +64,18 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     abort: new AbortController(),
   };
   runs.set(thread_id, run);
+  // Wall-clock watchdog (see runMaxMs comment). If the driver forgets to
+  // call finishRun() the entry would sit as "running" forever — auto-evict
+  // to "error" so the next POST is accepted and the user is unblocked.
+  const max = runMaxMs();
+  setTimeout(() => {
+    const cur = runs.get(thread_id);
+    if (cur !== run) return;
+    if (run.status !== "running") return;
+    console.warn(`[run-registry] watchdog: force-finishing leaked run for thread ${thread_id} after ${max}ms`);
+    try { run.abort.abort("run_watchdog_timeout"); } catch { /* */ }
+    finishRun(run, "error");
+  }, max).unref?.();
   return run;
 }
 
