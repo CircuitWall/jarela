@@ -21,6 +21,7 @@ import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { isLikelyBinary } from "@/lib/documents/indexer";
 import { registerTools } from "./registry";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "./error-codes";
 
 export interface GitHubAuth {
   token: string;
@@ -65,13 +66,52 @@ async function ghFetch(
     });
     const text = await res.text();
     if (!res.ok) {
-      return { error: `GitHub ${res.status}: ${text.slice(0, 500)}`, url };
+      // ADR-0049/0050 — stable error code so the agent can branch on
+      // 401/403/429 without parsing the message text. GitHub's primary
+      // rate-limit returns 403 with X-RateLimit-Remaining=0; the secondary
+      // rate-limit and abuse detection return 429. We prefer the
+      // GitHub-specific x-ratelimit-reset (epoch seconds) over Retry-After
+      // when present.
+      const code = githubStatusCode(res);
+      const retryAfterMs = code === "http_429" ? githubRetryAfterMs(res) : undefined;
+      return {
+        error: `GitHub ${res.status}: ${text.slice(0, 500)}`,
+        code,
+        status: res.status,
+        url,
+        ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+      };
     }
     if (!text) return {};
     return parseJsonSafe<unknown>(text, text);
   } catch (err) {
-    return { error: `GitHub fetch threw: ${err instanceof Error ? err.message : String(err)}`, url };
+    const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    return {
+      error: `GitHub fetch threw: ${err instanceof Error ? err.message : String(err)}`,
+      code,
+      url,
+    };
   }
+}
+
+function githubStatusCode(res: Response): string {
+  // Primary rate-limit: 403 + X-RateLimit-Remaining: 0. Treat as http_429
+  // so the playbook's retry-once-with-backoff branch fires.
+  if (res.status === 403 && res.headers.get("x-ratelimit-remaining") === "0") {
+    return "http_429";
+  }
+  return httpStatusToErrorCode(res.status);
+}
+
+function githubRetryAfterMs(res: Response): number | undefined {
+  const ra = parseRetryAfterMs(res.headers.get("retry-after"));
+  if (ra !== undefined) return ra;
+  const reset = res.headers.get("x-ratelimit-reset");
+  if (!reset) return undefined;
+  const epochSec = Number(reset);
+  if (!Number.isFinite(epochSec)) return undefined;
+  const delta = epochSec * 1000 - Date.now();
+  return delta > 0 ? delta : 0;
 }
 
 // Exposed for sibling modules that need the same auth/proxy/CA-bundle

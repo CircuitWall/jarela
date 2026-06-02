@@ -12,6 +12,7 @@
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-store";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "@/lib/tools/error-codes";
 
 export type { OAuthFlow };
 
@@ -197,10 +198,22 @@ export async function googleFetch(
     if (res.status === 204) return { ok: true };
     const text = await res.text();
     if (!res.ok) {
-      return { error: `${service} ${res.status}: ${text.slice(0, 500)}`, url };
+      const code = httpStatusToErrorCode(res.status);
+      const retryAfterMs = res.status === 429 ? parseRetryAfterMs(res.headers.get("retry-after")) : undefined;
+      return {
+        error: `${service} ${res.status}: ${text.slice(0, 500)}`,
+        code,
+        status: res.status,
+        url,
+        ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+      };
     }
     try { return JSON.parse(text); } catch { return text; }
   } catch (err) {
-    return { error: `${service} fetch threw: ${err instanceof Error ? err.message : String(err)}` };
+    const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    return {
+      error: `${service} fetch threw: ${err instanceof Error ? err.message : String(err)}`,
+      code,
+    };
   }
 }

@@ -33,6 +33,7 @@ import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { registerTools } from "./registry";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "./error-codes";
 
 export interface JiraAlignAuth {
   url: string;        // e.g. "https://acme.jiraalign.com"
@@ -107,11 +108,24 @@ async function jaFetch(
     });
     const text = await res.text();
     if (!res.ok) {
-      return { error: `Jira Align ${res.status}: ${text.slice(0, 500)}`, url };
+      const code = httpStatusToErrorCode(res.status);
+      const retryAfterMs = res.status === 429 ? parseRetryAfterMs(res.headers.get("retry-after")) : undefined;
+      return {
+        error: `Jira Align ${res.status}: ${text.slice(0, 500)}`,
+        code,
+        status: res.status,
+        url,
+        ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+      };
     }
     return parseJsonSafe<unknown>(text, text);
   } catch (err) {
-    return { error: `Jira Align fetch threw: ${err instanceof Error ? err.message : String(err)}`, url };
+    const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    return {
+      error: `Jira Align fetch threw: ${err instanceof Error ? err.message : String(err)}`,
+      code,
+      url,
+    };
   }
 }
 
