@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, submitRun, subscribeRun } from "@/api/client";
-import type { ContentPart, SSEEventType, StreamOptions } from "@/api/types";
+import type { ContentPart, StreamOptions } from "@/api/types";
 import type { ToolEvent } from "@/components/chat/ToolList";
 import { pushActivity } from "@/lib/ui/loading";
+import { safeParseSSEEvent } from "@/lib/agents/stream-chunk-schema";
 
 export type { ToolEvent };
 
@@ -47,7 +48,24 @@ export function useSSE(onDone?: () => void) {
     iterable: AsyncIterable<string>,
   ): Promise<void> => {
     for await (const raw of iterable) {
-      const event = JSON.parse(raw) as SSEEventType;
+      // Defensive parse: malformed payloads or unknown future event types
+      // are dropped with a console warning rather than crashing the reducer.
+      // The schema is the single source of truth shared with the server emit
+      // path (lib/agents/stream-chunk-schema.ts) so version skew between
+      // client + server fails loudly here instead of silently corrupting
+      // streaming state across a long task.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch (parseErr) {
+        console.warn("[useSSE] dropped non-JSON SSE chunk:", parseErr, raw.slice(0, 200));
+        continue;
+      }
+      const event = safeParseSSEEvent(parsed);
+      if (!event) {
+        console.warn("[useSSE] dropped SSE chunk failing schema:", parsed);
+        continue;
+      }
       if (event.type === "text_delta") {
         setStreamingContent((p) => p + event.delta);
         activityRef.current?.set("Responding…");
