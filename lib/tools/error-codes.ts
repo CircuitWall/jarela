@@ -62,6 +62,37 @@ export interface HttpToolError {
    * `http_429` responses when the upstream included the header.
    */
   retry_after_ms?: number;
+  /**
+   * ADR-0056 — domain-specific recovery guidance for the agent. The system
+   * prompt only carries generic rules ("don't retry tool_timeout blindly");
+   * the tool itself knows what to actually do. e.g. an Atlassian 401 hints
+   * "check Settings → Integrations → Atlassian"; a `jira_create_issue`
+   * `invalid_args` hints "call jira_list_projects to discover valid keys".
+   * Optional — generic codes like a transient http_5xx don't need a hint.
+   */
+  hint?: string;
+}
+
+/**
+ * Default recovery hint for an HTTP error code. Used by the wrappers
+ * (atlassian/github/jira_align/google/microsoft fetches) so every
+ * provider produces the same baseline guidance for the same status,
+ * with provider-specific overrides allowed at the call site.
+ *
+ * Returns undefined for codes that are too generic for a useful hint
+ * (e.g., http_5xx — "retry once" already comes from the playbook).
+ */
+export function defaultHttpHint(provider: string, code: string): string | undefined {
+  if (code === "http_401" || code === "http_403") {
+    return `Check ${provider} credentials in Settings → Integrations → ${provider}; the saved token may be missing, expired, or lack the required scope.`;
+  }
+  if (code === "http_404") {
+    return `The ${provider} resource at this path doesn't exist. Verify the id/key with a list/search call before retrying.`;
+  }
+  if (code === "http_429") {
+    return `Rate-limited by ${provider}. If retry_after_ms is set, wait that long before retrying ONCE; otherwise try a different approach.`;
+  }
+  return undefined;
 }
 
 /**

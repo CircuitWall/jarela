@@ -16,7 +16,7 @@
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-store";
 import { parseJsonSafe } from "@/lib/utils/json";
-import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "@/lib/tools/error-codes";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode, defaultHttpHint } from "@/lib/tools/error-codes";
 
 export type { OAuthFlow };
 
@@ -202,20 +202,30 @@ export async function graphFetch(
     if (!res.ok) {
       const code = httpStatusToErrorCode(res.status);
       const retryAfterMs = res.status === 429 ? parseRetryAfterMs(res.headers.get("retry-after")) : undefined;
+      const hint = code === "http_401"
+        ? "Outlook authentication expired or revoked. Open Settings → Integrations → Outlook and click Reconnect to refresh the OAuth grant."
+        : defaultHttpHint("Microsoft Graph", code);
       return {
         error: `Graph ${res.status}: ${text.slice(0, 500)}`,
         code,
         status: res.status,
         url,
         ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+        ...(hint ? { hint } : {}),
       };
     }
     try { return JSON.parse(text); } catch { return text; }
   } catch (err) {
     const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    const hint = code === "network_error"
+      ? "Network failure reaching graph.microsoft.com. Retry once; if persistent, check VPN/proxy."
+      : code === "tool_timeout"
+        ? "Microsoft Graph didn't respond within the per-tool deadline. Narrow the request (smaller $top, scoped $filter) or retry."
+        : undefined;
     return {
       error: `Graph fetch threw: ${err instanceof Error ? err.message : String(err)}`,
       code,
+      ...(hint ? { hint } : {}),
     };
   }
 }
