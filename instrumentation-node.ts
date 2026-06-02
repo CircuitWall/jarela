@@ -6,7 +6,22 @@
 // server in production.
 
 export async function bootNode(): Promise<void> {
-  // ADR-0058 — install the console patch first so every subsequent
+  // ADR-0060 — apply persisted env-overrides FIRST so subsequent module
+  // imports see the overridden values from the start. Done before the
+  // logging / shutdown / tools imports because each of them caches env
+  // reads at module-init time.
+  const { applyOverridesToProcessEnv } = await import("@/lib/env/overrides");
+  const r = applyOverridesToProcessEnv();
+  if (r.applied > 0 || r.skipped > 0) {
+    // Use raw stdout — console isn't patched yet and we don't want this
+    // line to land in the logs panel (the entries it produces would be
+    // pre-patch anyway).
+    process.stdout.write(
+      `[env-overrides] applied ${r.applied}, skipped ${r.skipped} (already in env)\n`,
+    );
+  }
+
+  // ADR-0058 — install the console patch second so every subsequent
   // boot-time log line lands in the in-memory ring + the live Logs
   // panel feed. Idempotent (guarded by a global Symbol), so dev HMR
   // doesn't double-patch.

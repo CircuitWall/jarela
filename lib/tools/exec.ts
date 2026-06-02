@@ -4,10 +4,13 @@ import { z } from "zod";
 import { registerTools } from "./registry";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { checkExecAllowed, resolveSafetyMode } from "./safety";
+import { getConfig } from "@/lib/env/config";
 
-const MAX_OUTPUT_BYTES = 8_000;
-const DEFAULT_TIMEOUT_MS = 10_000;
-const MAX_TIMEOUT_MS = 60_000;
+// JARELA_EXEC_MAX_OUTPUT_BYTES / JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS /
+// JARELA_EXEC_TOOL_MAX_TIMEOUT_MS override these.
+function maxOutputBytes(): number { return getConfig().execMaxOutputBytes; }
+function defaultTimeoutMs(): number { return getConfig().execToolDefaultTimeoutMs; }
+function maxTimeoutMs(): number { return getConfig().execToolMaxTimeoutMs; }
 
 const BLOCKED_PATTERNS = [
   /\brm\s+-rf\s+\/\b/i,
@@ -21,7 +24,7 @@ function isBlockedCommand(command: string): boolean {
   return BLOCKED_PATTERNS.some((pattern) => pattern.test(command));
 }
 
-function clipOutput(text: string, max = MAX_OUTPUT_BYTES): { value: string; truncated: boolean } {
+function clipOutput(text: string, max = maxOutputBytes()): { value: string; truncated: boolean } {
   if (text.length <= max) return { value: text, truncated: false };
   return { value: `${text.slice(0, max)}\n[output truncated]`, truncated: true };
 }
@@ -39,7 +42,7 @@ function runLocalCommand(
     return JSON.stringify({ exit_code: 1, stderr: "command is required" });
   }
 
-  const timeout = Math.min(options.timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
+  const timeout = Math.min(options.timeout_ms ?? defaultTimeoutMs(), maxTimeoutMs());
 
   const mode = resolveSafetyMode();
   const gate = checkExecAllowed(command, {
@@ -68,7 +71,7 @@ function runLocalCommand(
       env,
       timeout,
       encoding: "utf8",
-      maxBuffer: MAX_OUTPUT_BYTES * 2,
+      maxBuffer: maxOutputBytes() * 2,
       stdio: ["pipe", "pipe", "pipe"],
     });
     const clipped = clipOutput(output);

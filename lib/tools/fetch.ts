@@ -4,8 +4,9 @@ import { stripHtml } from "@/lib/utils/html";
 import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { registerTools } from "./registry";
 
-const MAX_BYTES = 200_000;
-const TIMEOUT_MS = 15_000;
+// JARELA_FETCH_TOOL_MAX_BYTES / JARELA_FETCH_TOOL_TIMEOUT_MS override these.
+function maxBytes(): number { return getConfig().fetchToolMaxBytes; }
+function timeoutMs(): number { return getConfig().fetchToolTimeoutMs; }
 // Defense against SSRF redirect chains: every Location-hop is re-checked
 // against the SSRF policy. Cap the chain so a malicious server can't
 // pin us in a redirect loop.
@@ -69,6 +70,8 @@ export const webFetchTool = tool(
       return JSON.stringify({ error: "url must start with http:// or https://" });
     }
     const ctrl = new AbortController();
+    const TIMEOUT_MS = timeoutMs();
+    const MAX_BYTES = maxBytes();
     const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
       // SSRF guard. The LLM controls `url`, and our HTTP middleware

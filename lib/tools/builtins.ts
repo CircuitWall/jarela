@@ -26,3 +26,4 @@ import "./calendar";
 import "./outlook";
 import "./outlook-calendar";
 import "./delegate";
+import "./system_config";

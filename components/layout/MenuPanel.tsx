@@ -1,5 +1,5 @@
 "use client";
-import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, ScrollText, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
+import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, ScrollText, ServerCog, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
 import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
@@ -36,6 +36,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   profile: <User size={13} />,
   harness: <Shapes size={13} />,
   logs: <ScrollText size={13} />,
+  env: <ServerCog size={13} />,
 };
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -54,6 +55,7 @@ const TAB_TITLES: Record<Tab, string> = {
   profile: "Profile",
   harness: "Harness",
   logs: "Logs",
+  env: "Environment",
 };
 
 const TAB_SHORT: Record<Tab, string> = {
@@ -72,6 +74,7 @@ const TAB_SHORT: Record<Tab, string> = {
   profile: "Me",
   harness: "Test",
   logs: "Logs",
+  env: "Env",
 };
 
 // Two-tier menu. "Common" surfaces the day-to-day verbs plus the most
@@ -87,7 +90,7 @@ const TAB_SHORT: Record<Tab, string> = {
 // "extensions" tabs remain wired for deep-link back-compat but are hidden
 // here.
 const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "tools", "connections", "tasks", "profile"];
-const ADVANCED_TABS: Tab[] = ["memory", "bridges", "harness", "logs"];
+const ADVANCED_TABS: Tab[] = ["memory", "bridges", "harness", "logs", "env"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
@@ -114,6 +117,7 @@ const TAB_ACCENT: Partial<Record<Tab, string>> = {
   tools: "from-emerald-500/20 to-lime-500/5",
   harness: "from-orange-500/20 to-amber-500/5",
   logs: "from-slate-500/20 to-zinc-500/5",
+  env: "from-teal-500/20 to-cyan-500/5",
 };
 
 function avatarGradient(id: string): string {
