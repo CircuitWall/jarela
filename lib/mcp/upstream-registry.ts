@@ -12,9 +12,11 @@
 
 import { z } from "zod";
 import type { RegistryEntry, RegistryVariable } from "./registry";
+import { getConfig } from "@/lib/env/config";
 
 const REGISTRY_BASE = "https://registry.modelcontextprotocol.io/v0.1";
-const FETCH_TIMEOUT_MS = 15_000;
+// JARELA_MCP_REGISTRY_TIMEOUT_MS overrides this. Read fresh on every call.
+function fetchTimeoutMs(): number { return getConfig().mcpRegistryTimeoutMs; }
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
 // ── Upstream schema ────────────────────────────────────────────────────────
@@ -229,7 +231,7 @@ export async function getUpstreamByName(serverName: string, fresh = false): Prom
 async function fetchJson(url: URL): Promise<unknown> {
   const res = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "Jarela/1.0 (+mcp-registry)" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(fetchTimeoutMs()),
   });
   if (!res.ok) throw new Error(`MCP registry ${url.pathname} returned ${res.status}`);
   return res.json();

@@ -132,8 +132,12 @@ function cachedList<T>(
 // escape hatch for the rare case where retry behaviour is masking a real
 // bug they're trying to debug).
 
-const REQUEST_TIMEOUT_MS = 30_000;
-const MAX_REQUEST_ATTEMPTS = 3;
+// JARELA_HTTP_REQUEST_TIMEOUT_MS / JARELA_HTTP_MAX_ATTEMPTS override these
+// via runtime-config (fetched once from /api/v1/config). The fallback is
+// the schema default so behavior is identical until the fetch lands.
+import { runtimeConfig } from "./runtime-config";
+function requestTimeoutMs(): number { return runtimeConfig().httpRequestTimeoutMs; }
+function maxRequestAttempts(): number { return runtimeConfig().httpMaxAttempts; }
 const RETRY_BACKOFFS_MS = [250, 1_000, 4_000];
 
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -165,7 +169,8 @@ function isTransientStatus(status: number, method: string): boolean {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const retryDisabled = isClientRetryDisabled();
-  const maxAttempts = retryDisabled ? 1 : MAX_REQUEST_ATTEMPTS;
+  const maxAttempts = retryDisabled ? 1 : maxRequestAttempts();
+  const REQUEST_TIMEOUT_MS = requestTimeoutMs();
 
   // Compose the caller's signal (if any) with a per-request timeout. The
   // timeout signal aborts the underlying fetch on deadline; the caller's
@@ -887,7 +892,7 @@ export function subscribeRun(
         try { es.close(); } catch { /* */ }
         notify();
       }
-    }, 30_000);
+    }, runtimeConfig().sseConnectTimeoutMs);
 
     const onAbort = () => {
       done = true;
