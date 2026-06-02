@@ -6,6 +6,13 @@
 // server in production.
 
 export async function bootNode(): Promise<void> {
+  // ADR-0058 — install the console patch first so every subsequent
+  // boot-time log line lands in the in-memory ring + the live Logs
+  // panel feed. Idempotent (guarded by a global Symbol), so dev HMR
+  // doesn't double-patch.
+  const { installConsolePatch } = await import("@/lib/logging/sink");
+  installConsolePatch();
+
   const { registerShutdownHandlers } = await import("@/lib/lifecycle/shutdown");
   registerShutdownHandlers();
 
