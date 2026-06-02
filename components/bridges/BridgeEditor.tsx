@@ -5,7 +5,17 @@ import { api } from "@/api/client";
 import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute, ModelConfig } from "@/api/types";
 import { useBridgeRoutes } from "@/hooks/useBridges";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
-import { resolveAgentModel } from "@/lib/agents/effective-model";
+// Inlined from the previous lib/agents/effective-model.ts (one-line resolver
+// with one external caller — this one). Mirrors lib/agents/llm.ts: explicit
+// model_config_name wins, otherwise fall back to the workspace-wide default.
+function resolveAgentModel(
+  agent: Pick<AgentConfig, "model_config_name"> | null | undefined,
+  models: readonly ModelConfig[],
+): ModelConfig | null {
+  const defaultModel = models.find((m) => m.is_default) ?? null;
+  if (!agent?.model_config_name) return defaultModel;
+  return models.find((m) => m.name === agent.model_config_name) ?? defaultModel;
+}
 import { formatRelativeOrDate } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { StatusPill } from "./BridgesPanel";

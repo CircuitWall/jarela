@@ -12,7 +12,9 @@ import { getModelConfig, getDefaultModelConfig, getModelParams, upsertModelConfi
 import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
-import { getCheckpointer } from "@/lib/agents/checkpointer";
+import { join } from "node:path";
+import { getDataDir } from "@/lib/db/data-dir";
+import { NodeSqliteSaver } from "./sqlite-checkpoint-saver";
 import type { ContentPart } from "@/lib/tools/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -563,4 +565,19 @@ export function parseContextLimitFromError(
   }
 
   return null;
+}
+
+// Persistent graph state per thread_id. Lazy singleton — multi-step plans
+// and any pending tool-call sequence survive process restarts and resume
+// on the next agent.stream() with the same thread_id. Uses a separate DB
+// file (~/.jarela/checkpoints.db) so LangGraph manages its own schema
+// independently of lib/db migrations. Was previously its own 22-line
+// module (lib/agents/checkpointer.ts) with one caller — inlined here per
+// the bloat audit.
+let _checkpointer: NodeSqliteSaver | null = null;
+function getCheckpointer(): NodeSqliteSaver {
+  if (!_checkpointer) {
+    _checkpointer = NodeSqliteSaver.fromConnString(join(getDataDir(), "checkpoints.db"));
+  }
+  return _checkpointer;
 }
