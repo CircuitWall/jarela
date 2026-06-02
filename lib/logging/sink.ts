@@ -22,7 +22,14 @@
 // machine). The SSE endpoint is loopback-gated by the same auth rules
 // as the rest of the API.
 
+import { getConfig } from "@/lib/env/config";
+
 export type LogLevel = "log" | "info" | "warn" | "error";
+
+// "log" is treated as info-tier when filtering — Node's console.log writes
+// to stdout, same severity as console.info.
+const LEVEL_RANK: Record<LogLevel, number> = { log: 1, info: 1, warn: 2, error: 3 };
+const CONFIG_LEVEL_RANK = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 
 export interface LogEntry {
   /** Monotonic per-process sequence; lets the SSE consumer dedupe across reconnects. */
@@ -34,7 +41,19 @@ export interface LogEntry {
 
 type Subscriber = (entry: LogEntry) => void;
 
-const RING_CAPACITY = 2000;
+// JARELA_LOGS_RING_SIZE / JARELA_LOG_LEVEL override these. Read at first
+// pushEntry, then memoised — the ring grows up to this cap and changes
+// require restart (the splice() math closes over the cap value).
+let _ringCap: number | null = null;
+function ringCapacity(): number {
+  if (_ringCap === null) _ringCap = getConfig().logsRingSize;
+  return _ringCap;
+}
+function passesLogLevel(level: LogLevel): boolean {
+  const min = CONFIG_LEVEL_RANK[getConfig().logLevel];
+  return LEVEL_RANK[level] >= min;
+}
+
 const ring: LogEntry[] = [];
 const subscribers = new Set<Subscriber>();
 let nextSeq = 1;
@@ -65,6 +84,10 @@ function redact(line: string): string {
 }
 
 function pushEntry(level: LogLevel, args: unknown[]): void {
+  // Filter by configured level — terminal output is never filtered (the
+  // patched console wrapper invoked the original BEFORE this), so this only
+  // gates what lands in the in-app Logs panel + SSE feed.
+  if (!passesLogLevel(level)) return;
   // Match Node's util.format-ish behaviour: stringify each arg and join with
   // spaces. Errors flatten to .stack when present.
   const text = redact(
@@ -88,8 +111,9 @@ function pushEntry(level: LogLevel, args: unknown[]): void {
   };
   nextSeq += 1;
   ring.push(entry);
-  if (ring.length > RING_CAPACITY) {
-    ring.splice(0, ring.length - RING_CAPACITY);
+  const cap = ringCapacity();
+  if (ring.length > cap) {
+    ring.splice(0, ring.length - cap);
   }
   for (const sub of subscribers) {
     try { sub(entry); } catch { /* subscriber errored — ignore */ }
@@ -138,9 +162,10 @@ export function recentEntries(limit?: number): LogEntry[] {
   return ring.slice(-limit);
 }
 
-/** Test-only: clear ring + subscriber set + reset seq. */
+/** Test-only: clear ring + subscriber set + reset seq + ring-cap memo. */
 export function _resetLogSink(): void {
   ring.length = 0;
   subscribers.clear();
   nextSeq = 1;
+  _ringCap = null;
 }

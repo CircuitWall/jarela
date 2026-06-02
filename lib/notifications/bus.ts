@@ -2,6 +2,8 @@
 // browser notifications. Run completions and scheduled-task firings both
 // publish here; the frontend subscribes via a single SSE endpoint.
 
+import { getConfig } from "@/lib/env/config";
+
 export type NotificationEvent =
   | {
       type: "run_completed";
@@ -75,7 +77,9 @@ export type NotificationEvent =
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 
 type Listener = (ev: NotificationEvent) => void;
-const RECENT_LIMIT = 50;
+// JARELA_NOTIFICATION_RING_SIZE overrides this. Captured at module init —
+// changes require restart.
+const RECENT_LIMIT = getConfig().notificationRingSize;
 
 interface BusState {
   listeners: Set<Listener>;
