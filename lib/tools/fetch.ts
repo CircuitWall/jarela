@@ -3,6 +3,7 @@ import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { registerTools } from "./registry";
+import { networkErrorCode } from "./error-codes";
 
 const MAX_BYTES = 200_000;
 const TIMEOUT_MS = 15_000;
@@ -66,7 +67,7 @@ function resolveUrl(u: string | null | undefined, base: string): string | null {
 export const webFetchTool = tool(
   async ({ url, mode, max_chars }) => {
     if (!/^https?:\/\//.test(url)) {
-      return JSON.stringify({ error: "url must start with http:// or https://" });
+      return JSON.stringify({ error: "url must start with http:// or https://", code: "invalid_args" });
     }
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -83,6 +84,7 @@ export const webFetchTool = tool(
         return JSON.stringify({
           url,
           error: `Refused to fetch private/loopback address (${initialCheck.reason}). Set JARELA_ALLOW_PRIVATE_FETCH=1 to override.`,
+          code: "ssrf_blocked",
         });
       }
 
@@ -106,19 +108,20 @@ export const webFetchTool = tool(
         const loc = res.headers.get("location");
         if (!loc) break;
         if (hop >= MAX_REDIRECTS) {
-          return JSON.stringify({ url: currentUrl, error: `too many redirects (>${MAX_REDIRECTS})` });
+          return JSON.stringify({ url: currentUrl, error: `too many redirects (>${MAX_REDIRECTS})`, code: "redirect_limit" });
         }
         let next: string;
         try {
           next = new URL(loc, currentUrl).toString();
         } catch {
-          return JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}` });
+          return JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}`, code: "invalid_redirect" });
         }
         const hopCheck = await checkPublicUrl(next);
         if (!hopCheck.allowed) {
           return JSON.stringify({
             url: next,
             error: `Refused redirect to private/loopback address (${hopCheck.reason}).`,
+            code: "ssrf_blocked",
           });
         }
         currentUrl = next;
@@ -164,7 +167,13 @@ export const webFetchTool = tool(
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return JSON.stringify({ url, error: msg });
+      // Distinguish abort (timeout / upstream cancel) from arbitrary network
+      // failure so the agent's playbook fires the right branch — timeouts
+      // mean "narrow the input"; network errors are transient and worth
+      // retrying once with the same args.
+      const aborted = (err as { name?: string })?.name === "AbortError";
+      const code = aborted ? "tool_timeout" : (networkErrorCode(err) ?? "fetch_error");
+      return JSON.stringify({ url, error: msg, code });
     } finally {
       clearTimeout(timeout);
     }
