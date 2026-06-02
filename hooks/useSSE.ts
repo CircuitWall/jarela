@@ -18,7 +18,11 @@ export function useSSE(onDone?: () => void) {
   const [streamingContent, setStreamingContent] = useState("");
   const [thinkingContent, setThinkingContent] = useState("");
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  // ADR-0054 — error state carries the code alongside the message so
+  // ChatView can render code-specific affordances (retry / open settings /
+  // copy / dismiss). Existing readers that want just the text use
+  // `error?.message`.
+  const [error, setError] = useState<{ message: string; code: string } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadIdRef = useRef<string | null>(null);
   // Live "what is the agent doing" label, surfaced in the app header. The
@@ -82,7 +86,17 @@ export function useSSE(onDone?: () => void) {
       } else if (event.type === "tool_result") {
         setToolEvents((prev) => [
           ...prev,
-          { id: event.id, phase: "result", name: event.name, payload: event.result },
+          {
+            id: event.id,
+            phase: "result",
+            name: event.name,
+            payload: event.result,
+            // ADR-0049 — first-class error metadata. Carry through so the
+            // pill can show code-specific text (timed out, invalid args,
+            // …) instead of a colour-only signal.
+            ...(event.error_code ? { error_code: event.error_code } : {}),
+            ...(event.error_message ? { error_message: event.error_message } : {}),
+          },
         ]);
         activeToolsRef.current.delete(event.id);
         const remaining = activeToolsRef.current.values().next().value as string | undefined;
@@ -105,7 +119,7 @@ export function useSSE(onDone?: () => void) {
         setStreamingContent("");
         setThinkingContent("");
         closeActivity();
-        setError(event.message);
+        setError({ message: event.message, code: event.code });
         break;
       }
     }
@@ -142,7 +156,7 @@ export function useSSE(onDone?: () => void) {
       return { accepted: submit.accepted };
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setError(String(err));
+        setError({ message: String(err), code: "client_error" });
       }
       return { accepted: false };
     } finally {
