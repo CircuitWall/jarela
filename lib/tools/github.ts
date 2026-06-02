@@ -21,7 +21,7 @@ import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { isLikelyBinary } from "@/lib/documents/indexer";
 import { registerTools } from "./registry";
-import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "./error-codes";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode, defaultHttpHint } from "./error-codes";
 
 export interface GitHubAuth {
   token: string;
@@ -74,22 +74,35 @@ async function ghFetch(
       // when present.
       const code = githubStatusCode(res);
       const retryAfterMs = code === "http_429" ? githubRetryAfterMs(res) : undefined;
+      // GitHub-specific override on 403: the secondary rate-limit returns 403
+      // with `X-RateLimit-Remaining: 0` rather than 429, and the recovery path
+      // is "wait, retry once" — same as 429. Treat the hint that way too.
+      const hint = code === "http_429"
+        ? "GitHub rate-limited this request. If retry_after_ms is set, wait that long; if not, GitHub's primary limit (5000/hr) resets at the next hour boundary."
+        : defaultHttpHint("GitHub", code);
       return {
         error: `GitHub ${res.status}: ${text.slice(0, 500)}`,
         code,
         status: res.status,
         url,
         ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+        ...(hint ? { hint } : {}),
       };
     }
     if (!text) return {};
     return parseJsonSafe<unknown>(text, text);
   } catch (err) {
     const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    const hint = code === "network_error"
+      ? "Network failure reaching api.github.com. Retry once; if it keeps failing, check the corporate proxy / VPN."
+      : code === "tool_timeout"
+        ? "The GitHub API didn't respond within the per-tool deadline. Narrow the request (smaller per_page, scoped repo:owner/name search) or try again."
+        : undefined;
     return {
       error: `GitHub fetch threw: ${err instanceof Error ? err.message : String(err)}`,
       code,
       url,
+      ...(hint ? { hint } : {}),
     };
   }
 }

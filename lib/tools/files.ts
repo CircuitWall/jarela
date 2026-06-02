@@ -17,6 +17,31 @@ function throwWithCode(message: string, code: string): never {
   throw err;
 }
 
+// ADR-0056 — domain-specific recovery hint for an fs error code. Returns
+// undefined for codes generic enough that the playbook's blanket rule is
+// already correct guidance.
+function fsHint(code: string): string | undefined {
+  if (code === "file_not_found") {
+    return "Don't retry the same path blindly. Verify the path exists with file_stat or list the parent dir with file_list — case + spelling matter, and ~/foo expands relative to HOME.";
+  }
+  if (code === "permission_denied") {
+    return "Don't retry — tell the user what file the agent tried to access and that the process can't read/write it. They likely need chmod or to run as a different user.";
+  }
+  if (code === "denylist") {
+    return "The path is on the credential denylist for safety. Don't try to bypass; tell the user what was refused and why. They can opt back in via JARELA_ALLOW_SENSITIVE_FILES=1 if they understand the risk.";
+  }
+  if (code === "path_is_directory") {
+    return "The path is a directory but the tool expected a file. Did you mean a file inside it? Use file_list to see contents.";
+  }
+  if (code === "path_not_directory") {
+    return "The path is a file but the tool expected a directory. Use file_stat to inspect it.";
+  }
+  if (code === "already_exists") {
+    return "Target already exists. Read it first with file_read to inspect, or pass an explicit overwrite flag if the tool supports it.";
+  }
+  return undefined;
+}
+
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
 // content" (echo / Set-Content) but is hostile to in-place edits: quoting
@@ -183,7 +208,7 @@ export const fileReadTool = tool(
         total_lines: raw.split(/\r?\n/).length,
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -211,7 +236,13 @@ export const fileWriteTool = tool(
     try {
       abs = resolvePath(filePath);
       if (content.length > MAX_WRITE_BYTES) {
-        return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes`, code: "content_too_large" });
+        return JSON.stringify({
+          ok: false,
+          path: abs,
+          error: `content exceeds ${MAX_WRITE_BYTES} bytes`,
+          code: "content_too_large",
+          hint: `The content is over the ${MAX_WRITE_BYTES.toLocaleString()}-byte cap for file_write. Split it into chunks (one file_write per chunk, or use shell_exec with a heredoc), or check whether you actually need to write this much.`,
+        });
       }
       assertSafePath(abs, "write");
       if (create_dirs !== false) {
@@ -231,7 +262,7 @@ export const fileWriteTool = tool(
         created: !existed,
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -292,7 +323,7 @@ export const fileEditTool = tool(
         bytes_after: Buffer.byteLength(next, "utf8"),
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -382,10 +413,10 @@ export const fileMoveTool = tool(
           await fs.rm(srcAbs, { recursive: true, force: true });
           return JSON.stringify({ ok: true, source: srcAbs, destination: dstAbs, cross_device: true });
         } catch (err2) {
-          return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err2 as Error).message, code: classifyFsError(err2) });
+          return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err2 as Error).message, code: classifyFsError(err2), ...(fsHint(classifyFsError(err2)) ? { hint: fsHint(classifyFsError(err2)) } : {}) });
         }
       }
-      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -424,7 +455,7 @@ export const fileListTool = tool(
       abs = resolvePath(dirPath);
       assertSafePath(abs, "read");
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
     const cap = max_entries ?? 200;
     const filter = pattern?.toLowerCase() ?? null;
@@ -435,7 +466,7 @@ export const fileListTool = tool(
       try {
         items = await fs.readdir(abs, { withFileTypes: true });
       } catch (err) {
-        return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+        return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
       }
       items.sort((a, b) => a.name.localeCompare(b.name));
       for (const it of items) {
@@ -496,7 +527,7 @@ export const fileListTool = tool(
       }
       return payload;
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -523,7 +554,7 @@ export const fileMkdirTool = tool(
       await fs.mkdir(abs, { recursive: recursive !== false });
       return JSON.stringify({ ok: true, path: abs });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -574,7 +605,7 @@ export const fileDeleteTool = tool(
       await fs.unlink(abs);
       return JSON.stringify({ ok: true, path: abs, kind: "file" });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -646,7 +677,7 @@ export const fileCopyTool = tool(
         kind: srcStat.isDirectory() ? "directory" : "file",
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
@@ -684,7 +715,7 @@ export const fileStatTool = tool(
       if (e.code === "ENOENT") {
         return JSON.stringify({ ok: true, path: abs, exists: false });
       }
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err), ...(fsHint(classifyFsError(err)) ? { hint: fsHint(classifyFsError(err)) } : {}) });
     }
   },
   {
