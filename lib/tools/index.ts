@@ -41,6 +41,54 @@ import { runToolDispatched } from "./dispatch";
 import { withToolTimeout } from "./timeout";
 import { getConfig } from "@/lib/env/config";
 
+// Wrap a StructuredTool so its .invoke() flows through the central dispatch
+// chokepoint (PR-4) layered over the per-call timeout (PR-1). Without this
+// wrap, only the proposals / direct-API path went through dispatch +
+// timeout — the LangGraph react agent's hot path called .invoke directly
+// and bypassed both. After this wrap, every tool invocation in the
+// process — agent loop, executeTool, and any future caller — gets the same
+// observability + deadline coverage uniformly.
+//
+// The wrapper preserves the tool's identity (name, description, schema)
+// because LangChain's prebuilt agent serialises those for the function-
+// calling payload sent to the model. We override only `invoke`.
+//
+// Returns the original `t` mutated in place rather than a new object so
+// any reference equality elsewhere (registry maps, allowed-tools lookups)
+// keeps working. Idempotent — re-wrapping a wrapped tool is a no-op.
+const WRAPPED_MARK = Symbol.for("@jarela/dispatch-wrapped");
+
+function wrapToolWithDispatch<T extends StructuredToolInterface>(t: T): T {
+  type Wrapped = T & { [WRAPPED_MARK]?: true };
+  const wrapped = t as Wrapped;
+  if (wrapped[WRAPPED_MARK]) return t;
+  const originalInvoke = t.invoke.bind(t);
+  t.invoke = async (args: Parameters<T["invoke"]>[0], config?: RunnableConfig) => {
+    const threadId = config?.configurable?.thread_id as string | undefined;
+    const runSignal = (config as RunnableConfig & { signal?: AbortSignal })?.signal;
+    const timeoutMs = getConfig().toolTimeoutMs;
+    const result = await runToolDispatched(
+      () => withToolTimeout(
+        (signal) => originalInvoke(args, { ...config, signal }),
+        { toolName: t.name, timeoutMs, runSignal },
+      ),
+      { toolName: t.name, threadId },
+    );
+    // Return the legacy raw payload shape LangChain's tool executor expects:
+    // strings pass through to ToolMessage.content; objects get JSON-stringified
+    // by the executor. Either way, llm.ts's tool_result handler runs JSON.parse
+    // on the resulting string and consumers see the same shape they always did.
+    return toLegacyShape(result);
+  };
+  wrapped[WRAPPED_MARK] = true;
+  return t;
+}
+
+function wrapAll<T extends StructuredToolInterface>(tools: T[]): T[] {
+  for (const t of tools) wrapToolWithDispatch(t);
+  return tools;
+}
+
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
 export {
@@ -50,13 +98,20 @@ export {
   type ToolGroup,
 } from "./registry";
 
-const ALL_BUILTINS: StructuredToolInterface[] = registeredTools();
+// Wrap built-ins at module load so the agent loop's direct .invoke() calls
+// flow through dispatch + timeout (the prior wrap was only inside
+// executeTool, which the LangGraph react agent never goes through).
+const ALL_BUILTINS: StructuredToolInterface[] = wrapAll(registeredTools());
 export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = registeredNames();
 
 // Per-call recompute so files dropped in $JARELA_TOOLS_DIR are picked up
 // without restart. loadExternalTools cache-busts require() per file.
+// Wrap each load — the wrap is idempotent (WRAPPED_MARK guard) so this
+// is safe across the cache-bust cycle.
 function loadExternal() {
-  return loadExternalTools(BUILTIN_TOOL_NAMES);
+  const result = loadExternalTools(BUILTIN_TOOL_NAMES);
+  wrapAll(result.tools);
+  return result;
 }
 
 export type ToolSource = "builtin" | "external" | "mcp";
@@ -135,7 +190,10 @@ export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
 export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredToolInterface[]> {
   let mcpTools: StructuredToolInterface[] = [];
   try {
-    mcpTools = await getMcpTools();
+    // MCP tools are cached by lib/mcp/client.ts; the wrap is idempotent so
+    // wrapping each fetch is safe (and necessary for the first fetch after
+    // an mcp_servers config change refreshed the cache).
+    mcpTools = wrapAll(await getMcpTools());
   } catch (err) {
     console.error("[tools] MCP load failed, continuing with built-ins only:", err);
   }
@@ -177,26 +235,15 @@ export async function executeTool(
   if (!t) throw new Error(`Unknown tool: ${name}`);
 
   const config: RunnableConfig = context.thread_id
-    ? { configurable: { thread_id: context.thread_id } }
-    : {};
+    ? { configurable: { thread_id: context.thread_id, signal: context.runSignal } }
+    : { configurable: { signal: context.runSignal } };
 
-  // Compose dispatch + timeout: the central chokepoint logs every call,
-  // and timeout enforces a wall-clock deadline so a hung MCP / external
-  // plugin can't stall the agent loop until the registry's 15-min
-  // watchdog fires. dispatch's catch turns the ToolTimeoutError into
-  // a structured kind:"error" with code="tool_timeout" — same shape as
-  // any other tool failure, so the agent can route around uniformly.
-  // The agent loop's own .invoke path is closed by ADR-0048 (PR-6).
-  const timeoutMs = context.timeoutMs ?? getConfig().toolTimeoutMs;
-  const tool = t;
-  const result = await runToolDispatched(
-    () => withToolTimeout(
-      (signal) => tool.invoke(args, { ...config, signal }),
-      { toolName: name, timeoutMs, runSignal: context.runSignal },
-    ),
-    { toolName: name, threadId: context.thread_id },
-  );
-  return toLegacyShape(result);
+  // The tool's .invoke is already wrapped at registration time (see
+  // wrapToolWithDispatch above) to flow through dispatch + timeout. Calling
+  // it here just inherits that coverage — no extra layer needed. The
+  // wrap returns the legacy raw shape, which is what historical callers
+  // of executeTool expect.
+  return t.invoke(args, config);
 }
 
 // Bridge ToolResult back to the historical "raw payload" shape so existing
@@ -233,17 +280,30 @@ export async function executeToolStructured(
   if (!t) return { kind: "error", code: "unknown_tool", message: `Unknown tool: ${name}` };
 
   const config: RunnableConfig = context.thread_id
-    ? { configurable: { thread_id: context.thread_id } }
-    : {};
-  const tool = t;
-  const timeoutMs = context.timeoutMs ?? getConfig().toolTimeoutMs;
-  return runToolDispatched(
-    () => withToolTimeout(
-      (signal) => tool.invoke(args, { ...config, signal }),
-      { toolName: name, timeoutMs, runSignal: context.runSignal },
-    ),
-    { toolName: name, threadId: context.thread_id },
-  );
+    ? { configurable: { thread_id: context.thread_id, signal: context.runSignal } }
+    : { configurable: { signal: context.runSignal } };
+  // The wrap returns a legacy raw payload; normalise it back into the
+  // ToolResult discriminated union for typed callers. Avoids double-
+  // logging by letting the registration wrap own the dispatch entry —
+  // we just shape-shift its output here.
+  const raw = await t.invoke(args, config);
+  return toToolResult(raw);
+}
+
+// Inverse of toLegacyShape — turns the legacy raw payload back into a
+// ToolResult. Mirrors the heuristic in normalizeToolResult but is keyed
+// on the convention `toLegacyShape` produces (`{error, code}` envelope
+// for errors). Used only by `executeToolStructured`; the wrap itself
+// keeps things in legacy form for the agent loop.
+function toToolResult(raw: unknown): ToolResult {
+  if (raw && typeof raw === "object" && "error" in raw && "code" in raw) {
+    const o = raw as { error: unknown; code: unknown };
+    if (typeof o.error === "string" && typeof o.code === "string") {
+      return { kind: "error", message: o.error, code: o.code };
+    }
+  }
+  if (typeof raw === "string") return { kind: "text", data: raw };
+  return { kind: "json", data: raw };
 }
 
 // One-shot startup loader. Call from instrumentation.ts so external tools
