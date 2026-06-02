@@ -5,6 +5,17 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
 import { checkFsAllowed, resolveSafetyMode } from "./safety";
+import { classifyFsError } from "./error-codes";
+
+// Tag a thrown error with a stable code so the catch sites in this file
+// can carry it forward to the JSON envelope (and the agent's playbook can
+// branch on it). Lets us keep the descriptive `throw new Error(msg)` style
+// while still giving callers a machine-readable code field.
+function throwWithCode(message: string, code: string): never {
+  const err = new Error(message);
+  (err as Error & { code: string }).code = code;
+  throw err;
+}
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
@@ -33,7 +44,7 @@ function clip(text: string, max: number): { value: string; truncated: boolean } 
 // default for an "assistant on my computer". Absolute paths and ~/ paths
 // are honored verbatim.
 function resolvePath(p: string): string {
-  if (!p.trim()) throw new Error("path is required");
+  if (!p.trim()) throwWithCode("path is required", "invalid_args");
   let s = p.trim();
   if (s === "~") return os.homedir();
   if (s.startsWith("~/") || s.startsWith("~\\")) {
@@ -93,22 +104,24 @@ function jarelaDataDir(): string {
 function assertSafePath(abs: string, op: "read" | "write"): void {
   const mode = resolveSafetyMode();
   const gate = checkFsAllowed(op, { mode });
-  if (!gate.allowed) throw new Error(gate.reason);
+  if (!gate.allowed) throwWithCode(gate.reason ?? "fs operation refused by safety mode", "denylist");
   // bypass mode disables every guard, including the credential denylist.
   if (mode === "bypass") return;
   if (process.env.JARELA_ALLOW_SENSITIVE_FILES === "1") return;
   for (const base of sensitiveBase()) {
     if (isInside(abs, base)) {
-      throw new Error(
+      throwWithCode(
         `refused: '${abs}' is inside a credential directory (${path.basename(base)}). ` +
           `Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+        "denylist",
       );
     }
   }
   for (const f of sensitiveFiles()) {
     if (path.resolve(abs) === path.resolve(f)) {
-      throw new Error(
+      throwWithCode(
         `refused: '${abs}' is a credential file. Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+        "denylist",
       );
     }
   }
@@ -123,13 +136,15 @@ function assertSafePath(abs: string, op: "read" | "write"): void {
     base.endsWith(".key") ||
     base === "credentials"
   ) {
-    throw new Error(
+    throwWithCode(
       `refused: '${abs}' looks like a credential file. Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+      "denylist",
     );
   }
   if (op === "write" && isInside(abs, jarelaDataDir())) {
-    throw new Error(
+    throwWithCode(
       `refused: '${abs}' is inside Jarela's data dir; the agent must not mutate app state directly.`,
+      "denylist",
     );
   }
 }
@@ -168,7 +183,7 @@ export const fileReadTool = tool(
         total_lines: raw.split(/\r?\n/).length,
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -196,7 +211,7 @@ export const fileWriteTool = tool(
     try {
       abs = resolvePath(filePath);
       if (content.length > MAX_WRITE_BYTES) {
-        return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes` });
+        return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes`, code: "content_too_large" });
       }
       assertSafePath(abs, "write");
       if (create_dirs !== false) {
@@ -216,7 +231,7 @@ export const fileWriteTool = tool(
         created: !existed,
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -277,7 +292,7 @@ export const fileEditTool = tool(
         bytes_after: Buffer.byteLength(next, "utf8"),
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -367,10 +382,10 @@ export const fileMoveTool = tool(
           await fs.rm(srcAbs, { recursive: true, force: true });
           return JSON.stringify({ ok: true, source: srcAbs, destination: dstAbs, cross_device: true });
         } catch (err2) {
-          return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err2 as Error).message });
+          return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err2 as Error).message, code: classifyFsError(err2) });
         }
       }
-      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -409,7 +424,7 @@ export const fileListTool = tool(
       abs = resolvePath(dirPath);
       assertSafePath(abs, "read");
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
     const cap = max_entries ?? 200;
     const filter = pattern?.toLowerCase() ?? null;
@@ -420,7 +435,7 @@ export const fileListTool = tool(
       try {
         items = await fs.readdir(abs, { withFileTypes: true });
       } catch (err) {
-        return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+        return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
       }
       items.sort((a, b) => a.name.localeCompare(b.name));
       for (const it of items) {
@@ -481,7 +496,7 @@ export const fileListTool = tool(
       }
       return payload;
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -508,7 +523,7 @@ export const fileMkdirTool = tool(
       await fs.mkdir(abs, { recursive: recursive !== false });
       return JSON.stringify({ ok: true, path: abs });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -559,7 +574,7 @@ export const fileDeleteTool = tool(
       await fs.unlink(abs);
       return JSON.stringify({ ok: true, path: abs, kind: "file" });
     } catch (err) {
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -631,7 +646,7 @@ export const fileCopyTool = tool(
         kind: srcStat.isDirectory() ? "directory" : "file",
       });
     } catch (err) {
-      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {
@@ -669,7 +684,7 @@ export const fileStatTool = tool(
       if (e.code === "ENOENT") {
         return JSON.stringify({ ok: true, path: abs, exists: false });
       }
-      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+      return JSON.stringify({ ok: false, path: abs, error: (err as Error).message, code: classifyFsError(err) });
     }
   },
   {

@@ -36,7 +36,7 @@ function runLocalCommand(
   },
 ): string {
   if (!command.trim()) {
-    return JSON.stringify({ exit_code: 1, stderr: "command is required" });
+    return JSON.stringify({ exit_code: 1, stderr: "command is required", code: "invalid_args" });
   }
 
   const timeout = Math.min(options.timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
@@ -48,7 +48,7 @@ function runLocalCommand(
     blockedByPattern: isBlockedCommand(command),
   });
   if (!gate.allowed) {
-    return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
+    return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode, code: "denylist" });
   }
 
   const cwd = options.cwd?.trim() ? options.cwd : process.cwd();
@@ -74,17 +74,40 @@ function runLocalCommand(
     const clipped = clipOutput(output);
     return JSON.stringify({ exit_code: 0, stdout: clipped.value, truncated: clipped.truncated, cwd });
   } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; status?: number; message?: string };
+    const e = err as { stdout?: string; stderr?: string; status?: number; message?: string; code?: string };
     const out = clipOutput(String(e.stdout ?? ""));
     const errText = clipOutput(String(e.stderr ?? e.message ?? ""), 2_000);
+    // Distinguish the common spawn failures so the agent's playbook can
+    // react. ENOENT means the binary isn't on PATH (don't retry — tell the
+    // user); EACCES means non-executable / permissions (don't retry); a
+    // killed-by-timeout SIGTERM means we exhausted timeout_ms (narrow the
+    // command, don't retry as-is).
+    const code = execErrorCode(e, errText.value);
     return JSON.stringify({
       exit_code: e.status ?? 1,
       stdout: out.value,
       stderr: errText.value,
       truncated: out.truncated || errText.truncated,
       cwd,
+      code,
     });
   }
+}
+
+function execErrorCode(
+  err: { code?: string; status?: number; message?: string },
+  stderr: string,
+): string {
+  if (err.code === "ENOENT") return "command_not_found";
+  if (err.code === "EACCES") return "permission_denied";
+  if (err.code === "ETIMEDOUT" || /timed out|signal:\s*sigterm/i.test(stderr) || /timed out/i.test(err.message ?? "")) {
+    return "tool_timeout";
+  }
+  // Non-zero exit is a normal command outcome (the agent reads stdout/stderr
+  // to decide what to do). Surface as `command_failed` only when the spawn
+  // itself errored with no exit status.
+  if (err.status === undefined) return "command_failed";
+  return "command_nonzero_exit";
 }
 
 const execSchema = z.object({
