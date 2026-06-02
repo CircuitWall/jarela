@@ -865,11 +865,20 @@ export function subscribeRun(
       // else: ignore — EventSource will try to reconnect.
     };
 
-    // Connect-timeout safety net: if onopen hasn't fired within 8s the
-    // server is unreachable (DNS, TLS handshake stuck, proxy black-holing
-    // the GET, …). EventSource alone won't surface that — it stays in
-    // CONNECTING forever, retrying silently. Force the iterator to fail so
-    // the caller's catch/finally can release the UI gate.
+    // Connect-timeout safety net. EventSource stays in CONNECTING forever
+    // when the server is unreachable (DNS / TLS handshake stuck / proxy
+    // black-holing the GET / …) — without this we'd hang the UI gate.
+    //
+    // The previous 8s deadline mis-fired under legitimate slow-paths:
+    // cold-boot of the run route (LangGraph init, sqlite open, MCP server
+    // load, agent first-token) can push the SSE-header flush well past 8s
+    // on corp proxies. The agent then completes server-side but the client
+    // already gave up — user sees a scary toast, no live view, no obvious
+    // recovery path. The kill timer becomes a false-positive.
+    //
+    // Raised to 30s (generous cold-boot envelope) to cut those false hits.
+    // If onopen genuinely never fires in 30s, the server is wedged and a
+    // hard fail is correct.
     let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       connectTimer = null;
       if (!everOpened && !done) {
@@ -878,7 +887,7 @@ export function subscribeRun(
         try { es.close(); } catch { /* */ }
         notify();
       }
-    }, 8_000);
+    }, 30_000);
 
     const onAbort = () => {
       done = true;

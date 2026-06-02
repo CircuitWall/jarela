@@ -143,11 +143,13 @@ export function useSSE(onDone?: () => void) {
     setError(null);
     openActivity("Sending…");
 
+    let submitted = false;
     try {
       // Command: register the run server-side. 202 = we own this turn; 409
       // = another tab/device owns it (caller re-queues, we still subscribe
       // so the user sees the in-flight turn's deltas render).
       const submit = await submitRun(threadId, message, ctrl.signal, options, attachments, hotSince);
+      submitted = true;
 
       // Query: subscribe to the run's chunk stream. Always opens the GET,
       // regardless of whether we got 202 or 409 — if 409 a run is already
@@ -156,7 +158,19 @@ export function useSSE(onDone?: () => void) {
       return { accepted: submit.accepted };
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
-        setError({ message: String(err), code: "client_error" });
+        // Distinguish "couldn't submit" from "submitted, then stream dropped".
+        // For a stream drop the run is on the server — refetching messages
+        // will surface any committed result, and the user can hit Reconnect
+        // to resume the live view via the replay buffer. Surfacing this as
+        // the same scary `client_error` toast (no recovery path, "Run failed"
+        // wording) hid that the agent often *did* complete; user thought
+        // their turn was lost.
+        if (submitted) {
+          onDone?.();
+          setError({ message: String(err), code: "stream_dropped" });
+        } else {
+          setError({ message: String(err), code: "client_error" });
+        }
       }
       return { accepted: false };
     } finally {
@@ -174,7 +188,7 @@ export function useSSE(onDone?: () => void) {
       setStreaming(false);
       closeActivity();
     }
-  }, [consume, openActivity, closeActivity]);
+  }, [consume, onDone, openActivity, closeActivity]);
 
   // Stop the active run. Three-part: (1) tell the server to abort the
   // agent stream so the LangGraph loop unwinds; (2) tear down local
