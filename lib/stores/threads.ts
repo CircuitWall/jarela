@@ -19,6 +19,10 @@ export interface ThreadRow {
   warm_summary?: string | null;
   warm_summary_before?: string | null;
   warm_summary_computed_at?: string | null;
+  // ADR-0046 — durable task memory. The user's pinned long-task description
+  // surfaced into every turn's system prompt outside the tier budget so it
+  // can't be compacted away. NULL on threads with no explicit goal.
+  task_goal?: string | null;
 }
 export interface MessageRow {
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
@@ -197,6 +201,17 @@ export function setThreadContextPin(thread_id: string, hot_since: string | null)
   getDb()
     .prepare("UPDATE threads SET hot_since=? WHERE thread_id=?")
     .run(hot_since, thread_id);
+}
+
+// ADR-0046 — pin the user's task description so it survives compaction. NULL
+// clears the pin. Trim-then-cap so multi-paragraph dumps don't push past
+// what the system prompt will reasonably carry every turn (~1.5k chars =
+// ~400 tokens of overhead, which is the budget we're willing to spend).
+export function setThreadTaskGoal(thread_id: string, goal: string | null): void {
+  const value = goal === null ? null : goal.trim().slice(0, 1500) || null;
+  getDb()
+    .prepare("UPDATE threads SET task_goal=? WHERE thread_id=?")
+    .run(value, thread_id);
 }
 
 // Cache the latest warm-tier summary alongside the boundary it covers. The
