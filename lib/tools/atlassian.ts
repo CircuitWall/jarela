@@ -20,6 +20,7 @@ import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { registerTools } from "./registry";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "./error-codes";
 
 export interface AtlassianAuth {
   url: string;        // e.g. "https://your-team.atlassian.net"
@@ -88,11 +89,29 @@ async function atlassianFetch(
     });
     const text = await res.text();
     if (!res.ok) {
-      return { error: `Atlassian ${res.status}: ${text.slice(0, 500)}`, url };
+      // PR-B — surface a stable error code the agent can branch on
+      // (ADR-0049 / ADR-0050 playbook). The HTTP status was previously
+      // buried in the message text; the agent had to regex it out to
+      // distinguish 401 (bad creds, tell user) from 429 (rate-limit, retry)
+      // from 5xx (transient, retry).
+      const code = httpStatusToErrorCode(res.status);
+      const retryAfterMs = res.status === 429 ? parseRetryAfterMs(res.headers.get("retry-after")) : undefined;
+      return {
+        error: `Atlassian ${res.status}: ${text.slice(0, 500)}`,
+        code,
+        status: res.status,
+        url,
+        ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+      };
     }
     return parseJsonSafe<unknown>(text, text);
   } catch (err) {
-    return { error: `Atlassian fetch threw: ${err instanceof Error ? err.message : String(err)}`, url };
+    const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    return {
+      error: `Atlassian fetch threw: ${err instanceof Error ? err.message : String(err)}`,
+      code,
+      url,
+    };
   }
 }
 
