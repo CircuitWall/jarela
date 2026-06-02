@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { summarizeTranscript, transcriptText } from "./conversation-summary";
+import { summarizeTranscript, summarizeTranscriptWithRetry, transcriptText } from "./conversation-summary";
 import type { ModelProvider, ProviderMessage, ProviderParams } from "@/lib/providers/types";
 
 describe("transcriptText", () => {
@@ -64,5 +64,68 @@ describe("summarizeTranscript", () => {
     const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
     const out = await summarizeTranscript(provider, "model-x", {}, "alpha beta");
     expect(out).toBe("ok");
+  });
+});
+
+describe("summarizeTranscriptWithRetry", () => {
+  it("returns the first attempt's value when the call succeeds", async () => {
+    const chat = vi.fn(async () => {
+      async function* gen() {
+        yield "first-try";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript");
+    expect(out.text).toBe("first-try");
+    expect(out.attempts).toBe(1);
+    expect(out.lastError).toBeUndefined();
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries once on transient failure and succeeds on attempt 2", async () => {
+    let calls = 0;
+    const chat = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("ECONNRESET");
+      async function* gen() {
+        yield "after-retry";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript", { delayMs: 0 });
+    expect(out.text).toBe("after-retry");
+    expect(out.attempts).toBe(2);
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns empty text + lastError when every attempt fails", async () => {
+    const chat = vi.fn(async () => { throw new Error("boom"); });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript", { delayMs: 0, attempts: 2 });
+    expect(out.text).toBe("");
+    expect(out.attempts).toBe(2);
+    expect(out.lastError).toBeInstanceOf(Error);
+    expect((out.lastError as Error).message).toBe("boom");
+    expect(chat).toHaveBeenCalledTimes(2);
+  });
+
+  it("respects attempts override (single attempt = no retry)", async () => {
+    const chat = vi.fn(async () => { throw new Error("boom"); });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript", { attempts: 1 });
+    expect(out.attempts).toBe(1);
+    expect(chat).toHaveBeenCalledTimes(1);
+  });
+
+  it("clamps attempts to a minimum of 1", async () => {
+    const chat = vi.fn(async () => {
+      async function* gen() { yield "ok"; }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript", { attempts: 0 });
+    expect(out.attempts).toBe(1);
   });
 });

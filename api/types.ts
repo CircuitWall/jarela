@@ -153,13 +153,20 @@ export interface ThreadDetail extends ThreadSummary {
   warm_summary_computed_at?: string | null;
   // ADR-0046 — durable task goal. NULL on threads with no pinned goal.
   task_goal?: string | null;
+  // ADR-0045 — warm-summary compaction status. 'fresh' = current;
+  // 'failed' = last attempt exhausted retries (UI shows degraded chip);
+  // NULL on threads where the warm tier hasn't run.
+  warm_summary_status?: WarmSummaryStatus | null;
 }
+
+export type WarmSummaryStatus = "fresh" | "stale" | "failed";
 
 export interface ThreadContextPin {
   hot_since: string | null;
   warm_summary: string | null;
   warm_summary_before: string | null;
   warm_summary_computed_at: string | null;
+  warm_summary_status: WarmSummaryStatus | null;
 }
 
 export interface MemoryItem {

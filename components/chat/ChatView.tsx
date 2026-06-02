@@ -67,6 +67,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   // ADR-0046 — pinned task goal. Surfaced as a chip near the input and
   // injected into every turn's system prompt outside the tier budget.
   const [taskGoal, setTaskGoal] = useState<string | null>(null);
+  // ADR-0045 — last reported compaction status. 'failed' surfaces as a chip
+  // banner so the user sees mid-task that older context is being dropped.
+  const [warmSummaryStatus, setWarmSummaryStatus] = useState<"fresh" | "stale" | "failed" | null>(null);
   // Thread-level effective context window cap, used as the ContextUsageBar
   // baseline. Re-fetched on every thread load alongside hot_since / warm
   // summary state so a model swap is reflected immediately.
@@ -187,6 +190,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummaryBefore(d.warm_summary_before ?? null);
       setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
       setTaskGoal(d.task_goal ?? null);
+      setWarmSummaryStatus(d.warm_summary_status ?? null);
       setContextWindowTokens(d.context_window_tokens ?? null);
       clearStreamingRef.current();
       if (pendingAutoSpeakRef.current) {
@@ -276,6 +280,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummaryBefore(null);
       setWarmSummaryComputedAt(null);
       setTaskGoal(null);
+      setWarmSummaryStatus(null);
       setContextWindowTokens(null);
       return;
     }
@@ -299,6 +304,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummaryBefore(d.warm_summary_before ?? null);
       setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
       setTaskGoal(d.task_goal ?? null);
+      setWarmSummaryStatus(d.warm_summary_status ?? null);
       setContextWindowTokens(d.context_window_tokens ?? null);
     }).catch((err) => { if (!cancelled) console.error(err); })
       .finally(() => {
@@ -335,6 +341,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(updated.warm_summary);
       setWarmSummaryBefore(updated.warm_summary_before);
       setWarmSummaryComputedAt(updated.warm_summary_computed_at);
+      setWarmSummaryStatus(updated.warm_summary_status);
     } catch (err) {
       console.error("setContextPin failed", err);
     }
@@ -526,6 +533,22 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         streaming={streaming}
         contextWindowTokens={contextWindowTokens}
       />
+
+      {warmSummaryStatus === "failed" && (
+        <div
+          className="mx-4 mb-1 px-3 py-1.5 rounded bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-[11px] flex items-center gap-2"
+          title={
+            "The warm-tier summariser exhausted its retry budget on the last turn — older messages aren't being recapped, " +
+            "so the agent is seeing a smaller history than it should. Check the model config for the agent (provider reachable? quota left?), " +
+            "or move the context boundary up so less history needs compacting."
+          }
+        >
+          <span aria-hidden>⚠</span>
+          <span className="flex-1">
+            Warm context degraded — last summarisation failed; older history is being truncated.
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="mx-4 mb-2 px-3 py-2 rounded bg-red-900/40 border border-red-700 text-red-700 dark:text-red-300 text-xs max-h-48 overflow-y-auto">
