@@ -172,3 +172,19 @@ describe("github_create_review", () => {
     expect(JSON.parse(out).error).toMatch(/REQUEST_CHANGES/);
   });
 });
+
+describe("ghFetch transport-error envelope", () => {
+  // See atlassian.test.ts: same root cause and same fix shape — transport
+  // failures now return `{error, url}` instead of propagating as a throw.
+  it("returns {error, url} envelope when fetch throws", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("fetch failed");
+    });
+    const out = await githubCreateReviewTool.invoke({
+      owner: "o", repo: "r", number: 7, event: "APPROVE",
+    });
+    const parsed = JSON.parse(out);
+    expect(parsed.error).toMatch(/GitHub fetch threw: fetch failed/);
+    expect(parsed.url).toContain("/repos/o/r/pulls/7/reviews");
+  });
+});

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { setupIsolatedToolTest } from "./test-helpers";
 
 const t = setupIsolatedToolTest("jarela-test-jira-align-", {
@@ -107,5 +107,20 @@ describe("jira_align_get_entity", () => {
     await jiraAlignGetEntityTool.invoke({ entity_type: "team", entity_id: "1" });
     expect(((t.calls[0].init.headers ?? {}) as Record<string, string>)["Authorization"])
       .toBe("Bearer test-bearer-token");
+  });
+});
+
+describe("jaFetch transport-error envelope", () => {
+  // See atlassian.test.ts: same root cause and same fix shape — transport
+  // failures now return `{error, url}` instead of propagating as a throw.
+  it("returns {error, url} envelope when fetch throws", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("fetch failed");
+    });
+    const out = JSON.parse(await jiraAlignGetEntityTool.invoke({
+      entity_type: "team", entity_id: "1",
+    }));
+    expect(out.error).toMatch(/Jira Align fetch threw: fetch failed/);
+    expect(out.url).toContain("/teams/1");
   });
 });
