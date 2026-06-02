@@ -159,11 +159,14 @@ export async function buildHistoryWindow(
         // also stamps status='fresh' for free.
         if (warmSummaryCtx && hotSince) {
           setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince);
-        } else if (summaryResult.status === "failed" && hotSince) {
+        } else if (summaryResult.status === "failed") {
           // Failed retry budget: keep any prior cached summary intact (it's
-          // better than nothing) but flag the thread so the UI can show
-          // degraded compaction. Without a pin we can't persist the status
-          // safely (the boundary the would-be record covers is undefined).
+          // better than nothing) and flag the thread so the UI can show
+          // degraded compaction. The status is a thread-level signal
+          // independent of the boundary cache — fire even on threads using
+          // the time-windowed default (no explicit pin), because that's the
+          // common case for users who haven't dragged the boundary, and
+          // they'd otherwise never see the "warm context degraded" chip.
           setThreadWarmSummaryStatus(thread_id, "failed");
         }
         // ADR-0046 — fact graduation. Same boundary-move trigger as the
