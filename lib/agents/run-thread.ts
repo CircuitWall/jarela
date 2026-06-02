@@ -6,7 +6,7 @@ import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
-import { validateAssistantOutput } from "@/lib/agents/output-validator";
+import { validateWithTelemetry } from "@/lib/agents/output-validator/telemetry";
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import {
   buildHistoryWindow,
@@ -327,8 +327,11 @@ async function* stallRetryStream(
 
   // Fabrication check (ADR-0037): only run when the stall path didn't claim
   // this turn — stall-retry already handles zero-tool stall-prose turns.
+  // ADR-0057 — telemetry wrapper records every call so we can decide
+  // whether the validator earns its 555 LOC. Wrapper short-circuits to
+  // ok=true when JARELA_DISABLE_OUTPUT_VALIDATOR=1 (operator A/B test).
   const fabrication = !sawError && !stalled
-    ? validateAssistantOutput(textBuf, toolNames, allowedTools)
+    ? validateWithTelemetry("stall_retry_check", textBuf, toolNames, allowedTools)
     : ({ ok: true } as const);
 
   if (!stalled && fabrication.ok) {
@@ -458,7 +461,7 @@ export function persistAssistantMessage(
   // the agent config so callers don't have to thread it through.
   if (trimmed && !final.includes("*⚠️ Agent stalled")) {
     const allowedTools = lookupAllowedToolsForThread(thread_id);
-    const v = validateAssistantOutput(trimmed, toolList, allowedTools);
+    const v = validateWithTelemetry("footer_check", trimmed, toolList, allowedTools);
     if (!v.ok) {
       final = `${final}\n\n*⚠️ Output validator flagged: ${v.reason}*`;
     }
