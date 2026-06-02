@@ -117,6 +117,12 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   // Identity-check: a superseded run must not smear trailing chunks onto
   // the replacement entry in the registry.
   if (runs.get(run.thread_id) !== run) return;
+  // Idempotent terminal guard: once a run has transitioned to done/error,
+  // late chunks (e.g. a persistence-error broadcast firing after collectStream
+  // already emitted `done`) must not reach subscribers. Without this guard,
+  // mid-replay subscribers can observe `done → error → done` after PR-#122
+  // guaranteed finishRun via try/finally.
+  if (run.status !== "running") return;
   run.last_chunk_at = Date.now();
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
@@ -133,6 +139,10 @@ export function finishRun(run: ActiveRun, status: "done" | "error"): void {
   // Identity-check: a stale run finishing late must not flip the
   // replacement's status or evict it from the registry.
   if (runs.get(run.thread_id) !== run) return;
+  // Idempotent: callers like the route's try/finally + watchdogs may both
+  // race to finish the run. The first wins; later calls are no-ops so we
+  // don't reset finished_at or schedule a second TTL eviction.
+  if (run.status !== "running") return;
   run.status = status;
   run.finished_at = Date.now();
   // Drop subscribers — late attachers should NOT keep getting events on a
