@@ -1,4 +1,5 @@
 import { streamWithConfig } from "@/lib/agents/llm";
+import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getThread, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
@@ -73,12 +74,10 @@ export interface ContextUsageSnapshot {
   facts_budget_tokens: number;
 }
 
-// Max times we'll auto-retry a single user turn when the model emits a
-// "one moment" stall without firing any tool. One retry is plenty — if the
-// model is *still* stalling after a forceful nudge, looping further just
-// burns tokens and the warning footer on the persisted message gives the
-// user a clear manual recovery path ("continue").
-const MAX_STALL_AUTO_RETRIES = 1;
+// JARELA_MAX_STALL_RETRIES / JARELA_MAX_TRANSIENT_RETRIES override these.
+// Read fresh per turn so non-restart-required reloads take effect.
+function maxStallRetries(): number { return getConfig().maxStallRetries; }
+function maxTransientRetries(): number { return getConfig().maxTransientRetries; }
 
 // Hard cap on how deep an A → B → C delegation chain can go via the
 // `delegate_to_agent` built-in tool. Public callers start at depth 0; the

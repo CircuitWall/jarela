@@ -7,26 +7,29 @@
 //
 // Resolution order for every entry: explicit JARELA_* var → legacy/standard
 // var (where one exists, e.g. PORT/HOSTNAME for Next.js compatibility) →
-// hard-coded default.
+// schema default (lib/env/schema.ts).
 //
-// Values are resolved lazily on first read and cached. Tests that mutate
-// `process.env` must call `resetConfigCache()` between cases.
+// Values are resolved lazily on first read and cached. Tests + the env-
+// override PATCH endpoint must call `resetConfigCache()` between cases.
 
 import { getDataDir } from "@/lib/db/data-dir";
 import { getAppName, getAppDescription, getAppIssueUrl } from "./app-config";
+import { ENV_DEFAULTS } from "./schema";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 export interface JarelaConfig {
-  /** TCP port the Next.js server binds to. */
+  // network
   readonly port: number;
-  /** Hostname/interface the server binds to (loopback by default). */
   readonly hostname: string;
-  /** Absolute path to the SQLite + files data directory. */
   readonly dataDir: string;
-  /** Absolute path to the external-tools directory (CJS/TS plugins). */
   readonly toolsDir: string;
-  /** Max LangGraph node visits per agent run before erroring out. */
+  readonly httpRequestTimeoutMs: number;
+  readonly sseConnectTimeoutMs: number;
+  readonly healthCheckTimeoutMs: number;
+  readonly httpMaxAttempts: number;
+
+  // agent
   readonly recursionLimit: number;
   /** Per-request timeout for Gemini voice (TTS/STT) calls, ms. */
   readonly voiceTimeoutMs: number;
@@ -34,9 +37,7 @@ export interface JarelaConfig {
   readonly imageTimeoutMs: number;
   /** User-visible app name. Forks override via NEXT_PUBLIC_APP_NAME. */
   readonly appName: string;
-  /** Meta description for the HTML <head>. NEXT_PUBLIC_APP_DESCRIPTION. */
   readonly appDescription: string;
-  /** "Report a bug" target — GitHub issues URL. NEXT_PUBLIC_APP_ISSUE_URL. */
   readonly issueUrl: string;
 }
 
@@ -59,6 +60,21 @@ function parsePort(value: string | undefined, fallback: number): number {
   return n >= 1 && n <= 65_535 ? n : fallback;
 }
 
+function parseBool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return fallback;
+}
+
+function parseLogLevel(value: string | undefined, fallback: "debug" | "info" | "warn" | "error"): JarelaConfig["logLevel"] {
+  if (!value) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "debug" || v === "info" || v === "warn" || v === "error") return v;
+  return fallback;
+}
+
 let cached: JarelaConfig | null = null;
 
 function expandHome(p: string): string {
@@ -70,8 +86,9 @@ export function getConfig(): JarelaConfig {
   const env = process.env;
   const dataDir = getDataDir();
   cached = {
-    port: parsePort(env.JARELA_PORT ?? env.PORT, DEFAULTS.port),
-    hostname: (env.JARELA_HOSTNAME ?? env.HOSTNAME ?? DEFAULTS.hostname).trim() || DEFAULTS.hostname,
+    // network
+    port: parsePort(env.JARELA_PORT ?? env.PORT, ENV_DEFAULTS.port),
+    hostname: (env.JARELA_HOSTNAME ?? env.HOSTNAME ?? ENV_DEFAULTS.hostname).trim() || ENV_DEFAULTS.hostname,
     dataDir,
     toolsDir: env.JARELA_TOOLS_DIR ? expandHome(env.JARELA_TOOLS_DIR) : join(dataDir, "tools"),
     recursionLimit: parsePositiveInt(env.JARELA_RECURSION_LIMIT, DEFAULTS.recursionLimit),
@@ -84,7 +101,7 @@ export function getConfig(): JarelaConfig {
   return cached;
 }
 
-/** Test-only: drop the memoised config so the next read picks up env edits. */
+/** Drop the memoised config so the next read picks up env edits. Used by tests + the env-override PATCH endpoint. */
 export function resetConfigCache(): void {
   cached = null;
 }

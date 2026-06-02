@@ -13,11 +13,11 @@ import { checkFsAllowed, resolveSafetyMode } from "./safety";
 // read-modify-write cycle needs two shell calls plus careful diff-by-hand.
 // These tools give agents a first-class file write + targeted edit surface.
 
-const MAX_READ_BYTES = 64_000;
-const MAX_WRITE_BYTES = 2_000_000;
-// Hard cap on the JSON payload returned by file_list. Stops a misconfigured
-// recursive listing of a giant tree from blowing the LLM's prompt budget
-// (one user hit 361K tokens / 64K limit from a single call).
+// JARELA_FILES_MAX_READ_BYTES / JARELA_FILES_MAX_WRITE_BYTES override these.
+// MAX_LIST_JSON_BYTES isn't user-tunable: the cap exists to keep file_list
+// JSON inside one LLM context budget; raising it just shifts the failure.
+function maxReadBytes(): number { return getConfig().filesMaxReadBytes; }
+function maxWriteBytes(): number { return getConfig().filesMaxWriteBytes; }
 const MAX_LIST_JSON_BYTES = 24_000;
 
 function clip(text: string, max: number): { value: string; truncated: boolean } {
@@ -158,7 +158,7 @@ export const fileReadTool = tool(
         content = lines.slice(s - 1, e).join("\n");
         lineRange = { start: s, end: e };
       }
-      const clipped = clip(content, MAX_READ_BYTES);
+      const clipped = clip(content, maxReadBytes());
       return JSON.stringify({
         ok: true,
         path: abs,
