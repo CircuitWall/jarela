@@ -3,8 +3,8 @@ import { join } from "node:path";
 import { getDb } from "@/lib/db";
 import { listToolStats, toStats } from "@/lib/stores/tool-stats";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
+import { estimateTokens } from "@/lib/agents/context-budget";
 
-const CHARS_PER_TOKEN = 4;
 const DEFAULT_WINDOW_DAYS = 30;
 
 export interface DashboardTierTokens {
@@ -736,12 +736,6 @@ export function computeDataQuality(measured: number, estimated: number): Dashboa
     estimated_messages: estimated,
     measured_pct: total === 0 ? 1 : round4(measured / total),
   };
-}
-
-function estimateTokens(text: string): number {
-  const trimmed = text.trim();
-  if (!trimmed) return 0;
-  return Math.max(1, Math.ceil(trimmed.length / CHARS_PER_TOKEN));
 }
 
 function estimateCostUsd(inputTokens: number, outputTokens: number, rates: ProviderRates): number {
