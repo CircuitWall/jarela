@@ -9,12 +9,17 @@ import { NextResponse } from "next/server";
 import type { z } from "zod";
 import type { NextRequest } from "next/server";
 
-export function errorResponse(message: string, status: number = 400): NextResponse {
-  return NextResponse.json({ error: message }, { status });
+// ADR-0053 — error envelope now carries an optional `code` so the client can
+// branch on failure class without parsing the message string. Existing
+// `{error: message}` shape is preserved; `code` is purely additive.
+export function errorResponse(message: string, status: number = 400, code?: string): NextResponse {
+  const body: { error: string; code?: string } = { error: message };
+  if (code) body.code = code;
+  return NextResponse.json(body, { status });
 }
 
-export function notFoundResponse(message: string = "Not found"): NextResponse {
-  return errorResponse(message, 404);
+export function notFoundResponse(message: string = "Not found", code: string = "not_found"): NextResponse {
+  return errorResponse(message, 404, code);
 }
 
 export function createdResponse<T>(data: T): NextResponse {
@@ -52,7 +57,7 @@ export async function validateBody<S extends z.ZodTypeAny>(
   }
   const parsed = schema.safeParse(raw);
   if (!parsed.success) {
-    return errorResponse(parsed.error.issues[0]?.message ?? "invalid body", 400);
+    return errorResponse(parsed.error.issues[0]?.message ?? "invalid body", 400, "invalid_args");
   }
   return parsed.data;
 }

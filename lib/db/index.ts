@@ -26,10 +26,29 @@ export function getDb(): DatabaseSync {
     const db = new DatabaseSync(DB_PATH);
     db.exec("PRAGMA journal_mode = WAL");
     db.exec("PRAGMA foreign_keys = ON");
-    runMigrations(db);
-    // One-time encryption migration: rewrites legacy plaintext rows in
-    // the four secret-bearing surfaces with enc:v1: envelopes. Idempotent.
-    runCryptoMigration(db);
+    // ADR-0053 — migration failure was previously silent: the throw bubbled
+    // out of getDb() and the request that triggered it produced a 500 with
+    // a stack trace. The user sees that on EVERY subsequent request because
+    // _db is never assigned and we re-enter this branch. Wrap with a
+    // friendly message that names the DB path so the user knows where to
+    // look. The throw still propagates (we can't continue without a working
+    // schema), but at least it's actionable.
+    try {
+      runMigrations(db);
+      // One-time encryption migration: rewrites legacy plaintext rows in
+      // the four secret-bearing surfaces with enc:v1: envelopes. Idempotent.
+      runCryptoMigration(db);
+    } catch (err) {
+      try { db.close(); } catch { /* */ }
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error("[jarela/db] migration failed:", err);
+      throw new Error(
+        `Database migration failed for ${DB_PATH}. ` +
+        `If this is a corrupted DB, back it up and rename it (Jarela will create a fresh one); ` +
+        `if this is a schema regression after a downgrade, restore from a previous backup. ` +
+        `Underlying error: ${detail}`,
+      );
+    }
     _db = db; // only assign after migrations succeed
     // Layer DB-backed proxy config on top of the env-var dispatcher
     // (ADR-0009). Fire-and-forget — keeps getDb() synchronous so existing
