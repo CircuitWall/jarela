@@ -19,6 +19,7 @@
 // boot. Idempotent: only the first call installs handlers.
 
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
+import { getConfig } from "@/lib/env/config";
 
 interface ShutdownState {
   registered: boolean;
@@ -29,8 +30,11 @@ const state = getOrCreateGlobal<ShutdownState>("__jarela_shutdown", () => ({
   shuttingDown: false,
 }));
 
-const HARD_TIMEOUT_MS = 10_000;
-const RUN_DRAIN_MS = 3_000;
+// JARELA_SHUTDOWN_DRAIN_MS / JARELA_SHUTDOWN_SETTLE_MS override these.
+// Captured at handler-install time (boot); these don't hot-reload because
+// the handlers close over the values.
+const HARD_TIMEOUT_MS = getConfig().shutdownDrainMs;
+const RUN_DRAIN_MS = getConfig().shutdownSettleMs;
 
 export function registerShutdownHandlers(): void {
   if (state.registered) return;

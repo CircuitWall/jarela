@@ -1,4 +1,5 @@
 import { streamWithConfig } from "@/lib/agents/llm";
+import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getThread, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
@@ -73,31 +74,20 @@ export interface ContextUsageSnapshot {
   facts_budget_tokens: number;
 }
 
-// Max times we'll auto-retry a single user turn when the model emits a
-// "one moment" stall without firing any tool. One retry is plenty — if the
-// model is *still* stalling after a forceful nudge, looping further just
-// burns tokens and the warning footer on the persisted message gives the
-// user a clear manual recovery path ("continue").
-const MAX_STALL_AUTO_RETRIES = 1;
+// JARELA_MAX_STALL_RETRIES / JARELA_MAX_TRANSIENT_RETRIES override these.
+// Read fresh per turn so non-restart-required reloads take effect.
+function maxStallRetries(): number { return getConfig().maxStallRetries; }
+function maxTransientRetries(): number { return getConfig().maxTransientRetries; }
 
-// ADR-0051 — separate retry budget for transient provider failures
-// (rate_limit / network_error). Independent from stall-retry: a turn can
-// burn one of each before we surface to the user. One auto-retry is plenty
-// — same logic as stall-retry, anything more is just paying for a known
-// bad call.
-const MAX_TRANSIENT_AUTO_RETRIES = 1;
 // Cap any provider-supplied retry_after_ms so a misbehaving upstream that
 // asks for a 10-minute wait can't pin the agent loop. Run-registry's
-// 15-min watchdog would catch it eventually, but a tight cap here makes
-// the user-visible UX better.
+// watchdog would catch it eventually; this bound just makes UX better.
 const MAX_TRANSIENT_RETRY_DELAY_MS = 60_000;
 
-// Hard cap on how deep an A → B → C delegation chain can go via the
-// `delegate_to_agent` built-in tool. Public callers start at depth 0; the
-// delegate tool increments before recursively invoking prepareThreadRun. At
-// depth >= MAX_DELEGATION_DEPTH the tool refuses with `depth_exceeded` so a
-// mis-configured agent network can't runaway.
-export const MAX_DELEGATION_DEPTH = 2;
+// JARELA_MAX_DELEGATION_DEPTH overrides this. Hard cap on A → B → C chain
+// depth via the `delegate_to_agent` built-in. Re-read at module init —
+// deep chains capture the value into request flow.
+export const MAX_DELEGATION_DEPTH = getConfig().maxDelegationDepth;
 
 function contentText(content: string | ContentPart[]): string {
   if (typeof content === "string") return content;
@@ -219,8 +209,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   };
 
   const rawStream = streamWithConfig(req.thread_id, historyWindow.history, streamOpts, req.signal);
-  const retriesLeft = req._stall_retries_left ?? MAX_STALL_AUTO_RETRIES;
-  const transientLeft = req._transient_retries_left ?? MAX_TRANSIENT_AUTO_RETRIES;
+  const retriesLeft = req._stall_retries_left ?? maxStallRetries();
+  const transientLeft = req._transient_retries_left ?? maxTransientRetries();
   // Compose: transientRetryStream wraps the raw stream first so a
   // rate-limit / network blip mid-call gets retried with the SAME message
   // (no nudge) before stall detection runs. stallRetryStream then sees a

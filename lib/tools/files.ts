@@ -6,6 +6,7 @@ import { z } from "zod";
 import { registerTools } from "./registry";
 import { checkFsAllowed, resolveSafetyMode } from "./safety";
 import { classifyFsError } from "./error-codes";
+import { getConfig } from "@/lib/env/config";
 
 // Tag a thrown error with a stable code so the catch sites in this file
 // can carry it forward to the JSON envelope (and the agent's playbook can
@@ -49,11 +50,11 @@ function fsHint(code: string): string | undefined {
 // read-modify-write cycle needs two shell calls plus careful diff-by-hand.
 // These tools give agents a first-class file write + targeted edit surface.
 
-const MAX_READ_BYTES = 64_000;
-const MAX_WRITE_BYTES = 2_000_000;
-// Hard cap on the JSON payload returned by file_list. Stops a misconfigured
-// recursive listing of a giant tree from blowing the LLM's prompt budget
-// (one user hit 361K tokens / 64K limit from a single call).
+// JARELA_FILES_MAX_READ_BYTES / JARELA_FILES_MAX_WRITE_BYTES override these.
+// MAX_LIST_JSON_BYTES isn't user-tunable: the cap exists to keep file_list
+// JSON inside one LLM context budget; raising it just shifts the failure.
+function maxReadBytes(): number { return getConfig().filesMaxReadBytes; }
+function maxWriteBytes(): number { return getConfig().filesMaxWriteBytes; }
 const MAX_LIST_JSON_BYTES = 24_000;
 
 function clip(text: string, max: number): { value: string; truncated: boolean } {
@@ -198,7 +199,7 @@ export const fileReadTool = tool(
         content = lines.slice(s - 1, e).join("\n");
         lineRange = { start: s, end: e };
       }
-      const clipped = clip(content, MAX_READ_BYTES);
+      const clipped = clip(content, maxReadBytes());
       return JSON.stringify({
         ok: true,
         path: abs,
@@ -235,13 +236,14 @@ export const fileWriteTool = tool(
     let abs = filePath;
     try {
       abs = resolvePath(filePath);
-      if (content.length > MAX_WRITE_BYTES) {
+      const maxWrite = maxWriteBytes();
+      if (content.length > maxWrite) {
         return JSON.stringify({
           ok: false,
           path: abs,
-          error: `content exceeds ${MAX_WRITE_BYTES} bytes`,
+          error: `content exceeds ${maxWrite} bytes`,
           code: "content_too_large",
-          hint: `The content is over the ${MAX_WRITE_BYTES.toLocaleString()}-byte cap for file_write. Split it into chunks (one file_write per chunk, or use shell_exec with a heredoc), or check whether you actually need to write this much.`,
+          hint: `The content is over the ${maxWrite.toLocaleString()}-byte cap for file_write. Split it into chunks (one file_write per chunk, or use shell_exec with a heredoc), or check whether you actually need to write this much.`,
         });
       }
       assertSafePath(abs, "write");

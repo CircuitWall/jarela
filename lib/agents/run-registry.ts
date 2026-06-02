@@ -1,4 +1,5 @@
 import type { StreamChunk } from "./base";
+import { getConfig } from "@/lib/env/config";
 
 // In-memory registry of in-flight agent runs, keyed by thread_id. When the user
 // switches agents mid-stream, the run keeps going server-side; if they return
@@ -13,25 +14,14 @@ import type { StreamChunk } from "./base";
 
 type Subscriber = (chunk: StreamChunk) => void;
 
-const MAX_BUFFERED = 4000;        // text_delta chunks accumulate fast; cap them
-const RECENT_TTL_MS = 5 * 60_000; // keep finished runs visible for 5 min
-// Idle (no-progress) ceiling: if no chunk has been broadcast for this
-// long the registry assumes the LLM/tool call wedged and force-finishes
-// the run. This is the user-perceived "stream is dead" signal and is
-// short by design — long legitimate turns keep streaming text/tool
-// chunks, so they reset the idle clock on every broadcast(). The
-// wall-clock ceiling (runMaxMs) is the absolute safety net for the
-// degenerate case where broadcast() is never called at all (or fires
-// faster than the idle window forever).
-// Override with JARELA_RUN_IDLE_MS / JARELA_RUN_MAX_MS.
-function runIdleMs(): number {
-  const raw = Number(process.env.JARELA_RUN_IDLE_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 90_000;
-}
-function runMaxMs(): number {
-  const raw = Number(process.env.JARELA_RUN_MAX_MS);
-  return Number.isFinite(raw) && raw > 0 ? raw : 15 * 60_000;
-}
+// Read once at module init. JARELA_RUN_BUFFER_SIZE / JARELA_RUN_REGISTRY_TTL_MS
+// override the defaults.
+const MAX_BUFFERED = getConfig().runBufferSize;
+const RECENT_TTL_MS = getConfig().runRegistryTtlMs;
+// Idle (no-progress) ceiling and wall-clock ceiling: read fresh per-run
+// from getConfig() so non-restart-required env reloads take effect.
+function runIdleMs(): number { return getConfig().runIdleMs; }
+function runMaxMs(): number { return getConfig().runMaxMs; }
 
 export interface ActiveRun {
   thread_id: string;
