@@ -5,7 +5,7 @@
 
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
-import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "../error-codes";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode, defaultHttpHint } from "../error-codes";
 
 export interface AtlassianAuth {
   url: string;        // e.g. "https://your-team.atlassian.net"
@@ -83,21 +83,29 @@ export async function atlassianFetch(
       // from 5xx (transient, retry).
       const code = httpStatusToErrorCode(res.status);
       const retryAfterMs = res.status === 429 ? parseRetryAfterMs(res.headers.get("retry-after")) : undefined;
+      const hint = defaultHttpHint("Atlassian", code);
       return {
         error: `Atlassian ${res.status}: ${text.slice(0, 500)}`,
         code,
         status: res.status,
         url,
         ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+        ...(hint ? { hint } : {}),
       };
     }
     return parseJsonSafe<unknown>(text, text);
   } catch (err) {
     const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    const hint = code === "network_error"
+      ? "Network failure reaching Atlassian. Retry once after a brief pause; if it keeps failing, check the corporate proxy / VPN status."
+      : code === "tool_timeout"
+        ? "The Atlassian API didn't respond within the per-tool deadline. Narrow the request (smaller jql limit, fewer fields) or try again."
+        : undefined;
     return {
       error: `Atlassian fetch threw: ${err instanceof Error ? err.message : String(err)}`,
       code,
       url,
+      ...(hint ? { hint } : {}),
     };
   }
 }

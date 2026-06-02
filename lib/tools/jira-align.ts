@@ -33,7 +33,7 @@ import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { registerTools } from "./registry";
-import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode } from "./error-codes";
+import { httpStatusToErrorCode, parseRetryAfterMs, networkErrorCode, defaultHttpHint } from "./error-codes";
 
 export interface JiraAlignAuth {
   url: string;        // e.g. "https://acme.jiraalign.com"
@@ -110,21 +110,29 @@ async function jaFetch(
     if (!res.ok) {
       const code = httpStatusToErrorCode(res.status);
       const retryAfterMs = res.status === 429 ? parseRetryAfterMs(res.headers.get("retry-after")) : undefined;
+      const hint = defaultHttpHint("Jira Align", code);
       return {
         error: `Jira Align ${res.status}: ${text.slice(0, 500)}`,
         code,
         status: res.status,
         url,
         ...(retryAfterMs !== undefined ? { retry_after_ms: retryAfterMs } : {}),
+        ...(hint ? { hint } : {}),
       };
     }
     return parseJsonSafe<unknown>(text, text);
   } catch (err) {
     const code = networkErrorCode(err) ?? ((err as { name?: string }).name === "AbortError" ? "tool_timeout" : "fetch_error");
+    const hint = code === "network_error"
+      ? "Network failure reaching Jira Align. Retry once; if it persists, check VPN/proxy."
+      : code === "tool_timeout"
+        ? "Jira Align didn't respond within the per-tool deadline. Narrow the search ($filter or limit) or retry."
+        : undefined;
     return {
       error: `Jira Align fetch threw: ${err instanceof Error ? err.message : String(err)}`,
       code,
       url,
+      ...(hint ? { hint } : {}),
     };
   }
 }
