@@ -23,7 +23,15 @@ export interface ThreadRow {
   // surfaced into every turn's system prompt outside the tier budget so it
   // can't be compacted away. NULL on threads with no explicit goal.
   task_goal?: string | null;
+  // ADR-0045 — compaction status. 'fresh' = the cached summary covers the
+  // current pin; 'failed' = the last summarisation attempt exhausted its
+  // retry budget and the warm tier is currently degraded; 'stale' (reserved
+  // for future use). NULL on legacy threads + threads where the warm tier
+  // was never engaged.
+  warm_summary_status?: WarmSummaryStatus | null;
 }
+
+export type WarmSummaryStatus = "fresh" | "stale" | "failed";
 export interface MessageRow {
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
   // JSON-encoded array of PersistedToolEvent. null when no tool work happened
@@ -217,7 +225,8 @@ export function setThreadTaskGoal(thread_id: string, goal: string | null): void 
 // Cache the latest warm-tier summary alongside the boundary it covers. The
 // chat UI considers the summary fresh only when `warm_summary_before` matches
 // the current `hot_since`; any boundary change triggers a re-summarise on the
-// next run rather than a synchronous LLM call here.
+// next run rather than a synchronous LLM call here. Always sets status to
+// 'fresh' — failed summarisation paths use setThreadWarmSummaryStatus.
 export function setThreadWarmSummary(
   thread_id: string,
   summary: string,
@@ -225,7 +234,21 @@ export function setThreadWarmSummary(
 ): void {
   getDb()
     .prepare(
-      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=? WHERE thread_id=?",
+      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_status='fresh' WHERE thread_id=?",
     )
     .run(summary, before, now(), thread_id);
+}
+
+// Update only the status (no new summary text). Used when the warm
+// summariser exhausted its retry budget — leaves any prior cached summary
+// in place (it's better than empty) but flags the thread so the UI can show
+// "warm context degraded" and the user can react (eg trim history, /new
+// thread, switch model) before too many turns operate on stale state.
+export function setThreadWarmSummaryStatus(
+  thread_id: string,
+  status: WarmSummaryStatus,
+): void {
+  getDb()
+    .prepare("UPDATE threads SET warm_summary_status=? WHERE thread_id=?")
+    .run(status, thread_id);
 }

@@ -663,6 +663,13 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   //   budget so it can't be compacted away as the thread grows. NULL on
   //   threads with no explicit goal (the agent works turn-by-turn).
   if (!names.has("task_goal"))               db.exec("ALTER TABLE threads ADD COLUMN task_goal TEXT");
+  // Compaction-status (ADR-0045). Tracks whether the most recent
+  // warm-summary attempt succeeded ('fresh'), is being reused on a stable
+  // boundary ('fresh'), or failed every retry ('failed'). NULL on legacy
+  // rows + on threads where the warm tier was never engaged. The chat UI
+  // uses this to surface a "warm context degraded" chip so users notice
+  // mid-task that older context is silently being truncated.
+  if (!names.has("warm_summary_status"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_status TEXT");
 }
 
 // Per-tier input-token breakdown so the chat UI can show actual
