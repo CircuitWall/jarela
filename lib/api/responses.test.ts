@@ -27,16 +27,16 @@ describe("errorResponse", () => {
 });
 
 describe("notFoundResponse", () => {
-  it("returns 404 with default message", async () => {
+  it("returns 404 with default message and code:not_found", async () => {
     const r = notFoundResponse();
     expect(r.status).toBe(404);
-    expect(await r.json()).toEqual({ error: "Not found" });
+    expect(await r.json()).toEqual({ error: "Not found", code: "not_found" });
   });
 
-  it("accepts a custom message", async () => {
+  it("accepts a custom message and emits the code", async () => {
     const r = notFoundResponse("Agent not found");
     expect(r.status).toBe(404);
-    expect(await r.json()).toEqual({ error: "Agent not found" });
+    expect(await r.json()).toEqual({ error: "Agent not found", code: "not_found" });
   });
 });
 
