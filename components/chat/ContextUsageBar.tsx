@@ -70,6 +70,21 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
   const factsUsed = usage.facts_tokens!;
   const overheadUsed = usage.overhead_tokens!;
 
+  // PR-2 — tier-starvation signal. A tier whose budget is non-trivial but
+  // came back near-empty means compaction silently degraded for THIS turn:
+  // either the warm summariser failed (caught at thread level via
+  // warm_summary_status; this is the per-row signal), or facts memory had
+  // no relevant hits. Surfacing both as a small "tier starved" hint helps
+  // the user diagnose context shape without expanding the bar.
+  const TIER_STARVED_RATIO = 0.1; // <10% of allocation = effectively unused
+  const TIER_BUDGET_FLOOR = 200;  // ignore tiers too small to matter
+  const warmStarved = warmBudget >= TIER_BUDGET_FLOOR && warmUsed / warmBudget < TIER_STARVED_RATIO;
+  const factsStarved = factsBudget >= TIER_BUDGET_FLOOR && factsUsed / factsBudget < TIER_STARVED_RATIO;
+  const starvedTiers = [
+    warmStarved ? "warm" : null,
+    factsStarved ? "facts" : null,
+  ].filter(Boolean) as string[];
+
   // Overhead's "budget" is whatever it actually consumed — there's no slider
   // for it. Shown as a fixed-size segment so it doesn't visually compete
   // with the tunable tiers.
@@ -110,6 +125,18 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           <Row label="Warm"     color="text-amber-500" used={warmUsed}     budget={warmBudget}     hint="Older history compressed into rolling summary" />
           <Row label="Facts"    color="text-teal-500"  used={factsUsed}    budget={factsBudget}    hint="Retrieved long-term memory + recall snippets" />
           <Row label="Overhead" color="text-fg-muted"  used={overheadUsed} budget={overheadUsed}   hint="System prompt + per-message scaffolding" />
+          {starvedTiers.length > 0 && (
+            <span
+              className="col-span-2 mt-0.5 text-amber-600 dark:text-amber-400"
+              title={
+                `${starvedTiers.join(" + ")} budget(ed) but came back nearly empty this turn — ` +
+                "either summarisation failed silently or there were no relevant memory hits. " +
+                "Persistent starvation across turns suggests the tier-proportions for this agent are misallocated."
+              }
+            >
+              ⚠ tier(s) starved: {starvedTiers.join(", ")}
+            </span>
+          )}
           <span
             className="col-span-2 mt-0.5 border-t border-border pt-0.5"
             title={`Output: tokens the model generated in its reply.\nWindow: total context capacity of this model.`}
