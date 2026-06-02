@@ -556,6 +556,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
           message={error.message}
           code={error.code}
           onRetry={input.trim().length === 0 ? undefined : handleSubmit}
+          onReconnect={threadId ? () => { void attach(threadId); } : undefined}
         />
       )}
 
