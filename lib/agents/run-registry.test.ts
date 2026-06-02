@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { startRun, finishRun, getRun, broadcast } from "./run-registry";
+import { resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
 const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: s } } as StreamChunk);
@@ -7,9 +8,13 @@ const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: 
 describe("run-registry watchdog", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // Tests mutate JARELA_RUN_*_MS at runtime; the config cache otherwise
+    // pins the snapshot read at module init.
+    resetConfigCache();
   });
   afterEach(() => {
     vi.useRealTimers();
+    resetConfigCache();
   });
 
   it("force-evicts a leaked 'running' entry after JARELA_RUN_MAX_MS", () => {

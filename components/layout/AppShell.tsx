@@ -20,6 +20,7 @@ import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasks
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { HarnessPanel } from "@/components/harness/HarnessPanel";
 import { LogsPanel } from "@/components/logs/LogsPanel";
+import { EnvVarsPanel } from "@/components/env/EnvVarsPanel";
 import { HeaderActivity } from "@/components/ui/HeaderActivity";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
@@ -31,7 +32,7 @@ import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
-const ADVANCED_TABS = new Set(["memory", "bridges", "harness", "logs"]);
+const ADVANCED_TABS = new Set(["memory", "bridges", "harness", "logs", "env"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -418,6 +419,11 @@ export function AppShell() {
         {isFullMode && mountedTabs.has("logs") && (
           <Activity mode={state.activeTab === "logs" ? "visible" : "hidden"}>
             <LogsPanel />
+          </Activity>
+        )}
+        {isFullMode && mountedTabs.has("env") && (
+          <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
+            <EnvVarsPanel />
           </Activity>
         )}
 

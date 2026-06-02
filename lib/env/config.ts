@@ -7,70 +7,79 @@
 //
 // Resolution order for every entry: explicit JARELA_* var → legacy/standard
 // var (where one exists, e.g. PORT/HOSTNAME for Next.js compatibility) →
-// hard-coded default.
+// schema default (lib/env/schema.ts).
 //
-// Values are resolved lazily on first read and cached. Tests that mutate
-// `process.env` must call `resetConfigCache()` between cases.
+// Values are resolved lazily on first read and cached. Tests + the env-
+// override PATCH endpoint must call `resetConfigCache()` between cases.
 
 import { getDataDir } from "@/lib/db/data-dir";
 import { getAppName, getAppDescription, getAppIssueUrl } from "./app-config";
+import { ENV_DEFAULTS } from "./schema";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 export interface JarelaConfig {
-  /** TCP port the Next.js server binds to. */
+  // network
   readonly port: number;
-  /** Hostname/interface the server binds to (loopback by default). */
   readonly hostname: string;
-  /** Absolute path to the SQLite + files data directory. */
   readonly dataDir: string;
-  /** Absolute path to the external-tools directory (CJS/TS plugins). */
   readonly toolsDir: string;
-  /** Max LangGraph node visits per agent run before erroring out. */
+  readonly httpRequestTimeoutMs: number;
+  readonly sseConnectTimeoutMs: number;
+  readonly healthCheckTimeoutMs: number;
+  readonly httpMaxAttempts: number;
+
+  // agent
   readonly recursionLimit: number;
-  /** Per-request timeout for Gemini voice (TTS/STT) calls, ms. */
-  readonly voiceTimeoutMs: number;
-  /** Per-request timeout for Gemini image-generation calls, ms. */
-  readonly imageTimeoutMs: number;
-  /**
-   * Per-tool-invocation deadline applied at lib/tools/index.ts#executeTool.
-   * MCP tools have no SDK-level timeout, plugins under JARELA_TOOLS_DIR may
-   * hang. The run-registry watchdog is a 15-min backstop, this is the
-   * per-call deadline that lets the agent route around stuck tools.
-   * Set to 0 to disable (not recommended outside tests). Override with
-   * JARELA_TOOL_TIMEOUT_MS.
-   */
-  readonly toolTimeoutMs: number;
-  /**
-   * Wall-clock budget for a single agent.stream() invocation. LangGraph's
-   * recursionLimit caps step count, not real time — a slow provider or
-   * stuck tool can stretch a turn for many minutes. The registry has its
-   * own 15-min backstop; this is the tighter per-LLM-stream deadline.
-   * Set to 0 to disable. Override with JARELA_LLM_STREAM_MAX_MS.
-   */
   readonly llmStreamMaxMs: number;
-  /** User-visible app name. Forks override via NEXT_PUBLIC_APP_NAME. */
+  readonly runIdleMs: number;
+  readonly runMaxMs: number;
+  readonly runRegistryTtlMs: number;
+  readonly runBufferSize: number;
+  readonly maxStallRetries: number;
+  readonly maxTransientRetries: number;
+  readonly maxDelegationDepth: number;
+  readonly streamParseTripwire: number;
+
+  // tools
+  readonly toolTimeoutMs: number;
+  readonly voiceTimeoutMs: number;
+  readonly imageTimeoutMs: number;
+  readonly fetchToolTimeoutMs: number;
+  readonly fetchToolMaxBytes: number;
+  readonly mcpRegistryTimeoutMs: number;
+  readonly execToolDefaultTimeoutMs: number;
+  readonly execToolMaxTimeoutMs: number;
+  readonly execMaxOutputBytes: number;
+  readonly filesMaxReadBytes: number;
+  readonly filesMaxWriteBytes: number;
+
+  // lifecycle
+  readonly updateCheckTimeoutMs: number;
+  readonly shutdownDrainMs: number;
+  readonly shutdownSettleMs: number;
+  readonly disableUpdateCheck: boolean;
+
+  // limits
+  readonly notificationRingSize: number;
+
+  // logging
+  readonly logsRingSize: number;
+  readonly logLevel: "debug" | "info" | "warn" | "error";
+
+  // scheduler
+  readonly schedulerTickMs: number;
+  readonly fastRemoteSweepMs: number;
+
+  // documents
+  readonly docMaxFileBytes: number;
+  readonly docMaxFilesPerSource: number;
+
+  // app metadata
   readonly appName: string;
-  /** Meta description for the HTML <head>. NEXT_PUBLIC_APP_DESCRIPTION. */
   readonly appDescription: string;
-  /** "Report a bug" target — GitHub issues URL. NEXT_PUBLIC_APP_ISSUE_URL. */
   readonly issueUrl: string;
 }
-
-const DEFAULTS = {
-  port: 4312,
-  hostname: "127.0.0.1",
-  recursionLimit: 200,
-  voiceTimeoutMs: 60_000,
-  imageTimeoutMs: 60_000,
-  // 60s default per tool — generous enough for legitimate slow MCP calls
-  // (deep web fetches, LLM-backed sub-tools) but tight enough to keep a
-  // wedged tool from soaking minutes.
-  toolTimeoutMs: 60_000,
-  // 10 min default per LLM stream — long-running react loops with many
-  // tools fit; runaway providers don't.
-  llmStreamMaxMs: 10 * 60_000,
-} as const;
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -91,6 +100,21 @@ function parsePort(value: string | undefined, fallback: number): number {
   return n >= 1 && n <= 65_535 ? n : fallback;
 }
 
+function parseBool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
+  if (v === "0" || v === "false") return false;
+  return fallback;
+}
+
+function parseLogLevel(value: string | undefined, fallback: "debug" | "info" | "warn" | "error"): JarelaConfig["logLevel"] {
+  if (!value) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "debug" || v === "info" || v === "warn" || v === "error") return v;
+  return fallback;
+}
+
 let cached: JarelaConfig | null = null;
 
 function expandHome(p: string): string {
@@ -102,15 +126,63 @@ export function getConfig(): JarelaConfig {
   const env = process.env;
   const dataDir = getDataDir();
   cached = {
-    port: parsePort(env.JARELA_PORT ?? env.PORT, DEFAULTS.port),
-    hostname: (env.JARELA_HOSTNAME ?? env.HOSTNAME ?? DEFAULTS.hostname).trim() || DEFAULTS.hostname,
+    // network
+    port: parsePort(env.JARELA_PORT ?? env.PORT, ENV_DEFAULTS.port),
+    hostname: (env.JARELA_HOSTNAME ?? env.HOSTNAME ?? ENV_DEFAULTS.hostname).trim() || ENV_DEFAULTS.hostname,
     dataDir,
     toolsDir: env.JARELA_TOOLS_DIR ? expandHome(env.JARELA_TOOLS_DIR) : join(dataDir, "tools"),
-    recursionLimit: parsePositiveInt(env.JARELA_RECURSION_LIMIT, DEFAULTS.recursionLimit),
-    voiceTimeoutMs: parsePositiveInt(env.JARELA_VOICE_TIMEOUT_MS, DEFAULTS.voiceTimeoutMs),
-    imageTimeoutMs: parsePositiveInt(env.JARELA_IMAGE_TIMEOUT_MS, DEFAULTS.imageTimeoutMs),
-    toolTimeoutMs: parseNonNegativeInt(env.JARELA_TOOL_TIMEOUT_MS, DEFAULTS.toolTimeoutMs),
-    llmStreamMaxMs: parseNonNegativeInt(env.JARELA_LLM_STREAM_MAX_MS, DEFAULTS.llmStreamMaxMs),
+    httpRequestTimeoutMs: parsePositiveInt(env.JARELA_HTTP_REQUEST_TIMEOUT_MS, ENV_DEFAULTS.httpRequestTimeoutMs),
+    sseConnectTimeoutMs: parsePositiveInt(env.JARELA_SSE_CONNECT_TIMEOUT_MS, ENV_DEFAULTS.sseConnectTimeoutMs),
+    healthCheckTimeoutMs: parsePositiveInt(env.JARELA_HEALTH_CHECK_TIMEOUT_MS, ENV_DEFAULTS.healthCheckTimeoutMs),
+    httpMaxAttempts: parsePositiveInt(env.JARELA_HTTP_MAX_ATTEMPTS, ENV_DEFAULTS.httpMaxAttempts),
+
+    // agent
+    recursionLimit: parsePositiveInt(env.JARELA_RECURSION_LIMIT, ENV_DEFAULTS.recursionLimit),
+    llmStreamMaxMs: parseNonNegativeInt(env.JARELA_LLM_STREAM_MAX_MS, ENV_DEFAULTS.llmStreamMaxMs),
+    runIdleMs: parsePositiveInt(env.JARELA_RUN_IDLE_MS, ENV_DEFAULTS.runIdleMs),
+    runMaxMs: parsePositiveInt(env.JARELA_RUN_MAX_MS, ENV_DEFAULTS.runMaxMs),
+    runRegistryTtlMs: parsePositiveInt(env.JARELA_RUN_REGISTRY_TTL_MS, ENV_DEFAULTS.runRegistryTtlMs),
+    runBufferSize: parsePositiveInt(env.JARELA_RUN_BUFFER_SIZE, ENV_DEFAULTS.runBufferSize),
+    maxStallRetries: parseNonNegativeInt(env.JARELA_MAX_STALL_RETRIES, ENV_DEFAULTS.maxStallRetries),
+    maxTransientRetries: parseNonNegativeInt(env.JARELA_MAX_TRANSIENT_RETRIES, ENV_DEFAULTS.maxTransientRetries),
+    maxDelegationDepth: parseNonNegativeInt(env.JARELA_MAX_DELEGATION_DEPTH, ENV_DEFAULTS.maxDelegationDepth),
+    streamParseTripwire: parsePositiveInt(env.JARELA_STREAM_PARSE_TRIPWIRE, ENV_DEFAULTS.streamParseTripwire),
+
+    // tools
+    toolTimeoutMs: parseNonNegativeInt(env.JARELA_TOOL_TIMEOUT_MS, ENV_DEFAULTS.toolTimeoutMs),
+    voiceTimeoutMs: parsePositiveInt(env.JARELA_VOICE_TIMEOUT_MS, ENV_DEFAULTS.voiceTimeoutMs),
+    imageTimeoutMs: parsePositiveInt(env.JARELA_IMAGE_TIMEOUT_MS, ENV_DEFAULTS.imageTimeoutMs),
+    fetchToolTimeoutMs: parsePositiveInt(env.JARELA_FETCH_TOOL_TIMEOUT_MS, ENV_DEFAULTS.fetchToolTimeoutMs),
+    fetchToolMaxBytes: parsePositiveInt(env.JARELA_FETCH_TOOL_MAX_BYTES, ENV_DEFAULTS.fetchToolMaxBytes),
+    mcpRegistryTimeoutMs: parsePositiveInt(env.JARELA_MCP_REGISTRY_TIMEOUT_MS, ENV_DEFAULTS.mcpRegistryTimeoutMs),
+    execToolDefaultTimeoutMs: parsePositiveInt(env.JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS, ENV_DEFAULTS.execToolDefaultTimeoutMs),
+    execToolMaxTimeoutMs: parsePositiveInt(env.JARELA_EXEC_TOOL_MAX_TIMEOUT_MS, ENV_DEFAULTS.execToolMaxTimeoutMs),
+    execMaxOutputBytes: parsePositiveInt(env.JARELA_EXEC_MAX_OUTPUT_BYTES, ENV_DEFAULTS.execMaxOutputBytes),
+    filesMaxReadBytes: parsePositiveInt(env.JARELA_FILES_MAX_READ_BYTES, ENV_DEFAULTS.filesMaxReadBytes),
+    filesMaxWriteBytes: parsePositiveInt(env.JARELA_FILES_MAX_WRITE_BYTES, ENV_DEFAULTS.filesMaxWriteBytes),
+
+    // lifecycle
+    updateCheckTimeoutMs: parsePositiveInt(env.JARELA_UPDATE_CHECK_TIMEOUT_MS, ENV_DEFAULTS.updateCheckTimeoutMs),
+    shutdownDrainMs: parsePositiveInt(env.JARELA_SHUTDOWN_DRAIN_MS, ENV_DEFAULTS.shutdownDrainMs),
+    shutdownSettleMs: parseNonNegativeInt(env.JARELA_SHUTDOWN_SETTLE_MS, ENV_DEFAULTS.shutdownSettleMs),
+    disableUpdateCheck: parseBool(env.JARELA_DISABLE_UPDATE_CHECK, false),
+
+    // limits
+    notificationRingSize: parsePositiveInt(env.JARELA_NOTIFICATION_RING_SIZE, ENV_DEFAULTS.notificationRingSize),
+
+    // logging
+    logsRingSize: parsePositiveInt(env.JARELA_LOGS_RING_SIZE, ENV_DEFAULTS.logsRingSize),
+    logLevel: parseLogLevel(env.JARELA_LOG_LEVEL, ENV_DEFAULTS.logLevel),
+
+    // scheduler
+    schedulerTickMs: parsePositiveInt(env.JARELA_SCHEDULER_TICK_MS, ENV_DEFAULTS.schedulerTickMs),
+    fastRemoteSweepMs: parsePositiveInt(env.JARELA_FAST_REMOTE_SWEEP_MS, ENV_DEFAULTS.fastRemoteSweepMs),
+
+    // documents
+    docMaxFileBytes: parsePositiveInt(env.JARELA_DOC_MAX_FILE_BYTES, ENV_DEFAULTS.docMaxFileBytes),
+    docMaxFilesPerSource: parsePositiveInt(env.JARELA_DOC_MAX_FILES_PER_SOURCE, ENV_DEFAULTS.docMaxFilesPerSource),
+
+    // app metadata
     appName: getAppName(),
     appDescription: getAppDescription(),
     issueUrl: getAppIssueUrl(),
@@ -118,7 +190,7 @@ export function getConfig(): JarelaConfig {
   return cached;
 }
 
-/** Test-only: drop the memoised config so the next read picks up env edits. */
+/** Drop the memoised config so the next read picks up env edits. Used by tests + the env-override PATCH endpoint. */
 export function resetConfigCache(): void {
   cached = null;
 }

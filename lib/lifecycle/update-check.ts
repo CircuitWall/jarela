@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { getDataDir } from "@/lib/db/data-dir";
+import { getConfig } from "@/lib/env/config";
 
 const PACKAGE_NAME = "@circuitwall/jarela";
 const REPO = "CircuitWall/jarela";
@@ -19,7 +20,8 @@ const REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}/latest`;
 const GH_COMMIT_URL = `https://api.github.com/repos/${REPO}/commits/main`;
 const GH_RAW_PKG_URL = `https://raw.githubusercontent.com/${REPO}/main/package.json`;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h
-const FETCH_TIMEOUT_MS = 3000;
+// JARELA_UPDATE_CHECK_TIMEOUT_MS overrides this.
+function fetchTimeoutMs(): number { return getConfig().updateCheckTimeoutMs; }
 
 export type UpdateChannel = "stable" | "main";
 
@@ -125,7 +127,7 @@ async function writeCache(entry: CacheFile): Promise<void> {
 
 async function fetchJson<T>(url: string): Promise<T> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), fetchTimeoutMs());
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
