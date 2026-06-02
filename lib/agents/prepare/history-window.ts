@@ -8,7 +8,13 @@
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { getRecentMessagesWindow, getThread, setThreadWarmSummary } from "@/lib/stores/threads";
+import {
+  getRecentMessagesWindow,
+  getThread,
+  setThreadWarmSummary,
+  setThreadWarmSummaryStatus,
+  type WarmSummaryStatus,
+} from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import {
@@ -19,7 +25,7 @@ import {
   truncateLargestMessagesWithinBudget,
   type ContextBudget,
 } from "@/lib/agents/context-budget";
-import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { summarizeTranscriptWithRetry, transcriptText } from "@/lib/agents/conversation-summary";
 import type { MessageRow } from "@/lib/stores/threads";
 import { listMemory, putMemory } from "@/lib/stores/memory";
 import { extractFactsFromTranscript } from "@/lib/agents/fact-extraction";
@@ -43,6 +49,11 @@ export interface ResolvedHistoryWindow {
     facts_tokens: number;
     overhead_tokens: number;
   };
+  // PR-2 — compaction status reported by the warm tier this turn. Null when
+  // the warm tier didn't run (e.g. budget too small or no messages outside
+  // the hot slice). The route persists this onto the thread so the chat UI
+  // can render a "warm context degraded" chip when status === 'failed'.
+  warmSummaryStatus: WarmSummaryStatus | null;
 }
 
 /**
@@ -109,6 +120,7 @@ export async function buildHistoryWindow(
   let hotCap = 0;
   let warmSummaryCtx = "";
   let factsCtx = "";
+  let warmSummaryStatus: WarmSummaryStatus | null = null;
 
   for (const tier of budget.tierPriority) {
     if (tier === "hot") {
@@ -121,6 +133,7 @@ export async function buildHistoryWindow(
       if (cachedSummaryFresh && cached?.warm_summary) {
         // Pin-stable turn: don't pay the summariser tax again.
         warmSummaryCtx = cached.warm_summary;
+        warmSummaryStatus = "fresh";
       } else {
         // If priority evaluates warm before hot, do a provisional hot slice at
         // hot's soft cap so we know which messages to summarise. Hot's later
@@ -128,7 +141,7 @@ export async function buildHistoryWindow(
         // and the warm summary will harmlessly cover a few messages hot also
         // includes — better than not summarising at all.
         const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
-        warmSummaryCtx = await buildWarmSummary(
+        const summaryResult = await buildWarmSummary(
           allWindowMessages,
           hotForSlice.length,
           modelInfo.providerName,
@@ -136,13 +149,25 @@ export async function buildHistoryWindow(
           providerParams,
           warmCap,
         );
+        warmSummaryCtx = summaryResult.text;
+        warmSummaryStatus = summaryResult.status;
         // Persist the freshly-computed summary keyed on the boundary it
         // covers, so the chat UI can render it on the next page load and
         // subsequent same-pin turns can short-circuit the LLM call. Skipped
         // when there's no explicit pin because the time-windowed boundary
-        // shifts every turn — caching it would never hit.
+        // shifts every turn — caching it would never hit. setThreadWarmSummary
+        // also stamps status='fresh' for free.
         if (warmSummaryCtx && hotSince) {
           setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince);
+        } else if (summaryResult.status === "failed") {
+          // Failed retry budget: keep any prior cached summary intact (it's
+          // better than nothing) and flag the thread so the UI can show
+          // degraded compaction. The status is a thread-level signal
+          // independent of the boundary cache — fire even on threads using
+          // the time-windowed default (no explicit pin), because that's the
+          // common case for users who haven't dragged the boundary, and
+          // they'd otherwise never see the "warm context degraded" chip.
+          setThreadWarmSummaryStatus(thread_id, "failed");
         }
         // ADR-0046 — fact graduation. Same boundary-move trigger as the
         // summary itself: we only run extraction when fresh content is
@@ -205,6 +230,7 @@ export async function buildHistoryWindow(
       facts_tokens: estimateTokens(factsCtx),
       overhead_tokens: budget.overheadTokens,
     },
+    warmSummaryStatus,
   };
 }
 
@@ -244,6 +270,15 @@ function parseContent(raw: string): string | ContentPart[] {
   return raw;
 }
 
+interface WarmSummaryOutcome {
+  text: string;
+  // 'fresh' on success; 'failed' when every retry attempt errored. Null
+  // when the warm tier was a no-op (budget too small, no warm messages,
+  // missing provider/model) — these aren't degradation, they're "the
+  // tier wasn't engaged this turn".
+  status: WarmSummaryStatus | null;
+}
+
 async function buildWarmSummary(
   allWindowMessages: readonly { role: string; content: string }[],
   hotCount: number,
@@ -251,11 +286,11 @@ async function buildWarmSummary(
   modelId: string | undefined,
   providerParams: ProviderParams,
   warmBudgetTokens: number,
-): Promise<string> {
-  if (warmBudgetTokens <= 32) return "";
-  if (!providerName || !modelId) return "";
+): Promise<WarmSummaryOutcome> {
+  if (warmBudgetTokens <= 32) return { text: "", status: null };
+  if (!providerName || !modelId) return { text: "", status: null };
   const warmMessages = allWindowMessages.slice(0, Math.max(0, allWindowMessages.length - hotCount));
-  if (warmMessages.length < 2) return "";
+  if (warmMessages.length < 2) return { text: "", status: null };
 
   // Keep summary input bounded by the warm budget to avoid recursive prompt bloat.
   const summaryInputChars = Math.max(0, warmBudgetTokens * 4);
@@ -263,20 +298,31 @@ async function buildWarmSummary(
     .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
     .join("\n\n")
     .slice(-summaryInputChars);
-  if (!transcript.trim()) return "";
+  if (!transcript.trim()) return { text: "", status: null };
 
-  try {
-    const provider = getProvider(providerName);
-    const summary = await summarizeTranscript(provider, modelId, providerParams, transcript);
-    if (!summary) return "";
-    return [
+  // Retry-with-backoff (PR-2 #A). The previous catch-and-empty silently lost
+  // older context across long tasks every time the provider hiccuped. Two
+  // attempts are usually enough to ride through transient failures without
+  // doubling cost on the steady-state turn.
+  const provider = getProvider(providerName);
+  const result = await summarizeTranscriptWithRetry(provider, modelId, providerParams, transcript);
+  if (!result.text) {
+    // Every attempt failed. Log so operators can correlate UI degradation
+    // with the underlying provider error.
+    console.warn(
+      `[warm-summary] giving up after ${result.attempts} attempt(s) on ${providerName}/${modelId}:`,
+      result.lastError,
+    );
+    return { text: "", status: "failed" };
+  }
+  return {
+    text: [
       "--- Warm context summary ---",
       "Compressed recap of earlier messages outside the hot window:",
-      summary,
-    ].join("\n");
-  } catch {
-    return "";
-  }
+      result.text,
+    ].join("\n"),
+    status: "fresh",
+  };
 }
 
 // ADR-0046 — fact graduation. When the warm summary is being recomputed at
