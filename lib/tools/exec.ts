@@ -36,7 +36,12 @@ function runLocalCommand(
   },
 ): string {
   if (!command.trim()) {
-    return JSON.stringify({ exit_code: 1, stderr: "command is required", code: "invalid_args" });
+    return JSON.stringify({
+      exit_code: 1,
+      stderr: "command is required",
+      code: "invalid_args",
+      hint: "Pass a non-empty `command` string. Empty/whitespace commands are rejected.",
+    });
   }
 
   const timeout = Math.min(options.timeout_ms ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS);
@@ -48,7 +53,13 @@ function runLocalCommand(
     blockedByPattern: isBlockedCommand(command),
   });
   if (!gate.allowed) {
-    return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode, code: "denylist" });
+    return JSON.stringify({
+      exit_code: 126,
+      stderr: gate.reason,
+      safety_mode: mode,
+      code: "denylist",
+      hint: `Command blocked by safety mode '${mode}'. Don't try to bypass — tell the user the command was refused for safety. If they need it, they can lower the safety mode via JARELA_TOOL_SAFETY env var (read about ADR-0038 first).`,
+    });
   }
 
   const cwd = options.cwd?.trim() ? options.cwd : process.cwd();
@@ -83,6 +94,7 @@ function runLocalCommand(
     // killed-by-timeout SIGTERM means we exhausted timeout_ms (narrow the
     // command, don't retry as-is).
     const code = execErrorCode(e, errText.value);
+    const hint = execHint(code, command);
     return JSON.stringify({
       exit_code: e.status ?? 1,
       stdout: out.value,
@@ -90,8 +102,23 @@ function runLocalCommand(
       truncated: out.truncated || errText.truncated,
       cwd,
       code,
+      ...(hint ? { hint } : {}),
     });
   }
+}
+
+function execHint(code: string, command: string): string | undefined {
+  const firstWord = command.trim().split(/\s+/)[0] ?? "command";
+  if (code === "command_not_found") {
+    return `'${firstWord}' isn't on PATH. Don't retry the same command. Tell the user what binary the agent expected; they may need to install it (brew/apt/winget) or pass a full path.`;
+  }
+  if (code === "permission_denied") {
+    return `'${firstWord}' exists but isn't executable by this process. Tell the user; they likely need to chmod +x or check file ownership. Don't retry as-is.`;
+  }
+  if (code === "tool_timeout") {
+    return `Command exceeded the timeout (${MAX_TIMEOUT_MS}ms max). Don't retry the same command. Narrow the input (smaller batch, scoped path), or split into multiple invocations.`;
+  }
+  return undefined;
 }
 
 function execErrorCode(

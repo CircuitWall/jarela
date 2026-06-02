@@ -4,6 +4,7 @@ import {
   networkErrorCode,
   classifyFsError,
   parseRetryAfterMs,
+  defaultHttpHint,
 } from "./error-codes";
 
 describe("httpStatusToErrorCode", () => {
@@ -102,5 +103,32 @@ describe("parseRetryAfterMs", () => {
     const result = parseRetryAfterMs("Wed, 21 Oct 2015 07:28:00 GMT");
     expect(result).toBeGreaterThanOrEqual(0);
     expect(Number.isFinite(result)).toBe(true);
+  });
+});
+
+describe("defaultHttpHint", () => {
+  it("returns a hint for 401 that names the provider + Settings path", () => {
+    const hint = defaultHttpHint("Atlassian", "http_401");
+    expect(hint).toContain("Atlassian");
+    expect(hint).toMatch(/Settings.*Integrations/i);
+  });
+
+  it("returns a hint for 403 (same Settings guidance)", () => {
+    expect(defaultHttpHint("GitHub", "http_403")).toMatch(/GitHub/);
+  });
+
+  it("returns a hint for 404 telling the agent to verify the id first", () => {
+    expect(defaultHttpHint("Jira Align", "http_404")).toMatch(/verify the id|key/i);
+  });
+
+  it("returns a hint for 429 referencing retry_after_ms", () => {
+    expect(defaultHttpHint("GitHub", "http_429")).toMatch(/retry_after_ms/i);
+  });
+
+  it("returns undefined for codes generic enough that the playbook handles them", () => {
+    expect(defaultHttpHint("X", "http_5xx")).toBeUndefined();
+    expect(defaultHttpHint("X", "http_4xx")).toBeUndefined();
+    expect(defaultHttpHint("X", "http_error")).toBeUndefined();
+    expect(defaultHttpHint("X", "tool_timeout")).toBeUndefined();
   });
 });

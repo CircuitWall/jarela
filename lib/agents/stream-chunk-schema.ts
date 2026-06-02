@@ -45,6 +45,11 @@ export const ToolResultPayloadSchema = z.object({
   // See ADR-0049.
   error_code: z.string().optional(),
   error_message: z.string().optional(),
+  // ADR-0056 — domain-specific recovery hint from the tool itself.
+  // Complements the generic playbook in the system prompt: the tool knows
+  // best how to recover from its own error (e.g. "call jira_list_projects
+  // to discover valid keys"). The agent prefers the hint when it exists.
+  error_hint: z.string().optional(),
 });
 
 export const DoneUsageSchema = z.object({

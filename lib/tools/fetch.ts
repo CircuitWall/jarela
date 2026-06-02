@@ -67,7 +67,11 @@ function resolveUrl(u: string | null | undefined, base: string): string | null {
 export const webFetchTool = tool(
   async ({ url, mode, max_chars }) => {
     if (!/^https?:\/\//.test(url)) {
-      return JSON.stringify({ error: "url must start with http:// or https://", code: "invalid_args" });
+      return JSON.stringify({
+        error: "url must start with http:// or https://",
+        code: "invalid_args",
+        hint: "Pass a fully-qualified URL like https://example.com/path. Relative paths and bare hostnames aren't accepted.",
+      });
     }
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -85,6 +89,7 @@ export const webFetchTool = tool(
           url,
           error: `Refused to fetch private/loopback address (${initialCheck.reason}). Set JARELA_ALLOW_PRIVATE_FETCH=1 to override.`,
           code: "ssrf_blocked",
+          hint: "Tell the user this URL was blocked for safety. Don't try to bypass it; if they want intranet fetches, they need to set JARELA_ALLOW_PRIVATE_FETCH=1 in the env and restart.",
         });
       }
 
@@ -108,13 +113,23 @@ export const webFetchTool = tool(
         const loc = res.headers.get("location");
         if (!loc) break;
         if (hop >= MAX_REDIRECTS) {
-          return JSON.stringify({ url: currentUrl, error: `too many redirects (>${MAX_REDIRECTS})`, code: "redirect_limit" });
+          return JSON.stringify({
+            url: currentUrl,
+            error: `too many redirects (>${MAX_REDIRECTS})`,
+            code: "redirect_limit",
+            hint: "The URL bounced through too many redirects. Try the canonical URL directly, or pick a different source.",
+          });
         }
         let next: string;
         try {
           next = new URL(loc, currentUrl).toString();
         } catch {
-          return JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}`, code: "invalid_redirect" });
+          return JSON.stringify({
+            url: currentUrl,
+            error: `invalid redirect target: ${loc}`,
+            code: "invalid_redirect",
+            hint: "The server returned a malformed Location header. The site is misconfigured; try a different URL.",
+          });
         }
         const hopCheck = await checkPublicUrl(next);
         if (!hopCheck.allowed) {
@@ -122,6 +137,7 @@ export const webFetchTool = tool(
             url: next,
             error: `Refused redirect to private/loopback address (${hopCheck.reason}).`,
             code: "ssrf_blocked",
+            hint: "The redirect target was blocked for safety. Pick a different starting URL; don't try to chase the redirect manually.",
           });
         }
         currentUrl = next;
@@ -173,7 +189,12 @@ export const webFetchTool = tool(
       // retrying once with the same args.
       const aborted = (err as { name?: string })?.name === "AbortError";
       const code = aborted ? "tool_timeout" : (networkErrorCode(err) ?? "fetch_error");
-      return JSON.stringify({ url, error: msg, code });
+      const hint = code === "tool_timeout"
+        ? "The page didn't respond within the per-tool deadline. The site may be slow or unreachable; try a different URL or a more specific page."
+        : code === "network_error"
+          ? "Network failure reaching this URL. Retry once; if it persists, the site is unreachable from this network."
+          : "Fetch failed. Verify the URL is reachable in a browser; if the user expected this to work, the corporate proxy may be blocking it.";
+      return JSON.stringify({ url, error: msg, code, hint });
     } finally {
       clearTimeout(timeout);
     }

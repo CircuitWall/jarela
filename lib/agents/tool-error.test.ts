@@ -51,4 +51,51 @@ describe("extractToolError", () => {
     expect(extractToolError({ kind: "error", code: "", message: "m" }))
       .toEqual({ code: "tool_error", message: "m" });
   });
+
+  // ADR-0056 — domain-specific hint pass-through.
+
+  it("forwards a hint on a kind:'error' envelope", () => {
+    expect(
+      extractToolError({
+        kind: "error",
+        code: "invalid_args",
+        message: "missing project_key",
+        hint: "Call jira_list_projects to discover valid keys.",
+      }),
+    ).toEqual({
+      code: "invalid_args",
+      message: "missing project_key",
+      hint: "Call jira_list_projects to discover valid keys.",
+    });
+  });
+
+  it("forwards a hint on a legacy {error, code, hint} envelope", () => {
+    expect(
+      extractToolError({
+        error: "Atlassian 401: invalid token",
+        code: "http_401",
+        hint: "Open Settings → Integrations → Atlassian.",
+      }),
+    ).toEqual({
+      code: "http_401",
+      message: "Atlassian 401: invalid token",
+      hint: "Open Settings → Integrations → Atlassian.",
+    });
+  });
+
+  it("omits hint when absent (no empty string in result)", () => {
+    const r = extractToolError({ kind: "error", code: "x", message: "m" });
+    expect(r).toEqual({ code: "x", message: "m" });
+    expect(r).not.toHaveProperty("hint");
+  });
+
+  it("treats empty-string hint as absent", () => {
+    expect(extractToolError({ kind: "error", code: "x", message: "m", hint: "" }))
+      .toEqual({ code: "x", message: "m" });
+  });
+
+  it("ignores non-string hint values", () => {
+    expect(extractToolError({ kind: "error", code: "x", message: "m", hint: 42 }))
+      .toEqual({ code: "x", message: "m" });
+  });
 });

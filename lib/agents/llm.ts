@@ -246,7 +246,11 @@ export async function* streamWithConfig(
               name: chunk.name ?? "",
               result,
               ...(errInfo
-                ? { error_code: errInfo.code, error_message: errInfo.message }
+                ? {
+                    error_code: errInfo.code,
+                    error_message: errInfo.message,
+                    ...(errInfo.hint ? { error_hint: errInfo.hint } : {}),
+                  }
                 : {}),
             },
           };
