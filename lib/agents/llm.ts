@@ -17,6 +17,7 @@ import type { ContentPart } from "@/lib/tools/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
+import { extractToolError } from "./tool-error";
 
 function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
@@ -231,9 +232,20 @@ export async function* streamWithConfig(
           if (typeof result === "string") {
             try { result = JSON.parse(result); } catch { /* keep string */ }
           }
+          // Promote tool-error metadata to first-class fields so consumers
+          // (chat UI, agent's stream, ADR-0037 validator) can branch on the
+          // code without parsing the payload. See ADR-0049.
+          const errInfo = extractToolError(result);
           yield {
             type: "tool_result",
-            data: { id: chunk.tool_call_id, name: chunk.name ?? "", result },
+            data: {
+              id: chunk.tool_call_id,
+              name: chunk.name ?? "",
+              result,
+              ...(errInfo
+                ? { error_code: errInfo.code, error_message: errInfo.message }
+                : {}),
+            },
           };
           // Next AI text should be visually separated from the pre-tool prose.
           needsParagraphBreak = true;

@@ -37,6 +37,14 @@ export const ToolResultPayloadSchema = z.object({
   id: z.string(),
   name: z.string(),
   result: z.unknown(),
+  // First-class error metadata. Present when the underlying tool returned a
+  // `kind:"error"` envelope (PR-4) or a legacy `{error, code}` shape; absent
+  // on success. Promoted out of `result` so the chat UI can render code-
+  // specific affordances (retry, "open settings", etc.) without parsing the
+  // payload, and so the agent's stream consumer can branch on it directly.
+  // See ADR-0049.
+  error_code: z.string().optional(),
+  error_message: z.string().optional(),
 });
 
 export const DoneUsageSchema = z.object({

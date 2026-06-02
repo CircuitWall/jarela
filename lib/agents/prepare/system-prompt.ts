@@ -71,6 +71,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     ...tierOrderCtx,
     recallCtx,
     buildDelegatesContext(delegateRosterLines),
+    buildToolErrorPlaybook(),
   ];
 
   return parts.filter(Boolean).join("\n\n");
@@ -84,6 +85,38 @@ export function resolveExperienceMode(options?: StreamOptions): "essential" | "f
 }
 
 // ── Context block builders (file-private) ────────────────────────────────
+
+// ADR-0049 — error-code playbook. Tool failures now surface a stable
+// `error_code` on tool_result chunks; this section teaches the agent how to
+// react to each code so it doesn't blindly retry the same failing call. Live
+// in the system prompt (not the harness) so it's always present regardless
+// of which harness an agent uses; ordering at the bottom keeps it close to
+// where the agent will need it (right before tool decisions every turn).
+function buildToolErrorPlaybook(): string {
+  return [
+    "--- Tool error playbook ---",
+    "When a tool result carries an `error_code` (or its result payload has `kind:\"error\"` / a top-level `error` field), branch on the code BEFORE deciding what to do next:",
+    "",
+    "  • `tool_timeout` — the tool exceeded its wall-clock deadline. Do NOT retry with the same args; either narrow the inputs (smaller batch, shorter range, more specific query) or pick a different tool.",
+    "  • `invalid_args` — the tool's schema rejected your call. Re-read the tool description; correct the field the message names; then retry once.",
+    "  • `unknown_tool` / `tool_disabled` / `mcp_unavailable` — the tool isn't available in this run. Apologise to the user, name the tool, suggest enabling it (Settings → Tools / Integrations / MCP), and proceed with whatever you CAN do.",
+    "  • `http_401` / `auth_error` — credentials are bad or missing. Tell the user plainly which integration is unauthenticated and where to fix it (Settings → Integrations → [name]). Do not retry the same call.",
+    "  • `http_403` — authenticated but lacking permission. Tell the user which scope/permission is missing; do not retry.",
+    "  • `http_429` / `rate_limit` — rate-limited. If the result includes `retry_after_ms`, wait that long before retrying ONCE. Otherwise pause this branch of work and try a different approach (other tools, narrower scope).",
+    "  • `http_5xx` / `network_error` — transient upstream failure. Retry ONCE with the same args; if it fails again, give up on this tool for the turn.",
+    "  • `command_not_found` — the binary in `cmd` isn't on PATH. Don't retry; tell the user what the agent expected and ask them to install / adjust PATH.",
+    "  • `permission_denied` — filesystem or process permission. Don't retry; explain what was attempted and on what path.",
+    "  • `file_not_found` — re-check the path with `file_list` or `file_stat` before retrying. Spelling/casing/expansion mistakes are common.",
+    "  • `denylist` — the path is on the credential denylist by design. Do NOT find a workaround; explain to the user that the tool refused for safety reasons.",
+    "  • `ssrf_blocked` / `redirect_limit` — the URL was rejected by the fetch policy. Don't retry the same URL; tell the user why.",
+    "  • `tool_threw` (generic) — uncategorised exception. Read the message; if it looks transient, you may retry once; otherwise stop and report.",
+    "",
+    "GENERAL RULES:",
+    "- Every retry counts against your step budget. Retrying the same failing call with the same args three times is a loop — don't.",
+    "- When you give up on a failing tool, NAME the tool and the code in your reply so the user understands what went wrong and what their options are.",
+    "- Never claim a tool succeeded after seeing an error_code on its result.",
+  ].join("\n");
+}
 
 function buildTaskGoalContext(goal: string | null | undefined): string {
   if (!goal) return "";
