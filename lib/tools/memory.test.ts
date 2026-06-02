@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,5 +59,43 @@ describe("memoryDeleteTool", () => {
     expect(memoryWriteTool.name).toBe("memory_write");
     expect(memoryListTool.name).toBe("memory_list");
     expect(memoryDeleteTool.name).toBe("memory_delete");
+  });
+});
+
+describe("memory_write/delete error envelopes", () => {
+  // Regression: putMemory / deleteMemory used to be called bare; a SQLite
+  // throw (busy / locked / disk full) propagated up and LangChain wrapped it
+  // as `Error: ...\n Please fix your mistakes.` — the agent saw nothing
+  // actionable. The tools now catch and return `{ok:false, error}` envelopes.
+  it("memory_write returns {ok:false, error} when the underlying store throws", async () => {
+    const stores = await import("@/lib/stores/memory");
+    const spy = vi.spyOn(stores, "putMemory").mockImplementation(() => {
+      throw new Error("database is locked");
+    });
+    try {
+      const raw = await memoryWriteTool.invoke({
+        namespace: "ns", key: "k", value: "v",
+      });
+      expect(JSON.parse(raw as string)).toEqual({
+        ok: false, namespace: "ns", key: "k", error: "database is locked",
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("memory_delete returns {ok:false, error} when the underlying store throws", async () => {
+    const stores = await import("@/lib/stores/memory");
+    const spy = vi.spyOn(stores, "deleteMemory").mockImplementation(() => {
+      throw new Error("database is locked");
+    });
+    try {
+      const raw = await memoryDeleteTool.invoke({ namespace: "ns", key: "k" });
+      expect(JSON.parse(raw as string)).toEqual({
+        ok: false, namespace: "ns", key: "k", error: "database is locked",
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

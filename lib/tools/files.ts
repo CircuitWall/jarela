@@ -222,7 +222,11 @@ export const fileWriteTool = tool(
   {
     name: "file_write",
     description:
-      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. Use file_edit for targeted in-place changes.",
+      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. " +
+      "Use file_edit for targeted in-place changes. " +
+      "Refused paths (returns ok:false): credential dirs (~/.ssh, ~/.aws, ~/.gnupg, ~/.config/gh, ~/.kube, ~/.docker), " +
+      "credential filenames (id_rsa, id_ed25519, *.pem, *.key, credentials, .netrc, .pgpass), " +
+      "and the app state dir (~/.jarela). Pick a different path rather than retrying these.",
     schema: writeSchema,
   },
 );
