@@ -186,6 +186,10 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     factsCtx: historyWindow.factsCtx,
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
+    // ADR-0046 — surface the pinned task goal outside the tier budget.
+    // Read fresh off the thread row each turn so a /goal update on turn N
+    // takes effect on turn N+1 without restarting the run.
+    taskGoal: thread.task_goal ?? null,
   });
 
   const delegationDepth = req._delegation_depth ?? 0;
