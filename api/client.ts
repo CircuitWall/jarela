@@ -120,16 +120,133 @@ function cachedList<T>(
   return req;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status} ${text}`);
+// ADR-0052 — request resilience.
+//
+// Defaults: 30s wall-clock timeout, 3 attempts on transient failures
+// (network errors, 502/503, 429). Mutating verbs (POST/PUT/PATCH/DELETE)
+// retry only on network errors and 503 — never on 429 (we don't want a
+// duplicate write if the first one actually succeeded but the response
+// was rate-limited). GET/HEAD retry on every transient class.
+//
+// `JARELA_DISABLE_CLIENT_RETRY=1` disables auto-retry entirely (operator
+// escape hatch for the rare case where retry behaviour is masking a real
+// bug they're trying to debug).
+
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_ATTEMPTS = 3;
+const RETRY_BACKOFFS_MS = [250, 1_000, 4_000];
+
+const SAFE_METHODS = new Set(["GET", "HEAD"]);
+
+function isClientRetryDisabled(): boolean {
+  if (typeof process === "undefined" || !process.env) return false;
+  return process.env.JARELA_DISABLE_CLIENT_RETRY === "1";
+}
+
+export class ApiRequestError extends Error {
+  /** "network" for connection-level failures, "http" for non-2xx responses, "timeout" for the per-request deadline. */
+  readonly kind: "network" | "http" | "timeout";
+  /** HTTP status when kind === "http"; undefined otherwise. */
+  readonly status?: number;
+  constructor(kind: "network" | "http" | "timeout", message: string, status?: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.kind = kind;
+    this.status = status;
   }
-  return res.json() as Promise<T>;
+}
+
+function isTransientStatus(status: number, method: string): boolean {
+  if (status === 502 || status === 503 || status === 504) return true;
+  if (status === 429 && SAFE_METHODS.has(method.toUpperCase())) return true;
+  return false;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const retryDisabled = isClientRetryDisabled();
+  const maxAttempts = retryDisabled ? 1 : MAX_REQUEST_ATTEMPTS;
+
+  // Compose the caller's signal (if any) with a per-request timeout. The
+  // timeout signal aborts the underlying fetch on deadline; the caller's
+  // signal lets components cancel still-pending requests on unmount.
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const timeoutCtrl = new AbortController();
+    const timeoutHandle = setTimeout(() => timeoutCtrl.abort("request_timeout"), REQUEST_TIMEOUT_MS);
+    const composed = init?.signal
+      ? composeSignals(init.signal, timeoutCtrl.signal)
+      : timeoutCtrl.signal;
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { "Content-Type": "application/json", ...init?.headers },
+        ...init,
+        signal: composed,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        // Transient HTTP — back off and retry, but only on safe methods for
+        // 429 (a 429 on POST might mean the request DID land but the response
+        // got rate-limited; replaying could double-write).
+        if (attempt < maxAttempts - 1 && isTransientStatus(res.status, method)) {
+          await sleep(RETRY_BACKOFFS_MS[attempt] ?? RETRY_BACKOFFS_MS[RETRY_BACKOFFS_MS.length - 1]);
+          continue;
+        }
+        throw new ApiRequestError("http", `${res.status} ${text}`, res.status);
+      }
+      return res.json() as Promise<T>;
+    } catch (err) {
+      lastErr = err;
+      // User-initiated abort (caller cancelled) — never retry.
+      if (init?.signal?.aborted) {
+        const e = new ApiRequestError("network", "request aborted by caller");
+        e.name = "AbortError";
+        throw e;
+      }
+      // Per-request timeout fired.
+      if (timeoutCtrl.signal.aborted && err instanceof Error && err.name === "AbortError") {
+        if (attempt < maxAttempts - 1) {
+          await sleep(RETRY_BACKOFFS_MS[attempt] ?? RETRY_BACKOFFS_MS[RETRY_BACKOFFS_MS.length - 1]);
+          continue;
+        }
+        throw new ApiRequestError("timeout", `request to ${path} timed out after ${REQUEST_TIMEOUT_MS}ms`);
+      }
+      // ApiRequestError from the !ok branch above falls through unchanged.
+      if (err instanceof ApiRequestError) throw err;
+      // Network-level failure (TypeError "fetch failed", DNS failure, etc.).
+      // Retry every method (network failures don't carry the "did the write
+      // land?" ambiguity that 429-on-POST does).
+      if (attempt < maxAttempts - 1) {
+        await sleep(RETRY_BACKOFFS_MS[attempt] ?? RETRY_BACKOFFS_MS[RETRY_BACKOFFS_MS.length - 1]);
+        continue;
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new ApiRequestError("network", msg);
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+  // Unreachable in practice (the loop always either returns or throws), but
+  // appease the compiler. Re-throw whatever the last attempt produced.
+  throw lastErr instanceof Error ? lastErr : new ApiRequestError("network", "request failed");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Compose two AbortSignals into one that fires when EITHER aborts. Replaces
+// AbortSignal.any() which is Node-22+; we keep this manual version so the
+// client lib stays portable across older runtimes.
+function composeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  if (a.aborted) return a;
+  if (b.aborted) return b;
+  const ctrl = new AbortController();
+  const onA = () => ctrl.abort(a.reason);
+  const onB = () => ctrl.abort(b.reason);
+  a.addEventListener("abort", onA, { once: true });
+  b.addEventListener("abort", onB, { once: true });
+  return ctrl.signal;
 }
 
 export const api = {
