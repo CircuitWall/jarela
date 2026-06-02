@@ -19,6 +19,7 @@ import { ConnectionsPanel } from "@/components/connections/ConnectionsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { HarnessPanel } from "@/components/harness/HarnessPanel";
+import { LogsPanel } from "@/components/logs/LogsPanel";
 import { HeaderActivity } from "@/components/ui/HeaderActivity";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
@@ -30,7 +31,7 @@ import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
-const ADVANCED_TABS = new Set(["memory", "bridges", "harness"]);
+const ADVANCED_TABS = new Set(["memory", "bridges", "harness", "logs"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -412,6 +413,11 @@ export function AppShell() {
         {isFullMode && mountedTabs.has("harness") && (
           <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
             <HarnessPanel />
+          </Activity>
+        )}
+        {isFullMode && mountedTabs.has("logs") && (
+          <Activity mode={state.activeTab === "logs" ? "visible" : "hidden"}>
+            <LogsPanel />
           </Activity>
         )}
 
