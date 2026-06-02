@@ -52,22 +52,26 @@ async function ghFetch(
   init?: RequestInit,
 ): Promise<unknown> {
   const url = path.startsWith("http") ? path : `${API}${path}`;
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${auth.token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "Jarela",
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    return { error: `GitHub ${res.status}: ${text.slice(0, 500)}`, url };
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "Jarela",
+        ...(init?.headers ?? {}),
+      },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      return { error: `GitHub ${res.status}: ${text.slice(0, 500)}`, url };
+    }
+    if (!text) return {};
+    return parseJsonSafe<unknown>(text, text);
+  } catch (err) {
+    return { error: `GitHub fetch threw: ${err instanceof Error ? err.message : String(err)}`, url };
   }
-  if (!text) return {};
-  return parseJsonSafe<unknown>(text, text);
 }
 
 // Exposed for sibling modules that need the same auth/proxy/CA-bundle

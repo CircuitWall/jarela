@@ -21,8 +21,17 @@ export const memoryReadTool = tool(
 
 export const memoryWriteTool = tool(
   async ({ namespace, key, value }) => {
-    putMemory(namespace, key, value);
-    return JSON.stringify({ ok: true, namespace, key });
+    try {
+      putMemory(namespace, key, value);
+      return JSON.stringify({ ok: true, namespace, key });
+    } catch (err) {
+      return JSON.stringify({
+        ok: false,
+        namespace,
+        key,
+        error: (err as Error).message,
+      });
+    }
   },
   {
     name: "memory_write",
@@ -66,8 +75,17 @@ export const memoryListTool = tool(
 
 export const memoryDeleteTool = tool(
   async ({ namespace, key }) => {
-    const removed = deleteMemory(namespace, key);
-    return JSON.stringify({ ok: true, namespace, key, removed });
+    try {
+      const removed = deleteMemory(namespace, key);
+      return JSON.stringify({ ok: true, namespace, key, removed });
+    } catch (err) {
+      return JSON.stringify({
+        ok: false,
+        namespace,
+        key,
+        error: (err as Error).message,
+      });
+    }
   },
   {
     name: "memory_delete",
