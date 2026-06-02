@@ -25,6 +25,13 @@ interface Props {
    * the user has to retype.
    */
   onRetry?: () => void;
+  /**
+   * If provided AND the recipe is reconnectable, the card renders a
+   * "Reconnect" button that calls this. Used for stream-drop recovery —
+   * the run is still on the server, we just need to re-subscribe via the
+   * replay buffer.
+   */
+  onReconnect?: () => void;
   /** Optional dismiss handler. When omitted the card stays until the next run. */
   onDismiss?: () => void;
 }
@@ -36,6 +43,14 @@ interface Recipe {
   hint?: string;
   /** True when the agent's playbook + this UI agree on retry being safe. */
   retryable: boolean;
+  /**
+   * True when the issue is recoverable by re-subscribing to a server-side
+   * run that's still in flight (stream drop, not a hard failure). The card
+   * renders a "Reconnect" button when the parent passes onReconnect.
+   */
+  reconnectable?: boolean;
+  /** Tone — "error" renders rose/red, "warning" renders amber. Defaults to "error". */
+  tone?: "error" | "warning";
   /** Settings page to link to when the user needs to fix config. */
   settingsHref?: string;
   /** Label for the settings link, when present. */
@@ -131,6 +146,17 @@ const CODE_RECIPES: Record<string, Recipe> = {
     title: "Client request failed",
     retryable: true,
   },
+  // Stream drop after the server already accepted the run (PR-λ). The
+  // agent is still running server-side; messages were just refetched so
+  // any committed result is visible. Reconnect re-subscribes via the
+  // server's replay buffer.
+  stream_dropped: {
+    title: "Stream connection dropped",
+    hint: "Refetched the latest messages — the agent may still be running. Reconnect to resume the live view.",
+    retryable: false,
+    reconnectable: true,
+    tone: "warning",
+  },
   no_model: {
     title: "No model configured",
     hint: "Add a model in the Models panel to start chatting.",
@@ -145,12 +171,30 @@ const GENERIC_RECIPE: Recipe = {
   retryable: true,
 };
 
-export function ErrorCard({ message, code, onRetry, onDismiss }: Props) {
+export function ErrorCard({ message, code, onRetry, onReconnect, onDismiss }: Props) {
   const recipe = CODE_RECIPES[code] ?? GENERIC_RECIPE;
+  const tone = recipe.tone ?? "error";
+  const cls = tone === "warning"
+    ? {
+        wrap: "bg-amber-900/20 border-amber-700/50 text-amber-700 dark:text-amber-300",
+        muted: "text-amber-700/80 dark:text-amber-300/80",
+        moreMuted: "text-amber-700/70 dark:text-amber-300/70",
+        codeText: "text-amber-700/90 dark:text-amber-300/90",
+        outline: "border-amber-700/40 hover:bg-amber-700/10",
+        primary: "bg-amber-600/80 text-white hover:bg-amber-600",
+      }
+    : {
+        wrap: "bg-rose-900/30 border-rose-700/60 text-rose-700 dark:text-rose-300",
+        muted: "text-rose-700/80 dark:text-rose-300/80",
+        moreMuted: "text-rose-700/70 dark:text-rose-300/70",
+        codeText: "text-rose-700/90 dark:text-rose-300/90",
+        outline: "border-rose-700/40 hover:bg-rose-700/10",
+        primary: "bg-rose-600/80 text-white hover:bg-rose-600",
+      };
 
   return (
     <div
-      className="mx-4 mb-2 px-3 py-2 rounded bg-rose-900/30 border border-rose-700/60 text-rose-700 dark:text-rose-300 text-xs"
+      className={`mx-4 mb-2 px-3 py-2 rounded border ${cls.wrap} text-xs`}
       role="alert"
     >
       <div className="flex items-start gap-2">
@@ -158,13 +202,13 @@ export function ErrorCard({ message, code, onRetry, onDismiss }: Props) {
         <div className="flex-1 min-w-0">
           <div className="font-medium">{recipe.title}</div>
           {recipe.hint && (
-            <div className="mt-0.5 text-rose-700/80 dark:text-rose-300/80">{recipe.hint}</div>
+            <div className={`mt-0.5 ${cls.muted}`}>{recipe.hint}</div>
           )}
           <details className="mt-1.5">
-            <summary className="cursor-pointer select-none text-rose-700/70 dark:text-rose-300/70 text-[11px] uppercase tracking-wider">
+            <summary className={`cursor-pointer select-none ${cls.moreMuted} text-[11px] uppercase tracking-wider`}>
               {`details · ${code}`}
             </summary>
-            <pre className="mt-1 whitespace-pre-wrap break-all font-mono text-[11px] text-rose-700/90 dark:text-rose-300/90 max-h-32 overflow-y-auto">{message}</pre>
+            <pre className={`mt-1 whitespace-pre-wrap break-all font-mono text-[11px] ${cls.codeText} max-h-32 overflow-y-auto`}>{message}</pre>
           </details>
         </div>
       </div>
@@ -172,14 +216,14 @@ export function ErrorCard({ message, code, onRetry, onDismiss }: Props) {
         {recipe.settingsHref && recipe.settingsLabel && (
           <Link
             href={recipe.settingsHref}
-            className="px-2 py-0.5 rounded border border-rose-700/40 hover:bg-rose-700/10 text-[11px]"
+            className={`px-2 py-0.5 rounded border ${cls.outline} text-[11px]`}
           >
             {recipe.settingsLabel}
           </Link>
         )}
         <button
           type="button"
-          className="px-2 py-0.5 rounded border border-rose-700/40 hover:bg-rose-700/10 text-[11px]"
+          className={`px-2 py-0.5 rounded border ${cls.outline} text-[11px]`}
           onClick={() => {
             if (typeof navigator !== "undefined" && navigator.clipboard) {
               void navigator.clipboard.writeText(`[${code}] ${message}`).catch(() => {});
@@ -189,10 +233,19 @@ export function ErrorCard({ message, code, onRetry, onDismiss }: Props) {
         >
           Copy
         </button>
+        {recipe.reconnectable && onReconnect && (
+          <button
+            type="button"
+            className={`px-2 py-0.5 rounded ${cls.primary} text-[11px]`}
+            onClick={onReconnect}
+          >
+            Reconnect
+          </button>
+        )}
         {recipe.retryable && onRetry && (
           <button
             type="button"
-            className="px-2 py-0.5 rounded bg-rose-600/80 text-white hover:bg-rose-600 text-[11px]"
+            className={`px-2 py-0.5 rounded ${cls.primary} text-[11px]`}
             onClick={onRetry}
           >
             Retry
@@ -201,7 +254,7 @@ export function ErrorCard({ message, code, onRetry, onDismiss }: Props) {
         {onDismiss && (
           <button
             type="button"
-            className="px-2 py-0.5 rounded border border-rose-700/40 hover:bg-rose-700/10 text-[11px]"
+            className={`px-2 py-0.5 rounded border ${cls.outline} text-[11px]`}
             onClick={onDismiss}
             aria-label="Dismiss error"
           >
