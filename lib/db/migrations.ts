@@ -657,6 +657,12 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   if (!names.has("warm_summary"))            db.exec("ALTER TABLE threads ADD COLUMN warm_summary TEXT");
   if (!names.has("warm_summary_before"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before TEXT");
   if (!names.has("warm_summary_computed_at")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_computed_at TEXT");
+  // ADR-0046 — durable task memory.
+  // task_goal: a user-pinned description of the long-running task this thread
+  //   is about. Surfaced to every turn's system prompt OUTSIDE the tier
+  //   budget so it can't be compacted away as the thread grows. NULL on
+  //   threads with no explicit goal (the agent works turn-by-turn).
+  if (!names.has("task_goal"))               db.exec("ALTER TABLE threads ADD COLUMN task_goal TEXT");
 }
 
 // Per-tier input-token breakdown so the chat UI can show actual

@@ -151,6 +151,8 @@ export interface ThreadDetail extends ThreadSummary {
   warm_summary?: string | null;
   warm_summary_before?: string | null;
   warm_summary_computed_at?: string | null;
+  // ADR-0046 — durable task goal. NULL on threads with no pinned goal.
+  task_goal?: string | null;
 }
 
 export interface ThreadContextPin {

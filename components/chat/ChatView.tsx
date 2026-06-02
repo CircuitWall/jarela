@@ -64,6 +64,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [warmSummary, setWarmSummary] = useState<string | null>(null);
   const [warmSummaryBefore, setWarmSummaryBefore] = useState<string | null>(null);
   const [warmSummaryComputedAt, setWarmSummaryComputedAt] = useState<string | null>(null);
+  // ADR-0046 — pinned task goal. Surfaced as a chip near the input and
+  // injected into every turn's system prompt outside the tier budget.
+  const [taskGoal, setTaskGoal] = useState<string | null>(null);
   // Thread-level effective context window cap, used as the ContextUsageBar
   // baseline. Re-fetched on every thread load alongside hot_since / warm
   // summary state so a model swap is reflected immediately.
@@ -183,6 +186,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(d.warm_summary ?? null);
       setWarmSummaryBefore(d.warm_summary_before ?? null);
       setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
+      setTaskGoal(d.task_goal ?? null);
       setContextWindowTokens(d.context_window_tokens ?? null);
       clearStreamingRef.current();
       if (pendingAutoSpeakRef.current) {
@@ -271,6 +275,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(null);
       setWarmSummaryBefore(null);
       setWarmSummaryComputedAt(null);
+      setTaskGoal(null);
       setContextWindowTokens(null);
       return;
     }
@@ -293,6 +298,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       setWarmSummary(d.warm_summary ?? null);
       setWarmSummaryBefore(d.warm_summary_before ?? null);
       setWarmSummaryComputedAt(d.warm_summary_computed_at ?? null);
+      setTaskGoal(d.task_goal ?? null);
       setContextWindowTokens(d.context_window_tokens ?? null);
     }).catch((err) => { if (!cancelled) console.error(err); })
       .finally(() => {
@@ -443,6 +449,24 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       return;
     }
 
+    // ADR-0046 — /goal <text> pins a long-task goal on this thread; /goal
+    // alone (no args) clears it. Surfaces as a chip and is threaded into
+    // every subsequent turn's system prompt outside the tier budget.
+    if (msg === "/goal" || msg.toLowerCase().startsWith("/goal ")) {
+      setInput("");
+      if (!threadId) return;
+      const next = msg === "/goal" ? null : msg.slice(6).trim() || null;
+      setTaskGoal(next); // optimistic
+      try {
+        const updated = await api.threads.setTaskGoal(threadId, next);
+        setTaskGoal(updated.task_goal);
+        addNotice(updated.task_goal ? `Task goal pinned: ${updated.task_goal.slice(0, 80)}` : "Task goal cleared.");
+      } catch (err) {
+        addNotice(`Failed to update task goal: ${String(err)}`);
+      }
+      return;
+    }
+
     if (sessionError) {
       setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
       return;
@@ -579,6 +603,32 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       {!agentId && !defaultAgent && recentAgents.length === 0 && (
         <div className="mx-4 mb-2 px-3 py-2 rounded bg-surface-3 border border-border text-fg-subtle text-xs text-center">
           No agent selected — open the menu and pick an agent to start chatting.
+        </div>
+      )}
+
+      {taskGoal && (
+        <div
+          className="mx-4 mb-1 px-3 py-1.5 rounded bg-accent/10 border border-accent/40 text-fg-muted text-[11px] flex items-start gap-2"
+          title={
+            "Pinned task goal — surfaced to every turn's system prompt outside the tier budget. " +
+            "Type `/goal <new text>` to update, or `/goal` (alone) to clear."
+          }
+        >
+          <span aria-hidden className="text-accent shrink-0 mt-px">📌</span>
+          <span className="flex-1 break-words leading-snug whitespace-pre-wrap">{taskGoal}</span>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!threadId) return;
+              setTaskGoal(null);
+              try { await api.threads.setTaskGoal(threadId, null); } catch { /* best-effort */ }
+            }}
+            className="shrink-0 text-fg-faint hover:text-fg-muted text-[10px] uppercase tracking-wider"
+            aria-label="Clear task goal"
+            title="Clear task goal"
+          >
+            clear
+          </button>
         </div>
       )}
 

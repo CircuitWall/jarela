@@ -31,10 +31,17 @@ export interface SystemPromptContext {
   factsCtx: string;
   experienceMode: "essential" | "full";
   delegateRosterLines: string[];
+  /**
+   * ADR-0046 — the thread's pinned task goal, if any. Rendered above all
+   * other context blocks and OUTSIDE the tier budget so a long task's
+   * north-star description can't be compacted away. The caller (route /
+   * prepareThreadRun) reads `threads.task_goal` and threads it through.
+   */
+  taskGoal?: string | null;
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
-  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines } = ctx;
+  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, taskGoal } = ctx;
 
   const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
@@ -45,6 +52,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const tierOrderCtx = budget.tierPriority.map((t) => tierCtxByName[t]).filter(Boolean);
 
   const parts: (string | null | undefined)[] = [
+    buildTaskGoalContext(taskGoal),
     agentCfg.identity,
     agentCfg.instructions,
     adaptivePersonaCtx,
@@ -76,6 +84,18 @@ export function resolveExperienceMode(options?: StreamOptions): "essential" | "f
 }
 
 // ── Context block builders (file-private) ────────────────────────────────
+
+function buildTaskGoalContext(goal: string | null | undefined): string {
+  if (!goal) return "";
+  // Topmost block — the agent should treat this as the persistent north
+  // star. Phrase it imperatively so the model orients to "make progress
+  // toward this", not "describe what this is".
+  return [
+    "--- Task goal (persistent across the whole thread) ---",
+    "This is the long-running task this conversation is about. Keep it in mind on every turn — every step you take should make progress toward it. The goal is pinned by the user and survives compaction; you can rely on it staying intact even after older turns have been summarised.",
+    goal,
+  ].join("\n");
+}
 
 function buildUserContext(): string {
   const userProfile = getUserProfile();

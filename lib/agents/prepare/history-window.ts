@@ -21,7 +21,8 @@ import {
 } from "@/lib/agents/context-budget";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
 import type { MessageRow } from "@/lib/stores/threads";
-import { listMemory } from "@/lib/stores/memory";
+import { listMemory, putMemory } from "@/lib/stores/memory";
+import { extractFactsFromTranscript } from "@/lib/agents/fact-extraction";
 import { getProvider } from "@/lib/providers";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
 import type { ContentPart } from "@/lib/tools/types";
@@ -143,6 +144,21 @@ export async function buildHistoryWindow(
         if (warmSummaryCtx && hotSince) {
           setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince);
         }
+        // ADR-0046 — fact graduation. Same boundary-move trigger as the
+        // summary itself: we only run extraction when fresh content is
+        // being evicted into the warm tier, not on every turn. The pass
+        // is best-effort and never throws — it can only ADD to memory,
+        // not corrupt the main turn.
+        if (warmSummaryCtx && hotSince && modelInfo.providerName && modelInfo.modelId) {
+          await graduateFactsFromEvicted(
+            allWindowMessages,
+            hotForSlice.length,
+            modelInfo.providerName,
+            modelInfo.modelId,
+            providerParams,
+            warmCap,
+          );
+        }
       }
       const used = estimateTokens(warmSummaryCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
@@ -260,6 +276,59 @@ async function buildWarmSummary(
     ].join("\n");
   } catch {
     return "";
+  }
+}
+
+// ADR-0046 — fact graduation. When the warm summary is being recomputed at
+// a moved boundary, the messages being evicted have one last chance to
+// contribute durable facts to long-term memory. Without this pass, every
+// boundary move re-summarises the same key facts forever; with it, they
+// graduate into memory_store namespace=facts and stop competing for warm
+// tokens on every subsequent turn.
+//
+// Best-effort: parse failures, low confidence, or model errors all just
+// produce a no-op. Conservative on what we keep — see fact-extraction.ts.
+async function graduateFactsFromEvicted(
+  allWindowMessages: readonly { role: string; content: string }[],
+  hotCount: number,
+  providerName: string,
+  modelId: string,
+  providerParams: ProviderParams,
+  warmBudgetTokens: number,
+): Promise<void> {
+  const evicted = allWindowMessages.slice(0, Math.max(0, allWindowMessages.length - hotCount));
+  if (evicted.length < 2) return;
+
+  // Bound the input the same way warm summarisation does — extraction
+  // benefits from broad context but the LLM cost has to stay reasonable.
+  const charBudget = Math.max(0, warmBudgetTokens * 4);
+  const transcript = evicted
+    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .join("\n\n")
+    .slice(-charBudget);
+  if (!transcript.trim()) return;
+
+  try {
+    const provider = getProvider(providerName);
+    const facts = await extractFactsFromTranscript(provider, modelId, providerParams, transcript);
+    for (const f of facts) {
+      try {
+        // Idempotent: putMemory upserts on (namespace, key). Re-graduating
+        // the same fact across boundary moves just refreshes its
+        // updated_at + re-embeds — desired, since the value text may have
+        // sharpened over time.
+        putMemory("facts", f.key, f.value);
+      } catch (persistErr) {
+        // Memory write should never fail (SQLite + idempotent insert), but
+        // if it does, log and continue. One bad row mustn't sink the rest.
+        console.warn(`[fact-extraction] putMemory failed for "${f.key}":`, persistErr);
+      }
+    }
+    if (facts.length > 0) {
+      console.info(`[fact-extraction] graduated ${facts.length} fact(s) into memory_store`);
+    }
+  } catch (err) {
+    console.warn("[fact-extraction] graduation pass errored (non-fatal):", err);
   }
 }
 
