@@ -95,20 +95,24 @@ async function jaFetch(
   init?: RequestInit,
 ): Promise<unknown> {
   const url = path.startsWith("http") ? path : `${auth.url}${path}`;
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${auth.apiToken}`,
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-  const text = await res.text();
-  if (!res.ok) {
-    return { error: `Jira Align ${res.status}: ${text.slice(0, 500)}`, url };
+  try {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${auth.apiToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      return { error: `Jira Align ${res.status}: ${text.slice(0, 500)}`, url };
+    }
+    return parseJsonSafe<unknown>(text, text);
+  } catch (err) {
+    return { error: `Jira Align fetch threw: ${err instanceof Error ? err.message : String(err)}`, url };
   }
-  return parseJsonSafe<unknown>(text, text);
 }
 
 // Shape an item payload back into a stable, typeless summary so the agent
