@@ -32,13 +32,13 @@ const state = getOrCreateGlobal<RuntimeState>("__jarela_bridges", () => ({
   started: false,
 }));
 
+// Construct an adapter for the given bridge kind. WhatsApp is the only
+// kind today (BridgeKind union has one member); when a second bridge
+// lands, switch on `kind` here. Until then this stays inline rather than
+// hiding the one-case mapping behind a registry.
 function makeAdapter(bridge_id: string, kind: string): BridgeAdapter {
-  switch (kind) {
-    case "whatsapp":
-      return new WhatsAppBridgeAdapter(bridge_id);
-    default:
-      throw new Error(`Unknown bridge kind: ${kind}`);
-  }
+  if (kind === "whatsapp") return new WhatsAppBridgeAdapter(bridge_id);
+  throw new Error(`Unknown bridge kind: ${kind}`);
 }
 
 function wireAdapter(adapter: BridgeAdapter): void {
