@@ -35,19 +35,55 @@ function summaryMessages(transcript: string): ProviderMessage[] {
   ];
 }
 
+// Wall-clock cap for one summary call. Without this the prepare phase can
+// hang forever when the provider stream stalls mid-response (observed with
+// gpt-4o through GitHub Copilot on threads whose warm context tripped a
+// content filter — stream opened but no chunks arrived). prepareThreadRun
+// runs BEFORE any chunks are broadcast for the user's turn, so a hung
+// summariser starves the registry's idle watchdog and the user just sees
+// "sending" until the 90s force-finish fires.
+const DEFAULT_SUMMARY_TIMEOUT_MS = 25_000;
+
+export class SummaryTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`summarizeTranscript: timed out after ${ms}ms`);
+    this.name = "SummaryTimeoutError";
+  }
+}
+
+export interface SummarizeTranscriptOptions {
+  /** Wall-clock budget for the underlying chat call. Default 25_000 ms. */
+  timeoutMs?: number;
+}
+
 export async function summarizeTranscript(
   provider: Pick<ModelProvider, "chat">,
   modelId: string,
   providerParams: ProviderParams,
   transcript: string,
+  options: SummarizeTranscriptOptions = {},
 ): Promise<string> {
   const trimmed = transcript.trim();
   if (!trimmed) return "";
 
-  const { stream } = await provider.chat(modelId, summaryMessages(trimmed), providerParams);
-  let summary = "";
-  for await (const chunk of stream) summary += chunk;
-  return summary.trim();
+  const timeoutMs = Math.max(1, options.timeoutMs ?? DEFAULT_SUMMARY_TIMEOUT_MS);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const work = (async () => {
+    const { stream } = await provider.chat(modelId, summaryMessages(trimmed), providerParams);
+    let summary = "";
+    for await (const chunk of stream) summary += chunk;
+    return summary.trim();
+  })();
+  try {
+    return await Promise.race([
+      work,
+      new Promise<string>((_, reject) => {
+        timer = setTimeout(() => reject(new SummaryTimeoutError(timeoutMs)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export interface SummarizeWithRetryOptions {
@@ -62,6 +98,8 @@ export interface SummarizeWithRetryOptions {
    * latency bounded while letting a flapping provider recover.
    */
   delayMs?: number;
+  /** Per-attempt wall-clock cap. Default 25_000 ms. */
+  timeoutMs?: number;
 }
 
 export interface SummarizeWithRetryResult {
@@ -89,10 +127,11 @@ export async function summarizeTranscriptWithRetry(
 ): Promise<SummarizeWithRetryResult> {
   const attempts = Math.max(1, options.attempts ?? 2);
   const delayMs = Math.max(0, options.delayMs ?? 250);
+  const timeoutMs = options.timeoutMs;
   let lastError: unknown;
   for (let i = 0; i < attempts; i += 1) {
     try {
-      const text = await summarizeTranscript(provider, modelId, providerParams, transcript);
+      const text = await summarizeTranscript(provider, modelId, providerParams, transcript, { timeoutMs });
       return { text, attempts: i + 1 };
     } catch (err) {
       lastError = err;
