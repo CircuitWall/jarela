@@ -223,6 +223,14 @@ export const api = {
         `/threads/${thread_id}/context-pin`,
         { method: "PATCH", body: JSON.stringify({ hot_since }) },
       ),
+    // ADR-0046. Pin or clear the thread's long-task goal. The goal is
+    // injected into every subsequent turn's system prompt outside the tier
+    // budget so it can't be compacted away as the thread grows.
+    setTaskGoal: (thread_id: string, task_goal: string | null) =>
+      request<{ task_goal: string | null }>(
+        `/threads/${thread_id}/task-goal`,
+        { method: "PATCH", body: JSON.stringify({ task_goal }) },
+      ),
   },
 
   memory: {
