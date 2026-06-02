@@ -21,6 +21,18 @@ export type ToolParamSchema = {
 
 export interface ToolContext {
   thread_id?: string;
+  /**
+   * Per-call wall-clock deadline (ms). Falls back to
+   * `getConfig().toolTimeoutMs` when undefined. Pass 0 to disable.
+   */
+  timeoutMs?: number;
+  /**
+   * Upstream cancellation signal (typically the agent run's AbortSignal).
+   * When fired, the in-flight tool sees its own signal abort and
+   * `executeTool` re-throws AbortError so the caller can distinguish
+   * user cancel from timeout / tool error.
+   */
+  runSignal?: AbortSignal;
 }
 
 // OpenAI function calling wire format

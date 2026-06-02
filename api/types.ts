@@ -799,19 +799,15 @@ export interface HarnessPatch {
   sections?: Partial<Record<_HarnessSectionKey, Partial<_HarnessSection>>>;
 }
 
-export type SSEEventType =
-  | { type: "text_delta"; delta: string }
-  | { type: "thinking_delta"; delta: string }
-  | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
-  | { type: "tool_result"; id: string; name: string; result: unknown }
-  | { type: "done"; message_id: string; usage: { input_tokens: number; output_tokens: number } }
-  | { type: "error"; message: string; code: string }
-  // Server is rejecting a new POST/WS message because a run is already in
-  // flight for this thread (another tab, another device). The stream that
-  // follows replays the in-flight run's buffered events plus live deltas;
-  // the client should re-queue the user message locally and resubmit after
-  // the upcoming `done` event.
-  | { type: "run_in_flight"; thread_id: string };
+// Wire shape of SSE events streamed by `/api/v1/threads/:id/run`. The
+// canonical definition lives as a zod schema in
+// `lib/agents/stream-chunk-schema.ts` so server emit + client consume parse
+// against the same source of truth — drift between this type and the runtime
+// schema would surface as silently-dropped events on the client.
+//
+// `run_in_flight` is emitted by the route directly (not by the agent
+// stream). `done` carries optional usage/provider metadata.
+export type { SSEEventParsed as SSEEventType } from "@/lib/agents/stream-chunk-schema";
 
 // ---------------------------------------------------------------------------
 // Bridges (external comm channels: WhatsApp via Baileys, …)
