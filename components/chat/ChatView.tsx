@@ -9,6 +9,7 @@ import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
+import { ErrorCard } from "./ErrorCard";
 
 const GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -551,9 +552,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       )}
 
       {error && (
-        <div className="mx-4 mb-2 px-3 py-2 rounded bg-red-900/40 border border-red-700 text-red-700 dark:text-red-300 text-xs max-h-48 overflow-y-auto">
-          <pre className="whitespace-pre-wrap break-all font-mono">{error}</pre>
-        </div>
+        <ErrorCard
+          message={error.message}
+          code={error.code}
+          onRetry={input.trim().length === 0 ? undefined : handleSubmit}
+        />
       )}
 
       {!agentId && (defaultAgent || recentAgents.length > 0) && (

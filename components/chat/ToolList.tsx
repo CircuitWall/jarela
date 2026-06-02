@@ -7,6 +7,12 @@ export interface ToolEvent {
   phase: "call" | "result";
   name: string;
   payload: unknown;
+  // ADR-0049 — promoted error metadata. Present when the tool returned a
+  // {kind:"error"} envelope or a legacy {error, code} envelope; absent on
+  // success. Lets the pill render a code-specific summary (timed out,
+  // invalid args, etc.) without falling back to the prose heuristic.
+  error_code?: string;
+  error_message?: string;
 }
 
 // Above this many events the list collapses to a one-line summary by
@@ -106,7 +112,13 @@ function previewPayload(payload: unknown): string {
 }
 
 function isErrorPayload(payload: unknown): boolean {
+  // ADR-0049 union shape wins (typed; explicit). Fall back to legacy
+  // shapes for tools that haven't migrated yet (atlassian/github/etc.).
+  if (payload && typeof payload === "object") {
+    const o = payload as Record<string, unknown>;
+    if (o.kind === "error") return true;
+    if ("error" in o) return true;
+  }
   if (typeof payload === "string") return /error/i.test(payload);
-  if (payload && typeof payload === "object" && "error" in payload) return true;
   return false;
 }
