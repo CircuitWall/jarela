@@ -15,16 +15,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CloudOff, Loader2 } from "lucide-react";
+import { runtimeConfig } from "@/api/runtime-config";
 
 const HEALTHY_INTERVAL_MS = 20_000;
 const DOWN_INTERVAL_MS = 2_000;
 const RETRY_INTERVAL_MS = 3_000;
-const FETCH_TIMEOUT_MS = 8_000;
 const FAILURE_THRESHOLD = 3;
 
 async function ping(): Promise<boolean> {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  const t = setTimeout(() => ctrl.abort(), runtimeConfig().healthCheckTimeoutMs);
   try {
     const res = await fetch("/api/v1/health", { cache: "no-store", signal: ctrl.signal });
     return res.ok;
