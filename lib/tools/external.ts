@@ -6,6 +6,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { getConfig } from "@/lib/env/config";
 import { getToolSecret, type ToolSecretSlot } from "@/lib/stores/tool-secrets";
 import type { ToolCategory } from "./registry";
+import { z, ZodError, type ZodTypeAny } from "zod";
 
 /**
  * Absolute path to the external tools directory. Resolved lazily from
@@ -52,6 +53,22 @@ export interface ExternalToolsResult {
   secrets: Map<string, ToolSecretSlot[]>;
   errors: ExtensionLoadError[];
 }
+
+// Duck-type a zod schema by structural shape — checking instanceof against
+// our z import doesn't cover external tools that bring their own zod copy
+// from a different node_modules tree, which would resolve to a different
+// constructor identity. The presence of `_def` + `parse` is unique enough
+// to zod that false positives are not a concern in practice.
+function isZodSchema(v: unknown): boolean {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.parse === "function" && typeof o.safeParse === "function" && "_def" in o;
+}
+
+// Marker reference so tree-shaking doesn't drop the zod import; we use the
+// runtime export above (`ZodError`, `ZodTypeAny`) and need `z` available
+// for any future builder helpers in this file.
+void z;
 
 function isValidSlot(v: unknown): v is ToolSecretSlot {
   if (!v || typeof v !== "object") return false;
@@ -156,13 +173,41 @@ export function loadExternalTools(
     }
     seen.add(def.name);
 
+    // ADR-0047 — enforce the declared schema at invoke time. LangChain's
+    // tool() wrapper validates on serialization (the function-calling
+    // payload sent to the model) but does NOT re-validate when invoke is
+    // called with already-shaped args; an external plugin loading
+    // user-authored code therefore had a hole where the agent could pass
+    // it anything matching the LLM's serialized intent. Re-parse here so
+    // the wrapper enforces the contract on every call.
+    const zodSchema = isZodSchema(def.schema) ? (def.schema as ZodTypeAny) : null;
     const wrapped = tool(
       async (args: unknown, _runManager?: unknown, config?: RunnableConfig) => {
+        let validated: Record<string, unknown>;
+        if (zodSchema) {
+          try {
+            validated = zodSchema.parse(args) as Record<string, unknown>;
+          } catch (err) {
+            if (err instanceof ZodError) {
+              return JSON.stringify({
+                error: `Invalid args for "${def.name}": ${err.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ")}`,
+                code: "invalid_args",
+              });
+            }
+            throw err;
+          }
+        } else {
+          // Best-effort: pass through when the tool didn't declare a zod
+          // schema (e.g. plain JSON Schema object). LangChain's outer
+          // serialization still applies, so the args came through the
+          // function-call layer with at least basic shape conformance.
+          validated = args as Record<string, unknown>;
+        }
         const ctx = {
           thread_id: config?.configurable?.thread_id as string | undefined,
           getSecret: (key: string) => getToolSecret(def.name, key),
         };
-        const result = await def.run(args as Record<string, unknown>, ctx);
+        const result = await def.run(validated, ctx);
         return typeof result === "string" ? result : JSON.stringify(result);
       },
       {

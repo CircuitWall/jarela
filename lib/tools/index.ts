@@ -34,10 +34,11 @@ import {
   getToolsDir,
   type ExtensionLoadError,
 } from "./external";
-import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
+import type { OpenAITool, ToolContext, ToolParamSchema, ToolResult } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
-import { withToolTimeout, ToolTimeoutError } from "./timeout";
+import { runToolDispatched } from "./dispatch";
+import { withToolTimeout } from "./timeout";
 import { getConfig } from "@/lib/env/config";
 
 export * from "./types";
@@ -179,39 +180,70 @@ export async function executeTool(
     ? { configurable: { thread_id: context.thread_id } }
     : {};
 
-  // Wall-clock deadline. MCP tools and external plugins have no SDK-level
-  // timeout — without this a single hung tool stalls the whole agent loop
-  // until the run-registry's 15-min watchdog fires. The merged signal is
-  // forwarded so a tool that respects AbortSignal exits early; non-cooperative
-  // tools fall back to the timeout itself.
+  // Compose dispatch + timeout: the central chokepoint logs every call,
+  // and timeout enforces a wall-clock deadline so a hung MCP / external
+  // plugin can't stall the agent loop until the registry's 15-min
+  // watchdog fires. dispatch's catch turns the ToolTimeoutError into
+  // a structured kind:"error" with code="tool_timeout" — same shape as
+  // any other tool failure, so the agent can route around uniformly.
+  // The agent loop's own .invoke path is closed by ADR-0048 (PR-6).
   const timeoutMs = context.timeoutMs ?? getConfig().toolTimeoutMs;
   const tool = t;
-  let result: unknown;
-  try {
-    result = await withToolTimeout(
+  const result = await runToolDispatched(
+    () => withToolTimeout(
       (signal) => tool.invoke(args, { ...config, signal }),
       { toolName: name, timeoutMs, runSignal: context.runSignal },
-    );
-  } catch (err) {
-    if (err instanceof ToolTimeoutError) {
-      // Surface as a structured tool result so the agent can route around.
-      // Returning rather than throwing keeps the LangGraph loop alive — the
-      // model sees a real timeout error and can choose an alternate tool or
-      // give up gracefully instead of crashing the whole turn.
-      return { error: err.message, code: err.code, tool: name, timeout_ms: err.timeoutMs };
-    }
-    throw err;
-  }
+    ),
+    { toolName: name, threadId: context.thread_id },
+  );
+  return toLegacyShape(result);
+}
 
-  // Tools return JSON strings per LangChain convention; parse back for downstream use.
-  if (typeof result === "string") {
-    try {
-      return JSON.parse(result);
-    } catch {
-      return result;
+// Bridge ToolResult back to the historical "raw payload" shape so existing
+// callers (proposals path, watcher tool, etc.) don't have to migrate in
+// the same PR. New callers should consume ToolResult directly via
+// `executeToolStructured` below.
+function toLegacyShape(result: ToolResult): unknown {
+  if (result.kind === "json") return result.data;
+  if (result.kind === "text") return result.data;
+  // Error case — surface a plain object so existing JSON-shape callers see
+  // an `error` field they can detect (matches the prior heuristic in
+  // ToolList's isErrorPayload).
+  return { error: result.message, code: result.code };
+}
+
+/**
+ * Like `executeTool` but returns the typed `ToolResult` discriminated union.
+ * Prefer this in new call sites — it lets the caller branch on `kind` without
+ * heuristic shape-detection.
+ */
+export async function executeToolStructured(
+  name: string,
+  args: Record<string, unknown>,
+  context: ToolContext = {},
+): Promise<ToolResult> {
+  let t = ALL_BUILTINS.find((x) => x.name === name);
+  if (t) {
+    const cat = registeredCategory(name);
+    if (cat && disabledCategories().has(cat)) {
+      return { kind: "error", code: "tool_disabled", message: `Tool "${name}" is disabled (category ${cat} is turned off)` };
     }
   }
-  return result;
+  if (!t) t = loadExternal().tools.find((x) => x.name === name);
+  if (!t) return { kind: "error", code: "unknown_tool", message: `Unknown tool: ${name}` };
+
+  const config: RunnableConfig = context.thread_id
+    ? { configurable: { thread_id: context.thread_id } }
+    : {};
+  const tool = t;
+  const timeoutMs = context.timeoutMs ?? getConfig().toolTimeoutMs;
+  return runToolDispatched(
+    () => withToolTimeout(
+      (signal) => tool.invoke(args, { ...config, signal }),
+      { toolName: name, timeoutMs, runSignal: context.runSignal },
+    ),
+    { toolName: name, threadId: context.thread_id },
+  );
 }
 
 // One-shot startup loader. Call from instrumentation.ts so external tools

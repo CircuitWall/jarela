@@ -73,3 +73,25 @@ export interface InvokeResult {
   tool_calls: ToolCall[];
   stop_reason: "stop" | "tool_use" | "length";
 }
+
+// ADR-0047 — central tool dispatch shape.
+//
+// Tools historically returned arbitrary values: a string (parsed-on-best-effort
+// at the call site), a JSON-able object (stringified by LangChain), an
+// {error: ...} object that callers had to detect heuristically. Downstream
+// consumers (the chat UI, the agent's own loop, the proposals path) had to
+// guess what they were looking at. ToolResult standardises the shape:
+//
+//   - `kind: "json"` — structured payload the agent can use directly.
+//   - `kind: "text"` — opaque text (markdown, prose, raw HTTP body).
+//   - `kind: "error"` — a recoverable failure the agent can route around.
+//                       `code` lets the caller branch (e.g. timeout vs auth
+//                       vs bad-args) without parsing the message.
+//
+// Existing tools that return raw shapes are normalized into this union by
+// `normalizeToolResult()` in lib/tools/dispatch.ts — the contract is enforced
+// at the central chokepoint, not at every emit site.
+export type ToolResult =
+  | { kind: "json"; data: unknown }
+  | { kind: "text"; data: string }
+  | { kind: "error"; message: string; code: string; data?: unknown };
