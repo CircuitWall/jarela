@@ -479,3 +479,21 @@ describe("confluence_get_attachment_content", () => {
     });
   });
 });
+
+describe("atlassianFetch transport-error envelope", () => {
+  // Regression: `fetch()` rejects on DNS / TLS / proxy / abort failures and
+  // those throws used to propagate up through the tool, where LangChain
+  // wrapped them as `Error: fetch failed\n Please fix your mistakes.` —
+  // the agent saw nothing actionable and the failure counted as 100% in
+  // tool_stats. The helper now catches and returns the same `{error, url}`
+  // envelope shape as HTTP-error responses.
+  it("returns {error, url} envelope when fetch throws (e.g. DNS failure)", async () => {
+    vi.stubGlobal("fetch", async () => {
+      throw new TypeError("fetch failed");
+    });
+    const out = await confluenceGetPageTool.invoke({ page_id: "12345" });
+    const parsed = JSON.parse(out);
+    expect(parsed.error).toMatch(/Atlassian fetch threw: fetch failed/);
+    expect(parsed.url).toContain("/wiki/api/v2/pages/12345");
+  });
+});
