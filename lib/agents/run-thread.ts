@@ -80,6 +80,18 @@ export interface ContextUsageSnapshot {
 // user a clear manual recovery path ("continue").
 const MAX_STALL_AUTO_RETRIES = 1;
 
+// ADR-0051 — separate retry budget for transient provider failures
+// (rate_limit / network_error). Independent from stall-retry: a turn can
+// burn one of each before we surface to the user. One auto-retry is plenty
+// — same logic as stall-retry, anything more is just paying for a known
+// bad call.
+const MAX_TRANSIENT_AUTO_RETRIES = 1;
+// Cap any provider-supplied retry_after_ms so a misbehaving upstream that
+// asks for a 10-minute wait can't pin the agent loop. Run-registry's
+// 15-min watchdog would catch it eventually, but a tight cap here makes
+// the user-visible UX better.
+const MAX_TRANSIENT_RETRY_DELAY_MS = 60_000;
+
 // Hard cap on how deep an A → B → C delegation chain can go via the
 // `delegate_to_agent` built-in tool. Public callers start at depth 0; the
 // delegate tool increments before recursively invoking prepareThreadRun. At
@@ -208,11 +220,17 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const rawStream = streamWithConfig(req.thread_id, historyWindow.history, streamOpts, req.signal);
   const retriesLeft = req._stall_retries_left ?? MAX_STALL_AUTO_RETRIES;
+  const transientLeft = req._transient_retries_left ?? MAX_TRANSIENT_AUTO_RETRIES;
+  // Compose: transientRetryStream wraps the raw stream first so a
+  // rate-limit / network blip mid-call gets retried with the SAME message
+  // (no nudge) before stall detection runs. stallRetryStream then sees a
+  // clean turn — successful, stalled, or fabricated — same as before.
+  const wrappedStream = transientRetryStream(rawStream, req, transientLeft);
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
   const overheadTokens = estimateTokens(systemPrompt);
   return {
-    stream: stallRetryStream(rawStream, req, allowedTools, retriesLeft),
+    stream: stallRetryStream(wrappedStream, req, allowedTools, retriesLeft),
     thread_id: req.thread_id,
     context_snapshot: {
       context_window_tokens: historyWindow.budget.contextWindowTokens,
@@ -336,6 +354,69 @@ async function* stallRetryStream(
     _stall_retries_left: retriesLeft - 1,
   });
   for await (const chunk of retry.stream) yield chunk;
+}
+
+// ADR-0051 — auto-retry on transient provider failures. Mirrors
+// stallRetryStream's recurse-via-prepareThreadRun shape but triggers on
+// retryable error codes (rate_limit / network_error from the new provider
+// classifier) instead of stall heuristics. The retry resubmits the SAME
+// user message — there's no nudge, just a brief pause and another attempt.
+//
+// Critical detail: we must NOT yield the error chunk to the consumer when
+// we're going to retry — otherwise the chat UI flashes a transient error
+// banner that disappears as the retry's content streams in. Buffer the
+// error and only emit it when we give up.
+async function* transientRetryStream(
+  inner: AsyncIterable<StreamChunk>,
+  originalReq: ThreadRunRequest,
+  retriesLeft: number,
+): AsyncGenerator<StreamChunk> {
+  if (retriesLeft <= 0) {
+    for await (const chunk of inner) yield chunk;
+    return;
+  }
+
+  // Track whether anything was yielded before the error fired. If the
+  // provider call started streaming text/tools and THEN hit a transient
+  // error, replaying the turn would emit duplicate content. Don't retry
+  // mid-stream — yield the error and let the user re-send if they want.
+  let yieldedAny = false;
+
+  for await (const chunk of inner) {
+    if (chunk.type === "error") {
+      const data = chunk.data as { code?: unknown; retry_after_ms?: unknown };
+      const code = typeof data?.code === "string" ? data.code : "";
+      const retryable = code === "rate_limit" || code === "network_error";
+
+      if (retryable && !yieldedAny) {
+        const rawDelay = typeof data?.retry_after_ms === "number" ? data.retry_after_ms : 0;
+        const delayMs = Math.min(MAX_TRANSIENT_RETRY_DELAY_MS, Math.max(0, rawDelay));
+        console.warn(
+          `[transient-retry] provider returned code=${code}; retrying once in ${delayMs}ms (${retriesLeft - 1} retries remaining after this)`,
+        );
+        if (delayMs > 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        }
+        const retry = await prepareThreadRun({
+          ...originalReq,
+          // Same message — transient errors don't reflect anything wrong with
+          // the user's input, just an upstream blip. No nudge, no separator.
+          attachments: originalReq.attachments,
+          _transient_retries_left: retriesLeft - 1,
+        });
+        for await (const c of retry.stream) yield c;
+        return;
+      }
+
+      // Non-retryable code, or budget exhausted, or we already streamed
+      // partial content — surface as today.
+      yield chunk;
+      return;
+    }
+
+    yieldedAny = true;
+    yield chunk;
+  }
 }
 
 export interface AssistantUsageSnapshot {

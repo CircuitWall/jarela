@@ -34,6 +34,11 @@ export interface ThreadRunRequest {
    *  stall-retry recursion. */
   _stall_retries_left?: number;
 
+  /** Internal — public callers leave undefined. Decremented across the
+   *  ADR-0051 transient-retry recursion (rate_limit / network_error).
+   *  Independent of stall budget so a turn can hit one of each. */
+  _transient_retries_left?: number;
+
   /** Internal — public callers leave undefined. Set by `delegate_to_agent`
    *  when one agent hands a subtask to another; gates depth + cycles. */
   _delegation_depth?: number;

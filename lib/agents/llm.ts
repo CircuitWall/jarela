@@ -18,6 +18,7 @@ import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
 import { extractToolError } from "./tool-error";
+import { classifyProviderError } from "./provider-errors";
 
 function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
@@ -380,6 +381,25 @@ export async function* streamWithConfig(
       code = "context_length_exceeded";
     } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
       code = "max_tokens_exhausted";
+    } else {
+      // ADR-0051 — provider-error classifiers. The catch above already covers
+      // the LangGraph-shaped failures (recursion / context / max_tokens); this
+      // branch handles the wider provider failure surface (auth, rate-limit,
+      // billing, network, model-not-found) that previously fell through as a
+      // raw stack trace. Each classified code carries a user-friendly message
+      // and (for transient codes) a `retry_after_ms` hint that the wrapper in
+      // run-thread.ts uses to schedule auto-retry.
+      const provInfo = classifyProviderError(rawMsg);
+      if (provInfo) {
+        const data: Record<string, unknown> = {
+          message: provInfo.message,
+          code: provInfo.code,
+        };
+        if (provInfo.retryAfterMs !== undefined) data.retry_after_ms = provInfo.retryAfterMs;
+        yield { type: "error", data };
+        deadline.clear();
+        return;
+      }
     }
     // Pull out the FIRST in-app frame from the stack so the user sees what
     // module triggered it, without dumping the full Pregel/webpack trace.
