@@ -37,6 +37,8 @@ import {
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
+import { withToolTimeout, ToolTimeoutError } from "./timeout";
+import { getConfig } from "@/lib/env/config";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
@@ -177,7 +179,29 @@ export async function executeTool(
     ? { configurable: { thread_id: context.thread_id } }
     : {};
 
-  const result = await t.invoke(args, config);
+  // Wall-clock deadline. MCP tools and external plugins have no SDK-level
+  // timeout — without this a single hung tool stalls the whole agent loop
+  // until the run-registry's 15-min watchdog fires. The merged signal is
+  // forwarded so a tool that respects AbortSignal exits early; non-cooperative
+  // tools fall back to the timeout itself.
+  const timeoutMs = context.timeoutMs ?? getConfig().toolTimeoutMs;
+  const tool = t;
+  let result: unknown;
+  try {
+    result = await withToolTimeout(
+      (signal) => tool.invoke(args, { ...config, signal }),
+      { toolName: name, timeoutMs, runSignal: context.runSignal },
+    );
+  } catch (err) {
+    if (err instanceof ToolTimeoutError) {
+      // Surface as a structured tool result so the agent can route around.
+      // Returning rather than throwing keeps the LangGraph loop alive — the
+      // model sees a real timeout error and can choose an alternate tool or
+      // give up gracefully instead of crashing the whole turn.
+      return { error: err.message, code: err.code, tool: name, timeout_ms: err.timeoutMs };
+    }
+    throw err;
+  }
 
   // Tools return JSON strings per LangChain convention; parse back for downstream use.
   if (typeof result === "string") {

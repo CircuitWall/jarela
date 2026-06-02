@@ -88,6 +88,15 @@ export async function* streamWithConfig(
 
   const provider = getProvider(cfg.provider);
 
+  // Compose the caller's signal with a per-stream wall-clock deadline.
+  // recursionLimit caps the number of node visits but not real time — a
+  // slow provider or stuck network call would otherwise keep streaming
+  // until the registry's 15-min watchdog fires. This is the tighter
+  // primary deadline; the registry watchdog stays as the backstop for
+  // pathological cases (broadcast() never fires, etc.).
+  const llmStreamMaxMs = getConfig().llmStreamMaxMs;
+  const deadline = makeStreamDeadline(signal, llmStreamMaxMs);
+
   const toolPolicy = runCfg?.allowed_tools?.length
     ? { allow: runCfg.allowed_tools }
     : options?.tool_policy;
@@ -177,7 +186,10 @@ export async function* streamWithConfig(
         // Cancellation: when the user hits Stop (or the last client
         // disconnects), the route aborts this signal and the LangGraph
         // pregel loop unwinds, throwing a friendly aborted error below.
-        signal,
+        // The composed signal also carries the per-stream wall-clock
+        // deadline (llmStreamMaxMs) so a runaway provider can't pin the
+        // turn for the full 15-min registry backstop.
+        signal: deadline.signal,
       },
     );
 
@@ -259,11 +271,17 @@ export async function* streamWithConfig(
       ? `${baseMsg} (cause: ${causeChain.join(" → ")})`
       : baseMsg;
 
-    // User-initiated abort (Stop button / client disconnect): emit a
-    // short error chunk and let the route fall through to `done` so the
-    // queued-message drain in the UI fires normally.
-    if (signal?.aborted || name === "AbortError" || /aborted/i.test(rawMsg)) {
-      yield { type: "error", data: { message: "Run interrupted by user.", code: "aborted" } };
+    // User-initiated abort (Stop button / client disconnect) OR per-stream
+    // wall-clock deadline. We branch on which one fired so the user sees a
+    // useful explanation instead of "Run interrupted" for both.
+    if (signal?.aborted || deadline.timedOut || name === "AbortError" || /aborted/i.test(rawMsg)) {
+      const message = deadline.timedOut && !signal?.aborted
+        ? `Run exceeded the per-stream wall-clock limit (${Math.floor(llmStreamMaxMs / 1000)}s). ` +
+          `If your task is legitimately long, raise JARELA_LLM_STREAM_MAX_MS in the env. ` +
+          `If a tool or provider stalled, retry or simplify the prompt.`
+        : "Run interrupted by user.";
+      const code = deadline.timedOut && !signal?.aborted ? "stream_deadline" : "aborted";
+      yield { type: "error", data: { message, code } };
       yield {
         type: "done",
         data: {
@@ -277,6 +295,7 @@ export async function* streamWithConfig(
           aborted: true,
         },
       };
+      deadline.clear();
       return;
     }
 
@@ -355,6 +374,7 @@ export async function* streamWithConfig(
     const firstAppFrame = stack.split("\n").find((l) => /\(rsc\)\.\/lib\//.test(l));
     const trimmed = firstAppFrame ? `\n${firstAppFrame.trim()}` : "";
     yield { type: "error", data: { message: `${friendly}${trimmed}`, code } };
+    deadline.clear();
     return;
   }
 
@@ -380,6 +400,59 @@ export async function* streamWithConfig(
       provider: cfg.provider,
       model_id: cfg.model_id,
       model_config_name: cfg.name,
+    },
+  };
+  deadline.clear();
+}
+
+interface StreamDeadline {
+  signal: AbortSignal;
+  /** True after the per-stream wall-clock fired. False on user-initiated abort. */
+  readonly timedOut: boolean;
+  /** Cancel the deadline timer + drop the upstream-abort listener. */
+  clear(): void;
+}
+
+// Compose the caller's signal with a per-stream wall-clock budget. Returns
+// a signal that fires when EITHER the upstream signal aborts (user/registry
+// watchdog) OR the deadline elapses. `timedOut` discriminates the two so
+// the friendly error message can name which one fired.
+function makeStreamDeadline(upstream: AbortSignal | undefined, maxMs: number): StreamDeadline {
+  const ctrl = new AbortController();
+  let timedOut = false;
+  let cleared = false;
+
+  const onUpstreamAbort = () => {
+    if (cleared) return;
+    ctrl.abort(upstream?.reason ?? "run_aborted");
+  };
+
+  if (upstream) {
+    if (upstream.aborted) {
+      ctrl.abort(upstream.reason ?? "run_aborted");
+    } else {
+      upstream.addEventListener("abort", onUpstreamAbort, { once: true });
+    }
+  }
+
+  let handle: ReturnType<typeof setTimeout> | null = null;
+  if (maxMs > 0) {
+    handle = setTimeout(() => {
+      if (cleared) return;
+      timedOut = true;
+      ctrl.abort("stream_deadline");
+    }, maxMs);
+    handle.unref?.();
+  }
+
+  return {
+    signal: ctrl.signal,
+    get timedOut() { return timedOut; },
+    clear() {
+      if (cleared) return;
+      cleared = true;
+      if (handle) clearTimeout(handle);
+      if (upstream) upstream.removeEventListener("abort", onUpstreamAbort);
     },
   };
 }

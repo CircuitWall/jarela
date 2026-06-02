@@ -92,3 +92,37 @@ describe("run-registry watchdog", () => {
     }
   });
 });
+
+describe("run-registry idempotent terminal guard", () => {
+  it("broadcast() drops chunks once the run has transitioned to terminal", () => {
+    const tid = `t-term-${Date.now()}`;
+    const run = startRun(tid, null);
+    const seen: StreamChunk[] = [];
+    run.subscribers.add((chunk) => seen.push(chunk));
+
+    broadcast(run, delta("a"));
+    expect(seen).toHaveLength(1);
+
+    finishRun(run, "done");
+    // Late chunk (e.g. a persistence-error broadcast firing after collectStream
+    // already emitted `done`) must not reach subscribers.
+    broadcast(run, { type: "error", data: { message: "stale", code: "x" } });
+    expect(seen).toHaveLength(1);
+    expect(run.events).toHaveLength(1);
+  });
+
+  it("finishRun() is idempotent — second call is a no-op", () => {
+    const tid = `t-finish-twice-${Date.now()}`;
+    const run = startRun(tid, null);
+    finishRun(run, "done");
+    const firstFinishedAt = run.finished_at;
+    expect(run.status).toBe("done");
+
+    // A second finishRun (e.g. from the route's try/finally racing the
+    // watchdog) must not flip status, reset finished_at, or re-arm the
+    // TTL timer.
+    finishRun(run, "error");
+    expect(run.status).toBe("done");
+    expect(run.finished_at).toBe(firstFinishedAt);
+  });
+});
