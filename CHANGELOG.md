@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stall-retry now catches in-turn duplicate-tool-call loops.** The
+  existing detector required zero tool calls in the turn before
+  retrying, so a model that kept calling the same read-only tool over
+  and over (e.g. `file_read` on the same path 14 times while announcing
+  "writing now") slipped through. We now also flag a turn when any
+  `(tool, args)` signature recurs ≥ 3 times within the turn, abort the
+  inner stream, and inject a loop-aware nudge ("you called X 3+ times
+  with the same arguments without making progress — invoke a different
+  tool or stop"). A `console.warn` records the looped tool/thread so
+  future occurrences leave a fingerprint identifying the provider.
 - **Pricing lookup for aggregator-namespaced model ids.** Models exposed
   by aggregators (OpenRouter / LiteLLM style) carry a `vendor/model` or
   `aggregator/vendor/model` prefix, which the pricing snapshot doesn't

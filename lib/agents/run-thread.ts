@@ -79,6 +79,14 @@ export interface ContextUsageSnapshot {
 function maxStallRetries(): number { return getConfig().maxStallRetries; }
 function maxTransientRetries(): number { return getConfig().maxTransientRetries; }
 
+// Within-turn duplicate-tool-call threshold. Catches the failure mode where
+// the model calls the same tool with the same args 3+ times without producing
+// a state-changing call (e.g. reads the same file repeatedly while
+// announcing "writing now" but never invoking file_write). Hardcoded:
+// 3 strikes is enough to distinguish "normal retry after transient blip"
+// from "stuck in a ReAct loop", and tuning hasn't been needed.
+const TOOL_LOOP_THRESHOLD = 3;
+
 // Cap any provider-supplied retry_after_ms so a misbehaving upstream that
 // asks for a 10-minute wait can't pin the agent loop. Run-registry's
 // watchdog would catch it eventually; this bound just makes UX better.
@@ -292,6 +300,11 @@ async function* stallRetryStream(
 
   let textBuf = "";
   const toolNames: string[] = [];
+  // Track (name, args) signatures within the turn so we can detect a
+  // ReAct loop where the model spins on the same tool call. Counts
+  // increment only on tool_call chunks; tool_result echoes are ignored.
+  const signatureCounts = new Map<string, number>();
+  let loopedToolName: string | null = null;
   let doneChunk: StreamChunk | null = null;
   let sawError = false;
 
@@ -301,8 +314,32 @@ async function* stallRetryStream(
       if (typeof d === "string") textBuf += d;
       yield chunk;
     } else if (chunk.type === "tool_call") {
-      const name = (chunk.data as { name?: unknown } | undefined)?.name;
-      if (typeof name === "string" && name) toolNames.push(name);
+      const data = chunk.data as { name?: unknown; arguments?: unknown } | undefined;
+      const name = typeof data?.name === "string" ? data.name : "";
+      const args = data?.arguments && typeof data.arguments === "object"
+        ? (data.arguments as Record<string, unknown>)
+        : {};
+      if (name) {
+        toolNames.push(name);
+        const sig = toolCallSignature(name, args);
+        const count = (signatureCounts.get(sig) ?? 0) + 1;
+        signatureCounts.set(sig, count);
+        if (count >= TOOL_LOOP_THRESHOLD && loopedToolName === null) {
+          loopedToolName = name;
+          // Leave a fingerprint so future loop incidents can be traced to a
+          // specific provider/model — most often a sign the aggregator's
+          // tool-use fidelity is poor (model narrates "writing now" without
+          // emitting the corresponding tool_use block).
+          console.warn(
+            `[stall-retry] tool-loop detected: tool=${name} repeats=${count} thread=${originalReq.thread_id}`,
+          );
+          yield chunk;
+          // Bail out of the inner stream — the iterator's `return()` will
+          // be called automatically and propagate cleanup. The retry below
+          // takes over with a forceful nudge.
+          break;
+        }
+      }
       yield chunk;
     } else if (chunk.type === "done") {
       // Hold the terminal marker — if we retry, the retry's `done` closes
@@ -323,17 +360,18 @@ async function* stallRetryStream(
     toolNames.length === 0 &&
     textBuf.trim().length > 0 &&
     looksLikeStall(textBuf.trim());
+  const looped = !sawError && loopedToolName !== null;
 
   // Fabrication check (ADR-0037): only run when the stall path didn't claim
   // this turn — stall-retry already handles zero-tool stall-prose turns.
   // ADR-0057 — telemetry wrapper records every call so we can decide
   // whether the validator earns its 555 LOC. Wrapper short-circuits to
   // ok=true when JARELA_DISABLE_OUTPUT_VALIDATOR=1 (operator A/B test).
-  const fabrication = !sawError && !stalled
+  const fabrication = !sawError && !stalled && !looped
     ? validateWithTelemetry("stall_retry_check", textBuf, toolNames, allowedTools)
     : ({ ok: true } as const);
 
-  if (!stalled && fabrication.ok) {
+  if (!stalled && !looped && fabrication.ok) {
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -343,11 +381,13 @@ async function* stallRetryStream(
   yield { type: "text_delta", data: { delta: "\n\n↻ " } };
 
   // Inject a forceful nudge as a synthetic user message so the model sees
-  // its own flagged reply + an instruction to continue. Stall and fabrication
-  // get distinct, reason-aware nudges.
-  const nudge = stalled
-    ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
-    : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
+  // its own flagged reply + an instruction to continue. Each failure mode
+  // gets its own reason-aware nudge.
+  const nudge = looped
+    ? `↻ Auto-retry: you called \`${loopedToolName}\` ${TOOL_LOOP_THRESHOLD}+ times in this turn with the same arguments without making progress. Either invoke a DIFFERENT tool to advance the task (for example, if you intend to write a file, call \`file_write\` now), or stop and explain what's blocking. Do NOT call \`${loopedToolName}\` again with the same arguments.`
+    : stalled
+      ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
+      : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
   const retry = await prepareThreadRun({
     ...originalReq,
@@ -590,6 +630,36 @@ function lookupAllowedToolsForThread(thread_id: string): string[] {
   if (!thread) return [];
   const agentCfg = getAgentConfig(thread.agent_id);
   return getAgentTools(agentCfg);
+}
+
+// Stable signature for a tool call so we can detect a model spinning on the
+// same call. Keys are sorted to make `{a:1,b:2}` and `{b:2,a:1}` equivalent.
+// Exported for unit tests.
+export function toolCallSignature(name: string, args: Record<string, unknown>): string {
+  const sortedKeys = Object.keys(args).sort();
+  const canonical: Record<string, unknown> = {};
+  for (const k of sortedKeys) canonical[k] = args[k];
+  return `${name}::${JSON.stringify(canonical)}`;
+}
+
+// Pure detector — given an ordered list of tool calls observed within one
+// turn, return the name of the first tool whose `(name, args)` signature
+// recurs `threshold` times, or null if no loop is present.
+// Exported for unit tests.
+export function detectToolLoop(
+  events: ReadonlyArray<{ name: string; args: Record<string, unknown> }>,
+  threshold: number,
+): string | null {
+  if (threshold <= 0) return null;
+  const counts = new Map<string, number>();
+  for (const ev of events) {
+    if (!ev.name) continue;
+    const sig = toolCallSignature(ev.name, ev.args);
+    const next = (counts.get(sig) ?? 0) + 1;
+    counts.set(sig, next);
+    if (next >= threshold) return ev.name;
+  }
+  return null;
 }
 
 export function looksLikeStall(text: string): boolean {
