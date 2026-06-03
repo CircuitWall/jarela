@@ -50,6 +50,22 @@ export interface ThreadRunRequest {
    *  Independent of stall budget so a turn can hit one of each. */
   _transient_retries_left?: number;
 
+  /** Internal — public callers leave undefined. When true, do NOT call
+   *  `addMessage` for `req.message` and do NOT touch the thread title.
+   *  Retry paths set this so synthetic nudges (stall) or replays of the
+   *  same message (transient) don't pollute the persisted conversation
+   *  history. Without it, every `↻ Auto-retry` recurrence becomes a
+   *  permanent user-role row the LLM sees as user input on every future
+   *  turn — which the model can't tell apart from a real correction. */
+  _skip_persist_message?: boolean;
+
+  /** Internal — public callers leave undefined. When true, append
+   *  `req.message` to the in-memory history just before the LLM stream
+   *  starts. Used by the stall-retry path where the nudge IS new content
+   *  the model needs to see; transient-retry leaves it off because the
+   *  original message is already in the DB-built history. */
+  _inject_message_into_history?: boolean;
+
   /** Internal — public callers leave undefined. Set by `delegate_to_agent`
    *  when one agent hands a subtask to another; gates depth + cycles. */
   _delegation_depth?: number;
