@@ -283,8 +283,28 @@ export function runMigrations(db: DatabaseSync): void {
   ensureMessageUsageTable(db);
   ensureMessageUsageTierColumns(db);
   ensureThreadContextPinColumns(db);
+  ensureThreadChannelSummariesTable(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
+}
+
+// ADR-0044. Per-channel warm summary so a thread shared across `chat`,
+// `scheduled_task`, `watcher`, and `bridge` channels stops blending
+// automation history into interactive turns. Replaces the single
+// `threads.warm_summary` blob — which is kept one release as a
+// read-only fallback — with one row per (thread_id, channel).
+function ensureThreadChannelSummariesTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS thread_channel_summaries (
+      thread_id       TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+      channel         TEXT NOT NULL,
+      summary         TEXT NOT NULL,
+      summary_before  TEXT,
+      computed_at     TEXT NOT NULL,
+      PRIMARY KEY (thread_id, channel)
+    );
+    CREATE INDEX IF NOT EXISTS idx_thread_channel_summaries_thread ON thread_channel_summaries(thread_id);
+  `);
 }
 
 // ADR-0041. Immutable per-assistant-turn snapshot of LLM usage. Written once
