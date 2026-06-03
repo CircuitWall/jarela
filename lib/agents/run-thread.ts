@@ -667,7 +667,14 @@ const STALL_PATTERNS: RegExp[] = [
   // HTML version next to the markdown file now." without ever invoking
   // file_write. The earlier "let me X" / "I'll X" patterns missed this
   // because the model used a present-progressive form instead.
-  /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming) [^.!?\n]{0,80}\bnow\b[.!?]?\s*$/i,
+  //
+  // Verb list extended with `editing|regenerating|rewriting|replacing|
+  // building|refreshing|rebuilding|recreating|fetching|formatting` after
+  // a follow-up failure where the model ended its turn with "Editing the
+  // markdown now." and "regenerating the HTML" without invoking
+  // file_edit / file_write — these verbs cover the file_edit and
+  // regenerate-output cases that the original list missed.
+  /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming|editing|regenerating|rewriting|replacing|building|refreshing|rebuilding|recreating|fetching|formatting) [^.!?\n]{0,80}\bnow\b[.!?]?\s*$/i,
 ];
 
 // Resolve the agent's allowed_tools list from a thread id. Best-effort: empty

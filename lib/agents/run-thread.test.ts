@@ -129,6 +129,21 @@ describe("looksLikeStall", () => {
       "Moving the file to OneDrive now.",
       "Copying the snapshot now.",
       "Renaming the column now.",
+      // Real-world regression: model ended turn with "Editing the
+      // markdown now." (file_edit verb) and "regenerating the HTML"
+      // (output-regen verb) without calling either tool. Original verb
+      // list only had `writing|saving|...|renaming`, missing both.
+      "Editing the markdown now.",
+      "Acknowledging — editing the markdown to reflect the leave dates, then regenerating the HTML now.",
+      "Regenerating the HTML now.",
+      "Rewriting the section now.",
+      "Replacing the stale block now.",
+      "Building the report now.",
+      "Refreshing the index now.",
+      "Rebuilding the dashboard now.",
+      "Recreating the snapshot now.",
+      "Fetching the latest data now.",
+      "Formatting the output now.",
     ])("flags %j", (text) => {
       expect(looksLikeStall(text)).toBe(true);
     });

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Stall detector now catches "editing X now" / "regenerating X now"
+  prose.** d6a4a87's verb list (`writing|saving|creating|updating|
+  deleting|adding|appending|generating|drafting|pushing|sending|
+  posting|moving|copying|renaming`) covered file_write narratives but
+  missed the verbs the model uses when planning a `file_edit` or a
+  re-render of derived output. Real-world failure: model finished a
+  successful read+discovery phase and ended its turn with *"Editing
+  the markdown now."* + *"regenerating the HTML"* without invoking
+  either tool. The `STALL_PATTERNS` regex didn't match (verbs absent),
+  so the stall-retry never fired and the turn silently ended without
+  action. Verb list extended with `editing|regenerating|rewriting|
+  replacing|building|refreshing|rebuilding|recreating|fetching|
+  formatting`. 11 new test fixtures cover the exact failing strings
+  + the wider verb family. Note: this is a regex backstop, not a root
+  fix — the durable solutions (per-agent tool-roster pruning, or
+  `tool_choice: "any"` after action verbs) still stand.
+
 - **`file_write` no longer skipped in favor of `local_exec`/heredoc
   narration.** PR #144 (slim playbook + per-tool hints) added a long
   refusal-list to `file_write`'s description (credential dirs, dotfile
