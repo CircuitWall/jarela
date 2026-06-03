@@ -32,19 +32,18 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
   const thread = getOrCreateAgentThread(firing.agentId);
   const category = firing.category ?? firing.kind;
 
-  // Silent mode: wrap the prompt with a "reply only if material" directive
-  // AND a NO_REPLY sentinel so the post-run code can drop the assistant
-  // turn entirely when nothing is worth surfacing. Visibility itself is
-  // handled at the chat-panel layer via the category-filter toolbar.
-  const effectivePrompt = firing.silent
-    ? `${firing.prompt}\n\n[SILENT_TRIGGER] This prompt was triggered automatically. Reply with information only if there is something material the user needs to see right now. If nothing material to report, reply with exactly the single token NO_REPLY and nothing else.`
-    : firing.prompt;
+  // ADR-0061 — silent semantics now live in the system prompt via
+  // `buildInboundChannelContext` (category="scheduled_task" / "watcher",
+  // `inboundSilent=true`). The body stays as the user-authored prompt so
+  // the agent doesn't see two competing copies of the NO_REPLY rule. The
+  // post-run NO_REPLY detection on the assistant reply is unchanged.
 
   try {
     const prepared = await prepareThreadRun({
       thread_id: thread.thread_id,
-      message: effectivePrompt,
+      message: firing.prompt,
       user_category: category,
+      silent: firing.silent === true,
     });
     const collected = await collectStream(prepared.stream);
     const replyText = collected.assistantContent.trim();
