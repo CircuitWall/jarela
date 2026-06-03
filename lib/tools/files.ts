@@ -5,6 +5,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerTools } from "./registry";
 import { checkFsAllowed, resolveSafetyMode } from "./safety";
+import { getConfig } from "@/lib/env/config";
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
@@ -195,8 +196,9 @@ export const fileWriteTool = tool(
     let abs = filePath;
     try {
       abs = resolvePath(filePath);
-      if (content.length > MAX_WRITE_BYTES) {
-        return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${MAX_WRITE_BYTES} bytes` });
+      const cap = maxWriteBytes();
+      if (content.length > cap) {
+        return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${cap} bytes` });
       }
       assertSafePath(abs, "write");
       if (create_dirs !== false) {

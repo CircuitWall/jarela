@@ -3,6 +3,7 @@ import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { registerTools } from "./registry";
+import { getConfig } from "@/lib/env/config";
 
 // JARELA_FETCH_TOOL_MAX_BYTES / JARELA_FETCH_TOOL_TIMEOUT_MS override these.
 function maxBytes(): number { return getConfig().fetchToolMaxBytes; }
