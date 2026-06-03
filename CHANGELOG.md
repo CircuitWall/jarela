@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-06-03
+
+### Fixed
+
+- **Inbound channel cue in the agent system prompt
+  ([#151](https://github.com/CircuitWall/jarela/pull/151), ADR-0061).**
+  Non-chat turns (scheduler, watcher, bridge) now carry an active-turn
+  channel cue so the LLM treats the body inside the inbound envelope as
+  the active request. Previously, in mixed-source threads, the agent's
+  reply could ignore the inbound's content and respond as if the latest
+  chat turn were still active. `ThreadRunRequest.silent` replaces the
+  old `[SILENT_TRIGGER] … NO_REPLY …` body wrapper so the LLM no longer
+  sees two competing copies of the rule.
+
+### Documentation
+
+- **Design principles & scope boundaries
+  ([#152](https://github.com/CircuitWall/jarela/pull/152)).** Adds an
+  explicit list of the 12 load-bearing architectural rules
+  (local-first, single process, single port, capability axis,
+  human-in-the-loop, …) and an in-scope/out-of-scope table to
+  `docs/ARCHITECTURE.md`, with cross-refs to the ADRs that codify each
+  one. README links to the new section.
+
 ## [0.11.1] - 2026-06-03
 
 ### Fixed
