@@ -106,8 +106,13 @@ function buildFiringPrompt(watcher: WatcherRow, previous: string | null, current
   // The diff envelope (label/tool/args/diff) is unchanged so the agent
   // always has the change context regardless of the user's instruction.
   const directive = watcher.reaction_prompt?.trim() || DEFAULT_REACTION_DIRECTIVE;
+  // ADR-0061 — lead with "Active turn" framing so the agent acts on the diff
+  // immediately rather than treating it as background context. The system
+  // prompt cue (buildInboundChannelContext, category="watcher") carries the
+  // structural framing; this header reinforces it inside the user message
+  // itself for redundancy when the cue is far above in a long context.
   return [
-    `Watcher "${watcher.label}" detected a change.`,
+    `**Active turn — react to the change below.** Watcher "${watcher.label}" detected a change.`,
     ``,
     `Tool: ${watcher.tool_name}`,
     `Args: ${argsPretty}`,
