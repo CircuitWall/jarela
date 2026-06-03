@@ -75,6 +75,89 @@ describe("run-registry watchdog", () => {
     }
   });
 
+  // Regression for the user-reported "hanging" symptom: model went silent
+  // mid-turn, watchdog fired at 90s, but the watchdog's error never
+  // reached the client because broadcast()'s status guard dropped any
+  // chunk delivered after finishRun() flipped status to "error". The fix
+  // emits the typed error chunk BEFORE finishRun, so subscribers see it.
+  it("idle watchdog emits a typed error chunk to subscribers before finishing", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-idle-emit-${Date.now()}`;
+      const run = startRun(tid, null);
+      const seen: Array<{ type: string; code?: string }> = [];
+      run.subscribers.add((chunk) => {
+        seen.push({
+          type: chunk.type,
+          code: (chunk.data as { code?: string }).code,
+        });
+      });
+
+      vi.advanceTimersByTime(5_000 + 10);
+
+      // Subscriber must receive a typed error + done pair. Without these
+      // chunks the client's EventSource sees a silent connection close
+      // and the chat bubble keeps spinning forever.
+      expect(seen).toEqual([
+        { type: "error", code: "run_idle_timeout" },
+        { type: "done", code: undefined },
+      ]);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  it("wall-clock watchdog emits a typed error chunk to subscribers before finishing", () => {
+    const prev = process.env.JARELA_RUN_MAX_MS;
+    process.env.JARELA_RUN_MAX_MS = "60000";
+    try {
+      const tid = `t-max-emit-${Date.now()}`;
+      const run = startRun(tid, null);
+      const seen: Array<{ type: string; code?: string }> = [];
+      run.subscribers.add((chunk) => {
+        seen.push({
+          type: chunk.type,
+          code: (chunk.data as { code?: string }).code,
+        });
+      });
+
+      vi.advanceTimersByTime(60_000 + 10);
+
+      expect(seen).toEqual([
+        { type: "error", code: "run_max_timeout" },
+        { type: "done", code: undefined },
+      ]);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_MAX_MS;
+      else process.env.JARELA_RUN_MAX_MS = prev;
+    }
+  });
+
+  it("watchdog termination chunks land in the buffer with seqs (so reconnects replay them)", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-idle-buf-${Date.now()}`;
+      const run = startRun(tid, null);
+      broadcast(run, delta("partial text"));
+      vi.advanceTimersByTime(5_000 + 10);
+
+      const types = run.events.map((e) => e.chunk.type);
+      // Buffered events: text_delta from broadcast(), then watchdog's
+      // synthetic error + done. A reconnecting subscriber gets the same
+      // sequence and sees the failure even if it missed the live event.
+      expect(types).toEqual(["text_delta", "error", "done"]);
+      expect(run.events.map((e) => e.seq)).toEqual([1, 2, 3]);
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
   it("does not fire idle watchdog while broadcast keeps streaming", () => {
     const prev = process.env.JARELA_RUN_IDLE_MS;
     process.env.JARELA_RUN_IDLE_MS = "5000";

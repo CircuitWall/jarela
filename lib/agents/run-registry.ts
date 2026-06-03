@@ -86,6 +86,43 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
   return run;
 }
 
+// Synthesise a typed error chunk for the watchdog termination paths and
+// fan it out to subscribers BEFORE flipping `status` to "error". The order
+// matters: `broadcast()`'s status guard drops any chunk delivered after
+// `finishRun()` has run, so calling finishRun first would silently swallow
+// the error and the client's EventSource would just see the connection
+// close with no terminal event — bubble keeps spinning, no toast. Doing
+// it the other way around lets the client receive a real error event,
+// render a "Run timed out" toast, and (if the consumer wires it up)
+// trigger an auto-retry path. Followed by `done` so the consumer's
+// for-await loop can break cleanly without waiting for an EOF.
+function emitWatchdogTermination(
+  run: ActiveRun,
+  code: "run_idle_timeout" | "run_max_timeout",
+  message: string,
+): void {
+  if (run.status !== "running") return;
+  // Direct registry mutation so the broadcast goes through the regular
+  // path (subscribers + buffer + seq stamp) without re-entering any of
+  // the watchdog scheduling. Mirrors broadcast() but bypasses the
+  // status check we'd otherwise be racing against.
+  run.last_chunk_at = Date.now();
+  const errSeq = run.next_seq++;
+  const errChunk: StreamChunk = { type: "error", data: { message, code } };
+  if (run.events.length < MAX_BUFFERED) run.events.push({ seq: errSeq, chunk: errChunk });
+  for (const fn of run.subscribers) {
+    try { fn(errChunk, errSeq); } catch { /* subscriber errored, ignore */ }
+  }
+  // Pair with a synthetic `done` so the client's consume() loop breaks
+  // on a terminal event rather than waiting for the EventSource to close.
+  const doneSeq = run.next_seq++;
+  const doneChunk: StreamChunk = { type: "done", data: {} };
+  if (run.events.length < MAX_BUFFERED) run.events.push({ seq: doneSeq, chunk: doneChunk });
+  for (const fn of run.subscribers) {
+    try { fn(doneChunk, doneSeq); } catch { /* */ }
+  }
+}
+
 // Self-rearming idle watchdog. Fires when no chunk has arrived for
 // `idleMs`; otherwise reschedules itself for `(last_chunk_at + idleMs) -
 // now`. We never carry a handle on the run — the closure just bails if
@@ -103,6 +140,11 @@ function scheduleIdleWatchdog(run: ActiveRun): void {
       return;
     }
     console.warn(`[run-registry] idle watchdog: force-finishing stalled run for thread ${run.thread_id} after ${idle}ms of no progress`);
+    emitWatchdogTermination(
+      run,
+      "run_idle_timeout",
+      `Run timed out — no progress for ${Math.round(idle / 1000)}s. The provider stream went silent before the agent finished. Try again, or split the request into smaller steps.`,
+    );
     try { run.abort.abort("run_idle_timeout"); } catch { /* */ }
     finishRun(run, "error");
   }, fireIn).unref?.();
@@ -115,6 +157,11 @@ function scheduleMaxWatchdog(run: ActiveRun): void {
     if (cur !== run) return;
     if (run.status !== "running") return;
     console.warn(`[run-registry] wall-clock watchdog: force-finishing run for thread ${run.thread_id} after ${max}ms`);
+    emitWatchdogTermination(
+      run,
+      "run_max_timeout",
+      `Run exceeded the wall-clock limit (${Math.round(max / 1000)}s). The agent was force-stopped. Try a smaller scope or raise JARELA_RUN_MAX_MS if this is expected.`,
+    );
     try { run.abort.abort("run_watchdog_timeout"); } catch { /* */ }
     finishRun(run, "error");
   }, max).unref?.();

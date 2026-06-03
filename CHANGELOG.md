@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run-watchdog timeout no longer looks like a silent hang in the UI.**
+  Both the idle watchdog (`JARELA_RUN_IDLE_MS`, 90 s by default) and
+  the wall-clock watchdog (`JARELA_RUN_MAX_MS`, 15 min) followed a bad
+  ordering on termination — they called `run.abort.abort()` and then
+  `finishRun(run, "error")`, so the agent's subsequent `error` + `done`
+  chunks reached `broadcast()` AFTER `status` had already flipped to
+  `"error"`. The status guard at the top of `broadcast()` then dropped
+  every late chunk on the floor. Net effect: the EventSource on the
+  client closed with no terminal event, `useSSE.consume()` exited the
+  for-await loop without an error toast, and the chat bubble kept
+  showing partial text + a "still thinking" feel — indistinguishable
+  from a real hang. Investigation showed real-world threads with the
+  watchdog firing 13+ times in one session, all silent.
+  - The watchdog now synthesises a typed `error` chunk (`code:
+    "run_idle_timeout"` / `"run_max_timeout"`, with the elapsed
+    duration in the message) and a paired `done` chunk, fans them out
+    to live subscribers, AND writes them into the buffered events
+    list (with seqs) BEFORE `finishRun()` flips status. Reconnecting
+    EventSources replay the same terminal pair via the existing
+    `Last-Event-ID` resume, so a tab that missed the live event still
+    sees the failure on next attach.
+  - Client side already renders typed `error` events as toasts via
+    `useSSE` — no client change required.
+
 - **`file_write` no longer skipped in favor of `local_exec`/heredoc
   narration.** PR #144 (slim playbook + per-tool hints) added a long
   refusal-list to `file_write`'s description (credential dirs, dotfile
