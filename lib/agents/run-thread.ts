@@ -133,12 +133,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   }
 
   // Persist the user turn (including any attachments) before the LLM stream
-  // so reload-mid-stream still shows the prompt.
+  // so reload-mid-stream still shows the prompt. The retry paths set
+  // `_skip_persist_message` to keep their synthetic nudges / replays out
+  // of the durable history — otherwise every `↻ Auto-retry` becomes a
+  // permanent user-role row the LLM mistakes for real user input on
+  // every future turn.
   const content: string | ContentPart[] =
     req.attachments?.length ? [{ type: "text", text: trimmed }, ...req.attachments] : trimmed;
   const stored = typeof content === "string" ? content : JSON.stringify(content);
-  addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
-  touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+  if (!req._skip_persist_message) {
+    addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
+    touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+  }
 
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
@@ -225,7 +231,17 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     },
   };
 
-  const rawStream = streamWithConfig(req.thread_id, historyWindow.history, streamOpts, req.signal);
+  // Stall-retry path: the nudge needs to reach the LLM but isn't (and
+  // shouldn't be) in the DB. Append it to the in-memory history just
+  // for this LLM call. Transient retry leaves the flag off because the
+  // original message is already in DB-built history. Use the structured
+  // `content` form (not `stored`'s JSON-stringified fallback) so any
+  // attachments survive into the LLM call.
+  const finalHistory = req._inject_message_into_history
+    ? [...historyWindow.history, { role: "user" as const, content }]
+    : historyWindow.history;
+
+  const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
   const retriesLeft = req._stall_retries_left ?? maxStallRetries();
   const transientLeft = req._transient_retries_left ?? maxTransientRetries();
   // Compose: transientRetryStream wraps the raw stream first so a
@@ -355,11 +371,21 @@ async function* stallRetryStream(
     }
   }
 
-  const stalled =
+  const trimmedText = textBuf.trim();
+  const isStallProse = trimmedText.length > 0 && looksLikeStall(trimmedText);
+  // The original stall path: model produced narration but called nothing.
+  const zeroToolStall = !sawError && toolNames.length === 0 && isStallProse;
+  // The "promised next-step" path: model DID call read-only tools, ended
+  // the turn with stall prose ("Writing it now", "Saving the file now"),
+  // and never invoked a write-like tool. Real failure from the wild —
+  // the read+narrate+stop loop slipped past the zero-tool gate.
+  const promisedWriteStall =
     !sawError &&
-    toolNames.length === 0 &&
-    textBuf.trim().length > 0 &&
-    looksLikeStall(textBuf.trim());
+    !zeroToolStall &&
+    isStallProse &&
+    toolNames.length > 0 &&
+    !toolNames.some(isWriteLikeToolName);
+  const stalled = zeroToolStall || promisedWriteStall;
   const looped = !sawError && loopedToolName !== null;
 
   // Fabrication check (ADR-0037): only run when the stall path didn't claim
@@ -385,7 +411,9 @@ async function* stallRetryStream(
   // gets its own reason-aware nudge.
   const nudge = looped
     ? `↻ Auto-retry: you called \`${loopedToolName}\` ${TOOL_LOOP_THRESHOLD}+ times in this turn with the same arguments without making progress. Either invoke a DIFFERENT tool to advance the task (for example, if you intend to write a file, call \`file_write\` now), or stop and explain what's blocking. Do NOT call \`${loopedToolName}\` again with the same arguments.`
-    : stalled
+    : promisedWriteStall
+      ? `↻ Auto-retry: your reply ended with a 'writing/saving/creating ... now' style statement but you only called read-only tools (${[...new Set(toolNames)].slice(0, 6).join(", ")}) — no write-like tool was invoked. Don't narrate the next step; CALL the actual write tool now (e.g. file_write, file_edit, memory_write). If you cannot, stop and explain why.`
+      : stalled
       ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
       : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
@@ -394,6 +422,14 @@ async function* stallRetryStream(
     message: nudge,
     attachments: undefined,
     _stall_retries_left: retriesLeft - 1,
+    // The nudge is in-memory only — never write it to `messages`. The
+    // assistant's combined (original + ↻ + retry) text gets persisted
+    // ONCE at end-of-turn via `persistAssistantMessage`, which is the
+    // sole durable record of what happened. Without these flags the
+    // nudge becomes a permanent user-role row the LLM mistakes for
+    // user input on every future turn.
+    _skip_persist_message: true,
+    _inject_message_into_history: true,
   });
   for await (const chunk of retry.stream) yield chunk;
 }
@@ -445,6 +481,11 @@ async function* transientRetryStream(
           // the user's input, just an upstream blip. No nudge, no separator.
           attachments: originalReq.attachments,
           _transient_retries_left: retriesLeft - 1,
+          // Skip re-persisting the user message — it was already written
+          // by the original `prepareThreadRun` call before the inner
+          // stream errored. The DB-built history already includes it,
+          // so we don't need `_inject_message_into_history` either.
+          _skip_persist_message: true,
         });
         for await (const c of retry.stream) yield c;
         return;
@@ -620,6 +661,13 @@ const STALL_PATTERNS: RegExp[] = [
   /\blet me (check|verify|continue|proceed|look|try|do (?:that|this|it))\b/i,
   /\bi['’]?ll (check|verify|continue|proceed|look|try|do (?:that|this|it)|keep going|get (?:on|right) (?:on|to))/i,
   /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
+  // Aspirational future-action family: "Writing X now", "Saving the file
+  // now", "Creating the document now", etc. Real failure mode from the
+  // wild: model called file_read, then closed the turn with "Writing the
+  // HTML version next to the markdown file now." without ever invoking
+  // file_write. The earlier "let me X" / "I'll X" patterns missed this
+  // because the model used a present-progressive form instead.
+  /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming) [^.!?\n]{0,80}\bnow\b[.!?]?\s*$/i,
 ];
 
 // Resolve the agent's allowed_tools list from a thread id. Best-effort: empty
@@ -660,6 +708,28 @@ export function detectToolLoop(
     if (next >= threshold) return ev.name;
   }
   return null;
+}
+
+// Recognise tool names that perform a state-changing action (write, edit,
+// move, delete, create, update, etc.) versus read-only ones. Pattern-based,
+// NOT a hardcoded list, so MCP tools and provider-specific CRUD verbs
+// (jira_create_issue, confluence_update_page, …) automatically qualify
+// without re-touching this file.
+//
+// Matches on per-segment equality (split on `_` / `-` / `.` / space) so
+// `dataset_search` doesn't falsely match the verb "set". Exported for
+// unit tests.
+const WRITE_LIKE_VERBS = new Set([
+  "write", "edit", "create", "update", "delete", "remove", "move", "copy",
+  "rename", "mkdir", "append", "add", "insert", "patch", "post", "put",
+  "send", "publish", "save", "upload", "transition", "rank", "merge",
+  "set", "schedule", "cancel",
+]);
+
+export function isWriteLikeToolName(name: string): boolean {
+  if (!name) return false;
+  const segments = name.toLowerCase().match(/[a-z]+/g) ?? [];
+  return segments.some((seg) => WRITE_LIKE_VERBS.has(seg));
 }
 
 export function looksLikeStall(text: string): boolean {
