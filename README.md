@@ -809,7 +809,8 @@ C4Context
     Rel(jarela, extdir, "scans per request")
 ```
 
-See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for container, component, and
+See [ARCHITECTURE.md](./docs/ARCHITECTURE.md) for the **design principles &
+scope boundaries** that govern new work, plus container, component, and
 sequence diagrams.
 
 ## Development
