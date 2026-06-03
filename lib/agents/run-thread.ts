@@ -192,6 +192,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     // Read fresh off the thread row each turn so a /goal update on turn N
     // takes effect on turn N+1 without restarting the run.
     taskGoal: thread.task_goal ?? null,
+    // ADR-0061 — tell the agent which channel delivered the active turn
+    // (scheduler / watcher / bridge framing vs plain chat) so it doesn't
+    // mistake an envelope for routing chrome and anchor on a prior plain
+    // turn. Stall/transient-retry recursions inherit the original req's
+    // category so the cue stays consistent across the same turn's auto
+    // retries; the synthetic nudge body itself is plain text but the
+    // agent should still treat the original channel as the active framing.
+    inboundCategory: req.user_category ?? null,
+    inboundSilent: req.silent === true,
   });
 
   const delegationDepth = req._delegation_depth ?? 0;

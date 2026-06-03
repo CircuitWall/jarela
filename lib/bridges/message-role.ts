@@ -150,27 +150,36 @@ export function parseBridgePrompt(raw: string): BridgePromptContext | null {
 }
 
 function roleNote(role: MessageRole, isGroup: boolean, silent: boolean): string {
+  // ADR-0061 — every variant ends with an explicit "this IS the active turn"
+  // line so the LLM doesn't mistake the metadata envelope for routing chrome
+  // and anchor on a prior plain-text turn in mixed-source threads.
+  const ACTIVE_TURN_LINE = "**This is your active request — respond to the raw text below the metadata block, not to the envelope itself.**";
+  const ECHO_LINE = "**This is NOT a request to respond to.**";
+
   if (silent) {
     // Observer mode overrides the per-role framing: the agent is forbidden
     // from speaking on the chat regardless of who sent the inbound message.
     // It only reports internally to the paired user.
     if (role === "agent") {
-      return "The message below is your own prior output, surfaced again because the bridge adapter could not suppress its echo. Use it only as a record of what you previously said — do not respond to it.";
+      return `The message below is your own prior output, surfaced again because the bridge adapter could not suppress its echo. Use it only as a record of what you previously said — do not respond to it. ${ECHO_LINE}`;
     }
     return (
       "Silent / observer mode is enabled for this route. You are standing on the paired user's side and only monitoring the chat — you must NEVER write to the chat, draft a chat reply, or imitate a participant. " +
       "Report only to the paired user, as a concise internal summary of important events, risks, or user-actionable changes (informational tone, not conversational). " +
-      "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else."
+      "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else. " +
+      ACTIVE_TURN_LINE
     );
   }
   switch (role) {
     case "user":
-      return "The paired user themselves sent the message below in this conversation. Treat it as the user's own reaction/input to the prior chat — they are speaking to the other party, not directly to you. Use it to update your understanding of the user's intent.";
+      return `The paired user themselves sent the message below in this conversation. Treat it as the user's own reaction/input to the prior chat — they are speaking to the other party, not directly to you. Use it to update your understanding of the user's intent. ${ACTIVE_TURN_LINE}`;
     case "counterpart":
-      return isGroup
-        ? "The message below was sent by another member of this group chat, addressed to the paired user. Respond on the user's behalf, in their voice, following your agent instructions and persona — do not introduce yourself as an assistant or break character. If your instructions tell you to stay silent or escalate to the user, do that instead."
-        : "The message below was sent by the user's counterpart in this 1:1 chat, addressed to the paired user. Respond on the user's behalf, in their voice, following your agent instructions and persona — do not introduce yourself as an assistant or break character. If your instructions tell you to stay silent or escalate to the user, do that instead.";
+      return (
+        isGroup
+          ? "The message below was sent by another member of this group chat, addressed to the paired user. Respond on the user's behalf, in their voice, following your agent instructions and persona — do not introduce yourself as an assistant or break character. If your instructions tell you to stay silent or escalate to the user, do that instead."
+          : "The message below was sent by the user's counterpart in this 1:1 chat, addressed to the paired user. Respond on the user's behalf, in their voice, following your agent instructions and persona — do not introduce yourself as an assistant or break character. If your instructions tell you to stay silent or escalate to the user, do that instead."
+      ) + ` ${ACTIVE_TURN_LINE}`;
     case "agent":
-      return "The message below is your own prior output, surfaced again because the bridge adapter could not suppress its echo. Use it only as a record of what you previously said — do not respond to it.";
+      return `The message below is your own prior output, surfaced again because the bridge adapter could not suppress its echo. Use it only as a record of what you previously said — do not respond to it. ${ECHO_LINE}`;
   }
 }
