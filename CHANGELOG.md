@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-06-03
+
+### Fixed
+
+- **Stall-retry now catches in-turn duplicate-tool-call loops.** The
+  existing detector required zero tool calls in the turn before
+  retrying, so a model that kept calling the same read-only tool over
+  and over (e.g. `file_read` on the same path 14 times while announcing
+  "writing now") slipped through. We now also flag a turn when any
+  `(tool, args)` signature recurs ≥ 3 times within the turn, abort the
+  inner stream, and inject a loop-aware nudge ("you called X 3+ times
+  with the same arguments without making progress — invoke a different
+  tool or stop"). A `console.warn` records the looped tool/thread so
+  future occurrences leave a fingerprint identifying the provider.
+- **Pricing lookup for aggregator-namespaced model ids.** Models exposed
+  by aggregators (OpenRouter / LiteLLM style) carry a `vendor/model` or
+  `aggregator/vendor/model` prefix, which the pricing snapshot doesn't
+  store. The byModel fallback now also tries the bare suffix, and the
+  github-copilot upstream-inference path strips the prefix before
+  matching, so e.g. `openai/gpt-4o` resolves to OpenAI's published
+  `gpt-4o` rate instead of falling through to a null provider rate.
+- **Inbound channel cue in the agent system prompt
+  ([#151](https://github.com/CircuitWall/jarela/pull/151), ADR-0061).**
+  Non-chat turns (scheduler, watcher, bridge) now carry an active-turn
+  channel cue so the LLM treats the body inside the inbound envelope as
+  the active request. Previously, in mixed-source threads, the agent's
+  reply could ignore the inbound's content and respond as if the latest
+  chat turn were still active. `ThreadRunRequest.silent` replaces the
+  old `[SILENT_TRIGGER] … NO_REPLY …` body wrapper so the LLM no longer
+  sees two competing copies of the rule.
+
+### Documentation
+
+- **Design principles & scope boundaries
+  ([#152](https://github.com/CircuitWall/jarela/pull/152)).** Adds an
+  explicit list of the 12 load-bearing architectural rules
+  (local-first, single process, single port, capability axis,
+  human-in-the-loop, …) and an in-scope/out-of-scope table to
+  `docs/ARCHITECTURE.md`, with cross-refs to the ADRs that codify each
+  one. README links to the new section.
+
 ## [0.11.1] - 2026-06-03
 
 ### Fixed
