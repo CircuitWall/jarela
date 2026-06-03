@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.4] - 2026-06-03
+
+### Fixed
+
+- **Stall-retry now catches the "writing X now" / "saving X now" loop.**
+  The 0.11.2 loop guard required either zero tool calls or the same
+  `(tool, args)` repeated 3+ times before retrying. A real-world thread
+  showed a third failure mode that slipped past both: model calls
+  `file_read` once, gets the content back, ends the turn with
+  `"Writing the HTML version next to the markdown file now."`, and never
+  invokes `file_write`. User asks "did you?" — model repeats the
+  pattern. Two changes:
+  - `STALL_PATTERNS` now matches the aspirational present-progressive
+    family (`writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming X now`)
+    in addition to the existing "let me X" / "I'll X" / "continuing"
+    forms.
+  - The detector also fires when the turn ended with stall prose AND
+    the model called read-only tools but no write-like tool. A new
+    `isWriteLikeToolName` helper recognises any tool whose name
+    contains a CRUD verb (`write`, `edit`, `create`, `update`,
+    `delete`, `move`, `copy`, `mkdir`, `add`, `insert`, `patch`, `post`,
+    `put`, `send`, `publish`, `save`, `upload`, `transition`, `rank`,
+    `merge`, `set`, `schedule`, `cancel`) as a path segment. Match is
+    per-segment so `dataset_search` doesn't falsely qualify on `set`.
+  - The retry nudge differentiates: looped → "called X 3+ times,
+    diversify"; promised-write-stall → "you only called read-only tools
+    ({list}); CALL the actual write tool now"; classic zero-tool →
+    unchanged.
+  Together these close the gap that produced the user-reported `file_read`
+  → narrate → end-of-turn loop without ever firing the existing
+  safeguards.
+
 ## [0.11.3] - 2026-06-03
 
 ### Fixed
