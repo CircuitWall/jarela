@@ -34,6 +34,23 @@ export interface ThreadRunRequest {
    *  stall-retry recursion. */
   _stall_retries_left?: number;
 
+  /**
+   * Internal — public callers leave undefined. When set, prepareThreadRun
+   * will NOT call addMessage/touchThread for this request. The stall-retry
+   * recursion sets this so its synthetic `↻ Auto-retry: …` nudges don't
+   * become permanent user-role rows that the LLM later mistakes for real
+   * user input.
+   */
+  _skip_persist_message?: boolean;
+
+  /**
+   * Internal — public callers leave undefined. When set, prepareThreadRun
+   * appends the request's message to the in-memory history just before the
+   * LLM stream so the model still sees the nudge for THIS turn even though
+   * it isn't persisted. Pairs with `_skip_persist_message` for stall-retry.
+   */
+  _inject_message_into_history?: boolean;
+
   /** Internal — public callers leave undefined. Set by `delegate_to_agent`
    *  when one agent hands a subtask to another; gates depth + cycles. */
   _delegation_depth?: number;

@@ -123,12 +123,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   }
 
   // Persist the user turn (including any attachments) before the LLM stream
-  // so reload-mid-stream still shows the prompt.
+  // so reload-mid-stream still shows the prompt. The stall-retry path sets
+  // `_skip_persist_message` to keep its synthetic `↻ Auto-retry: …` nudges
+  // out of the durable history — otherwise every nudge becomes a permanent
+  // user-role row that the LLM mistakes for real user input on every future
+  // turn.
   const content: string | ContentPart[] =
     req.attachments?.length ? [{ type: "text", text: trimmed }, ...req.attachments] : trimmed;
   const stored = typeof content === "string" ? content : JSON.stringify(content);
-  addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
-  touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+  if (!req._skip_persist_message) {
+    addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
+    touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+  }
 
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
@@ -202,7 +208,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     },
   };
 
-  const rawStream = streamWithConfig(req.thread_id, historyWindow.history, streamOpts, req.signal);
+  // Stall-retry path: the nudge needs to reach the LLM but isn't (and
+  // shouldn't be) in the DB. Append it to the in-memory history just for
+  // this LLM call. Use the structured `content` form (not the JSON-
+  // stringified fallback) so attachments survive into the LLM call.
+  const finalHistory = req._inject_message_into_history
+    ? [...historyWindow.history, { role: "user" as const, content }]
+    : historyWindow.history;
+
+  const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
   const retriesLeft = req._stall_retries_left ?? MAX_STALL_AUTO_RETRIES;
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
@@ -271,6 +285,11 @@ async function* stallRetryStream(
 
   let textBuf = "";
   const toolNames: string[] = [];
+  // Track (name, args) signatures within the turn so we can detect a
+  // ReAct loop where the model spins on the same tool call. Counts
+  // increment only on tool_call chunks; tool_result echoes are ignored.
+  const signatureCounts = new Map<string, number>();
+  let loopedToolName: string | null = null;
   let doneChunk: StreamChunk | null = null;
   let sawError = false;
 
@@ -280,8 +299,30 @@ async function* stallRetryStream(
       if (typeof d === "string") textBuf += d;
       yield chunk;
     } else if (chunk.type === "tool_call") {
-      const name = (chunk.data as { name?: unknown } | undefined)?.name;
-      if (typeof name === "string" && name) toolNames.push(name);
+      const data = chunk.data as { name?: unknown; arguments?: unknown } | undefined;
+      const name = typeof data?.name === "string" ? data.name : "";
+      const args = data?.arguments && typeof data.arguments === "object"
+        ? (data.arguments as Record<string, unknown>)
+        : {};
+      if (name) {
+        toolNames.push(name);
+        const sig = toolCallSignature(name, args);
+        const count = (signatureCounts.get(sig) ?? 0) + 1;
+        signatureCounts.set(sig, count);
+        if (count >= TOOL_LOOP_THRESHOLD && loopedToolName === null) {
+          loopedToolName = name;
+          // Leave a fingerprint so future loop incidents can be traced
+          // to a specific provider/model — most often a sign the
+          // aggregator's tool-use fidelity is poor (model narrates
+          // "writing now" without emitting the corresponding tool_use
+          // block).
+          console.warn(
+            `[stall-retry] tool-loop detected: tool=${name} repeats=${count} thread=${originalReq.thread_id}`,
+          );
+          yield chunk;
+          break;
+        }
+      }
       yield chunk;
     } else if (chunk.type === "done") {
       // Hold the terminal marker — if we retry, the retry's `done` closes
@@ -297,19 +338,30 @@ async function* stallRetryStream(
     }
   }
 
-  const stalled =
+  const trimmedText = textBuf.trim();
+  const isStallProse = trimmedText.length > 0 && looksLikeStall(trimmedText);
+  // The original stall path: model produced narration but called nothing.
+  const zeroToolStall = !sawError && toolNames.length === 0 && isStallProse;
+  // The "promised next-step" path: model DID call read-only tools, ended
+  // the turn with stall prose ("Writing it now", "Saving the file now"),
+  // and never invoked a write-like tool. Real failure from the wild — the
+  // read+narrate+stop loop slipped past the zero-tool gate.
+  const promisedWriteStall =
     !sawError &&
-    toolNames.length === 0 &&
-    textBuf.trim().length > 0 &&
-    looksLikeStall(textBuf.trim());
+    !zeroToolStall &&
+    isStallProse &&
+    toolNames.length > 0 &&
+    !toolNames.some(isWriteLikeToolName);
+  const stalled = zeroToolStall || promisedWriteStall;
+  const looped = !sawError && loopedToolName !== null;
 
-  // Fabrication check (ADR-0037): only run when the stall path didn't claim
-  // this turn — stall-retry already handles zero-tool stall-prose turns.
-  const fabrication = !sawError && !stalled
+  // Fabrication check (ADR-0037): only run when no other path claimed
+  // this turn.
+  const fabrication = !sawError && !stalled && !looped
     ? validateAssistantOutput(textBuf, toolNames, allowedTools)
     : ({ ok: true } as const);
 
-  if (!stalled && fabrication.ok) {
+  if (!stalled && !looped && fabrication.ok) {
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -319,17 +371,29 @@ async function* stallRetryStream(
   yield { type: "text_delta", data: { delta: "\n\n↻ " } };
 
   // Inject a forceful nudge as a synthetic user message so the model sees
-  // its own flagged reply + an instruction to continue. Stall and fabrication
-  // get distinct, reason-aware nudges.
-  const nudge = stalled
-    ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
-    : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
+  // its own flagged reply + an instruction to continue. Each failure mode
+  // gets its own reason-aware nudge.
+  const nudge = looped
+    ? `↻ Auto-retry: you called \`${loopedToolName}\` ${TOOL_LOOP_THRESHOLD}+ times in this turn with the same arguments without making progress. Either invoke a DIFFERENT tool to advance the task (for example, if you intend to write a file, call \`file_write\` now), or stop and explain what's blocking. Do NOT call \`${loopedToolName}\` again with the same arguments.`
+    : promisedWriteStall
+      ? `↻ Auto-retry: your reply ended with a 'writing/saving/creating ... now' style statement but you only called read-only tools (${[...new Set(toolNames)].slice(0, 6).join(", ")}) — no write-like tool was invoked. Don't narrate the next step; CALL the actual write tool now (e.g. file_write, file_edit, memory_write). If you cannot, stop and explain why.`
+      : zeroToolStall
+        ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
+        : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
   const retry = await prepareThreadRun({
     ...originalReq,
     message: nudge,
     attachments: undefined,
     _stall_retries_left: retriesLeft - 1,
+    // The nudge is in-memory only — never write it to `messages`. The
+    // assistant's combined (original + ↻ + retry) text gets persisted
+    // ONCE at end-of-turn via `persistAssistantMessage`, which is the
+    // sole durable record of what happened. Without these flags the
+    // nudge becomes a permanent user-role row the LLM mistakes for
+    // user input on every future turn.
+    _skip_persist_message: true,
+    _inject_message_into_history: true,
   });
   for await (const chunk of retry.stream) yield chunk;
 }
@@ -484,6 +548,57 @@ function capToolEventPayload(ev: PersistedToolEvent): PersistedToolEvent {
   }
 }
 
+const TOOL_LOOP_THRESHOLD = 3;
+
+// A "write-like" tool, by name, is one whose path segments contain a CRUD
+// verb. Per-segment match so e.g. `dataset_search` doesn't qualify on
+// `set`. Used to flag the "called read-only tools then promised a write"
+// stall pattern.
+const WRITE_VERB_SEGMENTS = new Set([
+  "write", "edit", "create", "update", "delete", "move", "copy", "mkdir",
+  "add", "insert", "patch", "post", "put", "send", "publish", "save",
+  "upload", "transition", "rank", "merge", "set", "schedule", "cancel",
+]);
+
+export function isWriteLikeToolName(name: string): boolean {
+  if (!name) return false;
+  const segments = name.toLowerCase().split(/[._\-/]+/).filter(Boolean);
+  return segments.some((s) => WRITE_VERB_SEGMENTS.has(s));
+}
+
+// Stable signature of a tool call so repeated identical calls collapse to
+// the same key. JSON.stringify with sorted keys is good enough — the
+// argument shapes that matter here are small JSON objects, not graphs.
+export function toolCallSignature(name: string, args: Record<string, unknown>): string {
+  try {
+    const sortedKeys = Object.keys(args).sort();
+    const stable: Record<string, unknown> = {};
+    for (const k of sortedKeys) stable[k] = args[k];
+    return `${name}::${JSON.stringify(stable)}`;
+  } catch {
+    return `${name}::<unserializable>`;
+  }
+}
+
+// Returns the FIRST tool name whose `(name, args)` signature appears
+// `threshold` or more times in `events`. Empty names and threshold <= 0
+// disable the check.
+export function detectToolLoop(
+  events: ReadonlyArray<{ name: string; args: Record<string, unknown> }>,
+  threshold: number,
+): string | null {
+  if (threshold <= 0) return null;
+  const counts = new Map<string, number>();
+  for (const ev of events) {
+    if (!ev.name) continue;
+    const sig = toolCallSignature(ev.name, ev.args);
+    const c = (counts.get(sig) ?? 0) + 1;
+    counts.set(sig, c);
+    if (c >= threshold) return ev.name;
+  }
+  return null;
+}
+
 const STALL_PATTERNS: RegExp[] = [
   /\bone (moment|sec(?:ond)?)\b/i,
   /\bgive me (a|just a) (moment|sec(?:ond)?|minute)\b/i,
@@ -493,6 +608,11 @@ const STALL_PATTERNS: RegExp[] = [
   /\blet me (check|verify|continue|proceed|look|try|do (?:that|this|it))\b/i,
   /\bi['’]?ll (check|verify|continue|proceed|look|try|do (?:that|this|it)|keep going|get (?:on|right) (?:on|to))/i,
   /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
+  // Aspirational future-action family: "Writing X now", "Saving the file
+  // now", "Creating the report now". Catches the read-only-tools +
+  // narrate-the-write + end-of-turn loop where the model promises a
+  // write but never invokes the corresponding tool.
+  /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming|editing|regenerating)\b[^.!?]*\bnow\b[!.]?\s*$/i,
 ];
 
 // Resolve the agent's allowed_tools list from a thread id. Best-effort: empty
