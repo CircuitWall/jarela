@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { toolCallSignature, detectToolLoop, looksLikeStall } from "./run-thread";
+import {
+  toolCallSignature,
+  detectToolLoop,
+  looksLikeStall,
+  isWriteLikeToolName,
+} from "./run-thread";
 
 describe("toolCallSignature", () => {
   it("encodes name and args into a stable string", () => {
@@ -100,5 +105,78 @@ describe("looksLikeStall", () => {
 
   it("does not flag normal answers that don't end on a promise", () => {
     expect(looksLikeStall("Here are the results: 42 rows in the table.")).toBe(false);
+  });
+
+  // Regression guard for the user-reported failure where the model said
+  // "Writing the HTML version next to the markdown file now." and never
+  // called file_write. The earlier "let me X" / "I'll X" patterns missed
+  // the present-progressive form entirely.
+  describe("aspirational future-action family ('writing X now')", () => {
+    it.each([
+      "Writing it now.",
+      "Writing the HTML version next to the markdown file now.",
+      "Good, I have the full content. Writing the HTML version next to the markdown file now.",
+      "Saving the file now.",
+      "Creating the document now.",
+      "Updating the index now.",
+      "Deleting the stale entries now.",
+      "Adding the new section now.",
+      "Generating the report now.",
+      "Drafting the response now.",
+      "Pushing the change now.",
+      "Sending the message now.",
+      "Posting the update now.",
+      "Moving the file to OneDrive now.",
+      "Copying the snapshot now.",
+      "Renaming the column now.",
+    ])("flags %j", (text) => {
+      expect(looksLikeStall(text)).toBe(true);
+    });
+
+    it("does NOT flag past-tense / completed actions", () => {
+      // The pattern is anchored to "now" at the end of a clause; "wrote
+      // it now" / "saved the file" don't fit, and shouldn't be flagged.
+      expect(looksLikeStall("I wrote the file. Done.")).toBe(false);
+      expect(looksLikeStall("Saved the file successfully.")).toBe(false);
+      expect(looksLikeStall("Created the document at /tmp/x.md")).toBe(false);
+    });
+
+    it("does NOT flag 'now' used as a discourse marker", () => {
+      // "Now, the next step is X" is not a stall — the verb isn't an
+      // aspirational write-like action.
+      expect(looksLikeStall("Now, the totals show 42 rows.")).toBe(false);
+      expect(looksLikeStall("Right now the build is green.")).toBe(false);
+    });
+  });
+});
+
+describe("isWriteLikeToolName", () => {
+  it.each([
+    "file_write", "file_edit", "file_move", "file_copy", "file_delete",
+    "file_mkdir", "memory_write", "memory_delete",
+    "jira_create_issue", "jira_update_issue", "jira_transition_issue",
+    "confluence_create_page", "confluence_update_page", "confluence_add_label",
+    "confluence_delete_page", "github_create_pull", "github_merge_pull",
+    "github_update_issue", "set_env_var", "schedule_task",
+  ])("recognises %s as state-changing", (name) => {
+    expect(isWriteLikeToolName(name)).toBe(true);
+  });
+
+  it.each([
+    "file_read", "file_list", "file_stat", "memory_read", "memory_list",
+    "jira_get_issue", "jira_search", "jira_list_sprints",
+    "confluence_search", "confluence_get_page", "github_get_file",
+    "web_search", "web_fetch", "documents_search",
+  ])("does NOT mark %s as state-changing (read-only)", (name) => {
+    expect(isWriteLikeToolName(name)).toBe(false);
+  });
+
+  it("returns false for empty / falsy names", () => {
+    expect(isWriteLikeToolName("")).toBe(false);
+  });
+
+  it("is case-insensitive", () => {
+    expect(isWriteLikeToolName("FILE_WRITE")).toBe(true);
+    expect(isWriteLikeToolName("File_Read")).toBe(false);
   });
 });

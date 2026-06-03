@@ -355,11 +355,21 @@ async function* stallRetryStream(
     }
   }
 
-  const stalled =
+  const trimmedText = textBuf.trim();
+  const isStallProse = trimmedText.length > 0 && looksLikeStall(trimmedText);
+  // The original stall path: model produced narration but called nothing.
+  const zeroToolStall = !sawError && toolNames.length === 0 && isStallProse;
+  // The "promised next-step" path: model DID call read-only tools, ended
+  // the turn with stall prose ("Writing it now", "Saving the file now"),
+  // and never invoked a write-like tool. Real failure from the wild —
+  // the read+narrate+stop loop slipped past the zero-tool gate.
+  const promisedWriteStall =
     !sawError &&
-    toolNames.length === 0 &&
-    textBuf.trim().length > 0 &&
-    looksLikeStall(textBuf.trim());
+    !zeroToolStall &&
+    isStallProse &&
+    toolNames.length > 0 &&
+    !toolNames.some(isWriteLikeToolName);
+  const stalled = zeroToolStall || promisedWriteStall;
   const looped = !sawError && loopedToolName !== null;
 
   // Fabrication check (ADR-0037): only run when the stall path didn't claim
@@ -385,7 +395,9 @@ async function* stallRetryStream(
   // gets its own reason-aware nudge.
   const nudge = looped
     ? `↻ Auto-retry: you called \`${loopedToolName}\` ${TOOL_LOOP_THRESHOLD}+ times in this turn with the same arguments without making progress. Either invoke a DIFFERENT tool to advance the task (for example, if you intend to write a file, call \`file_write\` now), or stop and explain what's blocking. Do NOT call \`${loopedToolName}\` again with the same arguments.`
-    : stalled
+    : promisedWriteStall
+      ? `↻ Auto-retry: your reply ended with a 'writing/saving/creating ... now' style statement but you only called read-only tools (${[...new Set(toolNames)].slice(0, 6).join(", ")}) — no write-like tool was invoked. Don't narrate the next step; CALL the actual write tool now (e.g. file_write, file_edit, memory_write). If you cannot, stop and explain why.`
+      : stalled
       ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
       : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
@@ -620,6 +632,13 @@ const STALL_PATTERNS: RegExp[] = [
   /\blet me (check|verify|continue|proceed|look|try|do (?:that|this|it))\b/i,
   /\bi['’]?ll (check|verify|continue|proceed|look|try|do (?:that|this|it)|keep going|get (?:on|right) (?:on|to))/i,
   /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
+  // Aspirational future-action family: "Writing X now", "Saving the file
+  // now", "Creating the document now", etc. Real failure mode from the
+  // wild: model called file_read, then closed the turn with "Writing the
+  // HTML version next to the markdown file now." without ever invoking
+  // file_write. The earlier "let me X" / "I'll X" patterns missed this
+  // because the model used a present-progressive form instead.
+  /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming) [^.!?\n]{0,80}\bnow\b[.!?]?\s*$/i,
 ];
 
 // Resolve the agent's allowed_tools list from a thread id. Best-effort: empty
@@ -660,6 +679,28 @@ export function detectToolLoop(
     if (next >= threshold) return ev.name;
   }
   return null;
+}
+
+// Recognise tool names that perform a state-changing action (write, edit,
+// move, delete, create, update, etc.) versus read-only ones. Pattern-based,
+// NOT a hardcoded list, so MCP tools and provider-specific CRUD verbs
+// (jira_create_issue, confluence_update_page, …) automatically qualify
+// without re-touching this file.
+//
+// Matches on per-segment equality (split on `_` / `-` / `.` / space) so
+// `dataset_search` doesn't falsely match the verb "set". Exported for
+// unit tests.
+const WRITE_LIKE_VERBS = new Set([
+  "write", "edit", "create", "update", "delete", "remove", "move", "copy",
+  "rename", "mkdir", "append", "add", "insert", "patch", "post", "put",
+  "send", "publish", "save", "upload", "transition", "rank", "merge",
+  "set", "schedule", "cancel",
+]);
+
+export function isWriteLikeToolName(name: string): boolean {
+  if (!name) return false;
+  const segments = name.toLowerCase().match(/[a-z]+/g) ?? [];
+  return segments.some((seg) => WRITE_LIKE_VERBS.has(seg));
 }
 
 export function looksLikeStall(text: string): boolean {
