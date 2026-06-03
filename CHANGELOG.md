@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-06-03
+
+### Fixed
+
+- **Retry mechanism no longer pollutes the persisted conversation
+  history.** Both `stallRetryStream` and `transientRetryStream` recurse
+  into `prepareThreadRun`, which always called `addMessage` for the
+  request's `message` — so every `↻ Auto-retry: …` nudge and every
+  transient replay became a permanent user-role row in `messages`. The
+  LLM then re-read those rows on every future turn and treated its own
+  self-correction prompts as user input. Real-world data showed 16
+  such rows on a single thread, contributing to the agent's "I don't
+  have any prior context in this conversation yet" responses.
+  - New internal flags on `ThreadRunRequest`:
+    `_skip_persist_message` (default false) suppresses the `addMessage`
+    + `touchThread` calls; `_inject_message_into_history` (default
+    false) appends the request's message to the in-memory history just
+    before the LLM stream so the model still sees the nudge.
+  - Stall-retry sets both flags (nudge is new content, must reach the
+    LLM, must NOT be persisted). Transient-retry sets only
+    `_skip_persist_message` (the original message is already in DB).
+  - The combined assistant text (original + `↻` separator + retry
+    response) is still persisted ONCE at end-of-turn via
+    `persistAssistantMessage` — that's the sole durable record of what
+    happened, unchanged from before.
+  - Public callers of `prepareThreadRun` are unaffected; both flags are
+    `_`-prefixed internal-only.
+
 ## [0.11.4] - 2026-06-03
 
 ### Fixed
