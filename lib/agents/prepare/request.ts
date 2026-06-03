@@ -22,6 +22,17 @@ export interface ThreadRunRequest {
   user_category?: string | null;
 
   /**
+   * ADR-0061 — non-chat channels (scheduler, watcher, bridge observer mode)
+   * may want the agent to reply only when there is something material to
+   * surface, using the `NO_REPLY` sentinel otherwise. The instruction was
+   * previously stapled into the user-message body; now the system prompt
+   * carries it via `buildInboundChannelContext` so the body stays clean
+   * and the LLM doesn't see two competing copies. Only consulted when
+   * `user_category` is set.
+   */
+  silent?: boolean;
+
+  /**
    * ADR-0042 — explicit context boundary chosen by the user. ISO timestamp.
    * When non-empty, `buildHistoryWindow` uses it as the lower bound for the
    * hot tier (overriding `agentCfg.history_window_hours`) and the run route
