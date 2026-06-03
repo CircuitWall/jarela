@@ -1,5 +1,71 @@
 ﻿# Architecture — Jarela
 
+## Design principles
+
+These are the load-bearing rules behind the architecture. New code, ADRs, and
+PRs should be checked against this list — if a change conflicts with one of
+these, write an ADR justifying the trade-off rather than silently breaking it.
+
+1. **Local-first, no cloud backend.** All state lives under `JARELA_DB_DIR`
+   (default `~/.jarela`, `%LOCALAPPDATA%\Jarela` on Windows). The only outbound
+   traffic is to LLM / tool / MCP / OAuth providers the user explicitly
+   configures. No telemetry, no analytics, no required sign-in, no hosted
+   control plane.
+2. **Single Node process.** UI, REST, SSE stream, scheduler, bridges, and the
+   agent runtime all share one Next.js process. Adding a second daemon is an
+   ADR-triggering decision ([CLAUDE.md](../CLAUDE.md) decision triggers).
+3. **Single port.** UI + REST + SSE on one TCP port; no WebSocket sidecar
+   ([ADR-0008](./adr/0008-cqrs-run-submit-eventsource.md)).
+4. **Cross-platform via plain Node + SQLite.** No native installers, no
+   platform-locked dependencies. OS-specific behaviour (autostart, keychain,
+   proxy/CA discovery) is opt-in and falls back gracefully.
+5. **User owns the secrets.** Sensitive memory namespaces and OAuth tokens are
+   AES-GCM-encrypted at rest with a master key in the OS keychain (or
+   `.secret-key` fallback). Agents never see raw secrets — they enter through
+   the approval modal ([ADR-0010](./adr/0010-agent-led-setup-and-integration-manifests.md)).
+6. **Schema-validated at every API boundary.** `zod` on both ingress and the
+   shapes the UI consumes; a missing schema is a bug.
+7. **Tools have a capability axis.** Every tool declares `read` / `write` /
+   `execute`; consumers (UI badges, approval gates, output validator) exhaust
+   the three values ([ADR-0038](./adr/0038-tool-capability-axis.md)).
+8. **Human-in-the-loop for high-risk operations.** Anything that mutates
+   external systems beyond `JARELA_DB_DIR`, sends mail, or touches credentials
+   routes through `propose_config_change` → approval rail.
+9. **Hot-loaded, in-process extensions.** External providers and tools are
+   dropped as `.cjs` into `~/.jarela/{providers,tools}/` and run with the same
+   Node privileges as the rest of the app — no sandbox. Trust model is the
+   user's local trust ([ADR-0013](./adr/0013-external-extension-contract.md)).
+10. **Same-origin only by default.** Origin / `Sec-Fetch-Site` guard rejects
+    cross-origin mutating requests; loopback bind by default; cross-origin
+    carve-outs (browser extension, Tailscale) are explicit and listed.
+11. **Diagrams are source-of-truth.** C4-Context in README, C4-Container +
+    sequence flows here. A PR that changes container boundaries without
+    updating the diagram is incomplete.
+12. **ADRs precede the code.** Triggers in [CLAUDE.md](../CLAUDE.md): new
+    provider, persistence schema change, second process, online-required
+    feature, cross-repo coupling.
+
+## Scope boundaries
+
+What this project is and is not, made explicit so structure decisions stay
+honest:
+
+| In scope | Out of scope |
+| --- | --- |
+| Single-user local agent UI | Multi-tenant / hosted SaaS / shared deployments |
+| LangGraph state-machine orchestration | Alternative agent frameworks in-tree |
+| Provider adapters for major LLMs | Self-hosted model serving (point at an OpenAI-compatible endpoint instead) |
+| LLM-driven tool calls, MCP, hot-loaded `.cjs` tools | Workflow / ETL engines |
+| Scheduler, bridges, page capture as inbound triggers | General-purpose iPaaS / Zapier-style platform |
+| Document RAG over user folders + Atlassian | Org-wide knowledge graph or search platform |
+| Cross-platform Node + SQLite distribution | Native installers, Electron shell, mobile app shell |
+| Optional first-class integrations (Gmail, Outlook, GitHub, Atlassian, MCP) | Building first-party SaaS for any of those domains |
+| Local notifications, PWA install | Push notifications via a hosted relay |
+
+When a request lands that doesn't fit either column, surface the mismatch
+before implementing — the answer is usually "fix the structure" or "write an
+ADR", not "bolt it on".
+
 ## C4 — Container
 
 ```mermaid
