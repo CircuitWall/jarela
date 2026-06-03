@@ -10,6 +10,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { knownRateFor } from "./known-rates";
 
 export type ProviderRates = {
   inputPer1M: number | null;
@@ -225,7 +226,17 @@ export function modelRatesFor(
   const directModel = tables.byModel.get(modelKey);
   if (directModel) return directModel;
 
-  // 3. Provider-level rate (or "no provider assigned" error).
+  // 3. Hardcoded known-rates fallback. The live snapshot extractor can
+  //    silently lose data (anthropic page redesign zeroed model_rates,
+  //    LLM-extract returning uniform garbage); this table guarantees a
+  //    sane non-null rate for canonical ids. Rates are stale by design,
+  //    so confidence="medium". Snapshot wins when present.
+  for (const candidate of modelAliasCandidates(provider ? (normalizeProvider(provider) ?? "") : "", modelKey)) {
+    const known = knownRateFor(candidate);
+    if (known) return known;
+  }
+
+  // 4. Provider-level rate (or "no provider assigned" error).
   return providerRatesFor(tables, provider);
 }
 
