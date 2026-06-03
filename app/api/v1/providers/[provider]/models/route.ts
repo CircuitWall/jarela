@@ -59,18 +59,33 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 }
 
-async function fetchCatalog(provider: string): Promise<CatalogModel[]> {
+// POST allows the editor to ship the in-form credentials (api_key /
+// base_url / extra_headers) before the user has saved them. We never cache
+// these responses since they're keyed on user-supplied secrets.
+export async function POST(req: NextRequest, { params }: Params) {
+  const { provider } = await params;
+  let body: { params?: ProviderParams } = {};
+  try { body = await req.json(); } catch { /* empty body is fine */ }
+  try {
+    const models = await fetchCatalog(provider, body.params);
+    return NextResponse.json(models, { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+async function fetchCatalog(provider: string, overrides?: ProviderParams): Promise<CatalogModel[]> {
   switch (provider) {
     case "openai":  return fetchOpenAICatalog();
     case "github-copilot": return fetchGitHubCopilotCatalog();
     case "anthropic": return anthropicKnownModels();
     case "gemini":  return geminiKnownModels();
     case "deepseek": return deepseekKnownModels();
-    default: return fetchExternalCatalog(provider);
+    default: return fetchExternalCatalog(provider, overrides);
   }
 }
 
-async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[]> {
+async function fetchExternalCatalog(providerName: string, overrides?: ProviderParams): Promise<CatalogModel[]> {
   let provider;
   try {
     provider = getProvider(providerName);
@@ -79,10 +94,30 @@ async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[
   }
   if (!provider.listModels) return [];
 
-  const cfg = listModelConfigs().find((c) => c.provider === providerName);
-  const params: ProviderParams = getModelParams(cfg);
-  const models = await provider.listModels(params);
-  return models as ProviderCatalogModel[];
+  // Try each saved config for this provider, plus the caller overrides.
+  // Some providers ship multiple configs where only some carry usable
+  // credentials; picking the first row blindly fails as soon as another
+  // row is misconfigured. Overrides are merged on top of each candidate,
+  // then also tried standalone, so a freshly-typed api_key works before
+  // the user has saved it.
+  const cfgs = listModelConfigs().filter((c) => c.provider === providerName);
+  const candidates: ProviderParams[] = cfgs.map((c) => ({
+    ...getModelParams(c),
+    ...(overrides ?? {}),
+  }));
+  if (overrides && Object.keys(overrides).length > 0) candidates.push(overrides);
+  if (candidates.length === 0) candidates.push(overrides ?? {});
+
+  let lastErr: unknown;
+  for (const params of candidates) {
+    try {
+      const models = await provider.listModels(params);
+      return models as ProviderCatalogModel[];
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr ?? new Error(`${providerName}: no usable credentials for catalog`);
 }
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
