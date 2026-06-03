@@ -74,6 +74,10 @@ export async function handleInboundMessage(
       message: promptText,
       attachments: msg.attachments,
       user_category: "bridge",
+      // ADR-0061 — observer-mode routes get the silent variant of the
+      // bridge channel cue in the system prompt, complementing the role
+      // note inside the body. NO_REPLY suppression below is unchanged.
+      silent,
     });
 
     // Silent mode: suppress *any* outbound signal — no reply, no typing

@@ -80,4 +80,84 @@ describe("bridge prompt envelope", () => {
   it("returns null when not a bridge envelope", () => {
     expect(parseBridgePrompt("plain text")).toBeNull();
   });
+
+  // ADR-0061 — every non-echo role-note variant ends with an explicit
+  // "active request" line so the LLM doesn't read the metadata block as
+  // routing chrome and anchor on a prior plain-text turn.
+  describe("active-turn framing (ADR-0061)", () => {
+    it("user role note ends with the active-request directive", () => {
+      const raw = formatBridgePrompt({
+        bridge_id: "b1",
+        chat_id: "dm@jid",
+        chat_name: "Alice",
+        is_group: false,
+        role: "user",
+        sender_id: "alice@jid",
+        sender_name: "Alice",
+        text: "hi",
+      });
+      expect(raw).toContain("**This is your active request");
+    });
+
+    it("counterpart role note ends with the active-request directive (DM)", () => {
+      const raw = formatBridgePrompt({
+        bridge_id: "b1",
+        chat_id: "dm@jid",
+        chat_name: "Alice",
+        is_group: false,
+        role: "counterpart",
+        sender_id: "alice@jid",
+        sender_name: "Alice",
+        text: "hi",
+      });
+      expect(raw).toContain("**This is your active request");
+    });
+
+    it("counterpart role note ends with the active-request directive (group)", () => {
+      const raw = formatBridgePrompt({
+        bridge_id: "b1",
+        chat_id: "group@jid",
+        chat_name: "Family",
+        is_group: true,
+        role: "counterpart",
+        sender_id: "bob@jid",
+        sender_name: "Bob",
+        text: "hi",
+      });
+      expect(raw).toContain("**This is your active request");
+    });
+
+    it("silent observer mode still ends with the active-request directive", () => {
+      const raw = formatBridgePrompt({
+        bridge_id: "b1",
+        chat_id: "dm@jid",
+        chat_name: "Alice",
+        is_group: false,
+        role: "counterpart",
+        sender_id: "alice@jid",
+        sender_name: "Alice",
+        text: "hi",
+        silent: true,
+      });
+      // Silent retains its NO_REPLY rule AND the active-request line so
+      // observer-mode reasoning still lands on the right body.
+      expect(raw).toContain("NO_REPLY");
+      expect(raw).toContain("**This is your active request");
+    });
+
+    it("agent echo is explicitly marked as not a request", () => {
+      const raw = formatBridgePrompt({
+        bridge_id: "b1",
+        chat_id: "dm@jid",
+        chat_name: "Alice",
+        is_group: false,
+        role: "agent",
+        sender_id: "self",
+        sender_name: "self",
+        text: "echo",
+      });
+      expect(raw).toContain("**This is NOT a request to respond to.**");
+      expect(raw).not.toContain("**This is your active request");
+    });
+  });
 });
