@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-06-03
+
+### Fixed
+
+- **Hardcoded known-rates fallback for canonical model ids.** When the
+  live pricing snapshot loses data (anthropic page redesign zeroed every
+  `model_rates` entry; LLM/regex extractor returning uniform garbage for
+  openai), the `byProvider` / `byProviderModel` / `byModel` lookups all
+  fall through to a null rate and the dashboard cost columns silently go
+  blank. New table at `lib/stores/known-rates.ts` lists authoritative
+  per-1M-token rates for the canonical Anthropic / OpenAI / Google /
+  DeepSeek / Cohere model ids, consulted as a 4th tier after the
+  snapshot lookups. Snapshot still wins when present; the table is
+  stale-by-design and reports `confidence: "medium"`. Catches the
+  real-world failure where `(provider=visa, model=claude-opus-4-7)`
+  produced $0 cost because anthropic's snapshot source had no
+  `model_rates`.
+
 ## [0.11.2] - 2026-06-03
 
 ### Fixed
@@ -21,19 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the same arguments without making progress — invoke a different
   tool or stop"). A `console.warn` records the looped tool/thread so
   future occurrences leave a fingerprint identifying the provider.
-- **Hardcoded known-rates fallback for canonical model ids.** When the
-  live pricing snapshot loses data (anthropic page redesign zeroed every
-  `model_rates` entry; LLM/regex extractor returning uniform garbage for
-  openai), the `byProvider` / `byProviderModel` / `byModel` lookups all
-  fall through to a null rate and the dashboard cost columns silently go
-  blank. New table at `lib/stores/known-rates.ts` lists authoritative
-  per-1M-token rates for the canonical Anthropic / OpenAI / Google /
-  DeepSeek / Cohere model ids, consulted as a 4th tier after the
-  snapshot lookups. Snapshot still wins when present; the table is
-  stale-by-design and reports `confidence: "medium"`. Catches the
-  real-world failure where `(provider=visa, model=claude-opus-4-7)`
-  produced $0 cost because anthropic's snapshot source had no
-  `model_rates`.
 - **Pricing lookup for aggregator-namespaced model ids.** Models exposed
   by aggregators (OpenRouter / LiteLLM style) carry a `vendor/model` or
   `aggregator/vendor/model` prefix, which the pricing snapshot doesn't
