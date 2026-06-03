@@ -133,12 +133,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   }
 
   // Persist the user turn (including any attachments) before the LLM stream
-  // so reload-mid-stream still shows the prompt.
+  // so reload-mid-stream still shows the prompt. The retry paths set
+  // `_skip_persist_message` to keep their synthetic nudges / replays out
+  // of the durable history — otherwise every `↻ Auto-retry` becomes a
+  // permanent user-role row the LLM mistakes for real user input on
+  // every future turn.
   const content: string | ContentPart[] =
     req.attachments?.length ? [{ type: "text", text: trimmed }, ...req.attachments] : trimmed;
   const stored = typeof content === "string" ? content : JSON.stringify(content);
-  addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
-  touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+  if (!req._skip_persist_message) {
+    addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
+    touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+  }
 
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
@@ -225,7 +231,17 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     },
   };
 
-  const rawStream = streamWithConfig(req.thread_id, historyWindow.history, streamOpts, req.signal);
+  // Stall-retry path: the nudge needs to reach the LLM but isn't (and
+  // shouldn't be) in the DB. Append it to the in-memory history just
+  // for this LLM call. Transient retry leaves the flag off because the
+  // original message is already in DB-built history. Use the structured
+  // `content` form (not `stored`'s JSON-stringified fallback) so any
+  // attachments survive into the LLM call.
+  const finalHistory = req._inject_message_into_history
+    ? [...historyWindow.history, { role: "user" as const, content }]
+    : historyWindow.history;
+
+  const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
   const retriesLeft = req._stall_retries_left ?? maxStallRetries();
   const transientLeft = req._transient_retries_left ?? maxTransientRetries();
   // Compose: transientRetryStream wraps the raw stream first so a
@@ -406,6 +422,14 @@ async function* stallRetryStream(
     message: nudge,
     attachments: undefined,
     _stall_retries_left: retriesLeft - 1,
+    // The nudge is in-memory only — never write it to `messages`. The
+    // assistant's combined (original + ↻ + retry) text gets persisted
+    // ONCE at end-of-turn via `persistAssistantMessage`, which is the
+    // sole durable record of what happened. Without these flags the
+    // nudge becomes a permanent user-role row the LLM mistakes for
+    // user input on every future turn.
+    _skip_persist_message: true,
+    _inject_message_into_history: true,
   });
   for await (const chunk of retry.stream) yield chunk;
 }
@@ -457,6 +481,11 @@ async function* transientRetryStream(
           // the user's input, just an upstream blip. No nudge, no separator.
           attachments: originalReq.attachments,
           _transient_retries_left: retriesLeft - 1,
+          // Skip re-persisting the user message — it was already written
+          // by the original `prepareThreadRun` call before the inner
+          // stream errored. The DB-built history already includes it,
+          // so we don't need `_inject_message_into_history` either.
+          _skip_persist_message: true,
         });
         for await (const c of retry.stream) yield c;
         return;
