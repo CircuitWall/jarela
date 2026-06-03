@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { summarizeTranscript, summarizeTranscriptWithRetry, transcriptText } from "./conversation-summary";
+import { summarizeTranscript, summarizeTranscriptWithRetry, SummaryTimeoutError, transcriptText } from "./conversation-summary";
 import type { ModelProvider, ProviderMessage, ProviderParams } from "@/lib/providers/types";
 
 describe("transcriptText", () => {
@@ -65,6 +65,22 @@ describe("summarizeTranscript", () => {
     const out = await summarizeTranscript(provider, "model-x", {}, "alpha beta");
     expect(out).toBe("ok");
   });
+
+  it("times out and rejects with SummaryTimeoutError when the stream hangs", async () => {
+    const chat = vi.fn(async () => {
+      // A stream that never yields and never closes — models the observed
+      // GitHub-Copilot hang where the HTTP stream opens but no chunks arrive.
+      async function* gen() {
+        await new Promise(() => {});
+        yield "unreachable";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    await expect(
+      summarizeTranscript(provider, "m", {}, "transcript", { timeoutMs: 20 }),
+    ).rejects.toBeInstanceOf(SummaryTimeoutError);
+  });
 });
 
 describe("summarizeTranscriptWithRetry", () => {
@@ -127,5 +143,25 @@ describe("summarizeTranscriptWithRetry", () => {
     const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
     const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript", { attempts: 0 });
     expect(out.attempts).toBe(1);
+  });
+
+  it("forwards timeoutMs to each summarizeTranscript attempt and exhausts retries on hang", async () => {
+    const chat = vi.fn(async () => {
+      async function* gen() {
+        await new Promise(() => {});
+        yield "unreachable";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscriptWithRetry(provider, "m", {}, "transcript", {
+      attempts: 2,
+      delayMs: 0,
+      timeoutMs: 20,
+    });
+    expect(out.text).toBe("");
+    expect(out.attempts).toBe(2);
+    expect(out.lastError).toBeInstanceOf(SummaryTimeoutError);
+    expect(chat).toHaveBeenCalledTimes(2);
   });
 });

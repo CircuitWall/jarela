@@ -9,6 +9,7 @@ import "./memory";
 import "./documents";
 import "./exec";
 import "./files";
+import "./workspace-context";
 import "./search";
 import "./fetch";
 import "./location";

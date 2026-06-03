@@ -92,6 +92,10 @@ export default defineConfig({
         // OS/env discovery + shell-rc parsing — driven by host environment (ADR-0016/0023).
         "lib/env/discover.ts",
         "lib/env/sync.ts",
+        // Runtime env overrides API (ADR-0060) — exercised through the Settings
+        // UI; the SQLite-backed helpers have partial unit coverage but the
+        // mutation paths run via integration.
+        "lib/env/overrides.ts",
         // Process lifecycle hooks — wire into Node signal handlers; not unit-testable.
         "lib/lifecycle/**",
         // Background trigger runners + side-effect reaction handlers
