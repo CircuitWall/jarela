@@ -11,7 +11,11 @@ import { ModelFeatureGuide } from "./ModelFeatureGuide";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
-const CATALOG_PROVIDERS = new Set<string>(["openai", "github-copilot", "anthropic", "gemini", "deepseek"]);
+// Providers without a `listModels` plugin still respond to the catalog
+// endpoint — they just return `[]`. We surface the Browse button for every
+// provider and let the empty-state UI explain when no catalog is published.
+// This avoids a hardcoded allowlist that would force every new provider
+// (including out-of-tree overlays) to patch this file.
 const DEFAULT_CONTEXT_WINDOW = 8192;
 const DEFAULT_TIER_PROPORTIONS = { hot: 60, warm: 25, facts: 15 };
 
@@ -68,6 +72,11 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [temperature, setTemperature] = useState(String(model?.params.temperature ?? ""));
   const [maxTokens, setMaxTokens] = useState(String(model?.params.max_tokens ?? ""));
   const [contextWindowTokens, setContextWindowTokens] = useState(String(model?.params.context_window_tokens ?? ""));
+  // Tracks values most recently auto-filled from the catalog. When the live
+  // input matches, we label the field as catalog-default; once the user edits
+  // it, the marker clears and we treat the value as an explicit override.
+  const [autoMaxTokens, setAutoMaxTokens] = useState<string | null>(null);
+  const [autoContextWindowTokens, setAutoContextWindowTokens] = useState<string | null>(null);
   const [hotRatio, setHotRatio] = useState(String(Math.round((model?.params.context_tier_proportions?.hot ?? (DEFAULT_TIER_PROPORTIONS.hot / 100)) * 100)));
   const [warmRatio, setWarmRatio] = useState(String(Math.round((model?.params.context_tier_proportions?.warm ?? (DEFAULT_TIER_PROPORTIONS.warm / 100)) * 100)));
   const [factsRatio, setFactsRatio] = useState(String(Math.round((model?.params.context_tier_proportions?.facts ?? (DEFAULT_TIER_PROPORTIONS.facts / 100)) * 100)));
@@ -125,11 +134,21 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   }, [provider]);
 
   async function loadCatalog() {
-    if (!CATALOG_PROVIDERS.has(provider)) return;
     setCatalogLoading(true);
     setCatalogError(null);
     try {
-      const models = await api.models.catalog(provider);
+      // Forward the in-form credentials so a freshly-typed api_key /
+      // base_url works before the user has saved the config. The server
+      // layers these on top of any persisted creds for the same provider.
+      const overrides: Record<string, unknown> = {};
+      if (apiKey.trim()) overrides.api_key = apiKey.trim();
+      if (baseUrl.trim()) overrides.base_url = baseUrl.trim();
+      if (extraHeaders.trim()) {
+        try { overrides.extra_headers = JSON.parse(extraHeaders); }
+        catch { /* invalid JSON — ignore for the catalog probe */ }
+      }
+      const hasOverrides = Object.keys(overrides).length > 0;
+      const models = await api.models.catalog(provider, hasOverrides ? overrides : undefined);
       setCatalog(models);
       setShowCatalog(true);
     } catch (e) {
@@ -270,16 +289,14 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs text-fg-subtle">Model ID</span>
-              {CATALOG_PROVIDERS.has(provider) && (
-                <button
-                  onClick={() => showCatalog ? setShowCatalog(false) : loadCatalog()}
-                  disabled={catalogLoading}
-                  className="flex items-center gap-1 text-[11px] text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
-                >
-                  <BookOpen size={11} />
-                  {catalogLoading ? "Loading…" : showCatalog ? "Hide catalog" : "Browse catalog"}
-                </button>
-              )}
+              <button
+                onClick={() => showCatalog ? setShowCatalog(false) : loadCatalog()}
+                disabled={catalogLoading}
+                className="flex items-center gap-1 text-[11px] text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
+              >
+                <BookOpen size={11} />
+                {catalogLoading ? "Loading…" : showCatalog ? "Hide catalog" : "Browse catalog"}
+              </button>
             </div>
             <input
               className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
@@ -307,7 +324,24 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
                   {filteredCatalog.map((m) => (
                     <button
                       key={m.id}
-                      onClick={() => { setModelId(m.id); setShowCatalog(false); }}
+                      onClick={() => {
+                        setModelId(m.id);
+                        // Auto-apply the catalog's known sizing as the default so
+                        // the agent doesn't fall back to the global 8K window.
+                        // Only fills when the field is currently empty — never
+                        // clobbers a value the user explicitly typed.
+                        if (m.context_length && !contextWindowTokens.trim()) {
+                          const v = String(m.context_length);
+                          setContextWindowTokens(v);
+                          setAutoContextWindowTokens(v);
+                        }
+                        if (m.max_output_tokens && !maxTokens.trim()) {
+                          const v = String(m.max_output_tokens);
+                          setMaxTokens(v);
+                          setAutoMaxTokens(v);
+                        }
+                        setShowCatalog(false);
+                      }}
                       className={`w-full text-left px-3 py-2 hover:bg-surface-2 transition-colors ${m.id === modelId ? "bg-accent/10 border-l-2 border-accent" : ""}`}
                     >
                       <div className="flex items-center gap-2 mb-0.5">
@@ -354,18 +388,38 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
                 value={temperature} onChange={(e) => setTemperature(e.target.value)} placeholder="0.7" />
             </label>
             <label className="block">
-              <span className="text-xs text-fg-subtle mb-1 block">Max tokens</span>
+              <span className="text-xs text-fg-subtle mb-1 block">
+                Max tokens
+                {autoMaxTokens !== null && autoMaxTokens === maxTokens && (
+                  <span className="ml-1 text-fg-faint">(catalog default)</span>
+                )}
+              </span>
               <input type="number" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} placeholder="4096" />
+                value={maxTokens}
+                onChange={(e) => {
+                  setMaxTokens(e.target.value);
+                  if (e.target.value !== autoMaxTokens) setAutoMaxTokens(null);
+                }}
+                placeholder="4096" />
             </label>
           </div>
 
           {expertVisible && (
             <>
               <label className="block">
-                <span className="text-xs text-fg-subtle mb-1 block">Context window tokens</span>
+                <span className="text-xs text-fg-subtle mb-1 block">
+                  Context window tokens
+                  {autoContextWindowTokens !== null && autoContextWindowTokens === contextWindowTokens && (
+                    <span className="ml-1 text-fg-faint">(catalog default)</span>
+                  )}
+                </span>
                 <input type="number" min="1" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                  value={contextWindowTokens} onChange={(e) => setContextWindowTokens(e.target.value)} placeholder="8192" />
+                  value={contextWindowTokens}
+                  onChange={(e) => {
+                    setContextWindowTokens(e.target.value);
+                    if (e.target.value !== autoContextWindowTokens) setAutoContextWindowTokens(null);
+                  }}
+                  placeholder="8192" />
               </label>
 
               <div className="rounded-xl border border-border bg-surface-3 p-3 space-y-2">

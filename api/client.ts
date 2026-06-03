@@ -247,7 +247,13 @@ export const api = {
     list: (opts?: { force?: boolean }) =>
       cachedList(modelListCache, () => request<ModelConfig[]>("/models"), setModelListCache, opts?.force === true),
     providers: () => request<string[]>("/providers"),
-    catalog: (provider: string) => request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`),
+    catalog: (provider: string, overrides?: Record<string, unknown>) =>
+      overrides
+        ? request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`, {
+            method: "POST",
+            body: JSON.stringify({ params: overrides }),
+          })
+        : request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`),
     create: async (name: string, data: ModelConfigIn) => {
       const created = await request<ModelConfig>("/models", { method: "POST", body: JSON.stringify({ name, ...data }) });
       if (modelListCache.data) setModelListCache([...modelListCache.data, created]);
