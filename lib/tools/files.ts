@@ -243,7 +243,7 @@ export const fileWriteTool = tool(
           path: abs,
           error: `content exceeds ${maxWrite} bytes`,
           code: "content_too_large",
-          hint: `The content is over the ${maxWrite.toLocaleString()}-byte cap for file_write. Split it into chunks (one file_write per chunk, or use shell_exec with a heredoc), or check whether you actually need to write this much.`,
+          hint: `The content is over the ${maxWrite.toLocaleString()}-byte cap for file_write. Split it into chunks (one file_write per chunk), or check whether you actually need to write this much.`,
         });
       }
       assertSafePath(abs, "write");
@@ -270,11 +270,7 @@ export const fileWriteTool = tool(
   {
     name: "file_write",
     description:
-      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. " +
-      "Use file_edit for targeted in-place changes. " +
-      "Refused paths (returns ok:false): credential dirs (~/.ssh, ~/.aws, ~/.gnupg, ~/.config/gh, ~/.kube, ~/.docker), " +
-      "credential filenames (id_rsa, id_ed25519, *.pem, *.key, credentials, .netrc, .pgpass), " +
-      "and the app state dir (~/.jarela). Pick a different path rather than retrying these.",
+      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. Use file_edit for targeted in-place changes.",
     schema: writeSchema,
   },
 );
