@@ -232,9 +232,19 @@ describe("modelRatesFor", () => {
     expect(modelRatesFor(tables, "openai", null).inputPer1M).toBe(2);
   });
 
-  it("returns provider-level rates when provider is null", () => {
+  it("returns provider-level rates when provider is null and the model is unknown", () => {
     const tables = getPricingTables();
-    expect(modelRatesFor(tables, null, "gpt-4o").error).toBe("no provider assigned");
+    expect(modelRatesFor(tables, null, "made-up-model").error).toBe("no provider assigned");
+  });
+
+  it("falls through to known-rates even when provider is null, if the id is canonical", () => {
+    // Behavior change with the known-rates tier: a null provider no longer
+    // implies "give up" — if we authoritatively know the model, we price it.
+    const tables = getPricingTables();
+    const rates = modelRatesFor(tables, null, "gpt-4o");
+    expect(rates.inputPer1M).toBe(2.5);
+    expect(rates.outputPer1M).toBe(10);
+    expect(rates.source).toBe("jarela:known-rates");
   });
 
   it("returns exact-match per-model rates when present", () => {
@@ -463,6 +473,58 @@ describe("modelRatesFor", () => {
       const rates = modelRatesFor(tables, null, "claude-sonnet-4-6");
       expect(rates.inputPer1M).toBe(3);
       expect(rates.outputPer1M).toBe(15);
+    });
+  });
+
+  describe("known-rates fallback (final tier)", () => {
+    it("resolves canonical ids when the snapshot has no anthropic model_rates", () => {
+      // Reproduces the user's `.vclaw` situation: custom-provider proxy with
+      // model_id=claude-opus-4-7 + an anthropic source that fetched OK
+      // but produced zero model_rates (regex extractor lost the model
+      // names). Without the known-rates tier this fell through to a
+      // null provider rate.
+      seedSnapshot({
+        sources: [
+          {
+            id: "anthropic",
+            pricing_url: "https://x",
+            ok: true,
+            status: 200,
+            price_signals: ["Input $ 3 / MTok", "Output $ 15 / MTok"],
+            model_rates: [],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      const rates = modelRatesFor(tables, "custom-provider", "claude-opus-4-7");
+      expect(rates.inputPer1M).toBe(15);
+      expect(rates.outputPer1M).toBe(75);
+      expect(rates.source).toBe("jarela:known-rates");
+      expect(rates.confidence).toBe("medium");
+    });
+
+    it("does NOT override a healthy snapshot rate", () => {
+      seedSnapshot({
+        sources: [{
+          id: "openai",
+          pricing_url: "https://x",
+          ok: true,
+          model_rates: [{ model_id: "gpt-4o", input_per_1m_usd: 99, output_per_1m_usd: 99, confidence: "high" }],
+        }],
+      });
+      const tables = getPricingTables();
+      // Snapshot wins even when the value is implausible — known-rates
+      // is FALLBACK only.
+      expect(modelRatesFor(tables, "openai", "gpt-4o").inputPer1M).toBe(99);
+    });
+
+    it("strips the aggregator prefix before known-rates lookup", () => {
+      seedSnapshot({ sources: [] });
+      const tables = getPricingTables();
+      const rates = modelRatesFor(tables, "openrouter", "openai/gpt-4o");
+      expect(rates.inputPer1M).toBe(2.5);
+      expect(rates.outputPer1M).toBe(10);
+      expect(rates.source).toBe("jarela:known-rates");
     });
   });
 });

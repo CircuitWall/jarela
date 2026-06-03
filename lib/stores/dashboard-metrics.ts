@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { listToolStats, toStats } from "@/lib/stores/tool-stats";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { estimateTokens } from "@/lib/agents/context-budget";
+import { knownRateFor } from "@/lib/stores/known-rates";
 
 const DEFAULT_WINDOW_DAYS = 30;
 
@@ -802,6 +803,12 @@ function modelRatesFor(
   }
   const directModel = byModel.get(modelKey);
   if (directModel) return directModel;
+
+  // 3. Hardcoded known-rates fallback (see lib/stores/known-rates.ts).
+  for (const candidate of modelAliasCandidates(provider ? (normalizeProvider(provider) ?? "") : "", modelKey)) {
+    const known = knownRateFor(candidate);
+    if (known) return known;
+  }
 
   return providerRatesFor(byProvider, provider);
 }
