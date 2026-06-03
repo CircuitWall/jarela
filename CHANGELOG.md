@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-06-03
+
+### Fixed
+
+- **Drop orphaned checkpoint rows when a thread is deleted.**
+  `DELETE /api/v1/threads/{id}` now also calls
+  `getCheckpointer().deleteThread(id)` so the thread's LangGraph rows
+  in `checkpoints.db` are reclaimed. The per-turn wipe in
+  `lib/agents/llm.ts` only ran for active threads, so deleted threads
+  left their checkpoint rows orphaned forever and `checkpoints.db`
+  grew monotonically with thread deletions.
+
 ## [0.11.0] - 2026-06-03
 
 ### Added

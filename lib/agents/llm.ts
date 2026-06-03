@@ -579,7 +579,7 @@ export function parseContextLimitFromError(
 // module (lib/agents/checkpointer.ts) with one caller — inlined here per
 // the bloat audit.
 let _checkpointer: NodeSqliteSaver | null = null;
-function getCheckpointer(): NodeSqliteSaver {
+export function getCheckpointer(): NodeSqliteSaver {
   if (!_checkpointer) {
     _checkpointer = NodeSqliteSaver.fromConnString(join(getDataDir(), "checkpoints.db"));
   }
