@@ -256,6 +256,11 @@ function modelAliasCandidates(provider: string, modelId: string): string[] {
   const id = modelId.trim().toLowerCase();
   if (!id) return [];
   out.add(id);
+  // Aggregators (OpenRouter, LiteLLM, etc.) namespace upstream models as
+  // `vendor/model` or `aggregator/vendor/model`. The snapshot only stores
+  // the bare model id, so add the post-`/` suffix as a fallback candidate.
+  const slash = id.lastIndexOf("/");
+  if (slash >= 0 && slash < id.length - 1) out.add(id.slice(slash + 1));
   if (provider === "deepseek") {
     if (/reasoner/.test(id) || /r1/.test(id)) out.add("deepseek-reasoner");
     if (/chat/.test(id) || /v[0-9]/.test(id) || /coder/.test(id)) out.add("deepseek-chat");
@@ -264,8 +269,10 @@ function modelAliasCandidates(provider: string, modelId: string): string[] {
 }
 
 function inferProviderFromModelId(modelId: string): string | null {
-  const id = modelId.trim().toLowerCase();
-  if (!id) return null;
+  const raw = modelId.trim().toLowerCase();
+  if (!raw) return null;
+  const slash = raw.lastIndexOf("/");
+  const id = slash >= 0 && slash < raw.length - 1 ? raw.slice(slash + 1) : raw;
   if (id.startsWith("gpt-") || /^o[1-4](?:-|$)/.test(id)) return "openai";
   if (id.startsWith("claude-")) return "anthropic";
   if (id.startsWith("gemini-")) return "google";

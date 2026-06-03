@@ -413,6 +413,41 @@ describe("modelRatesFor", () => {
       expect(rates.outputPer1M).toBe(75);
     });
 
+    it("strips aggregator path prefix to match the bare model id", () => {
+      seedSnapshot({
+        sources: [
+          { id: "openrouter", pricing_url: "https://x", ok: true },
+          {
+            id: "openai",
+            pricing_url: "https://y",
+            ok: true,
+            model_rates: [{ model_id: "gpt-4o", input_per_1m_usd: 5, output_per_1m_usd: 15 }],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      // OpenRouter-style namespacing: `vendor/model` and `aggregator/vendor/model`
+      // both resolve via the bare `gpt-4o` rate published by OpenAI.
+      expect(modelRatesFor(tables, "openrouter", "openai/gpt-4o").inputPer1M).toBe(5);
+      expect(modelRatesFor(tables, "openrouter", "openrouter/openai/gpt-4o").inputPer1M).toBe(5);
+    });
+
+    it("strips aggregator prefix when inferring upstream for github-copilot", () => {
+      seedSnapshot({
+        sources: [
+          { id: "github-copilot", pricing_url: "https://x", ok: true },
+          {
+            id: "openai",
+            pricing_url: "https://y",
+            ok: true,
+            model_rates: [{ model_id: "gpt-4o", input_per_1m_usd: 5, output_per_1m_usd: 15 }],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      expect(modelRatesFor(tables, "github-copilot", "openai/gpt-4o").inputPer1M).toBe(5);
+    });
+
     it("returns model_id-only hit when provider is null", () => {
       seedSnapshot({
         sources: [
