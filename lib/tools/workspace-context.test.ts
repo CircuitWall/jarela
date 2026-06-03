@@ -115,7 +115,7 @@ describe("workspace_context", () => {
   it("refuses cwd inside a credential subtree", async () => {
     const ssh = join(tmpRoot, ".ssh");
     mkdirSync(ssh, { recursive: true });
-    writeFileSync(join(ssh, "id_rsa"), "-----BEGIN OPENSSH PRIVATE KEY-----\n");
+    writeFileSync(join(ssh, "id_rsa"), "fake-key-marker\n");
     const out = parse(await workspaceContextTool.invoke({ cwd: ssh }));
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/credential directory/);
