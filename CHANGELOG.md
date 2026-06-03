@@ -11,6 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Streaming bubble no longer duplicates text on EventSource
+  auto-reconnect.** The run registry replayed the full buffered event
+  list to every new SSE subscriber, including reconnects after a
+  transient network drop or proxy idle close. The client appended
+  every replayed `text_delta` to the same accumulator, so a long-
+  running turn that hit a single drop rendered each prose paragraph
+  2x; multiple drops scaled linearly (real-world thread showed ~10x
+  repetition of the same paragraph in a single bubble). Worse on
+  text-heavy tool-light turns because the longer wall-clock widened
+  the reconnect window. Persisted DB rows were always one copy —
+  duplication was purely client-render.
+  - `broadcast()` now stamps each chunk with a monotonic `seq`, and
+    `subscribe()` accepts a `sinceSeq` so reconnecting subscribers
+    skip events they've already applied.
+  - The GET `/threads/:id/run` route emits `id: <seq>` ahead of every
+    SSE `data:` line; on reconnect the browser's `EventSource`
+    automatically forwards the last seen seq via the `Last-Event-ID`
+    header, which the route reads and passes through to `subscribe()`.
+  - No client-side change needed — `EventSource` handles
+    `Last-Event-ID` natively. Old buffer-cap behavior (gap if a run
+    overflows `runBufferSize`) is unchanged.
+
 - **Retry mechanism no longer pollutes the persisted conversation
   history.** Both `stallRetryStream` and `transientRetryStream` recurse
   into `prepareThreadRun`, which always called `addMessage` for the

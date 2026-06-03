@@ -237,11 +237,11 @@ sequenceDiagram
         AG->>DB: setThreadWarmSummary
     end
     API-->>UI: 202 Accepted
-    UI->>API: GET /threads/:id/run (EventSource subscribe)
+    UI->>API: GET /threads/:id/run (EventSource subscribe; Last-Event-ID on reconnect)
     AG->>LLM: stream completion
     LLM-->>AG: tokens
-    AG-->>API: broadcast chunks (run-registry)
-    API-->>UI: SSE: text_delta / tool_call / done
+    AG-->>API: broadcast chunks (run-registry stamps each with monotonic seq)
+    API-->>UI: SSE: id:seq + text_delta / tool_call / done (replay skips seq ≤ Last-Event-ID)
     UI-->>U: render
     AG->>DB: save checkpoint
     UI->>API: GET /threads/:id (refetch incl. warm_summary)
@@ -417,7 +417,7 @@ sequenceDiagram
 | Same-origin enforcement | required | CSRF / DNS-rebinding guard in `lib/auth/access.ts` |
 | Secrets at rest | required for sensitive namespaces | AES-GCM envelope, master key in OS keychain or `.secret-key` fallback |
 | Outbound proxy support | required on corporate networks | env vars or in-app `proxy_config` row, applied via undici `setGlobalDispatcher` (ADR-0009); env wins over DB |
-| Stream resilience | reattach within seconds of network change | EventSource auto-reconnect + 4000-event replay buffer in `lib/agents/run-registry.ts` (ADR-0008) |
+| Stream resilience | reattach within seconds of network change | EventSource auto-reconnect + 4000-event replay buffer in `lib/agents/run-registry.ts` (ADR-0008); per-chunk `id: <seq>` + `Last-Event-ID` on reconnect so replay skips already-delivered events |
 | CI on every push | required | `.github/workflows/ci.yml`: lint + tsc + build + live integration suite |
 
 ## External Dependencies
