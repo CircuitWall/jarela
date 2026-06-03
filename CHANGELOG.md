@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`file_write` no longer skipped in favor of `local_exec`/heredoc
+  narration.** PR #144 (slim playbook + per-tool hints) added a long
+  refusal-list to `file_write`'s description (credential dirs, dotfile
+  patterns, `~/.jarela`) and an error-hint that recommended
+  `shell_exec` heredoc as an alternative. No other write-tool got
+  comparable treatment — `file_edit` / `file_move` / `file_copy` /
+  `local_exec` kept their short, neutral 1-2 sentence descriptions.
+  Net effect: when the model picked between candidates after a
+  discovery phase, `file_write`'s description carried risk cues that
+  the alternatives didn't, so the prior tilted toward `local_exec` and
+  the agent ended up narrating "Now using a Python script…" without
+  emitting either tool_use. Worked at v0.10.0; regressed at v0.11.0.
+  - Description trimmed back to the v0.10.0 wording: 2 sentences, no
+    refusal catalog. The blocklist behavior (`assertSafePath`) is
+    unchanged — refused paths still return `ok:false`; the
+    `error_hint` on those errors still names the issue. The catalog
+    is no longer baked into the always-loaded tool description.
+  - `content_too_large` hint no longer suggests `shell_exec` heredoc as
+    a workaround; it just says "split into chunks (one file_write per
+    chunk)". Cross-tool bypass advertising was the part biasing
+    selection — it's the only place in the registry that did this.
+
 ## [0.11.5] - 2026-06-03
 
 ### Fixed
