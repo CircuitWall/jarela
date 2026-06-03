@@ -7,6 +7,88 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.5] - 2026-06-03
+
+### Fixed
+
+- **Streaming bubble no longer duplicates text on EventSource
+  auto-reconnect.** The run registry replayed the full buffered event
+  list to every new SSE subscriber, including reconnects after a
+  transient network drop or proxy idle close. The client appended
+  every replayed `text_delta` to the same accumulator, so a long-
+  running turn that hit a single drop rendered each prose paragraph
+  2x; multiple drops scaled linearly (real-world thread showed ~10x
+  repetition of the same paragraph in a single bubble). Worse on
+  text-heavy tool-light turns because the longer wall-clock widened
+  the reconnect window. Persisted DB rows were always one copy —
+  duplication was purely client-render.
+  - `broadcast()` now stamps each chunk with a monotonic `seq`, and
+    `subscribe()` accepts a `sinceSeq` so reconnecting subscribers
+    skip events they've already applied.
+  - The GET `/threads/:id/run` route emits `id: <seq>` ahead of every
+    SSE `data:` line; on reconnect the browser's `EventSource`
+    automatically forwards the last seen seq via the `Last-Event-ID`
+    header, which the route reads and passes through to `subscribe()`.
+  - No client-side change needed — `EventSource` handles
+    `Last-Event-ID` natively. Old buffer-cap behavior (gap if a run
+    overflows `runBufferSize`) is unchanged.
+
+- **Retry mechanism no longer pollutes the persisted conversation
+  history.** Both `stallRetryStream` and `transientRetryStream` recurse
+  into `prepareThreadRun`, which always called `addMessage` for the
+  request's `message` — so every `↻ Auto-retry: …` nudge and every
+  transient replay became a permanent user-role row in `messages`. The
+  LLM then re-read those rows on every future turn and treated its own
+  self-correction prompts as user input. Real-world data showed 16
+  such rows on a single thread, contributing to the agent's "I don't
+  have any prior context in this conversation yet" responses.
+  - New internal flags on `ThreadRunRequest`:
+    `_skip_persist_message` (default false) suppresses the `addMessage`
+    + `touchThread` calls; `_inject_message_into_history` (default
+    false) appends the request's message to the in-memory history just
+    before the LLM stream so the model still sees the nudge.
+  - Stall-retry sets both flags (nudge is new content, must reach the
+    LLM, must NOT be persisted). Transient-retry sets only
+    `_skip_persist_message` (the original message is already in DB).
+  - The combined assistant text (original + `↻` separator + retry
+    response) is still persisted ONCE at end-of-turn via
+    `persistAssistantMessage` — that's the sole durable record of what
+    happened, unchanged from before.
+  - Public callers of `prepareThreadRun` are unaffected; both flags are
+    `_`-prefixed internal-only.
+
+## [0.11.4] - 2026-06-03
+
+### Fixed
+
+- **Stall-retry now catches the "writing X now" / "saving X now" loop.**
+  The 0.11.2 loop guard required either zero tool calls or the same
+  `(tool, args)` repeated 3+ times before retrying. A real-world thread
+  showed a third failure mode that slipped past both: model calls
+  `file_read` once, gets the content back, ends the turn with
+  `"Writing the HTML version next to the markdown file now."`, and never
+  invokes `file_write`. User asks "did you?" — model repeats the
+  pattern. Two changes:
+  - `STALL_PATTERNS` now matches the aspirational present-progressive
+    family (`writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming X now`)
+    in addition to the existing "let me X" / "I'll X" / "continuing"
+    forms.
+  - The detector also fires when the turn ended with stall prose AND
+    the model called read-only tools but no write-like tool. A new
+    `isWriteLikeToolName` helper recognises any tool whose name
+    contains a CRUD verb (`write`, `edit`, `create`, `update`,
+    `delete`, `move`, `copy`, `mkdir`, `add`, `insert`, `patch`, `post`,
+    `put`, `send`, `publish`, `save`, `upload`, `transition`, `rank`,
+    `merge`, `set`, `schedule`, `cancel`) as a path segment. Match is
+    per-segment so `dataset_search` doesn't falsely qualify on `set`.
+  - The retry nudge differentiates: looped → "called X 3+ times,
+    diversify"; promised-write-stall → "you only called read-only tools
+    ({list}); CALL the actual write tool now"; classic zero-tool →
+    unchanged.
+  Together these close the gap that produced the user-reported `file_read`
+  → narrate → end-of-turn loop without ever firing the existing
+  safeguards.
+
 ## [0.11.3] - 2026-06-03
 
 ### Fixed

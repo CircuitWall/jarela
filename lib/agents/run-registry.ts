@@ -12,7 +12,16 @@ import { getConfig } from "@/lib/env/config";
 //   doesn't pin GBs of memory if every chunk lingers. Late attachers see the
 //   most recent slice plus all subsequent events.
 
-type Subscriber = (chunk: StreamChunk) => void;
+type Subscriber = (chunk: StreamChunk, seq: number) => void;
+
+// A chunk plus its monotonic sequence number within the run. Used so a
+// reconnecting subscriber can resume past what it already saw via SSE
+// `Last-Event-ID` rather than re-receiving the full buffer (which would
+// double-render text in the chat bubble).
+export interface BufferedChunk {
+  seq: number;
+  chunk: StreamChunk;
+}
 
 // Read once at module init. JARELA_RUN_BUFFER_SIZE / JARELA_RUN_REGISTRY_TTL_MS
 // override the defaults.
@@ -29,7 +38,14 @@ export interface ActiveRun {
   started_at: number;
   finished_at: number | null;
   status: "running" | "done" | "error";
-  events: StreamChunk[];
+  // Buffered events with monotonic seq numbers. Late attachers replay
+  // events with seq > Last-Event-ID so an EventSource auto-reconnect mid-run
+  // doesn't double-deliver chunks the client already applied (which would
+  // duplicate text in the streaming bubble).
+  events: BufferedChunk[];
+  // Next seq to assign on broadcast(). Starts at 1; 0 is reserved as the
+  // "I haven't seen anything yet" sentinel for first-time subscribers.
+  next_seq: number;
   subscribers: Set<Subscriber>;
   // Final assistant text — useful for notification body without replaying every event.
   final_text: string;
@@ -58,6 +74,7 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     finished_at: null,
     status: "running",
     events: [],
+    next_seq: 1,
     subscribers: new Set(),
     final_text: "",
     abort: new AbortController(),
@@ -117,11 +134,15 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
   }
+  // Always assign a seq even when the buffer is full — subscribers still
+  // receive live events with monotonic IDs. Only the replay-on-reconnect
+  // window degrades when the buffer caps out.
+  const seq = run.next_seq++;
   if (run.events.length < MAX_BUFFERED) {
-    run.events.push(chunk);
+    run.events.push({ seq, chunk });
   }
   for (const fn of run.subscribers) {
-    try { fn(chunk); } catch { /* subscriber errored, ignore */ }
+    try { fn(chunk, seq); } catch { /* subscriber errored, ignore */ }
   }
 }
 
@@ -194,15 +215,24 @@ export async function waitForRunsToSettle(timeoutMs: number): Promise<number> {
 
 // Replays buffered events synchronously, then subscribes for live ones.
 // Returns an unsubscribe fn. Caller is responsible for calling it.
+//
+// `sinceSeq` is the highest seq the subscriber has already observed (e.g.
+// from an SSE `Last-Event-ID` header on EventSource auto-reconnect). Only
+// events with `seq > sinceSeq` are replayed — without this gate, a mid-run
+// reconnect would re-deliver every text_delta from index 0 and the chat UI
+// would double-render the streaming bubble. Pass 0 (or omit) for a fresh
+// subscriber that wants the full buffer.
 export function subscribe(
   thread_id: string,
   onEvent: Subscriber,
+  sinceSeq: number = 0,
 ): { run: ActiveRun | null; unsubscribe: () => void } {
   const run = runs.get(thread_id);
   if (!run) return { run: null, unsubscribe: () => {} };
-  // Replay buffered events first (so the new subscriber catches up).
+  // Replay buffered events the subscriber hasn't seen yet.
   for (const ev of run.events) {
-    try { onEvent(ev); } catch { /* */ }
+    if (ev.seq <= sinceSeq) continue;
+    try { onEvent(ev.chunk, ev.seq); } catch { /* */ }
   }
   if (run.status !== "running") {
     return { run, unsubscribe: () => {} };

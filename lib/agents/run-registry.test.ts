@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun, broadcast } from "./run-registry";
+import { startRun, finishRun, getRun, broadcast, subscribe } from "./run-registry";
 import { resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
@@ -114,6 +114,85 @@ describe("run-registry idempotent terminal guard", () => {
     broadcast(run, { type: "error", data: { message: "stale", code: "x" } });
     expect(seen).toHaveLength(1);
     expect(run.events).toHaveLength(1);
+  });
+
+  it("subscribe() with sinceSeq=0 replays the full buffer", () => {
+    const tid = `t-replay-full-${Date.now()}`;
+    const run = startRun(tid, null);
+    broadcast(run, delta("a"));
+    broadcast(run, delta("b"));
+    broadcast(run, delta("c"));
+
+    const seen: Array<{ delta: string; seq: number }> = [];
+    subscribe(tid, (chunk, seq) => {
+      if (chunk.type === "text_delta") {
+        seen.push({ delta: (chunk.data as { delta: string }).delta, seq });
+      }
+    });
+
+    expect(seen).toEqual([
+      { delta: "a", seq: 1 },
+      { delta: "b", seq: 2 },
+      { delta: "c", seq: 3 },
+    ]);
+    finishRun(run, "done");
+  });
+
+  it("subscribe() with sinceSeq skips already-delivered events on reconnect", () => {
+    // Repro of the SSE-replay duplication bug: client received seqs 1..2
+    // before EventSource auto-reconnected. The reconnect must NOT replay
+    // 1..2 (which would double-render the streaming bubble).
+    const tid = `t-replay-skip-${Date.now()}`;
+    const run = startRun(tid, null);
+    broadcast(run, delta("a"));
+    broadcast(run, delta("b"));
+    broadcast(run, delta("c"));
+
+    const seen: Array<{ delta: string; seq: number }> = [];
+    subscribe(tid, (chunk, seq) => {
+      if (chunk.type === "text_delta") {
+        seen.push({ delta: (chunk.data as { delta: string }).delta, seq });
+      }
+    }, 2);
+
+    expect(seen).toEqual([{ delta: "c", seq: 3 }]);
+    finishRun(run, "done");
+  });
+
+  it("subscribe() with sinceSeq >= last seq replays nothing", () => {
+    const tid = `t-replay-empty-${Date.now()}`;
+    const run = startRun(tid, null);
+    broadcast(run, delta("a"));
+    broadcast(run, delta("b"));
+
+    const seen: StreamChunk[] = [];
+    subscribe(tid, (chunk) => seen.push(chunk), 99);
+
+    expect(seen).toHaveLength(0);
+    finishRun(run, "done");
+  });
+
+  it("live broadcasts after subscribe() carry monotonic seqs", () => {
+    // Live subscriber must receive seqs that continue the buffered series,
+    // so the client's Last-Event-ID stays accurate across the buffer→live
+    // boundary.
+    const tid = `t-live-seq-${Date.now()}`;
+    const run = startRun(tid, null);
+    broadcast(run, delta("buffered-1"));
+    broadcast(run, delta("buffered-2"));
+
+    const seen: Array<{ delta: string; seq: number }> = [];
+    subscribe(tid, (chunk, seq) => {
+      if (chunk.type === "text_delta") {
+        seen.push({ delta: (chunk.data as { delta: string }).delta, seq });
+      }
+    }, 0);
+
+    broadcast(run, delta("live-3"));
+    broadcast(run, delta("live-4"));
+
+    expect(seen.map((e) => e.seq)).toEqual([1, 2, 3, 4]);
+    finishRun(run, "done");
   });
 
   it("finishRun() is idempotent — second call is a no-op", () => {

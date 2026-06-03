@@ -17,6 +17,13 @@ type Params = { params: Promise<{ thread_id: string }> };
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
+// Tagged form: emits `id: <seq>\n` ahead of the data line so the browser's
+// EventSource captures the seq and echoes it back via `Last-Event-ID` on
+// auto-reconnect. The route then asks subscribe() to skip already-delivered
+// events instead of replaying the entire buffer (which would double-render
+// the streaming bubble).
+const sseWithId = (seq: number, obj: Record<string, unknown>) =>
+  enc.encode(`id: ${seq}\ndata: ${JSON.stringify(obj)}\n\n`);
 
 // POST is the *command* half of the run lifecycle (ADR-0008). It accepts the
 // new user message, registers a run in the in-memory registry, kicks the
@@ -177,6 +184,11 @@ export async function GET(req: NextRequest, { params }: Params) {
     filters: { include_tools: showTools, include_thinking: showThinking },
   };
 
+  // EventSource reconnects send back the seq of the last event the browser
+  // ingested via the `Last-Event-ID` header — read it once here and pass it
+  // to subscribe() so we replay only events the client hasn't seen.
+  const lastEventId = parseLastEventId(req.headers.get("last-event-id"));
+
   const run = getRun(thread_id);
   if (!run) {
     const stream = new ReadableStream({
@@ -188,7 +200,17 @@ export async function GET(req: NextRequest, { params }: Params) {
     return sseResponse(stream);
   }
 
-  return attachStream(thread_id, stream_options);
+  return attachStream(thread_id, stream_options, lastEventId);
+}
+
+// `Last-Event-ID` is a free-form string per the SSE spec; we choose to
+// emit positive integer seqs. Defensively coerce: anything non-numeric or
+// negative collapses to 0 (full replay), which is the same behavior we had
+// before this fix existed — safe fallback, never throws.
+function parseLastEventId(raw: string | null): number {
+  if (!raw) return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 // DELETE aborts the currently-running agent for this thread. The agent stream
@@ -207,6 +229,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 function attachStream(
   thread_id: string,
   stream_options?: StreamOptions,
+  sinceSeq: number = 0,
 ): Response {
   const stream = new ReadableStream({
     start(controller) {
@@ -216,12 +239,12 @@ function attachStream(
         try { controller.enqueue(chunk); } catch { clientGone = true; }
       };
 
-      const onEvent = (ev: StreamChunk) => {
+      const onEvent = (ev: StreamChunk, seq: number) => {
         if (!shouldEmitChunk(ev.type, stream_options)) return;
-        safeEnqueue(sse({ type: ev.type, ...ev.data }));
+        safeEnqueue(sseWithId(seq, { type: ev.type, ...ev.data }));
       };
 
-      const { run, unsubscribe } = subscribe(thread_id, onEvent);
+      const { run, unsubscribe } = subscribe(thread_id, onEvent, sinceSeq);
       if (!run) {
         controller.close();
         return;
