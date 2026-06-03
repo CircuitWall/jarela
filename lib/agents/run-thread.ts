@@ -216,7 +216,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     : historyWindow.history;
 
   const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
-  const retriesLeft = req._stall_retries_left ?? MAX_STALL_AUTO_RETRIES;
+  const retriesLeft = req._stall_retries_left ?? maxStallRetries();
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
   const overheadTokens = estimateTokens(systemPrompt);
