@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-06-03
+
+### Added
+
+- **`workspace_context` tool: one-shot codebase bundle for the developer
+  agent.** Returns a curated snapshot (directory tree, git status,
+  `package.json` summary, README excerpt, optional grep hits) so the
+  agent can ground answers without burning turns on filesystem probes.
+
+### Fixed
+
+- **OpenAI-compatible adapters now emit stream usage events.** Both
+  `lib/providers/openai.ts` and `lib/providers/github-copilot.ts` send
+  `stream_options: { include_usage: true }` and yield a `usage` chunk
+  from `chunk.usage`, so ADR-0041 token accounting reflects real
+  provider counts instead of estimates.
+- **Cap warm-summary chat with a wall-clock deadline.** Adds
+  `SummaryTimeoutError` and a 25s default deadline around the summary
+  stream loop, threaded through `summarizeTranscriptWithRetry`. Prevents
+  a stuck warm-summary call from starving the run-registry idle
+  watchdog and silently hanging a run.
+
 ## [0.10.0] - 2026-06-02
 
 ### Added
