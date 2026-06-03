@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pricing lookup for aggregator-namespaced model ids.** Models exposed
+  by aggregators (OpenRouter / LiteLLM style) carry a `vendor/model` or
+  `aggregator/vendor/model` prefix, which the pricing snapshot doesn't
+  store. The byModel fallback now also tries the bare suffix, and the
+  github-copilot upstream-inference path strips the prefix before
+  matching, so e.g. `openai/gpt-4o` resolves to OpenAI's published
+  `gpt-4o` rate instead of falling through to a null provider rate.
 - **Inbound channel cue in the agent system prompt
   ([#151](https://github.com/CircuitWall/jarela/pull/151), ADR-0061).**
   Non-chat turns (scheduler, watcher, bridge) now carry an active-turn
