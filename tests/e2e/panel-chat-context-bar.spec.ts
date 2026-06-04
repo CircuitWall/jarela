@@ -19,7 +19,7 @@ async function sendMockReply(page: import("@playwright/test").Page, marker: stri
   const composer = page.getByPlaceholder("Message…");
   await expect(composer).toBeEnabled({ timeout: 15_000 });
   await composer.fill(`MOCK:reply=${marker}`);
-  await page.locator('button[title="Send"]').click();
+  await page.locator('button[aria-label="Send"]').click();
   await expect(page.getByText(marker).last()).toBeVisible({ timeout: 20_000 });
 }
 
@@ -75,7 +75,7 @@ test("the just-streamed bubble stays expanded after the stream finalises", async
   const marker = `pw-keepopen-${Date.now()}`;
   const longReply = `${marker}\n\n${"lorem ipsum dolor sit amet ".repeat(120)}\n\nEND-${marker}`;
   await composer.fill(`MOCK:reply=${longReply}\nMOCK:slow=10`);
-  await page.locator('button[title="Send"]').click();
+  await page.locator('button[aria-label="Send"]').click();
 
   // Both the head marker and the tail marker must remain visible after
   // the stream completes — proving the bubble didn't auto-collapse.
