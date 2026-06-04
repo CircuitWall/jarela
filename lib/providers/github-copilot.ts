@@ -186,6 +186,7 @@ export const githubCopilotProvider: ModelProvider = {
 
   async *streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
     const client = await resolvedClient(params);
+    const compat = pickGitHubCompatOptions(params) as Record<string, unknown>;
     const stream = await client.chat.completions.create({
       model: model_id,
       messages: toOpenAIMessages(messages),
@@ -194,7 +195,8 @@ export const githubCopilotProvider: ModelProvider = {
       stream: true,
       temperature: params.temperature,
       max_tokens: params.max_tokens,
-      ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
+      ...compat,
+      stream_options: { include_usage: true, ...(compat.stream_options as object | undefined) },
     });
 
     yield* streamOpenAIEvents(
@@ -207,6 +209,7 @@ export const githubCopilotProvider: ModelProvider = {
           };
           finish_reason?: string | null;
         }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
       }>,
     );
   },
