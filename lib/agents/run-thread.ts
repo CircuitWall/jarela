@@ -18,6 +18,7 @@ import {
 import { recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/pricing";
 import { estimateTokens } from "@/lib/agents/context-budget";
+import { classifyStall } from "@/lib/agents/hallucination-classifier";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -351,8 +352,34 @@ async function* stallRetryStream(
     isStallProse &&
     toolNames.length > 0 &&
     !toolNames.some(isWriteLikeToolName);
-  const stalled = zeroToolStall || promisedWriteStall;
+  const regexStalled = zeroToolStall || promisedWriteStall;
   const looped = !sawError && loopedToolName !== null;
+
+  // Anti-hallucination classifier (configurable model). When configured,
+  // runs alongside the regex and either reports disagreements or — in
+  // `enforce` mode — votes alongside the regex on whether to retry.
+  // Best-effort: any error / parse failure / abort returns null and we
+  // fall through to regex-only behaviour.
+  const cfg = getConfig();
+  const classifierMode = cfg.hallucinationDetectorMode;
+  const classifierVerdict = !sawError && !looped && classifierMode !== "off" && cfg.hallucinationDetectorModel
+    ? await classifyStall(textBuf, toolNames, cfg.hallucinationDetectorModel, originalReq.signal).catch(() => null)
+    : null;
+  const classifierStalled = classifierVerdict?.stalled === true;
+
+  // In `enforce` mode the classifier vote is binding; otherwise regex
+  // alone decides retry. Disagreements are logged in either mode.
+  const stalled = classifierMode === "enforce"
+    ? regexStalled || classifierStalled
+    : regexStalled;
+
+  if (classifierVerdict && classifierStalled !== regexStalled) {
+    // Structured log entry — the logs panel surfaces these greppably
+    // and the operator can use them to harvest regex blind spots.
+    console.warn(
+      `[anti-hallucination] regex=${regexStalled} classifier=${classifierStalled} mode=${classifierMode} thread=${originalReq.thread_id} reason=${JSON.stringify(classifierVerdict.reason)}`,
+    );
+  }
 
   // Fabrication check (ADR-0037): only run when no other path claimed
   // this turn.
@@ -361,6 +388,15 @@ async function* stallRetryStream(
     : ({ ok: true } as const);
 
   if (!stalled && !looped && fabrication.ok) {
+    // The classifier flagged a possible stall the regex missed, but
+    // we're not in enforce mode so the turn finishes normally. Append
+    // an inline footer note so the user can see the disagreement.
+    if (classifierVerdict && classifierStalled && !regexStalled) {
+      yield {
+        type: "text_delta",
+        data: { delta: `\n\n*⚠️ Hallucination classifier flagged this turn (report-only mode): ${classifierVerdict.reason || "stall suspected"}*` },
+      };
+    }
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -378,7 +414,9 @@ async function* stallRetryStream(
       ? `↻ Auto-retry: your reply ended with a 'writing/saving/creating ... now' style statement but you only called read-only tools (${[...new Set(toolNames)].slice(0, 6).join(", ")}) — no write-like tool was invoked. Don't narrate the next step; CALL the actual write tool now (e.g. file_write, file_edit, memory_write). If you cannot, stop and explain why.`
       : zeroToolStall
         ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
-        : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
+        : classifierStalled
+          ? `↻ Auto-retry: an external classifier flagged your reply as a stall (${classifierVerdict?.reason || "promise without a write tool"}). Don't narrate the next step; either CALL the actual tool that fulfils what you promised, or stop and explain why you can't.`
+          : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
   const retry = await prepareThreadRun({
     ...originalReq,
