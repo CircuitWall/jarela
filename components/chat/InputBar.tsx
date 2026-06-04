@@ -133,7 +133,18 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
     }
   }
 
+  // After parent clears the input (send/queue/programmatic reset), collapse
+  // the textarea back to its single-line min-height. Without this the inline
+  // style.height set during typing persists, leaving an empty multi-line box.
+  useEffect(() => {
+    if (value.length === 0 && textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+  }, [value]);
+
   // Slash-command autocomplete is active only when the entire trimmed input
+  // is a `/`-prefixed token (no spaces). That keeps the popover from
+  // flashing when the user is mid-sentence and happens to type a slash.
   // is a `/`-prefixed token (no spaces). That keeps the popover from
   // flashing when the user is mid-sentence and happens to type a slash.
   const suggestions = useMemo(() => {
@@ -313,13 +324,14 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
 
         <textarea
           className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-[84px] min-h-[44px] transition-colors"
+          ref={textareaRef}
           placeholder={placeholder ?? "Message…"}
           rows={1}
           value={value}
           onChange={(e) => {
             onChange(e.target.value);
             e.target.style.height = "auto";
-            e.target.style.height = `${Math.min(e.target.scrollHeight, 192)}px`;
+            e.target.style.height = `${Math.min(e.target.scrollHeight, 84)}px`;
           }}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
