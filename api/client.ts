@@ -806,7 +806,13 @@ export function subscribeRun(
     let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       connectTimer = null;
       if (!everOpened && !done) {
-        streamError = new Error("EventSource connect timeout");
+        // User-facing: this surfaces verbatim in the chat error toast via
+        // useSSE → setError(String(err)). Avoid jargon ("EventSource") and
+        // name the actual symptom — the server didn't open the response
+        // stream within the connect window.
+        streamError = new Error(
+          `Connection timed out — the server didn't respond within ${Math.round(connectTimeoutMs / 1000)}s.`,
+        );
         done = true;
         try { es.close(); } catch { /* */ }
         notify();
