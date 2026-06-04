@@ -4,6 +4,8 @@ import { resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
 const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: s } } as StreamChunk);
+const toolCall = (id: string): StreamChunk => ({ type: "tool_call", data: { id, name: "x", arguments: {} } } as StreamChunk);
+const toolResult = (id: string): StreamChunk => ({ type: "tool_result", data: { id, name: "x", result: null } } as StreamChunk);
 
 describe("run-registry watchdog", () => {
   beforeEach(() => {
@@ -154,6 +156,75 @@ describe("run-registry watchdog", () => {
     } finally {
       if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
       else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  it("pauses idle watchdog while a tool_call is in flight", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-tool-pause-${Date.now()}`;
+      const run = startRun(tid, null);
+      broadcast(run, toolCall("call-1"));
+      // Tool runs silently for 4× the idle budget. Without the pause the
+      // watchdog would fire at 5s; with it, the run stays alive.
+      vi.advanceTimersByTime(20_000);
+      expect(run.status).toBe("running");
+      // Tool resolves — idle clock starts counting from here.
+      broadcast(run, toolResult("call-1"));
+      vi.advanceTimersByTime(2_000);
+      expect(run.status).toBe("running");
+      // Once silence resumes past idleMs after the tool_result, watchdog fires.
+      vi.advanceTimersByTime(5_000 + 10);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  it("only un-pauses the idle watchdog when ALL inflight tools resolve", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-tool-parallel-${Date.now()}`;
+      const run = startRun(tid, null);
+      broadcast(run, toolCall("a"));
+      broadcast(run, toolCall("b"));
+      vi.advanceTimersByTime(20_000);
+      expect(run.status).toBe("running");
+      // Resolving only one of two — still paused.
+      broadcast(run, toolResult("a"));
+      vi.advanceTimersByTime(20_000);
+      expect(run.status).toBe("running");
+      // Resolving the second un-pauses.
+      broadcast(run, toolResult("b"));
+      vi.advanceTimersByTime(5_000 + 10);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  it("wall-clock watchdog still fires even with a tool in flight", () => {
+    const prevIdle = process.env.JARELA_RUN_IDLE_MS;
+    const prevMax = process.env.JARELA_RUN_MAX_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    process.env.JARELA_RUN_MAX_MS = "60000";
+    try {
+      const tid = `t-tool-wall-${Date.now()}`;
+      const run = startRun(tid, null);
+      broadcast(run, toolCall("forever"));
+      // Tool never resolves. Idle watchdog stays paused, but the wall-clock
+      // backstop must still terminate the run.
+      vi.advanceTimersByTime(60_000 + 10);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prevIdle === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prevIdle;
+      if (prevMax === undefined) delete process.env.JARELA_RUN_MAX_MS;
+      else process.env.JARELA_RUN_MAX_MS = prevMax;
     }
   });
 
