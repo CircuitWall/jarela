@@ -88,7 +88,7 @@ function resolvePath(p: string, workspaceRoot?: string): string {
  * Returns a `resolve()` that handles ~/abs/relative paths and enforces
  * `scoped: true` (absolute paths outside the workspace root are refused).
  */
-function pathResolverFor(config?: ToolConfig): {
+export function pathResolverFor(config?: ToolConfig): {
   resolve: (p: string) => string;
   workspace?: ReturnType<typeof currentWorkspace>;
 } {
@@ -154,7 +154,7 @@ function jarelaDataDir(): string {
     : path.join(os.homedir(), ".jarela");
 }
 
-function assertSafePath(abs: string, op: "read" | "write"): void {
+export function assertSafePath(abs: string, op: "read" | "write"): void {
   const mode = resolveSafetyMode();
   const gate = checkFsAllowed(op, { mode });
   if (!gate.allowed) throw new Error(gate.reason);
