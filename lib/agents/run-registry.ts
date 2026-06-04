@@ -40,6 +40,12 @@ export interface ActiveRun {
   // Last activity timestamp — bumped on every broadcast() so the idle
   // watchdog can tell live progress from a wedged stream.
   last_chunk_at: number;
+  // Tool-call ids that have been announced (tool_call) but not yet
+  // resolved (tool_result). The idle watchdog pauses while this is
+  // non-empty: silence between a tool_call and its tool_result is the
+  // tool executing, not a wedged provider stream, and tools have their
+  // own per-tool timeouts. The wall-clock watchdog is still the backstop.
+  inflight_tools: Set<string>;
 }
 
 const runs = new Map<string, ActiveRun>();
@@ -62,6 +68,7 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     final_text: "",
     abort: new AbortController(),
     last_chunk_at: now,
+    inflight_tools: new Set<string>(),
   };
   runs.set(thread_id, run);
   scheduleIdleWatchdog(run);
@@ -120,6 +127,15 @@ function scheduleIdleWatchdog(run: ActiveRun): void {
       scheduleIdleWatchdog(run);
       return;
     }
+    if (run.inflight_tools.size > 0) {
+      // Tool execution in progress — silence here is the tool working, not a
+      // wedged provider stream. Skip the kill, re-check in idleMs. The
+      // tool_result will bump last_chunk_at when it lands; the wall-clock
+      // watchdog (runMaxMs) is still the backstop for a tool that never
+      // resolves.
+      setTimeout(() => scheduleIdleWatchdog(run), idleMs).unref?.();
+      return;
+    }
     console.warn(`[run-registry] idle watchdog: force-finishing stalled run for thread ${run.thread_id} after ${idle}ms of no progress`);
     emitWatchdogTermination(
       run,
@@ -155,6 +171,12 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   run.last_chunk_at = Date.now();
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
+  } else if (chunk.type === "tool_call") {
+    const id = (chunk.data as { id?: string }).id;
+    if (id) run.inflight_tools.add(id);
+  } else if (chunk.type === "tool_result") {
+    const id = (chunk.data as { id?: string }).id;
+    if (id) run.inflight_tools.delete(id);
   }
   if (run.events.length < MAX_BUFFERED) {
     run.events.push(chunk);
