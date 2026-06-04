@@ -21,6 +21,37 @@ function maxReadBytes(): number { return getConfig().filesMaxReadBytes; }
 function maxWriteBytes(): number { return getConfig().filesMaxWriteBytes; }
 const MAX_LIST_JSON_BYTES = 24_000;
 
+// Wall-clock deadline for a single fs.* call. Cloud-sync filesystem
+// providers (OneDrive, iCloud, Dropbox), network mounts, and aggressive
+// AV scanners can wedge fs.writeFile/readFile/mkdir indefinitely. Without
+// a deadline the agent loop just spins until the run-registry idle
+// watchdog (90s default) force-finishes the run with a generic "run
+// timed out" — the user never learns it was a stuck fs op. With this,
+// the deadline fires first and a structured error envelope tells the
+// agent (and the user) which path stalled.
+//
+// Reuses JARELA_TOOL_TIMEOUT_MS (default 60s) — same budget MCP/external
+// tools already use. Operators can raise it from the env panel for
+// genuinely-slow filesystems.
+export async function withFsDeadline<T>(
+  label: string,
+  abs: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  const ms = getConfig().toolTimeoutMs;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(
+      `${label} on '${abs}' timed out after ${Math.round(ms / 1000)}s — the path may be on a stalled filesystem (cloud-sync provider, network mount, AV scanner). Try a different location, or raise JARELA_TOOL_TIMEOUT_MS.`,
+    )), ms);
+  });
+  try {
+    return await Promise.race([work(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 function clip(text: string, max: number): { value: string; truncated: boolean } {
   if (text.length <= max) return { value: text, truncated: false };
   return { value: text.slice(0, max), truncated: true };
@@ -149,7 +180,7 @@ export const fileReadTool = tool(
     try {
       abs = resolvePath(filePath);
       assertSafePath(abs, "read");
-      const raw = await fs.readFile(abs, "utf8");
+      const raw = await withFsDeadline("file_read", abs, () => fs.readFile(abs, "utf8"));
       let content = raw;
       let lineRange: { start: number; end: number } | null = null;
       if (start_line || end_line) {
@@ -202,15 +233,15 @@ export const fileWriteTool = tool(
       }
       assertSafePath(abs, "write");
       if (create_dirs !== false) {
-        await fs.mkdir(path.dirname(abs), { recursive: true });
+        await withFsDeadline("file_write.mkdir", path.dirname(abs), () => fs.mkdir(path.dirname(abs), { recursive: true }));
       }
       let existed = true;
       try {
-        await fs.access(abs);
+        await withFsDeadline("file_write.access", abs, () => fs.access(abs));
       } catch {
         existed = false;
       }
-      await fs.writeFile(abs, content, "utf8");
+      await withFsDeadline("file_write", abs, () => fs.writeFile(abs, content, "utf8"));
       return JSON.stringify({
         ok: true,
         path: abs,
@@ -248,7 +279,7 @@ export const fileEditTool = tool(
     try {
       abs = resolvePath(filePath);
       assertSafePath(abs, "write");
-      const raw = await fs.readFile(abs, "utf8");
+      const raw = await withFsDeadline("file_edit.read", abs, () => fs.readFile(abs, "utf8"));
       const first = raw.indexOf(old_string);
       if (first === -1) {
         return JSON.stringify({
@@ -267,7 +298,7 @@ export const fileEditTool = tool(
         });
       }
       const next = raw.slice(0, first) + new_string + raw.slice(first + old_string.length);
-      await fs.writeFile(abs, next, "utf8");
+      await withFsDeadline("file_edit", abs, () => fs.writeFile(abs, next, "utf8"));
       return JSON.stringify({
         ok: true,
         path: abs,
@@ -310,19 +341,19 @@ export const fileMoveTool = tool(
       dstAbs = resolvePath(destination);
       assertSafePath(srcAbs, "write");
       assertSafePath(dstAbs, "write");
-      const srcStat = await fs.stat(srcAbs);
+      const srcStat = await withFsDeadline("file_move.stat", srcAbs, () => fs.stat(srcAbs));
       // If destination is an existing directory, move source INTO it
       // preserving its basename — matches `mv src dir/` semantics.
       let dstStat: import("node:fs").Stats | null = null;
       try {
-        dstStat = await fs.stat(dstAbs);
+        dstStat = await withFsDeadline("file_move.stat", dstAbs, () => fs.stat(dstAbs));
       } catch {
         // dst missing — fine
       }
       if (dstStat?.isDirectory()) {
         dstAbs = path.join(dstAbs, path.basename(srcAbs));
         try {
-          dstStat = await fs.stat(dstAbs);
+          dstStat = await withFsDeadline("file_move.stat", dstAbs, () => fs.stat(dstAbs));
         } catch {
           dstStat = null;
         }
@@ -346,9 +377,9 @@ export const fileMoveTool = tool(
         }
       }
       if (create_dirs !== false) {
-        await fs.mkdir(path.dirname(dstAbs), { recursive: true });
+        await withFsDeadline("file_move.mkdir", path.dirname(dstAbs), () => fs.mkdir(path.dirname(dstAbs), { recursive: true }));
       }
-      await fs.rename(srcAbs, dstAbs);
+      await withFsDeadline("file_move", srcAbs, () => fs.rename(srcAbs, dstAbs));
       return JSON.stringify({
         ok: true,
         source: srcAbs,
@@ -361,8 +392,8 @@ export const fileMoveTool = tool(
       const e = err as NodeJS.ErrnoException;
       if (e.code === "EXDEV") {
         try {
-          await fs.cp(srcAbs, dstAbs, { recursive: true, force: overwrite === true, errorOnExist: !overwrite });
-          await fs.rm(srcAbs, { recursive: true, force: true });
+          await withFsDeadline("file_move.cp", dstAbs, () => fs.cp(srcAbs, dstAbs, { recursive: true, force: overwrite === true, errorOnExist: !overwrite }));
+          await withFsDeadline("file_move.rm", srcAbs, () => fs.rm(srcAbs, { recursive: true, force: true }));
           return JSON.stringify({ ok: true, source: srcAbs, destination: dstAbs, cross_device: true });
         } catch (err2) {
           return JSON.stringify({ ok: false, source: srcAbs, destination: dstAbs, error: (err2 as Error).message });
@@ -416,7 +447,7 @@ export const fileListTool = tool(
     try {
       let items: import("node:fs").Dirent[];
       try {
-        items = await fs.readdir(abs, { withFileTypes: true });
+        items = await withFsDeadline("file_list", abs, () => fs.readdir(abs, { withFileTypes: true }));
       } catch (err) {
         return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
       }
@@ -437,7 +468,7 @@ export const fileListTool = tool(
         let size: number | undefined;
         if (kind === "file") {
           try {
-            const st = await fs.stat(full);
+            const st = await withFsDeadline("file_list.stat", full, () => fs.stat(full));
             size = st.size;
           } catch {
             // ignore
@@ -503,7 +534,7 @@ export const fileMkdirTool = tool(
     try {
       abs = resolvePath(dirPath);
       assertSafePath(abs, "write");
-      await fs.mkdir(abs, { recursive: recursive !== false });
+      await withFsDeadline("file_mkdir", abs, () => fs.mkdir(abs, { recursive: recursive !== false }));
       return JSON.stringify({ ok: true, path: abs });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
@@ -532,12 +563,12 @@ export const fileDeleteTool = tool(
     try {
       abs = resolvePath(targetPath);
       assertSafePath(abs, "write");
-      const st = await fs.stat(abs);
+      const st = await withFsDeadline("file_delete.stat", abs, () => fs.stat(abs));
       if (st.isDirectory()) {
         if (!recursive) {
           // Try non-recursive rmdir first — succeeds only if empty.
           try {
-            await fs.rmdir(abs);
+            await withFsDeadline("file_delete.rmdir", abs, () => fs.rmdir(abs));
             return JSON.stringify({ ok: true, path: abs, kind: "directory", removed: "empty" });
           } catch (err) {
             const e = err as NodeJS.ErrnoException;
@@ -551,10 +582,10 @@ export const fileDeleteTool = tool(
             throw err;
           }
         }
-        await fs.rm(abs, { recursive: true, force: false });
+        await withFsDeadline("file_delete.rm", abs, () => fs.rm(abs, { recursive: true, force: false }));
         return JSON.stringify({ ok: true, path: abs, kind: "directory", removed: "recursive" });
       }
-      await fs.unlink(abs);
+      await withFsDeadline("file_delete", abs, () => fs.unlink(abs));
       return JSON.stringify({ ok: true, path: abs, kind: "file" });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
@@ -586,17 +617,17 @@ export const fileCopyTool = tool(
       dstAbs = resolvePath(destination);
       assertSafePath(srcAbs, "read");
       assertSafePath(dstAbs, "write");
-      const srcStat = await fs.stat(srcAbs);
+      const srcStat = await withFsDeadline("file_copy.stat", srcAbs, () => fs.stat(srcAbs));
       let dstStat: import("node:fs").Stats | null = null;
       try {
-        dstStat = await fs.stat(dstAbs);
+        dstStat = await withFsDeadline("file_copy.stat", dstAbs, () => fs.stat(dstAbs));
       } catch {
         // missing
       }
       if (dstStat?.isDirectory()) {
         dstAbs = path.join(dstAbs, path.basename(srcAbs));
         try {
-          dstStat = await fs.stat(dstAbs);
+          dstStat = await withFsDeadline("file_copy.stat", dstAbs, () => fs.stat(dstAbs));
         } catch {
           dstStat = null;
         }
@@ -609,7 +640,7 @@ export const fileCopyTool = tool(
           error: "destination exists. Pass overwrite=true to replace it.",
         });
       }
-      await fs.mkdir(path.dirname(dstAbs), { recursive: true });
+      await withFsDeadline("file_copy.mkdir", path.dirname(dstAbs), () => fs.mkdir(path.dirname(dstAbs), { recursive: true }));
       if (srcStat.isDirectory()) {
         if (recursive === false) {
           return JSON.stringify({
@@ -618,9 +649,9 @@ export const fileCopyTool = tool(
             error: "source is a directory but recursive=false",
           });
         }
-        await fs.cp(srcAbs, dstAbs, { recursive: true, force: overwrite === true, errorOnExist: !overwrite });
+        await withFsDeadline("file_copy.cp", dstAbs, () => fs.cp(srcAbs, dstAbs, { recursive: true, force: overwrite === true, errorOnExist: !overwrite }));
       } else {
-        await fs.copyFile(srcAbs, dstAbs);
+        await withFsDeadline("file_copy", dstAbs, () => fs.copyFile(srcAbs, dstAbs));
       }
       return JSON.stringify({
         ok: true,
@@ -651,7 +682,7 @@ export const fileStatTool = tool(
     let abs = targetPath;
     try {
       abs = resolvePath(targetPath);
-      const st = await fs.stat(abs);
+      const st = await withFsDeadline("file_stat", abs, () => fs.stat(abs));
       return JSON.stringify({
         ok: true,
         path: abs,
