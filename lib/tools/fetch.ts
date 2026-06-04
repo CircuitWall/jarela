@@ -168,6 +168,16 @@ export const webFetchTool = tool(
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      const aborted = ctrl.signal.aborted
+        || (err instanceof Error && (err.name === "AbortError" || /abort/i.test(msg)));
+      if (aborted) {
+        return JSON.stringify({
+          url,
+          error: `timed out after ${Math.round(TIMEOUT_MS / 1000)}s. The page is slow or unresponsive — try a different URL, or raise JARELA_FETCH_TOOL_TIMEOUT_MS.`,
+          timed_out: true,
+          timeout_ms: TIMEOUT_MS,
+        });
+      }
       return JSON.stringify({ url, error: msg });
     } finally {
       clearTimeout(timeout);
