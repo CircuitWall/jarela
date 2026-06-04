@@ -8,7 +8,11 @@ interface Props {
   onChange: (v: string) => void;
   attachments: ContentPart[];
   onAttachmentsChange: (a: ContentPart[]) => void;
+  // Default Send / Enter. Caller decides idle-send vs steer based on streaming state.
   onSubmit: () => void;
+  // Cmd/Ctrl+Enter — explicit "queue this turn" path. Caller queues regardless of streaming.
+  onQueue: () => void;
+  // Pure interrupt — abort the in-flight run without follow-up.
   onStop: () => void;
   streaming: boolean;
   disabled?: boolean;
@@ -29,6 +33,7 @@ const ACCEPT = "image/*,text/*,.ts,.tsx,.js,.jsx,.json,.md,.py,.go,.rs,.yaml,.ym
 // To add: append here, then handle the literal in ChatView.handleSubmit.
 const SLASH_COMMANDS: Array<{ name: string; description: string }> = [
   { name: "/new", description: "save session to memory and start fresh" },
+  { name: "/btw", description: "redirect: abort current run and send this instead" },
 ];
 
 function fileToContentPart(file: File): Promise<ContentPart> {
@@ -54,7 +59,7 @@ function fileToContentPart(file: File): Promise<ContentPart> {
   });
 }
 
-export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
+export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [hlIdx, setHlIdx] = useState(0);
   const [recording, setRecording] = useState(false);
@@ -172,12 +177,12 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      // NOTE: do NOT gate on `streaming` here. ChatView.handleSubmit
-      // intentionally queues the message when a run is in flight, and the
-      // Send button is hidden during streaming (replaced by Stop). Enter
-      // is the ONLY path to push a message into the queue \u2014 if we block
-      // it here, queueing is unreachable from the UI.
-      if (!disabled && (value.trim() || attachments.length)) onSubmit();
+      if (!disabled && (value.trim() || attachments.length)) {
+        // Cmd/Ctrl+Enter is the explicit "queue" shortcut. Plain Enter goes
+        // through onSubmit, which is steer-when-streaming / send-when-idle.
+        if (e.metaKey || e.ctrlKey) onQueue();
+        else onSubmit();
+      }
     }
   }
 
@@ -320,24 +325,27 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           disabled={disabled}
         />
 
-        {streaming ? (
+        {streaming && (
           <button
             onClick={onStop}
             className="glass-btn-stop shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors"
-            title="Stop"
+            title="Stop (interrupt without sending)"
+            aria-label="Stop"
           >
             <Square size={16} />
           </button>
-        ) : (
-          <button
-            onClick={onSubmit}
-            disabled={(!value.trim() && !attachments.length) || disabled}
-            className="glass-btn-send shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            title="Send"
-          >
-            <Send size={16} />
-          </button>
         )}
+        <button
+          onClick={onSubmit}
+          disabled={(!value.trim() && !attachments.length) || disabled}
+          className="glass-btn-send shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          title={streaming
+            ? "Steer — abort current and send this instead (⌘/Ctrl+Enter to queue)"
+            : "Send (⌘/Ctrl+Enter to queue)"}
+          aria-label={streaming ? "Steer" : "Send"}
+        >
+          <Send size={16} />
+        </button>
       </div>
       {voiceError && (
         <p className="mt-1 text-[11px] text-rose-500" role="alert">{voiceError}</p>
