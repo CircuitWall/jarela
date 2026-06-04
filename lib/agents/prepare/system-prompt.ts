@@ -55,6 +55,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.plan_first,
     harnessParts.presentation,
     harnessParts.citation,
+    buildSourceLinkContext(agentCfg),
     buildTimeContext(),
     buildEnvContext(),
     harnessParts.self_config,
@@ -107,6 +108,22 @@ function buildUserContext(): string {
 
 function buildTimeContext(): string {
   return `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
+}
+
+// Citation enforcement directive. Empty unless the agent has
+// `require_source_links` on. The post-turn citation checker validates
+// that every cited link was actually visited via a tool call in this
+// thread, and surfaces a warning badge in the chat UI on any link the
+// agent invented.
+function buildSourceLinkContext(agent: AgentConfigRow): string {
+  if (!agent.require_source_links) return "";
+  return [
+    "--- Source-link enforcement (ENABLED) ---",
+    "Every factual claim you make MUST be followed by a markdown link [label](url-or-workspace-path) pointing to a source you have actually opened in this conversation via a tool call (file_read, file_grep, file_glob, web_search, fetch_webpage, etc.).",
+    "If you do not have a source for a fact, say so explicitly (e.g. 'I don't have a source for this') instead of stating the fact as if you did. Do NOT invent URLs or paths.",
+    "A post-turn checker will flag any link you cite that you did not actually visit, so fabricated citations will be visible to the user.",
+    "Conversational text, plans ('I'll do X'), and acknowledgements do not require sources — only specific factual claims about external content do.",
+  ].join("\n");
 }
 
 function buildExperienceContext(mode: "essential" | "full"): string {

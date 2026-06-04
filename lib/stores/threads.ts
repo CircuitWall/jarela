@@ -173,6 +173,15 @@ export function addMessage(
   return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
 }
 
+// Replace a single message's metadata blob. Used by the citation checker
+// to write its verdict back after the assistant turn has already been
+// persisted (the checker runs async post-insert so the chat UI sees the
+// content immediately and picks up the metadata on the next refresh).
+export function setMessageMetadata(msg_id: string, metadata: Record<string, unknown> | null): void {
+  const json = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
+  getDb().prepare("UPDATE messages SET metadata=? WHERE msg_id=?").run(json, msg_id);
+}
+
 export function getOrCreateAgentThread(agentId: string): ThreadRow {
   const existing = getDb()
     .prepare("SELECT * FROM threads WHERE agent_id=? LIMIT 1")

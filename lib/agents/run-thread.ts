@@ -2,7 +2,7 @@ import { streamWithConfig } from "@/lib/agents/llm";
 import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
-import { addMessage, getThread, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getThread, setMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
@@ -19,6 +19,11 @@ import { recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/pricing";
 import { estimateTokens } from "@/lib/agents/context-budget";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
+import {
+  classifyCitations,
+  extractCitedLinks,
+  extractVisitedSources,
+} from "@/lib/agents/citation-checker";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -501,6 +506,15 @@ export function persistAssistantMessage(
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
     }
+    // Citation checker (fire-and-forget). Runs only when the agent has
+    // `require_source_links` on, the persisted text is non-empty, and the
+    // text actually carries at least one markdown link to check. Writes
+    // its verdict back into `messages.metadata`; the UI picks it up on
+    // the next refresh. Any failure (timeout, parse error, missing
+    // checker model) leaves metadata null and the message renders normally.
+    if (persisted) {
+      void runCitationCheckerForRow(thread_id, row.msg_id, persisted, sanitizedEvents ?? []);
+    }
     // ADR-0041 wrote provider-reported token usage when available. The
     // per-tier context snapshot (hot/warm/facts/overhead) is computed
     // locally and is meaningful even when the provider didn't emit a
@@ -552,6 +566,38 @@ export function persistAssistantMessage(
         console.error("[message_usage] snapshot failed", err);
       }
     }
+  }
+}
+
+/**
+ * Fire-and-forget citation checker. Gated by the agent's
+ * `require_source_links` flag and the existence of a checker model. The
+ * checker is intentionally permissive about failure — anything that
+ * goes wrong (no model, provider throw, parse failure, timeout) leaves
+ * metadata null so the chat UI renders the message normally.
+ */
+async function runCitationCheckerForRow(
+  thread_id: string,
+  msg_id: string,
+  persistedText: string,
+  freshEvents: readonly PersistedToolEvent[],
+): Promise<void> {
+  try {
+    const thread = getThread(thread_id);
+    const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
+    if (!agent || !agent.require_source_links) return;
+    const checkerModel = (agent.anti_hallucination_model_config ?? "").trim();
+    if (!checkerModel) return;
+    // Skip the LLM round-trip when the agent didn't cite anything — there's
+    // nothing for the checker to verify so the only output would be an empty
+    // claims array, which is the same as no metadata.
+    if (extractCitedLinks(persistedText).length === 0) return;
+    const sources = extractVisitedSources(thread_id, freshEvents);
+    const verdict = await classifyCitations(persistedText, sources, checkerModel);
+    if (!verdict) return;
+    setMessageMetadata(msg_id, { citations: verdict });
+  } catch (err) {
+    console.error("[citation-checker] failed", err);
   }
 }
 
