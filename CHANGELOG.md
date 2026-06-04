@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-04
+
+Three additive features on top of 0.11.5. No agent-loop, schema, or
+prompt-construction changes — just storage, UI surface, and a
+provider-credentials path the editor previously couldn't drive without
+a save round-trip.
+
+### Added
+
+- **Per-channel warm summary store
+  ([ADR-0044](docs/adr/0044-per-channel-warm-summary-and-attributed-context.md)).**
+  New `thread_channel_summaries` table keyed by `(thread_id, channel)`
+  so a thread shared across `chat` / `scheduled_task` / `watcher` /
+  `bridge` channels stops blending automation history into interactive
+  turns. `lib/stores/thread-channel-summaries.ts` exposes
+  get/set/list/clear with `ON DELETE CASCADE` off `threads`. Existing
+  `threads.warm_summary*` columns are kept one release as a read-only
+  fallback per the ADR. Storage layer only — prompt-assembly wiring
+  follows.
+- **Model catalog browse accepts in-form credentials, allowlist
+  removed.** `POST /providers/:p/models` accepts `{ params }`
+  overrides so a freshly-typed `api_key` / `base_url` /
+  `extra_headers` works before the user has clicked Save; the server
+  layers them on top of any persisted creds for the same provider
+  and responds `Cache-Control: no-store` since the result is keyed
+  on user-supplied secrets. `ModelEditor`'s hardcoded
+  `CATALOG_PROVIDERS` allowlist is gone — every provider surfaces
+  the Browse button and falls through to the empty-state UI when no
+  `listModels` is published, so out-of-tree provider overlays no
+  longer have to patch this file.
+
+### Changed
+
+- **Per-model context-tier UI removed from ModelEditor.** The "Context
+  tiers and resource usage" panel surfaced `hot` / `warm` / `facts`
+  ratio sliders + tier-priority selectors on every model config; the
+  per-agent override (ADR-0043) already supersedes the model-level
+  value at run time, so this knob was duplicate UX. The
+  payload-building logic was lifted out of the component into
+  `lib/models/editor-payload.ts` so the form-shape → save-payload
+  contract is unit-testable. 15 new tests cover required-field
+  rejection, trim/whitespace, JSON header parsing, numeric edge cases,
+  and an end-to-end round-trip through `upsertModelConfig` +
+  `getModelParams` that confirms the editor's output is actually
+  usable; a regression guard asserts the dropped tier keys do not
+  reappear in persisted params.
+
 ## [0.11.5] - 2026-06-03
 
 ### Fixed
