@@ -5,6 +5,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
 import { useUrlSync } from "@/hooks/useUrlSync";
+import { useVisualViewportInsets } from "@/hooks/useVisualViewportInsets";
 import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
@@ -38,6 +39,7 @@ export function AppShell() {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";
   useUrlSync();
+  useVisualViewportInsets();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
     state.activeAgentId,
     state.activeThreadId,
@@ -194,7 +196,10 @@ export function AppShell() {
     : null;
 
   return (
-    <div className="h-screen h-[100dvh] flex flex-col text-fg overflow-hidden px-safe">
+    <div
+      className="flex flex-col text-fg overflow-hidden px-safe"
+      style={{ height: "var(--visual-vh, 100dvh)" }}
+    >
       <NotificationStatus />
       <Toaster />
       <ServerStatus />

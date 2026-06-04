@@ -61,6 +61,7 @@ function fileToContentPart(file: File): Promise<ContentPart> {
 
 export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hlIdx, setHlIdx] = useState(0);
   const [recording, setRecording] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
@@ -311,7 +312,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         )}
 
         <textarea
-          className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-48 min-h-[44px] transition-colors"
+          className="flex-1 resize-none bg-surface-3/60 text-fg text-sm rounded-xl px-3 py-2 border border-border/60 focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent/40 placeholder:text-fg-faint max-h-[84px] min-h-[44px] transition-colors"
           placeholder={placeholder ?? "Message…"}
           rows={1}
           value={value}
