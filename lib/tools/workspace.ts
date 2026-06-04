@@ -362,6 +362,68 @@ async function detectConventionFiles(root: string): Promise<{
   return { claude_md: claude, agents_md: agents, contributing_md: contributing, adr_dir: adrDir };
 }
 
+// Build the prioritised required-reading list the agent MUST read before
+// taking any other action. Order matters — earlier entries are higher
+// priority. We resolve each candidate to (relative path, byte size) so
+// the agent knows what it's about to spend tokens on.
+//
+// We deliberately do NOT inline contents here: the agent already has
+// file_read for that, the user sees the read calls in the tool stream,
+// and large convention files don't get force-loaded on every init.
+async function buildRequiredReading(
+  root: string,
+  conventions: Awaited<ReturnType<typeof detectConventionFiles>>,
+  readme: { path: string } | null,
+  extra: string[],
+): Promise<Array<{ path: string; bytes: number; reason: string }>> {
+  const seen = new Set<string>();
+  const out: Array<{ path: string; bytes: number; reason: string }> = [];
+
+  const push = async (rel: string | null, reason: string): Promise<void> => {
+    if (!rel || seen.has(rel)) return;
+    try {
+      const st = await fs.stat(path.join(root, rel));
+      if (!st.isFile()) return;
+      seen.add(rel);
+      out.push({ path: rel, bytes: st.size, reason });
+    } catch {
+      /* file vanished between detect and stat — skip */
+    }
+  };
+
+  // Priority order:
+  //   1. CLAUDE.md / AGENTS.md  — agent-specific operating instructions.
+  //   2. CONTRIBUTING.md         — contribution + commit + release rules.
+  //   3. README.md               — project overview & invariants.
+  //   4. Top-level ADR index    — architectural decisions if a docs/adr exists.
+  //   5. Caller-supplied extras  — project-specific must-reads.
+  await push(conventions.claude_md, "agent operating instructions");
+  await push(conventions.agents_md, "agent operating instructions");
+  await push(conventions.contributing_md, "contribution + commit + release rules");
+  await push(readme?.path ?? null, "project overview");
+
+  if (conventions.adr_dir) {
+    for (const idx of ["README.md", "index.md", "0000-index.md"]) {
+      const rel = `${conventions.adr_dir}/${idx}`;
+      await push(rel, "architectural decision records (index)");
+    }
+  }
+
+  for (const extraPath of extra) {
+    const cleaned = extraPath.trim();
+    if (!cleaned) continue;
+    // Refuse absolute paths or parent-escape — required_reading is always
+    // workspace-relative so the agent can't be coaxed into reading
+    // /etc/passwd via a prompt-injected init call.
+    if (path.isAbsolute(cleaned) || cleaned.startsWith("..") || cleaned.split(/[\\/]/).includes("..")) {
+      continue;
+    }
+    await push(cleaned.replace(/\\/g, "/"), "caller-supplied");
+  }
+
+  return out;
+}
+
 // --- init ---------------------------------------------------------------
 
 const initSchema = z.object({
@@ -372,6 +434,10 @@ const initSchema = z.object({
   include_git: z.boolean().optional().describe("Probe git state. Default true."),
   include_scripts: z.boolean().optional().describe("Parse package.json scripts and Makefile targets. Default true."),
   include_readme: z.boolean().optional().describe("Return the head of the project README. Default true."),
+  extra_required_reading: z
+    .array(z.string())
+    .optional()
+    .describe("Additional workspace-relative paths to append to required_reading. Absolute paths and '..' segments are rejected."),
 });
 
 export const workspaceInitTool = tool(
@@ -384,6 +450,7 @@ export const workspaceInitTool = tool(
       include_git = true,
       include_scripts = true,
       include_readme = true,
+      extra_required_reading = [],
     } = input;
 
     let abs: string;
@@ -460,12 +527,13 @@ export const workspaceInitTool = tool(
       tree: include_tree ? tree : undefined,
       readme,
       conventions,
+      required_reading: await buildRequiredReading(abs, conventions, readme, extra_required_reading),
     });
   },
   {
     name: "workspace_init",
     description:
-      "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files). After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task.",
+      "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading). After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task. CRITICAL: the response includes a `required_reading` array of workspace-relative documentation files (CLAUDE.md, AGENTS.md, CONTRIBUTING.md, README, ADR index, plus any caller-supplied extras). You MUST `file_read` every entry in `required_reading` before taking any other action (no edits, no shell commands, no further tool calls beyond file_read for those paths). These files define the project's contribution rules, commit format, release process, and architectural invariants — skipping them produces output that fails review.",
     schema: initSchema,
   },
 );

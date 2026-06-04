@@ -385,3 +385,89 @@ describe("workspace_init — probe opt-outs and edge cases", () => {
     expect(readFileSync(b.path as string, "utf8")).toBe("B");
   });
 });
+
+describe("workspace_init — required_reading", () => {
+  it("orders CLAUDE.md, AGENTS.md, CONTRIBUTING.md, README, and ADR index by priority", async () => {
+    writeFileSync(join(projectRoot, "CLAUDE.md"), "claude");
+    writeFileSync(join(projectRoot, "AGENTS.md"), "agents");
+    writeFileSync(join(projectRoot, "CONTRIBUTING.md"), "contributing");
+    writeFileSync(join(projectRoot, "README.md"), "readme");
+    mkdirSync(join(projectRoot, "docs", "adr"), { recursive: true });
+    writeFileSync(join(projectRoot, "docs", "adr", "README.md"), "adr index");
+
+    const out = parse(await workspaceInitTool.invoke({ path: projectRoot, include_tree: false, include_git: false }));
+    const rr = out.required_reading as Array<{ path: string; bytes: number; reason: string }>;
+    expect(rr.map((r) => r.path)).toEqual([
+      "CLAUDE.md",
+      "AGENTS.md",
+      "CONTRIBUTING.md",
+      "README.md",
+      "docs/adr/README.md",
+    ]);
+    expect(rr.every((r) => typeof r.bytes === "number" && r.bytes >= 0)).toBe(true);
+    expect(rr[0].reason).toMatch(/agent/i);
+  });
+
+  it("returns an empty list when no convention files exist", async () => {
+    const out = parse(await workspaceInitTool.invoke({ path: projectRoot, include_tree: false, include_git: false }));
+    expect(out.required_reading).toEqual([]);
+  });
+
+  it("skips entries that don't exist as files (graceful when convention dir is empty)", async () => {
+    mkdirSync(join(projectRoot, "docs", "adr"), { recursive: true });
+    // No README/index.md inside docs/adr — required_reading should not error out
+    const out = parse(await workspaceInitTool.invoke({ path: projectRoot, include_tree: false, include_git: false }));
+    expect(out.required_reading).toEqual([]);
+  });
+
+  it("appends caller-supplied extra_required_reading", async () => {
+    writeFileSync(join(projectRoot, "CLAUDE.md"), "x");
+    mkdirSync(join(projectRoot, "docs"));
+    writeFileSync(join(projectRoot, "docs", "ARCHITECTURE.md"), "arch");
+    const out = parse(await workspaceInitTool.invoke({
+      path: projectRoot,
+      include_tree: false,
+      include_git: false,
+      extra_required_reading: ["docs/ARCHITECTURE.md"],
+    }));
+    const paths = (out.required_reading as Array<{ path: string }>).map((r) => r.path);
+    expect(paths).toEqual(["CLAUDE.md", "docs/ARCHITECTURE.md"]);
+  });
+
+  it("rejects absolute paths and '..' segments in extra_required_reading", async () => {
+    writeFileSync(join(tmpRoot, "outside.md"), "leak");
+    const out = parse(await workspaceInitTool.invoke({
+      path: projectRoot,
+      include_tree: false,
+      include_git: false,
+      extra_required_reading: [
+        join(tmpRoot, "outside.md"),       // absolute
+        "../outside.md",                    // parent escape
+        "docs/../../outside.md",            // embedded ..
+      ],
+    }));
+    expect(out.required_reading).toEqual([]);
+  });
+
+  it("dedupes if an extra path duplicates a detected convention file", async () => {
+    writeFileSync(join(projectRoot, "CLAUDE.md"), "x");
+    const out = parse(await workspaceInitTool.invoke({
+      path: projectRoot,
+      include_tree: false,
+      include_git: false,
+      extra_required_reading: ["CLAUDE.md"],
+    }));
+    const paths = (out.required_reading as Array<{ path: string }>).map((r) => r.path);
+    expect(paths).toEqual(["CLAUDE.md"]);
+  });
+
+  it("silently skips extras that don't exist", async () => {
+    const out = parse(await workspaceInitTool.invoke({
+      path: projectRoot,
+      include_tree: false,
+      include_git: false,
+      extra_required_reading: ["does-not-exist.md"],
+    }));
+    expect(out.required_reading).toEqual([]);
+  });
+});
