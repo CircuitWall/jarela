@@ -75,8 +75,8 @@ export interface JarelaConfig {
   readonly docMaxFileBytes: number;
   readonly docMaxFilesPerSource: number;
 
-  // anti-hallucination classifier
-  readonly hallucinationDetectorMode: "off" | "report" | "enforce";
+  // anti-hallucination detector
+  readonly hallucinationDetectorMode: "off" | "regex" | "model";
   readonly hallucinationDetectorModel: string;
 
   // app metadata
@@ -118,7 +118,7 @@ function parseHallucinationMode(
 ): JarelaConfig["hallucinationDetectorMode"] {
   if (!value) return fallback;
   const v = value.trim().toLowerCase();
-  if (v === "off" || v === "report" || v === "enforce") return v;
+  if (v === "off" || v === "regex" || v === "model") return v;
   return fallback;
 }
 

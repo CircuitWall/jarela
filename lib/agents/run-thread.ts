@@ -18,7 +18,7 @@ import {
 import { recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/pricing";
 import { estimateTokens } from "@/lib/agents/context-budget";
-import { classifyStall } from "@/lib/agents/hallucination-classifier";
+import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -355,31 +355,39 @@ async function* stallRetryStream(
   const regexStalled = zeroToolStall || promisedWriteStall;
   const looped = !sawError && loopedToolName !== null;
 
-  // Anti-hallucination classifier (configurable model). When configured,
-  // runs alongside the regex and either reports disagreements or — in
-  // `enforce` mode — votes alongside the regex on whether to retry.
-  // Best-effort: any error / parse failure / abort returns null and we
-  // fall through to regex-only behaviour.
-  const cfg = getConfig();
-  const classifierMode = cfg.hallucinationDetectorMode;
-  const classifierVerdict = !sawError && !looped && classifierMode !== "off" && cfg.hallucinationDetectorModel
-    ? await classifyStall(textBuf, toolNames, cfg.hallucinationDetectorModel, originalReq.signal).catch(() => null)
-    : null;
-  const classifierStalled = classifierVerdict?.stalled === true;
-
-  // In `enforce` mode the classifier vote is binding; otherwise regex
-  // alone decides retry. Disagreements are logged in either mode.
-  const stalled = classifierMode === "enforce"
-    ? regexStalled || classifierStalled
-    : regexStalled;
-
-  if (classifierVerdict && classifierStalled !== regexStalled) {
-    // Structured log entry — the logs panel surfaces these greppably
-    // and the operator can use them to harvest regex blind spots.
-    console.warn(
-      `[anti-hallucination] regex=${regexStalled} classifier=${classifierStalled} mode=${classifierMode} thread=${originalReq.thread_id} reason=${JSON.stringify(classifierVerdict.reason)}`,
-    );
+  // Anti-hallucination detector — picks ONE method per turn (regex or
+  // model), based on the resolved per-agent (or global env) settings.
+  // The classifier and the regex never run together; the model is more
+  // accurate but adds latency + cost, the regex is fast but brittle.
+  const agentCfg = getAgentConfig(originalReq.thread_id ? (getThread(originalReq.thread_id)?.agent_id ?? "") : "");
+  const detector = resolveDetector(agentCfg);
+  let classifierStalled = false;
+  let classifierReason = "";
+  if (!sawError && !looped && detector.mode === "model") {
+    const verdict = await classifyStall(textBuf, toolNames, detector.modelConfigName, originalReq.signal)
+      .catch(() => null);
+    if (verdict) {
+      classifierStalled = verdict.stalled;
+      classifierReason = verdict.reason;
+    } else {
+      // Classifier unavailable / errored / aborted — fall back to regex
+      // for THIS turn so the agent isn't left ungovernable.
+      console.warn(
+        `[anti-hallucination] classifier unavailable, falling back to regex for thread ${originalReq.thread_id} (model=${detector.modelConfigName || "<unset>"})`,
+      );
+    }
   }
+
+  // Effective stall verdict per the resolved mode:
+  //   off    → no stall detection (whatever the regex thought, ignore)
+  //   regex  → regex verdict
+  //   model  → classifier verdict if we got one, else regex fallback
+  const stalled =
+    detector.mode === "off"
+      ? false
+      : detector.mode === "regex"
+        ? regexStalled
+        : (classifierStalled || (classifierReason === "" && regexStalled)); // "model" mode
 
   // Fabrication check (ADR-0037): only run when no other path claimed
   // this turn.
@@ -388,15 +396,6 @@ async function* stallRetryStream(
     : ({ ok: true } as const);
 
   if (!stalled && !looped && fabrication.ok) {
-    // The classifier flagged a possible stall the regex missed, but
-    // we're not in enforce mode so the turn finishes normally. Append
-    // an inline footer note so the user can see the disagreement.
-    if (classifierVerdict && classifierStalled && !regexStalled) {
-      yield {
-        type: "text_delta",
-        data: { delta: `\n\n*⚠️ Hallucination classifier flagged this turn (report-only mode): ${classifierVerdict.reason || "stall suspected"}*` },
-      };
-    }
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -415,7 +414,7 @@ async function* stallRetryStream(
       : zeroToolStall
         ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
         : classifierStalled
-          ? `↻ Auto-retry: an external classifier flagged your reply as a stall (${classifierVerdict?.reason || "promise without a write tool"}). Don't narrate the next step; either CALL the actual tool that fulfils what you promised, or stop and explain why you can't.`
+          ? `↻ Auto-retry: the anti-hallucination classifier flagged your reply as a stall (${classifierReason || "promise without a write tool"}). Don't narrate the next step; either CALL the actual tool that fulfils what you promised, or stop and explain why you can't.`
           : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
   const retry = await prepareThreadRun({

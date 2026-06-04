@@ -1,23 +1,64 @@
-// Anti-hallucination classifier (configurable model) — judges whether an
-// agent turn STALLED, meaning the assistant narrated future work but
-// didn't invoke a write-class tool to actually do the thing.
+// Anti-hallucination detector — judges whether an agent turn STALLED,
+// meaning the assistant narrated future work but didn't invoke a
+// write-class tool to actually do the thing.
 //
-// Two knobs in lib/env/schema.ts drive this:
-//   JARELA_HALLUCINATION_DETECTOR_MODE  = off | report | enforce
-//   JARELA_HALLUCINATION_DETECTOR_MODEL = name of a saved model config
+// Two detection methods, picked by mode (one or the other, never both):
+//   "off"   — no detection.
+//   "regex" — fast pattern match in lib/agents/run-thread.ts (default).
+//   "model" — LLM classifier via this module. Requires a saved model
+//             config name; falls back to "regex" if missing.
 //
-// `off`     — never invoked.
-// `report`  — runs in parallel with the regex; on disagreement, logs a
-//             structured entry to the logs sink (greppable in the panel)
-//             and the call site appends a footer note.
-// `enforce` — classifier vote OR regex vote → triggers retry.
+// Per-agent (lib/stores/agent-configs.ts):
+//   anti_hallucination_mode + anti_hallucination_model_config
+//   NULL on either column → inherit the env defaults below.
 //
-// Empty model name short-circuits to mode=off regardless. Same for any
-// invocation error: the classifier is best-effort, never blocks the turn.
+// Global (lib/env/schema.ts):
+//   JARELA_HALLUCINATION_DETECTOR_MODE  = off | regex | model  (default: regex)
+//   JARELA_HALLUCINATION_DETECTOR_MODEL = saved model config name
+//
+// Any invocation error / parse failure / abort returns null so the call
+// site can fall back; the classifier never blocks the turn.
 
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { isWriteLikeToolName } from "@/lib/agents/run-thread";
+import { getConfig } from "@/lib/env/config";
+import type { AgentConfigRow } from "@/lib/stores/agent-configs";
+
+export type DetectorMode = "off" | "regex" | "model";
+
+export interface ResolvedDetector {
+  /** Effective mode after merging the agent override over the env default. */
+  mode: DetectorMode;
+  /** Effective model config name (only meaningful when mode === "model"). */
+  modelConfigName: string;
+}
+
+/**
+ * Merge the per-agent override (`anti_hallucination_mode` + `_model_config`)
+ * over the env default (JARELA_HALLUCINATION_DETECTOR_MODE +
+ * JARELA_HALLUCINATION_DETECTOR_MODEL).
+ *
+ * If the resolved mode is "model" but no model config name is available,
+ * silently downgrade to "regex" — this is the cheaper safe fallback. We
+ * also downgrade when the named config doesn't exist (typo, deleted
+ * config); the call site can log if it cares.
+ */
+export function resolveDetector(agent: Pick<AgentConfigRow, "anti_hallucination_mode" | "anti_hallucination_model_config"> | null | undefined): ResolvedDetector {
+  const env = getConfig();
+  const rawMode = (agent?.anti_hallucination_mode as DetectorMode | null | undefined)
+    ?? env.hallucinationDetectorMode;
+  const modelName = (agent?.anti_hallucination_model_config?.trim() || env.hallucinationDetectorModel.trim());
+  if (rawMode === "model" && (!modelName || !getModelConfig(modelName))) {
+    // Asked for model classifier but it's not actually configured — fall
+    // back to regex so the agent still has SOME guard.
+    return { mode: "regex", modelConfigName: "" };
+  }
+  if (rawMode === "off" || rawMode === "regex" || rawMode === "model") {
+    return { mode: rawMode, modelConfigName: modelName };
+  }
+  return { mode: "regex", modelConfigName: "" };
+}
 
 export interface StallVerdict {
   stalled: boolean;

@@ -90,6 +90,15 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [tierOverride, setTierOverride] = useState<{ hot: number; warm: number; facts: number } | null>(
     agent?.context_tier_proportions ?? null,
   );
+  // Anti-hallucination detector: per-agent override of the global env
+  // setting. "" = inherit (null on the wire). The model field only
+  // matters when mode === "model"; when inherit/regex/off it's ignored.
+  const [antiHallucMode, setAntiHallucMode] = useState<"" | "off" | "regex" | "model">(
+    agent?.anti_hallucination_mode ?? "",
+  );
+  const [antiHallucModel, setAntiHallucModel] = useState<string>(
+    agent?.anti_hallucination_model_config ?? "",
+  );
   const [otherAgents, setOtherAgents] = useState<AgentConfig[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,6 +290,8 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         harness_id: harnessId || null,
         delegate_targets: delegateTargets,
         context_tier_proportions: tierOverride,
+        anti_hallucination_mode: antiHallucMode === "" ? null : antiHallucMode,
+        anti_hallucination_model_config: antiHallucModel.trim() === "" ? null : antiHallucModel.trim(),
       });
       onClose();
     } catch (e) {
@@ -576,6 +587,45 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                 </label>
                 <p className="text-[11px] text-fg-faint">
                   Behavioral scaffolding (output formatting, citation rules, anti-fabrication, self-config) injected into this agent&apos;s system prompt.
+                </p>
+
+                <hr className="border-border/60 my-2" />
+
+                <label className="block">
+                  <span className="text-xs text-fg-subtle mb-1 block">Anti-hallucination detector</span>
+                  <Select
+                    value={antiHallucMode}
+                    onChange={(e) => setAntiHallucMode(e.target.value as "" | "off" | "regex" | "model")}
+                  >
+                    <option value="">Inherit global default</option>
+                    <option value="off">Off — no detection</option>
+                    <option value="regex">Regex — fast, free, brittle</option>
+                    <option value="model">Model — LLM classifier (more accurate, +1 call/turn)</option>
+                  </Select>
+                </label>
+                {antiHallucMode === "model" && (
+                  <label className="block">
+                    <span className="text-xs text-fg-subtle mb-1 block">
+                      Classifier model
+                      {antiHallucModel === "" && (
+                        <span className="ml-1 text-fg-faint">(inherits global)</span>
+                      )}
+                    </span>
+                    <Select
+                      value={antiHallucModel}
+                      onChange={(e) => setAntiHallucModel(e.target.value)}
+                    >
+                      <option value="">Inherit global JARELA_HALLUCINATION_DETECTOR_MODEL</option>
+                      {models.map((m) => (
+                        <option key={m.name} value={m.name}>
+                          {m.name} — {m.provider}/{m.model_id}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                )}
+                <p className="text-[11px] text-fg-faint">
+                  When set to <em>model</em>, every assistant turn for this agent runs through an LLM classifier that judges whether the agent stalled (narrated future work without invoking a write tool). Pick a fast/cheap config (e.g. Haiku, gpt-4o-mini, gemini-flash). If no model is configured here or globally, falls back to <em>regex</em>.
                 </p>
 
                 <hr className="border-border/60 my-2" />

@@ -612,6 +612,17 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("context_tier_proportions")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN context_tier_proportions TEXT");
   }
+  // Per-agent override of the anti-hallucination classifier (ADR-…). NULL
+  // on either column = inherit the global JARELA_HALLUCINATION_DETECTOR_*
+  // env knob. Mode is one of "off" | "report" | "enforce"; model_config is
+  // the name of a saved model config (lib/stores/model-config) used as
+  // the classifier model.
+  if (!names.has("anti_hallucination_mode")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN anti_hallucination_mode TEXT");
+  }
+  if (!names.has("anti_hallucination_model_config")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN anti_hallucination_model_config TEXT");
+  }
 }
 
 /**

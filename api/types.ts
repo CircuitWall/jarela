@@ -47,6 +47,22 @@ export interface AgentConfig {
    * value.
    */
   context_tier_proportions: { hot: number; warm: number; facts: number } | null;
+  /**
+   * Per-agent override of the anti-hallucination classifier mode.
+   *   null      = inherit the global JARELA_HALLUCINATION_DETECTOR_MODE
+   *   "off"     = no classifier on this agent's turns
+   *   "report"  = classifier runs alongside regex; logs disagreements +
+   *               appends a footer when classifier flags a stall regex missed
+   *   "enforce" = either regex OR classifier vote triggers retry
+   */
+  anti_hallucination_mode: "off" | "regex" | "model" | null;
+  /**
+   * Per-agent override of the anti-hallucination classifier model.
+   * Stores the `name` of a saved model config (see Models settings) — pick
+   * a fast/cheap one (Haiku, gpt-4o-mini, gemini-flash). NULL = inherit the
+   * global JARELA_HALLUCINATION_DETECTOR_MODEL.
+   */
+  anti_hallucination_model_config: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -77,6 +93,9 @@ export interface AgentConfigIn {
   delegate_targets?: string[];
   // null = clear and inherit from the model; undefined = leave as-is.
   context_tier_proportions?: { hot: number; warm: number; facts: number } | null;
+  // null = clear override; undefined = leave as-is.
+  anti_hallucination_mode?: "off" | "regex" | "model" | null;
+  anti_hallucination_model_config?: string | null;
 }
 
 export interface ThreadSummary {
