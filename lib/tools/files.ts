@@ -6,6 +6,7 @@ import { z } from "zod";
 import { registerTools } from "./registry";
 import { checkFsAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
+import { currentWorkspace, type ToolConfig } from "./workspace-context";
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
@@ -57,14 +58,20 @@ function clip(text: string, max: number): { value: string; truncated: boolean } 
   return { value: text.slice(0, max), truncated: true };
 }
 
-// Resolve agent-supplied paths against the USER'S HOME directory, not
-// process.cwd(). In production cwd is the Jarela install dir
+// Resolve agent-supplied paths.
+//
+// - `~` and `~/foo` always resolve against $HOME.
+// - Absolute paths are honoured verbatim.
+// - Bare relative paths resolve against `workspaceRoot` if one is set
+//   (the agent called `workspace_init`), otherwise against $HOME.
+//
+// In production cwd is the Jarela install dir
 // (%LOCALAPPDATA%\Programs\Jarela) — if the agent writes "notes.txt"
 // expecting it to land somewhere visible, it lands buried in the install
 // tree and the user concludes the tool didn't run. Home is the natural
-// default for an "assistant on my computer". Absolute paths and ~/ paths
-// are honored verbatim.
-function resolvePath(p: string): string {
+// default for an "assistant on my computer"; the workspace root takes
+// priority once the agent has declared one.
+function resolvePath(p: string, workspaceRoot?: string): string {
   if (!p.trim()) throw new Error("path is required");
   let s = p.trim();
   if (s === "~") return os.homedir();
@@ -73,7 +80,32 @@ function resolvePath(p: string): string {
     return path.resolve(s);
   }
   if (path.isAbsolute(s)) return path.resolve(s);
-  return path.resolve(os.homedir(), s);
+  return path.resolve(workspaceRoot ?? os.homedir(), s);
+}
+
+/**
+ * Resolver factory bound to the current tool call's workspace context.
+ * Returns a `resolve()` that handles ~/abs/relative paths and enforces
+ * `scoped: true` (absolute paths outside the workspace root are refused).
+ */
+function pathResolverFor(config?: ToolConfig): {
+  resolve: (p: string) => string;
+  workspace?: ReturnType<typeof currentWorkspace>;
+} {
+  const workspace = currentWorkspace(config);
+  return {
+    workspace,
+    resolve: (p: string): string => {
+      const abs = resolvePath(p, workspace?.root);
+      if (workspace?.scoped && !isInside(abs, workspace.root)) {
+        throw new Error(
+          `refused: '${abs}' is outside the scoped workspace '${workspace.root}'. ` +
+            `Call workspace_init with scoped=false to allow paths outside the project, or use a relative path.`,
+        );
+      }
+      return abs;
+    },
+  };
 }
 
 // Filesystem denylist for agent-driven file tools. The LLM has free
@@ -175,10 +207,10 @@ const readSchema = z.object({
 });
 
 export const fileReadTool = tool(
-  async ({ path: filePath, start_line, end_line }) => {
+  async ({ path: filePath, start_line, end_line }, config?: ToolConfig) => {
     let abs = filePath;
     try {
-      abs = resolvePath(filePath);
+      abs = pathResolverFor(config).resolve(filePath);
       assertSafePath(abs, "read");
       const raw = await withFsDeadline("file_read", abs, () => fs.readFile(abs, "utf8"));
       let content = raw;
@@ -223,10 +255,10 @@ const writeSchema = z.object({
 });
 
 export const fileWriteTool = tool(
-  async ({ path: filePath, content, create_dirs }) => {
+  async ({ path: filePath, content, create_dirs }, config?: ToolConfig) => {
     let abs = filePath;
     try {
-      abs = resolvePath(filePath);
+      abs = pathResolverFor(config).resolve(filePath);
       const cap = maxWriteBytes();
       if (content.length > cap) {
         return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${cap} bytes` });
@@ -274,10 +306,10 @@ const editSchema = z.object({
 });
 
 export const fileEditTool = tool(
-  async ({ path: filePath, old_string, new_string }) => {
+  async ({ path: filePath, old_string, new_string }, config?: ToolConfig) => {
     let abs = filePath;
     try {
-      abs = resolvePath(filePath);
+      abs = pathResolverFor(config).resolve(filePath);
       assertSafePath(abs, "write");
       const raw = await withFsDeadline("file_edit.read", abs, () => fs.readFile(abs, "utf8"));
       const first = raw.indexOf(old_string);
@@ -333,12 +365,13 @@ const moveSchema = z.object({
 });
 
 export const fileMoveTool = tool(
-  async ({ source, destination, overwrite, create_dirs }) => {
+  async ({ source, destination, overwrite, create_dirs }, config?: ToolConfig) => {
     let srcAbs = source;
     let dstAbs = destination;
     try {
-      srcAbs = resolvePath(source);
-      dstAbs = resolvePath(destination);
+      const { resolve } = pathResolverFor(config);
+      srcAbs = resolve(source);
+      dstAbs = resolve(destination);
       assertSafePath(srcAbs, "write");
       assertSafePath(dstAbs, "write");
       const srcStat = await withFsDeadline("file_move.stat", srcAbs, () => fs.stat(srcAbs));
@@ -432,10 +465,10 @@ const listSchema = z.object({
 });
 
 export const fileListTool = tool(
-  async ({ path: dirPath, max_entries, include_hidden, pattern }) => {
+  async ({ path: dirPath, max_entries, include_hidden, pattern }, config?: ToolConfig) => {
     let abs = dirPath;
     try {
-      abs = resolvePath(dirPath);
+      abs = pathResolverFor(config).resolve(dirPath);
       assertSafePath(abs, "read");
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
@@ -529,10 +562,10 @@ const mkdirSchema = z.object({
 });
 
 export const fileMkdirTool = tool(
-  async ({ path: dirPath, recursive }) => {
+  async ({ path: dirPath, recursive }, config?: ToolConfig) => {
     let abs = dirPath;
     try {
-      abs = resolvePath(dirPath);
+      abs = pathResolverFor(config).resolve(dirPath);
       assertSafePath(abs, "write");
       await withFsDeadline("file_mkdir", abs, () => fs.mkdir(abs, { recursive: recursive !== false }));
       return JSON.stringify({ ok: true, path: abs });
@@ -558,10 +591,10 @@ const deleteSchema = z.object({
 });
 
 export const fileDeleteTool = tool(
-  async ({ path: targetPath, recursive }) => {
+  async ({ path: targetPath, recursive }, config?: ToolConfig) => {
     let abs = targetPath;
     try {
-      abs = resolvePath(targetPath);
+      abs = pathResolverFor(config).resolve(targetPath);
       assertSafePath(abs, "write");
       const st = await withFsDeadline("file_delete.stat", abs, () => fs.stat(abs));
       if (st.isDirectory()) {
@@ -609,12 +642,13 @@ const copySchema = z.object({
 });
 
 export const fileCopyTool = tool(
-  async ({ source, destination, overwrite, recursive }) => {
+  async ({ source, destination, overwrite, recursive }, config?: ToolConfig) => {
     let srcAbs = source;
     let dstAbs = destination;
     try {
-      srcAbs = resolvePath(source);
-      dstAbs = resolvePath(destination);
+      const { resolve } = pathResolverFor(config);
+      srcAbs = resolve(source);
+      dstAbs = resolve(destination);
       assertSafePath(srcAbs, "read");
       assertSafePath(dstAbs, "write");
       const srcStat = await withFsDeadline("file_copy.stat", srcAbs, () => fs.stat(srcAbs));
@@ -678,10 +712,10 @@ const statSchema = z.object({
 });
 
 export const fileStatTool = tool(
-  async ({ path: targetPath }) => {
+  async ({ path: targetPath }, config?: ToolConfig) => {
     let abs = targetPath;
     try {
-      abs = resolvePath(targetPath);
+      abs = pathResolverFor(config).resolve(targetPath);
       const st = await withFsDeadline("file_stat", abs, () => fs.stat(abs));
       return JSON.stringify({
         ok: true,

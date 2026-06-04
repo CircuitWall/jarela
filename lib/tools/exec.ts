@@ -5,6 +5,7 @@ import { registerTools } from "./registry";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { checkExecAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
+import { currentWorkspace, type ToolConfig } from "./workspace-context";
 
 // JARELA_EXEC_MAX_OUTPUT_BYTES / JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS /
 // JARELA_EXEC_TOOL_MAX_TIMEOUT_MS override these.
@@ -36,6 +37,7 @@ function runLocalCommand(
     env?: Record<string, string>;
     timeout_ms?: number;
     allow_unsafe?: boolean;
+    workspaceRoot?: string;
   },
 ): string {
   if (!command.trim()) {
@@ -54,7 +56,13 @@ function runLocalCommand(
     return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
   }
 
-  const cwd = options.cwd?.trim() ? options.cwd : process.cwd();
+  // Precedence: explicit options.cwd > active workspace root > process.cwd().
+  // The workspace root takes priority over process.cwd() so the agent
+  // doesn't have to thread `cwd` into every shell call once it's called
+  // workspace_init.
+  const cwd = options.cwd?.trim()
+    ? options.cwd
+    : options.workspaceRoot ?? process.cwd();
   // Layered env. Later spreads win:
   //   1. process.env — PATH, HOME, locale, the shell's exports
   //   2. integration-store credentials — so a service install (launchd,
@@ -99,8 +107,8 @@ const execSchema = z.object({
 });
 
 export const localExecTool = tool(
-  async ({ command, cwd, env, timeout_ms, allow_unsafe }) =>
-    runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe }),
+  async ({ command, cwd, env, timeout_ms, allow_unsafe }, config?: ToolConfig) =>
+    runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
     name: "local_exec",
     description: "Run local shell commands with optional cwd/env overrides. Output is truncated to 8 KB.",
@@ -109,8 +117,8 @@ export const localExecTool = tool(
 );
 
 export const shellExecTool = tool(
-  async ({ command, cwd, env, timeout_ms, allow_unsafe }) =>
-    runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe }),
+  async ({ command, cwd, env, timeout_ms, allow_unsafe }, config?: ToolConfig) =>
+    runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
     name: "shell_exec",
     description: "Backward-compatible alias for local_exec.",
