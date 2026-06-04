@@ -433,13 +433,69 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     setQueue((q) => q.filter((m) => m.id !== id));
   }
 
+  // Default Send / Enter. Send-when-idle, STEER-when-streaming.
+  // Steer = prepend message to queue and abort the current run; the existing
+  // handleDone → drainQueueRef machinery picks the prepended item up first
+  // (merged ahead of any earlier queued items) once the abort settles.
   async function handleSubmit() {
-    const msg = input.trim();
+    let msg = input.trim();
     if (!msg || !agentId) return;
 
     if (msg.toLowerCase() === "/new") {
       setInput("");
       await handleCompact();
+      return;
+    }
+
+    // /btw is intent flavor — strip the prefix so the agent never sees it.
+    // The default handleSubmit path already steers when streaming and sends
+    // when idle, so the prefix doesn't need to change routing.
+    if (msg.toLowerCase().startsWith("/btw ")) {
+      msg = msg.slice(5).trim();
+      if (!msg) return;
+    }
+
+    if (sessionError) {
+      setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
+      return;
+    }
+
+    setInput("");
+    const currentAttachments = attachments;
+    setAttachments([]);
+
+    const ready =
+      !streaming && !compacting && !!threadId && queueRef.current.length === 0;
+    if (ready) {
+      await launchRun(msg, currentAttachments);
+      return;
+    }
+
+    // Not ready: STEER. Prepend so the user's redirect goes to the front of
+    // the merged drain turn. Abort the in-flight run (if any) — the existing
+    // drainQueueRef wiring will fire after handleDone resolves the abort.
+    setQueue((q) => [
+      {
+        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        text: msg,
+        attachments: currentAttachments,
+      },
+      ...q,
+    ]);
+    if (streaming) stop();
+  }
+
+  // ⌘/Ctrl+Enter — explicit "queue this turn" path. Always appends; never
+  // aborts. When idle and the queue is empty there's nothing to wait behind,
+  // so we just send normally (the modifier is redundant in that case).
+  async function handleQueue() {
+    const msg = input.trim();
+    if (!msg || !agentId) return;
+
+    // /new and /btw have stronger semantics than the queue modifier — defer
+    // to handleSubmit so the prefix is parsed and routed correctly.
+    if (msg.toLowerCase() === "/new" || msg.toLowerCase().startsWith("/btw ")) {
+      await handleSubmit();
       return;
     }
 
@@ -452,24 +508,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     const currentAttachments = attachments;
     setAttachments([]);
 
-    // Queue when ANY gating condition holds: a run is already in flight,
-    // we're compacting, the session is still loading (no threadId yet), or
-    // there are already items ahead in the queue. The drain triggers
-    // (handleDone, handleCompact, the message-load effect) will fire it
-    // when the gate clears. Sending immediately is reserved for the fully
-    // ready state.
     const ready =
       !streaming && !compacting && !!threadId && queueRef.current.length === 0;
-    if (!ready) {
-      setQueue((q) => [...q, {
-        id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        text: msg,
-        attachments: currentAttachments,
-      }]);
+    if (ready) {
+      await launchRun(msg, currentAttachments);
       return;
     }
 
-    await launchRun(msg, currentAttachments);
+    setQueue((q) => [...q, {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: msg,
+      attachments: currentAttachments,
+    }]);
   }
 
   return (
@@ -590,6 +640,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         attachments={attachments}
         onAttachmentsChange={setAttachments}
         onSubmit={handleSubmit}
+        onQueue={handleQueue}
         onStop={stop}
         streaming={streaming}
         voiceEnabled={!!agentConfig?.voice_enabled}
