@@ -7,7 +7,9 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-threads-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const {
+  addMessage,
   createThread,
+  getMessages,
   getThread,
   setThreadContextPin,
   setThreadWarmSummary,
@@ -64,5 +66,33 @@ describe("thread context pin (ADR-0042)", () => {
     expect(drifted?.hot_since).toBe("2026-06-01T08:00:00.000Z");
     expect(drifted?.warm_summary_before).toBe("2026-06-01T10:00:00.000Z");
     // ⇒ freshness check `warm_summary_before === hot_since` returns false.
+  });
+});
+
+describe("addMessage metadata", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("stores null when no metadata is supplied", () => {
+    const t = createThread("agent-meta");
+    addMessage(t.thread_id, "assistant", "hi");
+    const [row] = getMessages(t.thread_id);
+    expect(row.metadata).toBeNull();
+  });
+
+  it("stores null for an empty-object metadata payload (no wasted bytes)", () => {
+    const t = createThread("agent-meta");
+    addMessage(t.thread_id, "assistant", "hi", undefined, null, {});
+    const [row] = getMessages(t.thread_id);
+    expect(row.metadata).toBeNull();
+  });
+
+  it("persists a populated metadata object as JSON", () => {
+    const t = createThread("agent-meta");
+    const meta = { citations: { checker_model: "haiku", claims: [], unverified_links: ["https://a"] } };
+    addMessage(t.thread_id, "assistant", "claim with [src](https://a)", undefined, null, meta);
+    const [row] = getMessages(t.thread_id);
+    expect(row.metadata).toBe(JSON.stringify(meta));
   });
 });
