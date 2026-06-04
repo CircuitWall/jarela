@@ -96,10 +96,10 @@ describe("log sink — redaction", () => {
   });
 
   it("redacts known token shapes (sk-, ghp_, gho_)", () => {
-    console.info("calling with sk-aaaaaaaaaaaaaaaaaaaa");
+    console.info("calling with sk-aaaaaaaaaaaaaaaaaaaa"); // jarela-secret-ok
     expect(recentEntries()[0].text).toContain("[redacted-key]");
     _resetLogSink();
-    console.info("token=ghp_bbbbbbbbbbbbbbbbbbbb");
+    console.info("token=ghp_bbbbbbbbbbbbbbbbbbbb"); // jarela-secret-ok
     expect(recentEntries()[0].text).toContain("[redacted-token]");
   });
 
