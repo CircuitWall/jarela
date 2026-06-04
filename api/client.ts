@@ -121,16 +121,63 @@ function cachedList<T>(
   return req;
 }
 
+// Retry classifier matching the JARELA_HTTP_MAX_ATTEMPTS schema description:
+// network errors, 5xx, and 429. 4xx (client errors) and 408 are not retried —
+// the request is well-formed but the server says no, retrying won't change
+// that. AbortError is also not retried (the caller cancelled deliberately).
+function isRetryable(err: unknown, status?: number): boolean {
+  if (status !== undefined) return status >= 500 || status === 429;
+  if (err instanceof DOMException && err.name === "AbortError") return false;
+  return true; // network errors / fetch rejections
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`${res.status} ${text}`);
+  const cfg = runtimeConfig();
+  const maxAttempts = Math.max(1, cfg.httpMaxAttempts);
+  const timeoutMs = cfg.httpRequestTimeoutMs;
+  const callerSignal = init?.signal ?? null;
+
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Per-attempt timeout. Respect a caller-supplied AbortSignal too —
+    // if the caller cancels, we abort whichever attempt is in flight and
+    // bail out of the retry loop immediately.
+    const timeoutCtrl = new AbortController();
+    const timer = setTimeout(() => timeoutCtrl.abort(), timeoutMs);
+    const onCallerAbort = () => timeoutCtrl.abort();
+    callerSignal?.addEventListener("abort", onCallerAbort);
+
+    try {
+      const res = await fetch(`${BASE}${path}`, {
+        headers: { "Content-Type": "application/json", ...init?.headers },
+        ...init,
+        signal: timeoutCtrl.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => res.statusText);
+        // Retryable status codes: try again unless we've burned the budget
+        // or the caller aborted.
+        if (attempt < maxAttempts && isRetryable(null, res.status) && !callerSignal?.aborted) {
+          lastErr = new Error(`${res.status} ${text}`);
+          continue;
+        }
+        throw new Error(`${res.status} ${text}`);
+      }
+      return res.json() as Promise<T>;
+    } catch (err) {
+      // Bail out immediately on caller cancel — never report it as a
+      // network failure.
+      if (callerSignal?.aborted) throw err;
+      lastErr = err;
+      if (attempt < maxAttempts && isRetryable(err)) continue;
+      throw err;
+    } finally {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+    }
   }
-  return res.json() as Promise<T>;
+  // Unreachable: the loop either returns or throws on every attempt.
+  throw lastErr ?? new Error("request failed");
 }
 
 export const api = {
