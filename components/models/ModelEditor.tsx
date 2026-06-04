@@ -11,7 +11,11 @@ import { ModelFeatureGuide } from "./ModelFeatureGuide";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
-const CATALOG_PROVIDERS = new Set<string>(["openai", "github-copilot", "anthropic", "gemini", "deepseek"]);
+// Providers without a `listModels` plugin still respond to the catalog
+// endpoint — they just return `[]`. We surface the Browse button for every
+// provider and let the empty-state UI explain when no catalog is published.
+// This avoids a hardcoded allowlist that would force every new provider
+// (including out-of-tree overlays) to patch this file.
 const DEFAULT_CONTEXT_WINDOW = 8192;
 const DEFAULT_TIER_PROPORTIONS = { hot: 60, warm: 25, facts: 15 };
 
@@ -125,11 +129,21 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   }, [provider]);
 
   async function loadCatalog() {
-    if (!CATALOG_PROVIDERS.has(provider)) return;
     setCatalogLoading(true);
     setCatalogError(null);
     try {
-      const models = await api.models.catalog(provider);
+      // Forward the in-form credentials so a freshly-typed api_key /
+      // base_url works before the user has clicked Save. The server
+      // layers these on top of any persisted creds for the same provider.
+      const overrides: Record<string, unknown> = {};
+      if (apiKey.trim()) overrides.api_key = apiKey.trim();
+      if (baseUrl.trim()) overrides.base_url = baseUrl.trim();
+      if (extraHeaders.trim()) {
+        try { overrides.extra_headers = JSON.parse(extraHeaders); }
+        catch { /* invalid JSON — ignore for the catalog probe */ }
+      }
+      const hasOverrides = Object.keys(overrides).length > 0;
+      const models = await api.models.catalog(provider, hasOverrides ? overrides : undefined);
       setCatalog(models);
       setShowCatalog(true);
     } catch (e) {
@@ -270,16 +284,14 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <span className="text-xs text-fg-subtle">Model ID</span>
-              {CATALOG_PROVIDERS.has(provider) && (
-                <button
-                  onClick={() => showCatalog ? setShowCatalog(false) : loadCatalog()}
-                  disabled={catalogLoading}
-                  className="flex items-center gap-1 text-[11px] text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
-                >
-                  <BookOpen size={11} />
-                  {catalogLoading ? "Loading…" : showCatalog ? "Hide catalog" : "Browse catalog"}
-                </button>
-              )}
+              <button
+                onClick={() => showCatalog ? setShowCatalog(false) : loadCatalog()}
+                disabled={catalogLoading}
+                className="flex items-center gap-1 text-[11px] text-accent hover:text-accent/80 transition-colors disabled:opacity-50"
+              >
+                <BookOpen size={11} />
+                {catalogLoading ? "Loading…" : showCatalog ? "Hide catalog" : "Browse catalog"}
+              </button>
             </div>
             <input
               className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
