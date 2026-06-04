@@ -10,6 +10,7 @@ import { getMessageUsageByIds } from "@/lib/stores/message-usage";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
+import { getCheckpointer } from "@/lib/agents/checkpointer";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -76,5 +77,19 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const deleted = deleteThread(thread_id);
   if (!deleted) return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+
+  // Drop the thread's LangGraph checkpoint rows too. Without this the
+  // checkpoints.db file grows forever as users delete threads — the rows
+  // are orphaned because the per-turn wipe in lib/agents/llm.ts only
+  // runs for active threads.
+  try {
+    await getCheckpointer().deleteThread(thread_id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table:\s*checkpoints/i.test(msg)) {
+      console.error("[threads] checkpoint cleanup failed for thread", thread_id, err);
+    }
+  }
+
   return NextResponse.json({ deleted: true });
 }
