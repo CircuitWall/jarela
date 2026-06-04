@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-04
+
+This release line is rebuilt onto the v0.9.0 base via a selective replay
+of the v0.10.0 line, then layers in the user-facing parts of v0.11.x and
+a focused set of new features. The deeper 0.11.x agent-loop refactor
+(#129–#145, #151–#152, #157) is deliberately not included.
+
+### Added
+
+- **Per-channel warm summary store
+  ([ADR-0044](docs/adr/0044-per-channel-warm-summary-and-attributed-context.md)).**
+  New `thread_channel_summaries` table keyed by `(thread_id, channel)`
+  so a thread shared across `chat` / `scheduled_task` / `watcher` /
+  `bridge` channels stops blending automation history into interactive
+  turns. Storage layer only — prompt-assembly wiring follows.
+- **Live server-log panel
+  ([ADR-0058](docs/adr/0058-logs-panel.md)).** In-app filterable
+  scrollback over a 2000-entry ring with idempotent console patch +
+  redaction of `Authorization` / `api_key` / `sk-…` / `ghp_…` tokens,
+  exposed via `/api/v1/logs` SSE with replay. Mounts as an Advanced tab.
+- **Runtime env overrides
+  ([ADR-0060](docs/adr/0060-env-overrides-and-config-schema.md)).**
+  ~40 `JARELA_*` operational knobs centralised behind a single schema
+  driving the typed config snapshot, per-deployment overrides at
+  `{dataDir}/env-overrides.json`, REST surface, agent tools
+  (`set_env_var`, `restart_server`), and a new EnvVarsPanel UI.
+- **Anti-hallucination stall-retry detector.** Catches three failure
+  modes in one pass: same `(tool, args)` signature recurring ≥3× in a
+  turn (ReAct loop), promised-write stalls (model called read-only
+  tools then ended on `writing X now` / `saving the file now`), and
+  the original zero-tool stall path. New `_skip_persist_message` +
+  `_inject_message_into_history` flags keep the auto-retry nudge in
+  front of the LLM but out of persisted history.
+- **Model catalog browse accepts in-form credentials, allowlist
+  removed.** `POST /providers/:p/models` accepts `{ params }` overrides
+  so a freshly-typed `api_key` / `base_url` works before the user has
+  clicked Save. Hardcoded `CATALOG_PROVIDERS` allowlist gone.
+
+### Changed
+
+- **Per-model context-tier UI removed from ModelEditor.** Per-agent
+  override (ADR-0043) already supersedes the model-level value at run
+  time, so the knob was duplicate UX. Payload-building lifted into
+  `lib/models/editor-payload.ts` with 15 unit tests including a
+  round-trip through `upsertModelConfig`.
+
+### Fixed
+
+- **SSE connect timeout configurable.** Replaces the hardcoded 8s with
+  `JARELA_SSE_CONNECT_TIMEOUT_MS` (default 30s, surfaced via the
+  runtime config layer to the browser). Plus plain-English wording for
+  the user-facing toast (was `Error: EventSource connect timeout`, now
+  `Connection timed out — the server didn't respond within Ns.`).
+- **`request()` helper respects `httpRequestTimeoutMs` and
+  `httpMaxAttempts`.** Both knobs were defined in the runtime config
+  schema with descriptions naming this code path but were never read.
+- **OpenAI-compat adapters emit stream usage events.** *(0.11.0
+  backport.)* Both `lib/providers/openai.ts` and
+  `lib/providers/github-copilot.ts` send
+  `stream_options: { include_usage: true }` and yield a `usage` chunk;
+  ADR-0041 token accounting reflects real provider counts instead of
+  content-length estimates.
+- **Drop orphaned checkpoint rows on thread delete.** *(0.11.1
+  backport.)* `DELETE /api/v1/threads/{id}` now calls
+  `getCheckpointer().deleteThread(id)` so deleted threads' LangGraph
+  rows are reclaimed instead of growing monotonically.
+- **Pricing lookup handles aggregator-namespaced model ids.** *(0.11.2
+  backport.)* Models exposed by aggregators (OpenRouter, LiteLLM) with
+  a `vendor/model` prefix now resolve via the bare suffix; the
+  github-copilot upstream-inference path strips the prefix too.
+- **Hardcoded known-rates fallback for canonical model ids.** *(0.11.3
+  backport.)* New `lib/stores/known-rates.ts` consulted as a 4th tier
+  after the snapshot lookups so dashboard cost columns no longer go
+  blank when the live extractor loses data. Snapshot still wins when
+  present.
+
 ## [0.10.0] - 2026-06-02
 
 ### Added
