@@ -63,6 +63,14 @@ export interface AgentConfig {
    * global JARELA_HALLUCINATION_DETECTOR_MODEL.
    */
   anti_hallucination_model_config: string | null;
+  /**
+   * Citation enforcement (independent of the stall detector). When true,
+   * the system prompt requires `[source](url-or-path)` links for factual
+   * claims and a post-turn checker validates that each cited source was
+   * actually visited via a tool call earlier in this thread. The checker
+   * reuses `anti_hallucination_model_config` as the LLM judge.
+   */
+  require_source_links: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +104,8 @@ export interface AgentConfigIn {
   // null = clear override; undefined = leave as-is.
   anti_hallucination_mode?: "off" | "regex" | "model" | null;
   anti_hallucination_model_config?: string | null;
+  // Independent toggle for the citation-link checker. undefined = leave as-is.
+  require_source_links?: boolean;
 }
 
 export interface ThreadSummary {
@@ -135,6 +145,32 @@ export interface Message {
   // re-querying. Absent for user turns and for assistant rows persisted
   // before message_usage existed.
   usage?: MessageUsage | null;
+  // Auxiliary per-turn metadata. Currently carries the citation-checker
+  // verdict when the agent's `require_source_links` is on. Absent on
+  // legacy rows and on turns where no checker ran.
+  metadata?: MessageMetadata | null;
+}
+
+export interface CitationClaim {
+  /** Short paraphrase of the claim the checker extracted from the turn. */
+  text: string;
+  /** URL or workspace-relative path the agent cited, if any. */
+  link: string | null;
+  /** true = link present AND link is in this thread's visited-source set. */
+  verified: boolean;
+  /** Short human-readable explanation; capped at ~120 chars. */
+  reason: string;
+}
+
+export interface MessageMetadata {
+  citations?: {
+    /** Model config name used as the checker. */
+    checker_model: string;
+    /** Per-claim verdicts. */
+    claims: CitationClaim[];
+    /** URLs/paths the agent cited but that aren't in the visited-source set. */
+    unverified_links: string[];
+  };
 }
 
 export interface MessageUsage {

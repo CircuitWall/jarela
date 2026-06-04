@@ -274,6 +274,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureProxyConfigSchemeAndCaBundle(db);
   ensureThreadsAgentIdUnique(db);
   ensureMessagesCategoryColumn(db);
+  ensureMessagesMetadataColumn(db);
   ensureScheduledTasksSilentColumn(db);
   ensureAgentDisplayFiltersColumn(db);
   ensureDocumentSourceRemoteColumns(db);
@@ -399,6 +400,18 @@ function ensureMessagesCategoryColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "category")) {
     db.exec("ALTER TABLE messages ADD COLUMN category TEXT");
+  }
+}
+
+// Per-message auxiliary metadata (JSON object). NULL on legacy rows and on
+// rows that don't carry any extra data. Current consumer is the citation
+// checker (`require_source_links`), which attaches a verdict shaped like
+// `{ citations: { claims: [...], unverified: [...] } }`. Adding more keys
+// later is free — readers tolerate unknown fields.
+function ensureMessagesMetadataColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "metadata")) {
+    db.exec("ALTER TABLE messages ADD COLUMN metadata TEXT");
   }
 }
 
@@ -622,6 +635,13 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   }
   if (!names.has("anti_hallucination_model_config")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN anti_hallucination_model_config TEXT");
+  }
+  // Independent of the stall classifier: when 1, the agent's system prompt
+  // gets a citation-link directive and the assistant turn is post-checked
+  // for {source link present, source previously visited in this thread}.
+  // Reuses `anti_hallucination_model_config` as the checker model.
+  if (!names.has("require_source_links")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN require_source_links INTEGER NOT NULL DEFAULT 0");
   }
 }
 

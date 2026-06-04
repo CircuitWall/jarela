@@ -7,7 +7,7 @@ const now = () => new Date().toISOString();
 // Explicit column list for message reads — omits `embedding` (~20KB of
 // JSON-encoded float[] per row) which only the embeddings module reads.
 // Avoids dragging it through the chat-history result set on every call.
-const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_events, category FROM messages";
+const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_events, category, metadata FROM messages";
 
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
@@ -30,6 +30,9 @@ export interface MessageRow {
   // panel (e.g. 'scheduled_task', 'bridge', 'synthetic'). NULL = ordinary
   // user/assistant chat content.
   category?: string | null;
+  // JSON-encoded auxiliary per-message data. NULL on legacy rows. Currently
+  // carries the citation-checker verdict when `require_source_links` is on.
+  metadata?: string | null;
 }
 
 export interface PersistedToolEvent {
@@ -148,13 +151,15 @@ export function addMessage(
   content: string,
   toolEvents?: PersistedToolEvent[] | null,
   category: string | null = null,
+  metadata?: Record<string, unknown> | null,
 ): MessageRow {
   const msg_id = randomUUID();
   const t = now();
   const db = getDb();
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
-  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category) VALUES (?,?,?,?,?,?,?)")
-    .run(msg_id, thread_id, role, content, t, toolEventsJson, category);
+  const metadataJson = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
+  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
+    .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson);
   db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
   // Best-effort: embed the message so semantic recall can pull it back later.
   // Skip empty / very short content (greetings have no useful signal).
@@ -165,7 +170,7 @@ export function addMessage(
       }
     }).catch(() => { /* logged in embeddings module */ });
   }
-  return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category };
+  return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
 }
 
 export function getOrCreateAgentThread(agentId: string): ThreadRow {
