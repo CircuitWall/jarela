@@ -142,9 +142,20 @@ export function parseOpenAIInvokeChoice(choice: OpenAIInvokeChoice): InvokeResul
 }
 
 export async function* streamOpenAIEvents(
-  stream: AsyncIterable<{ choices?: OpenAIStreamChoice[] }>,
+  stream: AsyncIterable<{
+    choices?: OpenAIStreamChoice[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+  }>,
 ): AsyncIterable<ProviderStreamEvent> {
   for await (const chunk of stream) {
+    if (chunk.usage) {
+      yield {
+        type: "usage",
+        input_tokens: chunk.usage.prompt_tokens,
+        output_tokens: chunk.usage.completion_tokens,
+        total_tokens: chunk.usage.total_tokens,
+      };
+    }
     const choice = chunk.choices?.[0];
     if (!choice) continue;
     const delta = choice.delta;
@@ -289,20 +300,27 @@ async function* openaiStreamInvoke(
   params: ProviderParams,
   tools: OpenAITool[],
 ): AsyncIterable<ProviderStreamEvent> {
+  const compatOptions = pickOpenAICompatOptions(params) as Record<string, unknown>;
   const body: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
     model: model_id,
     messages: toOpenAIMessages(messages),
     stream: true,
     temperature: params.temperature,
     max_tokens: params.max_tokens,
-    ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
+    ...compatOptions,
+    stream_options: { include_usage: true, ...(compatOptions.stream_options as object | undefined) },
   };
   if (tools.length > 0) {
     body.tools = tools as OpenAI.Chat.ChatCompletionTool[];
     body.tool_choice = "auto";
   }
   const stream = await client.chat.completions.create(body);
-  yield* streamOpenAIEvents(stream as AsyncIterable<{ choices?: OpenAIStreamChoice[] }>);
+  yield* streamOpenAIEvents(
+    stream as AsyncIterable<{
+      choices?: OpenAIStreamChoice[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+    }>,
+  );
 }
 
 export function makeOpenAICompatProvider(
