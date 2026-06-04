@@ -59,18 +59,39 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 }
 
-async function fetchCatalog(provider: string): Promise<CatalogModel[]> {
-  switch (provider) {
-    case "openai":  return fetchOpenAICatalog();
-    case "github-copilot": return fetchGitHubCopilotCatalog();
-    case "anthropic": return anthropicKnownModels();
-    case "gemini":  return geminiKnownModels();
-    case "deepseek": return deepseekKnownModels();
-    default: return fetchExternalCatalog(provider);
+// POST allows the editor to ship the in-form credentials (api_key /
+// base_url / extra_headers) before the user has saved them. We never
+// cache these responses since they're keyed on user-supplied secrets.
+export async function POST(req: NextRequest, { params }: Params) {
+  const { provider } = await params;
+  let body: { params?: ProviderParams } = {};
+  try { body = await req.json(); } catch { /* empty body is fine */ }
+  try {
+    const models = await fetchCatalog(provider, body.params);
+    return NextResponse.json(models, { headers: { "Cache-Control": "no-store" } });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
 
-async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[]> {
+async function fetchCatalog(
+  provider: string,
+  overrides?: ProviderParams,
+): Promise<CatalogModel[]> {
+  switch (provider) {
+    case "openai":  return fetchOpenAICatalog(overrides);
+    case "github-copilot": return fetchGitHubCopilotCatalog(overrides);
+    case "anthropic": return anthropicKnownModels();
+    case "gemini":  return geminiKnownModels();
+    case "deepseek": return deepseekKnownModels();
+    default: return fetchExternalCatalog(provider, overrides);
+  }
+}
+
+async function fetchExternalCatalog(
+  providerName: string,
+  overrides?: ProviderParams,
+): Promise<CatalogModel[]> {
   let provider;
   try {
     provider = getProvider(providerName);
@@ -80,17 +101,18 @@ async function fetchExternalCatalog(providerName: string): Promise<CatalogModel[
   if (!provider.listModels) return [];
 
   const cfg = listModelConfigs().find((c) => c.provider === providerName);
-  const params: ProviderParams = getModelParams(cfg);
+  const params: ProviderParams = { ...getModelParams(cfg), ...(overrides ?? {}) };
   const models = await provider.listModels(params);
   return models as ProviderCatalogModel[];
 }
 
 // ── OpenAI ────────────────────────────────────────────────────────────────────
 
-async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
+async function fetchOpenAICatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
   const cfg = listModelConfigs().find((c) => c.provider === "openai");
-  if (!cfg) throw new Error("No OpenAI model config found.");
-  const params = getModelParams(cfg);
+  // Overrides win over saved config so a freshly-typed api_key works
+  // before the user has clicked Save.
+  const params = { ...(cfg ? getModelParams(cfg) : {}), ...(overrides ?? {}) };
   const apiKey = (params.api_key as string | undefined) ?? process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OpenAI: no api_key configured.");
 
@@ -125,7 +147,7 @@ async function fetchOpenAICatalog(): Promise<CatalogModel[]> {
 
 // ── GitHub Copilot ────────────────────────────────────────────────────────────
 
-async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
+async function fetchGitHubCopilotCatalog(overrides?: ProviderParams): Promise<CatalogModel[]> {
   // We deliberately do NOT return the broad GitHub Models cross-publisher
   // registry here — that lists hundreds of models from every vendor, which is
   // confusing when the user is configuring the "github-copilot" provider
@@ -146,10 +168,11 @@ async function fetchGitHubCopilotCatalog(): Promise<CatalogModel[]> {
   }
 
   // 2. Look up a saved github-copilot model config for an explicit session
-  //    token or a non-PAT credential that supports exchange.
+  //    token or a non-PAT credential that supports exchange. Overrides win
+  //    so a freshly-typed credential in the editor works before save.
   const cfg = listModelConfigs().find((c) => c.provider === "github-copilot");
-  if (cfg) {
-    const params = getModelParams(cfg);
+  if (cfg || overrides) {
+    const params = { ...(cfg ? getModelParams(cfg) : {}), ...(overrides ?? {}) };
     const sessionTok = (params.copilot_session_token as string | undefined)?.trim();
     if (sessionTok) {
       try {
