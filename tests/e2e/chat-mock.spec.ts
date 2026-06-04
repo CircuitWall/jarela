@@ -27,8 +27,9 @@ test("composer sends a message and the mock reply renders", async ({ page }) => 
   const marker = `pw-e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await composer.fill(`MOCK:reply=${marker}`);
 
-  // The send button has title="Send" but no aria-label.
-  await page.locator('button[title="Send"]').click();
+  // Send button exposes aria-label="Send" when idle; its title string
+  // changes between idle and streaming, so prefer the accessible name.
+  await page.locator('button[aria-label="Send"]').click();
 
   // The mock provider streams the marker back; assert it lands in the
   // rendered message list. Use .last() because the marker also appears
