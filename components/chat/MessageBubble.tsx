@@ -716,7 +716,7 @@ function MapEmbed({ payload }: { payload: string }) {
   );
 }
 
-function MarkdownContent({ text, streaming, onInAppLink }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void }) {  return (
+function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string> }) {  return (
     <div className="prose prose-invert prose-sm max-w-none jarela-rich">
       <ReactMarkdown
         remarkPlugins={MD_REMARK_PLUGINS}
@@ -724,6 +724,7 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
         components={{
           a({ href, children, ...rest }) {
             const parsed = href ? parseHref(href) : undefined;
+            const isUnverified = !!(href && unverifiedLinks?.has(href));
             // Inline audio: any link to a local /api/v1/files/*.{wav,mp3,ogg,webm,m4a}
             // becomes a native <audio controls> player. The original anchor
             // text is dropped — the player IS the answer. An `?autoplay=1`
@@ -733,14 +734,19 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
               return <InlineAudio href={href} />;
             }
             const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash);
+            const unverifiedCls = isUnverified ? "decoration-warn decoration-wavy underline-offset-2" : "";
+            const unverifiedTitle = isUnverified ? "Agent did not visit this source in this conversation — the citation may be invented." : undefined;
             if (inApp && href && onInAppLink) {
               return (
                 <a
                   {...rest}
                   href={href}
+                  title={unverifiedTitle ?? rest.title}
+                  className={`${rest.className ?? ""} ${unverifiedCls}`.trim()}
                   onClick={(e) => { e.preventDefault(); onInAppLink(href); }}
                 >
                   {children}
+                  {isUnverified && <sup className="text-warn ml-0.5" aria-label="unverified citation">⚠</sup>}
                 </a>
               );
             }
@@ -750,8 +756,11 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
+                title={unverifiedTitle ?? rest.title}
+                className={`${rest.className ?? ""} ${unverifiedCls}`.trim()}
               >
                 {children}
+                {isUnverified && <sup className="text-warn ml-0.5" aria-label="unverified citation">⚠</sup>}
               </a>
             );
           },
@@ -784,6 +793,43 @@ function MarkdownContent({ text, streaming, onInAppLink }: { text: string; strea
           <span className="jarela-typing-dot" />
           <span className="jarela-typing-dot" />
         </span>
+      )}
+    </div>
+  );
+}
+
+function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ text?: string; link: string | null; verified: boolean; reason?: string }>; checkerModel: string }) {
+  const [open, setOpen] = useState(false);
+  if (claims.length === 0) return null;
+  const verifiedCount = claims.filter((c) => c.verified).length;
+  const total = claims.length;
+  const unverifiedCount = total - verifiedCount;
+  const allVerified = unverifiedCount === 0;
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1 text-[11px] transition-colors ${allVerified ? "text-fg-faint hover:text-fg-muted" : "text-warn hover:opacity-80"}`}
+        title={checkerModel ? `Citations checked by ${checkerModel}` : undefined}
+      >
+        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <span>
+          {allVerified
+            ? `${total} citation${total === 1 ? "" : "s"} verified`
+            : `${unverifiedCount} of ${total} citation${total === 1 ? "" : "s"} unverified`}
+        </span>
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-0.5 pl-4">
+          {claims.map((c, i) => (
+            <li key={i} className={`text-[11px] ${c.verified ? "text-fg-faint" : "text-warn"}`}>
+              {c.verified ? "✓" : "⚠"} {c.text ?? "(claim)"}
+              {c.link && (
+                <span className="ml-1 text-fg-faint truncate inline-block max-w-[60ch] align-middle">— {c.link}</span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -858,11 +904,11 @@ function CodeFence({ language, className, children }: { language: string; classN
   );
 }
 
-function ContentPartView({ part, isUser, onInAppLink }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void }) {
+function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string> }) {
   if (part.type === "text") {
     return isUser
       ? <p className="whitespace-pre-wrap">{part.text}</p>
-      : <MarkdownContent text={part.text} onInAppLink={onInAppLink} />;
+      : <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} />;
   }
   if (part.type === "image") {
     return <ClickableImage media_type={part.media_type} data={part.data} />;
@@ -1139,6 +1185,17 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
     }
   }
 
+  // Citation-checker verdict from messages.metadata. Present only when the
+  // agent has `require_source_links` on AND a checker model is configured
+  // AND the checker call succeeded (any failure leaves metadata null).
+  const citations = !isUser && "metadata" in message
+    ? (message.metadata as { citations?: { checker_model?: string; claims?: Array<{ link: string | null; verified: boolean }>; unverified_links?: string[] } } | null | undefined)?.citations ?? null
+    : null;
+  const unverifiedLinks = useMemo<ReadonlySet<string> | undefined>(
+    () => citations?.unverified_links?.length ? new Set(citations.unverified_links) : undefined,
+    [citations],
+  );
+
   // Format created_at for the hover timestamp. Streaming bubbles don't have
   // one — we show "now" so the hover affordance is still consistent.
   const createdAt = "created_at" in message ? message.created_at : null;
@@ -1218,7 +1275,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               })()
             ) : (
               <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} />
+                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} />
               </CollapsibleLong>
             )
           ) : (
@@ -1244,7 +1301,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                   );
                 }
                 return parsed.map((part, i) => (
-                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
+                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} />
                 ));
               })()}
               {streaming && (
@@ -1267,6 +1324,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         </div>
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
+        )}
+        {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
+          <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />
         )}
         {refs.length > 0 && <RefsFooter refs={refs} />}
       </div>
