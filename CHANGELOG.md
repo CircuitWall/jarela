@@ -7,6 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-06-04
+
+This release rebuilds onto the v0.9.0 base by way of a selective replay
+of the v0.10.0 line, then layers a focused set of new features and
+bugfixes on top. Versions 0.11.0–0.11.5 (workspace_context tool,
+ADR-0061 inbound channel cue, the 0.11.x agent-loop refactor stack,
+stall-retry expansions for aggregator-namespaced models, the
+file_write description trim) are deliberately not included.
+
+### Added
+
+- **Anti-hallucination stall-retry detector.** Catches three failure
+  modes in one pass: (1) the same `(tool, args)` signature recurring
+  ≥3× in a turn (ReAct loop on a read-only tool while narrating a
+  write); (2) "promised-write stalls" — model called read-only tools
+  then ended on `writing X now` / `saving the file now` without
+  invoking a write-like tool; (3) the original zero-tool stall path.
+  STALL_PATTERNS now covers the aspirational present-progressive
+  family (`writing|saving|creating|updating|... now`). New
+  `_skip_persist_message` + `_inject_message_into_history` flags on
+  `ThreadRunRequest` keep the auto-retry nudge in front of the LLM
+  but out of the persisted history — fixes the bug where the model
+  treated its own past nudges as user input.
+- **Per-channel warm summary store ([ADR-0044](docs/adr/0044-per-channel-warm-summary-and-attributed-context.md)).**
+  New `thread_channel_summaries` table keyed by `(thread_id, channel)`
+  so a thread shared across `chat` / `scheduled_task` / `watcher` /
+  `bridge` channels stops blending automation history into interactive
+  turns. Storage layer only in this release; prompt-assembly wiring
+  follows.
+- **Live server-log panel ([ADR-0058](docs/adr/0058-logs-panel.md)).**
+  In-app filterable scrollback over a 2000-entry ring with idempotent
+  console patch + redaction of `Authorization` / `api_key` / `sk-…` /
+  `ghp_…` tokens, exposed via `/api/v1/logs` SSE with
+  `Last-Event-ID`-style replay. Mounts as an Advanced tab.
+- **Runtime env overrides ([ADR-0060](docs/adr/0060-env-overrides-and-config-schema.md)).**
+  ~40 `JARELA_*` operational knobs centralised behind a single schema
+  (`lib/env/schema.ts`) that drives the typed config snapshot,
+  per-deployment overrides at `{dataDir}/env-overrides.json`, REST
+  surface, agent tools (`set_env_var`, `restart_server`), and a new
+  EnvVarsPanel UI. Operators can edit any knob without leaving the
+  app; agents can change a curated subset.
+- **Model catalog browse with in-form credentials.** `POST
+  /providers/:p/models` accepts `{params}` overrides so a freshly-typed
+  api_key / base_url works before the user saves the config. The
+  hardcoded `CATALOG_PROVIDERS` allowlist is gone — every provider
+  surfaces the Browse button and the empty-state UI explains when no
+  catalog is published.
+
+### Changed
+
+- **Per-model context-tier UI removed.** ModelEditor no longer surfaces
+  hot/warm/facts ratio sliders or tier-priority selectors; the per-agent
+  override (ADR-0043) already supersedes the model-level value at run
+  time. The `buildModelEditorPayload` helper was lifted out of the
+  component so the form-shape → save-payload contract is unit-testable
+  end-to-end through `upsertModelConfig`.
+
+### Fixed
+
+- **SSE connect timeout is now configurable.** The 8s hardcoded deadline
+  in `subscribeRun` aborted the EventSource before slow paths the user
+  can't avoid (Next dev cold-compiles, proxy buffering); replaced with
+  `JARELA_SSE_CONNECT_TIMEOUT_MS` (default 30s, surfaced via the
+  runtime config layer to the browser).
+- **Plain-English wording for the SSE connect-timeout toast.** Was
+  `Error: EventSource connect timeout` (a DOM API name no end user
+  knows); now `Connection timed out — the server didn't respond
+  within Ns.` with the actual configured deadline interpolated.
+- **`request()` helper now respects `httpRequestTimeoutMs` and
+  `httpMaxAttempts`.** The browser-side fetch wrapper had no
+  AbortSignal (a stuck server hung every API call forever) and no
+  retry (a single transient 502 / network blip surfaced as a hard
+  error). Both knobs were defined in the runtime config schema with
+  descriptions naming this code path; they were just never read.
+  Retries fire on network errors / 5xx / 429 only; caller-supplied
+  `init.signal` still wins and propagates `AbortError` unchanged.
+
 ## [0.10.0] - 2026-06-02
 
 ### Added
