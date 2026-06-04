@@ -54,9 +54,27 @@ function passesLogLevel(level: LogLevel): boolean {
   return LEVEL_RANK[level] >= min;
 }
 
-const ring: LogEntry[] = [];
-const subscribers = new Set<Subscriber>();
-let nextSeq = 1;
+// Shared state lives on globalThis so every module instance of this file
+// (Next.js bundles routes separately and may hot-reload in dev) reads and
+// writes the SAME ring + subscriber set + seq counter as the console-patch
+// closure. Without this, the first sink instance to patch console owns the
+// live state, and any other instance (e.g. the one imported by the /api/v1/logs
+// route bundle) sees an empty ring + empty subscribers and the Logs panel
+// never receives anything.
+const STATE_KEY: unique symbol = Symbol.for("@jarela/log-sink-state");
+interface SinkState {
+  ring: LogEntry[];
+  subscribers: Set<Subscriber>;
+  nextSeq: number;
+}
+type GlobalWithSink = typeof globalThis & { [STATE_KEY]?: SinkState };
+function sinkState(): SinkState {
+  const g = globalThis as GlobalWithSink;
+  if (!g[STATE_KEY]) {
+    g[STATE_KEY] = { ring: [], subscribers: new Set<Subscriber>(), nextSeq: 1 };
+  }
+  return g[STATE_KEY]!;
+}
 
 const PATCH_MARK: unique symbol = Symbol.for("@jarela/console-patched");
 type PatchedConsole = Console & { [PATCH_MARK]?: true };
@@ -103,19 +121,20 @@ function pushEntry(level: LogLevel, args: unknown[]): void {
       })
       .join(" "),
   );
+  const s = sinkState();
   const entry: LogEntry = {
-    seq: nextSeq,
+    seq: s.nextSeq,
     ts: Date.now(),
     level,
     text,
   };
-  nextSeq += 1;
-  ring.push(entry);
+  s.nextSeq += 1;
+  s.ring.push(entry);
   const cap = ringCapacity();
-  if (ring.length > cap) {
-    ring.splice(0, ring.length - cap);
+  if (s.ring.length > cap) {
+    s.ring.splice(0, s.ring.length - cap);
   }
-  for (const sub of subscribers) {
+  for (const sub of s.subscribers) {
     try { sub(entry); } catch { /* subscriber errored — ignore */ }
   }
 }
@@ -152,20 +171,23 @@ export function installConsolePatch(): void {
  * `recentEntries()` first to replay backlog, then subscribe for new lines.
  */
 export function subscribe(fn: Subscriber): () => void {
-  subscribers.add(fn);
-  return () => { subscribers.delete(fn); };
+  const s = sinkState();
+  s.subscribers.add(fn);
+  return () => { s.subscribers.delete(fn); };
 }
 
 /** Most recent N entries (most-recent-first ordering optional via reverse). */
 export function recentEntries(limit?: number): LogEntry[] {
-  if (!limit || limit >= ring.length) return ring.slice();
-  return ring.slice(-limit);
+  const s = sinkState();
+  if (!limit || limit >= s.ring.length) return s.ring.slice();
+  return s.ring.slice(-limit);
 }
 
 /** Test-only: clear ring + subscriber set + reset seq + ring-cap memo. */
 export function _resetLogSink(): void {
-  ring.length = 0;
-  subscribers.clear();
-  nextSeq = 1;
+  const s = sinkState();
+  s.ring.length = 0;
+  s.subscribers.clear();
+  s.nextSeq = 1;
   _ringCap = null;
 }
