@@ -48,6 +48,7 @@ import type {
   HarnessListResponse,
   HarnessPatch,
 } from "./types";
+import { runtimeConfig } from "./runtime-config";
 
 const BASE = "/api/v1";
 
@@ -746,11 +747,15 @@ export function subscribeRun(
       // else: ignore — EventSource will try to reconnect.
     };
 
-    // Connect-timeout safety net: if onopen hasn't fired within 8s the
-    // server is unreachable (DNS, TLS handshake stuck, proxy black-holing
-    // the GET, …). EventSource alone won't surface that — it stays in
-    // CONNECTING forever, retrying silently. Force the iterator to fail so
-    // the caller's catch/finally can release the UI gate.
+    // Connect-timeout safety net: if onopen hasn't fired within the
+    // configured window the server is unreachable (DNS, TLS handshake
+    // stuck, proxy black-holing the GET, dev-server still compiling the
+    // route, …). EventSource alone won't surface that — it stays in
+    // CONNECTING forever, retrying silently. Force the iterator to fail
+    // so the caller's catch/finally can release the UI gate. The window
+    // is tunable via JARELA_SSE_CONNECT_TIMEOUT_MS (default 30s) so dev
+    // cold-compiles and slow proxies don't false-positive.
+    const connectTimeoutMs = runtimeConfig().sseConnectTimeoutMs;
     let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
       connectTimer = null;
       if (!everOpened && !done) {
@@ -759,7 +764,7 @@ export function subscribeRun(
         try { es.close(); } catch { /* */ }
         notify();
       }
-    }, 8_000);
+    }, connectTimeoutMs);
 
     const onAbort = () => {
       done = true;
