@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-04
+
+Follow-up release on top of 0.12.0 with anti-hallucination tooling, more
+direct send-bar controls, and watchdog/idle-loop fixes shaken out of
+real-world long-running tasks.
+
+### Added
+
+- **Configurable anti-hallucination classifier.** New per-agent
+  classifier with `off` / `report` / `enforce` modes that catches
+  fabricated tool results and assertion drift, surfaced via a model
+  picker in the agent editor.
+- **Explicit Steer / Queue / Interrupt actions on the send button**
+  ([#165](https://github.com/CircuitWall/jarela/pull/165)). Replaces
+  the implicit "send during a turn = ???" behaviour with three
+  unambiguous actions so a follow-up message can be steered into the
+  running turn, queued for after it finishes, or used to interrupt.
+
+### Changed
+
+- **Default timeouts and fetch byte cap raised for long-running tasks**
+  ([#166](https://github.com/CircuitWall/jarela/pull/166)). Operational
+  defaults adjusted so a multi-step research / migration run no longer
+  trips watchdogs or fetch caps that were sized for chat-shaped turns.
+
+### Fixed
+
+- **Idle watchdog pauses while tool calls are in flight**
+  ([#163](https://github.com/CircuitWall/jarela/pull/163),
+  [#164](https://github.com/CircuitWall/jarela/pull/164)). A long
+  `exec`/`fetch` no longer trips the "no progress" detector and
+  cancels its own turn.
+- **Wall-clock deadline on every built-in `fs.*` call.** Read/write/
+  list operations now honour a hard deadline so a slow disk or a
+  pathological glob cannot hang a turn indefinitely.
+- **Stall detector catches mid-sentence "now" forms.** Previously only
+  matched sentence-final cues; now also flags `I'll X ... now` /
+  `I'm X ... now` patterns that historically slipped through.
+- **Watchdog timeouts surface as visible errors instead of silent
+  hangs.** Failed turns now emit an explicit error event so the UI can
+  show what happened rather than appearing to stall.
+
 ## [0.12.0] - 2026-06-04
 
 This release line is rebuilt onto the v0.9.0 base via a selective replay
