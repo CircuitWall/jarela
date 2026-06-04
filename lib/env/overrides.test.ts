@@ -36,7 +36,7 @@ describe("env-overrides validateForSchema", () => {
   const intDef: EnvVarDef = {
     name: "JARELA_RUN_IDLE_MS",
     type: "int",
-    default: 90_000,
+    default: 120_000,
     description: "",
     category: "agent",
     tier: "B",
