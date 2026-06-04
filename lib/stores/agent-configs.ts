@@ -33,6 +33,11 @@ export interface AgentConfigRow {
   // backend divides by sum so the UI can ship raw weights and never has to
   // reconcile to 100. NULL = inherit the model config's value.
   context_tier_proportions: string | null;
+  // Per-agent override of the anti-hallucination classifier mode/model.
+  // NULL on either column = inherit the global JARELA_HALLUCINATION_DETECTOR_*
+  // env knob.
+  anti_hallucination_mode: string | null;          // "off" | "report" | "enforce"
+  anti_hallucination_model_config: string | null;  // saved model config name
   created_at: string;
   updated_at: string;
 }
@@ -115,6 +120,10 @@ export interface UpsertAgentInput {
   // ADR-0043. Pass `null` to clear the override and inherit from the model.
   // Pass `undefined` to keep whatever's already on the row (PATCH semantics).
   context_tier_proportions?: AgentTierProportions | null;
+  // Per-agent anti-hallucination classifier override. `null` = clear the
+  // override (inherit env). `undefined` = keep existing.
+  anti_hallucination_mode?: "off" | "regex" | "model" | null;
+  anti_hallucination_model_config?: string | null;
 }
 
 /**
@@ -187,6 +196,23 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
             warm: Math.max(0, Number(input.context_tier_proportions.warm) || 0),
             facts: Math.max(0, Number(input.context_tier_proportions.facts) || 0),
           });
+  // Anti-hallucination override: `undefined` keeps existing; `null` clears
+  // the override (inherits env). Empty-string model is normalised to null
+  // so the editor can ship "" for the inherit option.
+  const antiHallucMode =
+    input.anti_hallucination_mode === undefined
+      ? (existing?.anti_hallucination_mode ?? null)
+      : input.anti_hallucination_mode === null
+        ? null
+        : (input.anti_hallucination_mode === "off" || input.anti_hallucination_mode === "regex" || input.anti_hallucination_mode === "model")
+          ? input.anti_hallucination_mode
+          : null;
+  const antiHallucModel =
+    input.anti_hallucination_model_config === undefined
+      ? (existing?.anti_hallucination_model_config ?? null)
+      : input.anti_hallucination_model_config && input.anti_hallucination_model_config.trim().length > 0
+        ? input.anti_hallucination_model_config.trim()
+        : null;
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
@@ -194,8 +220,9 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
+         anti_hallucination_mode, anti_hallucination_model_config,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -235,6 +262,8 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       harnessId,
       delegateTargets,
       tierProportions,
+      antiHallucMode,
+      antiHallucModel,
       created_at,
       t,
     );

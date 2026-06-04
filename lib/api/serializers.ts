@@ -37,6 +37,10 @@ export function agentToResponse(a: AgentConfigRow) {
     harness_id: a.harness_id,
     delegate_targets: parseDelegateTargets(a.delegate_targets),
     context_tier_proportions: getAgentTierProportions(a),
+    anti_hallucination_mode: (a.anti_hallucination_mode === "off" || a.anti_hallucination_mode === "regex" || a.anti_hallucination_mode === "model")
+      ? a.anti_hallucination_mode
+      : null,
+    anti_hallucination_model_config: a.anti_hallucination_model_config,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };

@@ -33,6 +33,8 @@ export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAge
     harness_id: body.harness_id,
     delegate_targets: body.delegate_targets,
     context_tier_proportions: body.context_tier_proportions,
+    anti_hallucination_mode: body.anti_hallucination_mode,
+    anti_hallucination_model_config: body.anti_hallucination_model_config,
   };
 }
 
@@ -68,5 +70,9 @@ export function toUpdateAgentInput(
     delegate_targets: "delegate_targets" in body ? body.delegate_targets : undefined,
     context_tier_proportions:
       "context_tier_proportions" in body ? body.context_tier_proportions : undefined,
+    anti_hallucination_mode:
+      "anti_hallucination_mode" in body ? body.anti_hallucination_mode : undefined,
+    anti_hallucination_model_config:
+      "anti_hallucination_model_config" in body ? body.anti_hallucination_model_config : undefined,
   };
 }
