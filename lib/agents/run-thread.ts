@@ -422,12 +422,18 @@ export function persistAssistantMessage(
   // ran, which reads as a hallucination even when the tool did execute.
   let final = trimmed;
   const toolList = usedTools ? Array.from(new Set(usedTools.filter(Boolean))) : [];
-  // Stall detector: model ended its turn with a "one moment" / "let me check"
-  // promise but invoked no tool. The system prompt forbids this, but models
-  // occasionally do it anyway. Marking the message inline gives the user a
-  // concrete next-step ("type continue") instead of staring at silence.
-  if (toolList.length === 0 && trimmed && looksLikeStall(trimmed)) {
-    final = `${trimmed}\n\n*⚠️ Agent stalled — promised a next step but did not invoke any tool. Reply "continue" to retry.*`;
+  // Stall detector: model ended its turn with a promise-shaped tail but
+  // either invoked no tool, OR called only read-only tools while
+  // narrating a write. Both shapes look identical to the user — a chat
+  // bubble that ends mid-task — so the warning footer covers both.
+  // The retry budget (MAX_STALL_AUTO_RETRIES) is exhausted by the time
+  // we hit this code path, so the footer is the user's manual recovery
+  // affordance: "Reply continue".
+  const isStallProse = !!trimmed && looksLikeStall(trimmed);
+  const noTool = toolList.length === 0;
+  const noWriteTool = toolList.length > 0 && !toolList.some(isWriteLikeToolName);
+  if (isStallProse && (noTool || noWriteTool)) {
+    final = `${trimmed}\n\n*⚠️ Agent stalled — promised a next step but did not invoke a write tool. Reply "continue" to retry.*`;
   } else if (toolList.length > 0) {
     final = `${trimmed}\n\n*— used: ${toolList.join(", ")}*`;
   }
@@ -612,6 +618,18 @@ const STALL_PATTERNS: RegExp[] = [
   // narrate-the-write + end-of-turn loop where the model promises a
   // write but never invokes the corresponding tool.
   /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming|editing|regenerating)\b[^.!?]*\bnow\b[!.]?\s*$/i,
+  // Broader promise-shape: any "I'll <verb>" or "I will <verb>" followed
+  // by "now" anywhere in the trailing clause. Catches "I will read it
+  // now to understand the plan" / "I'll add the note now" — variants the
+  // narrow aspirational-verb list above misses because the verb is in
+  // bare infinitive form and `now` is mid-sentence rather than at the
+  // end.
+  /\b(?:i['’]?ll|i\s+will)\s+\w+\b[^.!?]*\bnow\b/i,
+  // Present-continuous version: "I'm reading … now to figure out …" /
+  // "I am updating the dashboard now to reflect …". Same idea, but the
+  // model is narrating in progress rather than promising in future.
+  // Same failure mode in practice — followed by no actual write call.
+  /\b(?:i['’]?m|i\s+am)\s+\w+ing\b[^.!?]*\bnow\b/i,
 ];
 
 // Resolve the agent's allowed_tools list from a thread id. Best-effort: empty

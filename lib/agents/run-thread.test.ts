@@ -137,6 +137,36 @@ describe("looksLikeStall", () => {
       expect(looksLikeStall("Right now the build is green.")).toBe(false);
     });
   });
+
+  // Regression: the model in the wild ended a retry turn with prose like
+  // "I will read it now to understand the plan and then update it" and
+  // "Got it — I'm reading the file now to figure out where to add ...".
+  // The narrow aspirational-verb regex missed both because (a) the verbs
+  // were bare infinitives, not -ing forms, and (b) `now` was mid-sentence,
+  // not at end.
+  describe("broader promise patterns ('I'll X ... now' / 'I'm Xing ... now')", () => {
+    it.each([
+      "I will read it now to understand the current plan and then update it.",
+      "I'll add the note now under the Team Capacity section.",
+      "I will check the file now to see where the section lives.",
+      "I’ll search the directory now and pick the right file.",
+      "Got it — I'm reading the planning markdown file from the correct location now to figure out where to add the note and adjust the plan.",
+      "I am updating the dashboard now to reflect the change.",
+      "I'm looking at the file now to determine the right insertion point.",
+    ])("flags %j", (text) => {
+      expect(looksLikeStall(text)).toBe(true);
+    });
+
+    it("does NOT flag completed past-tense forms", () => {
+      expect(looksLikeStall("I read it just now and the plan looks fine.")).toBe(false);
+      expect(looksLikeStall("I added the note. The file is saved.")).toBe(false);
+    });
+
+    it("does NOT flag plain status reports without the 'now' anchor", () => {
+      expect(looksLikeStall("I will read it once you confirm the path.")).toBe(false);
+      expect(looksLikeStall("I am happy to help with that.")).toBe(false);
+    });
+  });
 });
 
 describe("isWriteLikeToolName", () => {
