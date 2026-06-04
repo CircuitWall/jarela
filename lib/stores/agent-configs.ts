@@ -38,6 +38,12 @@ export interface AgentConfigRow {
   // env knob.
   anti_hallucination_mode: string | null;          // "off" | "report" | "enforce"
   anti_hallucination_model_config: string | null;  // saved model config name
+  // When 1, the system prompt is augmented with a citation-link directive
+  // and the assistant turn is post-checked by `anti_hallucination_model_config`
+  // for {source link present, source previously visited in this thread}.
+  // Independent of `anti_hallucination_mode` — stall detection and citation
+  // enforcement can be on/off in any combination.
+  require_source_links: number;
   created_at: string;
   updated_at: string;
 }
@@ -124,6 +130,9 @@ export interface UpsertAgentInput {
   // override (inherit env). `undefined` = keep existing.
   anti_hallucination_mode?: "off" | "regex" | "model" | null;
   anti_hallucination_model_config?: string | null;
+  // Citation enforcement (independent of stall detector). `undefined` = keep
+  // existing. `false` = disable.
+  require_source_links?: boolean;
 }
 
 /**
@@ -213,6 +222,10 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       : input.anti_hallucination_model_config && input.anti_hallucination_model_config.trim().length > 0
         ? input.anti_hallucination_model_config.trim()
         : null;
+  const requireSourceLinks =
+    input.require_source_links === undefined
+      ? (existing?.require_source_links ?? 0)
+      : (input.require_source_links ? 1 : 0);
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
@@ -220,9 +233,9 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
-         anti_hallucination_mode, anti_hallucination_model_config,
+         anti_hallucination_mode, anti_hallucination_model_config, require_source_links,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -264,6 +277,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       tierProportions,
       antiHallucMode,
       antiHallucModel,
+      requireSourceLinks,
       created_at,
       t,
     );

@@ -5,6 +5,7 @@ import {
   mcpServerToResponse,
   messageToResponse,
   messageUsageToResponse,
+  parseMessageMetadataForResponse,
   parseToolEventsForResponse,
   resolveContextWindowTokens,
 } from "./serializers";
@@ -58,6 +59,16 @@ describe("agentToResponse", () => {
     expect(out.adaptive_persona_enabled).toBe(true);
     expect(out.voice_enabled).toBe(false);
     expect(out.voice_auto_speak).toBe(false);
+  });
+
+  it("defaults require_source_links to false when column is 0 or undefined", () => {
+    expect(agentToResponse(baseRow).require_source_links).toBe(false);
+    expect(agentToResponse({ ...baseRow, require_source_links: 0 } as AgentConfigRow).require_source_links).toBe(false);
+  });
+
+  it("coerces require_source_links=1 to true", () => {
+    const out = agentToResponse({ ...baseRow, require_source_links: 1 } as AgentConfigRow);
+    expect(out.require_source_links).toBe(true);
   });
 
   it("preserves scalar fields verbatim", () => {
@@ -163,6 +174,7 @@ function makeMessageRow(overrides: Partial<MessageRow> = {}): MessageRow {
     created_at: "2026-05-30T00:00:00Z",
     tool_events: null,
     category: null,
+    metadata: null,
     ...overrides,
   };
 }
@@ -292,6 +304,50 @@ describe("messageToResponse", () => {
       new Map(),
     );
     expect(out.tool_events).toBeUndefined();
+  });
+
+  it("defaults metadata to null when row carries no metadata", () => {
+    expect(messageToResponse(makeMessageRow(), new Map()).metadata).toBeNull();
+  });
+
+  it("parses a JSON-object metadata blob through verbatim", () => {
+    const meta = { citations: { checker_model: "haiku", claims: [], unverified_links: [] } };
+    const out = messageToResponse(
+      makeMessageRow({ metadata: JSON.stringify(meta) }),
+      new Map(),
+    );
+    expect(out.metadata).toEqual(meta);
+  });
+
+  it("collapses malformed metadata to null", () => {
+    const out = messageToResponse(
+      makeMessageRow({ metadata: "not json" }),
+      new Map(),
+    );
+    expect(out.metadata).toBeNull();
+  });
+});
+
+describe("parseMessageMetadataForResponse", () => {
+  it("returns null for empty / null input", () => {
+    expect(parseMessageMetadataForResponse(null)).toBeNull();
+    expect(parseMessageMetadataForResponse(undefined)).toBeNull();
+    expect(parseMessageMetadataForResponse("")).toBeNull();
+  });
+
+  it("returns null for non-object JSON (array, number, string, null)", () => {
+    expect(parseMessageMetadataForResponse("[]")).toBeNull();
+    expect(parseMessageMetadataForResponse("42")).toBeNull();
+    expect(parseMessageMetadataForResponse('"hi"')).toBeNull();
+    expect(parseMessageMetadataForResponse("null")).toBeNull();
+  });
+
+  it("returns the parsed object for a JSON object", () => {
+    expect(parseMessageMetadataForResponse('{"a":1}')).toEqual({ a: 1 });
+  });
+
+  it("returns null for malformed JSON", () => {
+    expect(parseMessageMetadataForResponse("{not json")).toBeNull();
   });
 });
 

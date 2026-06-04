@@ -41,6 +41,7 @@ export function agentToResponse(a: AgentConfigRow) {
       ? a.anti_hallucination_mode
       : null,
     anti_hallucination_model_config: a.anti_hallucination_model_config,
+    require_source_links: !!a.require_source_links,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };
@@ -112,6 +113,7 @@ export function messageToResponse(
     tool_events: parseToolEventsForResponse(m.tool_events),
     category: m.category ?? null,
     usage: messageUsageToResponse(usageById.get(m.msg_id)),
+    metadata: parseMessageMetadataForResponse(m.metadata),
   };
 }
 
@@ -125,6 +127,20 @@ export function parseToolEventsForResponse(raw: string | null | undefined): unkn
     return Array.isArray(parsed) ? parsed : undefined;
   } catch {
     return undefined;
+  }
+}
+
+/** Tolerant `metadata` JSON parser. Returns `null` for missing/blank/
+ *  malformed/non-object payloads so the wire shape stays a plain object
+ *  or null — readers can rely on `metadata?.citations?...` chaining. */
+export function parseMessageMetadataForResponse(raw: string | null | undefined): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
   }
 }
 
