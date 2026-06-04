@@ -111,7 +111,12 @@ export const ENV_DEFAULTS = {
   docMaxFilesPerSource: 5_000,
   // tool safety / policy (already in lib/env/allowlist; kept for schema completeness)
   toolSafety: "mostly_safe" as const,
+  // anti-hallucination classifier
+  hallucinationDetectorMode: "report" as const,
+  hallucinationDetectorModel: "",
 } as const;
+
+export const HALLUCINATION_DETECTOR_MODES = ["off", "report", "enforce"] as const;
 
 export const TOOL_SAFETY_VALUES = ["safe", "mostly_safe", "bypass"] as const;
 export const LOG_LEVEL_VALUES = ["debug", "info", "warn", "error"] as const;
@@ -563,6 +568,27 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
     min: 10,
+  },
+  {
+    name: "JARELA_HALLUCINATION_DETECTOR_MODE",
+    type: "enum",
+    default: ENV_DEFAULTS.hallucinationDetectorMode,
+    description: "Anti-hallucination classifier mode. 'off' = regex only (current default). 'report' = run classifier in parallel with regex; log disagreements + add a footer when classifier flags a stall the regex missed. 'enforce' = either regex OR classifier triggers the retry path. Requires JARELA_HALLUCINATION_DETECTOR_MODEL to be set; otherwise behaves as 'off'.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    enumValues: HALLUCINATION_DETECTOR_MODES,
+  },
+  {
+    name: "JARELA_HALLUCINATION_DETECTOR_MODEL",
+    type: "string",
+    default: ENV_DEFAULTS.hallucinationDetectorModel,
+    description: "Model config name (from Models settings) to use as the anti-hallucination classifier. Pick a fast/cheap one (e.g. claude-haiku, gpt-4o-mini, gemini-flash). Empty = no classifier; the mode knob is effectively 'off'.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
   },
 ];
 

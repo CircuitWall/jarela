@@ -75,6 +75,10 @@ export interface JarelaConfig {
   readonly docMaxFileBytes: number;
   readonly docMaxFilesPerSource: number;
 
+  // anti-hallucination classifier
+  readonly hallucinationDetectorMode: "off" | "report" | "enforce";
+  readonly hallucinationDetectorModel: string;
+
   // app metadata
   readonly appName: string;
   readonly appDescription: string;
@@ -105,6 +109,16 @@ function parseBool(value: string | undefined, fallback: boolean): boolean {
   const v = value.trim().toLowerCase();
   if (v === "1" || v === "true") return true;
   if (v === "0" || v === "false") return false;
+  return fallback;
+}
+
+function parseHallucinationMode(
+  value: string | undefined,
+  fallback: JarelaConfig["hallucinationDetectorMode"],
+): JarelaConfig["hallucinationDetectorMode"] {
+  if (!value) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "off" || v === "report" || v === "enforce") return v;
   return fallback;
 }
 
@@ -181,6 +195,13 @@ export function getConfig(): JarelaConfig {
     // documents
     docMaxFileBytes: parsePositiveInt(env.JARELA_DOC_MAX_FILE_BYTES, ENV_DEFAULTS.docMaxFileBytes),
     docMaxFilesPerSource: parsePositiveInt(env.JARELA_DOC_MAX_FILES_PER_SOURCE, ENV_DEFAULTS.docMaxFilesPerSource),
+
+    // anti-hallucination classifier
+    hallucinationDetectorMode: parseHallucinationMode(
+      env.JARELA_HALLUCINATION_DETECTOR_MODE,
+      ENV_DEFAULTS.hallucinationDetectorMode,
+    ),
+    hallucinationDetectorModel: (env.JARELA_HALLUCINATION_DETECTOR_MODEL ?? ENV_DEFAULTS.hallucinationDetectorModel).trim(),
 
     // app metadata
     appName: getAppName(),
