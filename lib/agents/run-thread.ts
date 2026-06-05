@@ -464,6 +464,11 @@ async function* stallRetryStream(
 export interface AssistantUsageSnapshot {
   input_tokens: number;
   output_tokens: number;
+  // Anthropic prompt-cache breakdown (PR #181). Disjoint from input_tokens:
+  // total billable input = input_tokens + cache_creation + cache_read,
+  // priced at 1×, 1.25×, and 0.1× the input rate respectively.
+  cache_creation_input_tokens?: number;
+  cache_read_input_tokens?: number;
   provider: string;
   model_id: string;
   model_config_name: string | null;
@@ -566,8 +571,13 @@ export function persistAssistantMessage(
         const rates = hasProviderUsage
           ? modelRatesFor(tables, usage!.provider, usage!.model_id)
           : { inputPer1M: null, outputPer1M: null };
+        const cacheCreation = hasProviderUsage ? (usage!.cache_creation_input_tokens ?? 0) : 0;
+        const cacheRead = hasProviderUsage ? (usage!.cache_read_input_tokens ?? 0) : 0;
         const cost = hasProviderUsage
-          ? estimateCostUsd(usage!.input_tokens, usage!.output_tokens, rates)
+          ? estimateCostUsd(usage!.input_tokens, usage!.output_tokens, rates, {
+              cache_creation_input_tokens: cacheCreation,
+              cache_read_input_tokens: cacheRead,
+            })
           : 0;
         recordMessageUsage({
           message_id: row.msg_id,
@@ -582,6 +592,8 @@ export function persistAssistantMessage(
           input_rate_usd_per_mtok: rates.inputPer1M,
           output_rate_usd_per_mtok: rates.outputPer1M,
           cost_usd: cost,
+          cache_creation_input_tokens: cacheCreation > 0 ? cacheCreation : null,
+          cache_read_input_tokens: cacheRead > 0 ? cacheRead : null,
           tier_usage: contextSnapshot
             ? {
                 hot_tokens: contextSnapshot.hot_tokens,
