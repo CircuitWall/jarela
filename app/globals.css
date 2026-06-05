@@ -427,6 +427,21 @@ body {
 /* Tables in chat — keep them within bubble width with horizontal scroll. */
 .prose-invert table { display: block; max-width: 100%; overflow-x: auto; }
 
+/* Chat bubbles are not pages: dial down heading sizes so a stray `## …`
+ * mid-sentence doesn't render as a billboard. Headings still get bold
+ * weight + a touch of size so structured replies stay scannable. */
+.jarela-rich :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 0.6em;
+  margin-bottom: 0.25em;
+}
+.jarela-rich h1 { font-size: 1.15em; }
+.jarela-rich h2 { font-size: 1.08em; }
+.jarela-rich h3 { font-size: 1em; }
+.jarela-rich :is(h4, h5, h6) { font-size: 0.95em; color: var(--color-fg-muted); }
+.jarela-rich :is(h1, h2, h3, h4, h5, h6):first-child { margin-top: 0; }
+
 /* Rich-format tags the agent can use ------------------------------------- */
 .jarela-rich kbd {
   display: inline-block;
