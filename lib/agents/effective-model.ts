@@ -19,3 +19,38 @@ export function resolveAgentModel(
   if (!agent?.model_config_name) return defaultModel;
   return models.find((m) => m.name === agent.model_config_name) ?? defaultModel;
 }
+
+export type AgentModelStatus =
+  | { state: "ok"; model: ModelConfig }
+  // Agent references a specific model_config_name that no longer exists.
+  // Server-side this falls back to the default model, but if the user
+  // explicitly picked a model they likely want a heads-up rather than a
+  // silent substitution.
+  | { state: "missing"; requested: string; fallback: ModelConfig | null }
+  // Agent has no explicit model AND no workspace default is set. Any run
+  // will throw `no_model` at the LLM layer — for unattended runs
+  // (scheduled tasks, watchers) this fails without the operator watching.
+  | { state: "no-model" }
+  // Agent row itself wasn't found (e.g. deleted between fetches). Anything
+  // pointing at this agent will fail at the trigger handler.
+  | { state: "no-agent" };
+
+/**
+ * Diagnose whether an agent has a runnable model RIGHT NOW. Used by the
+ * Scheduled Tasks and Watchers panels to surface model-availability issues
+ * before an unattended run silently no-ops with `no_model`.
+ */
+export function agentModelStatus(
+  agent: Pick<AgentConfig, "model_config_name"> | null | undefined,
+  models: readonly ModelConfig[],
+): AgentModelStatus {
+  if (!agent) return { state: "no-agent" };
+  const defaultModel = models.find((m) => m.is_default) ?? null;
+  if (agent.model_config_name) {
+    const exact = models.find((m) => m.name === agent.model_config_name);
+    if (exact) return { state: "ok", model: exact };
+    return { state: "missing", requested: agent.model_config_name, fallback: defaultModel };
+  }
+  if (defaultModel) return { state: "ok", model: defaultModel };
+  return { state: "no-model" };
+}
