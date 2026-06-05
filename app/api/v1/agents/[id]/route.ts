@@ -1,3 +1,10 @@
+/**
+ * @public — `GET /api/v1/agents/[id]`, `PATCH /api/v1/agents/[id]`,
+ *           `DELETE /api/v1/agents/[id]`
+ *
+ * Per-agent CRUD on a single config. See `docs/api.md`.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import {
   getAgentConfig,

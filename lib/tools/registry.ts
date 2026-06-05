@@ -1,25 +1,33 @@
-// Tool registry.
-//
-// Each built-in tool module registers its own tools at module load with
-// two orthogonal axes:
-//
-//   * category   — topical group ("Memory", "Files", "Mail", …) used by
-//                  the Agent editor sidebar to organise tools for users.
-//   * capability — safety class ("read" | "write" | "execute") used by
-//                  the future per-capability approval gate, UI badges,
-//                  and the ADR-0037 output validator. See ADR-0038.
-//
-// lib/tools/index.ts only needs to side-effect-import the modules
-// (see ./builtins.ts) — there is no central map listing every tool by
-// name. Adding a new built-in tool now requires touching exactly two
-// files: the tool file itself, and an `import "./<name>";` line in
-// builtins.ts.
-//
-// External tools (loaded from JARELA_TOOLS_DIR at runtime) use the same
-// category vocabulary but are not stored in this registry — see
-// ./external.ts. MCP tools default to category "MCP". Both default to
-// capability "execute" until manifest-level overrides land (ADR-0038
-// follow-up).
+/**
+ * Tool registry.
+ *
+ * Each built-in tool module registers its own tools at module load with
+ * two orthogonal axes:
+ *
+ *   - category   — topical group ("Memory", "Files", "Mail", …) used by
+ *                  the Agent editor sidebar to organise tools for users.
+ *   - capability — safety class ("read" | "write" | "execute") used by
+ *                  the future per-capability approval gate, UI badges,
+ *                  and the ADR-0037 output validator. See ADR-0038.
+ *
+ * `lib/tools/index.ts` only needs to side-effect-import the modules
+ * (see ./builtins.ts) — there is no central map listing every tool by
+ * name. Adding a new built-in tool now requires touching exactly two
+ * files: the tool file itself, and an `import "./<name>";` line in
+ * builtins.ts.
+ *
+ * External tools (loaded from JARELA_TOOLS_DIR at runtime) use the same
+ * category vocabulary but are not stored in this registry — see
+ * ./external.ts. MCP tools default to category "MCP". Both default to
+ * capability "execute" until manifest-level overrides land (ADR-0038
+ * follow-up).
+ *
+ * Public surface (per `package.json#exports`): `ToolCategory`,
+ * `Capability`, `ToolGroup`, `BuiltinCategory`, `registerTools`.
+ * Everything else (`registeredTools` / `registeredNames` /
+ * `registeredCategory` / etc.) is `@internal` — used only by the in-tree
+ * runtime, not part of the plugin contract.
+ */
 
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { wrapWithWallclock } from "./wallclock";
@@ -81,29 +89,32 @@ export function registerTools<T extends StructuredToolInterface>(
   return wrapped;
 }
 
-/** All registered built-in tools, in registration order. */
+/** @internal — all registered built-in tools, in registration order. */
 export function registeredTools(): StructuredToolInterface[] {
   return Array.from(REGISTRY.values(), (e) => e.tool);
 }
 
-/** Names of all registered built-in tools — used for collision checks. */
+/** @internal — names of all registered built-in tools, used for collision checks. */
 export function registeredNames(): ReadonlySet<string> {
   return new Set(REGISTRY.keys());
 }
 
+/** @internal */
 export function registeredCategory(name: string): BuiltinCategory | undefined {
   return REGISTRY.get(name)?.category;
 }
 
+/** @internal */
 export function registeredCapability(name: string): Capability | undefined {
   return REGISTRY.get(name)?.capability;
 }
 
+/** @internal */
 export function registeredGroup(name: string): ToolGroup | undefined {
   return REGISTRY.get(name)?.group;
 }
 
-/** Test-only: clear the registry between cases. */
+/** @internal — test-only: clear the registry between cases. */
 export function _resetRegistry(): void {
   REGISTRY.clear();
 }

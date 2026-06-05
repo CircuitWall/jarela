@@ -13,7 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { loadExternalTools } from "@/lib/tools/external";
-import { BUILTIN_TOOL_NAMES } from "@/lib/tools";
+import { getBuiltinToolNames } from "@/lib/tools";
 import {
   describeToolSecrets,
   setToolSecret,
@@ -31,7 +31,7 @@ export async function GET(
   { params }: { params: Promise<{ name: string }> },
 ) {
   const { name } = await params;
-  const tools = loadExternalTools(BUILTIN_TOOL_NAMES);
+  const tools = loadExternalTools(getBuiltinToolNames());
   const slots = tools.secrets.get(name);
   if (!slots) {
     return NextResponse.json({ error: "tool not found" }, { status: 404 });
@@ -58,7 +58,7 @@ export async function PUT(
     );
   }
 
-  const tools = loadExternalTools(BUILTIN_TOOL_NAMES);
+  const tools = loadExternalTools(getBuiltinToolNames());
   const slots = tools.secrets.get(name);
   if (!slots) {
     return NextResponse.json({ error: "tool not found" }, { status: 404 });

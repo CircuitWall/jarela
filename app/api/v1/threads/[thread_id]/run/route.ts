@@ -1,3 +1,12 @@
+/**
+ * @public — `POST /api/v1/threads/[thread_id]/run` (submit run),
+ *           `GET /api/v1/threads/[thread_id]/run` (subscribe via SSE)
+ *
+ * Agent execution endpoint. Submit a run, then stream tokens, tool
+ * calls, and final state. The split-and-subscribe shape lets reconnects
+ * pick up an in-flight stream. See `docs/api.md`.
+ */
+
 import { NextRequest } from "next/server";
 import type { StreamOptions, StreamChunk } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";

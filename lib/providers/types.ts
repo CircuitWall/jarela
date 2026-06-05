@@ -1,3 +1,16 @@
+/**
+ * @public
+ *
+ * Public LLM-provider extension contract.
+ *
+ * Every type and interface in this file is part of the package's
+ * stable public surface (per `package.json#exports`). External provider
+ * adapters — both in-tree and `~/.jarela/providers/*.cjs` plugins —
+ * conform to {@link ModelProvider}. Removing or breaking any export
+ * here counts as a breaking change under the deprecation policy in
+ * CONTRIBUTING.md.
+ */
+
 import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
 export type { InvokeMessage, InvokeResult, OpenAITool };
 

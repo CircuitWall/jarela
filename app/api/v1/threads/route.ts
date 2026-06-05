@@ -1,3 +1,10 @@
+/**
+ * @public — `GET /api/v1/threads` (list), `POST /api/v1/threads` (create)
+ *
+ * Thread lifecycle. Threads are the unit of conversation history; every
+ * agent run lives inside one. See `docs/api.md`.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import { createThread, listThreads } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";

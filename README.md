@@ -21,7 +21,7 @@
   <a href="#built-in-toolbelt">Tools</a> ·
   <a href="#providers">Providers</a> ·
   <a href="#connections">Connections</a> ·
-  <a href="#extension-points">Extending</a> ·
+  <a href="./docs/EXTENDING.md">Extending</a> ·
   <a href="./docs/ARCHITECTURE.md">Architecture</a> ·
   <a href="./CONTRIBUTING.md">Contributing</a> ·
   <a href="#documentation">Docs</a>
@@ -261,6 +261,34 @@ create an Outlook Calendar invite in the same turn.
   `~/.jarela/system-ca.pem`) — zero shell-config or manual CA paste
   required when the corporate roots are already in the system keychain
   (ADR-0020).
+
+## Extending Jarela
+
+Seven extension surfaces, each documented in
+[`docs/EXTENDING.md`](./docs/EXTENDING.md):
+
+- **LLM providers** — built-in (`lib/providers/<name>.ts`) or external
+  (`~/.jarela/providers/*.cjs`).
+- **Tools** — drop a file under `lib/tools/<name>.ts`, register with
+  `registerTools(category, capability, [...])`. External `.cjs` plugins
+  also live under `~/.jarela/tools/`.
+- **MCP servers** — stdio or http, configured via UI or programmatic
+  `upsertMcpServer`. Tools auto-merge into the agent's pool.
+- **Agent harnesses** — built-in presets in
+  `lib/agents/harness/presets.ts`, custom ones via the agent's
+  `propose_config_change` tool.
+- **Integration manifests** — agent-led setup recipes for external
+  services (Atlassian, Gmail, GitHub, …).
+- **Brand overlays** — env-var driven (`NEXT_PUBLIC_APP_NAME` and
+  friends).
+- **HTTP API** — see [`docs/api.md`](./docs/api.md) for the stable
+  contract; the agent introspection tools (`list_tools`,
+  `list_providers`, `list_mcp_servers`, `describe_extension_surfaces`)
+  cover the same surfaces from inside an agent run.
+
+The package's public type surface is locked via
+[`package.json#exports`](./package.json) and the deprecation policy in
+[CONTRIBUTING.md → Public API surface](./CONTRIBUTING.md#public-api-surface).
 
 ## Installation and runtime details
 

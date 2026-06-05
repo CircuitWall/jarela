@@ -46,8 +46,30 @@ describe("health runner", () => {
     for (const k of ["atlassian", "github", "google", "gmail", "outlook", "anthropic", "jira_align"]) {
       deleteMemory("integrations", k);
     }
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.DEEPSEEK_API_KEY;
+    // Several integrations have env-var fallbacks that bypass the
+    // `integrations` namespace (`_resolveGithubAuth` reads GITHUB_TOKEN /
+    // GH_TOKEN before falling back to the store; Atlassian and Jira Align
+    // do the same with their respective vars). The test runs in whatever
+    // shell the developer happens to have, which often has GITHUB_TOKEN
+    // set for the gh CLI — leaving an "unconfigured" assertion silently
+    // false. Clear them all here so each case opts in by setting only what
+    // it needs.
+    for (const v of [
+      "OPENAI_API_KEY",
+      "DEEPSEEK_API_KEY",
+      "GITHUB_TOKEN",
+      "GH_TOKEN",
+      "ATLASSIAN_URL",
+      "ATLASSIAN_EMAIL",
+      "ATLASSIAN_API_TOKEN",
+      "JIRA_ALIGN_URL",
+      "JIRA_ALIGN_TOKEN",
+      "GMAIL_CLIENT_ID",
+      "GMAIL_CLIENT_SECRET",
+      "GMAIL_REFRESH_TOKEN",
+    ]) {
+      delete process.env[v];
+    }
   });
 
   it("publishes a single alert on first failure (not one per cycle)", async () => {

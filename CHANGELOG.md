@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Public API surface declared** for the npm package. New
+  [`package.json#exports`](./package.json) lists `lib/providers/types`,
+  `lib/tools/types`, `lib/tools/registry`, and `lib/mcp/registry` as the
+  contract paths plugin authors and external embedders should rely on.
+  Everything reachable via the wildcard fallback is incidentally
+  accessible during the pre-1.0 transition but not part of the contract
+  (ADR-0061).
+- **`docs/EXTENDING.md`** — single integration guide covering all seven
+  extension surfaces (built-in providers, external `.cjs` provider
+  plugins, built-in tools, MCP servers, agent harnesses, integration
+  manifests, brand overlays).
+- **`docs/api.md`** — HTTP API reference listing only the stable
+  `@public` routes (health, threads, agents, tools, models, providers,
+  events SSE, page-capture). Sub-routes that exist for the in-app UI are
+  explicitly listed as out-of-scope.
+- **Four new agent-introspection tools** (`Config` category, `read`
+  capability): `list_tools`, `list_providers` + `describe_provider`,
+  `list_mcp_servers`, `describe_extension_surfaces`. Lets the agent
+  answer "what can I do" / "how do I add an X" without out-of-band docs.
+- **Deprecation policy** in CONTRIBUTING.md — public APIs get one minor
+  version cycle of deprecation before removal; internals can change
+  anytime.
+- **JSDoc `@public` headers** on the four contract type files
+  (`lib/providers/types.ts`, `lib/tools/types.ts`, `lib/tools/registry.ts`,
+  `lib/mcp/registry.ts`) and on the eleven public HTTP route files.
+
+### Changed
+
+- `lib/tools/index.ts` no longer snapshots the built-in tool list at
+  module-load time. Replaces the `ALL_BUILTINS` / `BUILTIN_TOOL_NAMES`
+  constants with live accessors so tool modules that import back from
+  `index` (for `getAllToolsAsync` etc.) can register without falling out
+  of the snapshot.
+- `BUILTIN_TOOL_NAMES` export replaced with `getBuiltinToolNames()`
+  function. The two in-app callers (`/api/v1/extensions` routes) are
+  updated.
+
+### Fixed
+
+- README "Extending" TOC link no longer points to a non-existent
+  `#extension-points` anchor; it now links to `docs/EXTENDING.md`.
+
 ## [0.14.0] - 2026-06-05
 
 Mobile-focused polish release. iOS Safari PWA now correctly survives the

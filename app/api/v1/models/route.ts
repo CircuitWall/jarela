@@ -1,3 +1,10 @@
+/**
+ * @public — `GET /api/v1/models` (list), `POST /api/v1/models` (upsert)
+ *
+ * Model-config catalog: per-model parameter presets that agents bind to
+ * by name (`model_config_name`). See `docs/api.md`.
+ */
+
 import { NextRequest } from "next/server";
 import { listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
 import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";

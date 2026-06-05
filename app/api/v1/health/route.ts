@@ -1,3 +1,11 @@
+/**
+ * @public — `GET /api/v1/health`
+ *
+ * Liveness/readiness probe. Returns DB-path, agent count, and basic
+ * runtime metadata. The browser extension and external uptime monitors
+ * poll this. See `docs/api.md`.
+ */
+
 import { NextResponse } from "next/server";
 import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { DB_PATH, getDb } from "@/lib/db";

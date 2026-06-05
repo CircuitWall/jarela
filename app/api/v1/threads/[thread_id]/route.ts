@@ -1,3 +1,11 @@
+/**
+ * @public — `GET /api/v1/threads/[thread_id]` (read messages),
+ *           `PATCH /api/v1/threads/[thread_id]` (rename / set agent),
+ *           `DELETE /api/v1/threads/[thread_id]` (drop thread)
+ *
+ * Thread-level CRUD. See `docs/api.md`.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
 import {
   deleteThread,

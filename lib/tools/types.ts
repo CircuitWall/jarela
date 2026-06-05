@@ -1,3 +1,16 @@
+/**
+ * @public
+ *
+ * Public tool extension contract.
+ *
+ * Every type and interface in this file is part of the package's
+ * stable public surface (per `package.json#exports`). External tool
+ * authors — both in-tree built-ins and `~/.jarela/tools/*.cjs` plugins —
+ * use these to describe arguments, results, and message shapes. Removing
+ * or breaking any export here counts as a breaking change under the
+ * deprecation policy in CONTRIBUTING.md.
+ */
+
 import type { StructuredToolInterface } from "@langchain/core/tools";
 
 // LangGraph/LangChain-compatible tool type. All tools implement this interface.

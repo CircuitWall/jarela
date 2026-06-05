@@ -119,3 +119,24 @@ export function getKnownContextLength(provider: string, model_id: string): numbe
 export function getKnownMaxOutputTokens(provider: string, model_id: string): number | null {
   return getKnownModelLimits(provider, model_id)?.max_output_tokens ?? null;
 }
+
+// Flat catalog snapshot for one provider — used by introspection tools so
+// the agent can enumerate what's known statically. Returns [] for providers
+// without a static table (e.g. `langchain`, `mock`, externals).
+export function listKnownModels(
+  provider: string,
+): Array<{ model_id: string; context_length: number; max_output_tokens: number | null }> {
+  let table: Record<string, KnownModelLimits> | null = null;
+  switch (provider) {
+    case "anthropic": table = ANTHROPIC; break;
+    case "gemini": table = GEMINI; break;
+    case "openai": table = OPENAI; break;
+    case "deepseek": table = DEEPSEEK; break;
+    default: return [];
+  }
+  return Object.entries(table).map(([model_id, l]) => ({
+    model_id,
+    context_length: l.context_length,
+    max_output_tokens: l.max_output_tokens ?? null,
+  }));
+}
