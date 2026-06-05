@@ -2,6 +2,7 @@ import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
+import { enqueueThreadRun } from "@/lib/agents/run-queue";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { resolveRoute } from "./router";
 import { formatBridgePrompt } from "./message-role";
@@ -69,37 +70,11 @@ export async function handleInboundMessage(
       text: msg.text,
       silent,
     });
-    const prepared = await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: promptText,
-      attachments: msg.attachments,
-      user_category: "bridge",
-    });
-
-    // Silent mode: suppress *any* outbound signal — no reply, no typing
-    // indicator. The typing presence itself is a tell that an agent is
-    // listening, so observer-mode routes must stay completely dark on the
-    // wire. The agent still runs and persists history below.
-    //
-    // silent_mode is the master switch — when set, nothing goes out
-    // regardless of `respond_to`. The WhatsApp adapter re-checks
-    // silent_mode inside its own sendText/sendTyping as a hard
-    // belt-and-suspenders guard, so even a tool that called the adapter
-    // directly cannot bypass it. respond_to is the finer-grained reply
-    // trigger: the agent ALWAYS runs (so it observes the full
-    // conversation), but the reply is only sent when the inbound role
-    // matches. Default 'counterpart' = agent answers the user's chat
-    // partner / group members but stays quiet on the user's own messages.
-    // 'user' = inverse — react only to what the paired user typed.
-    // Show the "composing…" presence on the channel while we drain the
-    // LLM stream. Refresh every ~8s because WhatsApp drops the indicator
-    // after ~10s if not renewed. We always send a final "paused" in the
-    // finally block, regardless of success/throw, so we never leave a
-    // stuck typing indicator.
-    // Typing presence only flashes when we're actually going to send — i.e.
-    // not silent AND the inbound role matches respond_to. Otherwise the
-    // composing-bubble would tell the chat someone is replying when no
-    // reply is coming, which is worse UX than no indicator at all.
+    // Serialise the whole prepare → stream → persist trio on thread_id
+    // with every other entry point (HTTP POST, scheduler, watcher, other
+    // bridges). See lib/agents/run-queue.ts. The typing indicator stays
+    // outside the queue so it shows while waiting in queue too — fine,
+    // since "agent is thinking" is true whether we're queued or running.
     const willReply = !silent && msg.role === route.respond_to;
     let typingActive = willReply;
     if (willReply) {
@@ -111,28 +86,32 @@ export async function handleInboundMessage(
     }, 8_000);
     (typingTimer as unknown as { unref?: () => void }).unref?.();
 
-    let assistantContent = "";
-    const usedTools: string[] = [];
-    const toolEvents: import("@/lib/stores/threads").PersistedToolEvent[] = [];
-    let assistantUsage: import("@/lib/agents/run-thread").AssistantUsageSnapshot | null = null;
+    let reply = "";
+    let suppressAssistant = false;
     try {
-      const collected = await collectStream(prepared.stream);
-      assistantContent = collected.assistantContent;
-      usedTools.push(...collected.usedTools);
-      toolEvents.push(...collected.toolEvents);
-      assistantUsage = collected.usage ?? null;
+      const result = await enqueueThreadRun(thread.thread_id, "bridge", async () => {
+        const prepared = await prepareThreadRun({
+          thread_id: thread.thread_id,
+          message: promptText,
+          attachments: msg.attachments,
+          user_category: "bridge",
+        });
+        const collected = await collectStream(prepared.stream);
+        const replyText = collected.assistantContent.trim();
+        const skip = silent && (replyText.length === 0 || isNoReply(replyText));
+        if (!skip) {
+          persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, "bridge", collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
+        }
+        return { replyText, skip };
+      }).result;
+      reply = result.replyText;
+      suppressAssistant = result.skip;
     } finally {
       typingActive = false;
       clearInterval(typingTimer);
       if (willReply) {
         void adapter.sendTyping(msg.remote_jid, false).catch(() => { /* best-effort */ });
       }
-    }
-
-    const reply = assistantContent.trim();
-    const suppressAssistant = silent && (reply.length === 0 || isNoReply(reply));
-    if (!suppressAssistant) {
-      persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge", assistantUsage, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
     }
 
     // Outbound reply gate: silent_mode (master switch) AND respond_to

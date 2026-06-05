@@ -2,6 +2,7 @@ import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
+import { enqueueThreadRun, QueueFullError } from "@/lib/agents/run-queue";
 import { getScript } from "./scripts";
 import type {
   PromptFiring,
@@ -41,27 +42,33 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
     : firing.prompt;
 
   try {
-    const prepared = await prepareThreadRun({
-      thread_id: thread.thread_id,
-      message: effectivePrompt,
-      user_category: category,
+    // Serialise on thread_id with every other entry point (HTTP POST,
+    // bridge, other triggers) — see lib/agents/run-queue.ts.
+    const enqueued = enqueueThreadRun(thread.thread_id, "trigger", async () => {
+      const prepared = await prepareThreadRun({
+        thread_id: thread.thread_id,
+        message: effectivePrompt,
+        user_category: category,
+      });
+      const collected = await collectStream(prepared.stream);
+      const replyText = collected.assistantContent.trim();
+      const isNoReply = firing.silent === true && /^\s*NO[_ ]?REPLY\b/i.test(replyText);
+      const skipAssistant = firing.silent === true && (isNoReply || replyText.length === 0);
+      if (!skipAssistant) {
+        persistAssistantMessage(
+          thread.thread_id,
+          collected.assistantContent,
+          collected.usedTools,
+          collected.toolEvents,
+          category,
+          collected.usage ?? null,
+          prepared.context_snapshot ?? null,
+          prepared.source_manifest ?? null,
+        );
+      }
+      return { collected, skipAssistant } as const;
     });
-    const collected = await collectStream(prepared.stream);
-    const replyText = collected.assistantContent.trim();
-    const isNoReply = firing.silent === true && /^\s*NO[_ ]?REPLY\b/i.test(replyText);
-    const skipAssistant = firing.silent === true && (isNoReply || replyText.length === 0);
-    if (!skipAssistant) {
-      persistAssistantMessage(
-        thread.thread_id,
-        collected.assistantContent,
-        collected.usedTools,
-        collected.toolEvents,
-        category,
-        collected.usage ?? null,
-        prepared.context_snapshot ?? null,
-        prepared.source_manifest ?? null,
-      );
-    }
+    const { collected, skipAssistant } = await enqueued.result;
     return {
       status: skipAssistant ? "skipped" : "done",
       preview: skipAssistant
@@ -70,7 +77,9 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
       threadId: thread.thread_id,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error
+      ? (err instanceof QueueFullError ? `queue full: ${err.message}` : err.message)
+      : String(err);
     return {
       status: "error",
       preview: "",
