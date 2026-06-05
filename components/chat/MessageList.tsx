@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
-import type { AgentConfig, Message, UserProfile } from "@/api/types";
+import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
@@ -47,9 +47,12 @@ interface Props {
   // the ContextUsageBar has a baseline for rows whose own usage snapshot
   // predates the per-row column.
   contextWindowTokens?: number | null;
+  // Resend a previously-sent user prompt as a new turn. Forwarded to each
+  // user-role MessageBubble; absent => retry button is hidden.
+  onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, onSetContextPin, streaming, contextWindowTokens }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
@@ -360,6 +363,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
                 showToolEvents={filters.tool_use}
                 contextWindowTokens={contextWindowTokens ?? null}
                 isLatest={i === visibleMessages.length - 1 && !streamingContent}
+                onRetry={onRetryMessage}
               />
             </div>,
           );

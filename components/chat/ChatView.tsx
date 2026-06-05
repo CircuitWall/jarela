@@ -433,6 +433,26 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     setQueue((q) => q.filter((m) => m.id !== id));
   }
 
+  // Resend a previously-sent user prompt as a new turn. Mirrors handleSubmit's
+  // ready/queue gating so retries during an in-flight run behave the same as
+  // typing a new message: they queue and drain. Does NOT delete the original
+  // message — the user can clean up the thread manually if they want.
+  function handleRetryMessage(text: string, atts: ContentPart[]) {
+    const msg = text.trim();
+    if (!msg || !agentId) return;
+    const ready =
+      !streaming && !compacting && !!threadId && queueRef.current.length === 0;
+    if (ready) {
+      void launchRun(msg, atts);
+      return;
+    }
+    setQueue((q) => [...q, {
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      text: msg,
+      attachments: atts,
+    }]);
+  }
+
   // Default Send / Enter. Send-when-idle, STEER-when-streaming.
   // Steer = prepend message to queue and abort the current run; the existing
   // handleDone → drainQueueRef machinery picks the prepended item up first
@@ -551,6 +571,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         onSetContextPin={setContextPin}
         streaming={streaming}
         contextWindowTokens={contextWindowTokens}
+        onRetryMessage={handleRetryMessage}
       />
 
       {error && (
