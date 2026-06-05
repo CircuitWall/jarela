@@ -42,14 +42,10 @@ export interface JarelaConfig {
   readonly streamParseTripwire: number;
 
   // tools
-  readonly toolTimeoutMs: number;
   readonly voiceTimeoutMs: number;
   readonly imageTimeoutMs: number;
-  readonly fetchToolTimeoutMs: number;
   readonly fetchToolMaxBytes: number;
   readonly mcpRegistryTimeoutMs: number;
-  readonly execToolDefaultTimeoutMs: number;
-  readonly execToolMaxTimeoutMs: number;
   readonly execMaxOutputBytes: number;
   readonly filesMaxReadBytes: number;
   readonly filesMaxWriteBytes: number;
@@ -165,14 +161,10 @@ export function getConfig(): JarelaConfig {
     streamParseTripwire: parsePositiveInt(env.JARELA_STREAM_PARSE_TRIPWIRE, ENV_DEFAULTS.streamParseTripwire),
 
     // tools
-    toolTimeoutMs: parseNonNegativeInt(env.JARELA_TOOL_TIMEOUT_MS, ENV_DEFAULTS.toolTimeoutMs),
     voiceTimeoutMs: parsePositiveInt(env.JARELA_VOICE_TIMEOUT_MS, ENV_DEFAULTS.voiceTimeoutMs),
     imageTimeoutMs: parsePositiveInt(env.JARELA_IMAGE_TIMEOUT_MS, ENV_DEFAULTS.imageTimeoutMs),
-    fetchToolTimeoutMs: parsePositiveInt(env.JARELA_FETCH_TOOL_TIMEOUT_MS, ENV_DEFAULTS.fetchToolTimeoutMs),
     fetchToolMaxBytes: parsePositiveInt(env.JARELA_FETCH_TOOL_MAX_BYTES, ENV_DEFAULTS.fetchToolMaxBytes),
     mcpRegistryTimeoutMs: parsePositiveInt(env.JARELA_MCP_REGISTRY_TIMEOUT_MS, ENV_DEFAULTS.mcpRegistryTimeoutMs),
-    execToolDefaultTimeoutMs: parsePositiveInt(env.JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS, ENV_DEFAULTS.execToolDefaultTimeoutMs),
-    execToolMaxTimeoutMs: parsePositiveInt(env.JARELA_EXEC_TOOL_MAX_TIMEOUT_MS, ENV_DEFAULTS.execToolMaxTimeoutMs),
     execMaxOutputBytes: parsePositiveInt(env.JARELA_EXEC_MAX_OUTPUT_BYTES, ENV_DEFAULTS.execMaxOutputBytes),
     filesMaxReadBytes: parsePositiveInt(env.JARELA_FILES_MAX_READ_BYTES, ENV_DEFAULTS.filesMaxReadBytes),
     filesMaxWriteBytes: parsePositiveInt(env.JARELA_FILES_MAX_WRITE_BYTES, ENV_DEFAULTS.filesMaxWriteBytes),

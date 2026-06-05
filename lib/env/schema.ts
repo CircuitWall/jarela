@@ -83,14 +83,10 @@ export const ENV_DEFAULTS = {
   maxDelegationDepth: 2,
   streamParseTripwire: 6,
   // tools
-  toolTimeoutMs: 360_000,
   voiceTimeoutMs: 60_000,
   imageTimeoutMs: 60_000,
-  fetchToolTimeoutMs: 15_000,
   fetchToolMaxBytes: 2_000_000,
   mcpRegistryTimeoutMs: 15_000,
-  execToolDefaultTimeoutMs: 10_000,
-  execToolMaxTimeoutMs: 60_000,
   execMaxOutputBytes: 8_000,
   filesMaxReadBytes: 64_000,
   filesMaxWriteBytes: 2_000_000,
@@ -311,17 +307,9 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
   },
 
   // ─── tools ─────────────────────────────────────────────────────────
-  {
-    name: "JARELA_TOOL_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.toolTimeoutMs,
-    description: "Per-tool-invocation deadline. Set 0 to disable.",
-    category: "tools",
-    tier: "A",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 0,
-  },
+  // Per-tool wall-clock deadlines are agent-controlled via the
+  // `deadline_ms` field on every tool's schema (see lib/tools/wallclock.ts).
+  // No operator knob to clamp them — the model picks per call.
   {
     name: "JARELA_VOICE_TIMEOUT_MS",
     type: "int",
@@ -345,17 +333,6 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     min: 1_000,
   },
   {
-    name: "JARELA_FETCH_TOOL_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.fetchToolTimeoutMs,
-    description: "Web-fetch tool per-request deadline.",
-    category: "tools",
-    tier: "A",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 1_000,
-  },
-  {
     name: "JARELA_FETCH_TOOL_MAX_BYTES",
     type: "int",
     default: ENV_DEFAULTS.fetchToolMaxBytes,
@@ -371,28 +348,6 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     type: "int",
     default: ENV_DEFAULTS.mcpRegistryTimeoutMs,
     description: "MCP upstream-registry discovery fetch timeout.",
-    category: "tools",
-    tier: "B",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 1_000,
-  },
-  {
-    name: "JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.execToolDefaultTimeoutMs,
-    description: "Default subprocess deadline for the local_exec / shell_exec tools.",
-    category: "tools",
-    tier: "B",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 500,
-  },
-  {
-    name: "JARELA_EXEC_TOOL_MAX_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.execToolMaxTimeoutMs,
-    description: "Upper clamp on the timeout_ms parameter accepted by exec tools.",
     category: "tools",
     tier: "B",
     requiresRestart: false,

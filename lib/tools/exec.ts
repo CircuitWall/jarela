@@ -7,11 +7,13 @@ import { checkExecAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
 
-// JARELA_EXEC_MAX_OUTPUT_BYTES / JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS /
-// JARELA_EXEC_TOOL_MAX_TIMEOUT_MS override these.
+// JARELA_EXEC_MAX_OUTPUT_BYTES overrides the output cap.
 function maxOutputBytes(): number { return getConfig().execMaxOutputBytes; }
-function defaultTimeoutMs(): number { return getConfig().execToolDefaultTimeoutMs; }
-function maxTimeoutMs(): number { return getConfig().execToolMaxTimeoutMs; }
+// Internal subprocess timeout. The agent's wall-clock budget on the tool
+// call (see lib/tools/wallclock.ts) is the primary deadline; this kills
+// the child process so a runaway shell can't keep burning CPU after the
+// wallclock abandons the promise.
+const EXEC_DEFAULT_TIMEOUT_MS = 60_000;
 
 const BLOCKED_PATTERNS = [
   /\brm\s+-rf\s+\/\b/i,
@@ -44,7 +46,7 @@ function runLocalCommand(
     return JSON.stringify({ exit_code: 1, stderr: "command is required" });
   }
 
-  const timeout = Math.min(options.timeout_ms ?? defaultTimeoutMs(), maxTimeoutMs());
+  const timeout = options.timeout_ms ?? EXEC_DEFAULT_TIMEOUT_MS;
 
   const mode = resolveSafetyMode();
   const gate = checkExecAllowed(command, {
@@ -105,7 +107,7 @@ function runLocalCommand(
         cwd,
         timed_out: true,
         timeout_ms: timeout,
-        error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope, a smaller working set, or pass a larger timeout_ms (max ${Math.round(maxTimeoutMs() / 1000)}s).`,
+        error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope, a smaller working set, or pass a larger timeout_ms.`,
       });
     }
     const errText = clipOutput(String(e.stderr ?? e.message ?? ""), 2_000);
@@ -123,7 +125,7 @@ const execSchema = z.object({
   command: z.string().describe("Shell command to execute"),
   cwd: z.string().optional().describe("Working directory for command execution (defaults to process cwd)"),
   env: z.record(z.string(), z.string()).optional().describe("Environment variables to inject for this command"),
-  timeout_ms: z.number().optional().describe("Timeout in milliseconds (default 10000, max 60000)"),
+  timeout_ms: z.number().optional().describe("Subprocess kill timeout in milliseconds (default 60000). Independent of the agent's wall-clock budget on this call."),
   allow_unsafe: z.boolean().optional().describe("Set true to bypass safety blocking for risky commands"),
 });
 

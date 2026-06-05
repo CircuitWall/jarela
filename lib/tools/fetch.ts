@@ -5,9 +5,13 @@ import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { registerTools } from "./registry";
 import { getConfig } from "@/lib/env/config";
 
-// JARELA_FETCH_TOOL_MAX_BYTES / JARELA_FETCH_TOOL_TIMEOUT_MS override these.
+// JARELA_FETCH_TOOL_MAX_BYTES overrides the byte cap.
 function maxBytes(): number { return getConfig().fetchToolMaxBytes; }
-function timeoutMs(): number { return getConfig().fetchToolTimeoutMs; }
+// Internal cap on a single fetch. The agent's wall-clock budget on the
+// tool call (see lib/tools/wallclock.ts) is the primary deadline; this is
+// a leak backstop that actually closes the socket via AbortController so a
+// stuck server can't tie up an fd indefinitely.
+const FETCH_INTERNAL_TIMEOUT_MS = 120_000;
 // Defense against SSRF redirect chains: every Location-hop is re-checked
 // against the SSRF policy. Cap the chain so a malicious server can't
 // pin us in a redirect loop.
@@ -71,7 +75,7 @@ export const webFetchTool = tool(
       return JSON.stringify({ error: "url must start with http:// or https://" });
     }
     const ctrl = new AbortController();
-    const TIMEOUT_MS = timeoutMs();
+    const TIMEOUT_MS = FETCH_INTERNAL_TIMEOUT_MS;
     const MAX_BYTES = maxBytes();
     const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
@@ -173,7 +177,7 @@ export const webFetchTool = tool(
       if (aborted) {
         return JSON.stringify({
           url,
-          error: `timed out after ${Math.round(TIMEOUT_MS / 1000)}s. The page is slow or unresponsive — try a different URL, or raise JARELA_FETCH_TOOL_TIMEOUT_MS.`,
+          error: `timed out after ${Math.round(TIMEOUT_MS / 1000)}s. The page is slow or unresponsive — try a different URL or pass a larger deadline_ms.`,
           timed_out: true,
           timeout_ms: TIMEOUT_MS,
         });
