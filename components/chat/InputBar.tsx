@@ -225,11 +225,10 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
   }
 
   return (
-    // pb-3 + safe-area inset. Do NOT add the keyboard inset here:
-    // AppShell already sizes itself to `--visual-vh` (= innerHeight minus
-    // keyboard inset), so the bottom of this bar is already pinned above
-    // the keyboard. Adding `--kb-inset` here on top of that double-
-    // compensated and lifted the input by 2× the keyboard height.
+    // pb-3 + safe-area inset. The on-screen keyboard inset is handled by
+    // the AppShell's `h-[100dvh]` — `dvh` natively shrinks when the
+    // keyboard opens on iOS 16.4+ Safari/PWA and Chromium, so this bar
+    // is already pinned just above the keyboard by the flex layout.
     <div
       className="glass border-t border-border/60 px-3 sm:px-4 pt-2"
       style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
