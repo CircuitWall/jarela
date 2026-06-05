@@ -2,10 +2,12 @@
 import { AlertCircle, Bell, CheckCircle2, EyeOff, Play, Power, Trash2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
-import type { AgentConfig, Watcher } from "@/api/types";
+import type { AgentConfig, ModelConfig, Watcher } from "@/api/types";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
+import { agentModelStatus } from "@/lib/agents/effective-model";
+import { AgentModelBadge } from "./AgentModelBadge";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Select } from "@/components/ui/Select";
@@ -14,7 +16,7 @@ import { Select } from "@/components/ui/Select";
 // card aesthetic, but rows describe a tool poll + diff detector, not a
 // cron firing. Watchers are agent-created via the `schedule_watcher`
 // tool; the UI is read-only-ish (cancel / pause / run-now / silent).
-export function WatchersSection({ agents }: { agents: Record<string, AgentConfig> }) {
+export function WatchersSection({ agents, models }: { agents: Record<string, AgentConfig>; models: ModelConfig[] }) {
   const [watchers, setWatchers] = useState<Watcher[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -99,6 +101,7 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
             watcher={w}
             agent={agents[w.agent_id]}
             agents={agents}
+            models={models}
             onCancel={() => cancel(w)}
             onRunNow={() => runNow(w)}
             onChanged={() => void load()}
@@ -110,11 +113,12 @@ export function WatchersSection({ agents }: { agents: Record<string, AgentConfig
 }
 
 function WatcherCard({
-  watcher, agent, agents, onCancel, onRunNow, onChanged,
+  watcher, agent, agents, models, onCancel, onRunNow, onChanged,
 }: {
   watcher: Watcher;
   agent?: AgentConfig;
   agents: Record<string, AgentConfig>;
+  models: ModelConfig[];
   onCancel: () => void;
   onRunNow: () => void;
   onChanged: () => void;
@@ -129,6 +133,11 @@ function WatcherCard({
     ? sharedFormatRelative(watcher.last_fired_at, { collapseSeconds: true })
     : null;
   const overdue = !watcher.last_error && new Date(watcher.next_run_at).getTime() < Date.now() - 60_000;
+  // Pre-flight model availability for the assigned agent; only relevant
+  // when the watcher reacts via an agent prompt (not a pure script).
+  const modelStatus = watcher.reaction_kind === "agent_prompt"
+    ? agentModelStatus(agent ?? null, models)
+    : null;
 
   return (
     <div data-deep-link-id={watcher.id} className="mb-2 rounded-lg border border-border bg-surface-2 overflow-hidden">
@@ -152,6 +161,12 @@ function WatcherCard({
                 <>
                   <span>·</span>
                   <span className="truncate">{agent.name}</span>
+                </>
+              )}
+              {modelStatus && modelStatus.state !== "ok" && (
+                <>
+                  <span>·</span>
+                  <AgentModelBadge status={modelStatus} />
                 </>
               )}
               {watcher.silent && (

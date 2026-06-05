@@ -2,11 +2,13 @@
 import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Pencil, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { AgentConfig, ScheduledTask } from "@/api/types";
+import type { AgentConfig, ModelConfig, ScheduledTask } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { formatRelative } from "@/lib/utils/time";
 import { humanizeCron } from "@/lib/utils/cron";
 import { pushErrorToast } from "@/lib/ui/error-report";
+import { agentModelStatus } from "@/lib/agents/effective-model";
+import { AgentModelBadge } from "./AgentModelBadge";
 import { WatchersSection } from "./WatchersSection";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
@@ -14,6 +16,7 @@ import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 export function ScheduledTasksPanel() {
   const [tasks, setTasks] = useState<ScheduledTask[]>([]);
   const [agents, setAgents] = useState<Record<string, AgentConfig>>({});
+  const [models, setModels] = useState<ModelConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("tasks", "task", containerRef);
@@ -21,12 +24,14 @@ export function ScheduledTasksPanel() {
   async function load() {
     setLoading(true);
     try {
-      const [taskList, agentList] = await Promise.all([
+      const [taskList, agentList, modelList] = await Promise.all([
         api.scheduledTasks.list(),
         api.agents.list(),
+        api.models.list(),
       ]);
       setTasks(taskList);
       setAgents(Object.fromEntries(agentList.map((a) => [a.id, a])));
+      setModels(modelList);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -90,20 +95,21 @@ export function ScheduledTasksPanel() {
           </div>
         )}
         {sorted.map((t) => (
-          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} agents={agents} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} onChanged={() => void load()} />
+          <TaskCard key={t.id} task={t} agent={agents[t.agent_id]} agents={agents} models={models} onCancel={() => cancel(t)} onRunNow={() => runNow(t)} onChanged={() => void load()} />
         ))}
-        <WatchersSection agents={agents} />
+        <WatchersSection agents={agents} models={models} />
       </div>
     </div>
   );
 }
 
 function TaskCard({
-  task, agent, agents, onCancel, onRunNow, onChanged,
+  task, agent, agents, models, onCancel, onRunNow, onChanged,
 }: {
   task: ScheduledTask;
   agent?: AgentConfig;
   agents: Record<string, AgentConfig>;
+  models: ModelConfig[];
   onCancel: () => void;
   onRunNow: () => void;
   onChanged: () => void;
@@ -115,6 +121,12 @@ function TaskCard({
   const nextRun = formatRelative(task.next_run_at, { collapseSeconds: true });
   const lastRun = task.last_run_at ? formatRelative(task.last_run_at, { collapseSeconds: true }) : null;
   const overdue = !task.last_error && new Date(task.next_run_at).getTime() < Date.now() - 60_000;
+  // Pre-flight model availability: catches "agent's model was deleted" /
+  // "no workspace default" before the next firing silently throws no_model.
+  // Script-only reactions don't talk to an LLM, so skip the check.
+  const modelStatus = task.reaction_kind === "agent_prompt"
+    ? agentModelStatus(agent ?? null, models)
+    : null;
 
   return (
     <div data-deep-link-id={task.id} className="mb-2 rounded-lg border border-border bg-surface-2 overflow-hidden">
@@ -143,6 +155,12 @@ function TaskCard({
                 <>
                   <span>·</span>
                   <span className="truncate">{agent.name}</span>
+                </>
+              )}
+              {modelStatus && modelStatus.state !== "ok" && (
+                <>
+                  <span>·</span>
+                  <AgentModelBadge status={modelStatus} />
                 </>
               )}
               {task.silent && (
