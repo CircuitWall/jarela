@@ -134,6 +134,12 @@ export async function* streamWithConfig(
   // JarelaChatModel; we sum them so the final figure covers the whole turn.
   let usageInputTokens = 0;
   let usageOutputTokens = 0;
+  // PR #181 + cache-fidelity follow-up: Anthropic prompt-cache reads/writes
+  // arrive as a separate breakdown via `input_token_details`. Sum them
+  // independently so the dashboard can report cost correctly (cache reads
+  // are 10× cheaper, cache writes 1.25× more expensive than fresh input).
+  let usageCacheCreationTokens = 0;
+  let usageCacheReadTokens = 0;
   let sawUsage = false;
   // Tracks whether the model hit max_tokens mid-stream. JarelaChatModel tags
   // the final chunk with additional_kwargs.stop_reason="length" when this
@@ -190,6 +196,11 @@ export async function* streamWithConfig(
           if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
             usageInputTokens += usage.input_tokens ?? 0;
             usageOutputTokens += usage.output_tokens ?? 0;
+            const details = usage.input_token_details;
+            if (details) {
+              usageCacheCreationTokens += details.cache_creation ?? 0;
+              usageCacheReadTokens += details.cache_read ?? 0;
+            }
             sawUsage = true;
           }
           if (typeof chunk.content === "string" && chunk.content) {
@@ -269,7 +280,13 @@ export async function* streamWithConfig(
         data: {
           message_id: `llm-${threadId}-${Date.now()}`,
           usage: sawUsage
-            ? { input_tokens: usageInputTokens, output_tokens: usageOutputTokens, source: "provider" }
+            ? {
+                input_tokens: usageInputTokens,
+                output_tokens: usageOutputTokens,
+                cache_creation_input_tokens: usageCacheCreationTokens,
+                cache_read_input_tokens: usageCacheReadTokens,
+                source: "provider",
+              }
             : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
           provider: cfg.provider,
           model_id: cfg.model_id,
@@ -375,7 +392,13 @@ export async function* streamWithConfig(
     data: {
       message_id: `llm-${threadId}-${Date.now()}`,
       usage: sawUsage
-        ? { input_tokens: usageInputTokens, output_tokens: usageOutputTokens, source: "provider" }
+        ? {
+            input_tokens: usageInputTokens,
+            output_tokens: usageOutputTokens,
+            cache_creation_input_tokens: usageCacheCreationTokens,
+            cache_read_input_tokens: usageCacheReadTokens,
+            source: "provider",
+          }
         : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
       provider: cfg.provider,
       model_id: cfg.model_id,
