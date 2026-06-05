@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Cache-hit indicator under each assistant turn.** When Anthropic
+  prompt caching fires for a turn, the chat panel's per-turn usage
+  bar now shows a `cache hit · Nk read · cache write · Mk` chip
+  underneath, with a `Cache` row appearing in the expanded numeric
+  details. The bar's tooltip explains the 0.1× / 1.25× billing
+  multipliers. ADR-0062 covers the full plumbing.
+- **`MessageUsage.cache_creation_input_tokens` /
+  `cache_read_input_tokens`** added to the API client type so external
+  consumers of `GET /api/v1/threads/<id>` see the same shape the chat
+  UI does.
 - **Public API surface declared** for the npm package. New
   [`package.json#exports`](./package.json) lists `lib/providers/types`,
   `lib/tools/types`, `lib/tools/registry`, and `lib/mcp/registry` as the
