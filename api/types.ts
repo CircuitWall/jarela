@@ -154,12 +154,25 @@ export interface Message {
 export interface CitationClaim {
   /** Short paraphrase of the claim the checker extracted from the turn. */
   text: string;
-  /** URL or workspace-relative path the agent cited, if any. */
+  /** Marker number the agent wrote in `[N]` next to the claim, if any. */
+  marker?: number | null;
+  /** URL or workspace-relative path the agent cited, if any. Resolved from
+   *  the source manifest when `marker` is present; null when the agent
+   *  attached no marker or the marker wasn't in the manifest. */
   link: string | null;
-  /** true = link present AND link is in this thread's visited-source set. */
+  /** true = marker present AND in this thread's source manifest. */
   verified: boolean;
   /** Short human-readable explanation; capped at ~120 chars. */
   reason: string;
+}
+
+export interface SourceManifestEntry {
+  /** 1-based number shown to the agent and used as the inline `[N]` marker. */
+  n: number;
+  /** Short display label (hostname+path for URLs, the path itself for files). */
+  label: string;
+  /** Full URL or workspace-relative path the marker resolves to. */
+  href: string;
 }
 
 export interface MessageMetadata {
@@ -170,6 +183,9 @@ export interface MessageMetadata {
     claims: CitationClaim[];
     /** URLs/paths the agent cited but that aren't in the visited-source set. */
     unverified_links: string[];
+    /** Numbered source manifest the agent saw at prompt time. The chat UI
+     *  uses it to render inline `[N]` markers as clickable links. */
+    sources?: SourceManifestEntry[];
   };
 }
 

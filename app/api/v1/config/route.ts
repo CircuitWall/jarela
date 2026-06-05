@@ -20,6 +20,8 @@ export function GET(): Response {
     sseConnectTimeoutMs: c.sseConnectTimeoutMs,
     healthCheckTimeoutMs: c.healthCheckTimeoutMs,
     httpMaxAttempts: c.httpMaxAttempts,
+    // agent — the chat countdown ring uses this as the wall-clock budget.
+    runMaxMs: c.runMaxMs,
     // app metadata (already public via /api/v1/agents and the manifest)
     appName: c.appName,
     appDescription: c.appDescription,

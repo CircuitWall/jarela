@@ -7,7 +7,9 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-citations-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const {
+  buildSourceManifest,
   extractCitedLinks,
+  extractCitedMarkers,
   extractSourcesFromEvents,
   extractVisitedSources,
   normalizeSource,
@@ -131,10 +133,27 @@ describe("parseCitationVerdict", () => {
     expect(out![0].link).toBe("https://a");
   });
 
+  it("parses the marker field when present", () => {
+    const json = '{"claims":[{"text":"a fact","marker":3,"verified":true,"reason":"cited"}]}';
+    const out = parseCitationVerdict(json);
+    expect(out).toEqual([{ text: "a fact", marker: 3, link: null, verified: true, reason: "cited" }]);
+  });
+
+  it("coerces a missing/null marker to null", () => {
+    const json = '{"claims":[{"text":"x","verified":false,"reason":"no marker"}]}';
+    expect(parseCitationVerdict(json)).toEqual([{ text: "x", marker: null, link: null, verified: false, reason: "no marker" }]);
+  });
+
+  it("drops a non-positive or non-finite marker", () => {
+    const json = '{"claims":[{"text":"a","marker":0,"verified":false,"reason":""},{"text":"b","marker":-2,"verified":false,"reason":""},{"text":"c","marker":"3","verified":false,"reason":""}]}';
+    const out = parseCitationVerdict(json);
+    expect(out!.map((c) => c.marker)).toEqual([null, null, null]);
+  });
+
   it("strips a markdown code fence wrapping", () => {
     const wrapped = '```json\n{"claims":[{"text":"a","link":null,"verified":false,"reason":"no link"}]}\n```';
     const out = parseCitationVerdict(wrapped);
-    expect(out).toEqual([{ text: "a", link: null, verified: false, reason: "no link" }]);
+    expect(out).toEqual([{ text: "a", marker: null, link: null, verified: false, reason: "no link" }]);
   });
 
   it("returns null on malformed JSON", () => {
@@ -147,6 +166,59 @@ describe("parseCitationVerdict", () => {
 
   it("filters out claim entries that don't have a text field", () => {
     const out = parseCitationVerdict('{"claims":[{"text":""},{"link":"x"},{"text":"keep","verified":true,"link":null,"reason":"ok"}]}');
-    expect(out).toEqual([{ text: "keep", link: null, verified: true, reason: "ok" }]);
+    expect(out).toEqual([{ text: "keep", marker: null, link: null, verified: true, reason: "ok" }]);
+  });
+});
+
+describe("extractCitedMarkers", () => {
+  it("returns [] for empty input", () => {
+    expect(extractCitedMarkers("")).toEqual([]);
+  });
+
+  it("pulls every numeric marker [N] in first-seen order", () => {
+    expect(extractCitedMarkers("see [1] then [3] and again [1] plus [12].")).toEqual([1, 3, 12]);
+  });
+
+  it("ignores reference-link tails like [label][1]", () => {
+    expect(extractCitedMarkers("a [link text][1] not a citation marker")).toEqual([]);
+  });
+
+  it("ignores non-numeric brackets like [x] or [v2]", () => {
+    expect(extractCitedMarkers("see [x] or [v2] but [4] counts")).toEqual([4]);
+  });
+
+  it("ignores zero markers (1-indexed manifest only)", () => {
+    expect(extractCitedMarkers("placeholder [0] should be skipped, [1] counts")).toEqual([1]);
+  });
+});
+
+describe("buildSourceManifest", () => {
+  it("returns [] when max is 0 or visited set is empty", () => {
+    expect(buildSourceManifest(new Set(["a"]), 0)).toEqual([]);
+    expect(buildSourceManifest(new Set(), 50)).toEqual([]);
+  });
+
+  it("numbers entries 1..N preserving insertion order", () => {
+    const set = new Set(["docs/a.md", "docs/b.md", "https://x.io/p"]);
+    const out = buildSourceManifest(set, 50);
+    expect(out).toEqual([
+      { n: 1, label: "docs/a.md", href: "docs/a.md" },
+      { n: 2, label: "docs/b.md", href: "docs/b.md" },
+      { n: 3, label: "x.io/p", href: "https://x.io/p" },
+    ]);
+  });
+
+  it("keeps the most-recent N entries when visited > max", () => {
+    const set = new Set(["a", "b", "c", "d", "e"]);
+    const out = buildSourceManifest(set, 3);
+    expect(out.map((e) => e.href)).toEqual(["c", "d", "e"]);
+    // Re-numbered 1..3, not 3..5 — the manifest the agent sees is always 1-indexed.
+    expect(out.map((e) => e.n)).toEqual([1, 2, 3]);
+  });
+
+  it("derives a hostname+path label for URLs and uses the raw path for files", () => {
+    const out = buildSourceManifest(new Set(["https://example.com/docs/x/"]), 50);
+    expect(out[0].label).toBe("example.com/docs/x");
+    expect(out[0].href).toBe("https://example.com/docs/x/");
   });
 });

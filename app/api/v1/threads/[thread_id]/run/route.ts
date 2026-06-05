@@ -8,6 +8,7 @@ import {
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
 import { broadcast, finishRun, startRun, subscribe, abortRun, getRun } from "@/lib/agents/run-registry";
+import { enqueueThreadRun, QueueFullError } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
@@ -41,111 +42,108 @@ export async function POST(req: NextRequest, { params }: Params) {
     hot_since?: string | null;
   };
 
-  // Connection-level handoff (NOT a kill). If a run is already in flight
-  // for this thread — second tab, another device, a flaky-mobile retry —
-  // refuse the new submission with 409. The caller is expected to:
-  //   1) roll back any optimistic user bubble it added,
-  //   2) re-queue the message locally to resubmit after the current turn
-  //      finishes,
-  //   3) open the GET subscription so the user still sees the in-flight
-  //      turn's deltas render.
-  const existing = getRun(thread_id);
-  if (existing && existing.status === "running") {
-    return new Response(
-      JSON.stringify({ accepted: false, code: "run_in_flight", thread_id }),
-      { status: 409, headers: { "Content-Type": "application/json" } },
-    );
-  }
-
+  // Per-thread FIFO queue (lib/agents/run-queue.ts). Every entry point
+  // that drives an agent on a thread goes through this — HTTP POST,
+  // scheduler, watcher, trigger, bridge — so concurrent fires on the same
+  // thread_id serialise instead of racing the LangGraph checkpoint store.
+  // If the queue is already at the soft cap, reject with 503 so the
+  // caller can back off rather than pin yet more work in memory.
   const thread = getThread(thread_id);
-  const active = startRun(thread_id, thread?.agent_id ?? null);
-  let prepared;
+  let position: number;
   try {
-    prepared = await prepareThreadRun({
-      thread_id,
-      message,
-      options: stream_options,
-      attachments,
-      signal: active.abort.signal,
-      hot_since,
-    });
-  } catch (err) {
-    // Prep failure (unknown agent, model misconfig, …) — drop the run we
-    // just registered and surface a synchronous error to the caller.
-    finishRun(active, "error");
-    if (err instanceof RunThreadError) {
-      return new Response(
-        JSON.stringify({ accepted: false, error: err.message, code: err.code }),
-        { status: err.status, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    return new Response(
-      JSON.stringify({ accepted: false, error: String(err), code: "run_prepare_error" }),
-      { status: 500, headers: { "Content-Type": "application/json" } },
-    );
-  }
-
-  // Drive the agent to completion regardless of client connection. Events
-  // go to the registry; the GET subscriber (and any reattaching clients)
-  // receive them via subscribe().
-  //
-  // CRITICAL: finishRun() MUST run no matter what — if it doesn't, the
-  // run is pinned as "running" forever, every subsequent POST returns
-  // 409 run_in_flight, and the user sees a silently-dead chat. The TTL
-  // eviction is scheduled inside finishRun(), so a leaked entry never
-  // self-heals. Wrap the whole body in try/finally.
-  void (async () => {
-    let terminal: "done" | "error" = "error";
-    let assistantContent = "";
-    try {
-      const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
-        onChunk: (chunk) => broadcast(active, chunk),
-      });
-      assistantContent = collected.assistantContent;
-      terminal = collected.terminal;
-      // If the stream threw mid-iteration, collectStream returns terminal="error"
-      // but no `error` chunk was broadcast — surface one to subscribers.
-      if (collected.terminal === "error" && collected.errorMessage) {
-        broadcast(active, {
-          type: "error",
-          data: { message: collected.errorMessage, code: "stream_error" },
-        });
-      }
+    ({ position } = enqueueThreadRun(thread_id, "user", async () => {
+      // startRun is called once it's our turn so the registry only ever
+      // holds one active entry per thread at a time. Subscribers that
+      // attach via GET before our turn comes will see no run yet and the
+      // SSE handler emits a synthetic done — the client reopens the
+      // EventSource and picks up the stream once we're running.
+      const active = startRun(thread_id, thread?.agent_id ?? null);
+      let prepared;
       try {
-        persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null);
-      } catch (persistErr) {
-        // Persistence failure must not strand the run — surface and continue
-        // to finishRun in the finally block.
+        prepared = await prepareThreadRun({
+          thread_id,
+          message,
+          options: stream_options,
+          attachments,
+          signal: active.abort.signal,
+          hot_since,
+        });
+      } catch (err) {
+        // Prep failure (unknown agent, model misconfig, …). With queueing
+        // the HTTP request has already returned 202, so the error has to
+        // surface as an SSE chunk to any attached subscriber. There may
+        // be no subscriber if the GET hasn't connected yet — the chunk
+        // is buffered on the ActiveRun for the next attach.
+        const message_ = err instanceof RunThreadError ? err.message : String(err);
+        const code = err instanceof RunThreadError ? err.code : "run_prepare_error";
+        broadcast(active, { type: "error", data: { message: message_, code } });
+        finishRun(active, "error");
+        return;
+      }
+
+      // Drive the agent to completion regardless of client connection. Events
+      // go to the registry; the GET subscriber (and any reattaching clients)
+      // receive them via subscribe().
+      //
+      // CRITICAL: finishRun() MUST run no matter what — if it doesn't, the
+      // run is pinned as "running" forever and the TTL eviction (scheduled
+      // inside finishRun()) never fires, so a leaked entry never self-heals.
+      // Wrap the whole body in try/finally.
+      let terminal: "done" | "error" = "error";
+      let assistantContent = "";
+      try {
+        const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
+          onChunk: (chunk) => broadcast(active, chunk),
+        });
+        assistantContent = collected.assistantContent;
+        terminal = collected.terminal;
+        // If the stream threw mid-iteration, collectStream returns terminal="error"
+        // but no `error` chunk was broadcast — surface one to subscribers.
+        if (collected.terminal === "error" && collected.errorMessage) {
+          broadcast(active, {
+            type: "error",
+            data: { message: collected.errorMessage, code: "stream_error" },
+          });
+        }
+        try {
+          persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
+        } catch (persistErr) {
+          terminal = "error";
+          broadcast(active, {
+            type: "error",
+            data: { message: `persist failed: ${(persistErr as Error).message}`, code: "persist_error" },
+          });
+        }
+      } catch (err) {
         terminal = "error";
         broadcast(active, {
           type: "error",
-          data: { message: `persist failed: ${(persistErr as Error).message}`, code: "persist_error" },
+          data: { message: (err as Error).message ?? String(err), code: "run_crashed" },
+        });
+      } finally {
+        finishRun(active, terminal);
+        publishNotification({
+          type: "run_completed",
+          thread_id,
+          agent_id: thread?.agent_id ?? null,
+          status: terminal,
+          preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
+          ts: Date.now(),
         });
       }
-    } catch (err) {
-      // Unhandled throw from collectStream / the underlying stream. Without
-      // this catch, finishRun would never run and the registry entry would
-      // stick as "running" indefinitely (see CRITICAL note above).
-      terminal = "error";
-      broadcast(active, {
-        type: "error",
-        data: { message: (err as Error).message ?? String(err), code: "run_crashed" },
-      });
-    } finally {
-      finishRun(active, terminal);
-      publishNotification({
-        type: "run_completed",
-        thread_id,
-        agent_id: thread?.agent_id ?? null,
-        status: terminal,
-        preview: assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),
-        ts: Date.now(),
-      });
+    }));
+  } catch (err) {
+    if (err instanceof QueueFullError) {
+      return new Response(
+        JSON.stringify({ accepted: false, code: "queue_full", thread_id, error: err.message }),
+        { status: 503, headers: { "Content-Type": "application/json" } },
+      );
     }
-  })();
+    throw err;
+  }
 
   return new Response(
-    JSON.stringify({ accepted: true, thread_id, started_at: active.started_at }),
+    JSON.stringify({ accepted: true, thread_id, queue_position: position }),
     { status: 202, headers: { "Content-Type": "application/json" } },
   );
 }

@@ -83,14 +83,10 @@ export const ENV_DEFAULTS = {
   maxDelegationDepth: 2,
   streamParseTripwire: 6,
   // tools
-  toolTimeoutMs: 360_000,
   voiceTimeoutMs: 60_000,
   imageTimeoutMs: 60_000,
-  fetchToolTimeoutMs: 15_000,
   fetchToolMaxBytes: 2_000_000,
   mcpRegistryTimeoutMs: 15_000,
-  execToolDefaultTimeoutMs: 10_000,
-  execToolMaxTimeoutMs: 60_000,
   execMaxOutputBytes: 8_000,
   filesMaxReadBytes: 64_000,
   filesMaxWriteBytes: 2_000_000,
@@ -114,6 +110,10 @@ export const ENV_DEFAULTS = {
   // anti-hallucination classifier
   hallucinationDetectorMode: "regex" as const,
   hallucinationDetectorModel: "",
+  // citation checker (second-pass LLM on require_source_links=on agents)
+  citationCheckerTailChars: 4_000,
+  // numbered source manifest shown to require_source_links agents
+  citationManifestMax: 50,
 } as const;
 
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
@@ -307,17 +307,9 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
   },
 
   // ─── tools ─────────────────────────────────────────────────────────
-  {
-    name: "JARELA_TOOL_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.toolTimeoutMs,
-    description: "Per-tool-invocation deadline. Set 0 to disable.",
-    category: "tools",
-    tier: "A",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 0,
-  },
+  // Per-tool wall-clock deadlines are agent-controlled via the
+  // `deadline_ms` field on every tool's schema (see lib/tools/wallclock.ts).
+  // No operator knob to clamp them — the model picks per call.
   {
     name: "JARELA_VOICE_TIMEOUT_MS",
     type: "int",
@@ -341,17 +333,6 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     min: 1_000,
   },
   {
-    name: "JARELA_FETCH_TOOL_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.fetchToolTimeoutMs,
-    description: "Web-fetch tool per-request deadline.",
-    category: "tools",
-    tier: "A",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 1_000,
-  },
-  {
     name: "JARELA_FETCH_TOOL_MAX_BYTES",
     type: "int",
     default: ENV_DEFAULTS.fetchToolMaxBytes,
@@ -367,28 +348,6 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     type: "int",
     default: ENV_DEFAULTS.mcpRegistryTimeoutMs,
     description: "MCP upstream-registry discovery fetch timeout.",
-    category: "tools",
-    tier: "B",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 1_000,
-  },
-  {
-    name: "JARELA_EXEC_TOOL_DEFAULT_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.execToolDefaultTimeoutMs,
-    description: "Default subprocess deadline for the local_exec / shell_exec tools.",
-    category: "tools",
-    tier: "B",
-    requiresRestart: false,
-    agentWritable: false,
-    min: 500,
-  },
-  {
-    name: "JARELA_EXEC_TOOL_MAX_TIMEOUT_MS",
-    type: "int",
-    default: ENV_DEFAULTS.execToolMaxTimeoutMs,
-    description: "Upper clamp on the timeout_ms parameter accepted by exec tools.",
     category: "tools",
     tier: "B",
     requiresRestart: false,
@@ -589,6 +548,28 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     tier: "B",
     requiresRestart: false,
     agentWritable: false,
+  },
+  {
+    name: "JARELA_CITATION_CHECKER_TAIL_CHARS",
+    type: "int",
+    default: ENV_DEFAULTS.citationCheckerTailChars,
+    description: "Max characters of the assistant reply sent to the citation checker (require_source_links agents). Only the trailing N chars are sent so checker cost stays bounded. Set 0 to send the full reply — use when claims often appear early in long answers; costs more tokens per check.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 0,
+  },
+  {
+    name: "JARELA_CITATION_MANIFEST_MAX",
+    type: "int",
+    default: ENV_DEFAULTS.citationManifestMax,
+    description: "Max numbered sources shown to require_source_links agents as the citation manifest (most-recent N visited via tools in this thread). Agent cites a source by writing the marker [N] inline. 0 disables the manifest (agent will be told no sources are available to cite).",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 0,
   },
 ];
 

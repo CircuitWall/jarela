@@ -20,9 +20,11 @@ import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/p
 import { estimateTokens } from "@/lib/agents/context-budget";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
 import {
+  buildSourceManifest,
   classifyCitations,
-  extractCitedLinks,
+  extractCitedMarkers,
   extractVisitedSources,
+  type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
@@ -67,6 +69,13 @@ export interface PreparedThreadRun {
   // Forwarded to `persistAssistantMessage` so message_usage carries the
   // per-tier breakdown the chat UI uses for its diagnostic context bar.
   context_snapshot?: ContextUsageSnapshot;
+  // Numbered source manifest shown to the agent for this turn (when
+  // `require_source_links` is on). Forwarded to `persistAssistantMessage`
+  // so the EXACT list the agent saw is persisted with the message — the
+  // chat UI uses it to resolve inline `[N]` markers to clickable links,
+  // and the citation checker uses it to score marker validity. Empty when
+  // the flag is off.
+  source_manifest?: SourceManifestEntry[];
 }
 
 export interface ContextUsageSnapshot {
@@ -188,6 +197,17 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     "",
   );
 
+  // Numbered source manifest for require_source_links agents. Built from
+  // every source the agent has touched via tools in prior turns of this
+  // thread so the agent can cite by writing inline `[N]` markers instead
+  // of typing full paths/URLs. Empty (and the prompt block becomes a
+  // "no sources yet" note) when the flag is off or the thread has no
+  // tool history. New tool calls within THIS turn aren't in the manifest
+  // — they'll show up next turn.
+  const sourceManifest: SourceManifestEntry[] = agentCfg.require_source_links
+    ? buildSourceManifest(extractVisitedSources(req.thread_id, []), getConfig().citationManifestMax)
+    : [];
+
   const systemPrompt = buildSystemPrompt({
     agentCfg,
     trimmedMessage: trimmed,
@@ -197,6 +217,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     factsCtx: historyWindow.factsCtx,
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
+    sourceManifest,
   });
 
   const delegationDepth = req._delegation_depth ?? 0;
@@ -239,6 +260,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       warm_budget_tokens: historyWindow.budget.tierBudgets.warm,
       facts_budget_tokens: historyWindow.budget.tierBudgets.facts,
     },
+    source_manifest: sourceManifest.length > 0 ? sourceManifest : undefined,
   };
 }
 
@@ -455,13 +477,9 @@ export function persistAssistantMessage(
   category: string | null = null,
   usage?: AssistantUsageSnapshot | null,
   contextSnapshot?: ContextUsageSnapshot | null,
+  sourceManifest?: readonly SourceManifestEntry[] | null,
 ): void {
   const trimmed = content.trim();
-  // Append a small, persistent footer listing which tools actually ran this
-  // turn. Without this, tool_call events are live-only UI — after the stream
-  // ends (or on page reload, or if a mobile client missed the brief render)
-  // the assistant text remains saying "I scheduled X" with no proof a tool
-  // ran, which reads as a hallucination even when the tool did execute.
   let final = trimmed;
   const toolList = usedTools ? Array.from(new Set(usedTools.filter(Boolean))) : [];
   // Stall detector: model ended its turn with a promise-shaped tail but
@@ -476,8 +494,6 @@ export function persistAssistantMessage(
   const noWriteTool = toolList.length > 0 && !toolList.some(isWriteLikeToolName);
   if (isStallProse && (noTool || noWriteTool)) {
     final = `${trimmed}\n\n*⚠️ Agent stalled — promised a next step but did not invoke a write tool. Reply "continue" to retry.*`;
-  } else if (toolList.length > 0) {
-    final = `${trimmed}\n\n*— used: ${toolList.join(", ")}*`;
   }
   // Fabrication footer (ADR-0037): runs after the retry budget is exhausted
   // and a flagged reply still made it through. Look up allowed tools from
@@ -506,14 +522,31 @@ export function persistAssistantMessage(
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
     }
+    // Persist the source manifest the agent saw this turn into the message's
+    // metadata, regardless of whether the checker will run. The chat UI uses
+    // it to resolve inline `[N]` markers → clickable links; without this,
+    // markers render as plain `[3]` text.
+    const manifest = sourceManifest ?? [];
+    if (manifest.length > 0) {
+      setMessageMetadata(row.msg_id, {
+        citations: {
+          checker_model: "",
+          claims: [],
+          unverified_links: [],
+          sources: manifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),
+        },
+      });
+    }
     // Citation checker (fire-and-forget). Runs only when the agent has
-    // `require_source_links` on, the persisted text is non-empty, and the
-    // text actually carries at least one markdown link to check. Writes
-    // its verdict back into `messages.metadata`; the UI picks it up on
+    // `require_source_links` on, the persisted text is non-empty, the
+    // manifest is non-empty, and the text actually carries at least one
+    // `[N]` marker to verify. Writes its verdict back into
+    // `messages.metadata` alongside the manifest; the UI picks it up on
     // the next refresh. Any failure (timeout, parse error, missing
-    // checker model) leaves metadata null and the message renders normally.
-    if (persisted) {
-      void runCitationCheckerForRow(thread_id, row.msg_id, persisted, sanitizedEvents ?? []);
+    // checker model) leaves the manifest in place and the message renders
+    // normally.
+    if (persisted && manifest.length > 0) {
+      void runCitationCheckerForRow(thread_id, row.msg_id, persisted, manifest);
     }
     // ADR-0041 wrote provider-reported token usage when available. The
     // per-tier context snapshot (hot/warm/facts/overhead) is computed
@@ -574,13 +607,14 @@ export function persistAssistantMessage(
  * `require_source_links` flag and the existence of a checker model. The
  * checker is intentionally permissive about failure — anything that
  * goes wrong (no model, provider throw, parse failure, timeout) leaves
- * metadata null so the chat UI renders the message normally.
+ * the manifest-only metadata in place so the chat UI still renders
+ * `[N]` markers as links.
  */
 async function runCitationCheckerForRow(
   thread_id: string,
   msg_id: string,
   persistedText: string,
-  freshEvents: readonly PersistedToolEvent[],
+  sourceManifest: readonly SourceManifestEntry[],
 ): Promise<void> {
   try {
     const thread = getThread(thread_id);
@@ -588,14 +622,19 @@ async function runCitationCheckerForRow(
     if (!agent || !agent.require_source_links) return;
     const checkerModel = (agent.anti_hallucination_model_config ?? "").trim();
     if (!checkerModel) return;
-    // Skip the LLM round-trip when the agent didn't cite anything — there's
-    // nothing for the checker to verify so the only output would be an empty
-    // claims array, which is the same as no metadata.
-    if (extractCitedLinks(persistedText).length === 0) return;
-    const sources = extractVisitedSources(thread_id, freshEvents);
-    const verdict = await classifyCitations(persistedText, sources, checkerModel);
+    // Skip the LLM round-trip when the agent didn't write any markers —
+    // there's nothing to verify and an empty verdict is the same as no
+    // checker metadata (the manifest persisted at message-insert time
+    // still drives marker rendering).
+    if (extractCitedMarkers(persistedText).length === 0) return;
+    const verdict = await classifyCitations(persistedText, sourceManifest, checkerModel);
     if (!verdict) return;
-    setMessageMetadata(msg_id, { citations: verdict });
+    setMessageMetadata(msg_id, {
+      citations: {
+        ...verdict,
+        sources: sourceManifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),
+      },
+    });
   } catch (err) {
     console.error("[citation-checker] failed", err);
   }

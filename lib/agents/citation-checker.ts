@@ -5,13 +5,16 @@
 // Pipeline:
 //   1. extractVisitedSources(threadId)  walks every persisted tool event +
 //      the just-produced events to build the {url|path} provenance set.
-//   2. extractCitedLinks(assistantText) pulls every markdown link target
-//      out of the assistant text (so the checker only spends tokens on
-//      messages that actually carry citations — when there are none the
-//      verdict is trivially "no claims, no checker call").
-//   3. classifyCitations(text, sources, modelConfigName) asks the checker
-//      LLM to emit a strict-JSON verdict listing each factual claim, its
-//      cited link (if any), and whether that link is in the visited set.
+//   2. buildSourceManifest(visited, max) numbers the most-recent N sources
+//      so the model can cite by writing an inline `[N]` marker instead of
+//      typing the full path/URL in every claim.
+//   3. extractCitedMarkers(text)         pulls every `[N]` marker out of
+//      the assistant text so the checker can skip turns that carry no
+//      citations at all.
+//   4. classifyCitations(text, manifest, modelConfigName) asks the checker
+//      LLM to emit a strict-JSON verdict listing each factual claim, the
+//      marker the agent attached (if any), and whether that marker is in
+//      the manifest.
 //
 // Failure modes (timeout, parse error, missing model config, provider
 // throw) all return null. The caller writes metadata only on a non-null
@@ -21,6 +24,11 @@
 //   - Provenance scope is the whole thread, not a rolling window. Matches
 //     how focused chat threads work in practice and avoids false flags
 //     when the agent legitimately re-cites a file it read five turns ago.
+//   - The manifest is built BEFORE the LLM turn (in run-thread) and shown
+//     to the model in the system prompt. The model only has to write a
+//     small marker `[3]` instead of a full URL — long-form LLM output is
+//     much more reliable at emitting short stable tokens than at typing
+//     exact paths in the middle of prose.
 //   - Reuses anti_hallucination_model_config as the checker model so the
 //     user only configures one cheap classifier model per agent.
 
@@ -28,12 +36,20 @@ import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { getMessages } from "@/lib/stores/threads";
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getConfig } from "@/lib/env/config";
 
 export interface CitationClaim {
   text: string;
+  marker: number | null;
   link: string | null;
   verified: boolean;
   reason: string;
+}
+
+export interface SourceManifestEntry {
+  n: number;
+  label: string;
+  href: string;
 }
 
 export interface CitationVerdict {
@@ -108,9 +124,9 @@ export function extractVisitedSources(
 }
 
 /**
- * Pull every markdown link target out of the assistant text. Used to
- * decide whether to even bother calling the checker LLM (no links →
- * no claims to verify → skip the LLM round-trip).
+ * Pull every markdown link target out of the assistant text. Kept for
+ * back-compat and as a useful primitive; the new marker-based flow uses
+ * extractCitedMarkers instead.
  */
 export function extractCitedLinks(text: string): string[] {
   if (!text) return [];
@@ -124,29 +140,83 @@ export function extractCitedLinks(text: string): string[] {
   return Array.from(out);
 }
 
-const PROMPT_TAIL_BUDGET = 4000;
+/**
+ * Pull every numeric marker (`[1]`, `[12]`) out of the assistant text.
+ * Skips reference-link tails like `[label][1]` via the lookbehind so the
+ * checker doesn't misread accidental markdown reference-link syntax as a
+ * citation marker. Returns unique numbers in first-seen order.
+ */
+export function extractCitedMarkers(text: string): number[] {
+  if (!text) return [];
+  const out = new Set<number>();
+  const re = /(?<!\])\[(\d+)\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const n = parseInt(m[1], 10);
+    if (Number.isFinite(n) && n > 0) out.add(n);
+  }
+  return Array.from(out);
+}
 
-const SYSTEM_PROMPT = `You judge whether an assistant turn's FACTUAL CLAIMS are backed by SOURCES the agent actually visited in this conversation.
+/**
+ * Build the numbered source manifest the agent will see in its system
+ * prompt. Takes the visited-sources set (insertion-ordered ≈ chronological
+ * because both Set and the events that filled it preserve order) and
+ * returns the most-recent `max` entries numbered 1..N.
+ *
+ * Most-recent rather than first-N because old sources are less likely to
+ * still be relevant on long threads; a tight cap keeps the prompt cheap.
+ */
+export function buildSourceManifest(
+  visited: ReadonlySet<string>,
+  max: number,
+): SourceManifestEntry[] {
+  if (max <= 0 || visited.size === 0) return [];
+  const all = Array.from(visited);
+  const tail = all.slice(-max);
+  return tail.map((href, i) => ({
+    n: i + 1,
+    label: labelForSource(href),
+    href,
+  }));
+}
+
+function labelForSource(href: string): string {
+  if (href.startsWith("http://") || href.startsWith("https://")) {
+    try {
+      const u = new URL(href);
+      const path = u.pathname.replace(/\/$/, "");
+      return `${u.hostname}${path}`;
+    } catch { return href; }
+  }
+  return href;
+}
+
+const SYSTEM_PROMPT = `You judge whether an assistant turn's FACTUAL CLAIMS are properly cited via SOURCE MARKERS.
 
 You will receive:
+- A numbered list of SOURCES the agent visited via tools in this thread.
 - The assistant text (or its trailing portion).
-- A list of source URLs/paths the agent has visited via tools in this thread.
+
+The agent cites a source by writing an inline marker like [3] right after the claim, where the number matches a row in the SOURCES list. A marker MAY appear mid-sentence or at the end of a sentence.
 
 A "factual claim" is a specific assertion about the external world, a file's contents, an API response, or a quoted/paraphrased fact. Generic prose, opinions, plans ("I'll do X"), and conversational filler are NOT claims.
 
-For each claim, look for a markdown link [text](url-or-path) attached to it. The claim is VERIFIED only when:
-  (a) such a link is present, AND
-  (b) that link (URL or workspace-relative path) is in the visited-sources list.
+For each claim, report:
+- "text":     short paraphrase (max 120 chars).
+- "marker":   the integer the agent attached (e.g. 3 for [3]), or null if no marker is attached.
+- "verified": true if marker is non-null AND that number appears in the SOURCES list, else false.
+- "reason":   one short sentence (max 120 chars) explaining the verdict.
 
 Reply with EXACTLY one JSON object on one line, no surrounding prose, no markdown fence:
 
-{"claims":[{"text":"<short paraphrase, max 120 chars>","link":"<url-or-null>","verified":true|false,"reason":"<one short sentence, max 120 chars>"}]}
+{"claims":[{"text":"...","marker":<integer-or-null>,"verified":true|false,"reason":"..."}]}
 
 If the turn has no factual claims, return {"claims":[]}.`;
 
 export async function classifyCitations(
   assistantText: string,
-  visitedSources: ReadonlySet<string>,
+  manifest: ReadonlyArray<SourceManifestEntry>,
   modelConfigName: string,
   signal?: AbortSignal,
 ): Promise<CitationVerdict | null> {
@@ -162,13 +232,22 @@ export async function classifyCitations(
 
   // Tail the text so a 60KB turn doesn't blow the checker budget. Citations
   // are usually inline so any sub-window catches representative claims.
-  const tail = assistantText.slice(-PROMPT_TAIL_BUDGET);
-  const sourcesList = Array.from(visitedSources).slice(0, 200);
-  const userMsg = `Visited sources (${sourcesList.length}):
-${sourcesList.map((s) => `- ${s}`).join("\n")}
+  // JARELA_CITATION_CHECKER_TAIL_CHARS=0 disables truncation entirely (use
+  // when claims often appear early in long answers — costs more tokens).
+  const tailBudget = getConfig().citationCheckerTailChars;
+  const sent = tailBudget > 0 ? assistantText.slice(-tailBudget) : assistantText;
+  const portionLabel = tailBudget > 0 && assistantText.length > tailBudget
+    ? `trailing ${sent.length} chars of ${assistantText.length}`
+    : `full ${sent.length} chars`;
+  const sourcesList = manifest.map((e) => {
+    const trailer = e.label === e.href ? "" : ` — ${e.href}`;
+    return `[${e.n}] ${e.label}${trailer}`;
+  }).join("\n");
+  const userMsg = `Sources (${manifest.length}):
+${sourcesList || "(none)"}
 
-Assistant text (trailing ${tail.length} chars):
-${tail}`;
+Assistant text (${portionLabel}):
+${sent}`;
 
   if (signal?.aborted) return null;
   let result;
@@ -186,22 +265,24 @@ ${tail}`;
 
   const parsed = parseCitationVerdict(result?.text ?? "");
   if (!parsed) return null;
-  // Apply the visited-set check ourselves rather than trusting the LLM —
-  // the LLM is good at extracting claims but not at exact-string membership.
+  // Resolve marker → manifest entry ourselves rather than trusting the LLM
+  // for the membership decision — the LLM is good at extracting claims but
+  // not at exact-integer set membership.
+  const byN = new Map(manifest.map((e) => [e.n, e]));
   const claims = parsed.map((c) => {
-    const linkNorm = c.link ? normalizeSource(c.link) : "";
-    const verified = !!linkNorm && visitedSources.has(linkNorm);
-    return { ...c, verified };
+    const marker = c.marker ?? null;
+    const entry = marker !== null ? byN.get(marker) : undefined;
+    const link = entry?.href ?? null;
+    const verified = entry !== undefined;
+    return { ...c, marker, link, verified };
   });
-  const unverified_links = Array.from(new Set(
-    claims.filter((c) => c.link && !c.verified).map((c) => c.link as string),
-  ));
-  return { checker_model: cfgName, claims, unverified_links };
+  return { checker_model: cfgName, claims, unverified_links: [] };
 }
 
 /**
  * Tolerant strict-JSON parser for the checker output. Returns null on any
- * shape mismatch so the caller can degrade to "no metadata".
+ * shape mismatch so the caller can degrade to "no metadata". Parses both
+ * `marker` (new manifest-based flow) and `link` (legacy free-form flow).
  */
 export function parseCitationVerdict(text: string): CitationClaim[] | null {
   if (!text) return null;
@@ -219,10 +300,14 @@ export function parseCitationVerdict(text: string): CitationClaim[] | null {
     const r = item as Record<string, unknown>;
     const text = typeof r.text === "string" ? r.text.slice(0, 200) : "";
     if (!text) continue;
+    const markerRaw = r.marker;
+    const marker = typeof markerRaw === "number" && Number.isFinite(markerRaw) && markerRaw > 0
+      ? Math.floor(markerRaw)
+      : null;
     const link = typeof r.link === "string" && r.link.trim() ? r.link.trim() : null;
     const verified = r.verified === true;
     const reason = typeof r.reason === "string" ? r.reason.slice(0, 200) : "";
-    claims.push({ text, link, verified, reason });
+    claims.push({ text, marker, link, verified, reason });
   }
   return claims;
 }
