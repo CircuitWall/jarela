@@ -79,6 +79,7 @@ export interface JarelaConfig {
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
   readonly hallucinationDetectorModel: string;
   readonly citationCheckerTailChars: number;
+  readonly citationManifestMax: number;
 
   // app metadata
   readonly appName: string;
@@ -204,6 +205,7 @@ export function getConfig(): JarelaConfig {
     ),
     hallucinationDetectorModel: (env.JARELA_HALLUCINATION_DETECTOR_MODEL ?? ENV_DEFAULTS.hallucinationDetectorModel).trim(),
     citationCheckerTailChars: parseNonNegativeInt(env.JARELA_CITATION_CHECKER_TAIL_CHARS, ENV_DEFAULTS.citationCheckerTailChars),
+    citationManifestMax: parseNonNegativeInt(env.JARELA_CITATION_MANIFEST_MAX, ENV_DEFAULTS.citationManifestMax),
 
     // app metadata
     appName: getAppName(),

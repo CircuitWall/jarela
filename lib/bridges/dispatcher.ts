@@ -132,7 +132,7 @@ export async function handleInboundMessage(
     const reply = assistantContent.trim();
     const suppressAssistant = silent && (reply.length === 0 || isNoReply(reply));
     if (!suppressAssistant) {
-      persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge", assistantUsage, prepared.context_snapshot ?? null);
+      persistAssistantMessage(thread.thread_id, assistantContent, usedTools, toolEvents, "bridge", assistantUsage, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
     }
 
     // Outbound reply gate: silent_mode (master switch) AND respond_to

@@ -59,6 +59,7 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
         category,
         collected.usage ?? null,
         prepared.context_snapshot ?? null,
+        prepared.source_manifest ?? null,
       );
     }
     return {

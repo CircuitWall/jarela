@@ -116,6 +116,8 @@ export const ENV_DEFAULTS = {
   hallucinationDetectorModel: "",
   // citation checker (second-pass LLM on require_source_links=on agents)
   citationCheckerTailChars: 4_000,
+  // numbered source manifest shown to require_source_links agents
+  citationManifestMax: 50,
 } as const;
 
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
@@ -597,6 +599,17 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     type: "int",
     default: ENV_DEFAULTS.citationCheckerTailChars,
     description: "Max characters of the assistant reply sent to the citation checker (require_source_links agents). Only the trailing N chars are sent so checker cost stays bounded. Set 0 to send the full reply — use when claims often appear early in long answers; costs more tokens per check.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 0,
+  },
+  {
+    name: "JARELA_CITATION_MANIFEST_MAX",
+    type: "int",
+    default: ENV_DEFAULTS.citationManifestMax,
+    description: "Max numbered sources shown to require_source_links agents as the citation manifest (most-recent N visited via tools in this thread). Agent cites a source by writing the marker [N] inline. 0 disables the manifest (agent will be told no sources are available to cite).",
     category: "agent",
     tier: "B",
     requiresRestart: false,

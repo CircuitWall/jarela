@@ -19,6 +19,7 @@ import {
 } from "@/lib/agents/context-budget";
 import { getAppName } from "@/lib/env/app-config";
 import type { StreamOptions } from "@/lib/agents/base";
+import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 
 const APP_NAME = getAppName();
 
@@ -31,10 +32,14 @@ export interface SystemPromptContext {
   factsCtx: string;
   experienceMode: "essential" | "full";
   delegateRosterLines: string[];
+  /** Numbered source manifest the agent may cite via `[N]` markers. Built
+   *  by run-thread from the thread's visited-source set when the agent has
+   *  `require_source_links` on; empty/undefined disables citation. */
+  sourceManifest?: ReadonlyArray<SourceManifestEntry>;
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
-  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines } = ctx;
+  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest } = ctx;
 
   const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
@@ -55,7 +60,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.plan_first,
     harnessParts.presentation,
     harnessParts.citation,
-    buildSourceLinkContext(agentCfg),
+    buildSourceLinkContext(agentCfg, sourceManifest ?? []),
     buildTimeContext(),
     buildEnvContext(),
     harnessParts.self_config,
@@ -111,22 +116,40 @@ function buildTimeContext(): string {
 }
 
 // Citation enforcement directive. Empty unless the agent has
-// `require_source_links` on. The post-turn citation checker validates
-// that every cited link was actually visited via a tool call in this
-// thread, and surfaces a warning badge in the chat UI on any link the
-// agent invented. Phrased as the agent's own self-check rather than an
-// external rule, because that voice generalises better — models that
-// "own" the check tend to cite more honestly than models told to obey
-// a directive.
-function buildSourceLinkContext(agent: AgentConfigRow): string {
+// `require_source_links` on. Shows the numbered source manifest the agent
+// may cite via inline `[N]` markers — the chat UI renders each `[N]` as
+// a clickable link to the corresponding source. Built from the thread's
+// visited-source set (tool calls like file_read, web_search, fetch_webpage)
+// so the agent can only cite what it has actually opened in this thread;
+// invented numbers stay as plain text (not rendered as links) and are
+// flagged by the post-turn checker.
+//
+// Numbered markers were chosen over free-form `[label](href)` because
+// long-form LLM output reliably regresses to its training distribution
+// when asked to type exact paths mid-sentence — Perplexity, Wikipedia,
+// and Anthropic's first-party Citations all sidestep that by letting the
+// model emit a short stable token (`[3]`) and resolving the link
+// out-of-band. Same idea here.
+function buildSourceLinkContext(
+  agent: AgentConfigRow,
+  manifest: ReadonlyArray<SourceManifestEntry>,
+): string {
   if (!agent.require_source_links) return "";
+  if (manifest.length === 0) {
+    return [
+      "--- Sources you can cite ---",
+      "You haven't opened any sources in this conversation yet, so factual claims can't be cited from this thread. If a claim is central to your answer, open the source first via a tool (file_read, file_grep, file_glob, web_search, fetch_webpage, …) before stating it. If you're going from memory, say so plainly instead of stating it as if you'd checked.",
+    ].join("\n");
+  }
+  const lines = manifest.map((e) => {
+    const trailer = e.label === e.href ? "" : ` — ${e.href}`;
+    return `[${e.n}] ${e.label}${trailer}`;
+  });
   return [
-    "--- Self-check: sourcing ---",
-    "Before I send a factual claim, I pause and ask myself: did I actually open a source for this in this conversation, or am I going from memory?",
-    "If I have a source I opened with a tool (file_read, file_grep, file_glob, web_search, fetch_webpage, …), I attach it as a markdown link like [label](url-or-workspace-path) right next to the claim.",
-    "If I don't, I say so plainly — something like \"I don't have a source for this\" or \"this is from memory, not verified here\" — instead of stating it as if I'd checked. I never invent a URL or path to make a claim look sourced.",
-    "Conversational replies, plans (\"I'll do X next\"), and acknowledgements aren't claims and don't need a source — this self-check is only for specific factual statements about external content.",
-    "(A second pass quietly re-reads my reply afterwards and flags any link I cited but didn't actually visit, so the user will see when I slip. The point isn't to dodge the checker — it's to catch myself first.)",
+    "--- Sources you can cite ---",
+    "You may attach a citation to a factual claim by writing a numbered marker like [1] or [3] in-prose, right after the claim. Use ONLY the numbers in the list below — never invent a number. If you don't have a matching source for a claim, state it plainly without a marker (or, if it's central to your answer, open the source first via a tool and cite it next turn). The chat UI renders each `[N]` as a clickable link, so you don't need to type the path or URL.",
+    "",
+    ...lines,
   ].join("\n");
 }
 

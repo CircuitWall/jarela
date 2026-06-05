@@ -112,7 +112,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         });
       }
       try {
-        persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null);
+        persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
       } catch (persistErr) {
         // Persistence failure must not strand the run — surface and continue
         // to finishRun in the finally block.

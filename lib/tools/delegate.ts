@@ -101,6 +101,7 @@ export const delegateToAgentTool = tool(
         "delegation",
         collected.usage ?? null,
         prepared.context_snapshot ?? null,
+        prepared.source_manifest ?? null,
       );
 
       return JSON.stringify({
