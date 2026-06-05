@@ -29,3 +29,7 @@ import "./outlook";
 import "./outlook-calendar";
 import "./delegate";
 import "./system_config";
+import "./list-tools";
+import "./providers-info";
+import "./mcp-servers-info";
+import "./extension-surfaces";

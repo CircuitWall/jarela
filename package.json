@@ -34,6 +34,15 @@
   "engines": {
     "node": ">=22"
   },
+  "exports": {
+    ".": null,
+    "./package.json": "./package.json",
+    "./lib/providers/types": "./lib/providers/types.ts",
+    "./lib/tools/types": "./lib/tools/types.ts",
+    "./lib/tools/registry": "./lib/tools/registry.ts",
+    "./lib/mcp/registry": "./lib/mcp/registry.ts",
+    "./*": "./*"
+  },
   "files": [
     ".next/standalone",
     "!.next/standalone/public/sw.js",
