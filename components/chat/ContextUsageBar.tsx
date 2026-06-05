@@ -69,6 +69,14 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
   const warmUsed = usage.warm_tokens!;
   const factsUsed = usage.facts_tokens!;
   const overheadUsed = usage.overhead_tokens!;
+  // Anthropic prompt-cache breakdown (ADR-0062). Disjoint from
+  // hot/warm/facts/overhead: those tiers count fresh input, while these
+  // count tokens served from / written to the prompt cache. Surface them
+  // in the tooltip and expanded panel so the user can see when caching
+  // is firing for this turn.
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const cacheCreation = usage.cache_creation_input_tokens ?? 0;
+  const cacheActive = cacheRead > 0 || cacheCreation > 0;
 
   // Overhead's "budget" is whatever it actually consumed — there's no slider
   // for it. Shown as a fixed-size segment so it doesn't visually compete
@@ -90,6 +98,13 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           `Context window: ${cap.toLocaleString()} tokens (the model's full capacity)`,
           `This turn's prompt used ${(hotUsed + warmUsed + factsUsed + overheadUsed).toLocaleString()} tokens`,
           `Reply generated: ${usage.output_tokens.toLocaleString()} tokens`,
+          ...(cacheActive
+            ? [
+                "",
+                `Prompt cache: ${cacheRead.toLocaleString()} read · ${cacheCreation.toLocaleString()} written`,
+                "(cache reads bill at 0.1× input, writes at 1.25×)",
+              ]
+            : []),
           "",
           "Each coloured slot's width = budget for that tier; filled portion = actually used.",
           "Red = tier overflowed its budget. Grey tail = headroom reserved for the reply.",
@@ -104,12 +119,41 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           {trailing > 0 && <div className="h-full bg-surface-3" style={{ width: `${toPct(trailing)}%` }} aria-hidden title={`Reserved for reply: ${trailing.toLocaleString()} tokens (${Math.round((trailing/cap)*100)}% of window)`} />}
         </div>
       </button>
+      {cacheActive && !showDetails && (
+        <div
+          className="mt-0.5 px-2 text-[10px] text-violet-500/80"
+          title={[
+            "Prompt cache (ADR-0062). Reads bill at 0.1× input, writes at 1.25×.",
+            cacheRead > 0 ? `${cacheRead.toLocaleString()} tokens served from cache.` : "",
+            cacheCreation > 0 ? `${cacheCreation.toLocaleString()} tokens written to cache.` : "",
+          ].filter(Boolean).join("\n")}
+        >
+          {cacheRead > 0 && <>cache hit · {fmtTokens(cacheRead)} read</>}
+          {cacheRead > 0 && cacheCreation > 0 && " · "}
+          {cacheCreation > 0 && <>cache write · {fmtTokens(cacheCreation)}</>}
+        </div>
+      )}
       {showDetails && (
         <div className="mt-1 px-2 pb-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-fg-faint">
           <Row label="Hot"      color="text-accent"    used={hotUsed}      budget={hotBudget}      hint="Recent messages kept verbatim" />
           <Row label="Warm"     color="text-amber-500" used={warmUsed}     budget={warmBudget}     hint="Older history compressed into rolling summary" />
           <Row label="Facts"    color="text-teal-500"  used={factsUsed}    budget={factsBudget}    hint="Retrieved long-term memory + recall snippets" />
           <Row label="Overhead" color="text-fg-muted"  used={overheadUsed} budget={overheadUsed}   hint="System prompt + per-message scaffolding" />
+          {cacheActive && (
+            <span
+              className="col-span-2 text-violet-500"
+              title={[
+                "Prompt cache (ADR-0062). Disjoint from the tiers above.",
+                `Read ${cacheRead.toLocaleString()} tokens — billed at 0.1× input rate.`,
+                `Wrote ${cacheCreation.toLocaleString()} tokens — billed at 1.25× input rate.`,
+                "Reads pay off on subsequent turns; writes are an investment.",
+              ].join("\n")}
+            >
+              <span className="text-violet-500">Cache</span>{" "}
+              read {fmtTokens(cacheRead)}
+              {cacheCreation > 0 ? ` · created ${fmtTokens(cacheCreation)}` : ""}
+            </span>
+          )}
           <span
             className="col-span-2 mt-0.5 border-t border-border pt-0.5"
             title={`Output: tokens the model generated in its reply.\nWindow: total context capacity of this model.`}
