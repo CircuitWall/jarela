@@ -720,7 +720,7 @@ Names that collide with built-in tools are rejected (built-in wins). Throw an
 
 1. Copy [lib/tools/template.ts](./lib/tools/template.ts) to `lib/tools/<name>.ts`.
 2. Implement with `tool(...)` from `@langchain/core/tools` + a Zod schema.
-3. Call `registerTools("<Category>", [yourTool, ...])` at the bottom of the file.
+3. Call `registerTools("<Category>", "<read|write|execute>", [yourTool, ...])` at the bottom of the file. Files with mixed capabilities make multiple calls (see [ADR-0038](./docs/adr/0038-tool-capability-axis.md)).
 4. Add `import "./<name>";` to [lib/tools/builtins.ts](./lib/tools/builtins.ts).
 5. If it calls a network or external resource, document the env vars and gate
    it behind a category the user can toggle off.
