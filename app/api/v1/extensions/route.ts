@@ -4,13 +4,13 @@ import {
 } from "@/lib/providers/external";
 import { BUILTIN_PROVIDER_NAMES } from "@/lib/providers";
 import { loadExternalTools, getToolsDir } from "@/lib/tools/external";
-import { BUILTIN_TOOL_NAMES } from "@/lib/tools";
+import { getBuiltinToolNames } from "@/lib/tools";
 import { describeToolSecrets } from "@/lib/stores/tool-secrets";
 import { cachedJson } from "@/lib/api/responses";
 
 export function GET() {
   const provs = loadExternalProvidersDetailed(BUILTIN_PROVIDER_NAMES);
-  const tools = loadExternalTools(BUILTIN_TOOL_NAMES);
+  const tools = loadExternalTools(getBuiltinToolNames());
 
   return cachedJson({
     directories: {

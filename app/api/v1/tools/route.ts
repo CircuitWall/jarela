@@ -1,3 +1,12 @@
+/**
+ * @public — `GET /api/v1/tools`
+ *
+ * Lists every tool in the agent's pool — built-in, external (loaded from
+ * `~/.jarela/tools/*.cjs`), and MCP — with category, capability, source,
+ * and per-tool stats. The agent-callable equivalent is the `list_tools`
+ * tool. See `docs/api.md`.
+ */
+
 import { NextResponse } from "next/server";
 import { getAllToolsAsync, getToolCategory, getToolCapability, getToolGroup, getToolSource } from "@/lib/tools";
 import { cachedJson } from "@/lib/api/responses";

@@ -1,3 +1,11 @@
+/**
+ * @public — `GET /api/v1/events` (Server-Sent Events)
+ *
+ * Live notification stream — run completion, watcher fires, queue
+ * progress, etc. UI subscribes here for real-time updates; external
+ * scripts can subscribe over the same SSE wire format. See `docs/api.md`.
+ */
+
 import { NextRequest } from "next/server";
 import { recentSince, subscribe } from "@/lib/notifications/bus";
 import { startScheduler } from "@/lib/scheduler";
