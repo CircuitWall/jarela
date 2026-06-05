@@ -225,11 +225,14 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
   }
 
   return (
-    // pb-3 + safe-area inset, additively. `pb-safe` alone overrides `pb-3`
-    // and collapses to 0 on devices without a notch (Android Edge, desktop).
+    // pb-3 + safe-area inset + on-screen keyboard inset, all additive.
+    // `pb-safe` alone overrides `pb-3` and collapses to 0 on devices
+    // without a notch (Android Edge, desktop). `--kb-inset` is published
+    // by useVisualViewportInsets so on iOS Safari / PWA the composer
+    // lifts above the keyboard instead of sitting behind it.
     <div
       className="glass border-t border-border/60 px-3 sm:px-4 pt-2"
-      style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom) + var(--kb-inset, 0px))" }}
     >
       {/* Attachment previews */}
       {attachments.length > 0 && (
