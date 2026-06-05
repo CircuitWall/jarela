@@ -200,11 +200,24 @@ describe("messageUsageToResponse", () => {
       warm_budget_tokens: 20_000,
       facts_budget_tokens: 10_000,
       context_window_tokens: 100_000,
+      // Anthropic prompt-cache breakdown carries through. NULL by default
+      // (legacy rows + non-Anthropic providers) — see PR #181 follow-up.
+      cache_creation_input_tokens: null,
+      cache_read_input_tokens: null,
     });
     // Cost + provenance fields stay server-side; the bar doesn't need them.
     expect(out).not.toHaveProperty("cost_usd");
     expect(out).not.toHaveProperty("provider");
     expect(out).not.toHaveProperty("agent_id");
+  });
+
+  it("surfaces Anthropic cache token breakdown when populated", () => {
+    const out = messageUsageToResponse(makeUsageRow({
+      cache_creation_input_tokens: 4_000,
+      cache_read_input_tokens: 80_000,
+    }))!;
+    expect(out.cache_creation_input_tokens).toBe(4_000);
+    expect(out.cache_read_input_tokens).toBe(80_000);
   });
 
   it("preserves NULL tier columns for legacy snapshots", () => {
