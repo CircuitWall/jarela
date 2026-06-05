@@ -18,8 +18,13 @@ test("app shell renders without console errors", async ({ page }) => {
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
 
   // Ignore a few well-known browser noise sources that are not regressions.
+  // - favicon / manifest / service-worker chatter on first paint.
+  // - Mobile Safari logs `Viewport argument key "interactive-widget" not
+  //   recognized` because it doesn't implement that meta key yet — that's
+  //   intentional (the JS visualViewport hook is the Safari fallback).
   const filtered = errors.filter((e) =>
-    !/favicon|manifest|service.?worker|workbox/i.test(e),
+    !/favicon|manifest|service.?worker|workbox/i.test(e) &&
+    !/Viewport argument key "interactive-widget"/i.test(e),
   );
   expect(filtered, `unexpected console/page errors: ${filtered.join(" | ")}`).toEqual([]);
 });

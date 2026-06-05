@@ -49,6 +49,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
+  // Chromium 108+: shrink the layout viewport when the OS keyboard
+  // appears, so `100dvh` and `position: fixed; bottom: 0` automatically
+  // sit above the keyboard with no JS. Safari ignores this and falls
+  // back to the visualViewport-based path in useVisualViewportInsets.
+  interactiveWidget: "resizes-content",
 };
 
 // Pre-paint script: reads the persisted theme and sets `data-theme` on
