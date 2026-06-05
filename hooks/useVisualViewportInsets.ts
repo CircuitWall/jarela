@@ -10,19 +10,14 @@ import { useEffect } from "react";
  *   --visual-vh  → the actual visible height in px (defaults to 100dvh).
  *   --kb-inset   → how many px the keyboard currently occupies at the bottom.
  *
- * Platform strategy (cheapest signal that fires wins):
- *   - Chromium ≥ 108: the `interactive-widget=resizes-content` viewport meta
- *     in `app/layout.tsx` shrinks the layout viewport when the keyboard
- *     appears, so `100dvh` and `env(safe-area-inset-bottom)` already do
- *     the right thing without any JS.
- *   - Chromium (where supported): we opt into the VirtualKeyboard API so
- *     `env(keyboard-inset-*)` becomes available to CSS. `InputBar` reads
- *     it via `max(--kb-inset, env(keyboard-inset-height))`.
- *   - iOS Safari (in-browser): `vv.height` shrinks when the keyboard
- *     appears. `inset = innerHeight - vv.height` covers this directly.
- *   - iOS standalone PWA: `vv.height` stays = innerHeight; the browser
- *     scrolls the layout viewport up to keep the focused input visible.
- *     We use `window.scrollY + vv.offsetTop` as the keyboard-height proxy.
+ * Consumers:
+ *   - AppShell uses `--visual-vh` as its container height, so the whole
+ *     chat layout shrinks to the visible area when the keyboard opens.
+ *     That alone is enough to keep the InputBar above the keyboard —
+ *     InputBar itself does NOT add `--kb-inset` as padding (doing so
+ *     double-compensated and pushed the input 2× too high).
+ *   - `--kb-inset` is still exposed for any future consumer that wants
+ *     the raw keyboard height.
  *
  * The CSS pinning in `app/globals.css` (`body { position: fixed; inset: 0 }`)
  * prevents iOS from scrolling the document so far that the input bar lands
