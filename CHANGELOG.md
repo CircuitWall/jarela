@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-06-05
+
+Mobile-focused polish release. iOS Safari PWA now correctly survives the
+on-screen keyboard after a research-backed simplification — see
+[Francisco Moretti's writeup](https://www.franciscomoretti.com/blog/fix-mobile-keyboard-overlap-with-visualviewport)
+and the [`ios-pwa-keyboard-fix`](https://github.com/Crscristi28/ios-pwa-keyboard-fix)
+reference implementation — and the countdown ring animation is visible
+again.
+
+### Changed
+
+- **iOS PWA viewport switched to `100dvh` natively**
+  ([#178](https://github.com/CircuitWall/jarela/pull/178)). Replaces the
+  `useVisualViewportInsets` JS hook, the `--visual-vh` / `--kb-inset` /
+  `--kb-scroll-offset` CSS variables, and the
+  `body { position: fixed; inset: 0 }` lock with the standard
+  `html, body { height: 100% }` + `h-[100dvh]` pattern. The browser
+  natively tracks the visible viewport including the OS keyboard on
+  iOS 16.4+ and modern Chromium. Net `-98 LOC`.
+- **`interactiveWidget: "resizes-content"` viewport meta**
+  ([#174](https://github.com/CircuitWall/jarela/pull/174)). Lets
+  Chromium shrink the layout viewport when the OS keyboard appears, so
+  `100dvh` sits naturally above the keyboard.
+
+### Fixed
+
+- **Countdown ring motion is obvious again**
+  ([#172](https://github.com/CircuitWall/jarela/pull/172)). The ring's
+  motion was too subtle to register as a countdown.
+- **Chat input visible when the iOS keyboard opens**
+  ([#173](https://github.com/CircuitWall/jarela/pull/173),
+  [#175](https://github.com/CircuitWall/jarela/pull/175)). Initial fix
+  pinned the composer to the visual viewport; follow-up removed double-
+  compensation that lifted the bar by 2× the keyboard height.
+- **MessageList re-pins to the bottom on container resize**
+  ([#176](https://github.com/CircuitWall/jarela/pull/176)). When the
+  on-screen keyboard shrinks AppShell via `100dvh` without a React
+  render, a `ResizeObserver` keeps the latest messages in view.
+- **Shrink "chin" below the input bar on iPhone**
+  ([#179](https://github.com/CircuitWall/jarela/pull/179)). Bottom
+  padding switched from `calc(0.75rem + env(safe-area-inset-bottom))`
+  to `max(0.25rem, env(safe-area-inset-bottom))`. Home-indicator and
+  rounded-corner clearance preserved, ~12px of constant chin removed.
+
 ## [0.13.0] - 2026-06-04
 
 Follow-up release on top of 0.12.0 with anti-hallucination tooling, more
