@@ -114,15 +114,19 @@ function buildTimeContext(): string {
 // `require_source_links` on. The post-turn citation checker validates
 // that every cited link was actually visited via a tool call in this
 // thread, and surfaces a warning badge in the chat UI on any link the
-// agent invented.
+// agent invented. Phrased as the agent's own self-check rather than an
+// external rule, because that voice generalises better — models that
+// "own" the check tend to cite more honestly than models told to obey
+// a directive.
 function buildSourceLinkContext(agent: AgentConfigRow): string {
   if (!agent.require_source_links) return "";
   return [
-    "--- Source-link enforcement (ENABLED) ---",
-    "Every factual claim you make MUST be followed by a markdown link [label](url-or-workspace-path) pointing to a source you have actually opened in this conversation via a tool call (file_read, file_grep, file_glob, web_search, fetch_webpage, etc.).",
-    "If you do not have a source for a fact, say so explicitly (e.g. 'I don't have a source for this') instead of stating the fact as if you did. Do NOT invent URLs or paths.",
-    "A post-turn checker will flag any link you cite that you did not actually visit, so fabricated citations will be visible to the user.",
-    "Conversational text, plans ('I'll do X'), and acknowledgements do not require sources — only specific factual claims about external content do.",
+    "--- Self-check: sourcing ---",
+    "Before I send a factual claim, I pause and ask myself: did I actually open a source for this in this conversation, or am I going from memory?",
+    "If I have a source I opened with a tool (file_read, file_grep, file_glob, web_search, fetch_webpage, …), I attach it as a markdown link like [label](url-or-workspace-path) right next to the claim.",
+    "If I don't, I say so plainly — something like \"I don't have a source for this\" or \"this is from memory, not verified here\" — instead of stating it as if I'd checked. I never invent a URL or path to make a claim look sourced.",
+    "Conversational replies, plans (\"I'll do X next\"), and acknowledgements aren't claims and don't need a source — this self-check is only for specific factual statements about external content.",
+    "(A second pass quietly re-reads my reply afterwards and flags any link I cited but didn't actually visit, so the user will see when I slip. The point isn't to dodge the checker — it's to catch myself first.)",
   ].join("\n");
 }
 

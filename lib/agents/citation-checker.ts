@@ -28,6 +28,7 @@ import type { PersistedToolEvent } from "@/lib/stores/threads";
 import { getMessages } from "@/lib/stores/threads";
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getConfig } from "@/lib/env/config";
 
 export interface CitationClaim {
   text: string;
@@ -124,8 +125,6 @@ export function extractCitedLinks(text: string): string[] {
   return Array.from(out);
 }
 
-const PROMPT_TAIL_BUDGET = 4000;
-
 const SYSTEM_PROMPT = `You judge whether an assistant turn's FACTUAL CLAIMS are backed by SOURCES the agent actually visited in this conversation.
 
 You will receive:
@@ -162,13 +161,19 @@ export async function classifyCitations(
 
   // Tail the text so a 60KB turn doesn't blow the checker budget. Citations
   // are usually inline so any sub-window catches representative claims.
-  const tail = assistantText.slice(-PROMPT_TAIL_BUDGET);
+  // JARELA_CITATION_CHECKER_TAIL_CHARS=0 disables truncation entirely (use
+  // when claims often appear early in long answers — costs more tokens).
+  const tailBudget = getConfig().citationCheckerTailChars;
+  const sent = tailBudget > 0 ? assistantText.slice(-tailBudget) : assistantText;
+  const portionLabel = tailBudget > 0 && assistantText.length > tailBudget
+    ? `trailing ${sent.length} chars of ${assistantText.length}`
+    : `full ${sent.length} chars`;
   const sourcesList = Array.from(visitedSources).slice(0, 200);
   const userMsg = `Visited sources (${sourcesList.length}):
 ${sourcesList.map((s) => `- ${s}`).join("\n")}
 
-Assistant text (trailing ${tail.length} chars):
-${tail}`;
+Assistant text (${portionLabel}):
+${sent}`;
 
   if (signal?.aborted) return null;
   let result;

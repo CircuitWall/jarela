@@ -114,6 +114,8 @@ export const ENV_DEFAULTS = {
   // anti-hallucination classifier
   hallucinationDetectorMode: "regex" as const,
   hallucinationDetectorModel: "",
+  // citation checker (second-pass LLM on require_source_links=on agents)
+  citationCheckerTailChars: 4_000,
 } as const;
 
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
@@ -589,6 +591,17 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     tier: "B",
     requiresRestart: false,
     agentWritable: false,
+  },
+  {
+    name: "JARELA_CITATION_CHECKER_TAIL_CHARS",
+    type: "int",
+    default: ENV_DEFAULTS.citationCheckerTailChars,
+    description: "Max characters of the assistant reply sent to the citation checker (require_source_links agents). Only the trailing N chars are sent so checker cost stays bounded. Set 0 to send the full reply — use when claims often appear early in long answers; costs more tokens per check.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 0,
   },
 ];
 
