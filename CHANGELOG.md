@@ -51,7 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the provider stream, persists them on the `message_usage` snapshot row
   (two new nullable columns), and prices them at 1.25× / 0.1× the input
   rate when computing `cost_usd`. The dashboard's totals now correctly
-  attribute spend on cache-creating vs. cache-hitting turns.
+  attribute spend on cache-creating vs. cache-hitting turns. Cache
+  tokens now also pass through `messageUsageToResponse`, so the GET
+  `/api/v1/threads/<id>` projection carries the breakdown for any UI
+  consumer. ADR-0062 captures the full decision.
 
 ### Fixed
 
