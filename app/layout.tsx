@@ -49,10 +49,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  // Chromium 108+: shrink the layout viewport when the OS keyboard
-  // appears, so `100dvh` and `position: fixed; bottom: 0` automatically
-  // sit above the keyboard with no JS. Safari ignores this and falls
-  // back to the visualViewport-based path in useVisualViewportInsets.
+  // Chromium-only: shrink the layout viewport when the OS keyboard
+  // appears, so `100dvh` automatically sits above the keyboard. Safari
+  // doesn't implement this key (it logs a benign console warning, see
+  // tests/e2e/smoke.spec.ts allow-list) and instead `dvh` itself already
+  // tracks the keyboard on iOS 16.4+ PWA, so no extra JS is needed.
   interactiveWidget: "resizes-content",
 };
 
