@@ -78,6 +78,12 @@ export function mcpServerToResponse(r: McpServerRow) {
  * chat panel's `ContextUsageBar` consumes. Returns `null` for messages
  * that have no snapshot (user turns and legacy assistant rows recorded
  * before the per-turn snapshot landed in ADR-0041).
+ *
+ * Anthropic prompt-cache tokens (PR #181 + the cache-fidelity follow-up)
+ * are surfaced as additive fields so future UI work can render a
+ * "served from cache" badge without another wire change. Both are
+ * `null` for rows that predate cache plumbing or for providers that
+ * don't expose a cache breakdown.
  */
 export function messageUsageToResponse(u: MessageUsageRow | undefined | null) {
   if (!u) return null;
@@ -92,6 +98,8 @@ export function messageUsageToResponse(u: MessageUsageRow | undefined | null) {
     warm_budget_tokens: u.warm_budget_tokens,
     facts_budget_tokens: u.facts_budget_tokens,
     context_window_tokens: u.context_window_tokens,
+    cache_creation_input_tokens: u.cache_creation_input_tokens,
+    cache_read_input_tokens: u.cache_read_input_tokens,
   };
 }
 
