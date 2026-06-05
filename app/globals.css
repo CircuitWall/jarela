@@ -606,26 +606,28 @@ body {
   background-color: rgba(239, 68, 68, 0.95);
 }
 
-/* Countdown ring: a small SVG circle that drains over the run's
- * wall-clock budget (runMaxMs). Replaces the old bouncing-dots typing
- * indicator with something that conveys "still working, this much
- * budget left" instead of a featureless animation. The drain itself
- * is too slow to be visibly moving on most runs, so we also spin the
- * whole SVG on a short cycle — the user always sees motion ("alive")
- * while the dash-offset conveys remaining budget. See
- * components/chat/CountdownRing.tsx. */
+/* Countdown ring: a small SVG with three layered circles —
+ *  1. faint full-circle track (visual baseline);
+ *  2. a drain arc that shrinks over the run's wall-clock budget so the
+ *     user can see how much runMaxMs is left;
+ *  3. a short, more saturated "spinner" arc that always rotates so
+ *     there's obvious motion ("still alive") even when the drain arc
+ *     is still nearly full at the start of a run.
+ * See components/chat/CountdownRing.tsx. */
 .jarela-countdown-ring {
   display: inline-block;
   vertical-align: middle;
   color: var(--color-fg-faint);
   line-height: 0;
 }
-.jarela-countdown-ring svg {
-  animation: jarela-countdown-spin 1.4s linear infinite;
-  transform-origin: 50% 50%;
-}
 .jarela-countdown-progress {
   animation: jarela-countdown-drain var(--jarela-countdown-ms, 1200000ms) linear forwards;
+}
+.jarela-countdown-spinner {
+  transform-origin: 50% 50%;
+  animation: jarela-countdown-spin 1s linear infinite;
+  color: var(--color-fg);
+  opacity: 0.85;
 }
 @keyframes jarela-countdown-spin {
   from { transform: rotate(0deg); }
@@ -636,5 +638,5 @@ body {
   to   { stroke-dashoffset: var(--jarela-countdown-circumference, 34.557); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .jarela-countdown-ring svg { animation: none; }
+  .jarela-countdown-spinner { animation: none; }
 }
