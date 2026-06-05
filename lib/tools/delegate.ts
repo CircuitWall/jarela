@@ -13,6 +13,7 @@ import {
   persistAssistantMessage,
 } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
+import { enqueueThreadRun } from "@/lib/agents/run-queue";
 
 interface DelegateContext {
   parentAgentId: string;
@@ -73,35 +74,43 @@ export const delegateToAgentTool = tool(
     const startedAt = Date.now();
 
     try {
-      const prepared = await prepareThreadRun({
-        thread_id: childThread.thread_id,
-        message: task,
-        user_category: "delegation",
-        _delegation_depth: ctx.depth + 1,
-        _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
-      });
-      const collected = await collectStream(prepared.stream);
+      // Serialise on the child thread_id with every other entry point
+      // (HTTP POST, scheduler, watcher, bridge, sibling delegations) —
+      // see lib/agents/run-queue.ts. A delegate fired while the child is
+      // already running waits in the child's queue instead of racing the
+      // checkpoint store.
+      const queued = await enqueueThreadRun(childThread.thread_id, "delegate", async () => {
+        const prepared = await prepareThreadRun({
+          thread_id: childThread.thread_id,
+          message: task,
+          user_category: "delegation",
+          _delegation_depth: ctx.depth + 1,
+          _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
+        });
+        const collected = await collectStream(prepared.stream);
+        if (collected.terminal !== "error") {
+          persistAssistantMessage(
+            childThread.thread_id,
+            collected.assistantContent,
+            collected.usedTools,
+            collected.toolEvents,
+            "delegation",
+            collected.usage ?? null,
+            prepared.context_snapshot ?? null,
+            prepared.source_manifest ?? null,
+          );
+        }
+        return collected;
+      }).result;
       const elapsed_ms = Date.now() - startedAt;
 
-      if (collected.terminal === "error") {
-        return fail("child_error", collected.errorMessage ?? "Child agent run failed", {
+      if (queued.terminal === "error") {
+        return fail("child_error", queued.errorMessage ?? "Child agent run failed", {
           agent_id,
           agent_name: child.name,
           thread_id: childThread.thread_id,
         });
       }
-
-      // Persist the child's reply on its own thread so the user can open it
-      // and see the full sub-conversation just like any other turn.
-      persistAssistantMessage(
-        childThread.thread_id,
-        collected.assistantContent,
-        collected.usedTools,
-        collected.toolEvents,
-        "delegation",
-        collected.usage ?? null,
-        prepared.context_snapshot ?? null,
-      );
 
       return JSON.stringify({
         ok: true,
@@ -109,8 +118,8 @@ export const delegateToAgentTool = tool(
         agent_name: child.name,
         thread_id: childThread.thread_id,
         depth: ctx.depth + 1,
-        result: collected.assistantContent.trim(),
-        used_tools: Array.from(new Set(collected.usedTools)),
+        result: queued.assistantContent.trim(),
+        used_tools: Array.from(new Set(queued.usedTools)),
         elapsed_ms,
       });
     } catch (err) {

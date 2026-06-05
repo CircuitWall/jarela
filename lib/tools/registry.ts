@@ -22,6 +22,7 @@
 // follow-up).
 
 import type { StructuredToolInterface } from "@langchain/core/tools";
+import { wrapWithWallclock } from "./wallclock";
 
 export type ToolCategory =
   | "Memory" | "Documents" | "Files" | "Shell" | "Web" | "Images" | "Voice"
@@ -65,13 +66,19 @@ export function registerTools<T extends StructuredToolInterface>(
   tools: readonly T[],
 ): readonly T[] {
   const group = CATEGORY_GROUPS[category];
+  const wrapped: T[] = [];
   for (const t of tools) {
     if (REGISTRY.has(t.name)) {
       throw new Error(`[tools] duplicate built-in tool registration: ${t.name}`);
     }
-    REGISTRY.set(t.name, { tool: t, category, capability, group });
+    // Every built-in tool gets the agent-controlled wall-clock wrap so a
+    // single stuck call (network hang, fs on a wedged cloud-sync drive,
+    // runaway shell) can't pin the turn — see lib/tools/wallclock.ts.
+    const w = wrapWithWallclock(t);
+    REGISTRY.set(w.name, { tool: w, category, capability, group });
+    wrapped.push(w);
   }
-  return tools;
+  return wrapped;
 }
 
 /** All registered built-in tools, in registration order. */

@@ -7,10 +7,8 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-fetch-"));
 process.env.HOME = tmpRoot;
 process.env.USERPROFILE = tmpRoot;
 process.env.JARELA_DB_DIR = join(tmpRoot, ".jarela-dbdir");
-process.env.JARELA_FETCH_TOOL_TIMEOUT_MS = "150";
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
-  delete process.env.JARELA_FETCH_TOOL_TIMEOUT_MS;
 });
 
 const { resetConfigCache } = await import("@/lib/env/config");
@@ -24,24 +22,22 @@ afterEach(() => { globalThis.fetch = realFetch; });
 
 describe("web_fetch timeout reporting", () => {
   it("surfaces a timed_out=true result with an actionable hint when the abort fires", async () => {
-    globalThis.fetch = vi.fn(async (_url: unknown, init?: { signal?: AbortSignal }) => {
-      // Wait for the tool's AbortController to fire, then reject like undici
-      // does when the signal aborts mid-request.
-      return new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => {
-          const err = new Error("The operation was aborted.");
-          err.name = "AbortError";
-          reject(err);
-        });
-      });
+    // Simulate undici's AbortError directly rather than waiting for the
+    // internal AbortController to fire — fetch.ts's catch block
+    // recognises the AbortError name and produces the timed_out envelope
+    // regardless of which clock fired it.
+    globalThis.fetch = vi.fn(async () => {
+      const err = new Error("The operation was aborted.");
+      err.name = "AbortError";
+      throw err;
     }) as unknown as typeof fetch;
 
     const out = parse(await webFetchTool.invoke({ url: "https://example.com/slow" }));
     expect(out.timed_out).toBe(true);
-    expect(out.timeout_ms).toBe(150);
+    expect(typeof out.timeout_ms).toBe("number");
     expect(String(out.error)).toMatch(/timed out after/i);
-    expect(String(out.error)).toMatch(/JARELA_FETCH_TOOL_TIMEOUT_MS|different URL/i);
-  }, 5_000);
+    expect(String(out.error)).toMatch(/different URL|deadline_ms/i);
+  });
 
   it("does not flag non-timeout failures as timed_out", async () => {
     globalThis.fetch = vi.fn(async () => {

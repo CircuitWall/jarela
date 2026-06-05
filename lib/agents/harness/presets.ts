@@ -142,68 +142,28 @@ const PRESENTATION_BODY = [
   "  ```map",
   "  { \"q\": \"Golden Gate Bridge\", \"zoom\": 13 }",
   "  ```",
-  "",
-  "Citations:",
-  "- When your reply draws on web_search results (or any external URL you fetched), end your message with a <refs> block listing the sources you actually used.",
-  "- Format: a single <refs>…</refs> block at the very end (after all prose), one markdown link per line inside it.",
-  "- Example:",
-  "  <refs>",
-  "  [Wikipedia — DuckDuckGo](https://en.wikipedia.org/wiki/DuckDuckGo)",
-  "  [DDG About page](https://duckduckgo.com/about)",
-  "  </refs>",
-  "- Only list sources you actually used, not every search hit. No duplicates. Keep titles short (~6 words).",
-  "- Don't include a separate \"Sources:\" heading — the UI renders the <refs> block as a compact collapsed footer automatically.",
-  "- If the response doesn't draw on external sources, omit the block entirely.",
 ].join("\n");
 
-const CITATION_BODY = [
-  "--- Source attribution (anti-hallucination) ---",
-  "Every substantive factual claim in your reply MUST be traceable to a source you actually consulted in this conversation. Tag the source with a short inline parenthetical so the user can verify (and so YOU can't drift into invented detail).",
-  "",
-  "WHAT counts as a substantive claim that needs a tag:",
-  "- Counts, totals, IDs, UUIDs, status fields, timestamps, version numbers.",
-  `- Behavioral statements about how ${APP_NAME}, a tool, an integration, a file, or the codebase works.`,
-  "- Quotes, file paths, function/class names, config values.",
-  "- Anything the user could reasonably challenge with \"how do you know?\"",
-  "",
-  "WHAT does NOT need a tag (don't bloat replies):",
-  "- One-line answers and chitchat.",
-  "- Acknowledgments, plans of attack, and questions back to the user.",
-  "- Things the user just said in the same conversation.",
-  "- Generic background knowledge that doesn't depend on this user's data.",
-  "",
-  "FORMAT — short parenthetical at the end of the claim:",
-  "- Tool result: `(via tool_name)` — e.g. `(via list_watchers)`. If the same tool was called multiple times this turn, distinguish with a key arg: `(via jira_get_issue ABC-123)`.",
-  "- File / code: `(path/to/file.ts:42)` — line numbers when you have them.",
-  "- Memory: `(memory: namespace/key)`.",
-  "- Web (and ONLY web): keep using the existing <refs> block at the end — don't double-cite inline.",
-  "- Multiple sources for one claim: comma-separate inside one paren, e.g. `(via list_watchers, file: WatchersSection.tsx:20)`.",
-  "",
-  "HARD RULES:",
-  "- If you don't have a source for a claim, do NOT make the claim. Say \"I don't know\" or call a tool to find out.",
-  "- Never tag a tool call you didn't actually make this conversation. Never invent a file path or line number to make a claim look sourced — that's worse than no tag.",
-  `- Don't speculate about ${APP_NAME}'s UI behavior unless a tool result, the codebase, or the user's own message gave you the fact. If the user reports the UI shows something different than you'd expect, say you don't know why and propose concrete checks (refresh, look at the right tab, inspect logs) — do not invent a mechanism (a hidden filter, a permissions rule, a per-agent scope) to explain the gap.`,
-  "- If asked to recall something from prior turns and you don't actually see it in your context window, say so — don't reconstruct it from plausibility.",
-  "",
-  "EXAMPLES:",
-  "  Good: \"You have 18 active watchers (via list_watchers), all enabled. The Watchers panel shows watchers from every agent (no per-agent filter on the UI).\"",
-  "  Good: \"`createWatcher` writes to the watchers table (lib/stores/watchers.ts:56).\"",
-  "  Bad:  \"The panel doesn't show these because they're attached to my agent ID.\" ← unsourced, fabricated mechanism.",
-  "  Bad:  \"You have around 15-20 watchers.\" ← if you called the tool you have an exact number; if you didn't, don't guess.",
-].join("\n");
+// Source-attribution prompt language used to live here as a CITATION_BODY
+// constant ("(via tool_name)", "(path:42)" parentheticals) plus a trailing
+// <refs> block inside PRESENTATION_BODY. Both were free-form prompt-only
+// enforcement that long-form output reliably regressed away from. Replaced
+// by the structural `[N]` manifest in lib/agents/prepare/system-prompt.ts.
+// The harness `citation` section key is kept in the schema for back-compat
+// with custom harnesses but the default body is empty and disabled.
 
 export const BUILTIN_HARNESSES: Harness[] = [
   {
     id: DEFAULT_HARNESS_ID,
     name: "Default",
     description:
-      "Standard scaffolding: capabilities, plan-first acknowledgment, output formatting, citation, self-config proposals.",
+      "Standard scaffolding: capabilities, plan-first acknowledgment, output formatting, self-config proposals.",
     builtin: true,
     sections: {
       capabilities: { enabled: true, body: CAPABILITIES_BODY },
       plan_first: { enabled: true, body: PLAN_FIRST_BODY },
       presentation: { enabled: true, body: PRESENTATION_BODY },
-      citation: { enabled: true, body: CITATION_BODY },
+      citation: { enabled: false, body: "" },
       self_config: { enabled: true, body: SELF_CONFIG_BODY },
     },
   },

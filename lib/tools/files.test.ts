@@ -30,7 +30,6 @@ const {
   fileStatTool,
   withFsDeadline,
 } = await import("./files");
-const { resetConfigCache } = await import("@/lib/env/config");
 
 // Per-test scratch dir under HOME so concurrent tests don't collide and so
 // the "bare relative paths resolve under HOME" semantics work cleanly.
@@ -486,50 +485,22 @@ describe("file_stat", () => {
 
 describe("withFsDeadline (stalled-fs guard)", () => {
   it("returns the work value when the work resolves before the deadline", async () => {
-    const original = process.env.JARELA_TOOL_TIMEOUT_MS;
-    process.env.JARELA_TOOL_TIMEOUT_MS = "5000";
-    try {
-      resetConfigCache();
-      const result = await withFsDeadline("test_op", "/tmp/x", async () => "ok");
-      expect(result).toBe("ok");
-    } finally {
-      if (original === undefined) delete process.env.JARELA_TOOL_TIMEOUT_MS;
-      else process.env.JARELA_TOOL_TIMEOUT_MS = original;
-      resetConfigCache();
-    }
+    const result = await withFsDeadline("test_op", "/tmp/x", async () => "ok");
+    expect(result).toBe("ok");
   });
 
   it("throws a labelled timeout error when work hangs past the deadline", async () => {
-    const original = process.env.JARELA_TOOL_TIMEOUT_MS;
-    // Tiny budget so the test finishes fast.
-    process.env.JARELA_TOOL_TIMEOUT_MS = "20";
-    try {
-      resetConfigCache();
-      // never resolves — exactly the cloud-sync-stuck-fs symptom we're
-      // defending against.
-      const work = () => new Promise<string>(() => { /* hang */ });
-      await expect(withFsDeadline("test_op", "/cloud/stuck", work))
-        .rejects.toThrow(/test_op on '\/cloud\/stuck' timed out/);
-    } finally {
-      if (original === undefined) delete process.env.JARELA_TOOL_TIMEOUT_MS;
-      else process.env.JARELA_TOOL_TIMEOUT_MS = original;
-      resetConfigCache();
-    }
+    // never resolves — exactly the cloud-sync-stuck-fs symptom we're
+    // defending against.
+    const work = () => new Promise<string>(() => { /* hang */ });
+    await expect(withFsDeadline("test_op", "/cloud/stuck", work, 20))
+      .rejects.toThrow(/test_op on '\/cloud\/stuck' timed out/);
   });
 
   it("propagates the underlying error verbatim when work rejects normally", async () => {
-    const original = process.env.JARELA_TOOL_TIMEOUT_MS;
-    process.env.JARELA_TOOL_TIMEOUT_MS = "5000";
-    try {
-      resetConfigCache();
-      const work = () => Promise.reject(new Error("ENOENT: no such file"));
-      await expect(withFsDeadline("test_op", "/x", work))
-        .rejects.toThrow(/ENOENT: no such file/);
-    } finally {
-      if (original === undefined) delete process.env.JARELA_TOOL_TIMEOUT_MS;
-      else process.env.JARELA_TOOL_TIMEOUT_MS = original;
-      resetConfigCache();
-    }
+    const work = () => Promise.reject(new Error("ENOENT: no such file"));
+    await expect(withFsDeadline("test_op", "/x", work))
+      .rejects.toThrow(/ENOENT: no such file/);
   });
 });
 
