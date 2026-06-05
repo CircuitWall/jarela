@@ -46,8 +46,21 @@ interface ThreadMessageAdded {
   ts: number;
 }
 
+// Background health probe state-transition. Surfaced as a sticky toast
+// so the user can act on an expired token / unreachable vendor before
+// the next agent run hits the same failure mid-conversation.
+interface HealthAlert {
+  type: "health_alert";
+  probe: string;
+  label: string;
+  category: "integration" | "llm";
+  status: "auth_failed" | "transient" | "error" | "recovered";
+  error: string | null;
+  ts: number;
+}
+
 type NotifEvent = RunCompleted | TaskCompleted | BridgeMessageReceived;
-type StreamEvent = NotifEvent | ThreadMessageAdded;
+type StreamEvent = NotifEvent | ThreadMessageAdded | HealthAlert;
 
 interface AgentSummary {
   id: string;
@@ -151,6 +164,28 @@ export function useEventNotifications(options: Options) {
             agent_id: ev.agent_id,
             thread_id: ev.thread_id,
             ttl: 5000,
+          });
+          return;
+        }
+
+        // Background health probes: surface as a sticky toast so the user
+        // notices before the agent burns a turn on an expired token. The
+        // runner already dedups so every health_alert is worth showing.
+        if (ev.type === "health_alert") {
+          lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
+          saveLastTs(lastTsRef.current);
+          const recovered = ev.status === "recovered";
+          pushToast({
+            kind: recovered ? "success" : "error",
+            source: "system",
+            sourceLabel: ev.category === "llm" ? "LLM provider" : "Integration",
+            title: recovered ? `${ev.label} recovered` : `${ev.label} is failing`,
+            body: ev.error ?? (recovered ? "Probe is green again." : "Probe failed."),
+            agent_id: null,
+            thread_id: null,
+            href: "/setup",
+            hrefLabel: "Open setup",
+            ttl: recovered ? 6000 : 0,
           });
           return;
         }
