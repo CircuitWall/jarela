@@ -31,19 +31,23 @@ const MAX_LIST_JSON_BYTES = 24_000;
 // the deadline fires first and a structured error envelope tells the
 // agent (and the user) which path stalled.
 //
-// Reuses JARELA_TOOL_TIMEOUT_MS (default 60s) — same budget MCP/external
-// tools already use. Operators can raise it from the env panel for
-// genuinely-slow filesystems.
+// This is a hardcoded leak-prevention backstop. The agent-controlled
+// wall-clock budget on every tool call (see lib/tools/wallclock.ts) is
+// the primary deadline; this only fires when the wallclock is even
+// longer than the backstop (e.g. a 10-minute build that includes a
+// stuck file op).
+const FS_DEADLINE_BACKSTOP_MS = 360_000;
 export async function withFsDeadline<T>(
   label: string,
   abs: string,
   work: () => Promise<T>,
+  deadlineMs: number = FS_DEADLINE_BACKSTOP_MS,
 ): Promise<T> {
-  const ms = getConfig().toolTimeoutMs;
+  const ms = deadlineMs;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new Error(
-      `${label} on '${abs}' timed out after ${Math.round(ms / 1000)}s — the path may be on a stalled filesystem (cloud-sync provider, network mount, AV scanner). Try a different location, or raise JARELA_TOOL_TIMEOUT_MS.`,
+      `${label} on '${abs}' timed out after ${Math.round(ms / 1000)}s — the path may be on a stalled filesystem (cloud-sync provider, network mount, AV scanner). Try a different location.`,
     )), ms);
   });
   try {

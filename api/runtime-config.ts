@@ -13,6 +13,7 @@ interface RuntimeConfigSnapshot {
   sseConnectTimeoutMs: number;
   healthCheckTimeoutMs: number;
   httpMaxAttempts: number;
+  runMaxMs: number;
 }
 
 // Mirror of ENV_DEFAULTS — these defaults are also the schema defaults so
@@ -24,6 +25,7 @@ const FALLBACK: RuntimeConfigSnapshot = {
   sseConnectTimeoutMs: 30_000,
   healthCheckTimeoutMs: 8_000,
   httpMaxAttempts: 3,
+  runMaxMs: 20 * 60_000,
 };
 
 let current: RuntimeConfigSnapshot = FALLBACK;
@@ -42,6 +44,7 @@ export function runtimeConfig(): RuntimeConfigSnapshot {
           sseConnectTimeoutMs: typeof data.sseConnectTimeoutMs === "number" ? data.sseConnectTimeoutMs : current.sseConnectTimeoutMs,
           healthCheckTimeoutMs: typeof data.healthCheckTimeoutMs === "number" ? data.healthCheckTimeoutMs : current.healthCheckTimeoutMs,
           httpMaxAttempts: typeof data.httpMaxAttempts === "number" ? data.httpMaxAttempts : current.httpMaxAttempts,
+          runMaxMs: typeof data.runMaxMs === "number" ? data.runMaxMs : current.runMaxMs,
         };
       })
       .catch(() => { /* keep fallback */ });

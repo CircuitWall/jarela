@@ -12,6 +12,7 @@ import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
+import { CountdownRing } from "@/components/chat/CountdownRing";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
@@ -721,7 +722,21 @@ function MapEmbed({ payload }: { payload: string }) {
   );
 }
 
-function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string> }) {  return (
+function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
+  // Inline-citation pre-processor. The agent writes `[3]` markers in-prose;
+  // we resolve each to a markdown link `[3](href)` BEFORE react-markdown
+  // parses the string so the existing <a> renderer below picks it up with
+  // no special-casing. Markers whose number isn't in the manifest are
+  // left untouched (they'll show as plain `[3]` text) so an invented
+  // number is visibly un-linked rather than silently mis-routed.
+  const renderedText = useMemo(() => {
+    if (!sourceManifest || sourceManifest.size === 0) return text;
+    return text.replace(/(?<!\])\[(\d+)\]/g, (match, raw: string) => {
+      const entry = sourceManifest.get(parseInt(raw, 10));
+      return entry ? `[${raw}](${entry.href})` : match;
+    });
+  }, [text, sourceManifest]);
+  return (
     <div className="prose prose-invert prose-sm max-w-none jarela-rich">
       <ReactMarkdown
         remarkPlugins={MD_REMARK_PLUGINS}
@@ -790,13 +805,10 @@ function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks }: { te
           },
         }}
       >
-        {text}
+        {renderedText}
       </ReactMarkdown>
-      {streaming && (
-        <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
+      {streaming && (        <span className="inline-flex items-center align-middle ml-1">
+          <CountdownRing />
         </span>
       )}
     </div>
@@ -909,11 +921,11 @@ function CodeFence({ language, className, children }: { language: string; classN
   );
 }
 
-function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string> }) {
+function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceManifest }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
   if (part.type === "text") {
     return isUser
       ? <p className="whitespace-pre-wrap">{part.text}</p>
-      : <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} />;
+      : <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />;
   }
   if (part.type === "image") {
     return <ClickableImage media_type={part.media_type} data={part.data} />;
@@ -1214,12 +1226,21 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   // agent has `require_source_links` on AND a checker model is configured
   // AND the checker call succeeded (any failure leaves metadata null).
   const citations = !isUser && "metadata" in message
-    ? (message.metadata as { citations?: { checker_model?: string; claims?: Array<{ link: string | null; verified: boolean }>; unverified_links?: string[] } } | null | undefined)?.citations ?? null
+    ? (message.metadata as { citations?: { checker_model?: string; claims?: Array<{ link: string | null; verified: boolean }>; unverified_links?: string[]; sources?: Array<{ n: number; label: string; href: string }> } } | null | undefined)?.citations ?? null
     : null;
   const unverifiedLinks = useMemo<ReadonlySet<string> | undefined>(
     () => citations?.unverified_links?.length ? new Set(citations.unverified_links) : undefined,
     [citations],
   );
+  // Numbered source manifest the agent saw at prompt time. The chat UI
+  // resolves each inline `[N]` marker in the assistant text to a clickable
+  // link against this map. Persisted on every assistant turn where the
+  // agent had `require_source_links` on; absent on legacy rows and on
+  // turns where the manifest was empty.
+  const sourceManifest = useMemo<ReadonlyMap<number, { href: string; label: string }> | undefined>(() => {
+    if (!citations?.sources?.length) return undefined;
+    return new Map(citations.sources.map((s) => [s.n, { href: s.href, label: s.label }]));
+  }, [citations]);
 
   // Format created_at for the hover timestamp. Streaming bubbles don't have
   // one — we show "now" so the hover affordance is still consistent.
@@ -1309,7 +1330,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               })()
             ) : (
               <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} />
+                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
               </CollapsibleLong>
             )
           ) : (
@@ -1335,14 +1356,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                   );
                 }
                 return parsed.map((part, i) => (
-                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} />
+                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
                 ));
               })()}
               {streaming && (
-        <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
+        <span className="inline-flex items-center align-middle ml-1">
+          <CountdownRing />
         </span>
       )}
             </div>
