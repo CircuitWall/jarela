@@ -126,19 +126,15 @@ html, body, #__next {
   overscroll-behavior-y: none;
 }
 
-/* Pin the document to the visual viewport so iOS Safari (especially when
- * installed as a PWA) can't scroll the page when the on-screen keyboard
- * appears. Without this, focusing the chat input scrolls the layout
- * viewport up to keep the textarea visible — and pushes the InputBar
- * itself above the visible area. AppShell uses `--visual-vh` for its
- * height and InputBar adds `--kb-inset` to its bottom padding, so the
- * composer lifts above the keyboard instead of sliding past it. */
-html {
-  overflow: hidden;
-}
+/* Lock the document so iOS doesn't scroll the layout viewport when the
+ * on-screen keyboard appears. Use the standard `html, body { height: 100% }`
+ * + `overflow: hidden` pattern (see ios-pwa-keyboard-fix reference impl) —
+ * the AppShell then uses `h-dvh` and the `dvh` unit natively tracks the
+ * visible viewport including the keyboard on iOS 16.4+ / modern Chromium.
+ * No JS observer, no CSS variables, no counter-translates required. */
+html,
 body {
-  position: fixed;
-  inset: 0;
+  height: 100%;
   overflow: hidden;
 }
 
