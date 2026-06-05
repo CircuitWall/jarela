@@ -198,7 +198,16 @@ export function AppShell() {
   return (
     <div
       className="flex flex-col text-fg overflow-hidden px-safe"
-      style={{ height: "var(--visual-vh, 100dvh)" }}
+      style={{
+        height: "var(--visual-vh, 100dvh)",
+        // On iOS standalone PWA, focusing the chat input makes the OS
+        // scroll the layout viewport up to expose it — which would drag
+        // this shell (and `body`, which is `position: fixed`) up off the
+        // top of the visual viewport, hiding the messages and leaving an
+        // empty "chin" of body background below. Counter-translate by the
+        // same amount so the shell stays anchored to the visual viewport.
+        marginTop: "var(--kb-scroll-offset, 0px)",
+      }}
     >
       <NotificationStatus />
       <Toaster />

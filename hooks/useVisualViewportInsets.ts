@@ -7,17 +7,21 @@ import { useEffect } from "react";
  * shrinks the visual viewport without shrinking the layout viewport).
  *
  * Exposed vars on `<html>`:
- *   --visual-vh  → the actual visible height in px (defaults to 100dvh).
- *   --kb-inset   → how many px the keyboard currently occupies at the bottom.
+ *   --visual-vh        → the actual visible height in px (defaults to 100dvh).
+ *   --kb-inset         → how many px the keyboard currently occupies at
+ *                        the bottom.
+ *   --kb-scroll-offset → how many px iOS shifted the layout viewport up to
+ *                        expose the focused input (PWA-specific). AppShell
+ *                        applies this as `margin-top` so it stays aligned
+ *                        with the visual viewport instead of riding up with
+ *                        the layout scroll.
  *
  * Consumers:
- *   - AppShell uses `--visual-vh` as its container height, so the whole
- *     chat layout shrinks to the visible area when the keyboard opens.
- *     That alone is enough to keep the InputBar above the keyboard —
- *     InputBar itself does NOT add `--kb-inset` as padding (doing so
- *     double-compensated and pushed the input 2× too high).
- *   - `--kb-inset` is still exposed for any future consumer that wants
- *     the raw keyboard height.
+ *   - AppShell uses `--visual-vh` as its container height AND
+ *     `--kb-scroll-offset` as `margin-top` so the shell fills the visible
+ *     viewport exactly even when iOS auto-scrolls the layout in standalone
+ *     PWA. InputBar does NOT add `--kb-inset` as padding — the shell
+ *     already shrinks to fit.
  *
  * The CSS pinning in `app/globals.css` (`body { position: fixed; inset: 0 }`)
  * prevents iOS from scrolling the document so far that the input bar lands
@@ -62,6 +66,11 @@ export function useVisualViewportInsets() {
       const visible = Math.max(0, Math.round(window.innerHeight - inset));
       root.style.setProperty("--visual-vh", `${visible}px`);
       root.style.setProperty("--kb-inset", `${inset}px`);
+      // Counter-offset for iOS PWA: the OS scrolls the layout viewport up
+      // to expose the focused input, which would drag the (position:fixed)
+      // body and its children with it. AppShell adds this as `margin-top`
+      // so it re-aligns with the visible visual viewport.
+      root.style.setProperty("--kb-scroll-offset", `${scrollProxy}px`);
     }
 
     apply();
@@ -89,6 +98,7 @@ export function useVisualViewportInsets() {
       document.removeEventListener("focusout", onFocusOut);
       root.style.removeProperty("--visual-vh");
       root.style.removeProperty("--kb-inset");
+      root.style.removeProperty("--kb-scroll-offset");
     };
   }, []);
 }
