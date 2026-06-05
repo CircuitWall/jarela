@@ -53,6 +53,80 @@ function appendServerTools(
   return merged;
 }
 
+// Anthropic prompt-caching breakpoints. Within a multi-tool ReAct turn the
+// system prompt + tools are stable across every LLM call, and tool_results
+// only grow at the tail — exactly the prefix Anthropic's ephemeral cache is
+// built for. We mark three breakpoints (system, last tool, last tool_result)
+// so calls 2..N read the prefix at ~10% the input rate. The prefix below the
+// minimum cacheable size is silently ignored by the API at no extra cost,
+// so it is safe to mark unconditionally.
+const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
+
+export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[] | undefined {
+  if (!text) return undefined;
+  return [{ type: "text", text, cache_control: EPHEMERAL }];
+}
+
+export function withToolsCacheControl(tools: Anthropic.Tool[]): Anthropic.Tool[] {
+  if (tools.length === 0) return tools;
+  const last = tools[tools.length - 1];
+  return [...tools.slice(0, -1), { ...last, cache_control: EPHEMERAL }];
+}
+
+export function withLastToolResultCacheControl(
+  messages: Anthropic.MessageParam[],
+): Anthropic.MessageParam[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (typeof m.content === "string") continue;
+    const blocks = m.content;
+    for (let j = blocks.length - 1; j >= 0; j--) {
+      const b = blocks[j];
+      if (b.type === "tool_result") {
+        const newBlocks = [...blocks];
+        newBlocks[j] = { ...b, cache_control: EPHEMERAL };
+        const next = [...messages];
+        next[i] = { ...m, content: newBlocks };
+        return next;
+      }
+    }
+  }
+  return messages;
+}
+
+interface AnthropicMessageStartEvent {
+  type: "message_start";
+  message: { usage?: Anthropic.Usage };
+}
+interface AnthropicMessageDeltaEvent {
+  type: "message_delta";
+  usage?: Anthropic.MessageDeltaUsage;
+}
+
+function usageEventFromStart(usage: Anthropic.Usage | undefined): ProviderStreamEvent | null {
+  if (!usage) return null;
+  return {
+    type: "usage",
+    input_tokens: usage.input_tokens ?? 0,
+    output_tokens: usage.output_tokens ?? 0,
+    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
+    cache_read_input_tokens: usage.cache_read_input_tokens ?? 0,
+  };
+}
+
+function usageEventFromDelta(usage: Anthropic.MessageDeltaUsage | undefined): ProviderStreamEvent | null {
+  if (!usage) return null;
+  // message_delta only carries the *final* output_tokens; input/cache fields
+  // are already accounted for from message_start. Emitting just the output
+  // delta here keeps the agent loop's running total accurate without
+  // double-counting cache reads.
+  return {
+    type: "usage",
+    input_tokens: 0,
+    output_tokens: usage.output_tokens ?? 0,
+  };
+}
+
 export const anthropicProvider: ModelProvider = {
   name: "anthropic",
 
@@ -80,7 +154,7 @@ export const anthropicProvider: ModelProvider = {
     const stream = await client.messages.stream({
       model: model_id,
       max_tokens: params.max_tokens ?? 4096,
-      system: systemText || undefined,
+      system: withSystemCacheControl(systemText),
       messages: userMessages,
     });
 
@@ -103,13 +177,18 @@ export const anthropicProvider: ModelProvider = {
     });
 
     const systemMsg = messages.find((m) => m.role === "system");
-    const msgList = toAnthropicMessages(messages.filter((m) => m.role !== "system"));
-    const anthropicTools = appendServerTools(toAnthropicTools(tools), params);
+    const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
+    const msgList = withLastToolResultCacheControl(
+      toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+    );
+    const anthropicTools = withToolsCacheControl(
+      appendServerTools(toAnthropicTools(tools), params),
+    );
 
     const resp = await client.messages.create({
       model: model_id,
       max_tokens: params.max_tokens ?? 4096,
-      system: typeof systemMsg?.content === "string" ? systemMsg.content : undefined,
+      system: withSystemCacheControl(systemText),
       messages: msgList,
       tools: anthropicTools,
       ...(params.thinking ? { thinking: params.thinking } : {}),
@@ -141,8 +220,13 @@ export const anthropicProvider: ModelProvider = {
       });
 
       const systemMsg = messages.find((m) => m.role === "system");
-      const msgList = toAnthropicMessages(messages.filter((m) => m.role !== "system"));
-      const anthropicTools = appendServerTools(toAnthropicTools(tools), params);
+      const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
+      const msgList = withLastToolResultCacheControl(
+        toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+      );
+      const anthropicTools = withToolsCacheControl(
+        appendServerTools(toAnthropicTools(tools), params),
+      );
 
       const body: Anthropic.Messages.MessageStreamParams = {
         model: model_id,
@@ -150,7 +234,8 @@ export const anthropicProvider: ModelProvider = {
         messages: msgList,
         ...(pickAnthropicOptions(params) as Record<string, unknown>),
       };
-      if (typeof systemMsg?.content === "string") body.system = systemMsg.content;
+      const systemParam = withSystemCacheControl(systemText);
+      if (systemParam) body.system = systemParam;
       if (anthropicTools.length > 0) body.tools = anthropicTools;
       if (params.thinking) {
         (body as unknown as Record<string, unknown>).thinking = params.thinking;
@@ -161,6 +246,12 @@ export const anthropicProvider: ModelProvider = {
       const blockType = new Map<number, "text" | "thinking" | "tool_use">();
 
       for await (const event of stream) {
+        if (event.type === "message_start") {
+          const ev = event as unknown as AnthropicMessageStartEvent;
+          const u = usageEventFromStart(ev.message?.usage);
+          if (u) yield u;
+          continue;
+        }
         if (event.type === "content_block_start") {
           const cb = event.content_block;
           if (cb.type === "tool_use") {
@@ -180,9 +271,14 @@ export const anthropicProvider: ModelProvider = {
           } else if (d.type === "input_json_delta" && d.partial_json !== undefined) {
             yield { type: "tool_call_chunk", index: event.index, args_delta: d.partial_json };
           }
-        } else if (event.type === "message_delta" && event.delta?.stop_reason) {
-          const reason = event.delta.stop_reason;
-          yield { type: "stop", reason: reason === "tool_use" ? "tool_use" : reason === "max_tokens" ? "length" : "stop" };
+        } else if (event.type === "message_delta") {
+          const delta = event as unknown as AnthropicMessageDeltaEvent;
+          const u = usageEventFromDelta(delta.usage);
+          if (u) yield u;
+          if (event.delta?.stop_reason) {
+            const reason = event.delta.stop_reason;
+            yield { type: "stop", reason: reason === "tool_use" ? "tool_use" : reason === "max_tokens" ? "length" : "stop" };
+          }
         }
       }
     })();

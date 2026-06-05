@@ -44,7 +44,14 @@ export type ProviderStreamEvent =
   | { type: "thinking"; delta: string }
   | { type: "tool_call_chunk"; index: number; id?: string; name?: string; args_delta?: string }
   | { type: "citation"; source?: string; snippet?: string; url?: string }
-  | { type: "usage"; input_tokens?: number; output_tokens?: number; total_tokens?: number }
+  | {
+      type: "usage";
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+      cache_creation_input_tokens?: number;
+      cache_read_input_tokens?: number;
+    }
   | { type: "audio_chunk"; mime_type: string; data_b64: string }
   | { type: "provider_event"; name: string; payload: unknown }
   | { type: "stop"; reason: "stop" | "tool_use" | "length" };
