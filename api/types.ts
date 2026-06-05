@@ -204,6 +204,14 @@ export interface MessageUsage {
   warm_budget_tokens: number | null;
   facts_budget_tokens: number | null;
   context_window_tokens: number | null;
+  // Anthropic prompt-cache breakdown (ADR-0062). Disjoint from
+  // `input_tokens`: Anthropic returns fresh-input separate from cache
+  // reads/writes, and total billable input = sum of the three. NULL on
+  // rows persisted before cache plumbing landed; 0 on Anthropic turns
+  // where caching didn't fire. Non-Anthropic providers leave both NULL
+  // until they grow the equivalent breakdown.
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
 }
 
 export interface ThreadDetail extends ThreadSummary {
