@@ -606,23 +606,21 @@ body {
   background-color: rgba(239, 68, 68, 0.95);
 }
 
-/* Streaming typing indicator: three dots that wave in sequence. Used in
- * place of a blinking pipe cursor while the agent is composing a reply.
- * Each dot's animation is offset by 160ms — the wave reads as "typing"
- * rather than "loading". */
-.jarela-typing-dot {
+/* Countdown ring: a small SVG circle that drains over the run's
+ * wall-clock budget (runMaxMs). Replaces the old bouncing-dots typing
+ * indicator with something that conveys "still working, this much
+ * budget left" instead of a featureless animation. See
+ * components/chat/CountdownRing.tsx. */
+.jarela-countdown-ring {
   display: inline-block;
-  width: 0.32rem;
-  height: 0.32rem;
-  margin: 0 0.10rem;
-  border-radius: 9999px;
-  background-color: var(--color-fg-faint);
   vertical-align: middle;
-  animation: jarela-typing-bounce 1.2s ease-in-out infinite;
+  color: var(--color-fg-faint);
+  line-height: 0;
 }
-.jarela-typing-dot:nth-child(2) { animation-delay: 0.16s; }
-.jarela-typing-dot:nth-child(3) { animation-delay: 0.32s; }
-@keyframes jarela-typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
-  30%           { transform: translateY(-3px); opacity: 1; }
+.jarela-countdown-progress {
+  animation: jarela-countdown-drain var(--jarela-countdown-ms, 1200000ms) linear forwards;
+}
+@keyframes jarela-countdown-drain {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: var(--jarela-countdown-circumference, 34.557); }
 }

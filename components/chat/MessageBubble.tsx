@@ -12,6 +12,7 @@ import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
+import { CountdownRing } from "@/components/chat/CountdownRing";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
@@ -806,10 +807,8 @@ function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, source
       >
         {renderedText}
       </ReactMarkdown>
-      {streaming && (        <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
+      {streaming && (        <span className="inline-flex items-center align-middle ml-1">
+          <CountdownRing />
         </span>
       )}
     </div>
@@ -1361,10 +1360,8 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 ));
               })()}
               {streaming && (
-        <span className="inline-flex items-center align-middle ml-1" aria-label="typing">
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
-          <span className="jarela-typing-dot" />
+        <span className="inline-flex items-center align-middle ml-1">
+          <CountdownRing />
         </span>
       )}
             </div>
