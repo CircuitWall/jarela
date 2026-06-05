@@ -72,6 +72,19 @@ export type NotificationEvent =
       agent_id: string;
       source: "page_capture";
       ts: number;
+    }
+  | {
+      // Background health probe detected a broken or recovered integration
+      // / LLM key. The runner only publishes on state transitions or on
+      // the long re-alert interval, so the UI can treat every alert as
+      // worth surfacing. See lib/health/runner.ts.
+      type: "health_alert";
+      probe: string;            // e.g. "atlassian", "gmail", "anthropic"
+      label: string;            // human label, e.g. "Atlassian (Jira + Confluence)"
+      category: "integration" | "llm";
+      status: "auth_failed" | "transient" | "error" | "recovered";
+      error: string | null;     // null when status="recovered"
+      ts: number;
     };
 
 import { getOrCreateGlobal } from "@/lib/utils/global-state";

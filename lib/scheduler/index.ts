@@ -5,6 +5,7 @@
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
+import { runAllHealthProbes } from "@/lib/health/runner";
 import type { ScheduledTaskRow } from "@/lib/stores/scheduled-tasks";
 
 // Env-tunable so e2e tests can ride a tighter loop without waiting 30 s
@@ -20,18 +21,26 @@ const POLL_INTERVAL_MS = (() => {
 // matches typical "I edited a file, ask Jarela about it" patience. PR-D
 // upgrades this to event-driven fs watching.
 const DOC_SWEEP_EVERY_TICKS = 20;
+// Probe integrations + LLM keys every Nth tick. 20 ticks × 30s = 10 min
+// — frequent enough that a freshly-expired token surfaces in roughly the
+// same window as a doc-source sweep, cheap enough that we don't hammer
+// the vendor /me endpoints. The health runner itself dedups alerts so
+// repeated failures only re-fire on its own (longer) backoff.
+const HEALTH_SWEEP_EVERY_TICKS = 20;
 
 interface SchedulerState {
   started: boolean;
   timer: NodeJS.Timeout | null;
   running: boolean;
   tickCount: number;
+  healthTickCount: number;
 }
 const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   started: false,
   timer: null,
   running: false,
   tickCount: 0,
+  healthTickCount: 0,
 }));
 
 // Idempotent — call repeatedly; only the first call starts the loop.
@@ -41,6 +50,15 @@ export function startScheduler(): void {
   setImmediate(() => { void tick(); });
   state.timer = setInterval(() => { void tick(); }, POLL_INTERVAL_MS);
   if (typeof state.timer.unref === "function") state.timer.unref();
+  // Fire the first health probe immediately (instead of waiting 10min)
+  // so a freshly-started server surfaces a broken token / unreachable
+  // vendor on the first SSE subscription. Fire-and-forget; cheap.
+  runAllHealthProbes().catch((err) => {
+    console.error(
+      "[scheduler] initial health probe failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+  });
 }
 
 export function stopScheduler(): void {
@@ -69,6 +87,19 @@ async function tick(): Promise<void> {
           err instanceof Error ? err.message : String(err),
         );
       }
+    }
+
+    // Health probe sweep. Tracks integrations + LLM keys, publishes
+    // health_alert notifications on state transitions. Runs out-of-band
+    // from triggers so a slow vendor doesn't delay scheduled-task firing.
+    state.healthTickCount = (state.healthTickCount + 1) % HEALTH_SWEEP_EVERY_TICKS;
+    if (state.healthTickCount === 0) {
+      runAllHealthProbes().catch((err) => {
+        console.error(
+          "[scheduler] health probe sweep failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      });
     }
   } finally {
     state.running = false;
