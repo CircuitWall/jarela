@@ -29,6 +29,10 @@ export function CountdownRing() {
 
   const r = 5.5;
   const c = 2 * Math.PI * r;
+  // Spinner arc length: ~25% of the circumference so the gap is large
+  // enough to read motion at 14px without the spinner looking like a
+  // closed ring.
+  const spinnerArc = c * 0.25;
   return (
     <span
       className="jarela-countdown-ring"
@@ -59,6 +63,17 @@ export function CountdownRing() {
           strokeDashoffset="0"
           transform="rotate(-90 7 7)"
           style={{ ["--jarela-countdown-circumference" as string]: c.toFixed(3) }}
+        />
+        <circle
+          className="jarela-countdown-spinner"
+          cx="7"
+          cy="7"
+          r={r}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeDasharray={`${spinnerArc.toFixed(3)} ${(c - spinnerArc).toFixed(3)}`}
         />
       </svg>
     </span>
