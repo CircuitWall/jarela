@@ -126,6 +126,22 @@ html, body, #__next {
   overscroll-behavior-y: none;
 }
 
+/* Pin the document to the visual viewport so iOS Safari (especially when
+ * installed as a PWA) can't scroll the page when the on-screen keyboard
+ * appears. Without this, focusing the chat input scrolls the layout
+ * viewport up to keep the textarea visible — and pushes the InputBar
+ * itself above the visible area. AppShell uses `--visual-vh` for its
+ * height and InputBar adds `--kb-inset` to its bottom padding, so the
+ * composer lifts above the keyboard instead of sliding past it. */
+html {
+  overflow: hidden;
+}
+body {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
 /* Ambient gradient wash — two centered, fixed color-fields behind every
  * glass surface. One soft cool wash above (light from the top) and one
  * subtle warm wash below (a quiet underglow). Two sources read as a calm
