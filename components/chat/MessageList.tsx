@@ -141,6 +141,23 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (atBottomRef.current) el.scrollTop = el.scrollHeight;
   }); // intentionally no deps — runs after every render
 
+  // Keep the bottom pinned when the scroll container *itself* resizes —
+  // not just when messages change. The on-screen keyboard on iOS Safari
+  // PWA shrinks AppShell via `--visual-vh`, which shrinks this container
+  // without triggering a React render, so the post-render effect above
+  // never fires. Without this observer the latest messages drop below
+  // the visible area and the user has to scroll down to find them.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      if (prependAnchorRef.current) return;
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Restore scroll position after older messages have been prepended.
   // useLayoutEffect runs synchronously after DOM mutations but before paint,
   // so the user never sees the intermediate "scrolled to oldest" frame.
