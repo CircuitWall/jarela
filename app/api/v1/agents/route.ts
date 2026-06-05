@@ -1,3 +1,10 @@
+/**
+ * @public — `GET /api/v1/agents` (list), `POST /api/v1/agents` (upsert)
+ *
+ * Agent-config CRUD: identity, instructions, tool policy, model config.
+ * See `docs/api.md`.
+ */
+
 import { NextRequest } from "next/server";
 import {
   listAgentConfigs,

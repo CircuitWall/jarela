@@ -1,9 +1,17 @@
-// MCP server registry types + variable substitution.
-//
-// Discovery is online via the official MCP Registry (see
-// `lib/mcp/upstream-registry.ts` and ADR-0013). Entries flow through this
-// module's types so the picker UI, install action, and `applyVariables`
-// substitution path stay decoupled from the upstream wire format.
+/**
+ * @public
+ *
+ * MCP server registry types + variable substitution.
+ *
+ * Discovery is online via the official MCP Registry (see
+ * `lib/mcp/upstream-registry.ts` and ADR-0013). Entries flow through this
+ * module's types so the picker UI, install action, and `applyVariables`
+ * substitution path stay decoupled from the upstream wire format.
+ *
+ * All exports in this file are part of the package's stable public
+ * surface (per `package.json#exports`). Removing or breaking them counts
+ * as a breaking change under the deprecation policy in CONTRIBUTING.md.
+ */
 
 export interface RegistryVariable {
   /** Unique key used as `${key}` in spec strings or env values. */

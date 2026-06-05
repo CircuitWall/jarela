@@ -47,13 +47,32 @@ export {
   type ToolGroup,
 } from "./registry";
 
-const ALL_BUILTINS: StructuredToolInterface[] = registeredTools();
-export const BUILTIN_TOOL_NAMES: ReadonlySet<string> = registeredNames();
+// Live accessors — DO NOT snapshot at module-load time. Some tool modules
+// import back from this file (for `getAllToolsAsync` etc.) and would create
+// a circular import cycle: their `registerTools(...)` call runs AFTER this
+// module finishes evaluating, so any captured snapshot here would miss them
+// and they'd silently disappear from the agent's tool pool. Live calls dodge
+// the problem — by the time anyone INVOKES `getAllTools()` / etc., every
+// builtin has registered.
+function allBuiltins(): StructuredToolInterface[] {
+  return registeredTools();
+}
+function builtinNames(): ReadonlySet<string> {
+  return registeredNames();
+}
+
+// Backwards-compatible export. Callers that import this Set get its current
+// contents at the moment they read it (a fresh Set each access). Internal
+// code prefers `builtinNames()` directly; this stays for external consumers
+// like the extensions API route.
+export function getBuiltinToolNames(): ReadonlySet<string> {
+  return builtinNames();
+}
 
 // Per-call recompute so files dropped in $JARELA_TOOLS_DIR are picked up
 // without restart. loadExternalTools cache-busts require() per file.
 function loadExternal() {
-  return loadExternalTools(BUILTIN_TOOL_NAMES);
+  return loadExternalTools(builtinNames());
 }
 
 export type ToolSource = "builtin" | "external" | "mcp";
@@ -63,7 +82,7 @@ export type ToolSource = "builtin" | "external" | "mcp";
 // neither a registered built-in nor an external (JARELA_TOOLS_DIR) tool —
 // matches today's behavior where MCP tools are everything else.
 export function getToolSource(name: string): ToolSource {
-  if (BUILTIN_TOOL_NAMES.has(name)) return "builtin";
+  if (builtinNames().has(name)) return "builtin";
   if (loadExternal().tools.some((t) => t.name === name)) return "external";
   return "mcp";
 }
@@ -120,7 +139,7 @@ function applyCategoryToggles(tools: StructuredToolInterface[]): StructuredToolI
 // and any code path that can't await.
 export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
   return applyPolicy(
-    [...applyCategoryToggles(ALL_BUILTINS), ...loadExternal().tools],
+    [...applyCategoryToggles(allBuiltins()), ...loadExternal().tools],
     policy,
   );
 }
@@ -137,7 +156,7 @@ export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredT
     console.error("[tools] MCP load failed, continuing with built-ins only:", err);
   }
   return applyPolicy(
-    [...applyCategoryToggles(ALL_BUILTINS), ...loadExternal().tools, ...mcpTools],
+    [...applyCategoryToggles(allBuiltins()), ...loadExternal().tools, ...mcpTools],
     policy,
   );
 }
@@ -161,7 +180,7 @@ export async function executeTool(
   args: Record<string, unknown>,
   context: ToolContext = {},
 ): Promise<unknown> {
-  let t = ALL_BUILTINS.find((x) => x.name === name);
+  let t = allBuiltins().find((x) => x.name === name);
   if (t) {
     const cat = registeredCategory(name);
     if (cat && disabledCategories().has(cat)) {
@@ -204,7 +223,7 @@ export function initTools(): InitToolsSummary {
   const toolsDir = getToolsDir();
   const result = loadExternal();
   const summary: InitToolsSummary = {
-    builtinCount: ALL_BUILTINS.length,
+    builtinCount: allBuiltins().length,
     externalCount: result.tools.length,
     errors: result.errors,
     toolsDir,

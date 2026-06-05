@@ -13,6 +13,7 @@ it; the rest is on the honour system, audited at PR review.
 - [Release process](#release-process)
 - [Release notes](#release-notes)
 - [Branch protection](#branch-protection)
+- [Public API surface](#public-api-surface)
 - [Local development quick reference](#local-development-quick-reference)
 
 ---
@@ -108,6 +109,34 @@ rule above kicks in at the `1.0.0` release.
 The version in `package.json` is the source of truth. Tags are derived from
 it: tag `vX.Y.Z` MUST point at a commit whose `package.json` reads `version:
 X.Y.Z`. The release workflow refuses to publish if they disagree.
+
+## Public API surface
+
+Not every export is part of the package contract. The single source of truth
+for what's public is `package.json#exports`:
+
+| Subpath                      | What it exposes                                                              |
+|------------------------------|------------------------------------------------------------------------------|
+| `./lib/providers/types`      | `ModelProvider` and friends — the contract external LLM providers conform to |
+| `./lib/tools/types`          | `OpenAITool`, `ToolContext`, `InvokeMessage`, etc. — the tool authoring API  |
+| `./lib/tools/registry`       | `registerTools`, `ToolCategory`, `Capability`, `ToolGroup`, `BuiltinCategory`|
+| `./lib/mcp/registry`         | `RegistryEntry`, `RegistryVariable`, `applyVariables`                        |
+| `./package.json`             | Required by tools that read the package metadata                             |
+
+Anything reachable via the wildcard fallback (`./*`) is **not** part of the
+contract — it stays accessible during the pre-1.0 transition but may move,
+rename, or disappear without notice between minor versions. ADR-0061 captures
+the rationale and the planned 1.0 lock-down.
+
+**Deprecation policy.** Public APIs (per the table above) get one minor
+version cycle of deprecation before removal: deprecate in `0.X.0`, remove no
+earlier than `0.(X+1).0`. Deprecation lives in JSDoc (`@deprecated since
+0.X.0 — use Y instead`) and the CHANGELOG. Internals can change anytime.
+
+**Inside the source tree.** Files marked `@public` in their JSDoc header are
+the corresponding implementations. Functions/types tagged `@internal` are
+not part of the contract even if they happen to live in a `@public` file —
+see `lib/tools/registry.ts` for an example of mixed-tier exports.
 
 ## Release process
 
