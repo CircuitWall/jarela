@@ -85,8 +85,29 @@ function runLocalCommand(
     const clipped = clipOutput(output);
     return JSON.stringify({ exit_code: 0, stdout: clipped.value, truncated: clipped.truncated, cwd });
   } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; status?: number; message?: string };
+    const e = err as { stdout?: string; stderr?: string; status?: number; message?: string; signal?: string; code?: string; killed?: boolean };
     const out = clipOutput(String(e.stdout ?? ""));
+    // Node's execSync surfaces a `timeout` kill as `signal: "SIGTERM"`
+    // and/or `killed: true` with no exit status. Bare exit_code=1 +
+    // empty stderr would lead the agent to retry the same command;
+    // call out the timeout explicitly so it narrows scope or raises
+    // timeout_ms instead.
+    const timedOut = e.code === "ETIMEDOUT"
+      || e.signal === "SIGTERM"
+      || (e.killed === true && (e.status == null || e.status === 0));
+    if (timedOut) {
+      const errText = clipOutput(String(e.stderr ?? ""), 2_000);
+      return JSON.stringify({
+        exit_code: 124,
+        stdout: out.value,
+        stderr: errText.value,
+        truncated: out.truncated || errText.truncated,
+        cwd,
+        timed_out: true,
+        timeout_ms: timeout,
+        error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope, a smaller working set, or pass a larger timeout_ms (max ${Math.round(maxTimeoutMs() / 1000)}s).`,
+      });
+    }
     const errText = clipOutput(String(e.stderr ?? e.message ?? ""), 2_000);
     return JSON.stringify({
       exit_code: e.status ?? 1,
