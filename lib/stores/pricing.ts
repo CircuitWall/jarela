@@ -317,15 +317,40 @@ function inferRatesFromSignals(signals: string[]): {
   };
 }
 
+// Anthropic prompt-cache multipliers, applied against the standard input
+// rate. Cache writes are billed at 1.25× input ("cache create"); cache
+// reads are billed at 0.1× input ("cache hit"). Source:
+// https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching#pricing
+// We apply the same multipliers to other providers that publish a
+// cache-token breakdown — OpenAI's prompt caching, for example, also
+// quotes a 0.5× read multiplier, but its API surfaces only `cached_tokens`
+// (no separate write count) and a future PR can split that out. For now
+// any provider that emits both fields will be priced as above.
+export const CACHE_CREATION_INPUT_RATE_MULTIPLIER = 1.25;
+export const CACHE_READ_INPUT_RATE_MULTIPLIER = 0.1;
+
+export interface CacheTokenBreakdown {
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
+}
+
 export function estimateCostUsd(
   inputTokens: number,
   outputTokens: number,
   rates: Pick<ProviderRates, "inputPer1M" | "outputPer1M">,
+  cache?: CacheTokenBreakdown | null,
 ): number {
   const inputRate = rates.inputPer1M;
   const outputRate = rates.outputPer1M;
   if (inputRate == null && outputRate == null) return 0;
   const inCost = inputRate == null ? 0 : (inputTokens / 1_000_000) * inputRate;
   const outCost = outputRate == null ? 0 : (outputTokens / 1_000_000) * outputRate;
-  return inCost + outCost;
+  let cacheCost = 0;
+  if (cache && inputRate != null) {
+    const create = cache.cache_creation_input_tokens ?? 0;
+    const read = cache.cache_read_input_tokens ?? 0;
+    if (create > 0) cacheCost += (create / 1_000_000) * inputRate * CACHE_CREATION_INPUT_RATE_MULTIPLIER;
+    if (read > 0)   cacheCost += (read   / 1_000_000) * inputRate * CACHE_READ_INPUT_RATE_MULTIPLIER;
+  }
+  return inCost + outCost + cacheCost;
 }

@@ -231,4 +231,38 @@ describe("message_usage snapshot store (ADR-0041)", () => {
     const map = getMessageUsageByIds([]);
     expect(map.size).toBe(0);
   });
+
+  it("persists Anthropic cache_creation/cache_read token counts (PR #181 follow-up)", () => {
+    recordMessageUsage({
+      message_id: "m-cache",
+      thread_id: "t-cache",
+      agent_id: "a", agent_name: "A",
+      provider: "anthropic", model_id: "claude-sonnet-4", model_config_name: null,
+      input_tokens: 1200,
+      output_tokens: 350,
+      cache_creation_input_tokens: 4000,
+      cache_read_input_tokens: 80_000,
+      input_rate_usd_per_mtok: 3,
+      output_rate_usd_per_mtok: 15,
+      cost_usd: 0.04,
+    });
+    const row = getMessageUsage("m-cache");
+    expect(row?.cache_creation_input_tokens).toBe(4000);
+    expect(row?.cache_read_input_tokens).toBe(80_000);
+  });
+
+  it("stores NULL cache columns for legacy rows that omit them", () => {
+    recordMessageUsage({
+      message_id: "m-no-cache",
+      thread_id: "t-no-cache",
+      agent_id: "a", agent_name: "A",
+      provider: "openai", model_id: "gpt-5", model_config_name: null,
+      input_tokens: 10, output_tokens: 20,
+      input_rate_usd_per_mtok: null, output_rate_usd_per_mtok: null,
+      cost_usd: 0,
+    });
+    const row = getMessageUsage("m-no-cache");
+    expect(row?.cache_creation_input_tokens).toBeNull();
+    expect(row?.cache_read_input_tokens).toBeNull();
+  });
 });

@@ -24,6 +24,13 @@ export interface MessageUsageInput {
   // assembly. NULL/undefined when unknown (very old assistant turns
   // persisted before the breakdown was wired up, or non-LLM persists).
   tier_usage?: TierUsage | null;
+  // Anthropic prompt caching (PR #181). Both fields are disjoint from
+  // `input_tokens`: total billable input tokens =
+  //   input_tokens + cache_creation_input_tokens + cache_read_input_tokens
+  // priced at 1×, 1.25×, and 0.1× the input rate respectively. NULL/zero
+  // for providers that don't expose cache counts.
+  cache_creation_input_tokens?: number | null;
+  cache_read_input_tokens?: number | null;
 }
 
 export interface TierUsage {
@@ -37,7 +44,7 @@ export interface TierUsage {
   context_window_tokens: number;
 }
 
-export interface MessageUsageRow extends Omit<MessageUsageInput, "tier_usage"> {
+export interface MessageUsageRow extends Omit<MessageUsageInput, "tier_usage" | "cache_creation_input_tokens" | "cache_read_input_tokens"> {
   created_at: string;
   hot_tokens: number | null;
   warm_tokens: number | null;
@@ -47,6 +54,8 @@ export interface MessageUsageRow extends Omit<MessageUsageInput, "tier_usage"> {
   warm_budget_tokens: number | null;
   facts_budget_tokens: number | null;
   context_window_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+  cache_read_input_tokens: number | null;
 }
 
 export function recordMessageUsage(input: MessageUsageInput): void {
@@ -58,8 +67,9 @@ export function recordMessageUsage(input: MessageUsageInput): void {
        model_config_name, input_tokens, output_tokens,
        input_rate_usd_per_mtok, output_rate_usd_per_mtok, cost_usd, created_at,
        hot_tokens, warm_tokens, facts_tokens, overhead_tokens,
-       hot_budget_tokens, warm_budget_tokens, facts_budget_tokens, context_window_tokens
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       hot_budget_tokens, warm_budget_tokens, facts_budget_tokens, context_window_tokens,
+       cache_creation_input_tokens, cache_read_input_tokens
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.message_id,
     input.thread_id,
@@ -82,6 +92,8 @@ export function recordMessageUsage(input: MessageUsageInput): void {
     t?.warm_budget_tokens ?? null,
     t?.facts_budget_tokens ?? null,
     t?.context_window_tokens ?? null,
+    input.cache_creation_input_tokens ?? null,
+    input.cache_read_input_tokens ?? null,
   );
 }
 

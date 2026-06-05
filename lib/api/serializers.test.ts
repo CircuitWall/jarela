@@ -161,6 +161,8 @@ function makeUsageRow(overrides: Partial<MessageUsageRow> = {}): MessageUsageRow
     warm_budget_tokens: 20_000,
     facts_budget_tokens: 10_000,
     context_window_tokens: 100_000,
+    cache_creation_input_tokens: null,
+    cache_read_input_tokens: null,
     ...overrides,
   };
 }

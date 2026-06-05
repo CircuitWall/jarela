@@ -283,6 +283,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureScheduledTasksReactionKindColumns(db);
   ensureMessageUsageTable(db);
   ensureMessageUsageTierColumns(db);
+  ensureMessageUsageCacheColumns(db);
   ensureThreadContextPinColumns(db);
   ensureThreadChannelSummariesTable(db);
   seedModelConfigs(db);
@@ -726,6 +727,20 @@ function ensureMessageUsageTierColumns(db: DatabaseSync): void {
   if (!names.has("warm_budget_tokens"))    db.exec("ALTER TABLE message_usage ADD COLUMN warm_budget_tokens INTEGER");
   if (!names.has("facts_budget_tokens"))   db.exec("ALTER TABLE message_usage ADD COLUMN facts_budget_tokens INTEGER");
   if (!names.has("context_window_tokens")) db.exec("ALTER TABLE message_usage ADD COLUMN context_window_tokens INTEGER");
+}
+
+// PR #181 enabled Anthropic prompt caching, but the per-turn usage snapshot
+// only captured `input_tokens` / `output_tokens`. Anthropic returns cache
+// reads and writes as separate counts (priced at 0.1× and 1.25× the input
+// rate respectively), so without these columns the dashboard underreports
+// cost on cache-creating turns and *over*reports on cache-hitting turns.
+// Both columns are nullable: legacy rows and non-Anthropic providers leave
+// them NULL.
+function ensureMessageUsageCacheColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(message_usage)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("cache_creation_input_tokens")) db.exec("ALTER TABLE message_usage ADD COLUMN cache_creation_input_tokens INTEGER");
+  if (!names.has("cache_read_input_tokens"))     db.exec("ALTER TABLE message_usage ADD COLUMN cache_read_input_tokens INTEGER");
 }
 
 function seedAgentConfigs(db: DatabaseSync): void {

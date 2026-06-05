@@ -45,6 +45,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BUILTIN_TOOL_NAMES` export replaced with `getBuiltinToolNames()`
   function. The two in-app callers (`/api/v1/extensions` routes) are
   updated.
+- **Per-turn cost now reflects Anthropic prompt-cache pricing.** PR #181
+  enabled cache writes/reads on the wire; this turn reads the
+  `cache_creation_input_tokens` / `cache_read_input_tokens` counts from
+  the provider stream, persists them on the `message_usage` snapshot row
+  (two new nullable columns), and prices them at 1.25× / 0.1× the input
+  rate when computing `cost_usd`. The dashboard's totals now correctly
+  attribute spend on cache-creating vs. cache-hitting turns.
 
 ### Fixed
 
