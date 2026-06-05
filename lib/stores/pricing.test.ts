@@ -80,6 +80,58 @@ describe("estimateCostUsd", () => {
   it("scales sub-million token counts proportionally", () => {
     expect(estimateCostUsd(500_000, 100_000, { inputPer1M: 2, outputPer1M: 10 })).toBeCloseTo(2, 6);
   });
+
+  describe("anthropic prompt-cache pricing", () => {
+    const rates = { inputPer1M: 3, outputPer1M: 15 };
+
+    it("ignores cache breakdown when not provided", () => {
+      // Sanity: existing call signature unchanged.
+      expect(estimateCostUsd(1_000_000, 0, rates)).toBe(3);
+    });
+
+    it("prices cache writes at 1.25× the input rate", () => {
+      // 1M cache_creation tokens × $3/M × 1.25 = $3.75
+      expect(
+        estimateCostUsd(0, 0, rates, { cache_creation_input_tokens: 1_000_000 }),
+      ).toBeCloseTo(3.75, 6);
+    });
+
+    it("prices cache reads at 0.1× the input rate", () => {
+      // 1M cache_read tokens × $3/M × 0.1 = $0.30
+      expect(
+        estimateCostUsd(0, 0, rates, { cache_read_input_tokens: 1_000_000 }),
+      ).toBeCloseTo(0.3, 6);
+    });
+
+    it("sums fresh + cache_creation + cache_read + output (Anthropic-style turn)", () => {
+      // 100k fresh input ($0.30) + 50k cache_creation ($0.1875)
+      // + 800k cache_read ($0.24) + 20k output ($0.30) = $1.0275
+      const cost = estimateCostUsd(100_000, 20_000, rates, {
+        cache_creation_input_tokens: 50_000,
+        cache_read_input_tokens: 800_000,
+      });
+      expect(cost).toBeCloseTo(0.3 + 0.1875 + 0.24 + 0.3, 6);
+    });
+
+    it("does not double-bill cache when input rate is null", () => {
+      // No input rate → cache multipliers have nothing to multiply against.
+      expect(
+        estimateCostUsd(0, 100_000, { inputPer1M: null, outputPer1M: 5 }, {
+          cache_creation_input_tokens: 1_000_000,
+          cache_read_input_tokens: 1_000_000,
+        }),
+      ).toBeCloseTo(0.5, 6);
+    });
+
+    it("treats nullish cache fields as zero", () => {
+      expect(
+        estimateCostUsd(0, 0, rates, {
+          cache_creation_input_tokens: null,
+          cache_read_input_tokens: undefined,
+        }),
+      ).toBe(0);
+    });
+  });
 });
 
 describe("getPricingTables", () => {

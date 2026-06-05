@@ -203,8 +203,13 @@ export class JarelaChatModel extends BaseChatModel {
       } else if (event.type === "usage") {
         // ADR-0041: surface real provider token counts on the final
         // AIMessageChunk via LangChain's standard `usage_metadata` field so
-        // the agent loop can snapshot them into message_usage.
+        // the agent loop can snapshot them into message_usage. PR #181 added
+        // Anthropic prompt caching; carry the cache breakdown through
+        // `input_token_details` (LangChain's standard channel) so cost
+        // attribution downstream can apply the 1.25× / 0.1× rates.
         emittedAny = true;
+        const cacheCreation = event.cache_creation_input_tokens ?? 0;
+        const cacheRead = event.cache_read_input_tokens ?? 0;
         yield new ChatGenerationChunk({
           message: new AIMessageChunk({
             content: "",
@@ -213,6 +218,9 @@ export class JarelaChatModel extends BaseChatModel {
               output_tokens: event.output_tokens ?? 0,
               total_tokens: event.total_tokens
                 ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0),
+              ...(cacheCreation > 0 || cacheRead > 0
+                ? { input_token_details: { cache_creation: cacheCreation, cache_read: cacheRead } }
+                : {}),
             },
           }),
           text: "",
