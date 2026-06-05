@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, User, Users, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -347,6 +347,11 @@ type Props = {
   // when its persisted version mounts (different component instance from
   // the streaming bubble, so the streaming-latch can't carry over).
   isLatest?: boolean;
+  // Resend this user prompt as a new turn. Hidden when undefined; also
+  // hidden for category-tagged messages (bridge / scheduled_task / watcher)
+  // since those originate from automation and re-sending the persisted
+  // body would replay it as a regular user prompt.
+  onRetry?: (text: string, attachments: ContentPart[]) => void;
 };
 
 const GRADIENTS = [
@@ -1024,7 +1029,7 @@ function messageTextForCopy(content: string | ContentPart[]): string {
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false, onRetry }: Props) {
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -1068,6 +1073,26 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       });
     }).catch(console.error);
   }, [messageId, threadId]);
+
+  // Retry only makes sense for plain user prompts the operator typed. Bridge
+  // / scheduled-task / watcher rows carry their own metadata header and
+  // re-sending them as a vanilla user message would be wrong.
+  const category = "category" in message ? message.category : null;
+  const canRetry = isUser && !category && !!onRetry && !streaming;
+  const handleRetry = useCallback(() => {
+    if (!onRetry) return;
+    if (typeof parsed === "string") {
+      onRetry(parsed, []);
+      return;
+    }
+    let text = "";
+    const atts: ContentPart[] = [];
+    for (const part of parsed) {
+      if (part.type === "text" && !text) text = part.text;
+      else atts.push(part);
+    }
+    onRetry(text, atts);
+  }, [onRetry, parsed]);
 
   const [copiedMessage, setCopiedMessage] = useState(false);
   const copyMessage = useCallback(() => {
@@ -1237,6 +1262,16 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             >
               {copiedMessage ? <Check size={11} /> : <Copy size={11} />}
             </button>
+            {canRetry && (
+              <button
+                onClick={handleRetry}
+                className="text-fg-faint hover:text-fg p-0.5 rounded"
+                title="Resend this prompt as a new turn"
+                aria-label="Resend this prompt as a new turn"
+              >
+                <RotateCcw size={11} />
+              </button>
+            )}
             {voiceEnabled && !streaming && ttsAbleText.trim() && (
               <button
                 onClick={() => void speak()}
@@ -1260,7 +1295,6 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
           {typeof parsed === "string" ? (
             isUser ? (
               (() => {
-                const category = "category" in message ? message.category : null;
                 const trigger = parseTriggerMessage(category, parsed);
                 if (trigger) return <TriggerMessageCard data={trigger} />;
                 const bridge = parseBridgeContext(parsed);
