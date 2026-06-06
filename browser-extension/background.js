@@ -392,16 +392,107 @@ async function copyTextToClipboard(tabId, text) {
   return Boolean(result?.ok);
 }
 
-async function getFillContext(tabId, selectionOverride) {
+// Resolves the focused editable across shadow DOM + same-origin iframes
+// and stamps it with `data-jarela-fill-target` so the rest of the fill
+// flow can find it again after the LLM round-trip — even if the page
+// (e.g. LinkedIn's post composer dialog) shifts focus in the meantime.
+// Returns `{ ok, frameId }` for the frame that owns the marker so we can
+// scope subsequent injections to it.
+async function markFillTarget(tabId, hintFrameId) {
+  const target = typeof hintFrameId === "number"
+    ? { tabId, frameIds: [hintFrameId] }
+    : { tabId, allFrames: true };
+  let results;
+  try {
+    results = await chrome.scripting.executeScript({
+      target,
+      func: () => {
+        function dig(root) {
+          let el = root?.activeElement || null;
+          while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+            el = el.shadowRoot.activeElement;
+          }
+          return el;
+        }
+        function isEditable(el) {
+          if (!el) return false;
+          if (el instanceof HTMLTextAreaElement) return true;
+          if (el instanceof HTMLInputElement) {
+            return /^(text|search|email|url|tel)$/i.test(el.type || "text");
+          }
+          return Boolean(el.isContentEditable);
+        }
+        let el = dig(document);
+        // Drill through nested same-origin iframes when activeElement is one.
+        while (el && el.tagName === "IFRAME") {
+          try {
+            const doc = el.contentDocument;
+            if (!doc) break;
+            const inner = dig(doc);
+            if (!inner) break;
+            el = inner;
+          } catch {
+            break;
+          }
+        }
+        // Walk up to find a contenteditable ancestor when activeElement is
+        // a non-editable child (common with rich editors like Quill).
+        if (el && !isEditable(el) && typeof el.closest === "function") {
+          const ce = el.closest("[contenteditable=''], [contenteditable='true']");
+          if (ce) el = ce;
+        }
+        // Last-resort fallback: pick the first editable inside an open
+        // dialog (LinkedIn's post composer renders as role=dialog with
+        // exactly one ql-editor).
+        if (!isEditable(el)) {
+          const dialog = document.querySelector("[role='dialog'], dialog[open]");
+          if (dialog) {
+            el = dialog.querySelector(
+              "textarea, input[type='text'], input[type='search'], input[type='email'], input[type='url'], input[type='tel'], [contenteditable=''], [contenteditable='true']",
+            );
+          }
+        }
+        if (!isEditable(el)) return { ok: false };
+        document.querySelectorAll("[data-jarela-fill-target]").forEach((n) => {
+          n.removeAttribute("data-jarela-fill-target");
+        });
+        el.setAttribute("data-jarela-fill-target", "1");
+        return { ok: true };
+      },
+    });
+  } catch {
+    return { ok: false };
+  }
+  const winner = (results || []).find((r) => r?.result?.ok);
+  return winner ? { ok: true, frameId: winner.frameId ?? 0 } : { ok: false };
+}
+
+async function clearFillTarget(tabId, frameId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
+      func: () => {
+        document.querySelectorAll("[data-jarela-fill-target]").forEach((n) => {
+          n.removeAttribute("data-jarela-fill-target");
+        });
+      },
+    });
+  } catch {
+    // Tab/frame may be gone — nothing to clean up.
+  }
+}
+
+async function getFillContext(tabId, frameId, selectionOverride) {
   const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
+    target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
     args: [selectionOverride ?? ""],
     func: (selectedTextOverride) => {
       function normalizeText(v, max = 5000) {
         return (v || "").replace(/\s+/g, " ").trim().slice(0, max);
       }
 
-      const active = document.activeElement;
+      const marked = document.querySelector("[data-jarela-fill-target]");
+      const active = marked || document.activeElement;
       const isTextarea = active instanceof HTMLTextAreaElement;
       const isTextInput = active instanceof HTMLInputElement && /^(text|search|email|url|tel)$/i.test(active.type || "text");
       const isEditable = Boolean(active && (isTextarea || isTextInput || active.isContentEditable));
@@ -460,15 +551,17 @@ async function getFillContext(tabId, selectionOverride) {
   return result;
 }
 
-async function fillFocusedField(tabId, value) {
+async function fillFocusedField(tabId, frameId, value) {
   const [{ result }] = await chrome.scripting.executeScript({
-    target: { tabId },
+    target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
     args: [value],
     func: (nextText) => {
-      const active = document.activeElement;
+      const marked = document.querySelector("[data-jarela-fill-target]");
+      const active = marked || document.activeElement;
       if (!active) return { ok: false, reason: "No focused field" };
 
       if (active instanceof HTMLTextAreaElement || (active instanceof HTMLInputElement && /^(text|search|email|url|tel)$/i.test(active.type || "text"))) {
+        active.focus();
         const start = Number(active.selectionStart ?? active.value.length);
         const end = Number(active.selectionEnd ?? active.value.length);
         const left = active.value.slice(0, Math.min(start, end));
@@ -484,7 +577,25 @@ async function fillFocusedField(tabId, value) {
 
       if (active.isContentEditable) {
         active.focus();
-        document.execCommand("insertText", false, nextText);
+        // Place caret at end of the editable before inserting so frameworks
+        // like Quill don't drop the text into a stale selection range.
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(active);
+          range.collapse(false);
+          const sel = window.getSelection();
+          sel?.removeAllRanges();
+          sel?.addRange(range);
+        } catch {
+          // Selection APIs throw inside detached frames; fall through to insertText.
+        }
+        const inserted = document.execCommand("insertText", false, nextText);
+        if (!inserted) {
+          // execCommand can be a no-op in some shadow roots / custom editors —
+          // fall back to a plain textContent assignment + input event so the
+          // host framework still sees the change.
+          active.textContent = `${active.textContent || ""}${nextText}`;
+        }
         active.dispatchEvent(new Event("input", { bubbles: true }));
         return { ok: true };
       }
@@ -498,10 +609,10 @@ async function fillFocusedField(tabId, value) {
 // Anchors a small rotating SVG spinner to the focused field so the user
 // gets visual confirmation that a fill turn is running. Mirrors the chat
 // CountdownRing geometry (r=5.5, viewBox 14×14) at field-sized scale.
-async function showFillSpinner(tabId) {
+async function showFillSpinner(tabId, frameId) {
   try {
     await chrome.scripting.insertCSS({
-      target: { tabId },
+      target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
       css: `
         #jarela-fill-spinner { position: fixed; z-index: 2147483647; pointer-events: none;
           width: 18px; height: 18px; border-radius: 50%;
@@ -515,10 +626,11 @@ async function showFillSpinner(tabId) {
       `,
     });
     await chrome.scripting.executeScript({
-      target: { tabId },
+      target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
       func: () => {
-        const active = document.activeElement;
-        if (!active) return;
+        const marked = document.querySelector("[data-jarela-fill-target]");
+        const active = marked || document.activeElement;
+        if (!active || typeof active.getBoundingClientRect !== "function") return;
         const rect = active.getBoundingClientRect();
         document.getElementById("jarela-fill-spinner")?.remove();
         const el = document.createElement("div");
@@ -534,10 +646,10 @@ async function showFillSpinner(tabId) {
   }
 }
 
-async function hideFillSpinner(tabId) {
+async function hideFillSpinner(tabId, frameId) {
   try {
     await chrome.scripting.executeScript({
-      target: { tabId },
+      target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
       func: () => { document.getElementById("jarela-fill-spinner")?.remove(); },
     });
   } catch {
@@ -605,9 +717,23 @@ async function runRewriteToClipboard(tabId, selectionText, instruction) {
   });
 }
 
-async function runFillFocusedField(tabId, selectionText) {
-  const ctx = await getFillContext(tabId, selectionText);
+async function runFillFocusedField(tabId, selectionText, hintFrameId) {
+  const marker = await markFillTarget(tabId, hintFrameId);
+  if (!marker.ok) {
+    await chrome.notifications.create({
+      type: "basic",
+      iconUrl: "icons/icon-128.png",
+      title: "No focused field",
+      message: "Click into an input/textarea first, then run Fill focused field.",
+      priority: 1,
+    });
+    return;
+  }
+  const frameId = marker.frameId;
+
+  const ctx = await getFillContext(tabId, frameId, selectionText);
   if (!ctx?.has_target) {
+    await clearFillTarget(tabId, frameId);
     await chrome.notifications.create({
       type: "basic",
       iconUrl: "icons/icon-128.png",
@@ -621,7 +747,7 @@ async function runFillFocusedField(tabId, selectionText) {
   // Mirror the chat-window CountdownRing on the focused field so the user
   // sees the request is in flight — same drain + spin SVG anchored to the
   // field's bounding rect, removed in finally so errors don't leak it.
-  await showFillSpinner(tabId);
+  await showFillSpinner(tabId, frameId);
 
   try {
     const payload = await withSelectedAgent({
@@ -658,7 +784,7 @@ async function runFillFocusedField(tabId, selectionText) {
       return;
     }
 
-    const applied = await fillFocusedField(tabId, out);
+    const applied = await fillFocusedField(tabId, frameId, out);
     await chrome.notifications.create({
       type: "basic",
       iconUrl: applied?.ok ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
@@ -669,7 +795,8 @@ async function runFillFocusedField(tabId, selectionText) {
       priority: 1,
     });
   } finally {
-    await hideFillSpinner(tabId);
+    await hideFillSpinner(tabId, frameId);
+    await clearFillTarget(tabId, frameId);
   }
 }
 
@@ -678,7 +805,7 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
   (async () => {
     if (info.menuItemId === MENU_FILL_FIELD) {
-      await runFillFocusedField(tab.id, info.selectionText ?? "");
+      await runFillFocusedField(tab.id, info.selectionText ?? "", info.frameId);
       return;
     }
     if (typeof info.menuItemId === "string" && info.menuItemId.startsWith(MENU_REWRITE_PREFIX)) {
