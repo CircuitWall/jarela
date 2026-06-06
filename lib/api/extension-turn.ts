@@ -42,11 +42,30 @@ function normalizeAgentIconKey(raw: string | null | undefined): "blue" | "white"
   return null;
 }
 
-function pickThread(agentId?: string): PickResult | { error: "no-agent" } {
+function pickThread(action: z.infer<typeof ExtensionAction>, agentId?: string): PickResult | { error: "no-agent" } {
   const requested: AgentConfigRow | null = agentId ? getAgentConfig(agentId) : null;
   const def: AgentConfigRow | null = getDefaultAgentConfig();
   const agent: AgentConfigRow | null = requested ?? def ?? listAgentConfigs()[0] ?? null;
   if (!agent) return { error: "no-agent" };
+
+  // Fill + rewrite are one-shot tools: the agent should answer using ONLY
+  // the per-call instruction + page context the extension sent, not the
+  // hot/warm history of whatever thread the user last chatted on. Spin a
+  // fresh thread per call so the history window is empty. Refine is
+  // iterative ("make that more concise", "now translate it"), so it keeps
+  // reusing the most recent thread for the agent.
+  if (action === "fill" || action === "rewrite_clipboard") {
+    const title = action === "fill" ? "Fill focused field" : "Rewrite to clipboard";
+    const t = createThread(agent.id, title);
+    return {
+      thread_id: t.thread_id,
+      agent_id: agent.id,
+      agent_name: agent.name,
+      agent_icon_key: normalizeAgentIconKey(agent.icon),
+      thread_title: t.title,
+      created: true,
+    };
+  }
 
   const recent: ThreadRow[] = listThreadsByAgent(agent.id, 1);
   if (recent.length > 0) {
@@ -71,7 +90,7 @@ function pickThread(agentId?: string): PickResult | { error: "no-agent" } {
 }
 
 async function runExtensionAction(action: z.infer<typeof ExtensionAction>, input: z.infer<typeof Body>): Promise<Response> {
-  const picked = pickThread(input.agent_id);
+  const picked = pickThread(action, input.agent_id);
   if ("error" in picked) {
     return new Response(JSON.stringify({ error: "no agent configured" }), {
       status: 503,
