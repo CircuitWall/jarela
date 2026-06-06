@@ -670,14 +670,13 @@ async function runRewriteToClipboard(tabId, selectionText, instruction) {
     return;
   }
 
-  const page = await collectPageInfo(tabId);
+  // No page-context collection for rewrite: the selection is the input.
+  // Bundling URL/headings/surrounding text encourages the model to echo
+  // the page H1 instead of rewriting the selection.
   const payload = await withSelectedAgent({
     action: "rewrite_clipboard",
     instruction,
     text: selected,
-    url: page?.url,
-    title: page?.title,
-    page_context: page?.page_context,
   });
   const apiRes = await postJson(extensionTurnUrl(currentConfig), payload);
   await applyAgentIconHintFromBody(apiRes?.body);
