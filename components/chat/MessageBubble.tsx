@@ -201,6 +201,141 @@ function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: bo
   );
 }
 
+// Browser-extension turn message (refine / fill / rewrite_clipboard) as
+// composed by lib/api/extension-turn.ts `composePrompt`. Parses the same
+// structured prompt format the server builds so the user bubble can show
+// a tight header + collapsed body instead of a wall of metadata. Returns
+// null if the text doesn't match — the bubble falls back to plain text.
+interface ExtensionTurnContext {
+  action: "refine" | "fill" | "rewrite_clipboard";
+  actionLabel: string;
+  instruction: string;
+  url: string | null;
+  title: string | null;
+  selector: string | null;
+  pageContext: string | null;
+  selectedText: string | null;
+}
+
+function parseExtensionTurn(raw: string): ExtensionTurnContext | null {
+  const headerRe = /^\[Extension (refine|fill|rewrite to clipboard) turn\][^\n]*\n/;
+  const hm = headerRe.exec(raw);
+  if (!hm) return null;
+  const actionWord = hm[1];
+  const action: ExtensionTurnContext["action"] =
+    actionWord === "fill" ? "fill"
+    : actionWord === "refine" ? "refine"
+    : "rewrite_clipboard";
+  const actionLabel =
+    action === "fill" ? "Fill focused field"
+    : action === "refine" ? "Refine selection"
+    : "Rewrite to clipboard";
+
+  let rest = raw.slice(hm[0].length);
+  function takeLine(label: string): string | null {
+    const re = new RegExp(`^${label}:\\s*([^\\n]*)\\n?`);
+    const m = re.exec(rest);
+    if (!m) return null;
+    rest = rest.slice(m[0].length);
+    return m[1].trim() || null;
+  }
+  const instruction = takeLine("Instruction") ?? "";
+  const url = takeLine("URL");
+  const title = takeLine("Title");
+  const selector = takeLine("Selector");
+
+  let pageContext: string | null = null;
+  const pageHeaderRe = /^\nPage\/form context:\n/;
+  if (pageHeaderRe.test(rest)) {
+    rest = rest.replace(pageHeaderRe, "");
+    const idx = rest.indexOf("\n\nSelected context:");
+    if (idx >= 0) {
+      pageContext = rest.slice(0, idx).trim() || null;
+      rest = rest.slice(idx + 2);
+    }
+  }
+
+  let selectedText: string | null = null;
+  const selHeaderRe = /^\nSelected context:\n([\s\S]*)$/;
+  const sm = selHeaderRe.exec(rest);
+  if (sm) {
+    const body = sm[1].trim();
+    selectedText = body === "(none provided)" ? null : (body || null);
+  }
+
+  return { action, actionLabel, instruction, url, title, selector, pageContext, selectedText };
+}
+
+function ExtensionTurnCard({ ctx, accent }: { ctx: ExtensionTurnContext; accent: boolean }) {
+  const [open, setOpen] = useState(false);
+  const hostname = ctx.url ? (() => { try { return new URL(ctx.url!).hostname; } catch { return ctx.url!; } })() : null;
+  const hasDetails = Boolean(ctx.pageContext || ctx.selectedText || ctx.selector || ctx.url);
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <button
+        type="button"
+        onClick={() => hasDetails && setOpen((v) => !v)}
+        className={`flex items-center gap-2 text-left min-w-0 ${accent ? "text-white/95 hover:text-white" : "text-fg hover:text-fg-muted"} ${hasDetails ? "" : "cursor-default"}`}
+        aria-expanded={open}
+        title={hasDetails ? (open ? "Hide extension turn details" : "Show extension turn details") : undefined}
+      >
+        {hasDetails && <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />}
+        <Zap size={12} className="shrink-0" />
+        <span className="text-[13px] font-medium truncate min-w-0">{ctx.actionLabel}</span>
+      </button>
+      {ctx.instruction && (
+        <p className={`pl-5 text-[12.5px] leading-relaxed whitespace-pre-wrap ${accent ? "text-white/90" : "text-fg"}`}>
+          {ctx.instruction}
+        </p>
+      )}
+      <div className={`flex flex-wrap items-center gap-1.5 text-[10px] pl-5 ${accent ? "text-white/75" : "text-fg-faint"}`}>
+        {ctx.url && hostname && (
+          <a
+            href={ctx.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 underline decoration-dotted hover:decoration-solid truncate max-w-[18rem]"
+            title={ctx.url}
+          >
+            <LinkIcon size={9} className="shrink-0" />
+            <span className="truncate">{ctx.title || hostname}</span>
+          </a>
+        )}
+        {ctx.selector && (
+          <span
+            className={`px-1.5 py-0.5 rounded font-mono ${accent ? "bg-white/15" : "bg-surface-3"}`}
+            title={ctx.selector}
+          >
+            {ctx.selector.length > 36 ? `…${ctx.selector.slice(-33)}` : ctx.selector}
+          </span>
+        )}
+        {ctx.selectedText && (
+          <span className={`px-1.5 py-0.5 rounded ${accent ? "bg-white/15" : "bg-surface-3"}`}>
+            {`${ctx.selectedText.length.toLocaleString()} chars selected`}
+          </span>
+        )}
+      </div>
+      {open && hasDetails && (
+        <div className={`mt-1 pt-2 pl-5 border-t flex flex-col gap-2 ${accent ? "border-white/20" : "border-border/60"}`}>
+          {ctx.selectedText && (
+            <div>
+              <div className={`text-[10px] uppercase tracking-wide mb-0.5 ${accent ? "text-white/70" : "text-fg-faint"}`}>Selected</div>
+              <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.selectedText}</p>
+            </div>
+          )}
+          {ctx.pageContext && (
+            <div>
+              <div className={`text-[10px] uppercase tracking-wide mb-0.5 ${accent ? "text-white/70" : "text-fg-faint"}`}>Page context</div>
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed opacity-80">{ctx.pageContext}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Small source-channel badge shown at the top of assistant bubbles that
 // were triggered by automation (bridge reply, scheduled task reply, etc.).
 // Lets the user tell at a glance which automation channel generated the
@@ -1345,6 +1480,8 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 if (trigger) return <TriggerMessageCard data={trigger} />;
                 const bridge = parseBridgeContext(parsed);
                 if (bridge) return <BridgeMessageCard ctx={bridge} />;
+                const ext = parseExtensionTurn(parsed);
+                if (ext) return <ExtensionTurnCard ctx={ext} accent={true} />;
                 const ctx = parseCapturedContext(parsed);
                 if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
                 return (
