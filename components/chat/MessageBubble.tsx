@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -197,6 +197,31 @@ function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: bo
           <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.body}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// Small source-channel badge shown at the top of assistant bubbles that
+// were triggered by automation (bridge reply, scheduled task reply, etc.).
+// Lets the user tell at a glance which automation channel generated the
+// response without needing to scroll up to the corresponding user bubble.
+const CATEGORY_BADGE: Record<string, { label: string; Icon: React.ElementType; cls: string }> = {
+  scheduled_task: { label: "Scheduled", Icon: Clock,          cls: "text-violet-400/90 border-violet-500/30 bg-violet-950/30" },
+  watcher:        { label: "Watcher",   Icon: Eye,            cls: "text-amber-400/90  border-amber-500/30  bg-amber-950/30" },
+  bridge:         { label: "Bridge",    Icon: MessageCircle,  cls: "text-sky-400/90    border-sky-500/30    bg-sky-950/30" },
+  page_capture:   { label: "Capture",   Icon: Globe,          cls: "text-teal-400/90   border-teal-500/30   bg-teal-950/30" },
+  extension:      { label: "Extension", Icon: Zap,            cls: "text-indigo-400/90 border-indigo-500/30 bg-indigo-950/30" },
+  synthetic:      { label: "System",    Icon: Bot,            cls: "text-fg-faint      border-border/40     bg-surface-2" },
+};
+
+function CategorySourceBadge({ category }: { category: string }) {
+  const def = CATEGORY_BADGE[category];
+  if (!def) return null;
+  const { label, Icon, cls } = def;
+  return (
+    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium mb-1.5 self-start ${cls}`}>
+      <Icon size={9} className="shrink-0" />
+      <span>{label} reply</span>
     </div>
   );
 }
@@ -1329,9 +1354,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 );
               })()
             ) : (
-              <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
-              </CollapsibleLong>
+              <div className="flex flex-col">
+                {category && <CategorySourceBadge category={category} />}
+                <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
+                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
+                </CollapsibleLong>
+              </div>
             )
           ) : (
             <div className="flex flex-col gap-1.5">
