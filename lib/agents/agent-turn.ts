@@ -12,6 +12,7 @@ export type AgentTurnQueueSource =
   | "watcher"
   | "trigger"
   | "bridge"
+  | "extension"
   | "delegate";
 
 export interface RunAgentTurnRequest {
@@ -22,6 +23,12 @@ export interface RunAgentTurnRequest {
   user_category?: string | null;
   assistant_category?: string | null;
   silent?: boolean;
+  /**
+   * When true, `prepareThreadRun` will NOT add the message to the DB.
+   * Use this when the caller has already persisted the user message and
+   * only wants to run the agent against it (e.g. page-capture observer).
+   */
+  skip_persist_user_message?: boolean;
 }
 
 export interface RunAgentTurnResult {
@@ -46,6 +53,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
       attachments: req.attachments,
       user_category: req.user_category ?? null,
       _pinned_model_config_name: pinnedModelConfigName,
+      _skip_persist_message: req.skip_persist_user_message,
     });
 
     const collected = await collectStream(prepared.stream);

@@ -7,6 +7,7 @@ const addMessageMock = vi.fn();
 const getDefaultAgentConfigMock = vi.fn();
 const listAgentConfigsMock = vi.fn();
 const publishMock = vi.fn();
+const runAgentTurnMock = vi.fn();
 
 vi.mock("@/lib/stores/threads", () => ({
   listThreadsByAgent: (...a: unknown[]) => listThreadsByAgentMock(...a),
@@ -20,6 +21,9 @@ vi.mock("@/lib/stores/agent-configs", () => ({
 vi.mock("@/lib/notifications/bus", () => ({
   publish: (...a: unknown[]) => publishMock(...a),
 }));
+vi.mock("@/lib/agents/agent-turn", () => ({
+  runAgentTurn: (...a: unknown[]) => runAgentTurnMock(...a),
+}));
 
 import { handlePageCapture, MAX_TEXT_BYTES } from "./page-capture";
 
@@ -30,6 +34,8 @@ beforeEach(() => {
   getDefaultAgentConfigMock.mockReset();
   listAgentConfigsMock.mockReset();
   publishMock.mockReset();
+  runAgentTurnMock.mockReset();
+  runAgentTurnMock.mockResolvedValue({ assistantContent: "NO_REPLY", skippedAssistant: true, preview: "", usage: null });
 
   addMessageMock.mockImplementation((thread_id: string, role: string, content: string) => ({
     msg_id: "m-1", thread_id, role, content, created_at: "2026-05-22T00:00:00.000Z",
@@ -254,6 +260,32 @@ describe("handlePageCapture — bus", () => {
   it("does not publish on validation failure", async () => {
     await handlePageCapture(makeReq({ ...validBody, url: "nope" }));
     expect(publishMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("handlePageCapture — silent observer run", () => {
+  it("fires a silent agent turn with skip_persist_user_message after adding the capture", async () => {
+    await handlePageCapture(makeReq(validBody));
+    // addMessage persists the user message synchronously
+    expect(addMessageMock).toHaveBeenCalledWith("t1", "user", expect.any(String), undefined, "page_capture");
+    // runAgentTurn is called silently so the agent observes without replying
+    expect(runAgentTurnMock).toHaveBeenCalledWith(expect.objectContaining({
+      thread_id: "t1",
+      queue_source: "extension",
+      silent: true,
+      skip_persist_user_message: true,
+      user_category: "page_capture",
+      assistant_category: "page_capture",
+    }));
+    // The message passed to the agent includes the silent-capture preamble
+    const [callArg] = runAgentTurnMock.mock.calls[0] as [{ message: string }];
+    expect(callArg.message).toContain("NO_REPLY");
+    expect(callArg.message).toContain("Captured from");
+  });
+
+  it("does not fire silent run on validation failure", async () => {
+    await handlePageCapture(makeReq({ ...validBody, url: "nope" }));
+    expect(runAgentTurnMock).not.toHaveBeenCalled();
   });
 });
 
