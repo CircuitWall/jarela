@@ -294,18 +294,68 @@ async function collectPageInfo(tabId) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
-      const h1 = document.querySelector("h1")?.textContent?.trim() ?? "";
-      const h2 = document.querySelector("h2")?.textContent?.trim() ?? "";
-      const description = document.querySelector('meta[name="description"]')?.getAttribute("content")?.trim() ?? "";
+      function normalize(v, max = 4000) {
+        return (v || "").replace(/\s+/g, " ").trim().slice(0, max);
+      }
+
+      const h1 = normalize(document.querySelector("h1")?.textContent || "", 300);
+      const h2 = normalize(document.querySelector("h2")?.textContent || "", 300);
+      const description = normalize(
+        document.querySelector('meta[name="description"]')?.getAttribute("content") || "",
+        400,
+      );
+
+      // Pull a snippet around the user's selection so the rewrite turn
+      // knows what came before/after the highlighted span. We anchor on
+      // the nearest block-level ancestor of the selection's start node so
+      // a one-sentence selection still carries paragraph-level context.
+      let surrounding = "";
+      let beforeSnippet = "";
+      let afterSnippet = "";
+      try {
+        const sel = window.getSelection?.();
+        if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+          const range = sel.getRangeAt(0);
+          let node = range.startContainer;
+          if (node && node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+          const BLOCK = /^(P|LI|TD|TH|BLOCKQUOTE|ARTICLE|SECTION|DIV|MAIN|H[1-6])$/;
+          let block = node;
+          while (block && block !== document.body && !BLOCK.test(block.tagName || "")) {
+            block = block.parentElement;
+          }
+          block = block || node;
+          const full = (block?.innerText || "").replace(/\s+/g, " ").trim();
+          const selText = sel.toString().replace(/\s+/g, " ").trim();
+          if (full && selText) {
+            const idx = full.indexOf(selText);
+            if (idx >= 0) {
+              beforeSnippet = full.slice(Math.max(0, idx - 600), idx).trim();
+              afterSnippet = full.slice(idx + selText.length, idx + selText.length + 600).trim();
+            } else {
+              surrounding = full.slice(0, 1200);
+            }
+          } else if (full) {
+            surrounding = full.slice(0, 1200);
+          }
+        }
+      } catch {
+        // Selection inspection is best-effort; fall back to metadata only.
+      }
+
+      const contextLines = [
+        `Host: ${location.host}`,
+        h1 ? `Main heading: ${h1}` : "",
+        h2 ? `Secondary heading: ${h2}` : "",
+        description ? `Meta description: ${description}` : "",
+        beforeSnippet ? `Text before selection:\n${beforeSnippet}` : "",
+        afterSnippet ? `Text after selection:\n${afterSnippet}` : "",
+        surrounding ? `Surrounding block:\n${surrounding}` : "",
+      ].filter(Boolean);
+
       return {
         url: location.href,
         title: document.title,
-        page_context: [
-          `Host: ${location.host}`,
-          h1 ? `Main heading: ${h1}` : "",
-          h2 ? `Secondary heading: ${h2}` : "",
-          description ? `Meta description: ${description}` : "",
-        ].filter(Boolean).join("\n"),
+        page_context: contextLines.join("\n"),
       };
     },
   });
