@@ -1,137 +1,72 @@
-// Generate placeholder PNG icons for the extension. Replace with real art
-// before publishing — these exist solely so chrome.action has something to
-// render and so the manifest doesn't 404.
+// Generate browser-extension toolbar icons from the real Jarela logo mark.
 //
-// Glyph: two corner brackets forming a "viewfinder" — the universal
-// picker / select-an-element affordance. Transparent everywhere else so
-// the icon reads on both light and dark browser toolbars rather than
-// fighting the toolbar with a solid background fill.
+// Output families:
+// - icon-*: blue logo for light toolbars
+// - icon-white-*: white-tinted logo for dark toolbars
+// Each family also gets -disabled variants by reducing opacity.
 //
 // Run: node browser-extension/scripts/generate-icons.mjs
 
-import { writeFileSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { deflateSync } from "node:zlib";
+import sharp from "sharp";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const root = resolve(here, "..", "..");
 const iconsDir = resolve(here, "..", "icons");
+const logoSrc = resolve(root, "public", "logo-mark-transparent.png");
 mkdirSync(iconsDir, { recursive: true });
 
-// Foreground colors. Slate-800 on light toolbars + a 1px slate-50 inner
-// halo so the bracket stays visible on dark toolbars too. Disabled state
-// drops to slate-400 with no halo (naturally communicates "off").
-const ENABLED_FG = { r: 30, g: 41, b: 59 };     // slate-800
-const ENABLED_HALO = { r: 248, g: 250, b: 252 }; // slate-50
-const DISABLED_FG = { r: 148, g: 163, b: 184 }; // slate-400
+const SIZES = [16, 32, 128];
+const PADDING = 0.06;
 
-function crc32() {
-  const table = new Uint32Array(256);
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-    table[i] = c >>> 0;
-  }
-  return (buf) => {
-    let c = 0xFFFFFFFF;
-    for (let i = 0; i < buf.length; i++) c = table[(c ^ buf[i]) & 0xFF] ^ (c >>> 8);
-    return (c ^ 0xFFFFFFFF) >>> 0;
-  };
-}
-const crc = crc32();
-
-function chunk(type, data) {
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(data.length, 0);
-  const typeBuf = Buffer.from(type, "ascii");
-  const crcBuf = Buffer.alloc(4);
-  const crcVal = crc(Buffer.concat([typeBuf, data]));
-  crcBuf.writeUInt32BE(crcVal, 0);
-  return Buffer.concat([len, typeBuf, data, crcBuf]);
+async function buildLogoBuffer({ white }) {
+  const base = sharp(logoSrc);
+  if (!white) return base.png({ compressionLevel: 9 }).toBuffer();
+  // White variant keeps alpha silhouette while recoloring the mark.
+  return base
+    .grayscale()
+    .tint({ r: 248, g: 250, b: 252 })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 }
 
-function makePng(size, drawPixel) {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0);
-  ihdr.writeUInt32BE(size, 4);
-  ihdr.writeUInt8(8, 8);   // bit depth
-  ihdr.writeUInt8(6, 9);   // RGBA
-  ihdr.writeUInt8(0, 10);
-  ihdr.writeUInt8(0, 11);
-  ihdr.writeUInt8(0, 12);
+async function writeIcon({ stem, size, suffix, input, opacity }) {
+  const inner = Math.round(size * (1 - PADDING * 2));
+  const resized = await sharp(input)
+    .resize({ width: inner, height: inner, fit: "inside" })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
 
-  // Each row: filter byte (0 = none) + RGBA pixels.
-  const stride = size * 4 + 1;
-  const raw = Buffer.alloc(stride * size); // zero-initialised → fully transparent
-  for (let y = 0; y < size; y++) {
-    raw[y * stride] = 0;
-    for (let x = 0; x < size; x++) {
-      const px = drawPixel(x, y);
-      if (!px) continue; // leave transparent
-      const off = y * stride + 1 + x * 4;
-      raw[off + 0] = px.r;
-      raw[off + 1] = px.g;
-      raw[off + 2] = px.b;
-      raw[off + 3] = px.a ?? 255;
-    }
-  }
-  const idat = deflateSync(raw);
-  const sig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-  return Buffer.concat([
-    sig,
-    chunk("IHDR", ihdr),
-    chunk("IDAT", idat),
-    chunk("IEND", Buffer.alloc(0)),
-  ]);
+  const outFile = resolve(iconsDir, `${stem}-${size}${suffix}.png`);
+  await sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite([{ input: resized, gravity: "center", blend: "over", opacity }])
+    .png({ compressionLevel: 9 })
+    .toFile(outFile);
+  console.log(`wrote ${outFile}`);
 }
 
-// Picker viewfinder: top-left + bottom-right corner brackets with a
-// transparent middle. Bracket arm length = ~40% of the icon, thickness
-// scales with size so it looks the same density at every scale.
-function brackets(size, fg, halo) {
-  const thickness = Math.max(1, Math.round(size / 12));
-  const armLen = Math.round(size * 0.4);
-  const inset = Math.max(1, Math.round(size / 12));
-  const haloT = halo ? Math.max(1, Math.round(size / 16)) : 0;
+async function run() {
+  const blue = await buildLogoBuffer({ white: false });
+  const white = await buildLogoBuffer({ white: true });
 
-  // Inclusive-bounds rectangle hit-test.
-  const inRect = (x, y, x0, y0, x1, y1) =>
-    x >= x0 && x <= x1 && y >= y0 && y <= y1;
-
-  // The four bracket arms (top-left horizontal/vertical, bottom-right
-  // horizontal/vertical), expressed as rectangles.
-  const tlH = [inset, inset, inset + armLen, inset + thickness - 1];
-  const tlV = [inset, inset, inset + thickness - 1, inset + armLen];
-  const brH = [size - 1 - inset - armLen, size - 1 - inset - thickness + 1, size - 1 - inset, size - 1 - inset];
-  const brV = [size - 1 - inset - thickness + 1, size - 1 - inset - armLen, size - 1 - inset, size - 1 - inset];
-  const arms = [tlH, tlV, brH, brV];
-
-  const onArm = (x, y) => arms.some((r) => inRect(x, y, ...r));
-  const onArmHalo = (x, y) => {
-    if (!haloT) return false;
-    for (const [x0, y0, x1, y1] of arms) {
-      if (inRect(x, y, x0 - haloT, y0 - haloT, x1 + haloT, y1 + haloT)) return true;
-    }
-    return false;
-  };
-
-  return (x, y) => {
-    if (onArm(x, y)) return { ...fg, a: 255 };
-    if (halo && onArmHalo(x, y)) return { ...halo, a: 200 };
-    return null;
-  };
-}
-
-const sizes = [16, 32, 128];
-const states = [
-  { suffix: "", fg: ENABLED_FG, halo: ENABLED_HALO },
-  { suffix: "-disabled", fg: DISABLED_FG, halo: null },
-];
-
-for (const { suffix, fg, halo } of states) {
-  for (const size of sizes) {
-    const file = resolve(iconsDir, `icon-${size}${suffix}.png`);
-    writeFileSync(file, makePng(size, brackets(size, fg, halo)));
-    console.log(`wrote ${file}`);
+  for (const size of SIZES) {
+    await writeIcon({ stem: "icon", size, suffix: "", input: blue, opacity: 1 });
+    await writeIcon({ stem: "icon", size, suffix: "-disabled", input: blue, opacity: 0.52 });
+    await writeIcon({ stem: "icon-white", size, suffix: "", input: white, opacity: 1 });
+    await writeIcon({ stem: "icon-white", size, suffix: "-disabled", input: white, opacity: 0.52 });
   }
 }
+
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

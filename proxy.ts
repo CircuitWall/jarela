@@ -48,11 +48,13 @@ export function proxy(req: NextRequest) {
     );
   }
 
-  // Browser-extension page-capture endpoint carves out of the origin
-  // check: a content script's Origin is `chrome-extension://<id>`, which
-  // never matches Host. The loopback Host gate above is the security
-  // boundary for this route. See ADR-0018.
-  if (req.nextUrl.pathname.startsWith("/api/v1/page-capture")) {
+  // Browser-extension endpoints carve out of the origin check: extension
+  // requests originate from `chrome-extension://<id>`, which never matches
+  // Host. The loopback Host gate above remains the security boundary.
+  if (
+    req.nextUrl.pathname.startsWith("/api/v1/page-capture") ||
+    req.nextUrl.pathname.startsWith("/api/v1/extension/")
+  ) {
     return NextResponse.next();
   }
 

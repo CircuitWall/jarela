@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Jarela Extension</title>
+  <style>
+    :root {
+      --bg: #0f141d;
+      --panel: #1a2230;
+      --border: #2c3b50;
+      --text: #e8eef8;
+      --muted: #9badc7;
+      --accent: #5ba8ff;
+      --accent2: #5fe1b5;
+      --danger: #ff8b8b;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 360px;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+    }
+    main { padding: 12px; }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .stack { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .label { font-size: 11px; color: var(--muted); }
+    .agent-row {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+    .agent-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: #24344d;
+      color: #e8eef8;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .agent-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+    button {
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    button.primary { border-color: #3f79d9; background: #275cb8; }
+    button:hover { filter: brightness(1.08); }
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      padding: 7px 8px;
+      font: 12px/1.3 "Segoe UI", system-ui, sans-serif;
+    }
+    .status {
+      min-height: 18px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .status.ok { color: var(--accent2); }
+    .status.err { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Jarela</h1>
+    <div class="stack">
+      <label class="label" for="agent">Agent</label>
+      <div class="agent-row">
+        <div class="agent-avatar" id="agent-avatar">
+          <img id="agent-avatar-img" alt="Agent icon" />
+          <span id="agent-avatar-fallback">AI</span>
+        </div>
+        <select id="agent"></select>
+      </div>
+    </div>
+    <button id="pick" class="primary" type="button">Select Element For Context</button>
+    <div style="height:8px"></div>
+    <button id="open-jarela" type="button">Open Jarela</button>
+    <div id="status" class="status" aria-live="polite"></div>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

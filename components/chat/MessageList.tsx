@@ -68,13 +68,14 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       if (cat === "scheduled_task") return filters.scheduled_task;
       if (cat === "watcher") return filters.watcher;
       if (cat === "bridge") return filters.bridge;
+      if (cat === "extension") return filters.extension;
       if (cat === "page_capture") return filters.page_capture;
       if (cat === "synthetic") return filters.synthetic;
       // Unknown future categories: show by default so forward-compat clients
       // never silently drop content the server thinks should be visible.
       return true;
     });
-  }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.page_capture, filters.synthetic]);
+  }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
 
@@ -105,6 +106,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       if (m.category === "scheduled_task") set.add("scheduled_task");
       else if (m.category === "watcher") set.add("watcher");
       else if (m.category === "bridge") set.add("bridge");
+      else if (m.category === "extension") set.add("extension");
       else if (m.category === "page_capture") set.add("page_capture");
       else if (m.category === "synthetic") set.add("synthetic");
       if (m.tool_events && m.tool_events.length > 0) set.add("tool_use");
@@ -438,6 +440,7 @@ const CHIP_LABELS: Record<MessageFilterKey, string> = {
   scheduled_task: "scheduled",
   watcher: "watcher",
   bridge: "bridge",
+  extension: "extension",
   page_capture: "captures",
   synthetic: "system",
   tool_use: "tools",
