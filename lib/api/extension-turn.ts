@@ -3,8 +3,9 @@ import { createThread, listThreadsByAgent, type ThreadRow } from "@/lib/stores/t
 import { getAgentConfig, getDefaultAgentConfig, listAgentConfigs, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { composePrompt, ExtensionActionEnum } from "./extension-turn-prompt";
 
-export const ExtensionAction = z.enum(["refine", "fill", "rewrite_clipboard"]);
+export const ExtensionAction = ExtensionActionEnum;
 
 const Body = z.object({
   instruction: z.string().trim().min(1).max(2000),
@@ -67,22 +68,6 @@ function pickThread(agentId?: string): PickResult | { error: "no-agent" } {
     thread_title: t.title,
     created: true,
   };
-}
-
-function composePrompt(action: z.infer<typeof ExtensionAction>, input: z.infer<typeof Body>): string {
-  const header = action === "refine"
-    ? "[Extension refine turn] Improve or refine the selected content based on the instruction below."
-    : action === "fill"
-      ? "[Extension fill turn] Produce text intended to be inserted into the currently focused editable field. Use nearby form context and page context to stay relevant. Return only the final field text."
-      : "[Extension rewrite to clipboard turn] Rewrite the selected text and return only the rewritten text. No commentary.";
-
-  const lines = [header, `Instruction: ${input.instruction}`];
-  if (input.url) lines.push(`URL: ${input.url}`);
-  if (input.title) lines.push(`Title: ${input.title}`);
-  if (input.selector) lines.push(`Selector: ${input.selector}`);
-  if (input.page_context) lines.push("", "Page/form context:", input.page_context);
-  lines.push("", "Selected context:", input.text && input.text.trim().length > 0 ? input.text : "(none provided)");
-  return lines.join("\n");
 }
 
 async function runExtensionAction(action: z.infer<typeof ExtensionAction>, input: z.infer<typeof Body>): Promise<Response> {

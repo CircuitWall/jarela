@@ -445,6 +445,56 @@ async function fillFocusedField(tabId, value) {
   return result;
 }
 
+// Anchors a small rotating SVG spinner to the focused field so the user
+// gets visual confirmation that a fill turn is running. Mirrors the chat
+// CountdownRing geometry (r=5.5, viewBox 14×14) at field-sized scale.
+async function showFillSpinner(tabId) {
+  try {
+    await chrome.scripting.insertCSS({
+      target: { tabId },
+      css: `
+        #jarela-fill-spinner { position: fixed; z-index: 2147483647; pointer-events: none;
+          width: 18px; height: 18px; border-radius: 50%;
+          background: rgba(15, 23, 42, 0.92); box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+          display: flex; align-items: center; justify-content: center; }
+        #jarela-fill-spinner svg { width: 14px; height: 14px; animation: jarela-fill-spin 1s linear infinite; }
+        #jarela-fill-spinner circle { fill: none; stroke: #818cf8; stroke-width: 1.5;
+          stroke-linecap: round; stroke-dasharray: 8.6 26; }
+        @keyframes jarela-fill-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { #jarela-fill-spinner svg { animation: none; } }
+      `,
+    });
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const active = document.activeElement;
+        if (!active) return;
+        const rect = active.getBoundingClientRect();
+        document.getElementById("jarela-fill-spinner")?.remove();
+        const el = document.createElement("div");
+        el.id = "jarela-fill-spinner";
+        el.innerHTML = '<svg viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5"/></svg>';
+        el.style.top = `${Math.max(2, rect.top + 4)}px`;
+        el.style.left = `${Math.max(2, rect.right - 22)}px`;
+        document.body.appendChild(el);
+      },
+    });
+  } catch (err) {
+    console.warn("[jarela] showFillSpinner failed:", err);
+  }
+}
+
+async function hideFillSpinner(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => { document.getElementById("jarela-fill-spinner")?.remove(); },
+    });
+  } catch {
+    // Tab may have navigated away — nothing to clean up.
+  }
+}
+
 async function runRewriteToClipboard(tabId, selectionText, instruction) {
   const selected = (selectionText ?? "").trim();
   if (!selected) {
@@ -518,50 +568,59 @@ async function runFillFocusedField(tabId, selectionText) {
     return;
   }
 
-  const payload = await withSelectedAgent({
-    action: "fill",
-    instruction: "Fill the currently focused field using page/form context and any selected text. Return only the final field text.",
-    url: ctx.url,
-    title: ctx.title,
-    text: ctx.text,
-    page_context: ctx.page_context,
-  });
-  const apiRes = await postJson(extensionTurnUrl(currentConfig), payload);
-  await applyAgentIconHintFromBody(apiRes?.body);
+  // Mirror the chat-window CountdownRing on the focused field so the user
+  // sees the request is in flight — same drain + spin SVG anchored to the
+  // field's bounding rect, removed in finally so errors don't leak it.
+  await showFillSpinner(tabId);
 
-  if (!apiRes?.ok) {
+  try {
+    const payload = await withSelectedAgent({
+      action: "fill",
+      instruction: "Fill the currently focused field using page/form context and any selected text. Return only the final field text.",
+      url: ctx.url,
+      title: ctx.title,
+      text: ctx.text,
+      page_context: ctx.page_context,
+    });
+    const apiRes = await postJson(extensionTurnUrl(currentConfig), payload);
+    await applyAgentIconHintFromBody(apiRes?.body);
+
+    if (!apiRes?.ok) {
+      await chrome.notifications.create({
+        type: "basic",
+        iconUrl: "icons/icon-128.png",
+        title: "Fill failed",
+        message: apiRes?.body?.error ?? `HTTP ${apiRes?.status ?? "?"}`,
+        priority: 1,
+      });
+      return;
+    }
+
+    const out = String(apiRes.body?.assistant ?? "").trim();
+    if (!out) {
+      await chrome.notifications.create({
+        type: "basic",
+        iconUrl: "icons/icon-128.png",
+        title: "Fill failed",
+        message: "The agent returned no content to insert.",
+        priority: 1,
+      });
+      return;
+    }
+
+    const applied = await fillFocusedField(tabId, out);
     await chrome.notifications.create({
       type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "Fill failed",
-      message: apiRes?.body?.error ?? `HTTP ${apiRes?.status ?? "?"}`,
+      iconUrl: applied?.ok ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
+      title: applied?.ok ? "Field filled" : "Fill generated",
+      message: applied?.ok
+        ? "The focused field was filled with the generated text."
+        : `Could not apply text automatically: ${applied?.reason ?? "unknown reason"}`,
       priority: 1,
     });
-    return;
+  } finally {
+    await hideFillSpinner(tabId);
   }
-
-  const out = String(apiRes.body?.assistant ?? "").trim();
-  if (!out) {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "Fill failed",
-      message: "The agent returned no content to insert.",
-      priority: 1,
-    });
-    return;
-  }
-
-  const applied = await fillFocusedField(tabId, out);
-  await chrome.notifications.create({
-    type: "basic",
-    iconUrl: applied?.ok ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
-    title: applied?.ok ? "Field filled" : "Fill generated",
-    message: applied?.ok
-      ? "The focused field was filled with the generated text."
-      : `Could not apply text automatically: ${applied?.reason ?? "unknown reason"}`,
-    priority: 1,
-  });
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {

@@ -17,6 +17,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
+import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 
 interface ExtractedRef {
   title: string;
@@ -201,71 +202,9 @@ function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: bo
   );
 }
 
-// Browser-extension turn message (refine / fill / rewrite_clipboard) as
-// composed by lib/api/extension-turn.ts `composePrompt`. Parses the same
-// structured prompt format the server builds so the user bubble can show
-// a tight header + collapsed body instead of a wall of metadata. Returns
-// null if the text doesn't match — the bubble falls back to plain text.
-interface ExtensionTurnContext {
-  action: "refine" | "fill" | "rewrite_clipboard";
-  actionLabel: string;
-  instruction: string;
-  url: string | null;
-  title: string | null;
-  selector: string | null;
-  pageContext: string | null;
-  selectedText: string | null;
-}
-
-function parseExtensionTurn(raw: string): ExtensionTurnContext | null {
-  const headerRe = /^\[Extension (refine|fill|rewrite to clipboard) turn\][^\n]*\n/;
-  const hm = headerRe.exec(raw);
-  if (!hm) return null;
-  const actionWord = hm[1];
-  const action: ExtensionTurnContext["action"] =
-    actionWord === "fill" ? "fill"
-    : actionWord === "refine" ? "refine"
-    : "rewrite_clipboard";
-  const actionLabel =
-    action === "fill" ? "Fill focused field"
-    : action === "refine" ? "Refine selection"
-    : "Rewrite to clipboard";
-
-  let rest = raw.slice(hm[0].length);
-  function takeLine(label: string): string | null {
-    const re = new RegExp(`^${label}:\\s*([^\\n]*)\\n?`);
-    const m = re.exec(rest);
-    if (!m) return null;
-    rest = rest.slice(m[0].length);
-    return m[1].trim() || null;
-  }
-  const instruction = takeLine("Instruction") ?? "";
-  const url = takeLine("URL");
-  const title = takeLine("Title");
-  const selector = takeLine("Selector");
-
-  let pageContext: string | null = null;
-  const pageHeaderRe = /^\nPage\/form context:\n/;
-  if (pageHeaderRe.test(rest)) {
-    rest = rest.replace(pageHeaderRe, "");
-    const idx = rest.indexOf("\n\nSelected context:");
-    if (idx >= 0) {
-      pageContext = rest.slice(0, idx).trim() || null;
-      rest = rest.slice(idx + 2);
-    }
-  }
-
-  let selectedText: string | null = null;
-  const selHeaderRe = /^\nSelected context:\n([\s\S]*)$/;
-  const sm = selHeaderRe.exec(rest);
-  if (sm) {
-    const body = sm[1].trim();
-    selectedText = body === "(none provided)" ? null : (body || null);
-  }
-
-  return { action, actionLabel, instruction, url, title, selector, pageContext, selectedText };
-}
-
+// Browser-extension turn card. The prompt format and parser live in
+// `lib/api/extension-turn-prompt` so the compose/parse pair stays in sync
+// between the server handler and this view.
 function ExtensionTurnCard({ ctx, accent }: { ctx: ExtensionTurnContext; accent: boolean }) {
   const [open, setOpen] = useState(false);
   const hostname = ctx.url ? (() => { try { return new URL(ctx.url!).hostname; } catch { return ctx.url!; } })() : null;
