@@ -45,35 +45,6 @@
         linear-gradient(180deg, var(--bg-grad-1), var(--bg-grad-2));
     }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 14px;
-    }
-    .brand-mark {
-      width: 28px; height: 28px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #5ba8ff, #2f7af0);
-      box-shadow: 0 4px 12px rgba(47, 122, 240, 0.35);
-      display: grid; place-items: center;
-      color: #fff;
-      font-weight: 700;
-      font-size: 13px;
-      letter-spacing: 0.3px;
-    }
-    .brand-title {
-      margin: 0;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-    }
-    .brand-subtitle {
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 1px;
-    }
-
     .card {
       background: linear-gradient(180deg, var(--panel-2), var(--panel));
       border: 1px solid var(--border);
@@ -82,6 +53,8 @@
       padding: 12px;
       margin-bottom: 12px;
     }
+
+    .agent-header { padding: 10px 12px; }
 
     .field-label {
       display: block;
@@ -231,16 +204,7 @@
 </head>
 <body>
   <main>
-    <header class="brand">
-      <div class="brand-mark" aria-hidden="true">J</div>
-      <div>
-        <h1 class="brand-title">Jarela</h1>
-        <div class="brand-subtitle">Browser companion</div>
-      </div>
-    </header>
-
-    <section class="card">
-      <label class="field-label" for="agent">Active agent</label>
+    <header class="card agent-header">
       <div class="agent-row">
         <div class="agent-avatar" id="agent-avatar">
           <img id="agent-avatar-img" alt="" />
@@ -250,7 +214,7 @@
           <select id="agent" aria-label="Active agent"></select>
         </div>
       </div>
-    </section>
+    </header>
 
     <section class="actions">
       <button id="pick" class="primary" type="button">
