@@ -45,8 +45,8 @@ export const FULL_PROFILE: TurnContextProfile = {
 export const ONE_SHOT_PROFILE: TurnContextProfile = {
   include_hot: false,
   include_warm: false,
-  include_facts: true,
-  include_recall: true,
+  include_facts: false,
+  include_recall: false,
 };
 
 // Category → profile. Add new categories alongside `AgentTurnQueueSource`.

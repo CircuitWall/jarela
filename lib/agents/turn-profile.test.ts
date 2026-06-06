@@ -16,9 +16,9 @@ describe("turn-profile", () => {
     expect(TURN_PROFILES.trigger).toEqual(ONE_SHOT_PROFILE);
   });
 
-  it("ONE_SHOT_PROFILE keeps facts and recall on", () => {
-    expect(ONE_SHOT_PROFILE.include_facts).toBe(true);
-    expect(ONE_SHOT_PROFILE.include_recall).toBe(true);
+  it("ONE_SHOT_PROFILE has every context source disabled", () => {
+    expect(ONE_SHOT_PROFILE.include_facts).toBe(false);
+    expect(ONE_SHOT_PROFILE.include_recall).toBe(false);
     expect(ONE_SHOT_PROFILE.include_hot).toBe(false);
     expect(ONE_SHOT_PROFILE.include_warm).toBe(false);
   });

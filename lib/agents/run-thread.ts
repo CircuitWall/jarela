@@ -216,8 +216,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // shows what we *would have* spent on hot/warm — useful when debugging
   // why an extension turn answered with the field's own context only.
   const profile = req.context_profile;
+  // include_hot=false strips PRIOR thread history but must keep the current
+  // turn's user message, otherwise the LLM is called with only a system
+  // prompt (e.g. Gemini rejects with "contents is not specified").
   const effectiveHistory = profile && profile.include_hot === false
-    ? []
+    ? [{ role: "user" as const, content }]
     : historyWindow.history;
   const effectiveWarmSummary = profile && profile.include_warm === false
     ? ""
