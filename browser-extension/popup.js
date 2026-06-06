@@ -29,19 +29,34 @@ async function callBackground(type, payload) {
 function renderAgentAvatar(agent) {
   const img = document.getElementById("agent-avatar-img");
   const fallback = document.getElementById("agent-avatar-fallback");
-  const icon = typeof agent?.icon === "string" ? agent.icon.trim() : "";
+  const rawIcon = typeof agent?.icon === "string" ? agent.icon.trim() : "";
+  // bundle:* literals are toolbar-icon hints, not real image URLs — they
+  // would 404 silently as <img src> and leave the avatar blank. Treat them
+  // (and anything else that's clearly not a URL / data URL) as "no icon"
+  // so the initials fallback renders.
+  const isLoadable =
+    rawIcon.length > 0 &&
+    !rawIcon.toLowerCase().startsWith("bundle:") &&
+    (rawIcon.startsWith("data:") || rawIcon.startsWith("http://") || rawIcon.startsWith("https://") || rawIcon.startsWith("/"));
 
-  if (icon.length > 0) {
-    img.src = icon;
-    img.style.display = "block";
-    fallback.style.display = "none";
+  function showFallback() {
+    img.style.display = "none";
+    img.removeAttribute("src");
+    fallback.textContent = initials(agent?.name ?? "AI");
+    fallback.style.display = "inline";
+  }
+
+  if (!isLoadable) {
+    showFallback();
     return;
   }
 
-  img.style.display = "none";
-  img.removeAttribute("src");
-  fallback.textContent = initials(agent?.name ?? "AI");
-  fallback.style.display = "inline";
+  img.onerror = () => { showFallback(); };
+  img.onload = () => {
+    img.style.display = "block";
+    fallback.style.display = "none";
+  };
+  img.src = rawIcon;
 }
 
 async function loadAgents() {

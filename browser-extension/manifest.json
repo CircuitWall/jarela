@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Jarela Page Capture",
+  "name": "Jarela",
   "version": "0.1.0",
-  "description": "Pick an element on any page and send it to your local Jarela agent.",
+  "description": "Browser companion for Jarela: pick page elements, fill fields, rewrite text, and open the side panel.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "storage", "alarms", "notifications", "contextMenus", "sidePanel"],
   "optional_permissions": ["management"],
