@@ -59,6 +59,11 @@ export function getThread(thread_id: string): ThreadRow | null {
 }
 
 export function createThread(agent_id: string, title?: string): ThreadRow {
+  const existing = getDb()
+    .prepare("SELECT * FROM threads WHERE agent_id=? LIMIT 1")
+    .get(agent_id) as ThreadRow | undefined;
+  if (existing) return existing;
+
   const t = now();
   const thread_id = randomUUID();
   getDb()
@@ -183,10 +188,6 @@ export function setMessageMetadata(msg_id: string, metadata: Record<string, unkn
 }
 
 export function getOrCreateAgentThread(agentId: string): ThreadRow {
-  const existing = getDb()
-    .prepare("SELECT * FROM threads WHERE agent_id=? LIMIT 1")
-    .get(agentId) as ThreadRow | undefined;
-  if (existing) return existing;
   return createThread(agentId);
 }
 

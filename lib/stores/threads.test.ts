@@ -9,6 +9,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 const {
   addMessage,
   createThread,
+  listThreadsByAgent,
   getMessages,
   getThread,
   setThreadContextPin,
@@ -24,6 +25,13 @@ afterAll(() => {
 describe("thread context pin (ADR-0042)", () => {
   beforeEach(() => {
     for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("createThread is idempotent per agent (one thread per agent)", () => {
+    const first = createThread("agent-x", "Primary");
+    const second = createThread("agent-x", "Should be ignored");
+    expect(second.thread_id).toBe(first.thread_id);
+    expect(listThreadsByAgent("agent-x", 10)).toHaveLength(1);
   });
 
   it("starts with no pin and no cached warm summary", () => {
