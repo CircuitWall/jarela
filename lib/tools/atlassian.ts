@@ -3089,9 +3089,9 @@ registerTools("Atlassian", "read", [
   confluenceGetCommentsTool, confluenceListAttachmentsTool,
   confluenceGetLabelsTool, confluenceGetAttachmentContentTool,
 ]);
-registerTools("Atlassian", "execute", [
+registerTools("Atlassian", "write", [
   jiraCreateIssueTool, jiraCreateIssuesBulkTool, jiraUpdateIssueTool,
-  jiraAddCommentTool, jiraTransitionsTool,
+  jiraAddCommentTool,
   jiraLinkIssuesTool, jiraAddRemoteLinkTool, jiraDeleteLinkTool,
   jiraUploadAttachmentTool, jiraDeleteIssueTool,
   jiraCreateSprintTool, jiraUpdateSprintTool, jiraDeleteSprintTool,
@@ -3105,3 +3105,4 @@ registerTools("Atlassian", "execute", [
   confluenceDeletePageTool, confluenceUpdateCommentTool, confluenceDeleteCommentTool,
   confluenceRemoveLabelTool, confluenceDeleteAttachmentTool,
 ]);
+registerTools("Atlassian", "execute", [jiraTransitionsTool]);

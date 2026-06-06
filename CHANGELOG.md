@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool capability re-classification.** The `Capability` axis now
+  reflects what a non-power user expects to see, not the HTTP method.
+  Record edits (create / update / delete / add / move / upload / draft)
+  are `write` regardless of whether they hit local SQLite or a remote
+  API. `execute` is reserved for tools that *perform an action* beyond
+  editing a record: arbitrary code (shell), server lifecycle (restart,
+  env-var), generated artifacts (image, voice), agent delegation,
+  workflow transitions (Jira / JA `transitions`), and PR merges. About
+  fifty tools moved from `execute` to `write` across Atlassian,
+  GitHub, Gmail, Outlook, Calendar, and Jira Align. ADR-0038 amended
+  to drop the locality-based tie-breaker.
+
 ## [1.0.0] - 2026-06-06
 
 First **stable** release. The package surface is now formally locked,
