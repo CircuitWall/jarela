@@ -752,7 +752,20 @@ async function runFillFocusedField(tabId, selectionText, hintFrameId) {
   try {
     const payload = await withSelectedAgent({
       action: "fill",
-      instruction: "Fill the currently focused field using page/form context and any selected text. Return only the final field text.",
+      instruction: [
+        "Fill the currently focused field on the page.",
+        "Use ONLY context that is clearly relevant to this specific field:",
+        "the field's own label, name, placeholder, aria-label, and any",
+        "selected text the user highlighted. Treat the nearby section text",
+        "as background only — pull from it only when it directly answers",
+        "what this field is asking for, and ignore unrelated headings,",
+        "navigation, ads, sidebars, comments, or boilerplate.",
+        "Match the field's expected format (length, tone, language) and",
+        "do not invent facts that are not present in the field's own",
+        "context or the selected text.",
+        "Return ONLY the final text to insert into the field — no",
+        "preamble, no quotes, no markdown fencing, no explanation.",
+      ].join(" "),
       url: ctx.url,
       title: ctx.title,
       text: ctx.text,
