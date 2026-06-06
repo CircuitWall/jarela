@@ -588,7 +588,8 @@ registerTools("JiraAlign", "read", [
   jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
   jiraAlignListEntitiesTool, jiraAlignGetEntityTool,
 ]);
-registerTools("JiraAlign", "execute", [
-  jiraAlignCreateItemTool, jiraAlignUpdateItemTool, jiraAlignTransitionItemTool,
+registerTools("JiraAlign", "write", [
+  jiraAlignCreateItemTool, jiraAlignUpdateItemTool,
   jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
 ]);
+registerTools("JiraAlign", "execute", [jiraAlignTransitionItemTool]);
