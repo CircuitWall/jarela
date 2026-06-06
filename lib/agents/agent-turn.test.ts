@@ -68,8 +68,8 @@ describe("runAgentTurn", () => {
       context_profile: {
         include_hot: false,
         include_warm: false,
-        include_facts: true,
-        include_recall: true,
+        include_facts: false,
+        include_recall: false,
       },
       _pinned_model_config_name: "Gemini Chat",
       _skip_persist_message: undefined,

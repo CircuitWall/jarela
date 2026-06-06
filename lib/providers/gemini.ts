@@ -133,6 +133,49 @@ function invokeMessagesToGemini(messages: InvokeMessage[]): {
   return { systemInstruction, contents };
 }
 
+// Gemini's tool-schema endpoint accepts only the OpenAPI 3.0 subset documented
+// at https://ai.google.dev/api/caching#Schema. Zod 4 emits JSON Schema 2020-12
+// with `$schema`, `additionalProperties`, numeric `exclusiveMinimum`, and
+// `propertyNames` — Gemini rejects every unknown key with HTTP 400. Whitelist
+// the accepted keys (recursively) and translate numeric exclusiveMinimum /
+// exclusiveMaximum into plain `minimum` / `maximum` so range hints survive.
+const GEMINI_SCHEMA_KEYS = new Set([
+  "type", "format", "description", "nullable", "enum", "items", "properties",
+  "required", "minimum", "maximum", "minItems", "maxItems", "minLength",
+  "maxLength", "pattern", "example", "default", "anyOf", "propertyOrdering",
+  "title",
+]);
+
+function sanitizeGeminiSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sanitizeGeminiSchema);
+  if (!value || typeof value !== "object") return value;
+  const src = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(src)) {
+    if (k === "exclusiveMinimum" && typeof v === "number") {
+      if (out.minimum === undefined) out.minimum = v;
+      continue;
+    }
+    if (k === "exclusiveMaximum" && typeof v === "number") {
+      if (out.maximum === undefined) out.maximum = v;
+      continue;
+    }
+    if (!GEMINI_SCHEMA_KEYS.has(k)) continue;
+    if (k === "properties" && v && typeof v === "object") {
+      const props: Record<string, unknown> = {};
+      for (const [pk, pv] of Object.entries(v as Record<string, unknown>)) {
+        props[pk] = sanitizeGeminiSchema(pv);
+      }
+      out[k] = props;
+    } else if (k === "items" || k === "anyOf") {
+      out[k] = sanitizeGeminiSchema(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 function toGeminiTools(tools: OpenAITool[], params: ProviderParams): unknown[] | undefined {
   const out: unknown[] = [];
   if (tools.length > 0) {
@@ -142,7 +185,7 @@ function toGeminiTools(tools: OpenAITool[], params: ProviderParams): unknown[] |
         .map((t) => ({
           name: t.function.name,
           description: t.function.description ?? "",
-          parameters: t.function.parameters,
+          parameters: sanitizeGeminiSchema(t.function.parameters),
         })),
     });
   }
@@ -434,7 +477,8 @@ export const geminiProvider: ModelProvider = {
     if (isCompatMode(params)) return geminiCompat.chat(model_id, messages, params);
     try {
       return await geminiNativeChat(model_id, messages, params);
-    } catch {
+    } catch (err) {
+      console.warn("[gemini] native chat failed, falling back to OpenAI-compat:", err);
       return geminiCompat.chat(model_id, messages, params);
     }
   },
@@ -446,7 +490,8 @@ export const geminiProvider: ModelProvider = {
     }
     try {
       return await geminiNativeInvoke(model_id, messages, params, tools);
-    } catch {
+    } catch (err) {
+      console.warn("[gemini] native invoke failed, falling back to OpenAI-compat:", err);
       if (!geminiCompat.invoke) throw new Error("Gemini compat provider has no invoke() implementation");
       return geminiCompat.invoke(model_id, messages, params, tools);
     }
@@ -460,7 +505,8 @@ export const geminiProvider: ModelProvider = {
     return (async function* (): AsyncIterable<ProviderStreamEvent> {
       try {
         yield* geminiNativeStreamInvoke(model_id, messages, params, tools);
-      } catch {
+      } catch (err) {
+        console.warn("[gemini] native streamInvoke failed, falling back to OpenAI-compat:", err);
         if (!geminiCompat.streamInvoke) throw new Error("Gemini compat provider has no streamInvoke() implementation");
         yield* geminiCompat.streamInvoke(model_id, messages, params, tools);
       }
