@@ -311,6 +311,6 @@ export const outlookTrashMessageTool = tool(
 registerTools("Mail", "read", [
   outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
 ]);
-registerTools("Mail", "execute", [
+registerTools("Mail", "write", [
   outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
 ]);

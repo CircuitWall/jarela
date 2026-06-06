@@ -105,34 +105,37 @@ Definitions (kept tight on purpose):
   observation. Includes network GETs that don't trigger side effects on
   the remote. Examples: `memory_read`, `file_list`, `web_fetch`,
   `jira_search`, `gmail_search`, `documents_search`.
-* **`write`** — mutates *local* persisted state owned by Jarela:
-  `~/.jarela` SQLite tables, the file store, files in directories the
-  user controls. No external visibility. Examples: `memory_write`,
-  `file_write`, `schedule_task`, `documents_add_local_source`,
-  `propose_config_change`.
-* **`execute`** — invokes external systems with side effects users see
-  outside Jarela, OR runs arbitrary code. Includes external API
-  mutations, shell exec, image/voice generation calls (paid + visible),
-  delegating to another agent (arbitrary tool calls downstream).
-  Examples: `local_exec`, `shell_exec`, `generate_image`,
-  `delegate_to_agent`, `jira_create_issue`, `github_merge_pull`,
-  `gmail_create_draft`, `calendar_create_event`.
+* **`write`** — mutates persisted state, local or remote. Edits a
+  record. A non-power user reading the label thinks "this is changing
+  data". Examples: `memory_write`, `file_write`, `schedule_task`,
+  `documents_add_local_source`, `propose_config_change`,
+  `jira_create_issue`, `jira_add_comment`, `github_create_pull`,
+  `gmail_create_draft`, `calendar_create_event`,
+  `confluence_update_page`.
+* **`execute`** — *performs an action* whose effect is more than
+  editing a record: runs arbitrary code, ships a deliverable, triggers
+  downstream automation, or transitions a workflow state. A non-power
+  user thinks "this is doing something, not just editing". Examples:
+  `local_exec`, `shell_exec`, `restart_server`, `set_env_var`,
+  `generate_image`, `generate_voice`, `delegate_to_agent`,
+  `jira_transitions`, `jira_align_transition_item`, `github_merge_pull`.
 
 The water gets murky in three places, settled by these tie-breakers:
 
-* **Network reads vs writes.** A GET that observes is `read`. A POST
-  that posts a comment is `execute`. A PUT that updates is `execute`.
-  Network round-trips with side effects on the remote always count as
-  `execute`, even when the body is short.
-* **Local state mutation that is hard to undo (file_delete) vs easy to
-  undo (memory_write to a key the user can overwrite).** Both are
-  `write`. The destructive-vs-recoverable distinction can be a future
-  sub-flavor if needed; for now, "did anything outside Jarela observe
-  it?" is the clean line.
-* **Mail draft vs mail send.** Drafts are `execute` because they touch
-  the external mail provider's draft list, which the user *will* see
-  next time they open the mail client. The provider is the source of
-  truth, not Jarela.
+* **Local vs remote record edits.** Both are `write`. The line is
+  "would the user describe this as editing data?", not "who owns the
+  storage?". `jira_update_issue` and `memory_write` are both `write`.
+* **Workflow transitions vs field updates.** Transitioning an issue
+  (Jira `transitions`, JA `transition_item`) is `execute` — it fires
+  notifications and automations and changes how the work item shows up
+  to other people. Updating a description field on the same issue is
+  `write`.
+* **PR open/update vs PR merge.** Opening or updating a PR is `write`
+  (records being edited). Merging the PR is `execute` because it
+  triggers CI, deploys, and side effects nobody opted into per-merge.
+* **Mail draft vs mail send.** Drafts are `write` — the user still
+  controls whether they go out. A direct send (when wired) would be
+  `execute`. Trash is `write` (a folder move, recoverable).
 
 ### Registry shape
 

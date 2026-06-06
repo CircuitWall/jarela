@@ -949,10 +949,12 @@ registerTools("GitHub", "read", [
   // Repo content
   githubGetRepoTool, githubListBranchesTool, githubGetFileTool, githubSearchCodeTool,
 ]);
-registerTools("GitHub", "execute", [
-  // Issues — write/execute
+registerTools("GitHub", "write", [
+  // Issues
   githubCreateIssueTool, githubUpdateIssueTool, githubAddCommentTool,
-  // Pull requests — write/execute
-  githubCreatePullTool, githubUpdatePullTool, githubMergePullTool,
+  // Pull requests (record edits — open/update/review)
+  githubCreatePullTool, githubUpdatePullTool,
   githubRequestReviewersTool, githubCreateReviewTool,
 ]);
+// merge_pull is execute: it triggers CI, deploys, and downstream automation.
+registerTools("GitHub", "execute", [githubMergePullTool]);

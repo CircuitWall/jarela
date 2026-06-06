@@ -361,6 +361,6 @@ export const calendarDeleteEventTool = tool(
 registerTools("Calendar", "read", [
   calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool,
 ]);
-registerTools("Calendar", "execute", [
+registerTools("Calendar", "write", [
   calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool,
 ]);
