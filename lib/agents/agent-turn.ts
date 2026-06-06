@@ -1,5 +1,5 @@
 import type { ContentPart } from "@/lib/tools/types";
-import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
+import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigName } from "@/lib/agents/run-thread";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
@@ -38,12 +38,14 @@ export interface RunAgentTurnResult {
  * they all share the same silent-mode and persistence rules.
  */
 export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTurnResult> {
+  const pinnedModelConfigName = snapshotThreadModelConfigName(req.thread_id);
   const enqueued = enqueueThreadRun(req.thread_id, req.queue_source, async () => {
     const prepared = await prepareThreadRun({
       thread_id: req.thread_id,
       message: req.message,
       attachments: req.attachments,
       user_category: req.user_category ?? null,
+      _pinned_model_config_name: pinnedModelConfigName,
     });
 
     const collected = await collectStream(prepared.stream);

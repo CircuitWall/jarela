@@ -4,6 +4,7 @@ const enqueueThreadRunMock = vi.fn();
 const prepareThreadRunMock = vi.fn();
 const collectStreamMock = vi.fn();
 const persistAssistantMessageMock = vi.fn();
+const snapshotThreadModelConfigNameMock = vi.fn();
 
 vi.mock("@/lib/agents/run-queue", () => ({
   enqueueThreadRun: (...args: unknown[]) => enqueueThreadRunMock(...args),
@@ -12,6 +13,7 @@ vi.mock("@/lib/agents/run-queue", () => ({
 vi.mock("@/lib/agents/run-thread", () => ({
   prepareThreadRun: (...args: unknown[]) => prepareThreadRunMock(...args),
   persistAssistantMessage: (...args: unknown[]) => persistAssistantMessageMock(...args),
+  snapshotThreadModelConfigName: (...args: unknown[]) => snapshotThreadModelConfigNameMock(...args),
 }));
 
 vi.mock("@/lib/agents/stream-collector", () => ({
@@ -26,6 +28,7 @@ describe("runAgentTurn", () => {
     prepareThreadRunMock.mockReset();
     collectStreamMock.mockReset();
     persistAssistantMessageMock.mockReset();
+    snapshotThreadModelConfigNameMock.mockReset();
 
     enqueueThreadRunMock.mockImplementation((thread_id: string, _source: string, runner: () => Promise<unknown>) => ({
       position: 0,
@@ -38,6 +41,7 @@ describe("runAgentTurn", () => {
       context_snapshot: null,
       source_manifest: null,
     });
+    snapshotThreadModelConfigNameMock.mockReturnValue("Gemini Chat");
   });
 
   it("queues, prepares, collects, and persists by default", async () => {
@@ -61,6 +65,7 @@ describe("runAgentTurn", () => {
       message: "Ping",
       attachments: undefined,
       user_category: "scheduled_task",
+      _pinned_model_config_name: "Gemini Chat",
     });
     expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
     expect(out.skippedAssistant).toBe(false);

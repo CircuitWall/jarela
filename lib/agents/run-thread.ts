@@ -109,6 +109,16 @@ function contentText(content: string | ContentPart[]): string {
     .join(" ");
 }
 
+export function snapshotThreadModelConfigName(thread_id: string): string | null {
+  const thread = getThread(thread_id);
+  if (!thread) return null;
+
+  const agentCfg = getAgentConfig(thread.agent_id);
+  if (!agentCfg) return null;
+
+  return agentCfg.model_config_name ?? getDefaultModelConfig()?.name ?? null;
+}
+
 /**
  * Per-turn entry point. Validates the request, persists the user message,
  * builds the history window + system prompt, kicks off the LLM stream, and
@@ -152,9 +162,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
-  const modelCfg = agentCfg.model_config_name
-    ? getModelConfig(agentCfg.model_config_name)
-    : getDefaultModelConfig();
+  const modelConfigName = req._pinned_model_config_name
+    ?? agentCfg.model_config_name
+    ?? getDefaultModelConfig()?.name
+    ?? null;
+  const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
   const baseProviderParams = getModelParams(modelCfg);
 
   // ADR-0043 — per-agent override of context_tier_proportions. The agent's
@@ -227,7 +239,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     agent_run_config: {
       system_prompt: systemPrompt,
       allowed_tools: allowedTools,
-      model_config_name: agentCfg.model_config_name ?? null,
+      model_config_name: modelConfigName,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }
         : undefined,
