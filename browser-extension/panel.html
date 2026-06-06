@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jarela</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #0b1220;
+      color: #dbe7ff;
+      font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+    }
+    #frame {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #0b1220;
+    }
+    #fallback {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      text-align: center;
+    }
+    #fallback a {
+      color: #7db3ff;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="frame" title="Jarela"></iframe>
+  <div id="fallback">
+    <div>
+      <div>Unable to load Jarela in the side panel.</div>
+      <div><a id="open-link" target="_blank" rel="noreferrer">Open Jarela in a tab</a></div>
+    </div>
+  </div>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

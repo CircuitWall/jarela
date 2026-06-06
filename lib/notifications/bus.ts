@@ -65,12 +65,13 @@ export type NotificationEvent =
     }
   | {
       // A new message landed in a thread without an active LLM run firing —
-      // currently published by the browser-extension page-capture route so
-      // the open chat view re-fetches without waiting for the next run.
+      // currently published by the browser-extension page-capture route and
+      // by extension refine/fill/rewrite turns so the open chat view
+      // re-fetches without waiting for the next run.
       type: "thread_message_added";
       thread_id: string;
       agent_id: string;
-      source: "page_capture";
+      source: "page_capture" | "extension";
       ts: number;
     }
   | {

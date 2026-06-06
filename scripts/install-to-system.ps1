@@ -121,6 +121,19 @@ foreach ($v in $victims) {
   Info ("  killing PID " + $v.ProcessId + " (" + $v.Name + ")")
   try { Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
 }
+# Belt-and-suspenders: kill any process still running from the install dir,
+# excluding this installer process itself.
+$selfPid = $PID
+$extraVictims = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+  Where-Object {
+    $_.ProcessId -ne $selfPid -and
+    $_.CommandLine -and
+    $_.CommandLine -match $installDirEsc
+  }
+foreach ($v in $extraVictims) {
+  Info ("  killing stray PID " + $v.ProcessId + " (" + $v.Name + ")")
+  try { Stop-Process -Id $v.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+}
 # Also free the port in case some unrelated squatter is on it. Skip our own
 # node � that was just killed above.
 $busy = Get-NetTCPConnection -LocalPort 4312 -State Listen -ErrorAction SilentlyContinue
@@ -139,18 +152,33 @@ Step "Clearing install dir contents at $InstallDir"
 if (-not (Test-Path $InstallDir)) {
   New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 }
-# Two-pass clear so individual locked files don't abort the whole step.
-$failed = @()
+
+# First pass: mirror an empty directory into the install dir. This deletes
+# stale files that are no longer part of the current standalone bundle.
+$emptyMirror = Join-Path $env:TEMP ("jarela-empty-" + [Guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $emptyMirror -Force | Out-Null
+try {
+  & robocopy $emptyMirror $InstallDir /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+  $rc = $LASTEXITCODE
+  if ($rc -ge 8) {
+    throw "robocopy mirror clear failed (exit $rc)"
+  }
+} finally {
+  try { Remove-Item -LiteralPath $emptyMirror -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+}
+
+# Second pass: explicit remove for anything still left.
 Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue | ForEach-Object {
   try { Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop }
-  catch { $failed += $_.FullName }
+  catch { Info ("  could not remove: " + $_.FullName + " - " + $_.Exception.Message) }
 }
-if ($failed.Count -gt 0) {
-  Start-Sleep -Seconds 2
-  foreach ($p in $failed) {
-    try { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction Stop }
-    catch { Info ("  could not remove: $p � $($_.Exception.Message)") }
-  }
+
+# Hard guarantee: never continue with a mixed tree. Abort install if cleanup
+# leaves anything behind, so we do not copy a new build over stale code.
+$leftovers = Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue
+if ($leftovers.Count -gt 0) {
+  $sample = ($leftovers | Select-Object -First 10 -ExpandProperty FullName) -join "`n"
+  throw "Install dir is not empty after cleanup. Refusing to continue to avoid stale code.`n$sample"
 }
 
 # ── 4. Copy standalone bundle ──────────────────────────────────────────────

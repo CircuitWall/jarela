@@ -14,6 +14,7 @@ import {
 } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
+import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 
 interface DelegateContext {
   parentAgentId: string;
@@ -84,6 +85,7 @@ export const delegateToAgentTool = tool(
           thread_id: childThread.thread_id,
           message: task,
           user_category: "delegation",
+          context_profile: resolveTurnProfile("delegate"),
           _delegation_depth: ctx.depth + 1,
           _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
         });

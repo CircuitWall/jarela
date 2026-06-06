@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -17,6 +17,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
+import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 
 interface ExtractedRef {
   title: string;
@@ -148,22 +149,66 @@ function parseCapturedContext(raw: string): CapturedContext | null {
 // already has the full text in the thread regardless of expand state — this
 // is purely a UI affordance to keep ~100KB blobs from blowing the chat layout.
 function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: boolean }) {
-  const [open, setOpen] = useState(false);
   const hostname = (() => { try { return new URL(ctx.url).hostname; } catch { return ctx.url; } })();
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`flex items-center gap-2 text-left min-w-0 ${accent ? "text-white/95 hover:text-white" : "text-fg hover:text-fg-muted"}`}
-        aria-expanded={open}
-        title={open ? "Hide captured content" : "Show captured content"}
+  const chips = (
+    <>
+      <a
+        href={ctx.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="inline-flex items-center gap-1 underline decoration-dotted hover:decoration-solid truncate max-w-[18rem]"
+        title={ctx.url}
       >
-        <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
-        <Paperclip size={12} className="shrink-0" />
-        <span className="text-[13px] font-medium truncate min-w-0">{ctx.title || hostname}</span>
-      </button>
-      <div className={`flex flex-wrap items-center gap-1.5 text-[10px] pl-5 ${accent ? "text-white/75" : "text-fg-faint"}`}>
+        <LinkIcon size={9} className="shrink-0" />
+        <span className="truncate">{hostname}</span>
+      </a>
+      {ctx.selector && (
+        <span
+          className={`px-1.5 py-0.5 rounded font-mono ${accent ? "bg-white/15" : "bg-surface-3"}`}
+          title={ctx.selector}
+        >
+          {ctx.selector.length > 36 ? `…${ctx.selector.slice(-33)}` : ctx.selector}
+        </span>
+      )}
+      {ctx.truncated && (
+        <span
+          className={`px-1.5 py-0.5 rounded ${accent ? "bg-amber-300/25 text-amber-50" : "bg-amber-900/30 text-amber-300"}`}
+          title={ctx.originalBytes ? `Original was ${ctx.originalBytes.toLocaleString()} bytes` : undefined}
+        >
+          truncated to 100KB
+        </span>
+      )}
+    </>
+  );
+  const sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = ctx.body
+    ? [{
+        label: "Captured content",
+        defaultOpen: false,
+        content: <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.body}</p>,
+      }]
+    : [];
+  return (
+    <StructuredTurnCard
+      categoryKey="page_capture"
+      Icon={Paperclip}
+      title={ctx.title || hostname}
+      titleTooltip={ctx.url}
+      chips={chips}
+      sections={sections}
+      accent={accent}
+    />
+  );
+}
+
+// Browser-extension turn card. The prompt format and parser live in
+// `lib/api/extension-turn-prompt` so the compose/parse pair stays in sync
+// between the server handler and this view.
+function ExtensionTurnCard({ ctx, accent }: { ctx: ExtensionTurnContext; accent: boolean }) {
+  const hostname = ctx.url ? (() => { try { return new URL(ctx.url!).hostname; } catch { return ctx.url!; } })() : null;
+  const chips = (ctx.url || ctx.selector || ctx.selectedText) ? (
+    <>
+      {ctx.url && hostname && (
         <a
           href={ctx.url}
           target="_blank"
@@ -173,28 +218,194 @@ function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: bo
           title={ctx.url}
         >
           <LinkIcon size={9} className="shrink-0" />
-          <span className="truncate">{hostname}</span>
+          <span className="truncate">{ctx.title || hostname}</span>
         </a>
-        {ctx.selector && (
-          <span
-            className={`px-1.5 py-0.5 rounded font-mono ${accent ? "bg-white/15" : "bg-surface-3"}`}
-            title={ctx.selector}
-          >
-            {ctx.selector.length > 36 ? `…${ctx.selector.slice(-33)}` : ctx.selector}
-          </span>
-        )}
-        {ctx.truncated && (
-          <span
-            className={`px-1.5 py-0.5 rounded ${accent ? "bg-amber-300/25 text-amber-50" : "bg-amber-900/30 text-amber-300"}`}
-            title={ctx.originalBytes ? `Original was ${ctx.originalBytes.toLocaleString()} bytes` : undefined}
-          >
-            truncated to 100KB
-          </span>
-        )}
+      )}
+      {ctx.selector && (
+        <span
+          className={`px-1.5 py-0.5 rounded font-mono ${accent ? "bg-white/15" : "bg-surface-3"}`}
+          title={ctx.selector}
+        >
+          {ctx.selector.length > 36 ? `…${ctx.selector.slice(-33)}` : ctx.selector}
+        </span>
+      )}
+      {ctx.selectedText && (
+        <span className={`px-1.5 py-0.5 rounded ${accent ? "bg-white/15" : "bg-surface-3"}`}>
+          {`${ctx.selectedText.length.toLocaleString()} chars selected`}
+        </span>
+      )}
+    </>
+  ) : null;
+
+  const sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [];
+  if (ctx.instruction) {
+    sections.push({
+      label: "Instruction",
+      defaultOpen: false,
+      content: <MarkdownContent text={ctx.instruction} />,
+    });
+  }
+  if (ctx.selectedText || ctx.pageContext) {
+    sections.push({
+      label: "Context",
+      defaultOpen: false,
+      content: (
+        <div className="flex flex-col gap-2">
+          {ctx.selectedText && (
+            <div>
+              <div className={`text-[9.5px] uppercase tracking-wide mb-0.5 ${accent ? "text-white/55" : "text-fg-faint"}`}>Selected</div>
+              <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.selectedText}</p>
+            </div>
+          )}
+          {ctx.pageContext && (
+            <div>
+              <div className={`text-[9.5px] uppercase tracking-wide mb-0.5 ${accent ? "text-white/55" : "text-fg-faint"}`}>Page</div>
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed opacity-80">{ctx.pageContext}</p>
+            </div>
+          )}
+        </div>
+      ),
+    });
+  }
+
+  return (
+    <StructuredTurnCard
+      categoryKey="extension"
+      Icon={Zap}
+      title={ctx.actionLabel}
+      chips={chips}
+      sections={sections}
+      accent={accent}
+    />
+  );
+}
+
+// Small source-channel badge shown at the top of assistant bubbles that
+// were triggered by automation (bridge reply, scheduled task reply, etc.).
+// Lets the user tell at a glance which automation channel generated the
+// response without needing to scroll up to the corresponding user bubble.
+const CATEGORY_BADGE: Record<string, { label: string; Icon: React.ElementType; cls: string }> = {
+  scheduled_task: { label: "Scheduled", Icon: Clock,          cls: "text-violet-400/90 border-violet-500/30 bg-violet-950/30" },
+  watcher:        { label: "Watcher",   Icon: Eye,            cls: "text-amber-400/90  border-amber-500/30  bg-amber-950/30" },
+  bridge:         { label: "Bridge",    Icon: MessageCircle,  cls: "text-sky-400/90    border-sky-500/30    bg-sky-950/30" },
+  page_capture:   { label: "Capture",   Icon: Globe,          cls: "text-teal-400/90   border-teal-500/30   bg-teal-950/30" },
+  extension:      { label: "Extension", Icon: Zap,            cls: "text-indigo-400/90 border-indigo-500/30 bg-indigo-950/30" },
+  synthetic:      { label: "System",    Icon: Bot,            cls: "text-fg-faint      border-border/40     bg-surface-2" },
+};
+
+function CategorySourceBadge({ category }: { category: string }) {
+  const def = CATEGORY_BADGE[category];
+  if (!def) return null;
+  const { label, Icon, cls } = def;
+  return (
+    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium mb-1.5 self-start ${cls}`}>
+      <Icon size={9} className="shrink-0" />
+      <span>{label} reply</span>
+    </div>
+  );
+}
+
+// Same chip used on the user-bubble side of an automated turn (extension,
+// bridge, capture, scheduled task, watcher). Bare label — no "reply"
+// suffix — so the chip reads as a source tag, not a response indicator.
+function UserCategoryChip({ category }: { category: string }) {
+  const def = CATEGORY_BADGE[category];
+  if (!def) return null;
+  const { label, Icon, cls } = def;
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[9.5px] font-medium shrink-0 ${cls}`}>
+      <Icon size={9} className="shrink-0" />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+// Compact disclosure used inside every automation-turn card so each
+// section (instruction, context, captured content, change diff) has the
+// same chevron + label affordance.
+function CollapsibleSection({
+  label,
+  defaultOpen,
+  accent,
+  hint,
+  children,
+}: {
+  label: string;
+  defaultOpen?: boolean;
+  accent: boolean;
+  hint?: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(Boolean(defaultOpen));
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`flex items-center gap-1 text-left text-[10.5px] ${accent ? "text-white/75 hover:text-white/95" : "text-fg-muted hover:text-fg"}`}
+        aria-expanded={open}
+      >
+        <ChevronRight size={11} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <span className="uppercase tracking-wide">{label}</span>
+        {hint && <span className={`ml-1 normal-case ${accent ? "text-white/55" : "text-fg-faint"}`}>{hint}</span>}
+      </button>
+      {open && <div className="pl-4 min-w-0">{children}</div>}
+    </div>
+  );
+}
+
+// Shared skeleton for every automation-turn user bubble. Top row is a
+// small category chip + icon + title; an optional chip row holds metadata
+// pills (host, selector, dm/group); the body is a list of collapsible
+// sections. This keeps extension/bridge/capture/trigger bubbles visually
+// consistent so the operator can scan an automation thread quickly.
+function StructuredTurnCard({
+  categoryKey,
+  Icon,
+  title,
+  titleTooltip,
+  chips,
+  sections,
+  accent,
+}: {
+  categoryKey: string | null;
+  Icon: React.ElementType;
+  title: string;
+  titleTooltip?: string;
+  chips?: ReactNode;
+  sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }>;
+  accent: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2 min-w-0">
+      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+        {categoryKey && <UserCategoryChip category={categoryKey} />}
+        <Icon size={12} className={`shrink-0 ${accent ? "text-white/85" : "text-fg-muted"}`} />
+        <span
+          className={`text-[13px] font-medium truncate min-w-0 ${accent ? "text-white/95" : "text-fg"}`}
+          title={titleTooltip}
+        >
+          {title}
+        </span>
       </div>
-      {open && ctx.body && (
-        <div className={`mt-1 pt-2 pl-5 border-t ${accent ? "border-white/20" : "border-border/60"}`}>
-          <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.body}</p>
+      {chips && (
+        <div className={`flex flex-wrap items-center gap-1.5 text-[10px] ${accent ? "text-white/75" : "text-fg-faint"}`}>
+          {chips}
+        </div>
+      )}
+      {sections.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          {sections.map((s, i) => (
+            <CollapsibleSection
+              key={i}
+              label={s.label}
+              defaultOpen={s.defaultOpen}
+              hint={s.hint}
+              accent={accent}
+            >
+              {s.content}
+            </CollapsibleSection>
+          ))}
         </div>
       )}
     </div>
@@ -474,48 +685,54 @@ function parseTriggerMessage(category: string | null | undefined, raw: string): 
 // the diff context in a collapsed section to keep large diffs out of
 // the main bubble height.
 function TriggerMessageCard({ data }: { data: TriggerCardData }) {
-  const [diffOpen, setDiffOpen] = useState(false);
   const Icon = data.kind === "scheduled_task" ? Clock : Eye;
-  const label = data.kind === "scheduled_task" ? "Scheduled task" : `Watcher: ${data.label || "(unnamed)"}`;
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      <div className="flex items-center gap-1.5 text-[11px] text-white/85 min-w-0">
-        <Icon size={11} className="shrink-0" />
-        <span className="font-medium truncate">{label}</span>
-        {data.kind === "watcher" && (
-          <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
-            {data.tool}
-          </span>
-        )}
-        {data.silent && (
-          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0" title="Silent trigger: reply only if material">
-            <EyeOff size={9} />
-            silent
-          </span>
-        )}
-      </div>
+  const title = data.kind === "scheduled_task" ? "Scheduled task" : `Watcher: ${data.label || "(unnamed)"}`;
+  const chips = (data.kind === "watcher" || data.silent) ? (
+    <>
       {data.kind === "watcher" && (
-        <button
-          type="button"
-          onClick={() => setDiffOpen((v) => !v)}
-          className="flex items-center gap-1 text-left text-[11px] text-white/75 hover:text-white/95"
-          aria-expanded={diffOpen}
-          title={diffOpen ? "Hide diff" : "Show diff"}
-        >
-          <ChevronRight size={11} className={`shrink-0 transition-transform ${diffOpen ? "rotate-90" : ""}`} />
-          <span>Change context</span>
-        </button>
+        <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
+          {data.tool}
+        </span>
       )}
-      {data.kind === "watcher" && diffOpen && (
-        <div className="ml-4 flex flex-col gap-1">
-          <pre className="m-0 px-2 py-1.5 rounded bg-black/25 text-[11px] leading-snug whitespace-pre-wrap break-words text-white/90 max-h-72 overflow-auto">{data.args}</pre>
-          <pre className="m-0 px-2 py-1.5 rounded bg-black/25 text-[11px] leading-snug whitespace-pre-wrap break-words text-white/90 max-h-96 overflow-auto">{data.diff}</pre>
+      {data.silent && (
+        <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0" title="Silent trigger: reply only if material">
+          <EyeOff size={9} />
+          silent
+        </span>
+      )}
+    </>
+  ) : null;
+
+  const body = data.kind === "scheduled_task" ? data.prompt : data.directive;
+  const sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [
+    {
+      label: data.kind === "scheduled_task" ? "Prompt" : "Directive",
+      defaultOpen: true,
+      content: <MarkdownContent text={body} />,
+    },
+  ];
+  if (data.kind === "watcher" && (data.args || data.diff)) {
+    sections.push({
+      label: "Change context",
+      defaultOpen: false,
+      content: (
+        <div className="flex flex-col gap-1">
+          {data.args && <pre className="m-0 px-2 py-1.5 rounded bg-black/25 text-[11px] leading-snug whitespace-pre-wrap break-words text-white/90 max-h-72 overflow-auto">{data.args}</pre>}
+          {data.diff && <pre className="m-0 px-2 py-1.5 rounded bg-black/25 text-[11px] leading-snug whitespace-pre-wrap break-words text-white/90 max-h-96 overflow-auto">{data.diff}</pre>}
         </div>
-      )}
-      <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">
-        {data.kind === "scheduled_task" ? data.prompt : data.directive}
-      </p>
-    </div>
+      ),
+    });
+  }
+
+  return (
+    <StructuredTurnCard
+      categoryKey={data.kind === "scheduled_task" ? "scheduled_task" : "watcher"}
+      Icon={Icon}
+      title={title}
+      chips={chips}
+      sections={sections}
+      accent={true}
+    />
   );
 }
 
@@ -526,27 +743,35 @@ function TriggerMessageCard({ data }: { data: TriggerCardData }) {
 // (accent) side because bridge messages are persisted with role=user.
 function BridgeMessageCard({ ctx }: { ctx: BridgePromptContext }) {
   const showChat = ctx.isGroup && ctx.chatName && ctx.chatName !== ctx.senderName;
-  return (
-    <div className="flex flex-col gap-1.5 min-w-0">
-      <div className="flex items-center gap-1.5 text-[11px] text-white/85 min-w-0">
-        {ctx.isGroup ? <Users size={11} className="shrink-0" /> : <MessageCircle size={11} className="shrink-0" />}
-        <span className="font-medium truncate" title={ctx.senderJid}>{ctx.senderName}</span>
-        {showChat && (
-          <>
-            <span className="text-white/55">in</span>
-            <span className="truncate" title={ctx.chatJid}>{ctx.chatName}</span>
-          </>
-        )}
-        <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
-          {ctx.isGroup ? "group" : "dm"}
-        </span>
-      </div>
-      {ctx.body ? (
-        <p className="whitespace-pre-wrap text-[13.5px] leading-relaxed">{ctx.body}</p>
+  const title = showChat ? `${ctx.senderName} in ${ctx.chatName}` : ctx.senderName;
+  const Icon = ctx.isGroup ? Users : MessageCircle;
+  const chips = (
+    <span className="px-1.5 py-0.5 rounded-full bg-white/15 text-[9.5px] uppercase tracking-wide shrink-0">
+      {ctx.isGroup ? "group" : "dm"}
+    </span>
+  );
+  const sections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [
+    {
+      label: "Message",
+      defaultOpen: true,
+      hint: ctx.body ? undefined : "(empty)",
+      content: ctx.body ? (
+        <MarkdownContent text={ctx.body} />
       ) : (
         <p className="text-[12px] italic text-white/65">(empty message)</p>
-      )}
-    </div>
+      ),
+    },
+  ];
+  return (
+    <StructuredTurnCard
+      categoryKey="bridge"
+      Icon={Icon}
+      title={title}
+      titleTooltip={ctx.senderJid}
+      chips={chips}
+      sections={sections}
+      accent={true}
+    />
   );
 }
 
@@ -1320,6 +1545,8 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 if (trigger) return <TriggerMessageCard data={trigger} />;
                 const bridge = parseBridgeContext(parsed);
                 if (bridge) return <BridgeMessageCard ctx={bridge} />;
+                const ext = parseExtensionTurn(parsed);
+                if (ext) return <ExtensionTurnCard ctx={ext} accent={true} />;
                 const ctx = parseCapturedContext(parsed);
                 if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
                 return (
@@ -1329,9 +1556,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 );
               })()
             ) : (
-              <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
-              </CollapsibleLong>
+              <div className="flex flex-col">
+                {category && <CategorySourceBadge category={category} />}
+                <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
+                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
+                </CollapsibleLong>
+              </div>
             )
           ) : (
             <div className="flex flex-col gap-1.5">

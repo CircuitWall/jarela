@@ -1,5 +1,6 @@
 import type { ContentPart } from "@/lib/tools/types";
 import type { StreamOptions } from "@/lib/agents/base";
+import type { TurnContextProfile } from "@/lib/agents/turn-profile";
 
 /**
  * Single-shot request shape for `prepareThreadRun`. Replaces the
@@ -29,6 +30,23 @@ export interface ThreadRunRequest {
    * callers leave it undefined to keep today's behaviour.
    */
   hot_since?: string | null;
+
+  /**
+   * Per-category context profile. When set, suppresses one or more of
+   * hot history / warm summary / facts block / recall block from the LLM
+   * call. Resolved by external runners (extension, bridge, scheduler,
+   * watcher, trigger, delegate, HTTP user run) from
+   * `@/lib/agents/turn-profile` so the policy lives in one place. When
+   * undefined, defaults to the full context (today's behaviour).
+   */
+  context_profile?: TurnContextProfile;
+
+  /**
+   * Internal - public callers leave undefined. When set by the submission
+   * path, this freezes the effective model config for the turn so queued
+   * runs do not drift if the agent model changes before execution starts.
+   */
+  _pinned_model_config_name?: string | null;
 
   /** Internal — public callers leave undefined. Decremented across the
    *  stall-retry recursion. */
