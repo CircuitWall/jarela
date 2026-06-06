@@ -7,8 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-07
+
+Browser-extension UX is unified behind a single Alt+J action menu and
+two Gemini one-shot regressions are fixed.
+
+### Added
+
+- **Unified Alt+J action menu in the browser extension**
+  ([#192](https://github.com/CircuitWall/jarela/pull/192)). Alt+J and
+  the single context-menu entry now open a centered floating menu
+  inside the page, so it works on hosts that hijack the native
+  right-click (Outlook PWA, custom rich editors). The menu shows the
+  captured selection preview plus rewrite preset chips (improve
+  clarity, concise, formal, friendly, technical) when text is
+  selected, and a collapsible custom-intent textarea. Selection inside
+  a focused editable is rewritten in place via the same write path as
+  fill; selection outside lands on the clipboard. Replaces the prior
+  split Alt+J / Alt+Shift+J shortcuts and the rewrite-direction
+  context submenu.
+
+### Fixed
+
+- **Gemini one-shot turns** ([#192](https://github.com/CircuitWall/jarela/pull/192)).
+  The native Gemini adapter rejected fill / rewrite turns because the
+  one-shot path emitted an empty messages array; it is now seeded
+  with the system prompt.
+- **Recall / facts leak into one-shot turns**
+  ([#192](https://github.com/CircuitWall/jarela/pull/192)). One-shot
+  fill / rewrite turns no longer pull from the recall and facts
+  memory stores, so prior fills cannot leak into later ones.
+- **Selection capture across element-node containers**
+  ([#192](https://github.com/CircuitWall/jarela/pull/192)). Captures
+  caret and range as text-offsets on a `data-jarela-fill-target`
+  dataset attribute, measured via a synthetic range. Multi-paragraph
+  selections in Gmail / Outlook now capture correctly instead of
+  collapsing to zero, and the offsets survive framework
+  reconciliation where a marker span would be stripped. Also removes
+  an `allFrames: true` iframe-drilling race that caused the top
+  frame to double-mark the iframe's editable.
+
 ### Changed
 
+- **Extension turn instruction cap raised from 2 000 to 16 000 chars**
+  ([#192](https://github.com/CircuitWall/jarela/pull/192)) so the
+  unified fill prompt no longer trips a 400.
 - **Tool capability re-classification.** The `Capability` axis now
   reflects what a non-power user expects to see, not the HTTP method.
   Record edits (create / update / delete / add / move / upload / draft)
