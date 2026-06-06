@@ -40,6 +40,11 @@ interface Props {
   onSelectAgent?: (agentId: string) => void;
 }
 
+function isRecoverableSessionError(err: string | null | undefined): boolean {
+  if (!err) return false;
+  return /timed?\s*out|timeout|aborterror|failed to fetch|network|temporar|econnreset|503|429/i.test(err);
+}
+
 export function ChatView({ threadId, agentId, sessionLoading, sessionError, showTools, showThinking, onMessageSent, onSelectAgent }: Props) {
   const { state } = useAppContext();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -68,6 +73,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   // baseline. Re-fetched on every thread load alongside hot_since / warm
   // summary state so a model swap is reflected immediately.
   const [contextWindowTokens, setContextWindowTokens] = useState<number | null>(null);
+  const recoverableSessionError = isRecoverableSessionError(sessionError);
 
   const addNotice = (text: string) =>
     setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
@@ -475,7 +481,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       if (!msg) return;
     }
 
-    if (sessionError) {
+    if (sessionError && !recoverableSessionError) {
       setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
       return;
     }
@@ -519,7 +525,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       return;
     }
 
-    if (sessionError) {
+    if (sessionError && !recoverableSessionError) {
       setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
       return;
     }
@@ -688,7 +694,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         }}
         disabled={
           !agentId ||
-          !!sessionError
+          (!!sessionError && !recoverableSessionError)
         }
         placeholder={
           compacting ? "Compacting session\u2026 your messages will queue" :
