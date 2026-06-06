@@ -131,11 +131,12 @@ function isRetryable(err: unknown, status?: number): boolean {
   return true; // network errors / fetch rejections
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const cfg = runtimeConfig();
   const maxAttempts = Math.max(1, cfg.httpMaxAttempts);
-  const timeoutMs = cfg.httpRequestTimeoutMs;
-  const callerSignal = init?.signal ?? null;
+  const timeoutMs = init?.timeoutMs ?? cfg.httpRequestTimeoutMs;
+  const { timeoutMs: _ignoreTimeoutMs, ...fetchInit } = init ?? {};
+  const callerSignal = fetchInit.signal ?? null;
 
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -149,8 +150,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
     try {
       const res = await fetch(`${BASE}${path}`, {
-        headers: { "Content-Type": "application/json", ...init?.headers },
-        ...init,
+        headers: { "Content-Type": "application/json", ...fetchInit.headers },
+        ...fetchInit,
         signal: timeoutCtrl.signal,
       });
       if (!res.ok) {
@@ -210,7 +211,9 @@ export const api = {
     compact: (id: string) =>
       request<{ compacted: boolean; summary?: string; reason?: string; message_count?: number; context_chars?: number }>(
         `/agents/${encodeURIComponent(id)}/compact`,
-        { method: "POST", body: "{}" },
+        // Conversation summarization can take longer than normal API calls,
+        // so avoid tripping the default HTTP timeout for large threads.
+        { method: "POST", body: "{}", timeoutMs: 180_000 },
       ),
   },
 

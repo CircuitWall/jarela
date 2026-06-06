@@ -1,16 +1,10 @@
 import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
-import { prepareThreadRun, persistAssistantMessage } from "@/lib/agents/run-thread";
-import { collectStream } from "@/lib/agents/stream-collector";
-import { enqueueThreadRun } from "@/lib/agents/run-queue";
+import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { resolveRoute } from "./router";
 import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
-
-function isNoReply(text: string): boolean {
-  return /^\s*NO[_ ]?REPLY\b/i.test(text);
-}
 
 /**
  * Handle one inbound message from a bridge adapter:
@@ -19,8 +13,8 @@ function isNoReply(text: string): boolean {
  *   2. Use `getOrCreateAgentThread(agent_id)` (one-thread-per-agent
  *      invariant — `UNIQUE(agent_id)` on bridge_routes ensures no chat
  *      interleaving).
- *   3. Drive the agent via `prepareThreadRun` and drain the stream just
- *      like the scheduler does in lib/scheduler/index.ts.
+ *   3. Drive the agent via the canonical `runAgentTurn` helper used by
+ *      every external context turn.
  *   4. Persist the assistant message and send the reply back through the
  *      adapter on the originating channel.
  *
@@ -70,11 +64,8 @@ export async function handleInboundMessage(
       text: msg.text,
       silent,
     });
-    // Serialise the whole prepare → stream → persist trio on thread_id
-    // with every other entry point (HTTP POST, scheduler, watcher, other
-    // bridges). See lib/agents/run-queue.ts. The typing indicator stays
-    // outside the queue so it shows while waiting in queue too — fine,
-    // since "agent is thinking" is true whether we're queued or running.
+    // Keep typing outside the queue so users still see "thinking" while
+    // waiting behind other queued turns for the same thread.
     const willReply = !silent && msg.role === route.respond_to;
     let typingActive = willReply;
     if (willReply) {
@@ -89,23 +80,17 @@ export async function handleInboundMessage(
     let reply = "";
     let suppressAssistant = false;
     try {
-      const result = await enqueueThreadRun(thread.thread_id, "bridge", async () => {
-        const prepared = await prepareThreadRun({
-          thread_id: thread.thread_id,
-          message: promptText,
-          attachments: msg.attachments,
-          user_category: "bridge",
-        });
-        const collected = await collectStream(prepared.stream);
-        const replyText = collected.assistantContent.trim();
-        const skip = silent && (replyText.length === 0 || isNoReply(replyText));
-        if (!skip) {
-          persistAssistantMessage(thread.thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, "bridge", collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
-        }
-        return { replyText, skip };
-      }).result;
-      reply = result.replyText;
-      suppressAssistant = result.skip;
+      const result = await runAgentTurn({
+        thread_id: thread.thread_id,
+        queue_source: "bridge",
+        message: promptText,
+        attachments: msg.attachments,
+        user_category: "bridge",
+        assistant_category: "bridge",
+        silent,
+      });
+      reply = result.assistantContent.trim();
+      suppressAssistant = result.skippedAssistant;
     } finally {
       typingActive = false;
       clearInterval(typingTimer);

@@ -12,11 +12,23 @@ import {
   type AgentConfigRow,
 } from "@/lib/stores/agent-configs";
 import { publish } from "@/lib/notifications/bus";
+import { runAgentTurn } from "@/lib/agents/agent-turn";
 
 // 100KB UTF-8 cap on captured text. The LLM context window is the real
 // constraint; this cap exists to keep a runaway "<body>" pick from
 // trashing the conversation. See ADR-0018.
 export const MAX_TEXT_BYTES = 100_000;
+
+// Preamble prepended to the LLM call for the silent observer run.
+// The captured content is already persisted in the DB — this wrapper
+// instructs the agent to observe without replying, matching bridge
+// silent/observer mode semantics. The user can ask about the content
+// in a later normal turn.
+const SILENT_CAPTURE_PREAMBLE =
+  "[Silent page capture — observer mode] " +
+  "A web page was just captured to your context by the user's browser extension. " +
+  "Silently review it. You must NOT reply with content now — the user will ask questions later. " +
+  "If nothing requires immediate attention, reply with exactly the single token NO_REPLY.";
 
 const Body = z.object({
   url: z.string().url(),
@@ -148,7 +160,24 @@ export async function handlePageCapture(req: Request): Promise<Response> {
     originalBytes,
   });
 
-  const msg = addMessage(thread_id, "user", messageBody, undefined, "synthetic");
+  const msg = addMessage(thread_id, "user", messageBody, undefined, "page_capture");
+
+  // Fire a silent observer run so the agent ingests the captured context
+  // without being forced to reply — matching bridge silent/observer mode.
+  // The user message is already persisted above; skip_persist_user_message
+  // prevents a duplicate. Fire-and-forget so the HTTP response is instant.
+  void runAgentTurn({
+    thread_id,
+    queue_source: "extension",
+    message: `${SILENT_CAPTURE_PREAMBLE}\n\n${messageBody}`,
+    user_category: "page_capture",
+    assistant_category: "page_capture",
+    silent: true,
+    skip_persist_user_message: true,
+  }).catch((err: unknown) => {
+    const m = err instanceof Error ? err.message : String(err);
+    console.warn("[page-capture] silent observer run failed:", m);
+  });
 
   publish({
     type: "thread_message_added",

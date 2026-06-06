@@ -154,6 +154,10 @@ export function useEventNotifications(options: Options) {
               detail: { thread_id: ev.thread_id, agent_id: ev.agent_id },
             }));
           }
+          // Extension refine/fill/rewrite turns share this bus only to
+          // refresh open chat views — they don't warrant a toast since the
+          // user just triggered the action from the extension popup/menu.
+          if (ev.source !== "page_capture") return;
           const agentName = optsRef.current.resolveAgentName(ev.agent_id);
           pushToast({
             kind: "info",
