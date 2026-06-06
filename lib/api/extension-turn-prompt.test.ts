@@ -54,6 +54,27 @@ describe("composePrompt / parseExtensionTurn", () => {
     expect(ctx?.selectedText).toBe("A rather long-winded version of the sentence.");
   });
 
+  it("strips URL/title/selector/page_context from rewrite_clipboard (selection is sovereign)", () => {
+    const prompt = composePrompt("rewrite_clipboard", {
+      instruction: "Tighten.",
+      text: "Make this shorter please.",
+      url: "https://example.com/post",
+      title: "Example Post",
+      selector: "main p",
+      page_context: "Main heading: Example\nSecondary heading: Section",
+    });
+    expect(prompt).not.toContain("URL:");
+    expect(prompt).not.toContain("Title:");
+    expect(prompt).not.toContain("Selector:");
+    expect(prompt).not.toContain("Page/form context:");
+    expect(prompt).not.toContain("Main heading: Example");
+    const ctx = parseExtensionTurn(prompt);
+    expect(ctx?.url).toBeNull();
+    expect(ctx?.title).toBeNull();
+    expect(ctx?.pageContext).toBeNull();
+    expect(ctx?.selectedText).toBe("Make this shorter please.");
+  });
+
   it("treats whitespace-only selected text as none", () => {
     const prompt = composePrompt("refine", {
       instruction: "Tidy.",
