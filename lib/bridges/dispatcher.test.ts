@@ -4,9 +4,7 @@ import type { BridgeAdapter, InboundMessage } from "./types";
 const resolveRouteMock = vi.fn();
 const getAgentConfigMock = vi.fn();
 const getOrCreateAgentThreadMock = vi.fn();
-const prepareThreadRunMock = vi.fn();
-const collectStreamMock = vi.fn();
-const persistAssistantMessageMock = vi.fn();
+const runAgentTurnMock = vi.fn();
 const publishNotificationMock = vi.fn();
 const formatBridgePromptMock = vi.fn();
 
@@ -22,13 +20,8 @@ vi.mock("@/lib/stores/threads", () => ({
   getOrCreateAgentThread: (...args: unknown[]) => getOrCreateAgentThreadMock(...args),
 }));
 
-vi.mock("@/lib/agents/run-thread", () => ({
-  prepareThreadRun: (...args: unknown[]) => prepareThreadRunMock(...args),
-  persistAssistantMessage: (...args: unknown[]) => persistAssistantMessageMock(...args),
-}));
-
-vi.mock("@/lib/agents/stream-collector", () => ({
-  collectStream: (...args: unknown[]) => collectStreamMock(...args),
+vi.mock("@/lib/agents/agent-turn", () => ({
+  runAgentTurn: (...args: unknown[]) => runAgentTurnMock(...args),
 }));
 
 vi.mock("@/lib/notifications/bus", () => ({
@@ -77,9 +70,7 @@ describe("handleInboundMessage silent observer mode", () => {
     resolveRouteMock.mockReset();
     getAgentConfigMock.mockReset();
     getOrCreateAgentThreadMock.mockReset();
-    prepareThreadRunMock.mockReset();
-    collectStreamMock.mockReset();
-    persistAssistantMessageMock.mockReset();
+    runAgentTurnMock.mockReset();
     publishNotificationMock.mockReset();
     formatBridgePromptMock.mockReset();
 
@@ -92,26 +83,30 @@ describe("handleInboundMessage silent observer mode", () => {
     });
     getAgentConfigMock.mockReturnValue({ id: "a1" });
     getOrCreateAgentThreadMock.mockReturnValue({ thread_id: "t1" });
-    prepareThreadRunMock.mockResolvedValue({ stream: {} });
+    runAgentTurnMock.mockResolvedValue({
+      assistantContent: "NO_REPLY",
+      preview: "",
+      skippedAssistant: true,
+      usage: null,
+    });
     formatBridgePromptMock.mockReturnValue("BRIDGE_PROMPT");
   });
 
   it("suppresses non-important NO_REPLY assistant output", async () => {
     const adapter = makeAdapter();
     const msg = makeMessage();
-    collectStreamMock.mockResolvedValue({ assistantContent: "NO_REPLY", usedTools: [], toolEvents: [] });
 
     await handleInboundMessage(adapter, msg);
 
-    expect(prepareThreadRunMock).toHaveBeenCalled();
-    const reqArg = prepareThreadRunMock.mock.calls[0][0] as { message: string };
+    expect(runAgentTurnMock).toHaveBeenCalled();
+    const reqArg = runAgentTurnMock.mock.calls[0][0] as { message: string; silent?: boolean };
     expect(reqArg.message).toContain("BRIDGE_PROMPT");
+    expect(reqArg.silent).toBe(true);
     // Silent-mode framing now lives inside formatBridgePrompt (mocked
     // above) — assert the dispatcher forwards the silent flag to it.
     const fmtArg = formatBridgePromptMock.mock.calls[0][0] as { silent?: boolean };
     expect(fmtArg.silent).toBe(true);
 
-    expect(persistAssistantMessageMock).not.toHaveBeenCalled();
     expect(adapter.sendText).not.toHaveBeenCalled();
     expect(publishNotificationMock).not.toHaveBeenCalled();
   });
@@ -119,15 +114,16 @@ describe("handleInboundMessage silent observer mode", () => {
   it("keeps important in-app update while still suppressing outbound chat replies", async () => {
     const adapter = makeAdapter();
     const msg = makeMessage();
-    collectStreamMock.mockResolvedValue({
+    runAgentTurnMock.mockResolvedValue({
       assistantContent: "Important: the group announced an urgent schedule change.",
-      usedTools: [],
-      toolEvents: [],
+      preview: "Important: the group announced an urgent schedule change.",
+      skippedAssistant: false,
+      usage: null,
     });
 
     await handleInboundMessage(adapter, msg);
 
-    expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
+    expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     expect(adapter.sendText).not.toHaveBeenCalled();
     expect(publishNotificationMock).toHaveBeenCalledTimes(1);
     const payload = publishNotificationMock.mock.calls[0][0] as { preview: string };
