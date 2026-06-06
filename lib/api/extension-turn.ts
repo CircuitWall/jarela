@@ -21,26 +21,6 @@ const GenericBody = Body.extend({
   action: ExtensionAction,
 });
 
-// Per-action thread strategy + display title. Surfaced here so the
-// behaviour of each extension turn type is configured in one obvious
-// place instead of being buried inside `pickThread` branches.
-//
-// - "isolated"     → spin a brand-new thread per call. Use for one-shot
-//                    tools where prior chat history would contaminate
-//                    the answer (fill, rewrite_clipboard).
-// - "reuse_latest" → land on the agent's most recent thread so the user
-//                    can keep iterating in the chat window
-//                    ("make that more concise", "now translate it").
-//                    Used for refine.
-//
-// To change behaviour for an action type, edit ONLY this map.
-type ThreadStrategy = "isolated" | "reuse_latest";
-const ACTION_THREAD_STRATEGY: Record<z.infer<typeof ExtensionAction>, { strategy: ThreadStrategy; isolatedTitle: string }> = {
-  fill:              { strategy: "isolated",     isolatedTitle: "Fill focused field" },
-  rewrite_clipboard: { strategy: "isolated",     isolatedTitle: "Rewrite to clipboard" },
-  refine:            { strategy: "reuse_latest", isolatedTitle: "Refine selection" },
-};
-
 interface PickResult {
   thread_id: string;
   agent_id: string;
@@ -62,28 +42,17 @@ function normalizeAgentIconKey(raw: string | null | undefined): "blue" | "white"
   return null;
 }
 
-function pickThread(action: z.infer<typeof ExtensionAction>, agentId?: string): PickResult | { error: "no-agent" } {
+// All extension calls land on the agent's most recent thread (or a fresh
+// "Extension turns" thread if there isn't one yet). LLM-side context
+// isolation is handled by the per-category context profile in
+// `lib/agents/turn-profile.ts`, not by spinning a new thread per call —
+// that would just spam the chat list with one entry per fill / rewrite.
+function pickThread(agentId?: string): PickResult | { error: "no-agent" } {
   const requested: AgentConfigRow | null = agentId ? getAgentConfig(agentId) : null;
   const def: AgentConfigRow | null = getDefaultAgentConfig();
   const agent: AgentConfigRow | null = requested ?? def ?? listAgentConfigs()[0] ?? null;
   if (!agent) return { error: "no-agent" };
 
-  const config = ACTION_THREAD_STRATEGY[action];
-
-  if (config.strategy === "isolated") {
-    const t = createThread(agent.id, config.isolatedTitle);
-    return {
-      thread_id: t.thread_id,
-      agent_id: agent.id,
-      agent_name: agent.name,
-      agent_icon_key: normalizeAgentIconKey(agent.icon),
-      thread_title: t.title,
-      created: true,
-    };
-  }
-
-  // reuse_latest — fall through to the most recent thread for the agent,
-  // creating a long-lived "Extension turns" thread if there isn't one yet.
   const recent: ThreadRow[] = listThreadsByAgent(agent.id, 1);
   if (recent.length > 0) {
     return {
@@ -107,7 +76,7 @@ function pickThread(action: z.infer<typeof ExtensionAction>, agentId?: string): 
 }
 
 async function runExtensionAction(action: z.infer<typeof ExtensionAction>, input: z.infer<typeof Body>): Promise<Response> {
-  const picked = pickThread(action, input.agent_id);
+  const picked = pickThread(input.agent_id);
   if ("error" in picked) {
     return new Response(JSON.stringify({ error: "no agent configured" }), {
       status: 503,
