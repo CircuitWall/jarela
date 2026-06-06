@@ -22,13 +22,19 @@ export function composePrompt(action: ExtensionAction, input: ExtensionPromptInp
     ? "[Extension refine turn] Improve or refine the selected content based on the instruction below."
     : action === "fill"
       ? "[Extension fill turn] Produce text intended to be inserted into the currently focused editable field. Use nearby form context and page context to stay relevant. Return only the final field text."
-      : "[Extension rewrite to clipboard turn] Rewrite the selected text and return only the rewritten text. No commentary.";
+      : "[Extension rewrite to clipboard turn] Rewrite ONLY the text under 'Selected context:' according to the instruction. Ignore any URL/title/heading hints — they are NOT the rewrite target. Return ONLY the rewritten text, no commentary, no quotes, no labels.";
 
   const lines = [header, `Instruction: ${input.instruction}`];
-  if (input.url) lines.push(`URL: ${input.url}`);
-  if (input.title) lines.push(`Title: ${input.title}`);
-  if (input.selector) lines.push(`Selector: ${input.selector}`);
-  if (input.page_context) lines.push("", "Page/form context:", input.page_context);
+  // rewrite_clipboard is intentionally selection-sovereign: the selection IS
+  // the input. Page metadata adds noise and the model has been observed
+  // echoing the page H1/H2 as the "rewrite" instead of operating on the
+  // selection. Strip every page hint for this action.
+  if (action !== "rewrite_clipboard") {
+    if (input.url) lines.push(`URL: ${input.url}`);
+    if (input.title) lines.push(`Title: ${input.title}`);
+    if (input.selector) lines.push(`Selector: ${input.selector}`);
+    if (input.page_context) lines.push("", "Page/form context:", input.page_context);
+  }
   lines.push("", "Selected context:", input.text && input.text.trim().length > 0 ? input.text : "(none provided)");
   return lines.join("\n");
 }
