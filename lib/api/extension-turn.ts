@@ -8,7 +8,7 @@ import { composePrompt, ExtensionActionEnum } from "./extension-turn-prompt";
 export const ExtensionAction = ExtensionActionEnum;
 
 const Body = z.object({
-  instruction: z.string().trim().min(1).max(2000),
+  instruction: z.string().trim().min(1).max(16_000),
   text: z.string().max(120_000).optional(),
   url: z.string().url().optional(),
   title: z.string().max(500).optional(),
