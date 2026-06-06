@@ -23,10 +23,7 @@ const ALARM_NAME = "jarela-health";
 const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
 const STORAGE_SELECTED_AGENT_ID = "jarelaSelectedAgentId";
-const MENU_FILL_FIELD = "jarela-fill-field";
-const MENU_FILL_FIELD_CUSTOM = "jarela-fill-field-custom";
-const MENU_REWRITE_PARENT = "jarela-rewrite-parent";
-const MENU_REWRITE_PREFIX = "jarela-rewrite-";
+const MENU_OPEN = "jarela-open";
 const REWRITE_DIRECTIONS = {
   neutral: "Rewrite the selected text to improve clarity while preserving meaning.",
   concise: "Rewrite the selected text to be concise while preserving meaning.",
@@ -34,13 +31,13 @@ const REWRITE_DIRECTIONS = {
   friendly: "Rewrite the selected text in a friendly, approachable tone while preserving meaning.",
   technical: "Rewrite the selected text with technical precision and explicit details while preserving meaning.",
 };
-const REWRITE_DIRECTION_LABELS = {
-  neutral: "Rewrite direction: neutral",
-  concise: "Rewrite direction: concise",
-  formal: "Rewrite direction: formal",
-  friendly: "Rewrite direction: friendly",
-  technical: "Rewrite direction: technical",
-};
+const REWRITE_PRESETS = [
+  { key: "neutral", label: "Improve clarity" },
+  { key: "concise", label: "Make it concise" },
+  { key: "formal", label: "Make it formal" },
+  { key: "friendly", label: "Make it friendly" },
+  { key: "technical", label: "Make it technical" },
+];
 
 let currentAgentIconKey = "auto"; // auto | blue | white
 
@@ -52,28 +49,10 @@ async function ensureContextMenus() {
   }
   try {
     await chrome.contextMenus.create({
-      id: MENU_FILL_FIELD,
-      title: "Jarela: fill focused field",
+      id: MENU_OPEN,
+      title: "Jarela: fill or rewrite…",
       contexts: ["editable", "selection"],
     });
-    await chrome.contextMenus.create({
-      id: MENU_FILL_FIELD_CUSTOM,
-      title: "Jarela: fill focused field with custom intent…",
-      contexts: ["editable", "selection"],
-    });
-    await chrome.contextMenus.create({
-      id: MENU_REWRITE_PARENT,
-      title: "Jarela: rewrite selection to clipboard",
-      contexts: ["selection"],
-    });
-    for (const key of Object.keys(REWRITE_DIRECTIONS)) {
-      await chrome.contextMenus.create({
-        id: `${MENU_REWRITE_PREFIX}${key}`,
-        parentId: MENU_REWRITE_PARENT,
-        title: REWRITE_DIRECTION_LABELS[key] ?? key,
-        contexts: ["selection"],
-      });
-    }
   } catch (err) {
     console.warn("[jarela] failed to create context menu:", err);
   }
@@ -398,20 +377,20 @@ async function copyTextToClipboard(tabId, text) {
   return Boolean(result?.ok);
 }
 
-// Resolves the focused editable across shadow DOM + same-origin iframes
-// and stamps it with `data-jarela-fill-target` so the rest of the fill
-// flow can find it again after the LLM round-trip — even if the page
-// (e.g. LinkedIn's post composer dialog) shifts focus in the meantime.
-// Returns `{ ok, frameId }` for the frame that owns the marker so we can
-// scope subsequent injections to it.
-async function markFillTarget(tabId, hintFrameId) {
-  const target = typeof hintFrameId === "number"
-    ? { tabId, frameIds: [hintFrameId] }
-    : { tabId, allFrames: true };
+// Unified capture: in one pass per same-origin frame, find the focused
+// editable (and pin it with `data-jarela-fill-target` + dataset offsets
+// so we can restore the caret/selection after the LLM round-trip blurs
+// the field) AND/OR snapshot the current selection text. Returns:
+//   { ok, frameId, hasField, original }
+// where `original` is the selected text inside the editable (rewrite
+// mode) or the loose page selection (clipboard mode), and is empty for
+// pure-fill mode (caret-only). Picks the frame with an editable; falls
+// back to the longest selection-only frame.
+async function captureField(tabId) {
   let results;
   try {
     results = await chrome.scripting.executeScript({
-      target,
+      target: { tabId, allFrames: true },
       func: () => {
         function dig(root) {
           let el = root?.activeElement || null;
@@ -423,89 +402,108 @@ async function markFillTarget(tabId, hintFrameId) {
         function isEditable(el) {
           if (!el) return false;
           if (el instanceof HTMLTextAreaElement) return true;
-          if (el instanceof HTMLInputElement) {
-            return /^(text|search|email|url|tel)$/i.test(el.type || "text");
-          }
+          if (el instanceof HTMLInputElement) return /^(text|search|email|url|tel)$/i.test(el.type || "text");
           return Boolean(el.isContentEditable);
         }
-        let el = dig(document);
-        // Drill through nested same-origin iframes when activeElement is one.
-        while (el && el.tagName === "IFRAME") {
-          try {
-            const doc = el.contentDocument;
-            if (!doc) break;
-            const inner = dig(doc);
-            if (!inner) break;
-            el = inner;
-          } catch {
-            break;
+
+        const sel = window.getSelection?.();
+        const trimmedSelection = (sel?.toString() || "").trim();
+
+        // Reuse an existing mark if a prior call already pinned the
+        // editable in this frame (e.g. the menu has stolen focus).
+        let el = document.querySelector("[data-jarela-fill-target]");
+        if (!el) {
+          el = dig(document);
+          if (el && !isEditable(el) && typeof el.closest === "function") {
+            const ce = el.closest("[contenteditable=''], [contenteditable='true']");
+            if (ce) el = ce;
+          }
+          if (!isEditable(el)) {
+            const dialog = document.querySelector("[role='dialog'], dialog[open]");
+            if (dialog) {
+              el = dialog.querySelector(
+                "textarea, input[type='text'], input[type='search'], input[type='email'], input[type='url'], input[type='tel'], [contenteditable=''], [contenteditable='true']",
+              );
+            }
           }
         }
-        // Walk up to find a contenteditable ancestor when activeElement is
-        // a non-editable child (common with rich editors like Quill).
-        if (el && !isEditable(el) && typeof el.closest === "function") {
-          const ce = el.closest("[contenteditable=''], [contenteditable='true']");
-          if (ce) el = ce;
-        }
-        // Last-resort fallback: pick the first editable inside an open
-        // dialog (LinkedIn's post composer renders as role=dialog with
-        // exactly one ql-editor).
+
         if (!isEditable(el)) {
-          const dialog = document.querySelector("[role='dialog'], dialog[open]");
-          if (dialog) {
-            el = dialog.querySelector(
-              "textarea, input[type='text'], input[type='search'], input[type='email'], input[type='url'], input[type='tel'], [contenteditable=''], [contenteditable='true']",
-            );
-          }
+          // Selection-only state (no field focused in this frame).
+          return trimmedSelection ? { hasField: false, original: trimmedSelection } : null;
         }
-        if (!isEditable(el)) return { ok: false };
+
+        // Clear stale marks on siblings, then pin this one.
         document.querySelectorAll("[data-jarela-fill-target]").forEach((n) => {
-          n.removeAttribute("data-jarela-fill-target");
+          if (n !== el) {
+            n.removeAttribute("data-jarela-fill-target");
+            delete n.dataset?.jarelaFillStart;
+            delete n.dataset?.jarelaFillEnd;
+            delete n.dataset?.jarelaFillCaretOffset;
+            delete n.dataset?.jarelaFillCaretEndOffset;
+          }
         });
         document.querySelectorAll("[data-jarela-fill-caret]").forEach((n) => n.remove());
         el.setAttribute("data-jarela-fill-target", "1");
 
-        // Capture caret position NOW, while focus is still on the field.
-        // The context menu + spinner + LLM round-trip all blur the field,
-        // and by fill-time selectionStart/End on inputs has reset to
-        // value.length and contentEditable selection has collapsed. We
-        // need to remember where the user actually was.
+        // Capture range NOW (start..end). For input/textarea: selection
+        // indices. For contenteditable: text-offsets from the editable's
+        // start, measured via synthetic range so element-node containers
+        // (multi-paragraph selections in Gmail/Outlook) work the same as
+        // text-node containers. Dataset on the editable root survives
+        // framework reconciliation where a marker <span> would be
+        // stripped. `original` is empty when the selection is collapsed.
+        let original = "";
         if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
           const s = Number(el.selectionStart ?? el.value.length);
           const e = Number(el.selectionEnd ?? el.value.length);
           el.dataset.jarelaFillStart = String(s);
           el.dataset.jarelaFillEnd = String(e);
+          if (s !== e) original = String(el.value || "").slice(Math.min(s, e), Math.max(s, e));
         } else if (el.isContentEditable) {
           try {
             const doc = el.ownerDocument || document;
-            const win = doc.defaultView || window;
-            const sel = win.getSelection?.();
             if (sel && sel.rangeCount > 0) {
               const range = sel.getRangeAt(0);
-              if (el.contains(range.startContainer)) {
-                const marker = doc.createElement("span");
-                marker.setAttribute("data-jarela-fill-caret", "1");
-                marker.style.cssText = "display:inline-block;width:0;height:0;font-size:0;line-height:0;color:transparent;";
-                marker.textContent = "\u200B";
-                // Insert at the range's start so the caret lands here
-                // even if the range was a selection (we collapse later).
-                const insertRange = range.cloneRange();
-                insertRange.collapse(true);
-                insertRange.insertNode(marker);
+              if (el.contains(range.startContainer) && el.contains(range.endContainer)) {
+                function offsetFromStart(container, offsetInContainer) {
+                  const r = doc.createRange();
+                  r.selectNodeContents(el);
+                  r.setEnd(container, offsetInContainer);
+                  return r.toString().length;
+                }
+                const startOffset = offsetFromStart(range.startContainer, range.startOffset);
+                const endOffset = offsetFromStart(range.endContainer, range.endOffset);
+                el.dataset.jarelaFillCaretOffset = String(startOffset);
+                el.dataset.jarelaFillCaretEndOffset = String(endOffset);
+                if (startOffset !== endOffset) original = range.toString();
               }
             }
           } catch {
             // Best-effort — fall back to end-of-field insertion.
           }
         }
-        return { ok: true };
+
+        return { hasField: true, original };
       },
     });
   } catch {
     return { ok: false };
   }
-  const winner = (results || []).find((r) => r?.result?.ok);
-  return winner ? { ok: true, frameId: winner.frameId ?? 0 } : { ok: false };
+
+  let fieldHit = null;
+  let selHit = null;
+  for (const r of results || []) {
+    const v = r?.result;
+    if (!v) continue;
+    if (v.hasField) {
+      if (!fieldHit) fieldHit = { ...v, frameId: r.frameId ?? 0 };
+    } else if (!selHit || (v.original?.length ?? 0) > (selHit.original?.length ?? 0)) {
+      selHit = { ...v, frameId: r.frameId ?? 0 };
+    }
+  }
+  const winner = fieldHit || selHit;
+  return winner ? { ok: true, ...winner } : { ok: false };
 }
 
 async function clearFillTarget(tabId, frameId) {
@@ -517,6 +515,8 @@ async function clearFillTarget(tabId, frameId) {
           n.removeAttribute("data-jarela-fill-target");
           delete n.dataset?.jarelaFillStart;
           delete n.dataset?.jarelaFillEnd;
+          delete n.dataset?.jarelaFillCaretOffset;
+          delete n.dataset?.jarelaFillCaretEndOffset;
         });
         document.querySelectorAll("[data-jarela-fill-caret]").forEach((n) => n.remove());
       },
@@ -735,19 +735,42 @@ async function fillFocusedField(tabId, frameId, value) {
 
       if (active.isContentEditable) {
         active.focus();
-        // Restore the caret to the marker dropped at mark time so we
-        // insert where the user was, not at the end of the field.
-        const marker = active.querySelector("[data-jarela-fill-caret]");
+        // Restore the saved range (start..end) so insertText REPLACES any
+        // selected text. Falls back to caret-only or end-of-field if the
+        // field's text shrank between mark and fill.
+        const savedStart = active.dataset?.jarelaFillCaretOffset;
+        const savedEnd = active.dataset?.jarelaFillCaretEndOffset ?? savedStart;
         try {
           const sel = window.getSelection();
           const range = document.createRange();
-          if (marker) {
-            range.setStartBefore(marker);
-            range.setEndBefore(marker);
-            marker.remove();
+          if (savedStart !== undefined) {
+            const startTarget = Number(savedStart);
+            const endTarget = Number(savedEnd);
+            const walker = document.createTreeWalker(active, NodeFilter.SHOW_TEXT);
+            let n;
+            let acc = 0;
+            let placedStart = false;
+            let placedEnd = false;
+            while ((n = walker.nextNode())) {
+              const len = (n.nodeValue || "").length;
+              if (!placedStart && startTarget <= acc + len) {
+                range.setStart(n, startTarget - acc);
+                placedStart = true;
+              }
+              if (!placedEnd && endTarget <= acc + len) {
+                range.setEnd(n, endTarget - acc);
+                placedEnd = true;
+              }
+              if (placedStart && placedEnd) break;
+              acc += len;
+            }
+            if (!placedStart || !placedEnd) {
+              // Field shrank or text changed; clamp to end.
+              range.selectNodeContents(active);
+              range.collapse(false);
+            }
           } else {
-            // No marker captured (e.g. shadow-root host or detached frame).
-            // Fall back to end-of-field so we at least insert *something*.
+            // No offset captured (shadow-root host or detached frame).
             range.selectNodeContents(active);
             range.collapse(false);
           }
@@ -756,6 +779,8 @@ async function fillFocusedField(tabId, frameId, value) {
         } catch {
           // Selection APIs throw inside detached frames; fall through to insertText.
         }
+        delete active.dataset?.jarelaFillCaretOffset;
+        delete active.dataset?.jarelaFillCaretEndOffset;
         const inserted = document.execCommand("insertText", false, nextText);
         if (!inserted) {
           // execCommand can be a no-op in some shadow roots / custom editors —
@@ -824,424 +849,407 @@ async function hideFillSpinner(tabId, frameId) {
   }
 }
 
-async function runRewriteToClipboard(tabId, selectionText, instruction) {
-  const selected = (selectionText ?? "").trim();
-  if (!selected) {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "Nothing selected",
-      message: "Select text first, then use a Jarela rewrite option.",
-      priority: 1,
-    });
-    return;
-  }
+// Prompt templates for the unified write path. Auto-fill (no user
+// intent) reads the field/page and drafts something plausible.
+// Custom-intent fill polishes the user's wording into a reply that fits
+// the surrounding context.
+const AUTO_FILL_PROMPT = [
+  "Fill the focused field with text the user would plausibly put there.",
+  "page_context gives you Field kind (heuristic guess) + raw HTML signals",
+  "(tag, type, maxlength, label, placeholder, aria-label, host).",
+  "If Field kind is missing or wrong, infer it from Host, URL, title/",
+  "headings/meta and the raw signals (gmail/outlook -> email; github",
+  "pull/issue -> code review or issue comment; x/linkedin -> social",
+  "post with platform length norms; jira/linear/asana -> ticket",
+  "comment; banking/billing -> short factual, no smalltalk).",
+  "Match that kind's conventions: search/form = bare keywords, respect",
+  "maxlength; email reply = greeting + substantive body + sign-off;",
+  "comment/forum = terse on-topic, no greeting; chat/social = short,",
+  "no sign-off, respect length caps (e.g. <=280 for X); title/subject",
+  "= one line.",
+  "For long-form bodies, read the page text and write a real reply",
+  "addressing the visible thread/item/form; skip chrome (nav, ads,",
+  "sidebars, unrelated previews). Don't stop at a generic greeting.",
+  "Write in the SAME LANGUAGE as the surrounding context, not this",
+  "instruction. Only fall back to English if the context language is",
+  "genuinely unclear.",
+  "Return ONLY the final text to insert: no preamble, quotes, markdown",
+  "fencing, or explanation.",
+].join(" ");
 
-  // No page-context collection for rewrite: the selection is the input.
-  // Bundling URL/headings/surrounding text encourages the model to echo
-  // the page H1 instead of rewriting the selection.
-  const payload = await withSelectedAgent({
-    action: "rewrite_clipboard",
-    instruction,
-    text: selected,
-  });
-  const apiRes = await postJson(extensionTurnUrl(currentConfig), payload);
-  await applyAgentIconHintFromBody(apiRes?.body);
-
-  if (!apiRes?.ok) {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "Rewrite failed",
-      message: apiRes?.body?.error ?? `HTTP ${apiRes?.status ?? "?"}`,
-      priority: 1,
-    });
-    return;
-  }
-
-  const out = String(apiRes.body?.assistant ?? "").trim();
-  if (!out) {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "Rewrite failed",
-      message: "The agent returned no content to copy.",
-      priority: 1,
-    });
-    return;
-  }
-
-  const copied = await copyTextToClipboard(tabId, out);
-  await chrome.notifications.create({
-    type: "basic",
-    iconUrl: copied ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
-    title: copied ? "Rewritten text copied" : "Rewrite complete",
-    message: copied
-      ? "The rewritten result is now in your clipboard."
-      : "Clipboard write failed, but the rewrite was generated.",
-    priority: 1,
-  });
+function buildCustomIntentFillPrompt(intent) {
+  return [
+    `User intent: "${intent.replace(/"/g, '\\"')}".`,
+    "Polish that intent into the final text for the focused field.",
+    "The intent is the message; the surrounding page is the situation",
+    "(tone, language, length, greeting/sign-off).",
+    "page_context gives you Field kind (heuristic guess) + raw HTML",
+    "signals (tag, type, maxlength, label, placeholder, aria-label,",
+    "host). If Field kind is missing or wrong, infer it from Host,",
+    "URL, title/headings/meta and the raw signals (gmail/outlook ->",
+    "email; github -> code review/issue comment; x/linkedin -> social",
+    "post with length norms; jira/linear/asana -> ticket; banking ->",
+    "short factual). Match that kind: email = greeting + sign-off;",
+    "chat = terse no sign-off; comment = on-topic no greeting; search",
+    "= bare keywords; short field = respect maxlength.",
+    "Write in the SAME LANGUAGE as the surrounding context, not this",
+    "instruction nor necessarily the intent. Only keep the intent's",
+    "language when the context language is genuinely unclear.",
+    "Faithfully convey the intent: no new content, no commitments or",
+    "facts the user didn't ask for, no softening a refusal into",
+    "agreement. You may expand a one-liner into greeting + body +",
+    "sign-off when the context calls for it, but the substance stays",
+    "the user's.",
+    "Return ONLY the final text to insert: no preamble, quotes,",
+    "markdown fencing, or explanation.",
+  ].join(" ");
 }
 
-async function runFillFocusedField(tabId, selectionText, hintFrameId) {
-  const marker = await markFillTarget(tabId, hintFrameId);
-  if (!marker.ok) {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "No focused field",
-      message: "Click into an input/textarea first, then run Fill focused field.",
-      priority: 1,
-    });
-    return;
+// Rewrite instruction = (preset baked direction) + (optional user
+// extra direction). Empty + empty = neutral preset.
+function buildRewriteInstruction(presetKey, customDirection) {
+  const base = presetKey ? REWRITE_DIRECTIONS[presetKey] : null;
+  const custom = (customDirection || "").trim();
+  if (base && custom) return `${base} Additional direction: ${custom}`;
+  if (base) return base;
+  if (custom) {
+    return `Rewrite the selected text per this direction: ${custom}. Preserve the original meaning unless the direction explicitly changes it.`;
   }
-  const frameId = marker.frameId;
+  return REWRITE_DIRECTIONS.neutral;
+}
 
-  const ctx = await getFillContext(tabId, frameId, selectionText);
-  if (!ctx?.has_target) {
-    await clearFillTarget(tabId, frameId);
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "No focused field",
-      message: "Click into an input/textarea first, then run Fill focused field.",
-      priority: 1,
-    });
-    return;
-  }
-
-  // Mirror the chat-window CountdownRing on the focused field so the user
-  // sees the request is in flight — same drain + spin SVG anchored to the
-  // field's bounding rect, removed in finally so errors don't leak it.
-  await showFillSpinner(tabId, frameId);
-
+async function notify(title, message, ok = true) {
   try {
-    const payload = await withSelectedAgent({
-      action: "fill",
-      instruction: [
-        "Fill the focused field with text the user would plausibly put there.",
-        "page_context gives you Field kind (heuristic guess) + raw HTML signals",
-        "(tag, type, maxlength, label, placeholder, aria-label, host).",
-        "If Field kind is missing or wrong, infer it from Host, URL, title/",
-        "headings/meta and the raw signals (gmail/outlook -> email; github",
-        "pull/issue -> code review or issue comment; x/linkedin -> social",
-        "post with platform length norms; jira/linear/asana -> ticket",
-        "comment; banking/billing -> short factual, no smalltalk).",
-        "Match that kind's conventions: search/form = bare keywords, respect",
-        "maxlength; email reply = greeting + substantive body + sign-off;",
-        "comment/forum = terse on-topic, no greeting; chat/social = short,",
-        "no sign-off, respect length caps (e.g. <=280 for X); title/subject",
-        "= one line.",
-        "For long-form bodies, read the page text and write a real reply",
-        "addressing the visible thread/item/form; skip chrome (nav, ads,",
-        "sidebars, unrelated previews). Don't stop at a generic greeting.",
-        "Write in the SAME LANGUAGE as the surrounding context, not this",
-        "instruction. Only fall back to English if the context language is",
-        "genuinely unclear.",
-        "Return ONLY the final text to insert: no preamble, quotes, markdown",
-        "fencing, or explanation.",
-      ].join(" "),
-      url: ctx.url,
-      title: ctx.title,
-      text: ctx.text,
-      page_context: ctx.page_context,
+    await chrome.notifications.create({
+      type: "basic",
+      iconUrl: ok ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
+      title,
+      message,
+      priority: 1,
     });
+  } catch {
+    // Notifications are best-effort.
+  }
+}
+
+// Single write path. Decides fill vs rewrite from `state.original` and
+// in-place vs clipboard from `state.hasField`. The captured range on
+// state lets fillFocusedField replace exactly that span.
+//   state:  { ok, frameId, hasField, original }
+//   choice: { intent, presetKey }
+async function runWrite(tabId, state, choice) {
+  const frameId = state.frameId;
+  await showFillSpinner(tabId, frameId);
+  try {
+    let payload;
+    const isRewrite = Boolean(state.original);
+    if (isRewrite) {
+      const instruction = buildRewriteInstruction(choice.presetKey, choice.intent);
+      payload = await withSelectedAgent({
+        action: "rewrite_clipboard",
+        instruction,
+        text: state.original.trim(),
+      });
+    } else {
+      const ctx = await getFillContext(tabId, frameId, "");
+      if (!ctx?.has_target) {
+        await notify("No focused field", "Click into an input/textarea first.", false);
+        return;
+      }
+      const intent = (choice.intent || "").trim();
+      payload = await withSelectedAgent({
+        action: "fill",
+        instruction: intent ? buildCustomIntentFillPrompt(intent) : AUTO_FILL_PROMPT,
+        url: ctx.url,
+        title: ctx.title,
+        text: ctx.text,
+        page_context: ctx.page_context,
+      });
+    }
+
     const apiRes = await postJson(extensionTurnUrl(currentConfig), payload);
     await applyAgentIconHintFromBody(apiRes?.body);
-
     if (!apiRes?.ok) {
-      await chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/icon-128.png",
-        title: "Fill failed",
-        message: apiRes?.body?.error ?? `HTTP ${apiRes?.status ?? "?"}`,
-        priority: 1,
-      });
+      await notify(isRewrite ? "Rewrite failed" : "Fill failed", apiRes?.body?.error ?? `HTTP ${apiRes?.status ?? "?"}`, false);
       return;
     }
 
     const out = String(apiRes.body?.assistant ?? "").trim();
     if (!out) {
-      await chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/icon-128.png",
-        title: "Fill failed",
-        message: "The agent returned no content to insert.",
-        priority: 1,
-      });
+      await notify("Empty response", "The agent returned no content.", false);
       return;
     }
 
-    const applied = await fillFocusedField(tabId, frameId, out);
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: applied?.ok ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
-      title: applied?.ok ? "Field filled" : "Fill generated",
-      message: applied?.ok
-        ? "The focused field was filled with the generated text."
-        : `Could not apply text automatically: ${applied?.reason ?? "unknown reason"}`,
-      priority: 1,
-    });
+    if (state.hasField) {
+      const applied = await fillFocusedField(tabId, frameId, out);
+      if (applied?.ok) {
+        await notify(
+          isRewrite ? "Selection rewritten" : "Field filled",
+          isRewrite ? "Replaced the selected text in place." : "The focused field was filled.",
+        );
+      } else {
+        // Field went away between capture and write — fall back to
+        // clipboard so the result isn't lost.
+        const copied = await copyTextToClipboard(tabId, out);
+        await notify(
+          copied ? "Field gone, copied instead" : "Generated but couldn't apply",
+          copied
+            ? "Couldn't write back to the field, so the result is on your clipboard."
+            : `Couldn't insert or copy: ${applied?.reason ?? "unknown"}`,
+          copied,
+        );
+      }
+    } else {
+      const copied = await copyTextToClipboard(tabId, out);
+      await notify(
+        copied ? "Rewritten text copied" : "Rewrite complete",
+        copied ? "The rewritten result is on your clipboard." : "Clipboard write failed, but the rewrite was generated.",
+        copied,
+      );
+    }
   } finally {
     await hideFillSpinner(tabId, frameId);
-    await clearFillTarget(tabId, frameId);
+    if (state.hasField) await clearFillTarget(tabId, frameId);
   }
 }
 
-// Centered modal injected into the page asking the user what they want to
-// say. Resolves to the typed string, or null if they cancel / press Esc.
-// The modal lives outside the page's own DOM concerns: high z-index,
-// scrollable, dismissed on backdrop click. We don't use chrome.windows
-// because a popup loses tab focus (and Gmail blurs the reply box).
-async function promptForCustomIntent(tabId, frameId, defaultText) {
+// Centered floating menu — single textarea + optional preset chips +
+// the captured selection preview. Replaces the old per-action button
+// list and the separate custom-intent modal: presets are baked intents
+// applied as ${preset} ${user text}. Resolves to:
+//   { intent: string, presetKey: string|null } or null on cancel.
+// Right-click is hijacked on many editors (Outlook PWA, custom rich
+// editors), so this lives in a high-z-index overlay inside the page.
+async function promptForAction(tabId, frameId, state) {
+  const presets = state.original ? REWRITE_PRESETS : [];
   const [{ result } = {}] = await chrome.scripting.executeScript({
     target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
-    args: [defaultText || ""],
-    func: (initial) => new Promise((resolve) => {
-      document.getElementById("jarela-fill-custom-modal")?.remove();
+    args: [{ state, presets }],
+    func: ({ state, presets }) => new Promise((resolve) => {
+      document.getElementById("jarela-action-menu")?.remove();
 
       const backdrop = document.createElement("div");
-      backdrop.id = "jarela-fill-custom-modal";
+      backdrop.id = "jarela-action-menu";
       backdrop.style.cssText = [
         "position:fixed", "inset:0", "z-index:2147483647",
         "background:rgba(15,23,42,0.55)",
         "display:flex", "align-items:center", "justify-content:center",
         "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif",
+        "animation:jarela-menu-fade 120ms ease-out",
       ].join(";");
+
+      const style = document.createElement("style");
+      style.textContent = `
+        @keyframes jarela-menu-fade { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes jarela-menu-pop { from { opacity: 0; transform: translateY(8px) scale(0.98) } to { opacity: 1; transform: none } }
+      `;
+      backdrop.appendChild(style);
 
       const dialog = document.createElement("div");
       dialog.style.cssText = [
         "background:#fff", "color:#0f172a",
-        "border-radius:12px", "padding:20px",
-        "width:min(560px,92vw)",
-        "box-shadow:0 20px 50px rgba(0,0,0,0.35)",
+        "border-radius:14px", "padding:18px",
+        "width:min(480px,92vw)",
+        "max-height:80vh", "overflow:auto",
+        "box-shadow:0 24px 60px rgba(15,23,42,0.35), 0 2px 6px rgba(15,23,42,0.12)",
         "display:flex", "flex-direction:column", "gap:12px",
+        "animation:jarela-menu-pop 140ms ease-out",
       ].join(";");
 
+      const header = document.createElement("div");
+      header.style.cssText = "display:flex;align-items:center;gap:10px;";
+      const dot = document.createElement("div");
+      dot.style.cssText = "width:8px;height:8px;border-radius:50%;background:#4f46e5;flex:0 0 auto;";
       const heading = document.createElement("div");
-      heading.textContent = "What would you like to say?";
-      heading.style.cssText = "font-size:15px;font-weight:600;";
+      heading.textContent = "Jarela";
+      heading.style.cssText = "font-size:13px;font-weight:600;color:#475569;letter-spacing:0.02em;text-transform:uppercase;";
+      header.appendChild(dot);
+      header.appendChild(heading);
 
       const subheading = document.createElement("div");
-      subheading.textContent = "Jarela will polish your wording into a reply that fits the surrounding context (tone, language, length).";
-      subheading.style.cssText = "font-size:12px;color:#475569;line-height:1.4;";
+      subheading.style.cssText = "font-size:13px;color:#475569;line-height:1.45;";
+      if (state.original && state.hasField) {
+        subheading.textContent = "Rewrite the selected text in place. Pick a preset, type a direction, or both.";
+      } else if (state.original) {
+        subheading.textContent = "Rewrite the selected text to your clipboard. Pick a preset, type a direction, or both.";
+      } else {
+        subheading.textContent = "Fill the focused field. Leave the box empty for auto, or describe what to say.";
+      }
+
+      const previewWrap = document.createElement("div");
+      if (state.original) {
+        const previewText = state.original.length > 240 ? `${state.original.slice(0, 240)}…` : state.original;
+        previewWrap.textContent = `"${previewText}"`;
+        previewWrap.style.cssText = "font-size:12px;color:#475569;background:#f1f5f9;padding:8px 10px;border-radius:8px;line-height:1.4;font-style:italic;white-space:pre-wrap;max-height:120px;overflow:auto;";
+      }
+
+      // Preset chips (rewrite only). Clicking toggles selection; the
+      // selected preset is combined with whatever the user types.
+      const chipsWrap = document.createElement("div");
+      chipsWrap.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;";
+      let selectedPreset = null;
+      const chipBtns = [];
+      function paintChips() {
+        for (const b of chipBtns) {
+          const isSel = b.dataset.key === selectedPreset;
+          b.style.background = isSel ? "#4f46e5" : "#fff";
+          b.style.color = isSel ? "#fff" : "#0f172a";
+          b.style.borderColor = isSel ? "#4f46e5" : "#e2e8f0";
+        }
+      }
+      for (const p of presets) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.dataset.key = p.key;
+        chip.textContent = p.label;
+        chip.style.cssText = [
+          "padding:6px 10px", "font-size:12px", "border-radius:999px",
+          "border:1px solid #e2e8f0", "background:#fff", "color:#0f172a",
+          "cursor:pointer", "font-family:inherit",
+          "transition:background 80ms, border-color 80ms, color 80ms",
+        ].join(";");
+        chip.addEventListener("click", () => {
+          selectedPreset = selectedPreset === p.key ? null : p.key;
+          paintChips();
+          textarea.focus();
+        });
+        chipBtns.push(chip);
+        chipsWrap.appendChild(chip);
+      }
+
+      const customWrap = document.createElement("div");
+      customWrap.style.cssText = "display:flex;flex-direction:column;gap:6px;";
+      const customToggle = document.createElement("button");
+      customToggle.type = "button";
+      customToggle.style.cssText = [
+        "align-self:flex-start", "background:transparent", "border:none",
+        "padding:0", "cursor:pointer", "color:#4f46e5",
+        "font-size:12px", "font-weight:600", "font-family:inherit",
+        "display:flex", "align-items:center", "gap:4px",
+      ].join(";");
+      const customCaret = document.createElement("span");
+      customCaret.textContent = "▸";
+      customCaret.style.cssText = "display:inline-block;transition:transform 120ms;";
+      const customLabel = document.createElement("span");
+      customLabel.textContent = state.original ? "Custom direction" : "Custom intent";
+      customToggle.appendChild(customCaret);
+      customToggle.appendChild(customLabel);
 
       const textarea = document.createElement("textarea");
-      textarea.value = initial;
-      textarea.placeholder = "e.g. accept the meeting, ask for a Monday slot instead";
-      textarea.rows = 5;
+      textarea.rows = 4;
+      textarea.placeholder = state.original
+        ? "e.g. translate to swedish, keep under 280 chars, rewrite as a bulleted list"
+        : "e.g. accept the meeting, ask for a Monday slot instead";
       textarea.style.cssText = [
         "width:100%", "box-sizing:border-box",
         "padding:10px 12px", "font-size:14px", "line-height:1.45",
         "border:1px solid #cbd5e1", "border-radius:8px",
-        "resize:vertical", "min-height:96px",
+        "resize:vertical", "min-height:80px",
         "font-family:inherit", "color:#0f172a", "background:#fff",
-        "outline:none",
+        "outline:none", "display:none",
       ].join(";");
 
-      const buttons = document.createElement("div");
-      buttons.style.cssText = "display:flex;justify-content:flex-end;gap:8px;";
+      let customOpen = false;
+      function setCustomOpen(open) {
+        customOpen = open;
+        textarea.style.display = open ? "block" : "none";
+        customCaret.style.transform = open ? "rotate(90deg)" : "none";
+        if (open) setTimeout(() => textarea.focus(), 0);
+      }
+      customToggle.addEventListener("click", () => setCustomOpen(!customOpen));
 
+      customWrap.appendChild(customToggle);
+      customWrap.appendChild(textarea);
+
+      const footer = document.createElement("div");
+      footer.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;";
+      const hint = document.createElement("div");
+      hint.textContent = "Esc cancels · Ctrl/⌘+Enter submits";
+      hint.style.cssText = "font-size:11px;color:#94a3b8;";
+      const actions = document.createElement("div");
+      actions.style.cssText = "display:flex;gap:8px;";
       const cancel = document.createElement("button");
       cancel.type = "button";
       cancel.textContent = "Cancel";
-      cancel.style.cssText = [
-        "padding:8px 14px", "font-size:13px", "border-radius:8px",
-        "border:1px solid #cbd5e1", "background:#fff", "color:#0f172a",
-        "cursor:pointer",
-      ].join(";");
-
+      cancel.style.cssText = "padding:8px 14px;font-size:13px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;cursor:pointer;font-family:inherit;";
       const submit = document.createElement("button");
       submit.type = "button";
-      submit.textContent = "Polish & fill";
-      submit.style.cssText = [
-        "padding:8px 14px", "font-size:13px", "border-radius:8px",
-        "border:1px solid #4f46e5", "background:#4f46e5", "color:#fff",
-        "cursor:pointer", "font-weight:600",
-      ].join(";");
+      submit.textContent = state.hasField ? "Apply" : "Rewrite & copy";
+      submit.style.cssText = "padding:8px 14px;font-size:13px;border-radius:8px;border:1px solid #4f46e5;background:#4f46e5;color:#fff;cursor:pointer;font-weight:600;font-family:inherit;";
+      actions.appendChild(cancel);
+      actions.appendChild(submit);
+      footer.appendChild(hint);
+      footer.appendChild(actions);
 
       function cleanup(value) {
         backdrop.remove();
         document.removeEventListener("keydown", onKey, true);
         resolve(value);
       }
+      function submitNow() {
+        cleanup({ intent: textarea.value.trim(), presetKey: selectedPreset });
+      }
       function onKey(e) {
-        if (e.key === "Escape") {
-          e.stopPropagation();
-          cleanup(null);
-        } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-          e.stopPropagation();
-          cleanup(textarea.value.trim() || null);
-        }
+        if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); cleanup(null); }
+        else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.stopPropagation(); e.preventDefault(); submitNow(); }
       }
       cancel.addEventListener("click", () => cleanup(null));
-      submit.addEventListener("click", () => cleanup(textarea.value.trim() || null));
+      submit.addEventListener("click", submitNow);
       backdrop.addEventListener("click", (e) => { if (e.target === backdrop) cleanup(null); });
       document.addEventListener("keydown", onKey, true);
 
-      buttons.appendChild(cancel);
-      buttons.appendChild(submit);
-      dialog.appendChild(heading);
+      dialog.appendChild(header);
       dialog.appendChild(subheading);
-      dialog.appendChild(textarea);
-      dialog.appendChild(buttons);
+      if (state.original) dialog.appendChild(previewWrap);
+      if (presets.length) dialog.appendChild(chipsWrap);
+      dialog.appendChild(customWrap);
+      dialog.appendChild(footer);
       backdrop.appendChild(dialog);
       document.documentElement.appendChild(backdrop);
-      setTimeout(() => textarea.focus(), 0);
+
+      paintChips();
+      // Fill-only path has no presets and no selection preview, so the
+      // textarea is the only real input — auto-expand it. Rewrite paths
+      // default collapsed: presets are the fast path, custom is opt-in.
+      if (!state.original) setCustomOpen(true);
+      else (submit.focus());
     }),
   });
-  return typeof result === "string" ? result : null;
+  return result ?? null;
 }
 
-async function runFillFocusedFieldCustom(tabId, selectionText, hintFrameId) {
-  const marker = await markFillTarget(tabId, hintFrameId);
-  if (!marker.ok) {
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "No focused field",
-      message: "Click into an input/textarea first, then run Fill with custom intent.",
-      priority: 1,
-    });
+// Unified entry point used by both context menu and Alt+J. Captures
+// state (field + selection) in one pass, opens the menu, dispatches to
+// the single write path.
+async function openActionMenu(tabId) {
+  const state = await captureField(tabId);
+  if (!state?.ok) {
+    await notify("Nothing to act on", "Click into a field or select some text first.", false);
     return;
   }
-  const frameId = marker.frameId;
-
-  const ctx = await getFillContext(tabId, frameId, selectionText);
-  if (!ctx?.has_target) {
-    await clearFillTarget(tabId, frameId);
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: "icons/icon-128.png",
-      title: "No focused field",
-      message: "Click into an input/textarea first, then run Fill with custom intent.",
-      priority: 1,
-    });
+  const choice = await promptForAction(tabId, state.frameId, state);
+  if (!choice) {
+    if (state.hasField) await clearFillTarget(tabId, state.frameId);
     return;
   }
-
-  const intent = await promptForCustomIntent(tabId, frameId, "");
-  if (!intent) {
-    await clearFillTarget(tabId, frameId);
-    return;
-  }
-
-  await showFillSpinner(tabId, frameId);
-  try {
-    const payload = await withSelectedAgent({
-      action: "fill",
-      instruction: [
-        `User intent: "${intent.replace(/"/g, '\\"')}".`,
-        "Polish that intent into the final text for the focused field.",
-        "The intent is the message; the surrounding page is the situation",
-        "(tone, language, length, greeting/sign-off).",
-        "page_context gives you Field kind (heuristic guess) + raw HTML",
-        "signals (tag, type, maxlength, label, placeholder, aria-label,",
-        "host). If Field kind is missing or wrong, infer it from Host,",
-        "URL, title/headings/meta and the raw signals (gmail/outlook ->",
-        "email; github -> code review/issue comment; x/linkedin -> social",
-        "post with length norms; jira/linear/asana -> ticket; banking ->",
-        "short factual). Match that kind: email = greeting + sign-off;",
-        "chat = terse no sign-off; comment = on-topic no greeting; search",
-        "= bare keywords; short field = respect maxlength.",
-        "Write in the SAME LANGUAGE as the surrounding context, not this",
-        "instruction nor necessarily the intent. Only keep the intent's",
-        "language when the context language is genuinely unclear.",
-        "Faithfully convey the intent: no new content, no commitments or",
-        "facts the user didn't ask for, no softening a refusal into",
-        "agreement. You may expand a one-liner into greeting + body +",
-        "sign-off when the context calls for it, but the substance stays",
-        "the user's.",
-        "Return ONLY the final text to insert: no preamble, quotes,",
-        "markdown fencing, or explanation.",
-      ].join(" "),
-      url: ctx.url,
-      title: ctx.title,
-      text: ctx.text,
-      page_context: ctx.page_context,
-    });
-    const apiRes = await postJson(extensionTurnUrl(currentConfig), payload);
-    await applyAgentIconHintFromBody(apiRes?.body);
-
-    if (!apiRes?.ok) {
-      await chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/icon-128.png",
-        title: "Fill failed",
-        message: apiRes?.body?.error ?? `HTTP ${apiRes?.status ?? "?"}`,
-        priority: 1,
-      });
-      return;
-    }
-
-    const out = String(apiRes.body?.assistant ?? "").trim();
-    if (!out) {
-      await chrome.notifications.create({
-        type: "basic",
-        iconUrl: "icons/icon-128.png",
-        title: "Fill failed",
-        message: "The agent returned no content to insert.",
-        priority: 1,
-      });
-      return;
-    }
-
-    const applied = await fillFocusedField(tabId, frameId, out);
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: applied?.ok ? "icons/icon-128.png" : "icons/icon-128-disabled.png",
-      title: applied?.ok ? "Field filled" : "Fill generated",
-      message: applied?.ok
-        ? "The focused field was filled with the polished text."
-        : `Could not apply text automatically: ${applied?.reason ?? "unknown reason"}`,
-      priority: 1,
-    });
-  } finally {
-    await hideFillSpinner(tabId, frameId);
-    await clearFillTarget(tabId, frameId);
-  }
+  await runWrite(tabId, state, choice);
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (!tab?.id) return;
-
-  (async () => {
-    if (info.menuItemId === MENU_FILL_FIELD) {
-      await runFillFocusedField(tab.id, info.selectionText ?? "", info.frameId);
-      return;
-    }
-    if (info.menuItemId === MENU_FILL_FIELD_CUSTOM) {
-      await runFillFocusedFieldCustom(tab.id, info.selectionText ?? "", info.frameId);
-      return;
-    }
-    if (typeof info.menuItemId === "string" && info.menuItemId.startsWith(MENU_REWRITE_PREFIX)) {
-      const direction = info.menuItemId.slice(MENU_REWRITE_PREFIX.length);
-      const instruction = REWRITE_DIRECTIONS[direction];
-      if (!instruction) return;
-      await runRewriteToClipboard(tab.id, info.selectionText ?? "", instruction);
-      return;
-    }
-  })().catch((err) => {
+  if (info.menuItemId !== MENU_OPEN) return;
+  openActionMenu(tab.id).catch((err) => {
     console.warn("[jarela] context menu action failed:", err);
   });
 });
 
-// Keyboard shortcuts — for hosts that hijack the right-click menu (Outlook
-// PWA, some Office apps, sites with custom context menus). Bindings are
-// declared in manifest.json under "commands"; users can rebind them at
-// chrome://extensions/shortcuts.
+// Keyboard shortcut for sites that hijack right-click (Outlook PWA,
+// custom editors). Binding declared in manifest.json under "commands";
+// users can rebind at chrome://extensions/shortcuts.
 chrome.commands?.onCommand.addListener((command, tab) => {
   if (!tab?.id) return;
-  (async () => {
-    if (command === "fill-focused-field") {
-      await runFillFocusedField(tab.id, "", undefined);
-      return;
-    }
-    if (command === "fill-focused-field-custom") {
-      await runFillFocusedFieldCustom(tab.id, "", undefined);
-      return;
-    }
-  })().catch((err) => {
+  if (command !== "fill-focused-field") return;
+  openActionMenu(tab.id).catch((err) => {
     console.warn("[jarela] keyboard command failed:", err);
   });
 });

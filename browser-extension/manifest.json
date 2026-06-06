@@ -40,14 +40,7 @@
         "default": "Alt+J",
         "mac": "Alt+J"
       },
-      "description": "Jarela: fill focused field"
-    },
-    "fill-focused-field-custom": {
-      "suggested_key": {
-        "default": "Alt+Shift+J",
-        "mac": "Alt+Shift+J"
-      },
-      "description": "Jarela: fill focused field with custom intent"
+      "description": "Jarela: open fill menu on focused field"
     }
   },
   "icons": {
