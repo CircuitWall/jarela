@@ -7,69 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-06
+
+First **stable** release. The package surface is now formally locked,
+Anthropic prompt caching is enabled with cost-correct per-turn
+accounting, and agents can introspect their own toolbelt at runtime.
+
+### Breaking
+
+- **`./*` wildcard removed from `package.json#exports`.** Consumers can
+  now import only from the five paths in the explicit contract table
+  (`./lib/providers/types`, `./lib/tools/types`, `./lib/tools/registry`,
+  `./lib/mcp/registry`, `./package.json`). Anything else is internal
+  and resolves to a Node `ERR_PACKAGE_PATH_NOT_EXPORTED`. ADR-0061
+  captured the planned lockdown; this is the cut. From this release
+  forward, the deprecation policy in CONTRIBUTING.md applies: removing
+  or breaking any public export bumps MAJOR.
+
 ### Added
 
-- **Cache-hit indicator under each assistant turn.** When Anthropic
-  prompt caching fires for a turn, the chat panel's per-turn usage
-  bar now shows a `cache hit · Nk read · cache write · Mk` chip
-  underneath, with a `Cache` row appearing in the expanded numeric
-  details. The bar's tooltip explains the 0.1× / 1.25× billing
-  multipliers. ADR-0062 covers the full plumbing.
+- **Anthropic prompt caching**
+  ([#181](https://github.com/CircuitWall/jarela/pull/181)). The
+  Anthropic adapter now marks the system block, the tools block, and
+  the most-recent tool result with
+  `cache_control: { type: "ephemeral" }`. Cuts cost on multi-step
+  ReAct turns where the same prefix repeats on every step. ADR-0062
+  documents the breakpoint placement.
+- **Per-turn cost reflects Anthropic cache pricing**
+  ([#183](https://github.com/CircuitWall/jarela/pull/183),
+  [#185](https://github.com/CircuitWall/jarela/pull/185)). The
+  `message_usage` table gained two nullable columns
+  (`cache_creation_input_tokens`, `cache_read_input_tokens`). The
+  agent loop reads them from the provider stream via LangChain's
+  standard `usage_metadata.input_token_details` channel, persists
+  them, and `estimateCostUsd` now prices them at 1.25× / 0.1× the
+  input rate. The dashboard's totals are correct end-to-end.
+- **Cache-hit indicator under each assistant turn**
+  ([#187](https://github.com/CircuitWall/jarela/pull/187)). The chat
+  panel's per-turn usage bar shows a
+  `cache hit · Nk read · cache write · Mk` chip when caching fires,
+  with a `Cache` row in the expanded numeric details and full numbers
+  in the bar tooltip.
 - **`MessageUsage.cache_creation_input_tokens` /
-  `cache_read_input_tokens`** added to the API client type so external
-  consumers of `GET /api/v1/threads/<id>` see the same shape the chat
-  UI does.
-- **Public API surface declared** for the npm package. New
-  [`package.json#exports`](./package.json) lists `lib/providers/types`,
-  `lib/tools/types`, `lib/tools/registry`, and `lib/mcp/registry` as the
-  contract paths plugin authors and external embedders should rely on.
-  Everything reachable via the wildcard fallback is incidentally
-  accessible during the pre-1.0 transition but not part of the contract
-  (ADR-0061).
-- **`docs/EXTENDING.md`** — single integration guide covering all seven
-  extension surfaces (built-in providers, external `.cjs` provider
-  plugins, built-in tools, MCP servers, agent harnesses, integration
-  manifests, brand overlays).
-- **`docs/api.md`** — HTTP API reference listing only the stable
-  `@public` routes (health, threads, agents, tools, models, providers,
-  events SSE, page-capture). Sub-routes that exist for the in-app UI are
-  explicitly listed as out-of-scope.
+  `cache_read_input_tokens`** added to the wire contract type so
+  external consumers of `GET /api/v1/threads/<id>` see the same shape
+  the chat UI does.
+- **Public API surface declared** for the npm package
+  ([#182](https://github.com/CircuitWall/jarela/pull/182), ADR-0061).
+  `package.json#exports` is the single source of truth for what's
+  contractually public; the deprecation policy in CONTRIBUTING.md
+  defines the change rules.
+- **[`docs/EXTENDING.md`](./docs/EXTENDING.md)** — single integration
+  guide covering all seven extension surfaces (built-in providers,
+  external `.cjs` provider plugins, built-in tools, MCP servers, agent
+  harnesses, integration manifests, brand overlays).
+- **[`docs/api.md`](./docs/api.md)** — HTTP API reference listing only
+  the stable `@public` routes (health, threads, agents, tools, models,
+  providers, events SSE, page-capture).
 - **Four new agent-introspection tools** (`Config` category, `read`
   capability): `list_tools`, `list_providers` + `describe_provider`,
-  `list_mcp_servers`, `describe_extension_surfaces`. Lets the agent
-  answer "what can I do" / "how do I add an X" without out-of-band docs.
-- **Deprecation policy** in CONTRIBUTING.md — public APIs get one minor
-  version cycle of deprecation before removal; internals can change
-  anytime.
+  `list_mcp_servers`, `describe_extension_surfaces`. Lets an agent
+  answer "what can I do" / "how do I add an X" without out-of-band
+  docs.
+- **Deprecation policy** in CONTRIBUTING.md — public APIs get one
+  minor version cycle of deprecation before removal; internals can
+  change anytime.
 - **JSDoc `@public` headers** on the four contract type files
-  (`lib/providers/types.ts`, `lib/tools/types.ts`, `lib/tools/registry.ts`,
-  `lib/mcp/registry.ts`) and on the eleven public HTTP route files.
+  (`lib/providers/types.ts`, `lib/tools/types.ts`,
+  `lib/tools/registry.ts`, `lib/mcp/registry.ts`) and on the eleven
+  public HTTP route files.
 
 ### Changed
 
 - `lib/tools/index.ts` no longer snapshots the built-in tool list at
   module-load time. Replaces the `ALL_BUILTINS` / `BUILTIN_TOOL_NAMES`
   constants with live accessors so tool modules that import back from
-  `index` (for `getAllToolsAsync` etc.) can register without falling out
-  of the snapshot.
+  `index` (for `getAllToolsAsync` etc.) can register without falling
+  out of the snapshot.
 - `BUILTIN_TOOL_NAMES` export replaced with `getBuiltinToolNames()`
   function. The two in-app callers (`/api/v1/extensions` routes) are
   updated.
-- **Per-turn cost now reflects Anthropic prompt-cache pricing.** PR #181
-  enabled cache writes/reads on the wire; this turn reads the
-  `cache_creation_input_tokens` / `cache_read_input_tokens` counts from
-  the provider stream, persists them on the `message_usage` snapshot row
-  (two new nullable columns), and prices them at 1.25× / 0.1× the input
-  rate when computing `cost_usd`. The dashboard's totals now correctly
-  attribute spend on cache-creating vs. cache-hitting turns. Cache
-  tokens now also pass through `messageUsageToResponse`, so the GET
-  `/api/v1/threads/<id>` projection carries the breakdown for any UI
-  consumer. ADR-0062 captures the full decision.
 
 ### Fixed
 
 - README "Extending" TOC link no longer points to a non-existent
   `#extension-points` anchor; it now links to `docs/EXTENDING.md`.
+- README "Add a built-in tool" walkthrough updated to the
+  post-ADR-0038 three-arg
+  `registerTools(category, capability, [...])` signature
+  ([#184](https://github.com/CircuitWall/jarela/pull/184)).
 
 ## [0.14.0] - 2026-06-05
 
