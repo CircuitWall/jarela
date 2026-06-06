@@ -3,6 +3,7 @@ import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigNam
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
+import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
 
 const NO_REPLY_RE = /^\s*NO[_ ]?REPLY\b/i;
 
@@ -29,6 +30,15 @@ export interface RunAgentTurnRequest {
    * only wants to run the agent against it (e.g. page-capture observer).
    */
   skip_persist_user_message?: boolean;
+
+  /**
+   * Per-call override of the context profile (see
+   * `@/lib/agents/turn-profile`). When omitted, the profile is resolved
+   * from `queue_source` via `TURN_PROFILES`. Provide partial overrides
+   * to flip an individual toggle for a specific call without changing
+   * the category default.
+   */
+  context_profile_override?: Partial<TurnContextProfile> | null;
 }
 
 export interface RunAgentTurnResult {
@@ -46,12 +56,14 @@ export interface RunAgentTurnResult {
  */
 export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTurnResult> {
   const pinnedModelConfigName = snapshotThreadModelConfigName(req.thread_id);
+  const contextProfile = resolveTurnProfile(req.queue_source, req.context_profile_override);
   const enqueued = enqueueThreadRun(req.thread_id, req.queue_source, async () => {
     const prepared = await prepareThreadRun({
       thread_id: req.thread_id,
       message: req.message,
       attachments: req.attachments,
       user_category: req.user_category ?? null,
+      context_profile: contextProfile,
       _pinned_model_config_name: pinnedModelConfigName,
       _skip_persist_message: req.skip_persist_user_message,
     });

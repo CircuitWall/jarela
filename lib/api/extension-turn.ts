@@ -21,6 +21,26 @@ const GenericBody = Body.extend({
   action: ExtensionAction,
 });
 
+// Per-action thread strategy + display title. Surfaced here so the
+// behaviour of each extension turn type is configured in one obvious
+// place instead of being buried inside `pickThread` branches.
+//
+// - "isolated"     → spin a brand-new thread per call. Use for one-shot
+//                    tools where prior chat history would contaminate
+//                    the answer (fill, rewrite_clipboard).
+// - "reuse_latest" → land on the agent's most recent thread so the user
+//                    can keep iterating in the chat window
+//                    ("make that more concise", "now translate it").
+//                    Used for refine.
+//
+// To change behaviour for an action type, edit ONLY this map.
+type ThreadStrategy = "isolated" | "reuse_latest";
+const ACTION_THREAD_STRATEGY: Record<z.infer<typeof ExtensionAction>, { strategy: ThreadStrategy; isolatedTitle: string }> = {
+  fill:              { strategy: "isolated",     isolatedTitle: "Fill focused field" },
+  rewrite_clipboard: { strategy: "isolated",     isolatedTitle: "Rewrite to clipboard" },
+  refine:            { strategy: "reuse_latest", isolatedTitle: "Refine selection" },
+};
+
 interface PickResult {
   thread_id: string;
   agent_id: string;
@@ -48,15 +68,10 @@ function pickThread(action: z.infer<typeof ExtensionAction>, agentId?: string): 
   const agent: AgentConfigRow | null = requested ?? def ?? listAgentConfigs()[0] ?? null;
   if (!agent) return { error: "no-agent" };
 
-  // Fill + rewrite are one-shot tools: the agent should answer using ONLY
-  // the per-call instruction + page context the extension sent, not the
-  // hot/warm history of whatever thread the user last chatted on. Spin a
-  // fresh thread per call so the history window is empty. Refine is
-  // iterative ("make that more concise", "now translate it"), so it keeps
-  // reusing the most recent thread for the agent.
-  if (action === "fill" || action === "rewrite_clipboard") {
-    const title = action === "fill" ? "Fill focused field" : "Rewrite to clipboard";
-    const t = createThread(agent.id, title);
+  const config = ACTION_THREAD_STRATEGY[action];
+
+  if (config.strategy === "isolated") {
+    const t = createThread(agent.id, config.isolatedTitle);
     return {
       thread_id: t.thread_id,
       agent_id: agent.id,
@@ -67,6 +82,8 @@ function pickThread(action: z.infer<typeof ExtensionAction>, agentId?: string): 
     };
   }
 
+  // reuse_latest — fall through to the most recent thread for the agent,
+  // creating a long-lived "Extension turns" thread if there isn't one yet.
   const recent: ThreadRow[] = listThreadsByAgent(agent.id, 1);
   if (recent.length > 0) {
     return {

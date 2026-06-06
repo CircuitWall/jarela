@@ -23,6 +23,7 @@ import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
+import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           attachments,
           signal: active.abort.signal,
           hot_since,
+          context_profile: resolveTurnProfile("user"),
           _pinned_model_config_name: pinnedModelConfigName,
         });
       } catch (err) {

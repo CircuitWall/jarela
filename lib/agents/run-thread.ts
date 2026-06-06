@@ -203,11 +203,29 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const oldestInWindow = historyWindow.history.length > 0
     ? contentText(historyWindow.history[0].content)
     : null;
-  const recallCtx = await raceWithBudget(
-    buildRecallContext(req.thread_id, trimmed, oldestInWindow),
-    RECALL_BUDGET_MS,
-    "",
-  );
+  const rawRecallCtx = req.context_profile && req.context_profile.include_recall === false
+    ? ""
+    : await raceWithBudget(
+      buildRecallContext(req.thread_id, trimmed, oldestInWindow),
+      RECALL_BUDGET_MS,
+      "",
+    );
+
+  // Apply the per-category context profile (see lib/agents/turn-profile.ts).
+  // The toggles fire AFTER buildHistoryWindow so the budget snapshot still
+  // shows what we *would have* spent on hot/warm — useful when debugging
+  // why an extension turn answered with the field's own context only.
+  const profile = req.context_profile;
+  const effectiveHistory = profile && profile.include_hot === false
+    ? []
+    : historyWindow.history;
+  const effectiveWarmSummary = profile && profile.include_warm === false
+    ? ""
+    : historyWindow.warmSummaryCtx;
+  const effectiveFacts = profile && profile.include_facts === false
+    ? ""
+    : historyWindow.factsCtx;
+  const recallCtx = rawRecallCtx;
 
   // Numbered source manifest for require_source_links agents. Built from
   // every source the agent has touched via tools in prior turns of this
@@ -225,8 +243,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     trimmedMessage: trimmed,
     budget: historyWindow.budget,
     recallCtx,
-    warmSummaryCtx: historyWindow.warmSummaryCtx,
-    factsCtx: historyWindow.factsCtx,
+    warmSummaryCtx: effectiveWarmSummary,
+    factsCtx: effectiveFacts,
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
     sourceManifest,
@@ -251,8 +269,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // this LLM call. Use the structured `content` form (not the JSON-
   // stringified fallback) so attachments survive into the LLM call.
   const finalHistory = req._inject_message_into_history
-    ? [...historyWindow.history, { role: "user" as const, content }]
-    : historyWindow.history;
+    ? [...effectiveHistory, { role: "user" as const, content }]
+    : effectiveHistory;
 
   const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
   const retriesLeft = req._stall_retries_left ?? maxStallRetries();
@@ -264,9 +282,9 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     thread_id: req.thread_id,
     context_snapshot: {
       context_window_tokens: historyWindow.budget.contextWindowTokens,
-      hot_tokens: historyWindow.tierUsage.hot_tokens,
-      warm_tokens: historyWindow.tierUsage.warm_tokens,
-      facts_tokens: historyWindow.tierUsage.facts_tokens,
+      hot_tokens: profile && profile.include_hot === false ? 0 : historyWindow.tierUsage.hot_tokens,
+      warm_tokens: profile && profile.include_warm === false ? 0 : historyWindow.tierUsage.warm_tokens,
+      facts_tokens: profile && profile.include_facts === false ? 0 : historyWindow.tierUsage.facts_tokens,
       overhead_tokens: overheadTokens,
       hot_budget_tokens: historyWindow.budget.tierBudgets.hot,
       warm_budget_tokens: historyWindow.budget.tierBudgets.warm,

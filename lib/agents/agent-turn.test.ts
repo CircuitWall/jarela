@@ -65,7 +65,14 @@ describe("runAgentTurn", () => {
       message: "Ping",
       attachments: undefined,
       user_category: "scheduled_task",
+      context_profile: {
+        include_hot: false,
+        include_warm: false,
+        include_facts: true,
+        include_recall: true,
+      },
       _pinned_model_config_name: "Gemini Chat",
+      _skip_persist_message: undefined,
     });
     expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
     expect(out.skippedAssistant).toBe(false);
