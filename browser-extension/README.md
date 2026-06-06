@@ -41,6 +41,7 @@ Press **ESC** during the picker to cancel without sending.
 | -------------------------- | ----------------------------------------------- |
 | `manifest.json`            | MV3 manifest                                    |
 | `background.js`            | Service worker: health heartbeat, click router  |
+| `popup.html` / `popup.js`  | Quick actions: pick, refine, fill               |
 | `content.js`               | Picker overlay + send animation                 |
 | `content.css`              | Picker styles + keyframes                       |
 | `lib/helpers.mjs`          | Pure helpers (also unit-tested via vitest)      |

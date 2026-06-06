@@ -30,6 +30,13 @@ export interface ThreadRunRequest {
    */
   hot_since?: string | null;
 
+  /**
+   * Internal - public callers leave undefined. When set by the submission
+   * path, this freezes the effective model config for the turn so queued
+   * runs do not drift if the agent model changes before execution starts.
+   */
+  _pinned_model_config_name?: string | null;
+
   /** Internal — public callers leave undefined. Decremented across the
    *  stall-retry recursion. */
   _stall_retries_left?: number;

@@ -12,6 +12,10 @@ import {
   matchesLaunchUrl,
   healthUrl,
   captureUrl,
+  extensionRefineUrl,
+  extensionFillUrl,
+  extensionTurnUrl,
+  extensionAgentsUrl,
   appUrl,
 } from "./config.mjs";
 
@@ -207,6 +211,10 @@ describe("healthUrl / captureUrl / appUrl", () => {
     const cfg = { scheme: "http", host: "127.0.0.1", port: 4312 };
     expect(healthUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/health");
     expect(captureUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/page-capture");
+    expect(extensionRefineUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/refine");
+    expect(extensionFillUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/fill");
+    expect(extensionTurnUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/turn");
+    expect(extensionAgentsUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/agents");
     expect(appUrl(cfg)).toBe("http://127.0.0.1:4312/");
   });
 });

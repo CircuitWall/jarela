@@ -14,6 +14,7 @@ import {
   prepareThreadRun,
   persistAssistantMessage,
   RunThreadError,
+  snapshotThreadModelConfigName,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
 import { broadcast, finishRun, startRun, subscribe, abortRun, getRun } from "@/lib/agents/run-registry";
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   // If the queue is already at the soft cap, reject with 503 so the
   // caller can back off rather than pin yet more work in memory.
   const thread = getThread(thread_id);
+  const pinnedModelConfigName = snapshotThreadModelConfigName(thread_id);
   let position: number;
   try {
     ({ position } = enqueueThreadRun(thread_id, "user", async () => {
@@ -76,6 +78,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           attachments,
           signal: active.abort.signal,
           hot_since,
+          _pinned_model_config_name: pinnedModelConfigName,
         });
       } catch (err) {
         // Prep failure (unknown agent, model misconfig, …). With queueing

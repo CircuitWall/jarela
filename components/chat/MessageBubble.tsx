@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -17,6 +17,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
+import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
 
 interface ExtractedRef {
   title: string;
@@ -197,6 +198,104 @@ function CapturedContextCard({ ctx, accent }: { ctx: CapturedContext; accent: bo
           <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.body}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// Browser-extension turn card. The prompt format and parser live in
+// `lib/api/extension-turn-prompt` so the compose/parse pair stays in sync
+// between the server handler and this view.
+function ExtensionTurnCard({ ctx, accent }: { ctx: ExtensionTurnContext; accent: boolean }) {
+  const [open, setOpen] = useState(false);
+  const hostname = ctx.url ? (() => { try { return new URL(ctx.url!).hostname; } catch { return ctx.url!; } })() : null;
+  const hasDetails = Boolean(ctx.pageContext || ctx.selectedText || ctx.selector || ctx.url);
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <button
+        type="button"
+        onClick={() => hasDetails && setOpen((v) => !v)}
+        className={`flex items-center gap-2 text-left min-w-0 ${accent ? "text-white/95 hover:text-white" : "text-fg hover:text-fg-muted"} ${hasDetails ? "" : "cursor-default"}`}
+        aria-expanded={open}
+        title={hasDetails ? (open ? "Hide extension turn details" : "Show extension turn details") : undefined}
+      >
+        {hasDetails && <ChevronRight size={12} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />}
+        <Zap size={12} className="shrink-0" />
+        <span className="text-[13px] font-medium truncate min-w-0">{ctx.actionLabel}</span>
+      </button>
+      {ctx.instruction && (
+        <p className={`pl-5 text-[12.5px] leading-relaxed whitespace-pre-wrap ${accent ? "text-white/90" : "text-fg"}`}>
+          {ctx.instruction}
+        </p>
+      )}
+      <div className={`flex flex-wrap items-center gap-1.5 text-[10px] pl-5 ${accent ? "text-white/75" : "text-fg-faint"}`}>
+        {ctx.url && hostname && (
+          <a
+            href={ctx.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 underline decoration-dotted hover:decoration-solid truncate max-w-[18rem]"
+            title={ctx.url}
+          >
+            <LinkIcon size={9} className="shrink-0" />
+            <span className="truncate">{ctx.title || hostname}</span>
+          </a>
+        )}
+        {ctx.selector && (
+          <span
+            className={`px-1.5 py-0.5 rounded font-mono ${accent ? "bg-white/15" : "bg-surface-3"}`}
+            title={ctx.selector}
+          >
+            {ctx.selector.length > 36 ? `…${ctx.selector.slice(-33)}` : ctx.selector}
+          </span>
+        )}
+        {ctx.selectedText && (
+          <span className={`px-1.5 py-0.5 rounded ${accent ? "bg-white/15" : "bg-surface-3"}`}>
+            {`${ctx.selectedText.length.toLocaleString()} chars selected`}
+          </span>
+        )}
+      </div>
+      {open && hasDetails && (
+        <div className={`mt-1 pt-2 pl-5 border-t flex flex-col gap-2 ${accent ? "border-white/20" : "border-border/60"}`}>
+          {ctx.selectedText && (
+            <div>
+              <div className={`text-[10px] uppercase tracking-wide mb-0.5 ${accent ? "text-white/70" : "text-fg-faint"}`}>Selected</div>
+              <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed opacity-90">{ctx.selectedText}</p>
+            </div>
+          )}
+          {ctx.pageContext && (
+            <div>
+              <div className={`text-[10px] uppercase tracking-wide mb-0.5 ${accent ? "text-white/70" : "text-fg-faint"}`}>Page context</div>
+              <p className="whitespace-pre-wrap text-[12px] leading-relaxed opacity-80">{ctx.pageContext}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Small source-channel badge shown at the top of assistant bubbles that
+// were triggered by automation (bridge reply, scheduled task reply, etc.).
+// Lets the user tell at a glance which automation channel generated the
+// response without needing to scroll up to the corresponding user bubble.
+const CATEGORY_BADGE: Record<string, { label: string; Icon: React.ElementType; cls: string }> = {
+  scheduled_task: { label: "Scheduled", Icon: Clock,          cls: "text-violet-400/90 border-violet-500/30 bg-violet-950/30" },
+  watcher:        { label: "Watcher",   Icon: Eye,            cls: "text-amber-400/90  border-amber-500/30  bg-amber-950/30" },
+  bridge:         { label: "Bridge",    Icon: MessageCircle,  cls: "text-sky-400/90    border-sky-500/30    bg-sky-950/30" },
+  page_capture:   { label: "Capture",   Icon: Globe,          cls: "text-teal-400/90   border-teal-500/30   bg-teal-950/30" },
+  extension:      { label: "Extension", Icon: Zap,            cls: "text-indigo-400/90 border-indigo-500/30 bg-indigo-950/30" },
+  synthetic:      { label: "System",    Icon: Bot,            cls: "text-fg-faint      border-border/40     bg-surface-2" },
+};
+
+function CategorySourceBadge({ category }: { category: string }) {
+  const def = CATEGORY_BADGE[category];
+  if (!def) return null;
+  const { label, Icon, cls } = def;
+  return (
+    <div className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[10px] font-medium mb-1.5 self-start ${cls}`}>
+      <Icon size={9} className="shrink-0" />
+      <span>{label} reply</span>
     </div>
   );
 }
@@ -1320,6 +1419,8 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 if (trigger) return <TriggerMessageCard data={trigger} />;
                 const bridge = parseBridgeContext(parsed);
                 if (bridge) return <BridgeMessageCard ctx={bridge} />;
+                const ext = parseExtensionTurn(parsed);
+                if (ext) return <ExtensionTurnCard ctx={ext} accent={true} />;
                 const ctx = parseCapturedContext(parsed);
                 if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
                 return (
@@ -1329,9 +1430,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 );
               })()
             ) : (
-              <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
-              </CollapsibleLong>
+              <div className="flex flex-col">
+                {category && <CategorySourceBadge category={category} />}
+                <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
+                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
+                </CollapsibleLong>
+              </div>
             )
           ) : (
             <div className="flex flex-col gap-1.5">

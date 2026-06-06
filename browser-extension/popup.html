@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Jarela Extension</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1018;
+      --bg-grad-1: #14233a;
+      --bg-grad-2: #0b1018;
+      --panel: #131c2b;
+      --panel-2: #1a2436;
+      --border: #233149;
+      --border-soft: #1c2740;
+      --text: #eef3fb;
+      --muted: #8ea0bd;
+      --accent: #5ba8ff;
+      --accent-strong: #2f7af0;
+      --accent-soft: rgba(91, 168, 255, 0.16);
+      --success: #5fe1b5;
+      --danger: #ff8b8b;
+      --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 340px;
+      background: var(--bg);
+      color: var(--text);
+      font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    main {
+      padding: 16px;
+      background:
+        radial-gradient(120% 80% at 0% 0%, rgba(91, 168, 255, 0.10), transparent 60%),
+        radial-gradient(120% 80% at 100% 0%, rgba(95, 225, 181, 0.06), transparent 55%),
+        linear-gradient(180deg, var(--bg-grad-1), var(--bg-grad-2));
+    }
+
+    .card {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .agent-header { padding: 10px 12px; }
+
+    .field-label {
+      display: block;
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--muted);
+      margin: 0 0 8px 2px;
+      font-weight: 600;
+    }
+
+    .agent-row {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+    .agent-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background:
+        radial-gradient(120% 120% at 30% 20%, #2b3b58, #1a2436);
+      color: #eef3fb;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      box-shadow: 0 0 0 2px rgba(91, 168, 255, 0.10);
+      transition: box-shadow 160ms ease;
+    }
+    .agent-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    .select-wrap {
+      position: relative;
+    }
+    .select-wrap::after {
+      content: "";
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      width: 8px; height: 8px;
+      border-right: 1.5px solid var(--muted);
+      border-bottom: 1.5px solid var(--muted);
+      transform: translateY(-70%) rotate(45deg);
+      pointer-events: none;
+    }
+    select {
+      width: 100%;
+      appearance: none;
+      -webkit-appearance: none;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: rgba(11, 16, 24, 0.55);
+      color: var(--text);
+      padding: 9px 30px 9px 11px;
+      font: 13px/1.3 inherit;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+    }
+    select:hover { background: rgba(11, 16, 24, 0.75); }
+    select:focus-visible {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    button {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 10px 12px;
+      cursor: pointer;
+      font: 600 12.5px/1.2 inherit;
+      letter-spacing: 0.15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 120ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+    button:hover {
+      background: var(--panel-2);
+      border-color: #2e4163;
+    }
+    button:active { transform: translateY(1px); }
+    button:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      border-color: var(--accent);
+    }
+    button .icon { width: 14px; height: 14px; flex: 0 0 auto; }
+
+    button.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      border-color: transparent;
+      color: #fff;
+      box-shadow: 0 6px 16px rgba(47, 122, 240, 0.35), 0 1px 0 rgba(255, 255, 255, 0.15) inset;
+    }
+    button.primary:hover {
+      filter: brightness(1.05);
+      background: linear-gradient(135deg, #6ab0ff, #357ef2);
+    }
+    button.primary:active { filter: brightness(0.98); }
+
+    .status {
+      min-height: 16px;
+      font-size: 11px;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      text-align: center;
+      margin-top: 2px;
+    }
+    .status:not(:empty) {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-soft);
+    }
+    .status-wrap {
+      display: flex;
+      justify-content: center;
+      min-height: 18px;
+    }
+    .status.ok { color: var(--success); border-color: rgba(95, 225, 181, 0.35); background: rgba(95, 225, 181, 0.08); }
+    .status.err { color: var(--danger); border-color: rgba(255, 139, 139, 0.35); background: rgba(255, 139, 139, 0.08); }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="card agent-header">
+      <div class="agent-row">
+        <div class="agent-avatar" id="agent-avatar">
+          <img id="agent-avatar-img" alt="" />
+          <span id="agent-avatar-fallback">AI</span>
+        </div>
+        <div class="select-wrap">
+          <select id="agent" aria-label="Active agent"></select>
+        </div>
+      </div>
+    </header>
+
+    <section class="actions">
+      <button id="pick" class="primary" type="button">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3h7v7H3z"/><path d="M14 14l7 7"/><path d="M14 14l3 0 0 3"/>
+        </svg>
+        Select element for context
+      </button>
+      <button id="open-jarela" type="button">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>
+        </svg>
+        Open Jarela
+      </button>
+    </section>
+
+    <div class="status-wrap">
+      <div id="status" class="status" aria-live="polite"></div>
+    </div>
+  </main>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

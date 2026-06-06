@@ -21,7 +21,7 @@
 // without ever invoking the runner: same blast radius as today's stranded
 // `running` registry entries.
 
-type Source = "user" | "scheduler" | "watcher" | "trigger" | "bridge" | "delegate";
+type Source = "user" | "scheduler" | "watcher" | "trigger" | "bridge" | "extension" | "delegate";
 
 // Per-thread chain tail. Each enqueue chains onto the previous tail; the
 // new promise becomes the tail. When the tail settles AND no one chained
