@@ -49,7 +49,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const { state } = useAppContext();
   const [messages, setMessages] = useState<Message[]>([]);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
-  const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ContentPart[]>([]);
   const [compacting, setCompacting] = useState(false);
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
@@ -463,12 +462,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   // Steer = prepend message to queue and abort the current run; the existing
   // handleDone → drainQueueRef machinery picks the prepended item up first
   // (merged ahead of any earlier queued items) once the abort settles.
-  async function handleSubmit() {
-    let msg = input.trim();
+  async function handleSubmit(rawInput: string) {
+    let msg = rawInput.trim();
     if (!msg || !agentId) return;
 
     if (msg.toLowerCase() === "/new") {
-      setInput("");
       await handleCompact();
       return;
     }
@@ -486,7 +484,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       return;
     }
 
-    setInput("");
     const currentAttachments = attachments;
     setAttachments([]);
 
@@ -514,14 +511,14 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   // ⌘/Ctrl+Enter — explicit "queue this turn" path. Always appends; never
   // aborts. When idle and the queue is empty there's nothing to wait behind,
   // so we just send normally (the modifier is redundant in that case).
-  async function handleQueue() {
-    const msg = input.trim();
+  async function handleQueue(rawInput: string) {
+    const msg = rawInput.trim();
     if (!msg || !agentId) return;
 
     // /new and /btw have stronger semantics than the queue modifier — defer
     // to handleSubmit so the prefix is parsed and routed correctly.
     if (msg.toLowerCase() === "/new" || msg.toLowerCase().startsWith("/btw ")) {
-      await handleSubmit();
+      await handleSubmit(rawInput);
       return;
     }
 
@@ -530,7 +527,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       return;
     }
 
-    setInput("");
     const currentAttachments = attachments;
     setAttachments([]);
 
@@ -662,8 +658,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       <ApprovalsBanner agentId={agentId} />
 
       <InputBar
-        value={input}
-        onChange={setInput}
         attachments={attachments}
         onAttachmentsChange={setAttachments}
         onSubmit={handleSubmit}
