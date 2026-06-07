@@ -3,11 +3,11 @@
 // Output (all PNG unless noted):
 //   public/logo-mark.png             320 wide, white bg          (README hero)
 //   public/logo-mark-transparent.png 512 wide, transparent bg    (dark mode / overlays)
-//   public/icon-192.png              192x192, transparent bg     (PWA)
-//   public/icon-512.png              512x512, transparent bg     (PWA)
-//   public/icon-192-maskable.png     192x192, brand-blue bg      (PWA maskable)
-//   public/icon-512-maskable.png     512x512, brand-blue bg      (PWA maskable)
-//   public/apple-touch-icon.png      180x180, white bg           (iOS home screen)
+//   public/icon-192.png              192x192, navy + glowing J   (PWA)
+//   public/icon-512.png              512x512, navy + glowing J   (PWA)
+//   public/icon-192-maskable.png     192x192, navy + glowing J   (PWA maskable)
+//   public/icon-512-maskable.png     512x512, navy + glowing J   (PWA maskable)
+//   public/apple-touch-icon.png      180x180, navy + glowing J   (iOS home screen)
 //   public/favicon-32.png             32x32,  transparent bg     (site icon, modern)
 //   public/favicon-16.png             16x16,  transparent bg     (site icon, legacy)
 //   public/favicon.ico                multi-res ICO (32 + 16)    (browsers)
@@ -22,9 +22,98 @@ const PUBLIC = new URL("../public/", import.meta.url);
 const SRC = new URL("logo-source.png", PUBLIC).pathname.replace(/^\//, "");
 const out = (name) => new URL(name, PUBLIC).pathname.replace(/^\//, "");
 
-// Brand-blue background used for maskable + apple-touch icons. Matches the
-// blue gradient stop in the logo.
-const BG = { r: 30, g: 64, b: 175, alpha: 1 }; // #1e40af
+// ---- "glowing J on navy" treatment (PWA / Apple touch icon) ----------------
+//
+// The PWA install surfaces (iOS home screen, Android drawer, Chrome's "add
+// to home screen" preview) sit on top of a user's wallpaper. A light-on-
+// white app icon disappears there. Use a near-black navy squircle with a
+// luminous sky-tinted J and a soft cyan halo so the icon reads at small
+// sizes against any background.
+
+const NAVY_BG = { r: 10, g: 14, b: 26, alpha: 1 };       // #0a0e1a
+const NAVY_BG_INNER = { r: 26, g: 34, b: 64, alpha: 1 }; // #1a2240
+const GLOW = { r: 125, g: 211, b: 252 };                 // sky-300 #7dd3fc
+const LETTER_FILL = { r: 224, g: 242, b: 254 };          // sky-100 #e0f2fe
+
+// Recolor the J silhouette: keep the alpha channel as a mask, replace RGB
+// with a flat luminous tint.
+async function tintedMark(tint) {
+  const { data, info } = await sharp(await transparentMarkPng())
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    data[i] = tint.r;
+    data[i + 1] = tint.g;
+    data[i + 2] = tint.b;
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } })
+    .png({ compressionLevel: 9 })
+    .toBuffer();
+}
+
+const hex = (c) => "#" + [c.r, c.g, c.b].map((v) => v.toString(16).padStart(2, "0")).join("");
+
+// Build the navy-glow icon: SVG radial-gradient background (smooth falloff
+// at any size — no visible disc seam) + tinted J + two-stop glow halo.
+// `masked=true` skips the iOS-style rounded-square clip so the home-screen
+// shape mask on Android can do its own crop without cutting into the J.
+async function navyGlowIcon({ size, masked = false }) {
+  const inner = Math.round(size * (masked ? 0.6 : 0.68));
+  const fitted = await sharp(await tintedMark(LETTER_FILL))
+    .resize({ width: inner, height: inner, fit: "inside" })
+    .png()
+    .toBuffer();
+
+  const glowMark = await tintedMark(GLOW);
+  const glowFitted = await sharp(glowMark)
+    .resize({ width: inner, height: inner, fit: "inside" })
+    .png()
+    .toBuffer();
+  const glowNear = await sharp(glowFitted).blur(Math.max(2, size / 64)).png().toBuffer();
+  const glowFar = await sharp(glowFitted).blur(Math.max(6, size / 24)).png().toBuffer();
+
+  const midColor = hex({
+    r: Math.round((NAVY_BG.r + NAVY_BG_INNER.r) / 2),
+    g: Math.round((NAVY_BG.g + NAVY_BG_INNER.g) / 2),
+    b: Math.round((NAVY_BG.b + NAVY_BG_INNER.b) / 2),
+  });
+  const bgSvg = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <defs>
+        <radialGradient id="g" cx="50%" cy="42%" r="75%">
+          <stop offset="0%"  stop-color="${hex(NAVY_BG_INNER)}"/>
+          <stop offset="55%" stop-color="${midColor}"/>
+          <stop offset="100%" stop-color="${hex(NAVY_BG)}"/>
+        </radialGradient>
+      </defs>
+      <rect width="${size}" height="${size}" fill="url(#g)"/>
+    </svg>`,
+  );
+  let canvas = await sharp(bgSvg).png().toBuffer();
+
+  if (!masked) {
+    const radius = Math.round(size * 0.22);
+    const maskSvg = Buffer.from(
+      `<svg width="${size}" height="${size}"><rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="#fff"/></svg>`,
+    );
+    canvas = await sharp(canvas)
+      .composite([{ input: maskSvg, blend: "dest-in" }])
+      .png()
+      .toBuffer();
+  }
+
+  return sharp(canvas)
+    .composite([
+      { input: glowFar, gravity: "center", blend: "screen" },
+      { input: glowNear, gravity: "center", blend: "screen" },
+      { input: fitted, gravity: "center" },
+    ])
+    .png({ compressionLevel: 9 });
+}
+
+// ---- main ------------------------------------------------------------------
 
 // ---- helper: trim the source and key out the near-white background ---------
 //
@@ -105,24 +194,24 @@ async function main() {
     .png({ compressionLevel: 9 })
     .toFile(out("logo-mark-transparent.png"));
 
-  // 3. PWA app icons (transparent)
+  // 3. PWA app icons — navy squircle with glowing J. Reads against any
+  //    wallpaper on iOS/Android install surfaces; light-on-white versions
+  //    disappeared on dark/photo home screens.
   for (const size of [192, 512]) {
-    await (await squareIcon({ size })).toFile(out(`icon-${size}.png`));
+    await (await navyGlowIcon({ size })).toFile(out(`icon-${size}.png`));
   }
 
-  // 4. Maskable variants (solid brand bg, smaller safe area for icon mask)
+  // 4. Maskable variants — same artwork, no rounded-corner clip so the
+  //    platform's shape mask (Android adaptive icon, etc.) crops to its
+  //    own outline without cutting the rounded squircle twice.
   for (const size of [192, 512]) {
-    await (
-      await squareIcon({ size, bg: BG, padding: 0.18 })
-    ).toFile(out(`icon-${size}-maskable.png`));
+    await (await navyGlowIcon({ size, masked: true })).toFile(out(`icon-${size}-maskable.png`));
   }
 
-  // 5. Apple touch icon (white bg — iOS does not honor transparency and the
-  // dark brand-blue background made the dark "J" mark almost invisible on
-  // the home screen).
-  await (
-    await squareIcon({ size: 180, bg: { r: 255, g: 255, b: 255, alpha: 1 }, padding: 0.12 })
-  ).toFile(out("apple-touch-icon.png"));
+  // 5. Apple touch icon — same navy-glow treatment. iOS rounds it for the
+  //    home screen automatically, and the dark background means the icon
+  //    no longer needs a white plate to keep the J visible.
+  await (await navyGlowIcon({ size: 180 })).toFile(out("apple-touch-icon.png"));
 
   // 6. Favicons
   await (await squareIcon({ size: 32 })).toFile(out("favicon-32.png"));
