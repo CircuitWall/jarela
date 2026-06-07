@@ -9,7 +9,7 @@ process.on("exit", () => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* */ }
 });
 
-const { putMemory, deleteMemory } = await import("@/lib/stores/memory");
+const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
 const { subscribe } = await import("@/lib/notifications/bus");
 const { runAllHealthProbes, getHealthSnapshot, _resetHealthRunner } = await import("./runner");
 
@@ -44,7 +44,7 @@ describe("health runner", () => {
     // Wipe every integration so unconfigured probes are silent and we
     // can opt into one at a time.
     for (const k of ["atlassian", "github", "google", "gmail", "outlook", "anthropic", "jira_align"]) {
-      deleteMemory("integrations", k);
+      deleteIntegration(k);
     }
     // Several integrations have env-var fallbacks that bypass the
     // `integrations` namespace (`_resolveGithubAuth` reads GITHUB_TOKEN /
@@ -73,7 +73,7 @@ describe("health runner", () => {
   });
 
   it("publishes a single alert on first failure (not one per cycle)", async () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-xxx" });
+    saveIntegration("anthropic", { api_key: "sk-ant-xxx" });
     stubFetchByHost(() => new Response("nope", { status: 401 }));
     const { alerts, unsubscribe } = captureAlerts();
     try {
@@ -89,7 +89,7 @@ describe("health runner", () => {
   });
 
   it("re-fires after 30 min of continuous failure", async () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-xxx" });
+    saveIntegration("anthropic", { api_key: "sk-ant-xxx" });
     stubFetchByHost(() => new Response("nope", { status: 401 }));
     const { alerts, unsubscribe } = captureAlerts();
     try {
@@ -104,7 +104,7 @@ describe("health runner", () => {
   });
 
   it("publishes a recovery alert when a failing probe goes green", async () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-xxx" });
+    saveIntegration("anthropic", { api_key: "sk-ant-xxx" });
     let healthy = false;
     stubFetchByHost(() => healthy
       ? new Response(JSON.stringify({ data: [] }), { status: 200, headers: { "content-type": "application/json" } })

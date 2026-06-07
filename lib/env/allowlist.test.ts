@@ -21,7 +21,7 @@ const {
   deleteOverride,
   listOverrides,
 } = await import("./allowlist");
-const { putMemory, deleteMemory } = await import("@/lib/stores/memory");
+const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
 
 describe("ENV_ALLOWLIST", () => {
   it("every mapping has at least one envVar and a non-empty integration + field", () => {
@@ -151,7 +151,7 @@ describe("getInjectedSubprocessEnv", () => {
     }
     // Wipe any stored integration credentials between tests.
     for (const def of ["anthropic", "github", "atlassian", "google"]) {
-      deleteMemory("integrations", def);
+      deleteIntegration(def);
     }
   });
 
@@ -160,20 +160,20 @@ describe("getInjectedSubprocessEnv", () => {
   });
 
   it("renders a stored anthropic key under every default alias", () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-test" });
+    saveIntegration("anthropic", { api_key: "sk-ant-test" });
     const env = getInjectedSubprocessEnv();
     expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-test");
   });
 
   it("renders a stored github token under every default alias (canonical + GH_TOKEN)", () => {
-    putMemory("integrations", "github", { token: "ghp_abc" });
+    saveIntegration("github", { token: "ghp_abc" });
     const env = getInjectedSubprocessEnv();
     expect(env.GITHUB_TOKEN).toBe("ghp_abc");
     expect(env.GH_TOKEN).toBe("ghp_abc");
   });
 
   it("renders a stored value under override aliases too", () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-rotation" });
+    saveIntegration("anthropic", { api_key: "sk-ant-rotation" });
     setOverride("anthropic", "api_key", ["MY_ANT_KEY"]);
     const env = getInjectedSubprocessEnv();
     expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-rotation");
@@ -181,7 +181,7 @@ describe("getInjectedSubprocessEnv", () => {
   });
 
   it("skips fields that aren't stored", () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant" });
+    saveIntegration("anthropic", { api_key: "sk-ant" });
     const env = getInjectedSubprocessEnv();
     expect(env.ANTHROPIC_API_KEY).toBe("sk-ant");
     expect(env.GITHUB_TOKEN).toBeUndefined();
