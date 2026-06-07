@@ -17,6 +17,11 @@ export interface ModelEditorFormInput {
   max_tokens: string;           // numeric text or empty
   context_window_tokens: string; // numeric text or empty
   is_default: boolean;
+  // Reference to a row in the typed credentials store. The credential
+  // carries api_key / base_url / extra_headers; inline values on the
+  // model (above) act as per-model overrides only and are typically
+  // empty when a credential is bound.
+  credential_id?: string | null;
 }
 
 export type ModelEditorPayload = Omit<ModelConfig, "name" | "created_at" | "updated_at">;
@@ -72,6 +77,7 @@ export function buildModelEditorPayload(input: ModelEditorFormInput): BuildResul
       model_id,
       params,
       is_default: input.is_default,
+      credential_id: input.credential_id ?? null,
     },
   };
 }

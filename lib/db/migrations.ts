@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
+import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 
 const now = () => new Date().toISOString();
 
@@ -286,8 +287,11 @@ export function runMigrations(db: DatabaseSync): void {
   ensureMessageUsageCacheColumns(db);
   ensureThreadContextPinColumns(db);
   ensureThreadChannelSummariesTable(db);
+  ensureCredentialsTable(db);
+  ensureModelConfigCredentialIdColumn(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
+  migrateInlineApiKeysToCredentials(db);
 }
 
 // ADR-0044. Per-channel warm summary so a thread shared across `chat`,
@@ -976,4 +980,95 @@ function seedModelConfigs(db: DatabaseSync): void {
 
   ];
   for (const s of seeds) insert.run(...s);
+}
+
+// First-class typed-credentials table. Replaces the per-row inline
+// `api_key` / `base_url` / `extra_headers` blob inside `model_configs.params`
+// and is intended to absorb the `integrations` store (OAuth + API keys for
+// Gmail/Outlook/Google/Atlassian/GitHub) in a later migration without
+// schema change.
+//
+//   id           Stable handle referenced by model_configs.credential_id
+//                (and later other tables). Format: `<type>-<provider>`
+//                with a `-N` collision bump.
+//   type         Coarse domain bucket: `model` for LLM credentials, will
+//                grow to `tts`, `integration`, …
+//   provider     Provider key within the type (e.g. `anthropic`,
+//                `github-copilot`, later `gmail`, `outlook`).
+//   auth_method  `api_key` | `oauth`. Drives the editor UI and the
+//                resolver: `api_key` flattens straight into ProviderParams;
+//                `oauth` holds tokens that the provider adapter exchanges
+//                at call time.
+//   params       Encrypted JSON. For `api_key`: { api_key, base_url?,
+//                extra_headers? }. For `oauth`: { client_id, client_secret,
+//                refresh_token, access_token?, expires_at? }.
+function ensureCredentialsTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS credentials (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL,
+      provider    TEXT NOT NULL,
+      auth_method TEXT NOT NULL DEFAULT 'api_key',
+      params      TEXT NOT NULL DEFAULT '{}',
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_credentials_type_provider ON credentials(type, provider);
+  `);
+}
+
+function ensureModelConfigCredentialIdColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(model_configs)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("credential_id")) {
+    db.exec("ALTER TABLE model_configs ADD COLUMN credential_id TEXT");
+  }
+}
+
+// Idempotent backfill: for each model_config still carrying an inline
+// `api_key` (and no `credential_id` yet), create a credential row and
+// link by id. Strips the api_key / base_url / extra_headers fields from
+// the model's params so the credential is the single source of truth.
+// Runs every boot; no-op once every legacy row has been migrated.
+function migrateInlineApiKeysToCredentials(db: DatabaseSync): void {
+  const rows = db.prepare(
+    "SELECT name, provider, params FROM model_configs WHERE credential_id IS NULL OR credential_id = ''",
+  ).all() as Array<{ name: string; provider: string; params: string }>;
+  if (rows.length === 0) return;
+
+  const insertCred = db.prepare(
+    "INSERT INTO credentials (id, type, provider, auth_method, params, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+  );
+  const linkModel = db.prepare("UPDATE model_configs SET credential_id=?, params=?, updated_at=? WHERE name=?");
+  const existsCred = db.prepare("SELECT 1 FROM credentials WHERE id=?");
+  const t = now();
+
+  for (const row of rows) {
+    let params: Record<string, unknown>;
+    try { params = JSON.parse(decryptIfNeeded(row.params || "{}")) as Record<string, unknown>; }
+    catch { continue; }
+    const apiKey = typeof params.api_key === "string" ? params.api_key.trim() : "";
+    if (!apiKey) continue; // nothing to migrate; row stays unlinked (env-only)
+
+    // Allocate a non-colliding id of the form `model-<provider>[-N]`.
+    const base = `model-${row.provider}`;
+    let id = base;
+    let suffix = 2;
+    while ((existsCred.get(id) as unknown) !== undefined) {
+      id = `${base}-${suffix++}`;
+    }
+
+    const credParams: Record<string, unknown> = { api_key: apiKey };
+    if (typeof params.base_url === "string" && params.base_url.trim()) credParams.base_url = params.base_url;
+    if (params.extra_headers && typeof params.extra_headers === "object") credParams.extra_headers = params.extra_headers;
+    insertCred.run(id, "model", row.provider, "api_key", encrypt(JSON.stringify(credParams)), t, t);
+
+    // Strip the migrated fields from model_configs.params so reads don't
+    // see two competing sources of truth for the same secret.
+    const cleaned: Record<string, unknown> = { ...params };
+    delete cleaned.api_key;
+    delete cleaned.base_url;
+    delete cleaned.extra_headers;
+    linkModel.run(id, encrypt(JSON.stringify(cleaned)), t, row.name);
+  }
 }

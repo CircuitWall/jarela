@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 import type { ProviderParams } from "@/lib/providers/types";
 
 type Params = { params: Promise<{ provider: string }> };
@@ -23,19 +24,28 @@ export async function POST(req: NextRequest, { params }: Params) {
     model_id?: string;
     params?: ProviderParams;
     name?: string; // optional: hydrate params from saved model_config
+    credential_id?: string; // optional: hydrate api_key from saved credential
   };
   if (!body.model_id) {
     return NextResponse.json({ ok: false, error: "model_id required" }, { status: 400 });
   }
 
-  // Caller can pass in-form params directly, OR reference a saved config
-  // by name so the persisted (encrypted) api_key is used without surfacing
-  // it back to the client.
-  let providerParams: ProviderParams = body.params ?? {};
+  // Layer params in lowest-to-highest precedence:
+  //   1. saved credential (api_key / base_url / extra_headers / OAuth)
+  //   2. saved model_config inline params (non-secret overrides)
+  //   3. body.params (form-time overrides)
+  // This lets the editor "Test connection" before save while still using
+  // a stored credential's secret without surfacing it to the client.
+  let providerParams: ProviderParams = {};
+  if (body.credential_id) {
+    const cred = getCredential(body.credential_id);
+    if (cred) providerParams = { ...providerParams, ...getCredentialParams(cred) };
+  }
   if (body.name) {
     const cfg = getModelConfig(body.name);
-    if (cfg) providerParams = { ...getModelParams(cfg), ...providerParams };
+    if (cfg) providerParams = { ...providerParams, ...getModelParams(cfg) };
   }
+  providerParams = { ...providerParams, ...(body.params ?? {}) };
 
   let provider;
   try {

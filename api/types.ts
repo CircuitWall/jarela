@@ -265,6 +265,10 @@ export interface ModelConfig {
     };
     context_tier_priority?: ["hot" | "warm" | "facts", "hot" | "warm" | "facts", "hot" | "warm" | "facts"];
   };
+  // Linked credential row that carries api_key / base_url / extra_headers
+  // (or OAuth tokens). NULL on freshly seeded rows; auto-migration fills
+  // this for legacy rows that had inline secrets.
+  credential_id?: string | null;
   is_default: boolean;
   created_at: string;
   updated_at: string;
@@ -274,7 +278,42 @@ export interface ModelConfigIn {
   provider: string;
   model_id: string;
   params?: ModelConfig["params"];
+  credential_id?: string | null;
   is_default?: boolean;
+}
+
+export type CredentialType = "model" | "tts" | "integration" | "bridge";
+export type CredentialAuthMethod = "api_key" | "oauth";
+
+export interface Credential {
+  id: string;
+  type: CredentialType;
+  provider: string;
+  auth_method: CredentialAuthMethod;
+  // Server returns this with secret fields redacted to "***" when
+  // present. Clients never see plaintext for `api_key`/`client_secret`/
+  // `refresh_token`/`access_token` — only their existence.
+  params: {
+    api_key?: string;
+    base_url?: string;
+    extra_headers?: Record<string, string>;
+    client_id?: string;
+    client_secret?: string;
+    refresh_token?: string;
+    access_token?: string;
+    expires_at?: string;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CredentialIn {
+  // Omit to let the server allocate `<type>-<provider>[-N]`.
+  id?: string;
+  type: CredentialType;
+  provider: string;
+  auth_method?: CredentialAuthMethod;
+  params?: Credential["params"];
 }
 
 export interface TaskAssignment {

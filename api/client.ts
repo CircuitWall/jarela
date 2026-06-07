@@ -34,6 +34,8 @@ import type {
   MemoryItem,
   ModelConfig,
   ModelConfigIn,
+  Credential,
+  CredentialIn,
   StreamOptions,
   ToolInfo,
   ToolPolicy,
@@ -305,10 +307,10 @@ export const api = {
             body: JSON.stringify({ params: overrides }),
           })
         : request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`),
-    probe: (provider: string, model_id: string, params?: Record<string, unknown>, name?: string) =>
+    probe: (provider: string, model_id: string, params?: Record<string, unknown>, name?: string, credential_id?: string) =>
       request<{ ok: boolean; error?: string }>(`/providers/${encodeURIComponent(provider)}/probe`, {
         method: "POST",
-        body: JSON.stringify({ model_id, params, name }),
+        body: JSON.stringify({ model_id, params, name, credential_id }),
         timeoutMs: 20_000,
       }),
     compactThreads: (name: string, using: { provider: string; model_id: string; params?: Record<string, unknown> }) =>
@@ -340,6 +342,35 @@ export const api = {
         // Deleting a model cascades to its assignments server-side; drop the
         // task list cache so the next read reflects the server.
         if (taskListCache.data) setTaskListCache(taskListCache.data.filter((t) => t.model_config_name !== name));
+      }
+      return res;
+    },
+  },
+
+  credentials: {
+    list: (filter?: { type?: string; provider?: string }) => {
+      const qs = new URLSearchParams();
+      if (filter?.type) qs.set("type", filter.type);
+      if (filter?.provider) qs.set("provider", filter.provider);
+      const suffix = qs.toString() ? `?${qs.toString()}` : "";
+      return request<Credential[]>(`/credentials${suffix}`);
+    },
+    create: async (data: CredentialIn) => {
+      const created = await request<Credential>("/credentials", { method: "POST", body: JSON.stringify(data) });
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
+      return created;
+    },
+    update: async (id: string, data: Partial<CredentialIn>) => {
+      const updated = await request<Credential>(`/credentials/${encodeURIComponent(id)}`, {
+        method: "PUT", body: JSON.stringify(data),
+      });
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
+      return updated;
+    },
+    delete: async (id: string) => {
+      const res = await request<{ deleted: boolean }>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (res.deleted && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       }
       return res;
     },

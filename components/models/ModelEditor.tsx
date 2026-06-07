@@ -1,14 +1,15 @@
 "use client";
 import { BookOpen, CheckCircle2, Loader2, X, XCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
-import type { CatalogModel, IntegrationStatus, ModelConfig } from "@/api/types";
+import type { CatalogModel, Credential, IntegrationStatus, ModelConfig } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { buildModelEditorPayload } from "@/lib/models/editor-payload";
 import { CapBadges } from "./CapBadges";
 import { ModelFeatureGuide } from "./ModelFeatureGuide";
+import { CredentialEditor } from "@/components/credentials/CredentialEditor";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -45,7 +46,15 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [provider, setProvider] = useState(model?.provider ?? "anthropic");
   const [providers, setProviders] = useState<string[]>(FALLBACK_PROVIDERS);
   const [modelId, setModelId] = useState(model?.model_id ?? "");
-  const [apiKey, setApiKey] = useState(model?.params.api_key ?? "");
+  // Credential binding. When set, secret fields live in the credential
+  // row and the inline api_key field is hidden (the credential UI owns
+  // it). Inline base_url / extra_headers / api_key still act as
+  // per-model overrides if the user reveals advanced fields, since the
+  // server merges credential params UNDER inline params.
+  const [credentialId, setCredentialId] = useState<string | null>(model?.credential_id ?? null);
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [credentialDialog, setCredentialDialog] = useState<Credential | { creating: true } | null>(null);
+  const [apiKey, setApiKey] = useState(model?.params.api_key === "***" ? "" : (model?.params.api_key ?? ""));
   const [baseUrl, setBaseUrl] = useState(model?.params.base_url ?? "");
 
   const [extraHeaders, setExtraHeaders] = useState(
@@ -126,6 +135,50 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
     };
   }, []);
 
+  // Refresh the credential list whenever the user creates / edits one
+  // from inside this editor, or switches to a different provider so the
+  // dropdown narrows.
+  const refreshCredentials = async () => {
+    try {
+      const rows = await api.credentials.list({ type: "model" });
+      setCredentials(rows);
+    } catch {
+      setCredentials([]);
+    }
+  };
+  useEffect(() => {
+    refreshCredentials();
+    const onChange = () => refreshCredentials();
+    if (typeof window !== "undefined") window.addEventListener("jarela:credentials-changed", onChange);
+    return () => {
+      if (typeof window !== "undefined") window.removeEventListener("jarela:credentials-changed", onChange);
+    };
+  }, []);
+
+  // Default the credential picker to the first credential matching the
+  // current provider once the list arrives — but only on a NEW config,
+  // and only when the user hasn't already chosen one. Edits keep
+  // whatever the model row already references.
+  const providerCredentials = useMemo(
+    () => credentials.filter((c) => c.provider === provider),
+    [credentials, provider],
+  );
+  useEffect(() => {
+    if (isEdit) return;
+    if (credentialId) return;
+    if (providerCredentials.length === 0) return;
+    setCredentialId(providerCredentials[0].id);
+  }, [isEdit, credentialId, providerCredentials]);
+
+  // When the user changes the provider, drop a credential binding that
+  // no longer matches so we don't ship a mismatched secret to the
+  // backend on save.
+  useEffect(() => {
+    if (!credentialId) return;
+    const stillValid = credentials.some((c) => c.id === credentialId && c.provider === provider);
+    if (!stillValid) setCredentialId(null);
+  }, [provider, credentialId, credentials]);
+
   // Reset catalog when provider changes
   useEffect(() => {
     setCatalog(null);
@@ -178,6 +231,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       max_tokens: maxTokens,
       context_window_tokens: contextWindowTokens,
       is_default: isDefault,
+      credential_id: credentialId,
     });
     if (!result.ok) { setError(result.error); return; }
     setSaving(true);
@@ -186,7 +240,13 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       // (typical case: github-copilot embedding-only models that 404 on
       // chat completions). User can override via "Save anyway".
       if (!allowSaveAnyway) {
-        const probe = await api.models.probe(provider, result.payload.model_id, result.payload.params as Record<string, unknown>).catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) }));
+        const probe = await api.models.probe(
+          provider,
+          result.payload.model_id,
+          result.payload.params as Record<string, unknown>,
+          undefined,
+          credentialId ?? undefined,
+        ).catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) }));
         setProbeResult(probe);
         if (!probe.ok) {
           setError(`Model probe failed: ${probe.error || "unknown error"}. Use "Save anyway" if this is intentional.`);
@@ -249,6 +309,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
         modelId.trim(),
         Object.keys(overrides).length > 0 ? overrides : undefined,
         isEdit ? model?.name : undefined,
+        credentialId ?? undefined,
       );
       setProbeResult(res);
       if (res.ok) setAllowSaveAnyway(false);
@@ -430,11 +491,74 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
           {showGitHub && <GitHubCopilotAuth />}
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">API Key</span>
-            <input type="password" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-              value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
-          </label>
+          {/* Credential picker — primary surface for binding secrets.
+              Hides the inline api_key field when a credential is bound,
+              since the credential row owns the secret. */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-fg-subtle">Credential</span>
+              <button
+                type="button"
+                onClick={() => setCredentialDialog({ creating: true })}
+                className="text-[11px] text-accent hover:text-accent/80 transition-colors inline-flex items-center gap-1"
+              >
+                + New credential
+              </button>
+            </div>
+            <select
+              className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              value={credentialId ?? ""}
+              onChange={(e) => setCredentialId(e.target.value || null)}
+            >
+              <option value="">
+                {providerCredentials.length === 0 ? `— No credentials for ${provider} —` : `— Inline / env fallback —`}
+              </option>
+              {providerCredentials.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.id} ({c.auth_method})
+                </option>
+              ))}
+              {credentialId && !providerCredentials.some((c) => c.id === credentialId) && (
+                <option value={credentialId}>{credentialId} (other provider)</option>
+              )}
+            </select>
+            {credentialId && (
+              <button
+                type="button"
+                onClick={() => {
+                  const cred = credentials.find((c) => c.id === credentialId);
+                  if (cred) setCredentialDialog(cred);
+                }}
+                className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
+              >
+                Edit selected credential
+              </button>
+            )}
+          </div>
+
+          {/* Inline API Key only when no credential bound — lets the
+              env-fallback case continue to work AND lets a user paste a
+              one-off key without forcing them into the credential UI
+              first. When a credential is bound, the field stays
+              available as an advanced override below. */}
+          {!credentialId && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">
+                API Key
+                <span className="ml-1 text-fg-faint">(optional — env fallback used if blank)</span>
+              </span>
+              <input type="password" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
+            </label>
+          )}
+
+          {expertVisible && credentialId && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">API Key override (advanced)</span>
+              <input type="password" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="leave blank — credential value used" />
+            </label>
+          )}
 
           {expertVisible && (
             <label className="block">
@@ -571,6 +695,22 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             </div>
           </div>
         </div>
+      )}
+      {credentialDialog && (
+        <CredentialEditor
+          credential={"creating" in credentialDialog ? undefined : credentialDialog}
+          defaults={{ type: "model", provider }}
+          providers={providers}
+          lockType
+          onSaved={(cred) => {
+            // Auto-bind the freshly created/edited credential so the
+            // user's next action ("Save model") uses it without needing
+            // to re-pick from the dropdown.
+            setCredentialId(cred.id);
+            refreshCredentials();
+          }}
+          onClose={() => setCredentialDialog(null)}
+        />
       )}
     </div>
   );

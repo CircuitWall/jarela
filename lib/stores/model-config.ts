@@ -1,12 +1,17 @@
 import { getDb } from "@/lib/db";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import type { ProviderParams } from "@/lib/providers/types";
+import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 
 const now = () => new Date().toISOString();
 
 export interface ModelConfigRow {
   name: string; provider: string; model_id: string;
   params: string; is_default: number;
+  // ADR forthcoming — first-class credentials. NULL until the row is
+  // explicitly bound (or until the auto-migration in lib/db/migrations.ts
+  // lifts an inline api_key into a credential row).
+  credential_id?: string | null;
   created_at: string; updated_at: string;
 }
 
@@ -35,16 +40,18 @@ export function getDefaultModelConfig(): ModelConfigRow | null {
 
 export function upsertModelConfig(
   name: string, provider: string, model_id: string,
-  params: Record<string, unknown>, is_default: boolean
+  params: Record<string, unknown>, is_default: boolean,
+  credential_id: string | null = null,
 ): ModelConfigRow {
   const t = now();
   const existing = getModelConfig(name);
   const created_at = existing?.created_at ?? t;
+  const finalCredId = credential_id ?? existing?.credential_id ?? null;
   const db = getDb();
   if (is_default) db.prepare("UPDATE model_configs SET is_default=0").run();
   db.prepare(
-    "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,created_at,updated_at) VALUES (?,?,?,?,?,?,?)"
-  ).run(name, provider, model_id, encrypt(JSON.stringify(params)), is_default ? 1 : 0, created_at, t);
+    "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,credential_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)"
+  ).run(name, provider, model_id, encrypt(JSON.stringify(params)), is_default ? 1 : 0, finalCredId, created_at, t);
   return getModelConfig(name)!;
 }
 
@@ -65,11 +72,23 @@ export function deleteModelConfig(name: string): boolean {
 
 /**
  * Decode the JSON-encoded provider params (api_key, model overrides, etc.).
- * Returns an empty object on NULL/blank/malformed JSON. Callers that
- * previously did `JSON.parse(cfg.params)` inline should switch to this
- * getter so the serialization contract stays owned by this store.
+ * Returns an empty object on NULL/blank/malformed JSON.
+ *
+ * If the row carries `credential_id`, the credential's params (api_key,
+ * base_url, extra_headers, OAuth tokens) are merged UNDER the row's
+ * inline params, so per-model overrides still win when both sides
+ * define the same key.
  */
-export function getModelParams(cfg: Pick<ModelConfigRow, "params"> | null | undefined): ProviderParams {
+export function getModelParams(cfg: Pick<ModelConfigRow, "params"> & Partial<Pick<ModelConfigRow, "credential_id">> | null | undefined): ProviderParams {
+  const inline = decodeInlineParams(cfg);
+  const credId = cfg && "credential_id" in cfg ? cfg.credential_id : null;
+  if (!credId) return inline;
+  const cred = getCredential(credId);
+  if (!cred) return inline;
+  return { ...getCredentialParams(cred), ...inline } as ProviderParams;
+}
+
+function decodeInlineParams(cfg: Pick<ModelConfigRow, "params"> | null | undefined): ProviderParams {
   if (!cfg?.params) return {};
   try {
     const parsed = JSON.parse(cfg.params);
