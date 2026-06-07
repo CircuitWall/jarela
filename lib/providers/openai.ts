@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ContentPart } from "@/lib/tools/types";
+import { resolveProviderApiKey } from "./credentials";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -38,9 +39,10 @@ function makeClient(
   params: ProviderParams,
   baseURL?: string,
   extraHeaders?: Record<string, string>,
+  providerName: string = "openai",
 ): OpenAI {
   return new OpenAI({
-    apiKey: params.api_key ?? process.env.OPENAI_API_KEY,
+    apiKey: resolveProviderApiKey(providerName, params),
     baseURL: params.base_url ?? baseURL,
     defaultHeaders: { ...params.extra_headers, ...extraHeaders },
   });
@@ -332,7 +334,7 @@ export function makeOpenAICompatProvider(
     name: providerName,
 
     async chat(model_id, messages, params): Promise<ProviderStreamResult> {
-      const client = makeClient(params, defaultBaseURL, fixedHeaders);
+      const client = makeClient(params, defaultBaseURL, fixedHeaders, providerName);
       const mapped = messages.map((m): InvokeMessage => ({
         role: m.role,
         content: m.content,
@@ -349,7 +351,7 @@ export function makeOpenAICompatProvider(
     },
 
     async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
-      const client = makeClient(params, defaultBaseURL, fixedHeaders);
+      const client = makeClient(params, defaultBaseURL, fixedHeaders, providerName);
       const resp = await client.chat.completions.create({
         model: model_id,
         messages: toOpenAIMessages(messages),
@@ -364,11 +366,11 @@ export function makeOpenAICompatProvider(
     },
 
     streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
-      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders), model_id, messages, params, tools);
+      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, messages, params, tools);
     },
 
     async embed(model_id, inputs, params): Promise<number[][]> {
-      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders), model_id, inputs, params);
+      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, inputs, params);
     },
   };
 }

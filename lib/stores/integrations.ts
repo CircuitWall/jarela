@@ -85,9 +85,52 @@ export const INTEGRATIONS = {
   google: {
     label: "Google AI (Gemini + Imagen)",
     category: "llm" as IntegrationCategory,
-    description: "Used by the generate_image tool (Gemini / Imagen). Get a key at aistudio.google.com → API keys.",
+    description:
+      "Used by Gemini chat models and the generate_image tool (Imagen). Get a key at " +
+      "aistudio.google.com → API keys.",
     fields: [
       { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
+    ],
+  },
+  openai: {
+    label: "OpenAI",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Used by GPT-family chat and embedding models. Create a key at platform.openai.com → " +
+      "API keys. Project-scoped keys (sk-proj-…) work the same as user keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "sk-… or sk-proj-…", secret: true, required: true },
+    ],
+  },
+  deepseek: {
+    label: "DeepSeek",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Used by deepseek-chat and deepseek-reasoner. Get a key at platform.deepseek.com → " +
+      "API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "sk-…", secret: true, required: true },
+    ],
+  },
+  cohere: {
+    label: "Cohere",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Used by Cohere command-family chat models and embed-v3 embeddings. Get a key at " +
+      "dashboard.cohere.com → API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "co_…", secret: true, required: true },
+    ],
+  },
+  "github-copilot": {
+    label: "GitHub Copilot",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Routes chat-completion requests through your Copilot subscription. Paste a GitHub PAT " +
+      "with `copilot` scope from github.com/settings/tokens, or run the device-flow sign-in in " +
+      "the Models panel.",
+    fields: [
+      { key: "api_key", label: "GitHub PAT", placeholder: "ghp_… or github_pat_…", secret: true, required: true },
     ],
   },
   gmail: {

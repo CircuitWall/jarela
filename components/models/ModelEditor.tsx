@@ -7,9 +7,10 @@ import type { CatalogModel, Credential, IntegrationStatus, ModelConfig } from "@
 import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { buildModelEditorPayload } from "@/lib/models/editor-payload";
+import { integrationNameForProvider } from "@/lib/providers/provider-integration-map";
 import { CapBadges } from "./CapBadges";
 import { ModelFeatureGuide } from "./ModelFeatureGuide";
-import { CredentialEditor } from "@/components/credentials/CredentialEditor";
+import { AddCredentialDialog } from "@/components/credentials/AddCredentialDialog";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -53,7 +54,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   // server merges credential params UNDER inline params.
   const [credentialId, setCredentialId] = useState<string | null>(model?.credential_id ?? null);
   const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [credentialDialog, setCredentialDialog] = useState<Credential | { creating: true } | null>(null);
+  const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
   const [apiKey, setApiKey] = useState(model?.params.api_key === "***" ? "" : (model?.params.api_key ?? ""));
   const [baseUrl, setBaseUrl] = useState(model?.params.base_url ?? "");
 
@@ -140,7 +141,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   // dropdown narrows.
   const refreshCredentials = async () => {
     try {
-      const rows = await api.credentials.list({ type: "model" });
+      const rows = await api.credentials.list({ type: "integration" });
       setCredentials(rows);
     } catch {
       setCredentials([]);
@@ -158,10 +159,12 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   // Default the credential picker to the first credential matching the
   // current provider once the list arrives — but only on a NEW config,
   // and only when the user hasn't already chosen one. Edits keep
-  // whatever the model row already references.
+  // whatever the model row already references. Filter by the integration
+  // name that backs this provider (gemini → google, otherwise identity).
+  const integrationName = integrationNameForProvider(provider);
   const providerCredentials = useMemo(
-    () => credentials.filter((c) => c.provider === provider),
-    [credentials, provider],
+    () => credentials.filter((c) => c.provider === integrationName),
+    [credentials, integrationName],
   );
   useEffect(() => {
     if (isEdit) return;
@@ -175,9 +178,9 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   // backend on save.
   useEffect(() => {
     if (!credentialId) return;
-    const stillValid = credentials.some((c) => c.id === credentialId && c.provider === provider);
+    const stillValid = credentials.some((c) => c.id === credentialId && c.provider === integrationName);
     if (!stillValid) setCredentialId(null);
-  }, [provider, credentialId, credentials]);
+  }, [integrationName, credentialId, credentials]);
 
   // Reset catalog when provider changes
   useEffect(() => {
@@ -499,7 +502,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
               <span className="text-xs text-fg-subtle">Credential</span>
               <button
                 type="button"
-                onClick={() => setCredentialDialog({ creating: true })}
+                onClick={() => setCredentialDialogOpen(true)}
                 className="text-[11px] text-accent hover:text-accent/80 transition-colors inline-flex items-center gap-1"
               >
                 + New credential
@@ -525,10 +528,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             {credentialId && (
               <button
                 type="button"
-                onClick={() => {
-                  const cred = credentials.find((c) => c.id === credentialId);
-                  if (cred) setCredentialDialog(cred);
-                }}
+                onClick={() => setCredentialDialogOpen(true)}
                 className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
               >
                 Edit selected credential
@@ -696,20 +696,25 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           </div>
         </div>
       )}
-      {credentialDialog && (
-        <CredentialEditor
-          credential={"creating" in credentialDialog ? undefined : credentialDialog}
-          defaults={{ type: "model", provider }}
-          providers={providers}
-          lockType
-          onSaved={(cred) => {
-            // Auto-bind the freshly created/edited credential so the
-            // user's next action ("Save model") uses it without needing
-            // to re-pick from the dropdown.
-            setCredentialId(cred.id);
-            refreshCredentials();
+      {credentialDialogOpen && (
+        <AddCredentialDialog
+          initialCategory="llm"
+          directProviderName={integrationName}
+          lockCategory
+          onClose={() => { setCredentialDialogOpen(false); refreshCredentials(); }}
+          onSaved={async () => {
+            // Auto-bind the freshly created credential so the user's next
+            // action ("Save model") uses it without re-picking from the
+            // dropdown. Look it up by integration name + first-match rule.
+            try {
+              const rows = await api.credentials.list({ type: "integration", provider: integrationName });
+              setCredentials((prev) => {
+                const merged = [...prev.filter((c) => !rows.some((r) => r.id === c.id)), ...rows];
+                return merged;
+              });
+              if (rows.length > 0 && !credentialId) setCredentialId(rows[0].id);
+            } catch { /* refresh-only failure is non-fatal */ }
           }}
-          onClose={() => setCredentialDialog(null)}
         />
       )}
     </div>
