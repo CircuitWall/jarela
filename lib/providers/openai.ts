@@ -35,6 +35,22 @@ function pickOpenAICompatOptions(params: ProviderParams): Record<string, unknown
   return out;
 }
 
+// gpt-5* and o1/o3/o4 reasoning models reject `max_tokens` and require
+// `max_completion_tokens` instead.
+export function isOpenAIReasoningModel(model_id: string): boolean {
+  return /^(gpt-5|o[134](?:-|$))/i.test(model_id);
+}
+
+export function openaiTokenLimitParams(
+  model_id: string,
+  params: ProviderParams,
+): Record<string, number | undefined> {
+  if (params.max_tokens == null) return {};
+  return isOpenAIReasoningModel(model_id)
+    ? { max_completion_tokens: params.max_tokens }
+    : { max_tokens: params.max_tokens };
+}
+
 function makeClient(
   params: ProviderParams,
   baseURL?: string,
@@ -244,7 +260,7 @@ export const openaiProvider: ModelProvider = {
       messages: toOpenAIMessages(mapped),
       stream: true,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     return streamOpenAIText(stream);
@@ -259,7 +275,7 @@ export const openaiProvider: ModelProvider = {
       tool_choice: "auto",
       stream: false,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
@@ -308,7 +324,7 @@ async function* openaiStreamInvoke(
     messages: toOpenAIMessages(messages),
     stream: true,
     temperature: params.temperature,
-    max_tokens: params.max_tokens,
+    ...openaiTokenLimitParams(model_id, params),
     ...compatOptions,
     stream_options: { include_usage: true, ...(compatOptions.stream_options as object | undefined) },
   };
@@ -344,7 +360,7 @@ export function makeOpenAICompatProvider(
         messages: toOpenAIMessages(mapped),
         stream: true,
         temperature: params.temperature,
-        max_tokens: params.max_tokens,
+        ...openaiTokenLimitParams(model_id, params),
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       return streamOpenAIText(stream);
@@ -359,7 +375,7 @@ export function makeOpenAICompatProvider(
         tool_choice: "auto",
         stream: false,
         temperature: params.temperature,
-        max_tokens: params.max_tokens,
+        ...openaiTokenLimitParams(model_id, params),
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
