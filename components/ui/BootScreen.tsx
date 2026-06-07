@@ -26,6 +26,8 @@ interface Props {
   agentsLoaded: boolean;
   activeAgentId: string | null;
   onPickAgent: (agentId: string) => void;
+  // Boot picker is a chat-tab gate; suppress on non-chat tabs so it doesn't overlay them.
+  suppressed?: boolean;
 }
 
 // Three-phase first-screen experience:
@@ -40,7 +42,7 @@ interface Props {
 // Replaces the previous splash + ChatView empty-state agent picker. The
 // header (z-40) is hidden while this is visible so the user lands on a
 // focused, one-purpose screen.
-export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent }: Props) {
+export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, suppressed }: Props) {
   // Capture which agent we transitioned through so the icon can keep
   // showing during the fade-out, even if a parent state shift would
   // otherwise clear it.
@@ -148,7 +150,18 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent }:
     };
   }, [activeAgentId, pickedId, agentsLoaded, markStep]);
 
+  // Returning users with a saved default skip the manual tile-click.
+  useEffect(() => {
+    if (suppressed) return;
+    if (!agentsLoaded) return;
+    if (activeAgentId || pickedId) return;
+    if (!defaultAgent) return;
+    setPickedId(defaultAgent.id);
+    onPickAgent(defaultAgent.id);
+  }, [suppressed, agentsLoaded, activeAgentId, pickedId, defaultAgent, onPickAgent]);
+
   if (done) return null;
+  if (suppressed) return null;
 
   const phase: "loading" | "pick" | "opening" =
     !agentsLoaded

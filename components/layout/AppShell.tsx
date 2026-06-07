@@ -266,6 +266,7 @@ export function AppShell() {
           dispatch({ type: "SET_AGENT", agentId: id });
           dispatch({ type: "SET_TAB", tab: "chat" });
         }}
+        suppressed={state.activeTab !== "chat"}
       />
       {screenLocked && (
         <ScreenLock
