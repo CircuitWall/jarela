@@ -2,7 +2,11 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { runMigrations } from "./migrations";
 import { getDataDir } from "./data-dir";
-import { initMasterKey } from "@/lib/crypto/master-key";
+import {
+  initMasterKey,
+  isMasterKeyLocked,
+  onMasterKeyUnlocked,
+} from "@/lib/crypto/master-key";
 import { runCryptoMigration } from "@/lib/crypto/migrate";
 import { applyProxyConfigFromDb } from "@/lib/proxy/dispatcher"; // env-var dispatcher applied at module load; DB layer applied below
 import { runEnvSyncOnce } from "@/lib/env/sync";
@@ -29,26 +33,47 @@ export function getDb(): DatabaseSync {
     runMigrations(db);
     // One-time encryption migration: rewrites legacy plaintext rows in
     // the four secret-bearing surfaces with enc:v1: envelopes. Idempotent.
-    runCryptoMigration(db);
+    // Defer when the master key is PIN-locked (ADR-0063) — the sweep
+    // would throw MasterKeyLockedError on first envelope.encrypt(). It
+    // re-runs as soon as the user unlocks via /api/v1/security/unlock.
+    if (isMasterKeyLocked()) {
+      onMasterKeyUnlocked(() => {
+        try { runCryptoMigration(db); } catch (err) {
+          console.warn("[jarela] deferred runCryptoMigration failed:", err);
+        }
+      });
+    } else {
+      runCryptoMigration(db);
+    }
     _db = db; // only assign after migrations succeed
     // Layer DB-backed proxy config on top of the env-var dispatcher
     // (ADR-0009). Fire-and-forget — keeps getDb() synchronous so existing
     // call sites stay unchanged. Errors are logged but don't break boot;
     // worst case we fall back to direct connection.
-    applyProxyConfigFromDb().catch((err) =>
-      console.warn("[jarela/proxy] applyProxyConfigFromDb failed at boot:", err),
-    );
-    // Pull rc-defined credential env vars into the encrypted integration
-    // store so installed launchers (LaunchAgent / systemd-user) — which
-    // never source the user's shell rc — pick up tokens automatically
-    // and survive rotation. Best-effort; never blocks boot.
-    runEnvSyncOnce().then((r) => {
-      if (r && r.applied_count > 0) {
-        console.log(
-          `[jarela/env-sync] applied ${r.applied_count} field(s) from ${r.discovered.source}`,
-        );
-      }
-    });
+    //
+    // Both applyProxyConfigFromDb and runEnvSyncOnce read encrypted
+    // rows, so defer them past the PIN unlock when locked (ADR-0063).
+    const runPostUnlockBootstrap = () => {
+      applyProxyConfigFromDb().catch((err) =>
+        console.warn("[jarela/proxy] applyProxyConfigFromDb failed at boot:", err),
+      );
+      // Pull rc-defined credential env vars into the encrypted integration
+      // store so installed launchers (LaunchAgent / systemd-user) — which
+      // never source the user's shell rc — pick up tokens automatically
+      // and survive rotation. Best-effort; never blocks boot.
+      runEnvSyncOnce().then((r) => {
+        if (r && r.applied_count > 0) {
+          console.log(
+            `[jarela/env-sync] applied ${r.applied_count} field(s) from ${r.discovered.source}`,
+          );
+        }
+      });
+    };
+    if (isMasterKeyLocked()) {
+      onMasterKeyUnlocked(runPostUnlockBootstrap);
+    } else {
+      runPostUnlockBootstrap();
+    }
   }
   return _db;
 }

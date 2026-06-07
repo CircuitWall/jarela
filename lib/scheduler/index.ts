@@ -6,6 +6,7 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
+import { isMasterKeyLocked } from "@/lib/crypto/master-key";
 import type { ScheduledTaskRow } from "@/lib/stores/scheduled-tasks";
 
 // Env-tunable so e2e tests can ride a tighter loop without waiting 30 s
@@ -53,12 +54,14 @@ export function startScheduler(): void {
   // Fire the first health probe immediately (instead of waiting 10min)
   // so a freshly-started server surfaces a broken token / unreachable
   // vendor on the first SSE subscription. Fire-and-forget; cheap.
-  runAllHealthProbes().catch((err) => {
-    console.error(
-      "[scheduler] initial health probe failed:",
-      err instanceof Error ? err.message : String(err),
-    );
-  });
+  if (!isMasterKeyLocked()) {
+    runAllHealthProbes().catch((err) => {
+      console.error(
+        "[scheduler] initial health probe failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+  }
 }
 
 export function stopScheduler(): void {
@@ -71,6 +74,11 @@ export function stopScheduler(): void {
 
 async function tick(): Promise<void> {
   if (state.running) return;
+  // Skip the entire tick while the at-rest key is locked (ADR-0063):
+  // every encrypted store read would throw MasterKeyLockedError and
+  // pollute the console. The tick resumes naturally once the user
+  // unlocks via the splash.
+  if (isMasterKeyLocked()) return;
   state.running = true;
   try {
     await runTriggerTick();

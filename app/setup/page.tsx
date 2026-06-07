@@ -5,8 +5,15 @@
 import { redirect } from "next/navigation";
 import { listModelConfigs } from "@/lib/stores/model-config";
 import { FirstKeySetup } from "@/components/setup/FirstKeySetup";
+import { UnlockScreen } from "@/components/setup/UnlockScreen";
+import { getDb } from "@/lib/db";
+import { isMasterKeyLocked } from "@/lib/crypto/master-key";
 
 export default function SetupPage() {
+  getDb();
+  if (isMasterKeyLocked()) {
+    return <UnlockScreen />;
+  }
   const configs = listModelConfigs();
   if (configs.length > 0) redirect("/");
   return <FirstKeySetup />;

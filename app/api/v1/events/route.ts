@@ -11,6 +11,7 @@ import { recentSince, subscribe } from "@/lib/notifications/bus";
 import { startScheduler } from "@/lib/scheduler";
 import { startAllBridges } from "@/lib/bridges/runtime";
 import { sseResponse } from "@/lib/api/sse";
+import { isMasterKeyLocked, onMasterKeyUnlocked } from "@/lib/crypto/master-key";
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
@@ -30,9 +31,19 @@ export function GET(req: NextRequest) {
   // pins state to globalThis so this is a no-op after the first call.
   // Fire-and-forget: bridge connect can take seconds, the SSE stream below
   // mustn't block waiting for WebSocket handshakes.
-  void startAllBridges().catch((err) => {
-    console.error("[bridges] startAllBridges failed:", err);
-  });
+  //
+  // Defer past the PIN unlock when locked (ADR-0063): startAllBridges
+  // reads encrypted credentials and would throw MasterKeyLockedError.
+  const launchBridges = () => {
+    void startAllBridges().catch((err) => {
+      console.error("[bridges] startAllBridges failed:", err);
+    });
+  };
+  if (isMasterKeyLocked()) {
+    onMasterKeyUnlocked(launchBridges);
+  } else {
+    launchBridges();
+  }
 
   const url = new URL(req.url);
   const sinceTs = Number(url.searchParams.get("since")) || 0;
