@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
@@ -352,7 +352,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     } finally {
       setLoadingMore(false);
     }
-  }, [threadId, loadingMore, hasMore, messages]);
+    // Depend on `messages.length` rather than the array identity so streaming
+    // appends don't recreate this callback (which would churn MessageList's
+    // onLoadMore prop on every text_delta).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, loadingMore, hasMore, messages.length]);
 
   async function handleCompact() {
     if (!agentId) return;
@@ -434,21 +438,27 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     });
   };
 
-  function removeQueued(id: string) {
+  const removeQueued = useCallback((id: string) => {
     setQueue((q) => q.filter((m) => m.id !== id));
-  }
+  }, []);
 
   // Resend a previously-sent user prompt as a new turn. Mirrors handleSubmit's
   // ready/queue gating so retries during an in-flight run behave the same as
   // typing a new message: they queue and drain. Does NOT delete the original
   // message — the user can clean up the thread manually if they want.
-  function handleRetryMessage(text: string, atts: ContentPart[]) {
+  //
+  // `launchRun` is a plain function re-created each render; we read it
+  // through a ref to keep this callback stable (otherwise MessageList sees
+  // a fresh onRetryMessage on every streaming delta).
+  const launchRunRef = useRef(launchRun);
+  launchRunRef.current = launchRun;
+  const handleRetryMessage = useCallback((text: string, atts: ContentPart[]) => {
     const msg = text.trim();
     if (!msg || !agentId) return;
     const ready =
       !streaming && !compacting && !!threadId && queueRef.current.length === 0;
     if (ready) {
-      void launchRun(msg, atts);
+      void launchRunRef.current(msg, atts);
       return;
     }
     setQueue((q) => [...q, {
@@ -456,7 +466,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       text: msg,
       attachments: atts,
     }]);
-  }
+  }, [agentId, streaming, compacting, threadId]);
 
   // Default Send / Enter. Send-when-idle, STEER-when-streaming.
   // Steer = prepend message to queue and abort the current run; the existing
@@ -544,6 +554,13 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     }]);
   }
 
+  // Shallow projection for MessageList: keep prop identity stable so the
+  // queued-bubble subtree doesn't re-reconcile on every streaming delta.
+  const queuedMessages = useMemo(
+    () => queue.map((q) => ({ id: q.id, text: q.text, attachmentCount: q.attachments.length })),
+    [queue],
+  );
+
   return (
     <div className="flex flex-col h-full">
       <MessageList
@@ -564,7 +581,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
         hasMore={hasMore}
         loadingMore={loadingMore}
         onLoadMore={loadOlder}
-        queuedMessages={queue.map((q) => ({ id: q.id, text: q.text, attachmentCount: q.attachments.length }))}
+        queuedMessages={queuedMessages}
         onRemoveQueued={removeQueued}
         hotSince={hotSince}
         warmSummary={warmSummary}
