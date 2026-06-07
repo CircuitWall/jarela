@@ -961,7 +961,14 @@ function MapEmbed({ payload }: { payload: string }) {
   );
 }
 
-function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
+// Memoized: this component appears under every assistant bubble and during
+// streaming gets re-rendered on every rAF flush. The inner ReactMarkdown
+// pipeline (remark + rehype passes, syntax highlighting via rehypeHighlight,
+// custom <a> / <code> renderers) is the expensive part — re-running it
+// against unchanged text on every parent render shows up as jank on long
+// threads. With memo, only the in-flight bubble re-renders during streaming;
+// persisted siblings sit idle.
+const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
   // Inline-citation pre-processor. The agent writes `[3]` markers in-prose;
   // we resolve each to a markdown link `[3](href)` BEFORE react-markdown
   // parses the string so the existing <a> renderer below picks it up with
@@ -1086,7 +1093,7 @@ function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, source
       )}
     </div>
   );
-}
+});
 
 function ReferencesPanel({ sources }: { sources: ReadonlyArray<{ n: number; label: string; href: string }> }) {
   const [open, setOpen] = useState(false);
@@ -1409,7 +1416,11 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
-  const parsed = parseContent(message.content);
+  // Memoize the JSON-or-plain-text parse: `parseContent` runs JSON.parse on
+  // anything that looks like a serialized ContentPart[]. For the streaming
+  // bubble this is called on every rAF flush as `content` grows; without
+  // memoization we'd re-parse the entire (growing) blob each frame.
+  const parsed = useMemo(() => parseContent(message.content), [message.content]);
   const messageId = "id" in message ? message.id : null;
 
   const handleInAppLink = useCallback((href: string) => {
