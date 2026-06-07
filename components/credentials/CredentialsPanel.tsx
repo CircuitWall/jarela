@@ -1,8 +1,9 @@
 "use client";
-import { Key, Pencil, Plus, Trash2 } from "lucide-react";
+import { Key, Pencil, Plus, Plug, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, CredentialType } from "@/api/types";
+import { useAppContext } from "@/contexts/AppContext";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { CredentialEditor } from "./CredentialEditor";
 
@@ -20,7 +21,23 @@ const TYPE_LABEL: Record<CredentialType, string> = {
   bridge: "Bridge",
 };
 
+// One-line status for a credential. Integration credentials don't all use
+// `api_key` — atlassian stores `api_token`, github stores `token`, gmail
+// stores OAuth shape — so the model/tts oriented summary doesn't apply.
+function describeCredential(c: Credential): string {
+  if (c.type === "integration") {
+    const keys = Object.keys(c.params).filter((k) => k !== "base_url" && k !== "extra_headers");
+    if (keys.length === 0) return "Not configured";
+    return `Fields: ${keys.join(", ")}`;
+  }
+  if (c.auth_method === "api_key") {
+    return c.params.api_key ? "API key configured" : "API key missing";
+  }
+  return c.params.refresh_token ? "Refresh token stored" : "OAuth pending";
+}
+
 export function CredentialsPanel() {
+  const { dispatch } = useAppContext();
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
   const [providers, setProviders] = useState<string[]>([]);
@@ -60,6 +77,11 @@ export function CredentialsPanel() {
     }
   }
 
+  function openIntegrationsPanel() {
+    dispatch({ type: "SET_TAB", tab: "connections" });
+    dispatch({ type: "SET_SELECTION", tab: "connections", itemId: "builtin" });
+  }
+
   // Group credentials by type so the panel renders one section per
   // bucket (Models first, then the rest as they grow).
   const grouped = useMemo(() => {
@@ -80,7 +102,16 @@ export function CredentialsPanel() {
         <div className="flex items-center gap-1">
           {/* Typed Add menu — one button per credential type so the user
               picks the bucket up front rather than having to set a
-              dropdown after opening. */}
+              dropdown after opening. Integration credentials have
+              per-provider field schemas (atlassian needs url+email,
+              github uses `token` not `api_key`, gmail is OAuth, …) that
+              the generic CredentialEditor can't render yet, so that
+              button routes the user to the Connections panel which owns
+              the manifest-driven editor. The underlying rows still land
+              in the same `credentials` table either way. */}
+          <button onClick={openIntegrationsPanel} className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors" title="Add an integration credential (Gmail, Atlassian, GitHub, …)">
+            <Plug size={14} /> Integration
+          </button>
           <button onClick={() => setEditing({ type: "model" })} className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors" title="Add a model-provider credential (API key or OAuth)">
             <Plus size={14} /> Model
           </button>
@@ -92,7 +123,7 @@ export function CredentialsPanel() {
           {loading && credentials.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
           {!loading && credentials.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">
-              No credentials yet. Click <span className="font-medium">+ Model</span> to add your first one — or open a model config and use its credential picker.
+              No credentials yet. Click <span className="font-medium">+ Model</span> to add a model-provider key, or <span className="font-medium">+ Integration</span> to connect Gmail / Atlassian / GitHub / etc.
             </p>
           )}
           {deleteError && (
@@ -112,16 +143,26 @@ export function CredentialsPanel() {
                         <span className="text-[10px] text-fg-faint">{c.auth_method}</span>
                       </div>
                       <p className="text-[11px] text-fg-subtle">
-                        {c.auth_method === "api_key"
-                          ? (c.params.api_key ? "API key configured" : "API key missing")
-                          : (c.params.refresh_token ? "Refresh token stored" : "OAuth pending")}
-                        {c.params.base_url && <span className="ml-2 truncate">• base: {c.params.base_url}</span>}
+                        {describeCredential(c)}
+                        {typeof c.params.base_url === "string" && c.params.base_url && (
+                          <span className="ml-2 truncate">• base: {c.params.base_url}</span>
+                        )}
                       </p>
                     </div>
                     <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-                      <button onClick={() => setEditing(c)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit">
-                        <Pencil size={13} />
-                      </button>
+                      {c.type === "integration" ? (
+                        <button
+                          onClick={openIntegrationsPanel}
+                          className="p-1 text-fg-subtle hover:text-fg transition-colors"
+                          title="Edit in Connections (per-integration field schema)"
+                        >
+                          <Plug size={13} />
+                        </button>
+                      ) : (
+                        <button onClick={() => setEditing(c)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit">
+                          <Pencil size={13} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDelete(c.id)}
                         className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
