@@ -134,10 +134,26 @@ const iosViewportBootstrap = `(() => {
       var n = parseFloat(v);
       return isNaN(n) ? 0 : n;
     }
+    function isEditableFocused() {
+      var ae = document.activeElement;
+      if (!ae) return false;
+      var tag = ae.tagName;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || ae.isContentEditable === true;
+    }
     function apply() {
-      var vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      var vv = window.visualViewport;
+      var vh = (vv && vv.height) || window.innerHeight;
+      // Keyboard-open detection: when iOS shows the on-screen keyboard,
+      // visualViewport.height shrinks but window.innerHeight stays put.
+      // Pairing that gap with editable-focus makes it model-agnostic -
+      // no need to guess a keyboard height per device (SE ~216, 15 Pro
+      // Max ~301, iPad floating ~120). 50px just filters URL-bar jitter.
+      var keyboardOpen = isEditableFocused() && (window.innerHeight - vh) > 50;
       var isPortrait = window.innerHeight > window.innerWidth;
-      if (isPortrait) {
+      // Skip the chin correction while the keyboard is up - otherwise we
+      // inflate --actual-vh beyond the visible viewport and the input bar
+      // ends up underneath the keyboard.
+      if (!keyboardOpen && isPortrait) {
         var screenH = Math.max(window.screen.height, window.screen.width);
         if (screenH - vh > 15) {
           var top = safeTopPx();
@@ -158,7 +174,12 @@ const iosViewportBootstrap = `(() => {
     });
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', apply);
+      window.visualViewport.addEventListener('scroll', apply);
     }
+    // focusin/focusout can lead visualViewport.resize by ~100ms on
+    // older iOS - recompute immediately so we don't render a bad frame.
+    document.addEventListener('focusin', apply, true);
+    document.addEventListener('focusout', apply, true);
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) { setTimeout(apply, 50); setTimeout(apply, 200); }
     });
