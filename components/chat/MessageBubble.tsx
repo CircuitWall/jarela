@@ -77,6 +77,20 @@ function extractRefs(text: string): { body: string; refs: ExtractedRef[] } {
   return { body, refs };
 }
 
+// Mid-stream guard for the agent's optional trailing
+// ```jarela-references` fence. The server-side parser folds that block
+// into the citation manifest and strips it from the persisted body, but
+// during streaming the in-flight buffer still contains it. Cut from the
+// opening fence onward so the user never sees raw JSON flash on screen.
+// Once the closing fence has arrived the body is identical to what the
+// server will persist either way; cutting from the open is the simple
+// path that handles partial-block and complete-block cases uniformly.
+function stripDeclaredReferencesFence(text: string): string {
+  const idx = text.indexOf("```jarela-references");
+  if (idx < 0) return text;
+  return text.slice(0, idx).trimEnd();
+}
+
 // Tracks which TTS clips have started auto-playing this session so a clip
 // only autoplays once. Re-renders of the same <audio> (message refetched,
 // scroll into view, list re-render) won't trigger a replay. Keyed by the
@@ -947,7 +961,14 @@ function MapEmbed({ payload }: { payload: string }) {
   );
 }
 
-function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
+// Memoized: this component appears under every assistant bubble and during
+// streaming gets re-rendered on every rAF flush. The inner ReactMarkdown
+// pipeline (remark + rehype passes, syntax highlighting via rehypeHighlight,
+// custom <a> / <code> renderers) is the expensive part — re-running it
+// against unchanged text on every parent render shows up as jank on long
+// threads. With memo, only the in-flight bubble re-renders during streaming;
+// persisted siblings sit idle.
+const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
   // Inline-citation pre-processor. The agent writes `[3]` markers in-prose;
   // we resolve each to a markdown link `[3](href)` BEFORE react-markdown
   // parses the string so the existing <a> renderer below picks it up with
@@ -970,6 +991,17 @@ function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, source
           a({ href, children, ...rest }) {
             const parsed = href ? parseHref(href) : undefined;
             const isUnverified = !!(href && unverifiedLinks?.has(href));
+            // Detect citation markers: link text is literally `[N]` where N
+            // is a positive integer. These are rendered as small superscript
+            // chips (Wikipedia-style) so they're scannable as citations and
+            // distinct from ordinary inline links.
+            const isCitationMarker =
+              Array.isArray(children) && children.length === 1
+                ? typeof children[0] === "string" && /^\[\d+\]$/.test(children[0])
+                : typeof children === "string" && /^\[\d+\]$/.test(children);
+            const citationText = isCitationMarker
+              ? (Array.isArray(children) ? (children[0] as string) : (children as string))
+              : null;
             // Inline audio: any link to a local /api/v1/files/*.{wav,mp3,ogg,webm,m4a}
             // becomes a native <audio controls> player. The original anchor
             // text is dropped — the player IS the answer. An `?autoplay=1`
@@ -978,9 +1010,32 @@ function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, source
             if (href && /^\/api\/v1\/files\/[^?#]+\.(wav|mp3|ogg|webm|m4a)(\?|#|$)/i.test(href)) {
               return <InlineAudio href={href} />;
             }
-            const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash);
+            const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash || (!!parsed.thread && !!parsed.agent));
             const unverifiedCls = isUnverified ? "decoration-warn decoration-wavy underline-offset-2" : "";
             const unverifiedTitle = isUnverified ? "Agent did not visit this source in this conversation — the citation may be invented." : undefined;
+            // Citation-marker rendering: superscript chip with a tooltip
+            // showing the source label so the user can preview what the
+            // marker points to without clicking. The href is still active
+            // (jumps to anchor for #msg-… or opens external for URLs).
+            if (isCitationMarker && href) {
+              const markerNum = parseInt(citationText!.replace(/[\[\]]/g, ""), 10);
+              const entry = Number.isFinite(markerNum) ? sourceManifest?.get(markerNum) : undefined;
+              const title = entry?.label ?? unverifiedTitle ?? href;
+              const isAnchor = href.startsWith("#");
+              return (
+                <a
+                  {...rest}
+                  href={href}
+                  target={isAnchor || inApp ? undefined : "_blank"}
+                  rel={isAnchor || inApp ? undefined : "noopener noreferrer"}
+                  title={title}
+                  onClick={inApp && onInAppLink ? (e) => { e.preventDefault(); onInAppLink(href); } : undefined}
+                  className="jarela-citation"
+                >
+                  {citationText}
+                </a>
+              );
+            }
             if (inApp && href && onInAppLink) {
               return (
                 <a
@@ -1038,40 +1093,131 @@ function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, source
       )}
     </div>
   );
-}
+});
 
-function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ text?: string; link: string | null; verified: boolean; reason?: string }>; checkerModel: string }) {
+function ReferencesPanel({ sources }: { sources: ReadonlyArray<{ n: number; label: string; href: string }> }) {
   const [open, setOpen] = useState(false);
-  if (claims.length === 0) return null;
-  const verifiedCount = claims.filter((c) => c.verified).length;
-  const total = claims.length;
-  const unverifiedCount = total - verifiedCount;
-  const allVerified = unverifiedCount === 0;
+  if (sources.length === 0) return null;
   return (
     <div className="mt-1.5">
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1 text-[11px] transition-colors ${allVerified ? "text-fg-faint hover:text-fg-muted" : "text-warn hover:opacity-80"}`}
-        title={checkerModel ? `Citations checked by ${checkerModel}` : undefined}
+        className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
+        aria-expanded={open}
       >
         <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
-        <span>
-          {allVerified
-            ? `${total} citation${total === 1 ? "" : "s"} verified`
-            : `${unverifiedCount} of ${total} citation${total === 1 ? "" : "s"} unverified`}
-        </span>
+        <LinkIcon size={10} />
+        <span>{sources.length} {sources.length === 1 ? "reference" : "references"}</span>
       </button>
       {open && (
-        <ul className="mt-1 space-y-0.5 pl-4">
-          {claims.map((c, i) => (
-            <li key={i} className={`text-[11px] ${c.verified ? "text-fg-faint" : "text-warn"}`}>
-              {c.verified ? "✓" : "⚠"} {c.text ?? "(claim)"}
-              {c.link && (
-                <span className="ml-1 text-fg-faint truncate inline-block max-w-[60ch] align-middle">— {c.link}</span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <ol className="mt-1 space-y-0.5 pl-4 list-none">
+          {sources.map((s) => {
+            const isAnchor = s.href.startsWith("#");
+            const isMemory = s.href.startsWith("memory://");
+            return (
+              <li key={s.n} className="text-[11px] flex items-start gap-1.5">
+                <span className="text-fg-faint tabular-nums shrink-0 w-5 text-right">[{s.n}]</span>
+                {isAnchor || isMemory ? (
+                  <a
+                    href={isAnchor ? s.href : "#"}
+                    onClick={isMemory ? (e) => e.preventDefault() : undefined}
+                    className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
+                    title={s.href}
+                  >
+                    {s.label}
+                  </a>
+                ) : (
+                  <a
+                    href={s.href}
+                    target={s.href.startsWith("http") ? "_blank" : undefined}
+                    rel={s.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                    className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
+                    title={s.href}
+                  >
+                    {s.label}
+                  </a>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ text?: string; link: string | null; verified: boolean; reason?: string; impact?: "high" | "med" | "low" }>; checkerModel: string }) {
+  const [open, setOpen] = useState(false);
+  if (claims.length === 0) return null;
+
+  // Group + count by impact so the trigger is a compact, scannable summary.
+  type ClaimT = (typeof claims)[number];
+  const buckets: Record<"high" | "med" | "low", ClaimT[]> = { high: [], med: [], low: [] };
+  for (const c of claims) {
+    const k = c.impact === "high" ? "high" : c.impact === "low" ? "low" : "med";
+    buckets[k].push(c);
+  }
+  const uncitedHigh = buckets.high.filter((c) => !c.verified).length;
+  const totalUncited = claims.filter((c) => !c.verified).length;
+  const total = claims.length;
+  const allCited = totalUncited === 0;
+
+  // Trigger label prefers the loudest signal: uncited-high > total uncited > all good.
+  const trigger = uncitedHigh > 0
+    ? `${uncitedHigh} high-impact claim${uncitedHigh === 1 ? "" : "s"} uncited`
+    : totalUncited > 0
+      ? `${totalUncited} of ${total} claim${total === 1 ? "" : "s"} uncited`
+      : `${total} claim${total === 1 ? "" : "s"} cited`;
+
+  const impactBadge = (impact: "high" | "med" | "low") => {
+    const styles =
+      impact === "high" ? "bg-warn/15 text-warn"
+      : impact === "low" ? "bg-fg-faint/10 text-fg-faint"
+      : "bg-fg-subtle/15 text-fg-subtle";
+    return (
+      <span className={`text-[9px] uppercase tracking-wider px-1 py-px rounded ${styles} shrink-0`}>
+        {impact}
+      </span>
+    );
+  };
+
+  return (
+    <div className="mt-1.5">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`inline-flex items-center gap-1 text-[11px] transition-colors ${allCited ? "text-fg-faint hover:text-fg-muted" : "text-warn hover:opacity-80"}`}
+        title={checkerModel ? `Citations checked by ${checkerModel}` : undefined}
+        aria-expanded={open}
+      >
+        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <span>{trigger}</span>
+      </button>
+      {open && (
+        <div className="mt-1 pl-4 space-y-2">
+          {(["high", "med", "low"] as const).map((bucket) => {
+            const list = buckets[bucket];
+            if (list.length === 0) return null;
+            return (
+              <ul key={bucket} className="space-y-0.5">
+                {list.map((c, i) => (
+                  <li key={`${bucket}-${i}`} className={`text-[11px] flex items-start gap-1.5 ${c.verified ? "text-fg-subtle" : "text-warn"}`}>
+                    <span className="shrink-0">{c.verified ? "✓" : "⚠"}</span>
+                    {impactBadge(bucket)}
+                    <span className="min-w-0 flex-1">
+                      <span>{c.text ?? "(claim)"}</span>
+                      {c.link && (
+                        <span className="ml-1 text-fg-faint truncate inline-block max-w-[60ch] align-middle">— {c.link}</span>
+                      )}
+                      {!c.verified && c.reason && (
+                        <span className="block text-[10px] text-fg-faint italic mt-px">{c.reason}</span>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1270,12 +1416,23 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
-  const parsed = parseContent(message.content);
+  // Memoize the JSON-or-plain-text parse: `parseContent` runs JSON.parse on
+  // anything that looks like a serialized ContentPart[]. For the streaming
+  // bubble this is called on every rAF flush as `content` grows; without
+  // memoization we'd re-parse the entire (growing) blob each frame.
+  const parsed = useMemo(() => parseContent(message.content), [message.content]);
   const messageId = "id" in message ? message.id : null;
 
   const handleInAppLink = useCallback((href: string) => {
     const p = parseHref(href);
-    if (p.tab) {
+    // A `thread`+`agent` pair (emitted by delegate_to_agent's cite_as link
+    // and by toast deep links) is a SELECT_THREAD intent — fire the
+    // dedicated action so AppShell sets activeThreadId AND activeAgentId
+    // atomically. Falling back to SET_TAB+SET_SELECTION would not load the
+    // thread because chat tab keys off activeThreadId, not selectedItem.
+    if (p.thread && p.agent) {
+      dispatch({ type: "SELECT_THREAD", threadId: p.thread, agentId: p.agent });
+    } else if (p.tab) {
       dispatch({ type: "SET_TAB", tab: p.tab });
       dispatch({ type: "SET_SELECTION", tab: p.tab, itemId: p.item ?? null });
     }
@@ -1445,13 +1602,22 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
     } else {
       renderedString = parsed;
     }
+    // Also hide the agent's trailing ```jarela-references` JSON block —
+    // this is a machine-readable side channel for populating the citation
+    // manifest, not user-facing prose. The server strips it before
+    // persisting, but the streaming buffer still carries it until the
+    // turn ends, so we'd otherwise flash raw JSON for one frame.
+    if (renderedString) {
+      renderedString = stripDeclaredReferencesFence(renderedString);
+    }
   }
 
-  // Citation-checker verdict from messages.metadata. Present only when the
-  // agent has `require_source_links` on AND a checker model is configured
-  // AND the checker call succeeded (any failure leaves metadata null).
+  // Citation-checker verdict from messages.metadata. Present whenever the
+  // agent's `citation_strictness` is not `off` AND a checker model is
+  // configured AND the checker call succeeded. The checker emits one row
+  // per factual claim, ranked by impact (high → med → low).
   const citations = !isUser && "metadata" in message
-    ? (message.metadata as { citations?: { checker_model?: string; claims?: Array<{ link: string | null; verified: boolean }>; unverified_links?: string[]; sources?: Array<{ n: number; label: string; href: string }> } } | null | undefined)?.citations ?? null
+    ? (message.metadata as { citations?: { checker_model?: string; claims?: Array<{ text?: string; link: string | null; verified: boolean; reason?: string; impact?: "high" | "med" | "low" }>; unverified_links?: string[]; sources?: Array<{ n: number; label: string; href: string }> } } | null | undefined)?.citations ?? null
     : null;
   const unverifiedLinks = useMemo<ReadonlySet<string> | undefined>(
     () => citations?.unverified_links?.length ? new Set(citations.unverified_links) : undefined,
@@ -1459,9 +1625,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   );
   // Numbered source manifest the agent saw at prompt time. The chat UI
   // resolves each inline `[N]` marker in the assistant text to a clickable
-  // link against this map. Persisted on every assistant turn where the
-  // agent had `require_source_links` on; absent on legacy rows and on
-  // turns where the manifest was empty.
+  // link/anchor against this map. Persisted on every assistant turn where
+  // the agent's `citation_strictness` was not `off`; absent on legacy rows
+  // and on turns where the manifest was empty.
   const sourceManifest = useMemo<ReadonlyMap<number, { href: string; label: string }> | undefined>(() => {
     if (!citations?.sources?.length) return undefined;
     return new Map(citations.sources.map((s) => [s.n, { href: s.href, label: s.label }]));
@@ -1607,6 +1773,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         </div>
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
+        )}
+        {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
+          <ReferencesPanel sources={citations.sources} />
         )}
         {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
           <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />

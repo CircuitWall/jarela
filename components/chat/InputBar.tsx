@@ -4,14 +4,12 @@ import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type Keyboar
 import type { ContentPart } from "@/api/types";
 
 interface Props {
-  value: string;
-  onChange: (v: string) => void;
   attachments: ContentPart[];
   onAttachmentsChange: (a: ContentPart[]) => void;
   // Default Send / Enter. Caller decides idle-send vs steer based on streaming state.
-  onSubmit: () => void;
+  onSubmit: (text: string) => void;
   // Cmd/Ctrl+Enter — explicit "queue this turn" path. Caller queues regardless of streaming.
-  onQueue: () => void;
+  onQueue: (text: string) => void;
   // Pure interrupt — abort the in-flight run without follow-up.
   onStop: () => void;
   streaming: boolean;
@@ -59,7 +57,12 @@ function fileToContentPart(file: File): Promise<ContentPart> {
   });
 }
 
-export function InputBar({ value, onChange, attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
+export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
+  // Text state is intentionally LOCAL. Lifting it to ChatView would re-render
+  // the entire message list (every MessageBubble + ReactMarkdown pass) on
+  // every keystroke, which is the root cause of typing feeling sluggish on
+  // long threads. Parent only needs the text at submit/queue time.
+  const [value, setValue] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [hlIdx, setHlIdx] = useState(0);
@@ -157,8 +160,25 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
   const activeIdx = Math.min(hlIdx, Math.max(suggestions.length - 1, 0));
 
   function applySuggestion(name: string) {
-    onChange(`${name} `);
+    setValue(`${name} `);
     setHlIdx(0);
+  }
+
+  // Fire submit/queue with the current text and clear locally. The parent
+  // doesn't see the live value during typing — only at this moment.
+  function fireSubmit() {
+    if (disabled) return;
+    if (!value.trim() && !attachments.length) return;
+    const text = value;
+    setValue("");
+    onSubmit(text);
+  }
+  function fireQueue() {
+    if (disabled) return;
+    if (!value.trim() && !attachments.length) return;
+    const text = value;
+    setValue("");
+    onQueue(text);
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -182,19 +202,17 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
         return;
       } else if (e.key === "Escape") {
         e.preventDefault();
-        onChange("");
+        setValue("");
         return;
       }
     }
 
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (!disabled && (value.trim() || attachments.length)) {
-        // Cmd/Ctrl+Enter is the explicit "queue" shortcut. Plain Enter goes
-        // through onSubmit, which is steer-when-streaming / send-when-idle.
-        if (e.metaKey || e.ctrlKey) onQueue();
-        else onSubmit();
-      }
+      // Cmd/Ctrl+Enter is the explicit "queue" shortcut. Plain Enter goes
+      // through onSubmit, which is steer-when-streaming / send-when-idle.
+      if (e.metaKey || e.ctrlKey) fireQueue();
+      else fireSubmit();
     }
   }
 
@@ -334,7 +352,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           rows={1}
           value={value}
           onChange={(e) => {
-            onChange(e.target.value);
+            setValue(e.target.value);
             e.target.style.height = "auto";
             e.target.style.height = `${Math.min(e.target.scrollHeight, 84)}px`;
           }}
@@ -354,7 +372,7 @@ export function InputBar({ value, onChange, attachments, onAttachmentsChange, on
           </button>
         )}
         <button
-          onClick={onSubmit}
+          onClick={fireSubmit}
           disabled={(!value.trim() && !attachments.length) || disabled}
           className="glass-btn-send shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           title={streaming

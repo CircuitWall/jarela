@@ -1,14 +1,16 @@
 "use client";
-import { BookOpen, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { BookOpen, CheckCircle2, Loader2, X, XCircle } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
-import type { CatalogModel, IntegrationStatus, ModelConfig } from "@/api/types";
+import type { CatalogModel, Credential, IntegrationStatus, ModelConfig } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { buildModelEditorPayload } from "@/lib/models/editor-payload";
+import { integrationNameForProvider } from "@/lib/providers/provider-integration-map";
 import { CapBadges } from "./CapBadges";
 import { ModelFeatureGuide } from "./ModelFeatureGuide";
+import { AddCredentialDialog } from "@/components/credentials/AddCredentialDialog";
 
 const FALLBACK_PROVIDERS = ["anthropic", "openai", "github-copilot", "deepseek", "gemini", "langchain"];
 
@@ -38,10 +40,22 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const expertVisible = isFullMode || showExpert;
   const isEdit = !!model;
   const [name, setName] = useState(model?.name ?? "");
+  // Tracks whether the user has edited the name field directly. While false
+  // (default for new configs), the name auto-mirrors model_id so the user
+  // doesn't have to type "claude-sonnet-4-6" twice.
+  const [nameTouched, setNameTouched] = useState(isEdit);
   const [provider, setProvider] = useState(model?.provider ?? "anthropic");
   const [providers, setProviders] = useState<string[]>(FALLBACK_PROVIDERS);
   const [modelId, setModelId] = useState(model?.model_id ?? "");
-  const [apiKey, setApiKey] = useState(model?.params.api_key ?? "");
+  // Credential binding. When set, secret fields live in the credential
+  // row and the inline api_key field is hidden (the credential UI owns
+  // it). Inline base_url / extra_headers / api_key still act as
+  // per-model overrides if the user reveals advanced fields, since the
+  // server merges credential params UNDER inline params.
+  const [credentialId, setCredentialId] = useState<string | null>(model?.credential_id ?? null);
+  const [credentials, setCredentials] = useState<Credential[]>([]);
+  const [credentialDialogOpen, setCredentialDialogOpen] = useState(false);
+  const [apiKey, setApiKey] = useState(model?.params.api_key === "***" ? "" : (model?.params.api_key ?? ""));
   const [baseUrl, setBaseUrl] = useState(model?.params.base_url ?? "");
 
   const [extraHeaders, setExtraHeaders] = useState(
@@ -58,6 +72,28 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
   const [isDefault, setIsDefault] = useState(model?.is_default ?? false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  // Probe state — lets the user click "Test" before saving, AND the save
+  // path auto-probes so embedding-only or unauthorized models don't get
+  // persisted only to fail when an agent actually tries to use them.
+  const [probing, setProbing] = useState(false);
+  const [probeResult, setProbeResult] = useState<{ ok: boolean; error?: string } | null>(null);
+  const [allowSaveAnyway, setAllowSaveAnyway] = useState(false);
+
+  // Compaction state — when the operator shrinks the context (smaller
+  // window, or different model_id) on an existing config, offer to run
+  // the warm summary using the OLD provider snapshot before completing
+  // the save. Without this, the first turn under the new model can fail
+  // because compaction itself doesn't fit the new budget.
+  const [compacting, setCompacting] = useState(false);
+  const [pendingShrinkConfirm, setPendingShrinkConfirm] = useState<
+    | null
+    | {
+        oldSnapshot: { provider: string; model_id: string; params: Record<string, unknown> };
+        payloadName: string;
+        payload: Omit<ModelConfig, "name" | "created_at" | "updated_at">;
+      }
+  >(null);
 
   // Catalog state
   const [showCatalog, setShowCatalog] = useState(false);
@@ -99,6 +135,52 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       mounted = false;
     };
   }, []);
+
+  // Refresh the credential list whenever the user creates / edits one
+  // from inside this editor, or switches to a different provider so the
+  // dropdown narrows.
+  const refreshCredentials = async () => {
+    try {
+      const rows = await api.credentials.list({ type: "integration" });
+      setCredentials(rows);
+    } catch {
+      setCredentials([]);
+    }
+  };
+  useEffect(() => {
+    refreshCredentials();
+    const onChange = () => refreshCredentials();
+    if (typeof window !== "undefined") window.addEventListener("jarela:credentials-changed", onChange);
+    return () => {
+      if (typeof window !== "undefined") window.removeEventListener("jarela:credentials-changed", onChange);
+    };
+  }, []);
+
+  // Default the credential picker to the first credential matching the
+  // current provider once the list arrives — but only on a NEW config,
+  // and only when the user hasn't already chosen one. Edits keep
+  // whatever the model row already references. Filter by the integration
+  // name that backs this provider (gemini → google, otherwise identity).
+  const integrationName = integrationNameForProvider(provider);
+  const providerCredentials = useMemo(
+    () => credentials.filter((c) => c.provider === integrationName),
+    [credentials, integrationName],
+  );
+  useEffect(() => {
+    if (isEdit) return;
+    if (credentialId) return;
+    if (providerCredentials.length === 0) return;
+    setCredentialId(providerCredentials[0].id);
+  }, [isEdit, credentialId, providerCredentials]);
+
+  // When the user changes the provider, drop a credential binding that
+  // no longer matches so we don't ship a mismatched secret to the
+  // backend on save.
+  useEffect(() => {
+    if (!credentialId) return;
+    const stillValid = credentials.some((c) => c.id === credentialId && c.provider === integrationName);
+    if (!stillValid) setCredentialId(null);
+  }, [integrationName, credentialId, credentials]);
 
   // Reset catalog when provider changes
   useEffect(() => {
@@ -152,10 +234,55 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       max_tokens: maxTokens,
       context_window_tokens: contextWindowTokens,
       is_default: isDefault,
+      credential_id: credentialId,
     });
     if (!result.ok) { setError(result.error); return; }
     setSaving(true);
     try {
+      // Auto-probe: don't persist a model that can't open a chat stream
+      // (typical case: github-copilot embedding-only models that 404 on
+      // chat completions). User can override via "Save anyway".
+      if (!allowSaveAnyway) {
+        const probe = await api.models.probe(
+          provider,
+          result.payload.model_id,
+          result.payload.params as Record<string, unknown>,
+          undefined,
+          credentialId ?? undefined,
+        ).catch((e) => ({ ok: false, error: String(e instanceof Error ? e.message : e) }));
+        setProbeResult(probe);
+        if (!probe.ok) {
+          setError(`Model probe failed: ${probe.error || "unknown error"}. Use "Save anyway" if this is intentional.`);
+          setAllowSaveAnyway(true);
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Shrink-guard: if the operator is editing an existing config and
+      // either the context window dropped OR the model_id changed, stage
+      // a confirmation that will compact warm summaries with the OLD
+      // model snapshot before completing the save.
+      if (isEdit && model) {
+        const oldCtx = Number(model.params.context_window_tokens) || 0;
+        const newCtx = Number(result.payload.params.context_window_tokens) || 0;
+        const ctxShrunk = oldCtx > 0 && newCtx > 0 && newCtx < oldCtx;
+        const modelIdChanged = model.model_id !== result.payload.model_id;
+        if (ctxShrunk || modelIdChanged) {
+          setPendingShrinkConfirm({
+            oldSnapshot: {
+              provider: model.provider,
+              model_id: model.model_id,
+              params: model.params as Record<string, unknown>,
+            },
+            payloadName: result.name,
+            payload: result.payload,
+          });
+          setSaving(false);
+          return;
+        }
+      }
+
       await onSave(result.name, result.payload);
       onClose();
     } catch (e) {
@@ -166,6 +293,76 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
       });
     }
     finally { setSaving(false); }
+  }
+
+  async function handleTestConnection() {
+    setProbeResult(null);
+    if (!modelId.trim()) { setProbeResult({ ok: false, error: "model_id required" }); return; }
+    setProbing(true);
+    try {
+      const overrides: Record<string, unknown> = {};
+      if (apiKey.trim()) overrides.api_key = apiKey.trim();
+      if (baseUrl.trim()) overrides.base_url = baseUrl.trim();
+      if (extraHeaders.trim()) {
+        try { overrides.extra_headers = JSON.parse(extraHeaders); }
+        catch { /* invalid JSON — ignore */ }
+      }
+      const res = await api.models.probe(
+        provider,
+        modelId.trim(),
+        Object.keys(overrides).length > 0 ? overrides : undefined,
+        isEdit ? model?.name : undefined,
+        credentialId ?? undefined,
+      );
+      setProbeResult(res);
+      if (res.ok) setAllowSaveAnyway(false);
+    } catch (e) {
+      setProbeResult({ ok: false, error: String(e instanceof Error ? e.message : e) });
+    } finally {
+      setProbing(false);
+    }
+  }
+
+  async function confirmShrinkAndSave() {
+    if (!pendingShrinkConfirm) return;
+    const { oldSnapshot, payloadName, payload } = pendingShrinkConfirm;
+    setCompacting(true);
+    try {
+      // Compact FIRST with the old snapshot — works even though the model
+      // hasn't been swapped yet because the endpoint accepts the provider
+      // info inline rather than reading it back from the DB row.
+      await api.models.compactThreads(payloadName, oldSnapshot);
+      await onSave(payloadName, payload);
+      setPendingShrinkConfirm(null);
+      onClose();
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't compact threads before model swap",
+        error: e,
+        context: { panel: "models", action: "model.compact", name: payloadName },
+      });
+    } finally {
+      setCompacting(false);
+    }
+  }
+
+  async function skipCompactAndSave() {
+    if (!pendingShrinkConfirm) return;
+    const { payloadName, payload } = pendingShrinkConfirm;
+    setSaving(true);
+    try {
+      await onSave(payloadName, payload);
+      setPendingShrinkConfirm(null);
+      onClose();
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't save model",
+        error: e,
+        context: { panel: "models", action: "model.save", name: payloadName, provider, model_id: payload.model_id },
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   const showGitHub = provider === "github-copilot";
@@ -197,7 +394,9 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Config name</span>
               <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
-                value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. work-claude" disabled={isEdit} />
+                value={name}
+                onChange={(e) => { setName(e.target.value); setNameTouched(true); }}
+                placeholder={modelId || "e.g. work-claude"} disabled={isEdit} />
             </label>
             <label className="block">
               <span className="text-xs text-fg-subtle mb-1 block">Provider</span>
@@ -224,7 +423,11 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
             <input
               className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
               value={modelId}
-              onChange={(e) => setModelId(e.target.value)}
+              onChange={(e) => {
+                const next = e.target.value;
+                setModelId(next);
+                if (!nameTouched && !isEdit) setName(next);
+              }}
               placeholder="e.g. claude-sonnet-4-6"
             />
             {catalogError && <p className="text-red-700 dark:text-red-400 text-xs">{catalogError}</p>}
@@ -249,6 +452,7 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
                       key={m.id}
                       onClick={() => {
                         setModelId(m.id);
+                        if (!nameTouched && !isEdit) setName(m.id);
                         // Auto-apply the catalog's known sizing as the default so
                         // the agent doesn't fall back to the global 8K window.
                         // Only fills when the field is currently empty — never
@@ -290,11 +494,71 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
 
           {showGitHub && <GitHubCopilotAuth />}
 
-          <label className="block">
-            <span className="text-xs text-fg-subtle mb-1 block">API Key</span>
-            <input type="password" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-              value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
-          </label>
+          {/* Credential picker — primary surface for binding secrets.
+              Hides the inline api_key field when a credential is bound,
+              since the credential row owns the secret. */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-fg-subtle">Credential</span>
+              <button
+                type="button"
+                onClick={() => setCredentialDialogOpen(true)}
+                className="text-[11px] text-accent hover:text-accent/80 transition-colors inline-flex items-center gap-1"
+              >
+                + New credential
+              </button>
+            </div>
+            <select
+              className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+              value={credentialId ?? ""}
+              onChange={(e) => setCredentialId(e.target.value || null)}
+            >
+              <option value="">
+                {providerCredentials.length === 0 ? `— No credentials for ${provider} —` : `— Inline / env fallback —`}
+              </option>
+              {providerCredentials.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.id} ({c.auth_method})
+                </option>
+              ))}
+              {credentialId && !providerCredentials.some((c) => c.id === credentialId) && (
+                <option value={credentialId}>{credentialId} (other provider)</option>
+              )}
+            </select>
+            {credentialId && (
+              <button
+                type="button"
+                onClick={() => setCredentialDialogOpen(true)}
+                className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
+              >
+                Edit selected credential
+              </button>
+            )}
+          </div>
+
+          {/* Inline API Key only when no credential bound — lets the
+              env-fallback case continue to work AND lets a user paste a
+              one-off key without forcing them into the credential UI
+              first. When a credential is bound, the field stays
+              available as an advanced override below. */}
+          {!credentialId && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">
+                API Key
+                <span className="ml-1 text-fg-faint">(optional — env fallback used if blank)</span>
+              </span>
+              <input type="password" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="••••••••" />
+            </label>
+          )}
+
+          {expertVisible && credentialId && (
+            <label className="block">
+              <span className="text-xs text-fg-subtle mb-1 block">API Key override (advanced)</span>
+              <input type="password" className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+                value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="leave blank — credential value used" />
+            </label>
+          )}
 
           {expertVisible && (
             <label className="block">
@@ -362,14 +626,97 @@ export function ModelEditor({ model, onSave, onClose }: Props) {
           </label>
 
           {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+          {probeResult && (
+            <div
+              className={`text-xs flex items-start gap-1.5 px-2 py-1.5 rounded border ${
+                probeResult.ok
+                  ? "bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-800 text-green-700 dark:text-green-300"
+                  : "bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800 text-red-700 dark:text-red-300"
+              }`}
+            >
+              {probeResult.ok ? <CheckCircle2 size={13} className="shrink-0 mt-0.5" /> : <XCircle size={13} className="shrink-0 mt-0.5" />}
+              <span className="min-w-0 break-words">
+                {probeResult.ok ? "Connection OK — the model responded to a probe." : `Probe failed: ${probeResult.error || "unknown error"}`}
+              </span>
+            </div>
+          )}
         </div>
-        <div className="flex justify-end gap-2 px-4 pb-4 pt-1 border-t border-border/60">
+        <div className="flex flex-wrap justify-end gap-2 px-4 pb-4 pt-1 border-t border-border/60">
+          <button
+            onClick={handleTestConnection}
+            disabled={probing || !modelId.trim()}
+            className="px-3 py-1.5 text-sm text-fg-muted hover:text-fg transition-colors inline-flex items-center gap-1.5 disabled:opacity-40"
+          >
+            {probing && <Loader2 size={13} className="animate-spin" />}
+            {probing ? "Testing…" : "Test connection"}
+          </button>
+          <div className="flex-1" />
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
           <button onClick={handleSave} disabled={saving} className="px-4 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-50">
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : allowSaveAnyway ? "Save anyway" : "Save"}
           </button>
         </div>
       </div>
+      {pendingShrinkConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[60] p-4">
+          <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-md shadow-2xl p-5 space-y-3">
+            <h4 className="text-sm font-semibold text-fg">Compact threads first?</h4>
+            <p className="text-xs text-fg-muted leading-relaxed">
+              You&apos;re switching <span className="font-mono">{pendingShrinkConfirm.payloadName}</span> from{" "}
+              <span className="font-mono">{pendingShrinkConfirm.oldSnapshot.model_id}</span> to{" "}
+              <span className="font-mono">{pendingShrinkConfirm.payload.model_id}</span>. The new model may have a smaller
+              context window. To avoid the next turn failing, Jarela can summarize older messages now using the previous
+              model, then complete the swap.
+            </p>
+            <p className="text-[11px] text-fg-faint">Other actions are blocked while compaction runs.</p>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => { setPendingShrinkConfirm(null); }}
+                disabled={compacting}
+                className="px-3 py-1.5 text-xs text-fg-subtle hover:text-fg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={skipCompactAndSave}
+                disabled={compacting || saving}
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-fg transition-colors"
+              >
+                Skip &amp; save anyway
+              </button>
+              <button
+                onClick={confirmShrinkAndSave}
+                disabled={compacting}
+                className="px-4 py-1.5 text-xs font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {compacting && <Loader2 size={12} className="animate-spin" />}
+                {compacting ? "Compacting…" : "Compact &amp; save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {credentialDialogOpen && (
+        <AddCredentialDialog
+          initialCategory="llm"
+          directProviderName={integrationName}
+          lockCategory
+          onClose={() => { setCredentialDialogOpen(false); refreshCredentials(); }}
+          onSaved={async () => {
+            // Auto-bind the freshly created credential so the user's next
+            // action ("Save model") uses it without re-picking from the
+            // dropdown. Look it up by integration name + first-match rule.
+            try {
+              const rows = await api.credentials.list({ type: "integration", provider: integrationName });
+              setCredentials((prev) => {
+                const merged = [...prev.filter((c) => !rows.some((r) => r.id === c.id)), ...rows];
+                return merged;
+              });
+              if (rows.length > 0 && !credentialId) setCredentialId(rows[0].id);
+            } catch { /* refresh-only failure is non-fatal */ }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
@@ -212,6 +212,11 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.classList.add("jarela-deep-link-flash");
         setTimeout(() => el.classList.remove("jarela-deep-link-flash"), 1600);
+        // Strip the hash so the next streaming message / list-length change
+        // doesn't yank the view back to this anchor. replaceState avoids
+        // triggering a hashchange event (which would re-enter this handler).
+        const { pathname, search } = window.location;
+        window.history.replaceState(null, "", pathname + search);
       });
     }
     scrollToHashTarget();
@@ -394,10 +399,10 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       {thinkingContent && filters.thinking && <ThinkingLine text={thinkingContent} />}
       {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}
       {streamingContent && (
-        <MessageBubble
-          message={{ role: "assistant", content: streamingContent, streaming: true }}
+        <StreamingBubble
+          content={streamingContent}
           threadId={threadId ?? null}
-          agentConfig={agentConfig}
+          agentConfig={agentConfig ?? null}
           showAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
         />
       )}
@@ -488,6 +493,36 @@ function FilterToolbar({
     </div>
   );
 }
+
+// Streaming-bubble wrapper. Wraps the in-flight assistant bubble so the
+// `message` object passed to MessageBubble keeps a stable identity across
+// renders that don't actually change the streaming text — without this
+// the inline `{ role, content, streaming: true }` literal in the parent
+// JSX would defeat MessageBubble's React.memo on every parent re-render.
+const StreamingBubble = memo(function StreamingBubble({
+  content,
+  threadId,
+  agentConfig,
+  showAvatar,
+}: {
+  content: string;
+  threadId: string | null;
+  agentConfig: AgentConfig | null;
+  showAvatar: boolean;
+}) {
+  const message = useMemo(
+    () => ({ role: "assistant" as const, content, streaming: true }),
+    [content],
+  );
+  return (
+    <MessageBubble
+      message={message}
+      threadId={threadId}
+      agentConfig={agentConfig}
+      showAvatar={showAvatar}
+    />
+  );
+});
 
 function ThinkingLine({ text }: { text: string }) {
   const [open, setOpen] = useState(false);

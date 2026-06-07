@@ -5,11 +5,13 @@ import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
 import { useUrlSync } from "@/hooks/useUrlSync";
+import { useConfigurationIssues } from "@/hooks/useConfigurationIssues";
 import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { ModelsPanel } from "@/components/models/ModelsPanel";
+import { CredentialsPanel } from "@/components/credentials/CredentialsPanel";
 import { DocumentsPanel } from "@/components/documents/DocumentsPanel";import { AgentsPanel } from "@/components/agents/AgentsPanel";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
@@ -27,6 +29,8 @@ import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
 import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
+import { Logo } from "@/components/ui/Logo";
+import { Splash } from "@/components/ui/Splash";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
@@ -38,6 +42,7 @@ export function AppShell() {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";
   useUrlSync();
+  useConfigurationIssues();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
     state.activeAgentId,
     state.activeThreadId,
@@ -71,9 +76,15 @@ export function AppShell() {
 
   // Cache agent id → name for notification titles. Refreshed on agent CRUD.
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    const load = () => api.agents.list().then((rows) => { if (!cancelled) setAgents(rows); }).catch(() => {});
+    const load = () =>
+      api.agents
+        .list()
+        .then((rows) => { if (!cancelled) setAgents(rows); })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setAgentsLoaded(true); });
     void load();
     function onAgentsChanged() { void load(); }
     window.addEventListener("jarela:agents-changed", onAgentsChanged);
@@ -200,6 +211,7 @@ export function AppShell() {
     <div
       className="h-[100dvh] flex flex-col text-fg overflow-hidden px-safe"
     >
+      <Splash visible={!agentsLoaded} />
       <NotificationStatus />
       <Toaster />
       <ServerStatus />
@@ -251,15 +263,10 @@ export function AppShell() {
                 {activeAgent.name.charAt(0).toUpperCase()}
               </span>
             ) : (
-              // No active agent yet — fall back to the app mark. Blue-on-
-              // transparent loses contrast against the dark glass, so we
-              // flatten + invert it in dark mode (alpha is preserved).
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src="/logo-mark-transparent.png"
-                alt=""
-                className="h-6 w-auto dark:brightness-0 dark:invert"
-              />
+              // No active agent yet — fall back to the app mark. The Logo
+              // component renders both color variants and CSS picks the
+              // visible one based on the active theme.
+              <Logo className="h-6 w-auto" />
             )}
             <span className="text-fg font-semibold tracking-tight truncate max-w-[12rem] sm:max-w-[16rem]">
               {activeAgent?.name ?? getAppName()}
@@ -379,6 +386,11 @@ export function AppShell() {
         {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
             <ModelsPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("credentials") && (
+          <Activity mode={state.activeTab === "credentials" ? "visible" : "hidden"}>
+            <CredentialsPanel />
           </Activity>
         )}
         {mountedTabs.has("mcp") && (

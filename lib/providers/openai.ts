@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { ContentPart } from "@/lib/tools/types";
+import { resolveProviderApiKey } from "./credentials";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -34,13 +35,30 @@ function pickOpenAICompatOptions(params: ProviderParams): Record<string, unknown
   return out;
 }
 
+// gpt-5* and o1/o3/o4 reasoning models reject `max_tokens` and require
+// `max_completion_tokens` instead.
+export function isOpenAIReasoningModel(model_id: string): boolean {
+  return /^(gpt-5|o[134](?:-|$))/i.test(model_id);
+}
+
+export function openaiTokenLimitParams(
+  model_id: string,
+  params: ProviderParams,
+): Record<string, number | undefined> {
+  if (params.max_tokens == null) return {};
+  return isOpenAIReasoningModel(model_id)
+    ? { max_completion_tokens: params.max_tokens }
+    : { max_tokens: params.max_tokens };
+}
+
 function makeClient(
   params: ProviderParams,
   baseURL?: string,
   extraHeaders?: Record<string, string>,
+  providerName: string = "openai",
 ): OpenAI {
   return new OpenAI({
-    apiKey: params.api_key ?? process.env.OPENAI_API_KEY,
+    apiKey: resolveProviderApiKey(providerName, params),
     baseURL: params.base_url ?? baseURL,
     defaultHeaders: { ...params.extra_headers, ...extraHeaders },
   });
@@ -242,7 +260,7 @@ export const openaiProvider: ModelProvider = {
       messages: toOpenAIMessages(mapped),
       stream: true,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     return streamOpenAIText(stream);
@@ -257,7 +275,7 @@ export const openaiProvider: ModelProvider = {
       tool_choice: "auto",
       stream: false,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
     });
     return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
@@ -306,7 +324,7 @@ async function* openaiStreamInvoke(
     messages: toOpenAIMessages(messages),
     stream: true,
     temperature: params.temperature,
-    max_tokens: params.max_tokens,
+    ...openaiTokenLimitParams(model_id, params),
     ...compatOptions,
     stream_options: { include_usage: true, ...(compatOptions.stream_options as object | undefined) },
   };
@@ -332,7 +350,7 @@ export function makeOpenAICompatProvider(
     name: providerName,
 
     async chat(model_id, messages, params): Promise<ProviderStreamResult> {
-      const client = makeClient(params, defaultBaseURL, fixedHeaders);
+      const client = makeClient(params, defaultBaseURL, fixedHeaders, providerName);
       const mapped = messages.map((m): InvokeMessage => ({
         role: m.role,
         content: m.content,
@@ -342,14 +360,14 @@ export function makeOpenAICompatProvider(
         messages: toOpenAIMessages(mapped),
         stream: true,
         temperature: params.temperature,
-        max_tokens: params.max_tokens,
+        ...openaiTokenLimitParams(model_id, params),
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       return streamOpenAIText(stream);
     },
 
     async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
-      const client = makeClient(params, defaultBaseURL, fixedHeaders);
+      const client = makeClient(params, defaultBaseURL, fixedHeaders, providerName);
       const resp = await client.chat.completions.create({
         model: model_id,
         messages: toOpenAIMessages(messages),
@@ -357,18 +375,18 @@ export function makeOpenAICompatProvider(
         tool_choice: "auto",
         stream: false,
         temperature: params.temperature,
-        max_tokens: params.max_tokens,
+        ...openaiTokenLimitParams(model_id, params),
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
       });
       return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
     },
 
     streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
-      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders), model_id, messages, params, tools);
+      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, messages, params, tools);
     },
 
     async embed(model_id, inputs, params): Promise<number[][]> {
-      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders), model_id, inputs, params);
+      return openaiEmbed(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, inputs, params);
     },
   };
 }

@@ -8,6 +8,7 @@
 
 import os from "node:os";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
+import { parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
 import { listIntegrations } from "@/lib/stores/integrations";
 import { listEnabledDocumentSources, getDocumentSourceStats } from "@/lib/stores/document-sources";
@@ -33,8 +34,9 @@ export interface SystemPromptContext {
   experienceMode: "essential" | "full";
   delegateRosterLines: string[];
   /** Numbered source manifest the agent may cite via `[N]` markers. Built
-   *  by run-thread from the thread's visited-source set when the agent has
-   *  `require_source_links` on; empty/undefined disables citation. */
+   *  by run-thread from the thread's visited-source set + prior-dialog
+   *  turns when the agent's `citation_strictness` is not `'off'`. Empty
+   *  array or undefined disables citation. */
   sourceManifest?: ReadonlyArray<SourceManifestEntry>;
 }
 
@@ -115,14 +117,18 @@ function buildTimeContext(): string {
   return `Current time: ${new Date().toISOString()} (UTC). Use this when computing scheduled task timestamps.`;
 }
 
-// Citation enforcement directive. Empty unless the agent has
-// `require_source_links` on. Shows the numbered source manifest the agent
-// may cite via inline `[N]` markers — the chat UI renders each `[N]` as
-// a clickable link to the corresponding source. Built from the thread's
-// visited-source set (tool calls like file_read, web_search, fetch_webpage)
-// so the agent can only cite what it has actually opened in this thread;
-// invented numbers stay as plain text (not rendered as links) and are
-// flagged by the post-turn checker.
+// Citation enforcement directive. Empty unless the agent's
+// `citation_strictness` is not `'off'`. Shows the numbered source
+// manifest (tool-visited sources + memory items + prior assistant turns)
+// the agent may cite via inline `[N]` markers — the chat UI renders each
+// `[N]` as a clickable link or anchor. Invented numbers stay as plain
+// text and are flagged by the post-turn checker.
+//
+// Strictness levels:
+//   informational — agent NOT asked to cite (checker still surfaces
+//                   references in the UI)
+//   standard      — agent nudged to cite KEY (load-bearing) claims
+//   strict        — agent asked to cite EVERY factual claim
 //
 // Numbered markers were chosen over free-form `[label](href)` because
 // long-form LLM output reliably regresses to its training distribution
@@ -134,22 +140,35 @@ function buildSourceLinkContext(
   agent: AgentConfigRow,
   manifest: ReadonlyArray<SourceManifestEntry>,
 ): string {
-  if (!agent.require_source_links) return "";
-  if (manifest.length === 0) {
-    return [
-      "--- Sources you can cite ---",
-      "You haven't opened any sources in this conversation yet, so factual claims can't be cited from this thread. If a claim is central to your answer, open the source first via a tool (file_read, file_grep, file_glob, web_search, fetch_webpage, …) before stating it. If you're going from memory, say so plainly instead of stating it as if you'd checked.",
-    ].join("\n");
-  }
-  const lines = manifest.map((e) => {
-    const trailer = e.label === e.href ? "" : ` — ${e.href}`;
-    return `[${e.n}] ${e.label}${trailer}`;
-  });
+  const strictness = parseCitationStrictness(agent.citation_strictness) ?? "off";
+  if (strictness === "off" || strictness === "informational") return "";
+
+  const intro =
+    strictness === "strict"
+      ? "Your reply will be audited by a second-pass model that ranks every factual claim by impact. Cite EVERY factual claim — quoted numbers, file contents, API behavior, named facts, paraphrases of earlier turns. The audit downgrades unsupported claims as low-confidence; citing up front saves you from re-grounding rounds for things you already know."
+      : "Your reply will be audited by a second-pass model that ranks every factual claim by impact. Cite KEY load-bearing claims (quoted numbers, file contents, API behavior, named facts). Don't mark incidentals, summaries, plans, or your own derivations — over-citing is as bad as not citing. The audit re-grounds unsupported KEY claims; citing up front saves the extra round.";
+
+  // The pre-turn manifest is always empty under the current design — we
+  // surface citable references in the post-turn manifest after tool
+  // events have actually been recorded. So the only valid citation form
+  // during drafting is the inline markdown link.
+  void manifest;
   return [
-    "--- Sources you can cite ---",
-    "You may attach a citation to a factual claim by writing a numbered marker like [1] or [3] in-prose, right after the claim. Use ONLY the numbers in the list below — never invent a number. If you don't have a matching source for a claim, state it plainly without a marker (or, if it's central to your answer, open the source first via a tool and cite it next turn). The chat UI renders each `[N]` as a clickable link, so you don't need to type the path or URL.",
-    "",
-    ...lines,
+    "--- Citation format ---",
+    intro,
+    "PRIMARY (inline links): cite by writing a standard markdown link inline: `[short label](https://example.com/path)` or `[file name](/abs/path.ts)` or `[earlier reply](#msg-<id>)`. Wrap the cited PHRASE itself as the link text when natural — `Jade has [ice skating at 16:00](?thread=…&agent=…)` reads better than a trailing `[1]`.",
+    "When a tool result contains a `cite_as` field (delegate_to_agent does, and so do some integrations), paste that exact value somewhere in your reply — it's a pre-built markdown link to the source. Anything you summarize from a delegate or from a web/file tool result MUST carry at least one inline link back to where it came from; a summary with zero links reads as if you made the facts up.",
+    "For web_search / fetch_webpage results, the URL is right there in the tool output — use it: `[headline or short label](https://...)`. For file_read results, link the absolute path: `[filename.ext](/abs/path/filename.ext)`.",
+    "FALLBACK (declared refs block): if a source is awkward to cite inline (e.g. you summarized 4 articles in one paragraph), you MAY end your reply with a fenced block exactly like this:",
+    "```jarela-references",
+    "[",
+    "  { \"label\": \"CNN — Mars mission\", \"href\": \"https://cnn.com/...\" },",
+    "  { \"label\": \"Postman's reply\", \"href\": \"?thread=...&agent=...\" }",
+    "]",
+    "```",
+    "Rules for the declared-refs block: it MUST be the very last thing in your reply, MUST be valid JSON (an array of `{label, href}` objects, both strings), and MUST be inside a fenced code block tagged exactly `jarela-references`. The block is stripped from your reply before it's shown to the user — the entries appear as numbered chips in a References footer the UI builds automatically. Use this sparingly — inline links are always preferred because they show the user which words came from where.",
+    "DO NOT write `[CNN, June 4]`, `[Reuters]`, `[AP News]`, or any other bare-text bracket without a URL — those are NOT citations, they render as plain text and the audit counts them as uncited.",
+    "If a claim is central to your answer and you have no link to attach, ground it first via a tool (web_search, fetch_webpage, file_read, …) before stating it.",
   ].join("\n");
 }
 

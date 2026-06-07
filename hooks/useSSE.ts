@@ -27,6 +27,51 @@ export function useSSE(onDone?: () => void) {
   const activityRef = useRef<ReturnType<typeof pushActivity> | null>(null);
   const activeToolsRef = useRef<Map<string, string>>(new Map());
 
+  // Streaming-delta batching. SSE emits one event per chunk (often per
+  // token, sometimes per character). Calling setState on every event
+  // forced a full ChatView re-render per delta — on long threads that
+  // adds noticeable jank because the message list, queued bubbles, and
+  // markdown subtrees all participate. We accumulate deltas into refs
+  // and flush once per animation frame, which collapses bursty streams
+  // into ~60 renders/sec regardless of token rate.
+  const pendingTextRef = useRef("");
+  const pendingThinkingRef = useRef("");
+  const rafIdRef = useRef<number | null>(null);
+
+  const flushPending = useCallback(() => {
+    rafIdRef.current = null;
+    if (pendingTextRef.current) {
+      const delta = pendingTextRef.current;
+      pendingTextRef.current = "";
+      setStreamingContent((p) => p + delta);
+    }
+    if (pendingThinkingRef.current) {
+      const delta = pendingThinkingRef.current;
+      pendingThinkingRef.current = "";
+      setThinkingContent((p) => p + delta);
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    if (rafIdRef.current !== null) return;
+    if (typeof requestAnimationFrame === "undefined") {
+      // SSR / test environments — flush synchronously so React state
+      // assertions in unit tests still see the appended deltas.
+      flushPending();
+      return;
+    }
+    rafIdRef.current = requestAnimationFrame(flushPending);
+  }, [flushPending]);
+
+  const cancelPendingFlush = useCallback(() => {
+    if (rafIdRef.current !== null && typeof cancelAnimationFrame !== "undefined") {
+      cancelAnimationFrame(rafIdRef.current);
+    }
+    rafIdRef.current = null;
+    pendingTextRef.current = "";
+    pendingThinkingRef.current = "";
+  }, []);
+
   const openActivity = useCallback((initial: string) => {
     activityRef.current?.clear();
     activeToolsRef.current.clear();
@@ -43,18 +88,27 @@ export function useSSE(onDone?: () => void) {
   // dangling "thinking…" can't outlive its session.
   useEffect(() => closeActivity, [closeActivity]);
 
+  // Cancel any pending rAF flush on unmount so it doesn't fire against a
+  // dead component (React would warn about setState-after-unmount).
+  useEffect(() => () => { cancelPendingFlush(); }, [cancelPendingFlush]);
+
   const consume = useCallback(async (
     iterable: AsyncIterable<string>,
   ): Promise<void> => {
     for await (const raw of iterable) {
       const event = JSON.parse(raw) as SSEEventType;
       if (event.type === "text_delta") {
-        setStreamingContent((p) => p + event.delta);
+        pendingTextRef.current += event.delta;
+        scheduleFlush();
         activityRef.current?.set("Responding…");
       } else if (event.type === "thinking_delta") {
-        setThinkingContent((p) => p + event.delta);
+        pendingThinkingRef.current += event.delta;
+        scheduleFlush();
         if (activeToolsRef.current.size === 0) activityRef.current?.set("Thinking…");
       } else if (event.type === "tool_call") {
+        // Flush any buffered text before the tool event so the order on
+        // screen matches the order on the wire.
+        flushPending();
         setToolEvents((prev) => [
           ...prev,
           { id: event.id, phase: "call", name: event.name, payload: event.arguments },
@@ -62,6 +116,7 @@ export function useSSE(onDone?: () => void) {
         activeToolsRef.current.set(event.id, event.name);
         activityRef.current?.set(`Using ${event.name}…`);
       } else if (event.type === "tool_result") {
+        flushPending();
         setToolEvents((prev) => [
           ...prev,
           { id: event.id, phase: "result", name: event.name, payload: event.result },
@@ -70,6 +125,7 @@ export function useSSE(onDone?: () => void) {
         const remaining = activeToolsRef.current.values().next().value as string | undefined;
         activityRef.current?.set(remaining ? `Using ${remaining}…` : "Thinking…");
       } else if (event.type === "done") {
+        flushPending();
         setStreaming(false);
         closeActivity();
         // Don't clear streamingContent here — it would cause a visual gap
@@ -83,6 +139,7 @@ export function useSSE(onDone?: () => void) {
         onDone?.();
         break;
       } else if (event.type === "error") {
+        cancelPendingFlush();
         setStreaming(false);
         setStreamingContent("");
         setThinkingContent("");
@@ -91,7 +148,7 @@ export function useSSE(onDone?: () => void) {
         break;
       }
     }
-  }, [onDone, closeActivity]);
+  }, [onDone, closeActivity, flushPending, scheduleFlush, cancelPendingFlush]);
 
   const start = useCallback(async (
     threadId: string,
@@ -104,6 +161,7 @@ export function useSSE(onDone?: () => void) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     threadIdRef.current = threadId;
+    cancelPendingFlush();
     setStreaming(true);
     setStreamingContent("");
     setThinkingContent("");
@@ -142,7 +200,7 @@ export function useSSE(onDone?: () => void) {
       setStreaming(false);
       closeActivity();
     }
-  }, [consume, openActivity, closeActivity]);
+  }, [consume, openActivity, closeActivity, cancelPendingFlush]);
 
   // Stop the active run. Three-part: (1) tell the server to abort the
   // agent stream so the LangGraph loop unwinds; (2) tear down local
@@ -159,13 +217,14 @@ export function useSSE(onDone?: () => void) {
     if (tid) {
       void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
     }
+    flushPending();
     setStreaming(false);
     // Keep streamingContent and thinkingContent visible until the next
     // start()/attach() — same pattern as the `done` branch in consume().
     closeActivity();
     abortRef.current?.abort();
     onDone?.();
-  }, [onDone, closeActivity]);
+  }, [onDone, closeActivity, flushPending]);
 
   // Attach to an in-flight run for the given thread (server-side run kept
   // going because the user switched away, or because this is a fresh
@@ -179,6 +238,7 @@ export function useSSE(onDone?: () => void) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     threadIdRef.current = threadId;
+    cancelPendingFlush();
     setStreaming(true);
     setStreamingContent("");
     setThinkingContent("");
@@ -202,7 +262,7 @@ export function useSSE(onDone?: () => void) {
       setStreaming(false);
       closeActivity();
     }
-  }, [consume, onDone, openActivity, closeActivity]);
+  }, [consume, onDone, openActivity, closeActivity, cancelPendingFlush]);
 
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.

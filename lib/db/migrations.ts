@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
+import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 
 const now = () => new Date().toISOString();
 
@@ -286,8 +287,12 @@ export function runMigrations(db: DatabaseSync): void {
   ensureMessageUsageCacheColumns(db);
   ensureThreadContextPinColumns(db);
   ensureThreadChannelSummariesTable(db);
+  ensureCredentialsTable(db);
+  ensureModelConfigCredentialIdColumn(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
+  migrateInlineApiKeysToCredentials(db);
+  migrateIntegrationsToCredentials(db);
 }
 
 // ADR-0044. Per-channel warm summary so a thread shared across `chat`,
@@ -406,7 +411,7 @@ function ensureMessagesCategoryColumn(db: DatabaseSync): void {
 
 // Per-message auxiliary metadata (JSON object). NULL on legacy rows and on
 // rows that don't carry any extra data. Current consumer is the citation
-// checker (`require_source_links`), which attaches a verdict shaped like
+// checker (`citation_strictness` != 'off'), which attaches a verdict shaped like
 // `{ citations: { claims: [...], unverified: [...] } }`. Adding more keys
 // later is free — readers tolerate unknown fields.
 function ensureMessagesMetadataColumn(db: DatabaseSync): void {
@@ -643,6 +648,18 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   // Reuses `anti_hallucination_model_config` as the checker model.
   if (!names.has("require_source_links")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN require_source_links INTEGER NOT NULL DEFAULT 0");
+  }
+  // Replaces the boolean require_source_links with a 4-level strictness
+  // enum: 'off' | 'informational' | 'standard' | 'strict'.
+  //   off           — no checker, no directive (legacy require_source_links=0)
+  //   informational — checker runs; agent NOT asked to cite (UI surfaces refs)
+  //   standard      — agent nudged to cite KEY claims (legacy require_source_links=1)
+  //   strict        — agent must cite EVERY factual claim AND stall classifier
+  //                   is forced to mode='model'
+  if (!names.has("citation_strictness")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN citation_strictness TEXT NOT NULL DEFAULT 'off'");
+    // Backfill from the legacy boolean so existing agents keep their behavior.
+    db.exec("UPDATE agent_configs SET citation_strictness = 'standard' WHERE require_source_links = 1");
   }
 }
 
@@ -976,4 +993,136 @@ function seedModelConfigs(db: DatabaseSync): void {
 
   ];
   for (const s of seeds) insert.run(...s);
+}
+
+// First-class typed-credentials table. Replaces the per-row inline
+// `api_key` / `base_url` / `extra_headers` blob inside `model_configs.params`
+// and is intended to absorb the `integrations` store (OAuth + API keys for
+// Gmail/Outlook/Google/Atlassian/GitHub) in a later migration without
+// schema change.
+//
+//   id           Stable handle referenced by model_configs.credential_id
+//                (and later other tables). Format: `<type>-<provider>`
+//                with a `-N` collision bump.
+//   type         Coarse domain bucket: `model` for LLM credentials, will
+//                grow to `tts`, `integration`, …
+//   provider     Provider key within the type (e.g. `anthropic`,
+//                `github-copilot`, later `gmail`, `outlook`).
+//   auth_method  `api_key` | `oauth`. Drives the editor UI and the
+//                resolver: `api_key` flattens straight into ProviderParams;
+//                `oauth` holds tokens that the provider adapter exchanges
+//                at call time.
+//   params       Encrypted JSON. For `api_key`: { api_key, base_url?,
+//                extra_headers? }. For `oauth`: { client_id, client_secret,
+//                refresh_token, access_token?, expires_at? }.
+function ensureCredentialsTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS credentials (
+      id          TEXT PRIMARY KEY,
+      type        TEXT NOT NULL,
+      provider    TEXT NOT NULL,
+      auth_method TEXT NOT NULL DEFAULT 'api_key',
+      params      TEXT NOT NULL DEFAULT '{}',
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_credentials_type_provider ON credentials(type, provider);
+  `);
+}
+
+function ensureModelConfigCredentialIdColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(model_configs)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("credential_id")) {
+    db.exec("ALTER TABLE model_configs ADD COLUMN credential_id TEXT");
+  }
+}
+
+// Idempotent backfill: for each model_config still carrying an inline
+// `api_key` (and no `credential_id` yet), create a credential row and
+// link by id. Strips the api_key / base_url / extra_headers fields from
+// the model's params so the credential is the single source of truth.
+// Runs every boot; no-op once every legacy row has been migrated.
+function migrateInlineApiKeysToCredentials(db: DatabaseSync): void {
+  const rows = db.prepare(
+    "SELECT name, provider, params FROM model_configs WHERE credential_id IS NULL OR credential_id = ''",
+  ).all() as Array<{ name: string; provider: string; params: string }>;
+  if (rows.length === 0) return;
+
+  const insertCred = db.prepare(
+    "INSERT INTO credentials (id, type, provider, auth_method, params, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+  );
+  const linkModel = db.prepare("UPDATE model_configs SET credential_id=?, params=?, updated_at=? WHERE name=?");
+  const existsCred = db.prepare("SELECT 1 FROM credentials WHERE id=?");
+  const t = now();
+
+  for (const row of rows) {
+    let params: Record<string, unknown>;
+    try { params = JSON.parse(decryptIfNeeded(row.params || "{}")) as Record<string, unknown>; }
+    catch { continue; }
+    const apiKey = typeof params.api_key === "string" ? params.api_key.trim() : "";
+    if (!apiKey) continue; // nothing to migrate; row stays unlinked (env-only)
+
+    // Allocate a non-colliding id of the form `model-<provider>[-N]`.
+    const base = `model-${row.provider}`;
+    let id = base;
+    let suffix = 2;
+    while ((existsCred.get(id) as unknown) !== undefined) {
+      id = `${base}-${suffix++}`;
+    }
+
+    const credParams: Record<string, unknown> = { api_key: apiKey };
+    if (typeof params.base_url === "string" && params.base_url.trim()) credParams.base_url = params.base_url;
+    if (params.extra_headers && typeof params.extra_headers === "object") credParams.extra_headers = params.extra_headers;
+    insertCred.run(id, "model", row.provider, "api_key", encrypt(JSON.stringify(credParams)), t, t);
+
+    // Strip the migrated fields from model_configs.params so reads don't
+    // see two competing sources of truth for the same secret.
+    const cleaned: Record<string, unknown> = { ...params };
+    delete cleaned.api_key;
+    delete cleaned.base_url;
+    delete cleaned.extra_headers;
+    linkModel.run(id, encrypt(JSON.stringify(cleaned)), t, row.name);
+  }
+}
+
+// Idempotent backfill: for each row in memory_store namespace=`integrations`
+// (the legacy single-instance store), create a `type='integration'`
+// credential keyed `integration-<name>`. Leaves the legacy memory_store
+// row in place so existing readers (gmail-oauth, atlassian tool, env-sync,
+// health probes, etc.) keep working until commit B switches them over.
+// auth_method is `oauth` when the row carries client_id+client_secret,
+// else `api_key`. Skips rows whose credential already exists.
+function migrateIntegrationsToCredentials(db: DatabaseSync): void {
+  const rows = db.prepare(
+    "SELECT key, value FROM memory_store WHERE namespace='integrations'",
+  ).all() as Array<{ key: string; value: string }>;
+  if (rows.length === 0) return;
+
+  const existsCred = db.prepare("SELECT 1 FROM credentials WHERE id=?");
+  const insertCred = db.prepare(
+    "INSERT INTO credentials (id, type, provider, auth_method, params, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+  );
+  const t = now();
+
+  for (const row of rows) {
+    const id = `integration-${row.key}`;
+    if (existsCred.get(id) !== undefined) continue;
+
+    let params: Record<string, unknown>;
+    // memory_store rows in sensitive namespaces (including `integrations`)
+    // are envelope-encrypted at rest. Decrypt before parsing — without
+    // this, JSON.parse throws and the `catch` below silently skips the
+    // row, which is what produced the empty-credentials migration on
+    // first install. See ADR-0005.
+    try { params = JSON.parse(decryptIfNeeded(row.value)) as Record<string, unknown>; }
+    catch { continue; }
+    if (!params || typeof params !== "object" || Object.keys(params).length === 0) continue;
+
+    const hasClientId = typeof params.client_id === "string" && (params.client_id as string).length > 0;
+    const hasClientSecret = typeof params.client_secret === "string" && (params.client_secret as string).length > 0;
+    const auth_method = hasClientId && hasClientSecret ? "oauth" : "api_key";
+
+    insertCred.run(id, "integration", row.key, auth_method, encrypt(JSON.stringify(params)), t, t);
+  }
 }

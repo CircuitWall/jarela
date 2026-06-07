@@ -8,11 +8,17 @@ import type { Tab } from "@/contexts/AppContext";
 export interface ParsedHref {
   tab?: Tab;
   item?: string;
+  // When a `thread` query param is present, the link points at a specific
+  // chat thread. `agent` is required so the AppShell can dispatch
+  // SELECT_THREAD (which carries both ids); a thread-only href is treated
+  // as incomplete and falls back to tab navigation.
+  thread?: string;
+  agent?: string;
   hash?: string;
   external: boolean;
 }
 
-const TABS: Tab[] = ["chat", "dashboard", "agents", "memory", "models", "mcp", "extensions", "tools", "connections", "tasks", "bridges", "profile", "harness", "documents"];
+const TABS: Tab[] = ["chat", "dashboard", "agents", "memory", "models", "credentials", "mcp", "extensions", "tools", "connections", "tasks", "bridges", "profile", "harness", "documents"];
 
 export function parseHref(input: string | null | undefined): ParsedHref {
   if (!input) return { external: false };
@@ -36,7 +42,9 @@ export function parseHref(input: string | null | undefined): ParsedHref {
   const tabRaw = params.get("tab");
   const tab = TABS.includes(tabRaw as Tab) ? (tabRaw as Tab) : undefined;
   const item = params.get("item") ?? undefined;
-  return { tab, item, hash, external: false };
+  const thread = params.get("thread") ?? undefined;
+  const agent = params.get("agent") ?? undefined;
+  return { tab, item, thread, agent, hash, external: false };
 }
 
 // Build the URL we want to push when the reducer is the source of truth.

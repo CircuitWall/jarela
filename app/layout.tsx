@@ -10,11 +10,19 @@ export const metadata: Metadata = {
   description: getAppDescription(),
   manifest: "/manifest.json",
   icons: {
+    // SVG favicon is theme-aware (prefers-color-scheme inside the SVG),
+    // so it flips between navy J (light UI) and sky J (dark UI) without
+    // shipping two payloads. PNG/ICO fall through for older browsers.
     icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
       { url: "/favicon.ico", sizes: "any" },
       { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
       { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
+    // iOS reads ONE apple-touch-icon and ignores prefers-color-scheme,
+    // so we hand it the dark navy variant (reads on any wallpaper). The
+    // light-bg companion is shipped at /apple-touch-icon-light.png for
+    // anyone who wants to opt in via a custom <link> tag.
     apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   // iOS standalone-mode PWA chrome. Safari ignores the manifest's

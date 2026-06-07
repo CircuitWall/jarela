@@ -27,6 +27,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   memory: <Brain size={13} />,
   documents: <FolderSearch size={13} />,
   models: <Cpu size={13} />,
+  credentials: <Key size={13} />,
   mcp: <Wrench size={13} />,
   extensions: <Wrench size={13} />,
   tools: <Wrench size={13} />,
@@ -46,6 +47,7 @@ const TAB_TITLES: Record<Tab, string> = {
   memory: "Memory",
   documents: "Documents",
   models: "Models",
+  credentials: "Credentials",
   mcp: "MCP",
   extensions: "Extensions",
   tools: "Tools",
@@ -65,6 +67,7 @@ const TAB_SHORT: Record<Tab, string> = {
   memory: "Mem",
   documents: "Docs",
   models: "Model",
+  credentials: "Keys",
   mcp: "MCP",
   extensions: "Ext",
   tools: "Tools",
@@ -89,7 +92,7 @@ const TAB_SHORT: Record<Tab, string> = {
 // users won't pair a phone on first setup. The legacy top-level "mcp" and
 // "extensions" tabs remain wired for deep-link back-compat but are hidden
 // here.
-const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "tools", "connections", "tasks", "profile"];
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "credentials", "tools", "connections", "tasks", "profile"];
 const ADVANCED_TABS: Tab[] = ["memory", "bridges", "harness", "logs", "env"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
@@ -114,6 +117,7 @@ const TAB_ACCENT: Partial<Record<Tab, string>> = {
   profile: "from-fuchsia-500/20 to-purple-500/5",
   connections: "from-cyan-500/20 to-sky-500/5",
   models: "from-violet-500/20 to-indigo-500/5",
+  credentials: "from-amber-500/20 to-yellow-500/5",
   tools: "from-emerald-500/20 to-lime-500/5",
   harness: "from-orange-500/20 to-amber-500/5",
   logs: "from-slate-500/20 to-zinc-500/5",

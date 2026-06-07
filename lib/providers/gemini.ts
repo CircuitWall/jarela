@@ -1,4 +1,5 @@
 import { makeOpenAICompatProvider } from "./openai";
+import { resolveProviderApiKey } from "./credentials";
 import { readSSELines } from "./streaming";
 import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
 import type { ModelProvider, ProviderMessage, ProviderParams, ProviderStreamEvent, ProviderStreamResult } from "./types";
@@ -29,7 +30,7 @@ function nativeBaseUrl(params: ProviderParams): string {
 }
 
 function geminiApiKey(params: ProviderParams): string {
-  const key = typeof params.api_key === "string" ? params.api_key : process.env.GEMINI_API_KEY;
+  const key = resolveProviderApiKey("gemini", params);
   if (!key) throw new Error("Gemini: no api_key configured");
   return key;
 }
@@ -436,8 +437,7 @@ function resolveGeminiEmbeddingModel(model_id: string, params: ProviderParams): 
 
 async function geminiEmbed(model_id: string, inputs: string[], params: ProviderParams): Promise<number[][]> {
   if (inputs.length === 0) return [];
-  const apiKey = typeof params.api_key === "string" ? params.api_key : process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("Gemini: no api_key configured");
+  const apiKey = geminiApiKey(params);
 
   const model = resolveGeminiEmbeddingModel(model_id, params);
   const body = {
