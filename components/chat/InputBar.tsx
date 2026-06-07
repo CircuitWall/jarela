@@ -34,6 +34,22 @@ const SLASH_COMMANDS: Array<{ name: string; description: string }> = [
   { name: "/btw", description: "redirect: abort current run and send this instead" },
 ];
 
+// iOS standalone-PWA detection. Used to gate `focus({preventScroll:true})`,
+// which keeps iOS from scrolling the layout viewport when the keyboard opens.
+// Sizing is handled globally by the `--actual-vh` bootstrap in app/layout.tsx:
+// when the keyboard opens, visualViewport.height shrinks, --actual-vh
+// shrinks, the AppShell shrinks, and the input bar naturally lands above the
+// keyboard. No translateY on the compose bar - that's double compensation.
+function isIosStandalonePwa(): boolean {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent || "";
+  const isiOS = /iPhone|iPad|iPod/i.test(ua);
+  if (!isiOS) return false;
+  return window.matchMedia("(display-mode: standalone)").matches
+    || window.matchMedia("(display-mode: fullscreen)").matches
+    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+}
+
 function fileToContentPart(file: File): Promise<ContentPart> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -71,6 +87,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  const iosPwaFix = isIosStandalonePwa();
 
   useEffect(() => {
     return () => {
@@ -141,13 +158,11 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
   // style.height set during typing persists, leaving an empty multi-line box.
   useEffect(() => {
     if (value.length === 0 && textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = "auto";
     }
   }, [value]);
 
   // Slash-command autocomplete is active only when the entire trimmed input
-  // is a `/`-prefixed token (no spaces). That keeps the popover from
-  // flashing when the user is mid-sentence and happens to type a slash.
   // is a `/`-prefixed token (no spaces). That keeps the popover from
   // flashing when the user is mid-sentence and happens to type a slash.
   const suggestions = useMemo(() => {
@@ -243,16 +258,11 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
   }
 
   return (
-    // The on-screen keyboard inset is handled by the AppShell's
-    // `h-[100dvh]` — `dvh` natively shrinks when the keyboard opens on
-    // iOS 16.4+ Safari/PWA and Chromium, so this bar is already pinned
-    // just above the keyboard by the flex layout. The bottom padding
-    // uses `max(...)` so the iOS home-indicator safe-area is the floor
-    // (avoids clipping the input behind the rounded-corner indicator)
-    // without stacking an extra ~12px chin on top of it.
     <div
       className="glass border-t border-border/60 px-3 sm:px-4 pt-2"
-      style={{ paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))" }}
+      style={{
+        paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))",
+      }}
     >
       {/* Attachment previews */}
       {attachments.length > 0 && (
@@ -351,6 +361,12 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
           placeholder={placeholder ?? "Message…"}
           rows={1}
           value={value}
+          onMouseDown={(e) => {
+            if (iosPwaFix) {
+              e.preventDefault();
+              e.currentTarget.focus({ preventScroll: true });
+            }
+          }}
           onChange={(e) => {
             setValue(e.target.value);
             e.target.style.height = "auto";

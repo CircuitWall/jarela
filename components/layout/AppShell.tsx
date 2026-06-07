@@ -205,11 +205,16 @@ export function AppShell() {
     : null;
 
   return (
-    // `h-[100dvh]` (dynamic viewport height) natively tracks the visible
-    // viewport on iOS 16.4+ Safari/PWA and Chromium, including the
-    // on-screen keyboard. No JS hooks, no CSS vars, no counter-translates.
+    // `dvh` natively tracks the visible viewport on iOS 16.4+ / modern
+    // Chromium, including the on-screen keyboard. The `--actual-vh`
+    // override (set by the iOS-standalone-PWA shim in layout.tsx) covers
+    // the separate WebKit bug where 100dvh under-reports the physical
+    // screen by ~safe-area-inset-top, which leaves a white strip above
+    // the home indicator. Inline style instead of `h-[...]` because
+    // Tailwind arbitrary values choke on commas inside `var(...)`.
     <div
-      className="h-[100dvh] flex flex-col text-fg overflow-hidden px-safe"
+      className="flex flex-col text-fg overflow-hidden px-safe"
+      style={{ height: "var(--actual-vh, 100dvh)" }}
     >
       <Splash visible={!agentsLoaded} />
       <NotificationStatus />
