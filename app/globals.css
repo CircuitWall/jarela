@@ -73,9 +73,17 @@
  *   fg-muted  ≈ 11:1   AAA
  *   fg-subtle ≈ 8:1    AAA
  *   fg-faint  ≈ 6.5:1  AA   (still > 5:1 on surface-3) */
-:where([data-theme="light"]),
-:where([data-theme="system"]) {
+/* `color-scheme` tells the UA which palette to use for chrome it controls
+ * itself: scrollbars, form controls, and — critically on iOS Safari PWA
+ * standalone — the home-indicator chin and any area outside the page box.
+ * For `system` we declare BOTH so the UA picks based on prefers-color-scheme,
+ * matching the body background rules below. Previously this said `light`
+ * for system, which made dark-OS users see a white chin under the app. */
+:where([data-theme="light"]) {
   color-scheme: light;
+}
+:where([data-theme="system"]) {
+  color-scheme: light dark;
 }
 :where([data-theme="dark"]) {
   color-scheme: dark;
