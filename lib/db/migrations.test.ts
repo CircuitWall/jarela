@@ -160,7 +160,7 @@ describe("migrateIntegrationsToCredentials", () => {
 
   it("encrypts the migrated payload at rest (legacy plaintext does not appear in the credentials row)", async () => {
     const db = getDb();
-    const SECRET = "sk-ant-encryption-canary-XYZ";
+    const SECRET = "sk-ant-encryption-canary-XYZ"; // jarela-secret-ok
 
     db.exec("DELETE FROM credentials WHERE id='integration-anthropic'");
     db.exec("DELETE FROM memory_store WHERE namespace='integrations' AND key='anthropic'");
