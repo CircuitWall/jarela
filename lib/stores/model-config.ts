@@ -49,7 +49,18 @@ export function upsertModelConfig(
 }
 
 export function deleteModelConfig(name: string): boolean {
-  return (getDb().prepare("DELETE FROM model_configs WHERE name=?").run(name) as { changes: number }).changes > 0;
+  const db = getDb();
+  const wasDefault = !!(db.prepare("SELECT is_default FROM model_configs WHERE name=?").get(name) as { is_default?: number } | undefined)?.is_default;
+  const deleted = (db.prepare("DELETE FROM model_configs WHERE name=?").run(name) as { changes: number }).changes > 0;
+  if (!deleted) return false;
+  // Avoid the "no default" state: if the deleted row was the default and any
+  // other rows remain, promote the alphabetically-first remaining row so
+  // agents that fall back to the default keep working.
+  if (wasDefault) {
+    const next = db.prepare("SELECT name FROM model_configs ORDER BY name ASC LIMIT 1").get() as { name?: string } | undefined;
+    if (next?.name) db.prepare("UPDATE model_configs SET is_default=1 WHERE name=?").run(next.name);
+  }
+  return true;
 }
 
 /**

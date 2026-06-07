@@ -5,6 +5,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
 import { useUrlSync } from "@/hooks/useUrlSync";
+import { useConfigurationIssues } from "@/hooks/useConfigurationIssues";
 import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
@@ -38,6 +39,7 @@ export function AppShell() {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";
   useUrlSync();
+  useConfigurationIssues();
   const { threadId, loading: sessionLoading, error: sessionError } = useAgentSession(
     state.activeAgentId,
     state.activeThreadId,

@@ -189,20 +189,20 @@ export const api = {
     create: async (data: AgentConfigIn) => {
       const created = await request<AgentConfig>("/agents", { method: "POST", body: JSON.stringify(data) });
       if (agentListCache.data) setAgentListCache([...agentListCache.data, created]);
-      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
       return created;
     },
     update: async (id: string, data: AgentConfigIn) => {
       const updated = await request<AgentConfig>(`/agents/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) });
       if (agentListCache.data) setAgentListCache(agentListCache.data.map((a) => (a.id === id ? updated : a)));
-      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
       return updated;
     },
     delete: async (id: string) => {
       const res = await request<{ deleted: boolean }>(`/agents/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (res.deleted) {
         if (agentListCache.data) setAgentListCache(agentListCache.data.filter((a) => a.id !== id));
-        else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:agents-changed"));
       }
       return res;
     },
@@ -305,23 +305,38 @@ export const api = {
             body: JSON.stringify({ params: overrides }),
           })
         : request<import("./types").CatalogModel[]>(`/providers/${encodeURIComponent(provider)}/models`),
+    probe: (provider: string, model_id: string, params?: Record<string, unknown>, name?: string) =>
+      request<{ ok: boolean; error?: string }>(`/providers/${encodeURIComponent(provider)}/probe`, {
+        method: "POST",
+        body: JSON.stringify({ model_id, params, name }),
+        timeoutMs: 20_000,
+      }),
+    compactThreads: (name: string, using: { provider: string; model_id: string; params?: Record<string, unknown> }) =>
+      request<{ compacted: number; skipped: number; errors: Array<{ thread_id: string; error: string }> }>(
+        `/models/${encodeURIComponent(name)}/compact-threads`,
+        {
+          method: "POST",
+          body: JSON.stringify({ using }),
+          timeoutMs: 120_000,
+        },
+      ),
     create: async (name: string, data: ModelConfigIn) => {
       const created = await request<ModelConfig>("/models", { method: "POST", body: JSON.stringify({ name, ...data }) });
       if (modelListCache.data) setModelListCache([...modelListCache.data, created]);
-      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
       return created;
     },
     update: async (name: string, data: ModelConfigIn) => {
       const updated = await request<ModelConfig>(`/models/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) });
       if (modelListCache.data) setModelListCache(modelListCache.data.map((m) => (m.name === name ? updated : m)));
-      else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
       return updated;
     },
     delete: async (name: string) => {
       const res = await request<{ deleted: boolean }>(`/models/${encodeURIComponent(name)}`, { method: "DELETE" });
       if (res.deleted) {
         if (modelListCache.data) setModelListCache(modelListCache.data.filter((m) => m.name !== name));
-        else if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:models-changed"));
         // Deleting a model cascades to its assignments server-side; drop the
         // task list cache so the next read reflects the server.
         if (taskListCache.data) setTaskListCache(taskListCache.data.filter((t) => t.model_config_name !== name));
