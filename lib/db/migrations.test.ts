@@ -68,3 +68,53 @@ describe("migrateInlineApiKeysToCredentials", () => {
     });
   });
 });
+
+describe("migrateIntegrationsToCredentials", () => {
+  it("lifts memory_store integration rows into credential rows", async () => {
+    const db = getDb();
+    const t = new Date().toISOString();
+
+    // Seed two legacy integration rows directly into memory_store: one
+    // OAuth shape (gmail) and one api-key shape (atlassian). Memory_store
+    // values are plaintext JSON — the migration encrypts them on copy.
+    db.prepare(
+      "INSERT OR REPLACE INTO memory_store (namespace, key, value, created_at, updated_at) VALUES (?,?,?,?,?)",
+    ).run("integrations", "gmail", JSON.stringify({
+      client_id: "id.apps.googleusercontent.com",
+      client_secret: "GOCSPX-secret",
+      refresh_token: "1//refresh",
+    }), t, t);
+    db.prepare(
+      "INSERT OR REPLACE INTO memory_store (namespace, key, value, created_at, updated_at) VALUES (?,?,?,?,?)",
+    ).run("integrations", "atlassian", JSON.stringify({
+      url: "https://team.atlassian.net",
+      email: "me@team",
+      api_token: "ATATT-tok",
+    }), t, t);
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const integrationCreds = listCredentials({ type: "integration" });
+    const gmail = integrationCreds.find((c) => c.id === "integration-gmail")!;
+    const atlassian = integrationCreds.find((c) => c.id === "integration-atlassian")!;
+    expect(gmail).toBeTruthy();
+    expect(atlassian).toBeTruthy();
+    expect(gmail.auth_method).toBe("oauth");
+    expect(atlassian.auth_method).toBe("api_key");
+    expect(getCredentialParams(gmail).refresh_token).toBe("1//refresh");
+    expect(getCredentialParams(atlassian).api_token).toBe("ATATT-tok");
+
+    // Legacy memory_store row is left in place — readers don't switch
+    // until commit B. Source-of-truth-flip happens there.
+    const stillLegacy = db.prepare(
+      "SELECT value FROM memory_store WHERE namespace='integrations' AND key='gmail'",
+    ).get() as { value: string } | undefined;
+    expect(stillLegacy).toBeTruthy();
+
+    // Idempotent: re-running doesn't duplicate.
+    const before = listCredentials({ type: "integration" }).length;
+    runMigrations(db);
+    expect(listCredentials({ type: "integration" }).length).toBe(before);
+  });
+});

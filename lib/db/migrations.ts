@@ -292,6 +292,7 @@ export function runMigrations(db: DatabaseSync): void {
   seedModelConfigs(db);
   seedAgentConfigs(db);
   migrateInlineApiKeysToCredentials(db);
+  migrateIntegrationsToCredentials(db);
 }
 
 // ADR-0044. Per-channel warm summary so a thread shared across `chat`,
@@ -1070,5 +1071,41 @@ function migrateInlineApiKeysToCredentials(db: DatabaseSync): void {
     delete cleaned.base_url;
     delete cleaned.extra_headers;
     linkModel.run(id, encrypt(JSON.stringify(cleaned)), t, row.name);
+  }
+}
+
+// Idempotent backfill: for each row in memory_store namespace=`integrations`
+// (the legacy single-instance store), create a `type='integration'`
+// credential keyed `integration-<name>`. Leaves the legacy memory_store
+// row in place so existing readers (gmail-oauth, atlassian tool, env-sync,
+// health probes, etc.) keep working until commit B switches them over.
+// auth_method is `oauth` when the row carries client_id+client_secret,
+// else `api_key`. Skips rows whose credential already exists.
+function migrateIntegrationsToCredentials(db: DatabaseSync): void {
+  const rows = db.prepare(
+    "SELECT key, value FROM memory_store WHERE namespace='integrations'",
+  ).all() as Array<{ key: string; value: string }>;
+  if (rows.length === 0) return;
+
+  const existsCred = db.prepare("SELECT 1 FROM credentials WHERE id=?");
+  const insertCred = db.prepare(
+    "INSERT INTO credentials (id, type, provider, auth_method, params, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+  );
+  const t = now();
+
+  for (const row of rows) {
+    const id = `integration-${row.key}`;
+    if (existsCred.get(id) !== undefined) continue;
+
+    let params: Record<string, unknown>;
+    try { params = JSON.parse(row.value) as Record<string, unknown>; }
+    catch { continue; }
+    if (!params || typeof params !== "object" || Object.keys(params).length === 0) continue;
+
+    const hasClientId = typeof params.client_id === "string" && (params.client_id as string).length > 0;
+    const hasClientSecret = typeof params.client_secret === "string" && (params.client_secret as string).length > 0;
+    const auth_method = hasClientId && hasClientSecret ? "oauth" : "api_key";
+
+    insertCred.run(id, "integration", row.key, auth_method, encrypt(JSON.stringify(params)), t, t);
   }
 }
