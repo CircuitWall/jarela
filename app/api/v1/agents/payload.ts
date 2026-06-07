@@ -35,7 +35,7 @@ export function toCreateAgentInput(id: string, body: AgentCreateBody): UpsertAge
     context_tier_proportions: body.context_tier_proportions,
     anti_hallucination_mode: body.anti_hallucination_mode,
     anti_hallucination_model_config: body.anti_hallucination_model_config,
-    require_source_links: body.require_source_links,
+    citation_strictness: body.citation_strictness,
   };
 }
 
@@ -75,7 +75,7 @@ export function toUpdateAgentInput(
       "anti_hallucination_mode" in body ? body.anti_hallucination_mode : undefined,
     anti_hallucination_model_config:
       "anti_hallucination_model_config" in body ? body.anti_hallucination_model_config : undefined,
-    require_source_links:
-      "require_source_links" in body ? body.require_source_links : undefined,
+    citation_strictness:
+      "citation_strictness" in body ? body.citation_strictness : undefined,
   };
 }

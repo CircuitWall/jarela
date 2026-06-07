@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ContentPart } from "@/lib/tools/types";
-import { getIntegrationRaw } from "@/lib/stores/integrations";
+import { resolveProviderApiKey } from "./credentials";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -12,12 +12,8 @@ import type {
   OpenAITool,
 } from "./types";
 
-// Resolves the API key in fallback order:
-//   1. params.api_key — explicit per-call override
-//   2. integration store — value put there by the user (UI) or env-sync (rc)
-//   3. process.env.ANTHROPIC_API_KEY — last-resort process inheritance
 function resolveApiKey(params: ProviderParams): string | undefined {
-  return params.api_key ?? getIntegrationRaw("anthropic")?.api_key ?? process.env.ANTHROPIC_API_KEY;
+  return resolveProviderApiKey("anthropic", params);
 }
 
 function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {

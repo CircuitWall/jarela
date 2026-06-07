@@ -3,7 +3,7 @@
 // list and item shapes from drifting (they were copy-pasted before).
 
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
-import { getAgentTierProportions, parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentTierProportions, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import type { BridgeRow } from "@/lib/stores/bridges";
 import type { McpServerRow } from "@/lib/stores/mcp-servers";
 import type { MessageRow } from "@/lib/stores/threads";
@@ -41,7 +41,7 @@ export function agentToResponse(a: AgentConfigRow) {
       ? a.anti_hallucination_mode
       : null,
     anti_hallucination_model_config: a.anti_hallucination_model_config,
-    require_source_links: !!a.require_source_links,
+    citation_strictness: parseCitationStrictness(a.citation_strictness) ?? "off",
     created_at: a.created_at,
     updated_at: a.updated_at,
   };

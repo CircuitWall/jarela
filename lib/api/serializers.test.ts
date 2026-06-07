@@ -61,14 +61,20 @@ describe("agentToResponse", () => {
     expect(out.voice_auto_speak).toBe(false);
   });
 
-  it("defaults require_source_links to false when column is 0 or undefined", () => {
-    expect(agentToResponse(baseRow).require_source_links).toBe(false);
-    expect(agentToResponse({ ...baseRow, require_source_links: 0 } as AgentConfigRow).require_source_links).toBe(false);
+  it("defaults citation_strictness to 'off' when column is unset", () => {
+    expect(agentToResponse(baseRow).citation_strictness).toBe("off");
   });
 
-  it("coerces require_source_links=1 to true", () => {
-    const out = agentToResponse({ ...baseRow, require_source_links: 1 } as AgentConfigRow);
-    expect(out.require_source_links).toBe(true);
+  it("passes citation_strictness through verbatim for known enum values", () => {
+    for (const v of ["off", "informational", "standard", "strict"] as const) {
+      const out = agentToResponse({ ...baseRow, citation_strictness: v } as AgentConfigRow);
+      expect(out.citation_strictness).toBe(v);
+    }
+  });
+
+  it("falls back to 'off' for unknown citation_strictness values (forward-compat)", () => {
+    const out = agentToResponse({ ...baseRow, citation_strictness: "weird" } as AgentConfigRow);
+    expect(out.citation_strictness).toBe("off");
   });
 
   it("preserves scalar fields verbatim", () => {

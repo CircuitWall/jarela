@@ -4,7 +4,7 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getThread, setMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
-import { getAgentConfig, getAgentTierProportions, getAgentTools, parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentConfig, getAgentTierProportions, getAgentTools, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
@@ -20,10 +20,11 @@ import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/p
 import { estimateTokens } from "@/lib/agents/context-budget";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
 import {
-  buildSourceManifest,
+  buildCombinedManifest,
   classifyCitations,
   extractCitedMarkers,
-  extractVisitedSources,
+  extractDeclaredReferences,
+  mergeDeclaredReferences,
   type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
 
@@ -70,7 +71,7 @@ export interface PreparedThreadRun {
   // per-tier breakdown the chat UI uses for its diagnostic context bar.
   context_snapshot?: ContextUsageSnapshot;
   // Numbered source manifest shown to the agent for this turn (when
-  // `require_source_links` is on). Forwarded to `persistAssistantMessage`
+  // `citation_strictness` is not `off`). Forwarded to `persistAssistantMessage`
   // so the EXACT list the agent saw is persisted with the message — the
   // chat UI uses it to resolve inline `[N]` markers to clickable links,
   // and the citation checker uses it to score marker validity. Empty when
@@ -230,16 +231,27 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     : historyWindow.factsCtx;
   const recallCtx = rawRecallCtx;
 
-  // Numbered source manifest for require_source_links agents. Built from
-  // every source the agent has touched via tools in prior turns of this
-  // thread so the agent can cite by writing inline `[N]` markers instead
-  // of typing full paths/URLs. Empty (and the prompt block becomes a
-  // "no sources yet" note) when the flag is off or the thread has no
-  // tool history. New tool calls within THIS turn aren't in the manifest
-  // — they'll show up next turn.
-  const sourceManifest: SourceManifestEntry[] = agentCfg.require_source_links
-    ? buildSourceManifest(extractVisitedSources(req.thread_id, []), getConfig().citationManifestMax)
-    : [];
+  // Numbered source manifest, shown to the agent for `[N]` markers and
+  // persisted on the assistant row so the chat UI can resolve markers →
+  // clickable links/anchors. Built from every source the agent has touched
+  // in this thread (tool calls), plus the user's memory items, plus prior
+  // assistant turns — see ADR-0044. Empty (and the prompt block becomes a
+  // "no sources yet" note) when strictness is `off` or the thread is fresh.
+  // Pre-turn manifest: empty in practice. The agent hasn't called any
+  // tools yet on this turn, so there are no `[N]` numbers it could
+  // attach. Citations for THIS turn happen in two ways:
+  //   1. Mid-prose markdown links `[label](https://…)` for sources the
+  //      agent fetches while drafting (web_search/web_fetch/file_read
+  //      results it just got back).
+  //   2. Numeric `[N]` markers resolved AFTER the turn finishes — the
+  //      post-turn manifest refresh in `persistAssistantMessage` appends
+  //      this-turn tool + delegate sources and numbers them.
+  // Old design dragged in every source from every prior turn in the
+  // thread plus 10 memory items plus 10 dialog anchors — produced a
+  // 38-entry panel of mostly-irrelevant noise on every reply. Dropped.
+  const strictness = parseCitationStrictness(agentCfg.citation_strictness) ?? "off";
+  const sourceManifest: SourceManifestEntry[] = [];
+  void strictness; // strictness is read again at persist-time
 
   const systemPrompt = buildSystemPrompt({
     agentCfg,
@@ -421,6 +433,14 @@ async function* stallRetryStream(
   // accurate but adds latency + cost, the regex is fast but brittle.
   const agentCfg = getAgentConfig(originalReq.thread_id ? (getThread(originalReq.thread_id)?.agent_id ?? "") : "");
   const detector = resolveDetector(agentCfg);
+  // Strict citation mode forces the stall classifier to model-based:
+  // strict turns are higher-stakes, so the more accurate (but more
+  // expensive) LLM judge is worth the extra round-trip. Falls back to
+  // regex automatically if the agent has no checker model configured.
+  const strictness = agentCfg ? parseCitationStrictness(agentCfg.citation_strictness) : null;
+  if (strictness === "strict" && detector.modelConfigName) {
+    detector.mode = "model";
+  }
   let classifierStalled = false;
   let classifierReason = "";
   if (!sawError && !looped && detector.mode === "model") {
@@ -455,7 +475,47 @@ async function* stallRetryStream(
     ? validateAssistantOutput(textBuf, toolNames, allowedTools)
     : ({ ok: true } as const);
 
-  if (!stalled && !looped && fabrication.ok) {
+  // Strict-mode citation audit. Runs ONLY at `citation_strictness === 'strict'`
+  // when no earlier gate already claimed the turn — that's when we want to
+  // catch hallucinated/uncited high-impact claims and force a correction
+  // round. Standard / informational defer to the post-persist fire-and-
+  // forget checker (no nudge, just surfacing). The audit is synchronous so
+  // it adds one checker round-trip to strict turns; the cost is the price
+  // of the stronger guarantee.
+  let uncitedHighClaims: ReadonlyArray<{ text: string; reason: string; marker: number | null }> = [];
+  if (
+    !sawError && !stalled && !looped && fabrication.ok
+    && agentCfg
+    && parseCitationStrictness(agentCfg.citation_strictness) === "strict"
+    && retriesLeft > 0
+    && textBuf.trim().length > 0
+  ) {
+    const checkerModel = (agentCfg.anti_hallucination_model_config ?? "").trim();
+    if (checkerModel) {
+      // The audit grades against THIS turn's sources. We don't accumulate
+      // tool-result payloads in this scope (only names + signatures for
+      // loop detection), so the audit can only see what landed in the
+      // text — pass an empty events array and let `classifyCitations`
+      // judge purely on the markers/links in the prose. The post-persist
+      // checker (which runs against the persisted manifest) catches
+      // anything this scope misses.
+      const auditManifest = buildCombinedManifest([], originalReq.thread_id, {
+        tools: Math.max(0, getConfig().citationManifestMax - 10),
+        delegates: 10,
+      });
+      try {
+        const verdict = await classifyCitations(textBuf, auditManifest, checkerModel, originalReq.signal);
+        if (verdict) {
+          uncitedHighClaims = verdict.claims
+            .filter((c) => c.impact === "high" && !c.verified)
+            .map((c) => ({ text: c.text, reason: c.reason, marker: c.marker }));
+        }
+      } catch { /* audit failed — fall through, no retry */ }
+    }
+  }
+  const citationFail = uncitedHighClaims.length > 0;
+
+  if (!stalled && !looped && fabrication.ok && !citationFail) {
     if (doneChunk) yield doneChunk;
     return;
   }
@@ -475,7 +535,9 @@ async function* stallRetryStream(
         ? "↻ Auto-retry: your previous reply ended with a 'one moment' style promise but you didn't call any tool, which ends the turn with nothing happening. Continue the original task NOW by invoking the appropriate tool. Do not acknowledge, do not apologize — just call the tool."
         : classifierStalled
           ? `↻ Auto-retry: the anti-hallucination classifier flagged your reply as a stall (${classifierReason || "promise without a write tool"}). Don't narrate the next step; either CALL the actual tool that fulfils what you promised, or stop and explain why you can't.`
-          : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
+          : citationFail
+            ? `↻ Auto-retry: the citation audit flagged ${uncitedHighClaims.length} high-impact claim${uncitedHighClaims.length === 1 ? "" : "s"} without a verified source:\n${uncitedHighClaims.slice(0, 5).map((c, i) => `  ${i + 1}. ${c.text}${c.reason ? ` — ${c.reason}` : ""}`).join("\n")}\n\nFix each one in exactly ONE of these three ways:\n  (a) cite an existing source from the manifest by appending the marker \`[N]\` to the claim,\n  (b) call a tool now (file_read, web_search, fetch_webpage, memory_read, …) to actually ground the claim before stating it,\n  (c) rephrase plainly — drop the specific number/fact, or say "I don't have a source for this" — so the claim is no longer load-bearing.\n\nDo NOT just restate the same claim. Do NOT invent a marker number that isn't in the manifest.`
+            : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
   const retry = await prepareThreadRun({
     ...originalReq,
@@ -554,17 +616,57 @@ export function persistAssistantMessage(
   // streaming client only — reloading the thread, scrolling back, or opening
   // the conversation from another browser must not replay TTS clips the user
   // has already heard.
-  const persisted = stripAutoplayHints(final);
+  const withoutAutoplay = stripAutoplayHints(final);
+  // Split the optional trailing ```jarela-references` JSON block off the
+  // body before persistence. The block is a machine-readable list of
+  // {label, href} pairs the agent declared as its sources for this turn;
+  // we merge it into the manifest below. The body stored in
+  // messages.content is the clean prose without the fence.
+  const { body: persisted, refs: declaredRefs } = extractDeclaredReferences(withoutAutoplay);
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
     const row = addMessage(thread_id, "assistant", persisted, sanitizedEvents, category);
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
     }
-    // Persist the source manifest the agent saw this turn into the message's
-    // metadata, regardless of whether the checker will run. The chat UI uses
-    // it to resolve inline `[N]` markers → clickable links; without this,
-    // markers render as plain `[3]` text.
-    const manifest = sourceManifest ?? [];
+    // Persist the source manifest for THIS reply into the message's
+    // metadata. The chat UI uses it to resolve inline `[N]` markers →
+    // clickable links and to populate the References panel.
+    //
+    // Scope: ONLY this turn's tool events + this turn's delegate replies.
+    // We deliberately don't include prior-turn sources, memory items, or
+    // earlier-dialog anchors — each reply's panel must reflect what backs
+    // THAT reply, otherwise the panel turns into a 40-entry haystack of
+    // stale links from unrelated topics across the thread (real user
+    // complaint, 2026-06-07: "there are so many irrelevant citation").
+    //
+    // The agent's mid-prose markdown links `[label](url)` need no
+    // manifest entry — they linkify themselves.
+    let manifest: SourceManifestEntry[] = [];
+    if (sanitizedEvents && sanitizedEvents.length > 0) {
+      const thread = getThread(thread_id);
+      const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
+      const strictness = agent ? parseCitationStrictness(agent.citation_strictness) ?? "off" : "off";
+      if (strictness !== "off") {
+        manifest = buildCombinedManifest(sanitizedEvents, thread_id, {
+          tools: getConfig().citationManifestMax,
+          delegates: 10,
+        });
+      }
+    }
+    // Fold the agent's declared refs into the manifest (dedup by
+    // normalized href). These are appended after tool-derived entries
+    // and renumbered. Skipped when strictness is `off` so off-mode
+    // agents that ignore the fence don't suddenly get a References
+    // panel (the strictness gate is the user's switch for this whole
+    // feature).
+    if (declaredRefs.length > 0) {
+      const thread = getThread(thread_id);
+      const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
+      const strictness = agent ? parseCitationStrictness(agent.citation_strictness) ?? "off" : "off";
+      if (strictness !== "off") {
+        manifest = mergeDeclaredReferences(manifest, declaredRefs);
+      }
+    }
     if (manifest.length > 0) {
       setMessageMetadata(row.msg_id, {
         citations: {
@@ -575,14 +677,15 @@ export function persistAssistantMessage(
         },
       });
     }
-    // Citation checker (fire-and-forget). Runs only when the agent has
-    // `require_source_links` on, the persisted text is non-empty, the
-    // manifest is non-empty, and the text actually carries at least one
-    // `[N]` marker to verify. Writes its verdict back into
-    // `messages.metadata` alongside the manifest; the UI picks it up on
-    // the next refresh. Any failure (timeout, parse error, missing
-    // checker model) leaves the manifest in place and the message renders
-    // normally.
+    // Citation checker (fire-and-forget). Runs only when the agent's
+    // `citation_strictness` is not `off`, the persisted text is non-empty,
+    // the manifest is non-empty, and (at standard/informational levels)
+    // the text actually carries at least one `[N]` marker to verify.
+    // Strict mode skips the marker pre-check so the audit can flag
+    // missing citations. Writes its verdict back into `messages.metadata`
+    // alongside the manifest; the UI picks it up on the next refresh.
+    // Any failure (timeout, parse error, missing checker model) leaves
+    // the manifest in place and the message renders normally.
     if (persisted && manifest.length > 0) {
       void runCitationCheckerForRow(thread_id, row.msg_id, persisted, manifest);
     }
@@ -649,11 +752,11 @@ export function persistAssistantMessage(
 
 /**
  * Fire-and-forget citation checker. Gated by the agent's
- * `require_source_links` flag and the existence of a checker model. The
- * checker is intentionally permissive about failure — anything that
- * goes wrong (no model, provider throw, parse failure, timeout) leaves
- * the manifest-only metadata in place so the chat UI still renders
- * `[N]` markers as links.
+ * `citation_strictness` and the existence of a checker model. The checker
+ * is intentionally permissive about failure — anything that goes wrong
+ * (no model, provider throw, parse failure, timeout) leaves the manifest-
+ * only metadata in place so the chat UI still renders `[N]` markers as
+ * links.
  */
 async function runCitationCheckerForRow(
   thread_id: string,
@@ -664,14 +767,16 @@ async function runCitationCheckerForRow(
   try {
     const thread = getThread(thread_id);
     const agent = thread?.agent_id ? getAgentConfig(thread.agent_id) : null;
-    if (!agent || !agent.require_source_links) return;
+    if (!agent) return;
+    const strictness = parseCitationStrictness(agent.citation_strictness) ?? "off";
+    if (strictness === "off") return;
     const checkerModel = (agent.anti_hallucination_model_config ?? "").trim();
     if (!checkerModel) return;
-    // Skip the LLM round-trip when the agent didn't write any markers —
-    // there's nothing to verify and an empty verdict is the same as no
-    // checker metadata (the manifest persisted at message-insert time
-    // still drives marker rendering).
-    if (extractCitedMarkers(persistedText).length === 0) return;
+    // Strict mode runs the checker even when the agent emitted no markers
+    // (it should have cited every claim — the audit will flag the
+    // missing ones). Standard / informational skip the LLM round-trip
+    // when there's literally nothing to verify, as a cost guard.
+    if (strictness !== "strict" && extractCitedMarkers(persistedText).length === 0) return;
     const verdict = await classifyCitations(persistedText, sourceManifest, checkerModel);
     if (!verdict) return;
     setMessageMetadata(msg_id, {

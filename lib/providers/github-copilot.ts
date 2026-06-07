@@ -7,7 +7,7 @@ import type {
   InvokeResult,
 } from "./types";
 import { getStoredOAuthToken } from "./github-copilot-auth";
-import { parseOpenAIInvokeChoice, streamOpenAIEvents, toOpenAIMessages } from "./openai";
+import { openaiTokenLimitParams, parseOpenAIInvokeChoice, streamOpenAIEvents, toOpenAIMessages } from "./openai";
 
 function pickGitHubCompatOptions(params: ProviderParams): Record<string, unknown> {
   const p = params as Record<string, unknown>;
@@ -156,7 +156,7 @@ export const githubCopilotProvider: ModelProvider = {
       messages: toOpenAIMessages(messages),
       stream: true,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
     return {
@@ -178,7 +178,7 @@ export const githubCopilotProvider: ModelProvider = {
       tool_choice: "auto",
       stream: false,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
     });
     return parseOpenAIInvokeChoice(resp.choices[0]);
@@ -194,7 +194,7 @@ export const githubCopilotProvider: ModelProvider = {
       tool_choice: "auto",
       stream: true,
       temperature: params.temperature,
-      max_tokens: params.max_tokens,
+      ...openaiTokenLimitParams(model_id, params),
       ...compat,
       stream_options: { include_usage: true, ...(compat.stream_options as object | undefined) },
     });

@@ -9,7 +9,7 @@ process.on("exit", () => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* */ }
 });
 
-const { putMemory, deleteMemory } = await import("@/lib/stores/memory");
+const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
 const {
   probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
   probeOutlook, probeAnthropic, probeOpenAI, probeDeepseek,
@@ -28,7 +28,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function wipe(): void {
   for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "anthropic"]) {
-    deleteMemory("integrations", k);
+    deleteIntegration(k);
   }
   delete process.env.OPENAI_API_KEY;
   delete process.env.DEEPSEEK_API_KEY;
@@ -59,7 +59,7 @@ describe("health probes", () => {
   });
 
   it("auth_failed maps 401 to a clear actionable message", async () => {
-    putMemory("integrations", "atlassian", { url: "https://example.atlassian.net", email: "a@b", api_token: "bad" });
+    saveIntegration("atlassian", { url: "https://example.atlassian.net", email: "a@b", api_token: "bad" });
     mockFetch(() => new Response("nope", { status: 401 }));
     const r = await probeAtlassian();
     expect(r.ok).toBe(false);
@@ -68,7 +68,7 @@ describe("health probes", () => {
   });
 
   it("transient classifies network errors", async () => {
-    putMemory("integrations", "github", { token: "ghp_abc" });
+    saveIntegration("github", { token: "ghp_abc" });
     mockFetch(() => { throw new Error("ECONNRESET"); });
     const r = await probeGithub();
     expect(r.ok).toBe(false);
@@ -77,7 +77,7 @@ describe("health probes", () => {
   });
 
   it("ok on a 200 from the vendor", async () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-xxx" });
+    saveIntegration("anthropic", { api_key: "sk-ant-xxx" });
     mockFetch(() => jsonResponse({ data: [{ id: "claude-3-opus" }] }));
     const r = await probeAnthropic();
     expect(r.ok).toBe(true);
@@ -86,7 +86,7 @@ describe("health probes", () => {
   });
 
   it("429 is treated as transient (not auth) so the runner won't suggest regenerating the key", async () => {
-    putMemory("integrations", "anthropic", { api_key: "sk-ant-xxx" });
+    saveIntegration("anthropic", { api_key: "sk-ant-xxx" });
     mockFetch(() => new Response("rate limited", { status: 429 }));
     const r = await probeAnthropic();
     expect(r.ok).toBe(false);
@@ -96,7 +96,7 @@ describe("health probes", () => {
   // ── per-probe branch coverage ──
 
   describe("atlassian", () => {
-    beforeEach(() => putMemory("integrations", "atlassian", { url: "https://example.atlassian.net", email: "a@b", api_token: "ok" }));
+    beforeEach(() => saveIntegration("atlassian", { url: "https://example.atlassian.net", email: "a@b", api_token: "ok" }));
     it("ok", async () => {
       mockFetch(() => jsonResponse({ displayName: "Andre", emailAddress: "a@b", accountId: "x" }));
       expect((await probeAtlassian()).status).toBe("ok");
@@ -120,36 +120,36 @@ describe("health probes", () => {
       expect((await probeJiraAlign()).status).toBe("unconfigured");
     });
     it("403 reads as ok with note (token authed but no read scope)", async () => {
-      putMemory("integrations", "jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
+      saveIntegration("jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
       mockFetch(() => new Response("forbidden", { status: 403 }));
       const r = await probeJiraAlign();
       expect(r.status).toBe("ok");
       expect(String(r.detail?.note)).toMatch(/no read access/i);
     });
     it("401 is auth_failed", async () => {
-      putMemory("integrations", "jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
+      saveIntegration("jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
       mockFetch(() => new Response("nope", { status: 401 }));
       expect((await probeJiraAlign()).status).toBe("auth_failed");
     });
     it("429 transient", async () => {
-      putMemory("integrations", "jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
+      saveIntegration("jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
       mockFetch(() => new Response("", { status: 429 }));
       expect((await probeJiraAlign()).status).toBe("transient");
     });
     it("ok", async () => {
-      putMemory("integrations", "jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
+      saveIntegration("jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
       mockFetch(() => jsonResponse({ items: [{ id: 1 }] }));
       const r = await probeJiraAlign();
       expect(r.status).toBe("ok");
       expect(r.detail?.sample_programs).toBe(1);
     });
     it("500 error", async () => {
-      putMemory("integrations", "jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
+      saveIntegration("jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
       mockFetch(() => new Response("boom", { status: 500 }));
       expect((await probeJiraAlign()).status).toBe("error");
     });
     it("network throw is transient", async () => {
-      putMemory("integrations", "jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
+      saveIntegration("jira_align", { url: "https://acme.jiraalign.com", api_token: "t" });
       mockFetch(() => { throw new Error("ETIMEDOUT"); });
       expect((await probeJiraAlign()).status).toBe("transient");
     });
@@ -160,24 +160,24 @@ describe("health probes", () => {
       expect((await probeGithub()).status).toBe("unconfigured");
     });
     it("ok", async () => {
-      putMemory("integrations", "github", { token: "ghp" });
+      saveIntegration("github", { token: "ghp" });
       mockFetch(() => jsonResponse({ login: "andre", name: "Andre", type: "User" }));
       const r = await probeGithub();
       expect(r.status).toBe("ok");
       expect(r.detail?.login).toBe("andre");
     });
     it("403 auth_failed", async () => {
-      putMemory("integrations", "github", { token: "ghp" });
+      saveIntegration("github", { token: "ghp" });
       mockFetch(() => new Response("", { status: 403 }));
       expect((await probeGithub()).status).toBe("auth_failed");
     });
     it("429 transient", async () => {
-      putMemory("integrations", "github", { token: "ghp" });
+      saveIntegration("github", { token: "ghp" });
       mockFetch(() => new Response("", { status: 429 }));
       expect((await probeGithub()).status).toBe("transient");
     });
     it("500 error", async () => {
-      putMemory("integrations", "github", { token: "ghp" });
+      saveIntegration("github", { token: "ghp" });
       mockFetch(() => new Response("boom", { status: 500 }));
       expect((await probeGithub()).status).toBe("error");
     });
@@ -188,27 +188,27 @@ describe("health probes", () => {
       expect((await probeGoogle()).status).toBe("unconfigured");
     });
     it("ok", async () => {
-      putMemory("integrations", "google", { api_key: "k" });
+      saveIntegration("google", { api_key: "k" });
       mockFetch(() => jsonResponse({ models: [] }));
       expect((await probeGoogle()).status).toBe("ok");
     });
     it("400 auth_failed", async () => {
-      putMemory("integrations", "google", { api_key: "k" });
+      saveIntegration("google", { api_key: "k" });
       mockFetch(() => new Response("invalid", { status: 400 }));
       expect((await probeGoogle()).status).toBe("auth_failed");
     });
     it("429 transient", async () => {
-      putMemory("integrations", "google", { api_key: "k" });
+      saveIntegration("google", { api_key: "k" });
       mockFetch(() => new Response("", { status: 429 }));
       expect((await probeGoogle()).status).toBe("transient");
     });
     it("500 error", async () => {
-      putMemory("integrations", "google", { api_key: "k" });
+      saveIntegration("google", { api_key: "k" });
       mockFetch(() => new Response("boom", { status: 500 }));
       expect((await probeGoogle()).status).toBe("error");
     });
     it("network throw is transient", async () => {
-      putMemory("integrations", "google", { api_key: "k" });
+      saveIntegration("google", { api_key: "k" });
       mockFetch(() => { throw new Error("ECONNRESET"); });
       expect((await probeGoogle()).status).toBe("transient");
     });
@@ -216,7 +216,7 @@ describe("health probes", () => {
 
   describe("gmail", () => {
     function gmailCreds(): void {
-      putMemory("integrations", "gmail", { client_id: "cid", client_secret: "sec", refresh_token: "rt" });
+      saveIntegration("gmail", { client_id: "cid", client_secret: "sec", refresh_token: "rt" });
     }
     it("unconfigured", async () => {
       expect((await probeGmail()).status).toBe("unconfigured");
@@ -291,7 +291,7 @@ describe("health probes", () => {
 
   describe("outlook", () => {
     function outlookCreds(): void {
-      putMemory("integrations", "outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt" });
+      saveIntegration("outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt" });
     }
     it("unconfigured", async () => {
       expect((await probeOutlook()).status).toBe("unconfigured");
@@ -305,7 +305,7 @@ describe("health probes", () => {
     it("ok end-to-end", async () => {
       // Unique refresh_token per test so the in-process MS access-token cache
       // (keyed off refresh_token.slice(0, 20)) does not bleed across tests.
-      putMemory("integrations", "outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt-ok-aaaaaaaaaaaaaaaaa" });
+      saveIntegration("outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt-ok-aaaaaaaaaaaaaaaaa" });
       let calls = 0;
       mockFetch(() => {
         calls += 1;
@@ -317,7 +317,7 @@ describe("health probes", () => {
       expect(r.detail?.displayName).toBe("Andre");
     });
     it("graph 429 is transient", async () => {
-      putMemory("integrations", "outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt-429-bbbbbbbbbbbbbbbbb" });
+      saveIntegration("outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt-429-bbbbbbbbbbbbbbbbb" });
       let calls = 0;
       mockFetch(() => {
         calls += 1;
@@ -327,7 +327,7 @@ describe("health probes", () => {
       expect((await probeOutlook()).status).toBe("transient");
     });
     it("graph 500 is error", async () => {
-      putMemory("integrations", "outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt-500-ccccccccccccccccc" });
+      saveIntegration("outlook", { client_id: "cid", client_secret: "sec", refresh_token: "rt-500-ccccccccccccccccc" });
       let calls = 0;
       mockFetch(() => {
         calls += 1;
@@ -339,7 +339,7 @@ describe("health probes", () => {
   });
 
   describe("anthropic", () => {
-    beforeEach(() => putMemory("integrations", "anthropic", { api_key: "k" }));
+    beforeEach(() => saveIntegration("anthropic", { api_key: "k" }));
     it("403 auth_failed", async () => {
       mockFetch(() => new Response("", { status: 403 }));
       expect((await probeAnthropic()).status).toBe("auth_failed");

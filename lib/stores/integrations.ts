@@ -1,16 +1,33 @@
-// Thin wrapper over memory_store for integration credentials. The data lives
-// under namespace="integrations", key=<integration name>, value=<JSON>. We
-// reuse memory_store so the existing Atlassian tool's fallback resolution
-// path "just works" without a second source of truth.
+// Thin wrapper over the typed `credentials` table for integration
+// credentials. Each integration name maps to a credential of
+// `type='integration'`, `provider=<name>`. When the user has multiple
+// instances (e.g. two gmail credentials) the legacy single-instance
+// callers resolve to the FIRST one (sorted by id), matching the
+// "default = first suitable" rule from the credentials spec.
+//
+// Pre-migration history: integrations used to live under namespace
+// `integrations` in memory_store. The boot-time migration
+// `migrateIntegrationsToCredentials` (see lib/db/migrations.ts) lifted
+// every legacy row into the credentials table. This module now writes
+// only through the credentials table and proactively deletes any
+// leftover legacy memory_store rows on save/delete to prevent drift.
 //
 // Secret fields are echoed back to clients as a fixed sentinel string so
 // nothing sensitive ends up in the UI / network logs / browser inspector.
 
-import { getMemory, putMemory, deleteMemory, listMemory } from "@/lib/stores/memory";
+import { deleteMemory } from "@/lib/stores/memory";
+import {
+  createCredential,
+  deleteCredential,
+  getCredential,
+  getCredentialParams,
+  listCredentials,
+  updateCredential,
+} from "@/lib/stores/credentials";
 import { getIntegrationMeta, markFieldsAsUserTouched } from "@/lib/stores/integration_meta";
 
 export const SECRET_MASK = "********";
-const NAMESPACE = "integrations";
+const LEGACY_NAMESPACE = "integrations";
 
 // Persona-filter category. Mirrors the category enum in
 // lib/integrations/manifest.ts so we can drive the Credentials panel
@@ -68,9 +85,52 @@ export const INTEGRATIONS = {
   google: {
     label: "Google AI (Gemini + Imagen)",
     category: "llm" as IntegrationCategory,
-    description: "Used by the generate_image tool (Gemini / Imagen). Get a key at aistudio.google.com → API keys.",
+    description:
+      "Used by Gemini chat models and the generate_image tool (Imagen). Get a key at " +
+      "aistudio.google.com → API keys.",
     fields: [
       { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
+    ],
+  },
+  openai: {
+    label: "OpenAI",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Used by GPT-family chat and embedding models. Create a key at platform.openai.com → " +
+      "API keys. Project-scoped keys (sk-proj-…) work the same as user keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "sk-… or sk-proj-…", secret: true, required: true },
+    ],
+  },
+  deepseek: {
+    label: "DeepSeek",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Used by deepseek-chat and deepseek-reasoner. Get a key at platform.deepseek.com → " +
+      "API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "sk-…", secret: true, required: true },
+    ],
+  },
+  cohere: {
+    label: "Cohere",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Used by Cohere command-family chat models and embed-v3 embeddings. Get a key at " +
+      "dashboard.cohere.com → API keys.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "co_…", secret: true, required: true },
+    ],
+  },
+  "github-copilot": {
+    label: "GitHub Copilot",
+    category: "llm" as IntegrationCategory,
+    description:
+      "Routes chat-completion requests through your Copilot subscription. Paste a GitHub PAT " +
+      "with `copilot` scope from github.com/settings/tokens, or run the device-flow sign-in in " +
+      "the Models panel.",
+    fields: [
+      { key: "api_key", label: "GitHub PAT", placeholder: "ghp_… or github_pat_…", secret: true, required: true },
     ],
   },
   gmail: {
@@ -134,12 +194,18 @@ export interface IntegrationStatus {
 }
 
 export function listIntegrations(): IntegrationStatus[] {
-  const rows = listMemory(NAMESPACE, undefined, 100);
-  const byKey = new Map(rows.map((r) => [r.key, r]));
+  const creds = listCredentials({ type: "integration" });
+  // Pick the first credential per provider (sorted by id ascending; the
+  // migrated `integration-<name>` always sorts before `integration-<name>-N`).
+  const byProvider = new Map<string, ReturnType<typeof getCredential> & {}>();
+  for (const c of creds) {
+    if (!c) continue;
+    if (!byProvider.has(c.provider)) byProvider.set(c.provider, c);
+  }
   return Object.keys(INTEGRATIONS).map((name) => {
-    const row = byKey.get(name);
+    const cred = byProvider.get(name);
     const meta = getIntegrationMeta(name);
-    if (!row) {
+    if (!cred) {
       return {
         name,
         configured: false,
@@ -152,8 +218,8 @@ export function listIntegrations(): IntegrationStatus[] {
     return {
       name,
       configured: true,
-      values: maskSecrets(name as IntegrationName, parseValue(row.value)),
-      updated_at: row.updated_at,
+      values: maskSecrets(name as IntegrationName, paramsToStrings(getCredentialParams(cred))),
+      updated_at: cred.updated_at,
       source: meta.source,
       rc_synced_at: meta.rc_synced_at,
     };
@@ -162,9 +228,9 @@ export function listIntegrations(): IntegrationStatus[] {
 
 export function getIntegrationStatus(name: string): IntegrationStatus | null {
   if (!isKnownIntegration(name)) return null;
-  const row = getMemory(NAMESPACE, name);
+  const cred = firstCredentialFor(name);
   const meta = getIntegrationMeta(name);
-  if (!row) {
+  if (!cred) {
     return {
       name,
       configured: false,
@@ -177,8 +243,8 @@ export function getIntegrationStatus(name: string): IntegrationStatus | null {
   return {
     name,
     configured: true,
-    values: maskSecrets(name, parseValue(row.value)),
-    updated_at: row.updated_at,
+    values: maskSecrets(name, paramsToStrings(getCredentialParams(cred))),
+    updated_at: cred.updated_at,
     source: meta.source,
     rc_synced_at: meta.rc_synced_at,
   };
@@ -187,9 +253,9 @@ export function getIntegrationStatus(name: string): IntegrationStatus | null {
 // Internal: server-side resolution that returns RAW secrets. Only callable
 // from server code (the integration tools).
 export function getIntegrationRaw(name: string): Record<string, string> | null {
-  const row = getMemory(NAMESPACE, name);
-  if (!row) return null;
-  return parseValue(row.value);
+  const cred = firstCredentialFor(name);
+  if (!cred) return null;
+  return paramsToStrings(getCredentialParams(cred));
 }
 
 // Save credentials. Any field whose value matches SECRET_MASK is preserved
@@ -198,7 +264,8 @@ export function getIntegrationRaw(name: string): Record<string, string> | null {
 export function saveIntegration(name: string, incoming: Record<string, string>): IntegrationStatus | { error: string } {
   if (!isKnownIntegration(name)) return { error: `unknown integration "${name}"` };
   const def = INTEGRATIONS[name];
-  const existing = getIntegrationRaw(name) ?? {};
+  const existingCred = firstCredentialFor(name);
+  const existing = existingCred ? paramsToStrings(getCredentialParams(existingCred)) : {};
   const merged: Record<string, string> = {};
   // Track which fields the user actually changed (vs preserved via SECRET_MASK).
   // Only changed fields flip source to "user" — if they re-saved without
@@ -221,28 +288,57 @@ export function saveIntegration(name: string, incoming: Record<string, string>):
       if (existing[f.key] !== v) touched.push(f.key);
     }
   }
-  putMemory(NAMESPACE, name, merged);
+  const auth_method = deriveAuthMethod(name);
+  if (existingCred) {
+    updateCredential(existingCred.id, { auth_method, params: merged });
+  } else {
+    createCredential({
+      id: `integration-${name}`,
+      type: "integration",
+      provider: name,
+      auth_method,
+      params: merged,
+    });
+  }
+  // Drop the legacy plaintext row if it's still lingering from before
+  // the credentials migration.
+  deleteMemory(LEGACY_NAMESPACE, name);
   if (touched.length > 0) markFieldsAsUserTouched(name, touched);
   return getIntegrationStatus(name)!;
 }
 
 export function deleteIntegration(name: string): boolean {
   if (!isKnownIntegration(name)) return false;
-  return deleteMemory(NAMESPACE, name);
+  // Delete every credential for this provider (covers multi-instance
+  // future-state — the user clicking "Disconnect" on the integrations
+  // panel still expects all of them gone).
+  const creds = listCredentials({ type: "integration", provider: name });
+  let removed = false;
+  for (const c of creds) {
+    if (deleteCredential(c.id)) removed = true;
+  }
+  // Sweep any legacy plaintext row too.
+  if (deleteMemory(LEGACY_NAMESPACE, name)) removed = true;
+  return removed;
 }
 
-function parseValue(raw: string): Record<string, string> {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (parsed && typeof parsed === "object") {
-      const out: Record<string, string> = {};
-      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof v === "string") out[k] = v;
-      }
-      return out;
-    }
-  } catch { /* */ }
-  return {};
+function firstCredentialFor(name: string) {
+  const creds = listCredentials({ type: "integration", provider: name });
+  return creds.length > 0 ? creds[0] : null;
+}
+
+function deriveAuthMethod(name: string): "api_key" | "oauth" {
+  if (!isKnownIntegration(name)) return "api_key";
+  const keys = new Set(INTEGRATIONS[name].fields.map((f) => f.key));
+  return keys.has("client_id") && keys.has("client_secret") ? "oauth" : "api_key";
+}
+
+function paramsToStrings(params: Record<string, unknown>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
 }
 
 function maskSecrets(name: IntegrationName, values: Record<string, string>): Record<string, string> {

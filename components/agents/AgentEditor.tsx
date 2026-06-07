@@ -99,13 +99,14 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
   const [antiHallucModel, setAntiHallucModel] = useState<string>(
     agent?.anti_hallucination_model_config ?? "",
   );
-  // Citation enforcement is an independent toggle that re-uses
-  // anti_hallucination_model_config as the checker model. When on, the
-  // agent's system prompt requires [source](url) links for factual claims
-  // and a post-turn checker flags any citation that wasn't actually
-  // visited via a tool call in this thread.
-  const [requireSourceLinks, setRequireSourceLinks] = useState<boolean>(
-    agent?.require_source_links ?? false,
+  // Citation strictness is an independent 4-level enum that re-uses
+  // anti_hallucination_model_config as the checker model. The checker
+  // emits a single audit shape (every factual claim ranked by impact)
+  // and strictness only governs (a) how strongly the agent is asked to
+  // cite in the system prompt and (b) for 'strict', whether the stall
+  // classifier is forced to model mode.
+  const [citationStrictness, setCitationStrictness] = useState<"off" | "informational" | "standard" | "strict">(
+    agent?.citation_strictness ?? "off",
   );
   const [otherAgents, setOtherAgents] = useState<AgentConfig[]>([]);
   const [saving, setSaving] = useState(false);
@@ -300,7 +301,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
         context_tier_proportions: tierOverride,
         anti_hallucination_mode: antiHallucMode === "" ? null : antiHallucMode,
         anti_hallucination_model_config: antiHallucModel.trim() === "" ? null : antiHallucModel.trim(),
-        require_source_links: requireSourceLinks,
+        citation_strictness: citationStrictness,
       });
       onClose();
     } catch (e) {
@@ -639,23 +640,26 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
 
                 <hr className="border-border/60 my-2" />
 
-                <label className="flex items-start gap-2 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    className="rounded border-border mt-0.5"
-                    checked={requireSourceLinks}
-                    onChange={(e) => setRequireSourceLinks(e.target.checked)}
-                  />
-                  <span className="text-xs text-fg-subtle">
-                    Require source links on factual claims
-                    <span className="block text-[11px] text-fg-faint mt-0.5 font-normal">
-                      The system prompt is augmented with a directive to attach a <code>[source](url-or-path)</code> link to every factual claim, and the assistant turn is post-checked: any cited link that wasn&apos;t actually visited via a tool call in this thread gets a warning badge in the chat. Re-uses the classifier model picked above.
-                    </span>
+                <label className="flex flex-col gap-1">
+                  <span className="text-xs font-semibold text-fg-subtle">
+                    Citation strictness
+                  </span>
+                  <Select
+                    value={citationStrictness}
+                    onChange={(e) => setCitationStrictness(e.target.value as typeof citationStrictness)}
+                  >
+                    <option value="off">Off — no checker, no nudge to cite</option>
+                    <option value="informational">Informational — checker surfaces references; agent NOT asked to cite</option>
+                    <option value="standard">Standard — nudge agent to cite KEY (load-bearing) claims</option>
+                    <option value="strict">Strict — cite EVERY claim; force model-based stall detector</option>
+                  </Select>
+                  <span className="text-[11px] text-fg-faint mt-1">
+                    The audit (a second-pass LLM that ranks each factual claim by impact) runs whenever strictness is not <em>off</em>. References may be tool-visited files/URLs, memory items, or prior assistant turns. The chat UI renders each <code>[N]</code> marker as a clickable link/anchor.
                   </span>
                 </label>
-                {requireSourceLinks && antiHallucModel.trim() === "" && (
+                {citationStrictness !== "off" && antiHallucModel.trim() === "" && (
                   <p className="text-[11px] text-warn">
-                    Pick a classifier model above (or set <em>Anti-hallucination detector</em> to <em>model</em>) so the citation checker has somewhere to run. Without it, the directive is added to the prompt but no verification happens.
+                    Pick a classifier model above (or set <em>Anti-hallucination detector</em> to <em>model</em>) so the citation audit has somewhere to run. Without it, the system-prompt directive is added but no verification happens.
                   </p>
                 )}
 

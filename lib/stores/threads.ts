@@ -31,7 +31,8 @@ export interface MessageRow {
   // user/assistant chat content.
   category?: string | null;
   // JSON-encoded auxiliary per-message data. NULL on legacy rows. Currently
-  // carries the citation-checker verdict when `require_source_links` is on.
+  // carries the citation-checker verdict when the agent's `citation_strictness`
+  // is not `off`.
   metadata?: string | null;
 }
 

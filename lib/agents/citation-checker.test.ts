@@ -10,10 +10,13 @@ const {
   buildSourceManifest,
   extractCitedLinks,
   extractCitedMarkers,
+  extractDeclaredReferences,
   extractSourcesFromEvents,
   extractVisitedSources,
+  mergeDeclaredReferences,
   normalizeSource,
   parseCitationVerdict,
+  stripStreamingDeclaredReferences,
 } = await import("./citation-checker");
 const {
   createThread,
@@ -88,6 +91,35 @@ describe("extractSourcesFromEvents", () => {
   it("returns empty set for empty input", () => {
     expect(extractSourcesFromEvents([]).size).toBe(0);
   });
+
+  it("rejects search-result titles that happen to contain dot-tlds", () => {
+    // Real case from a Gemini search where the result title was
+    // "gemini apps' release updates & improvements - gemini.google".
+    // The old `.<ext>` regex matched `.google` and the title leaked into
+    // the references panel as a bogus citable source.
+    const events = [
+      { id: "1", phase: "result" as const, name: "web_search", payload: { results: [
+        { url: "https://gemini.google/release-notes", title: "gemini apps' release updates & improvements - gemini.google" },
+      ]}},
+    ];
+    const got = extractSourcesFromEvents(events);
+    expect(got.has("https://gemini.google/release-notes")).toBe(true);
+    expect(Array.from(got).some((s) => s.includes("release updates"))).toBe(false);
+  });
+
+  it("rejects fetch_webpage JSON-blob results that contain '/' in their body", () => {
+    // Real case: fetch_webpage returns the whole page text inside a
+    // `content` field; if the upstream wrapper accidentally stringifies
+    // the whole result, the old extractor accepted the 400KB JSON dump
+    // as a single source because it contained slashes.
+    const blob = '{"url":"https://blog.example/post","status":200,"content":"line one / line two"}';
+    const events = [
+      { id: "1", phase: "result" as const, name: "fetch_webpage", payload: blob },
+    ];
+    const got = extractSourcesFromEvents(events);
+    expect(got.has(blob.toLowerCase())).toBe(false);
+    expect(got.size).toBe(0);
+  });
 });
 
 describe("extractVisitedSources", () => {
@@ -136,12 +168,12 @@ describe("parseCitationVerdict", () => {
   it("parses the marker field when present", () => {
     const json = '{"claims":[{"text":"a fact","marker":3,"verified":true,"reason":"cited"}]}';
     const out = parseCitationVerdict(json);
-    expect(out).toEqual([{ text: "a fact", marker: 3, link: null, verified: true, reason: "cited" }]);
+    expect(out).toEqual([{ text: "a fact", marker: 3, link: null, verified: true, reason: "cited", impact: "med" }]);
   });
 
   it("coerces a missing/null marker to null", () => {
     const json = '{"claims":[{"text":"x","verified":false,"reason":"no marker"}]}';
-    expect(parseCitationVerdict(json)).toEqual([{ text: "x", marker: null, link: null, verified: false, reason: "no marker" }]);
+    expect(parseCitationVerdict(json)).toEqual([{ text: "x", marker: null, link: null, verified: false, reason: "no marker", impact: "med" }]);
   });
 
   it("drops a non-positive or non-finite marker", () => {
@@ -153,7 +185,7 @@ describe("parseCitationVerdict", () => {
   it("strips a markdown code fence wrapping", () => {
     const wrapped = '```json\n{"claims":[{"text":"a","link":null,"verified":false,"reason":"no link"}]}\n```';
     const out = parseCitationVerdict(wrapped);
-    expect(out).toEqual([{ text: "a", marker: null, link: null, verified: false, reason: "no link" }]);
+    expect(out).toEqual([{ text: "a", marker: null, link: null, verified: false, reason: "no link", impact: "med" }]);
   });
 
   it("returns null on malformed JSON", () => {
@@ -166,7 +198,7 @@ describe("parseCitationVerdict", () => {
 
   it("filters out claim entries that don't have a text field", () => {
     const out = parseCitationVerdict('{"claims":[{"text":""},{"link":"x"},{"text":"keep","verified":true,"link":null,"reason":"ok"}]}');
-    expect(out).toEqual([{ text: "keep", marker: null, link: null, verified: true, reason: "ok" }]);
+    expect(out).toEqual([{ text: "keep", marker: null, link: null, verified: true, reason: "ok", impact: "med" }]);
   });
 });
 
@@ -220,5 +252,122 @@ describe("buildSourceManifest", () => {
     const out = buildSourceManifest(new Set(["https://example.com/docs/x/"]), 50);
     expect(out[0].label).toBe("example.com/docs/x");
     expect(out[0].href).toBe("https://example.com/docs/x/");
+  });
+});
+
+describe("extractDeclaredReferences", () => {
+  it("returns the input unchanged when there is no fence", () => {
+    const out = extractDeclaredReferences("just prose, no fence here");
+    expect(out.body).toBe("just prose, no fence here");
+    expect(out.refs).toEqual([]);
+  });
+
+  it("strips a well-formed trailing fence and parses the JSON array", () => {
+    const text = [
+      "Here is the answer.",
+      "",
+      "```jarela-references",
+      "[",
+      "  { \"label\": \"CNN\", \"href\": \"https://cnn.com/a\" },",
+      "  { \"label\": \"Reuters\", \"href\": \"https://reuters.com/b\" }",
+      "]",
+      "```",
+    ].join("\n");
+    const out = extractDeclaredReferences(text);
+    expect(out.body).toBe("Here is the answer.");
+    expect(out.refs).toEqual([
+      { label: "CNN", href: "https://cnn.com/a" },
+      { label: "Reuters", href: "https://reuters.com/b" },
+    ]);
+  });
+
+  it("ignores entries missing label or href", () => {
+    const text = [
+      "Body.",
+      "```jarela-references",
+      "[{\"label\":\"only label\"},{\"href\":\"https://x\"},{\"label\":\"ok\",\"href\":\"https://ok\"}]",
+      "```",
+    ].join("\n");
+    const out = extractDeclaredReferences(text);
+    expect(out.refs).toEqual([{ label: "ok", href: "https://ok" }]);
+  });
+
+  it("returns the original text untouched when the JSON is malformed", () => {
+    const text = "Body.\n```jarela-references\nnot json {{\n```";
+    const out = extractDeclaredReferences(text);
+    expect(out.body).toBe(text);
+    expect(out.refs).toEqual([]);
+  });
+
+  it("returns refs:[] when the fence body is not an array", () => {
+    const text = "Body.\n```jarela-references\n{\"label\":\"x\",\"href\":\"y\"}\n```";
+    const out = extractDeclaredReferences(text);
+    expect(out.refs).toEqual([]);
+  });
+
+  it("only strips a fence at the very end (mid-body fences are left alone)", () => {
+    const text = [
+      "Intro.",
+      "```jarela-references",
+      "[{\"label\":\"x\",\"href\":\"y\"}]",
+      "```",
+      "",
+      "More prose after the fence.",
+    ].join("\n");
+    const out = extractDeclaredReferences(text);
+    // Anchored to end-of-string, so a fence followed by more prose is not stripped.
+    expect(out.refs).toEqual([]);
+    expect(out.body).toBe(text);
+  });
+});
+
+describe("stripStreamingDeclaredReferences", () => {
+  it("returns the input unchanged when there is no fence", () => {
+    expect(stripStreamingDeclaredReferences("hello")).toBe("hello");
+  });
+
+  it("cuts from the opening fence onward while the block is still streaming", () => {
+    const partial = "Body so far.\n```jarela-references\n[{\"label\":\"x\",";
+    expect(stripStreamingDeclaredReferences(partial)).toBe("Body so far.");
+  });
+
+  it("cuts a completed fence cleanly", () => {
+    const done = "Body.\n```jarela-references\n[{\"label\":\"x\",\"href\":\"y\"}]\n```";
+    expect(stripStreamingDeclaredReferences(done)).toBe("Body.");
+  });
+});
+
+describe("mergeDeclaredReferences", () => {
+  it("appends declared refs after existing manifest entries and renumbers", () => {
+    const manifest = [
+      { n: 1, label: "tool.md", href: "tool.md" },
+    ];
+    const declared = [
+      { label: "CNN", href: "https://cnn.com/a" },
+    ];
+    const out = mergeDeclaredReferences(manifest, declared);
+    expect(out).toEqual([
+      { n: 1, label: "tool.md", href: "tool.md" },
+      { n: 2, label: "CNN", href: "https://cnn.com/a" },
+    ]);
+  });
+
+  it("deduplicates a declared href that the manifest already has", () => {
+    const manifest = [
+      { n: 1, label: "tool", href: "https://example.com/a" },
+    ];
+    const declared = [
+      { label: "duplicate label", href: "https://example.com/a?utm=x" },
+    ];
+    const out = mergeDeclaredReferences(manifest, declared);
+    // normalizeSource strips query — the second entry is recognized as the same source.
+    expect(out).toEqual([
+      { n: 1, label: "tool", href: "https://example.com/a" },
+    ]);
+  });
+
+  it("returns a copy of the manifest unchanged when there are no declared refs", () => {
+    const manifest = [{ n: 1, label: "x", href: "x" }];
+    expect(mergeDeclaredReferences(manifest, [])).toEqual(manifest);
   });
 });
