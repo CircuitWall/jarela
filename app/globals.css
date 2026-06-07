@@ -201,8 +201,8 @@ body {
     rgba(255, 255, 255, 0.06) 0%,
     transparent 65%
   );
-  backdrop-filter: blur(20px) saturate(1.8);
   -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(20px) saturate(1.8);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.18),
     inset 0 -1px 0 0 rgba(255, 255, 255, 0.04),
@@ -215,8 +215,8 @@ body {
     rgba(255, 255, 255, 0.08) 0%,
     transparent 60%
   );
-  backdrop-filter: blur(28px) saturate(1.9);
   -webkit-backdrop-filter: blur(28px) saturate(1.9);
+  backdrop-filter: blur(28px) saturate(1.9);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06),
@@ -229,8 +229,8 @@ body {
     rgba(255, 255, 255, 0.07) 0%,
     transparent 70%
   );
-  backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
     inset 0 0 0 1px rgba(255, 255, 255, 0.05);
@@ -242,8 +242,8 @@ body {
     rgba(255, 255, 255, 0.25) 0%,
     transparent 65%
   );
-  backdrop-filter: blur(16px) saturate(1.6);
   -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  backdrop-filter: blur(16px) saturate(1.6);
   box-shadow:
     inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
     inset 0 0 0 1px rgba(255, 255, 255, 0.12);
