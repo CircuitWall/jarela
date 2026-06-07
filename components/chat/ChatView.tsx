@@ -8,21 +8,6 @@ import { useTrackLoading } from "@/lib/ui/loading";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
-import { useUnreadByAgent } from "@/lib/ui/toasts";
-
-const GRADIENTS = [
-  "from-violet-500 to-indigo-600",
-  "from-blue-500 to-cyan-600",
-  "from-emerald-500 to-teal-600",
-  "from-orange-500 to-amber-600",
-  "from-rose-500 to-pink-600",
-  "from-fuchsia-500 to-purple-600",
-];
-function gradientFor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return GRADIENTS[Math.abs(h) % GRADIENTS.length];
-}
 
 interface SystemNotice {
   id: string;
@@ -37,7 +22,6 @@ interface Props {
   showTools: boolean;
   showThinking: boolean;
   onMessageSent: () => void;
-  onSelectAgent?: (agentId: string) => void;
 }
 
 function isRecoverableSessionError(err: string | null | undefined): boolean {
@@ -45,7 +29,7 @@ function isRecoverableSessionError(err: string | null | undefined): boolean {
   return /timed?\s*out|timeout|aborterror|failed to fetch|network|temporar|econnreset|503|429/i.test(err);
 }
 
-export function ChatView({ threadId, agentId, sessionLoading, sessionError, showTools, showThinking, onMessageSent, onSelectAgent }: Props) {
+export function ChatView({ threadId, agentId, sessionLoading, sessionError, showTools, showThinking, onMessageSent }: Props) {
   const { state } = useAppContext();
   const [messages, setMessages] = useState<Message[]>([]);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
@@ -53,9 +37,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
   const [compacting, setCompacting] = useState(false);
   const [agentConfig, setAgentConfig] = useState<AgentConfig | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [defaultAgent, setDefaultAgent] = useState<AgentConfig | null>(null);
-  const [recentAgents, setRecentAgents] = useState<AgentConfig[]>([]);
-  const unreadByAgent = useUnreadByAgent();
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [messagesLoading, setMessagesLoading] = useState(false);
@@ -104,18 +85,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
     if (!agentId) {
       setAgentConfig(null);
       setAgentConfigLoading(false);
-      api.agents.list().then((all) => {
-        const def = all.find((a) => a.is_default) ?? null;
-        const others = all
-          .filter((a) => !a.is_default)
-          .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
-          .slice(0, 3);
-        setDefaultAgent(def);
-        setRecentAgents(others);
-      }).catch(console.error);
       return;
     }
-    setRecentAgents([]);
     setAgentConfigLoading(true);
     api.agents.get(agentId).then(setAgentConfig).catch(console.error).finally(() => setAgentConfigLoading(false));
   }, [agentId]);
@@ -596,79 +567,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       {error && (
         <div className="mx-4 mb-2 px-3 py-2 rounded bg-red-900/40 border border-red-700 text-red-700 dark:text-red-300 text-xs max-h-48 overflow-y-auto">
           <pre className="whitespace-pre-wrap break-all font-mono">{error}</pre>
-        </div>
-      )}
-
-      {!agentId && (defaultAgent || recentAgents.length > 0) && (
-        <div className="mx-4 mb-4 flex flex-col items-center gap-3">
-          {/* Featured: the default agent — bigger, centered, with a subtle glow */}
-          {defaultAgent && (
-            <button
-              onClick={() => onSelectAgent?.(defaultAgent.id)}
-              className="group flex flex-col items-center gap-2 px-5 py-4 rounded-2xl border border-accent/40 bg-gradient-to-br from-accent/10 to-surface-2 hover:from-accent/15 hover:border-accent/60 transition-all w-[260px] shadow-lg shadow-accent/10"
-            >
-              <div className="relative">
-                <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${gradientFor(defaultAgent.id)} flex items-center justify-center text-xl font-bold text-white select-none overflow-hidden ring-2 ring-accent/30 ring-offset-2 ring-offset-surface group-hover:ring-accent/50 transition-all`}>
-                  {defaultAgent.icon
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={defaultAgent.icon} alt={defaultAgent.name} className="w-full h-full object-cover" />
-                    : defaultAgent.name.charAt(0).toUpperCase()}
-                </div>
-                {(unreadByAgent.get(defaultAgent.id) ?? 0) > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1.5 rounded-full bg-rose-500 border-2 border-surface text-[11px] font-bold text-white flex items-center justify-center leading-none">
-                    {(unreadByAgent.get(defaultAgent.id) ?? 0) > 9 ? "9+" : unreadByAgent.get(defaultAgent.id)}
-                  </span>
-                )}
-              </div>
-              <div className="text-center min-w-0 w-full">
-                <div className="flex items-center justify-center gap-1.5">
-                  <p className="text-base font-semibold text-fg truncate">{defaultAgent.name}</p>
-                  <span className="text-[9px] uppercase tracking-wider px-1.5 py-px rounded text-accent bg-accent/15 border border-accent/30">default</span>
-                </div>
-                {defaultAgent.identity && (
-                  <p className="text-xs text-fg-subtle mt-0.5 line-clamp-2 px-2">{defaultAgent.identity}</p>
-                )}
-              </div>
-            </button>
-          )}
-
-          {/* Latest 3 others — small row below */}
-          {recentAgents.length > 0 && (
-            <div className="flex flex-col items-center gap-1.5">
-              <p className="text-[10px] text-fg-faint uppercase tracking-wider">Recent</p>
-              <div className="flex gap-1.5 justify-center flex-wrap">
-                {recentAgents.map((a) => {
-                  const n = unreadByAgent.get(a.id) ?? 0;
-                  return (
-                    <button
-                      key={a.id}
-                      onClick={() => onSelectAgent?.(a.id)}
-                      title={a.identity || a.name}
-                      className="relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg border border-border bg-surface-2 hover:bg-surface-3 hover:border-border transition-colors text-left max-w-[150px]"
-                    >
-                      <div className={`w-6 h-6 shrink-0 rounded-md bg-gradient-to-br ${gradientFor(a.id)} flex items-center justify-center text-xs font-bold text-white select-none overflow-hidden`}>
-                        {a.icon
-                          // eslint-disable-next-line @next/next/no-img-element
-                          ? <img src={a.icon} alt={a.name} className="w-full h-full object-cover" />
-                          : a.name.charAt(0).toUpperCase()}
-                      </div>
-                      <p className="text-xs text-fg-muted truncate">{a.name}</p>
-                      {n > 0 && (
-                        <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 rounded-full bg-rose-500 border border-surface text-[10px] font-bold text-white flex items-center justify-center leading-none">
-                          {n > 9 ? "9+" : n}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {!agentId && !defaultAgent && recentAgents.length === 0 && (
-        <div className="mx-4 mb-2 px-3 py-2 rounded bg-surface-3 border border-border text-fg-subtle text-xs text-center">
-          No agent selected — open the menu and pick an agent to start chatting.
         </div>
       )}
 

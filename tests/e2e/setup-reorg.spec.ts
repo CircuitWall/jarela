@@ -137,7 +137,8 @@ test("Connections panel filter chip reflects the active preset", async ({ page, 
   // and infrastructure (GitHub) when they aren't configured. Their card
   // headings shouldn't be in the DOM.
   await expect(page.getByRole("heading", { name: /Atlassian/ })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: /GitHub/ })).toHaveCount(0);
+  // exact: "GitHub Copilot" is an LLM integration allowed under home.
+  await expect(page.getByRole("heading", { name: "GitHub", exact: true })).toHaveCount(0);
 
   // Click chip → navigates to Profile.
   await chip.click();

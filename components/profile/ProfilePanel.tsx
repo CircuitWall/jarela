@@ -5,6 +5,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { useAppContext } from "@/contexts/AppContext";
 import { OnboardingWizard } from "@/components/setup/OnboardingWizard";
 import { ProfileEditor } from "./ProfileEditor";
+import { SecurityPanel } from "./SecurityPanel";
 
 export function ProfilePanel() {
   const { state } = useAppContext();
@@ -59,6 +60,9 @@ export function ProfilePanel() {
       </div>
       <div ref={containerRef} className="flex-1 overflow-y-auto profile-scrollbar panel-scrollbar max-w-lg mx-auto w-full">
         <ProfileEditor />
+        <div className="px-4 pb-6">
+          <SecurityPanel />
+        </div>
       </div>
     </div>
   );
