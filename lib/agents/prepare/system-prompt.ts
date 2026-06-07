@@ -65,6 +65,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     buildEnvContext(),
     harnessParts.self_config,
     buildExperienceContext(experienceMode),
+    buildOutputBudgetContext(budget),
     buildMemoryContext(budget),
     ...tierOrderCtx,
     recallCtx,
@@ -227,6 +228,18 @@ function buildIntegrationsContext(): string {
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function buildOutputBudgetContext(budget: ContextBudget): string {
+  const tokens = budget.outputReserveTokens;
+  const words = Math.round(tokens * 0.75);
+  return [
+    "--- Output budget ---",
+    `Your reply is capped at ~${tokens} output tokens per turn (≈${words} words). The provider truncates mid-sentence if you exceed it — you will not get a chance to finish.`,
+    "- Lead with the answer. Skip preambles, restating the question, and recapping context the user already sees.",
+    "- If the user asks for a long artifact (essay, plan, large code dump, exhaustive list), estimate the size first. If it won't fit, ask whether to split across turns, summarise, or stream only the requested section.",
+    "- Prefer dense prose and tight bullets over verbose explanation. Don't repeat yourself across paragraphs.",
+  ].join("\n");
 }
 
 function buildMemoryContext(budget: ContextBudget): string {
