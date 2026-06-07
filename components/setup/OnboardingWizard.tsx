@@ -7,6 +7,7 @@ import type { AgentConfig, IntegrationStatus, ModelConfig, UserProfile } from "@
 import { useAppContext } from "@/contexts/AppContext";
 import { getAppName } from "@/lib/env/app-config";
 import { ModelFeatureGuide } from "@/components/models/ModelFeatureGuide";
+import { Logo } from "@/components/ui/Logo";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 
 type Provider = "anthropic" | "openai" | "gemini" | "deepseek";
@@ -349,8 +350,7 @@ export function OnboardingWizard({ context }: Props) {
       <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="mb-6 flex items-start gap-4">
           {fullScreen && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src="/logo-mark-transparent.png" alt="" className="mt-1 h-11 w-auto" />
+            <Logo className="mt-1 h-11 w-auto" />
           )}
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-fg-faint">

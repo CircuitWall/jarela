@@ -29,6 +29,8 @@ import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
 import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
 import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
+import { Logo } from "@/components/ui/Logo";
+import { Splash } from "@/components/ui/Splash";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
@@ -74,9 +76,15 @@ export function AppShell() {
 
   // Cache agent id → name for notification titles. Refreshed on agent CRUD.
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    const load = () => api.agents.list().then((rows) => { if (!cancelled) setAgents(rows); }).catch(() => {});
+    const load = () =>
+      api.agents
+        .list()
+        .then((rows) => { if (!cancelled) setAgents(rows); })
+        .catch(() => {})
+        .finally(() => { if (!cancelled) setAgentsLoaded(true); });
     void load();
     function onAgentsChanged() { void load(); }
     window.addEventListener("jarela:agents-changed", onAgentsChanged);
@@ -203,6 +211,7 @@ export function AppShell() {
     <div
       className="h-[100dvh] flex flex-col text-fg overflow-hidden px-safe"
     >
+      <Splash visible={!agentsLoaded} />
       <NotificationStatus />
       <Toaster />
       <ServerStatus />
@@ -254,15 +263,10 @@ export function AppShell() {
                 {activeAgent.name.charAt(0).toUpperCase()}
               </span>
             ) : (
-              // No active agent yet — fall back to the app mark. Blue-on-
-              // transparent loses contrast against the dark glass, so we
-              // flatten + invert it in dark mode (alpha is preserved).
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src="/logo-mark-transparent.png"
-                alt=""
-                className="h-6 w-auto dark:brightness-0 dark:invert"
-              />
+              // No active agent yet — fall back to the app mark. The Logo
+              // component renders both color variants and CSS picks the
+              // visible one based on the active theme.
+              <Logo className="h-6 w-auto" />
             )}
             <span className="text-fg font-semibold tracking-tight truncate max-w-[12rem] sm:max-w-[16rem]">
               {activeAgent?.name ?? getAppName()}
