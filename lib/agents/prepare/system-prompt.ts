@@ -147,7 +147,7 @@ function buildSourceLinkContext(
   });
   return [
     "--- Sources you can cite ---",
-    "You may attach a citation to a factual claim by writing a numbered marker like [1] or [3] in-prose, right after the claim. Use ONLY the numbers in the list below — never invent a number. If you don't have a matching source for a claim, state it plainly without a marker (or, if it's central to your answer, open the source first via a tool and cite it next turn). The chat UI renders each `[N]` as a clickable link, so you don't need to type the path or URL.",
+    "Attach a citation to KEY factual claims by writing a numbered marker like [1] or [3] in-prose, right after the claim. KEY = the load-bearing facts a careful reader would want a source for (a quoted number, a specific file's contents, an API behavior, a named fact). Don't mark incidental details, summaries, plans, or your own derivations — over-citing is as bad as not citing. Use ONLY the numbers in the list below; never invent a number. If a KEY claim has no matching source, either state it plainly without a marker or, if it's central to your answer, open the source first via a tool and cite it next turn. The chat UI renders each `[N]` as a clickable link, so you don't need to type the path or URL.",
     "",
     ...lines,
   ].join("\n");

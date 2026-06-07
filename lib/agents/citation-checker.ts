@@ -192,7 +192,7 @@ function labelForSource(href: string): string {
   return href;
 }
 
-const SYSTEM_PROMPT = `You judge whether an assistant turn's FACTUAL CLAIMS are properly cited via SOURCE MARKERS.
+const SYSTEM_PROMPT = `You judge whether an assistant turn's KEY FACTUAL CLAIMS are properly cited via SOURCE MARKERS.
 
 You will receive:
 - A numbered list of SOURCES the agent visited via tools in this thread.
@@ -200,10 +200,18 @@ You will receive:
 
 The agent cites a source by writing an inline marker like [3] right after the claim, where the number matches a row in the SOURCES list. A marker MAY appear mid-sentence or at the end of a sentence.
 
-A "factual claim" is a specific assertion about the external world, a file's contents, an API response, or a quoted/paraphrased fact. Generic prose, opinions, plans ("I'll do X"), and conversational filler are NOT claims.
+ONLY flag KEY (load-bearing) claims — the small set of assertions a careful reader would want a source for because the rest of the answer depends on them. Examples of KEY claims: a quoted number, a file's contents the answer hinges on, an API behavior, a named fact (date, version, person), a paraphrased finding from a search result.
 
-For each claim, report:
-- "text":     short paraphrase (max 120 chars).
+IGNORE:
+- Generic prose, summaries, opinions, plans ("I'll do X"), conversational filler.
+- Self-evident derivations from earlier claims in the same turn.
+- Incidental details (adjectives, restatements, syntactic glue).
+- Tool-call narration ("I read foo.ts and noticed...") unless it asserts a specific external fact.
+
+Cap the output at 5 claims. If more would qualify, keep the 5 most load-bearing and drop the rest.
+
+For each KEY claim, report:
+- "text":     short paraphrase of the claim (max 120 chars).
 - "marker":   the integer the agent attached (e.g. 3 for [3]), or null if no marker is attached.
 - "verified": true if marker is non-null AND that number appears in the SOURCES list, else false.
 - "reason":   one short sentence (max 120 chars) explaining the verdict.
@@ -212,7 +220,7 @@ Reply with EXACTLY one JSON object on one line, no surrounding prose, no markdow
 
 {"claims":[{"text":"...","marker":<integer-or-null>,"verified":true|false,"reason":"..."}]}
 
-If the turn has no factual claims, return {"claims":[]}.`;
+If the turn has no KEY factual claims (chitchat, plans, or all claims are incidental), return {"claims":[]}.`;
 
 export async function classifyCitations(
   assistantText: string,
