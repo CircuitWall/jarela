@@ -91,6 +91,9 @@ const REDACTION_PATTERNS: Array<[RegExp, string]> = [
   [/\bgho_[A-Za-z0-9_-]{20,}\b/g, "[redacted-token]"],
   // Atlassian-style JWT-ish values in URL.
   [/(token\s*[:=]\s*)[A-Za-z0-9._-]{20,}/g, "$1[redacted]"],
+  // PIN-like 6-digit values in JSON bodies posted to /api/v1/security/*
+  // (ADR-0063). The keys are `pin`, `newPin`, `currentPin`.
+  [/("(?:pin|newPin|currentPin)"\s*:\s*")\d{6}(")/gi, "$1[redacted]$2"],
 ];
 
 function redact(line: string): string {
