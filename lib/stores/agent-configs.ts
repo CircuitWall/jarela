@@ -3,6 +3,17 @@ import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-prese
 
 const now = () => new Date().toISOString();
 
+export type CitationStrictness = "off" | "informational" | "standard" | "strict";
+
+/** Coerce arbitrary input (DB row TEXT, API body, undefined) to the enum.
+ *  Returns `null` for null/undefined/unknown values so callers can default. */
+export function parseCitationStrictness(value: unknown): CitationStrictness | null {
+  if (value === "off" || value === "informational" || value === "standard" || value === "strict") {
+    return value;
+  }
+  return null;
+}
+
 export interface AgentConfigRow {
   id: string;
   name: string;
@@ -38,12 +49,17 @@ export interface AgentConfigRow {
   // env knob.
   anti_hallucination_mode: string | null;          // "off" | "report" | "enforce"
   anti_hallucination_model_config: string | null;  // saved model config name
-  // When 1, the system prompt is augmented with a citation-link directive
-  // and the assistant turn is post-checked by `anti_hallucination_model_config`
-  // for {source link present, source previously visited in this thread}.
-  // Independent of `anti_hallucination_mode` — stall detection and citation
-  // enforcement can be on/off in any combination.
-  require_source_links: number;
+  // Citation strictness: 'off' | 'informational' | 'standard' | 'strict'.
+  //   off           - no checker, no system-prompt directive
+  //   informational - checker runs and surfaces references; agent NOT nudged
+  //                   to cite
+  //   standard      - agent nudged to cite KEY (load-bearing) claims with [N]
+  //   strict        - agent must cite EVERY factual claim AND the stall
+  //                   classifier is forced to mode='model' on this agent's
+  //                   turns
+  // Independent of `anti_hallucination_mode` for the stall axis; strict
+  // mode does override the resolved stall classifier to 'model'.
+  citation_strictness: string;
   created_at: string;
   updated_at: string;
 }
@@ -130,9 +146,9 @@ export interface UpsertAgentInput {
   // override (inherit env). `undefined` = keep existing.
   anti_hallucination_mode?: "off" | "regex" | "model" | null;
   anti_hallucination_model_config?: string | null;
-  // Citation enforcement (independent of stall detector). `undefined` = keep
-  // existing. `false` = disable.
-  require_source_links?: boolean;
+  // Citation strictness ('off' | 'informational' | 'standard' | 'strict').
+  // `undefined` = keep existing.
+  citation_strictness?: CitationStrictness;
 }
 
 /**
@@ -222,10 +238,10 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       : input.anti_hallucination_model_config && input.anti_hallucination_model_config.trim().length > 0
         ? input.anti_hallucination_model_config.trim()
         : null;
-  const requireSourceLinks =
-    input.require_source_links === undefined
-      ? (existing?.require_source_links ?? 0)
-      : (input.require_source_links ? 1 : 0);
+  const citationStrictness =
+    input.citation_strictness === undefined
+      ? (parseCitationStrictness(existing?.citation_strictness) ?? "off")
+      : (parseCitationStrictness(input.citation_strictness) ?? "off");
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
@@ -233,7 +249,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
-         anti_hallucination_mode, anti_hallucination_model_config, require_source_links,
+         anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
          created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
@@ -277,7 +293,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       tierProportions,
       antiHallucMode,
       antiHallucModel,
-      requireSourceLinks,
+      citationStrictness,
       created_at,
       t,
     );

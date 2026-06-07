@@ -64,16 +64,25 @@ export interface AgentConfig {
    */
   anti_hallucination_model_config: string | null;
   /**
-   * Citation enforcement (independent of the stall detector). When true,
-   * the system prompt requires `[source](url-or-path)` links for factual
-   * claims and a post-turn checker validates that each cited source was
-   * actually visited via a tool call earlier in this thread. The checker
-   * reuses `anti_hallucination_model_config` as the LLM judge.
+   * Citation strictness (independent of the stall detector). One of:
+   *  - `off`           : no checker, no system-prompt directive
+   *  - `informational` : checker runs and surfaces a references panel; the
+   *                      agent is NOT asked to cite
+   *  - `standard`      : agent nudged to cite KEY (load-bearing) claims
+   *                      with `[N]` markers
+   *  - `strict`        : agent must cite EVERY factual claim AND the stall
+   *                      classifier is forced to mode='model' for this
+   *                      agent's turns
+   * The checker reuses `anti_hallucination_model_config` as the LLM judge.
    */
-  require_source_links: boolean;
+  citation_strictness: CitationStrictness;
   created_at: string;
   updated_at: string;
 }
+
+/** Citation strictness enum exposed over the wire. Mirrors
+ *  `lib/stores/agent-configs#CitationStrictness`. */
+export type CitationStrictness = "off" | "informational" | "standard" | "strict";
 
 export interface AgentConfigIn {
   name: string;
@@ -104,8 +113,9 @@ export interface AgentConfigIn {
   // null = clear override; undefined = leave as-is.
   anti_hallucination_mode?: "off" | "regex" | "model" | null;
   anti_hallucination_model_config?: string | null;
-  // Independent toggle for the citation-link checker. undefined = leave as-is.
-  require_source_links?: boolean;
+  // Independent citation strictness ('off' | 'informational' | 'standard' |
+  // 'strict'). undefined = leave as-is.
+  citation_strictness?: CitationStrictness;
 }
 
 export interface ThreadSummary {
@@ -146,7 +156,7 @@ export interface Message {
   // before message_usage existed.
   usage?: MessageUsage | null;
   // Auxiliary per-turn metadata. Currently carries the citation-checker
-  // verdict when the agent's `require_source_links` is on. Absent on
+  // verdict when the agent's `citation_strictness` is not `off`. Absent on
   // legacy rows and on turns where no checker ran.
   metadata?: MessageMetadata | null;
 }

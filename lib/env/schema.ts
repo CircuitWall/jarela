@@ -110,9 +110,9 @@ export const ENV_DEFAULTS = {
   // anti-hallucination classifier
   hallucinationDetectorMode: "regex" as const,
   hallucinationDetectorModel: "",
-  // citation checker (second-pass LLM on require_source_links=on agents)
+  // citation checker (second-pass LLM on agents with citation_strictness != 'off')
   citationCheckerTailChars: 4_000,
-  // numbered source manifest shown to require_source_links agents
+  // numbered source manifest shown to agents with citation_strictness != 'off'
   citationManifestMax: 50,
 } as const;
 
@@ -553,7 +553,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_CITATION_CHECKER_TAIL_CHARS",
     type: "int",
     default: ENV_DEFAULTS.citationCheckerTailChars,
-    description: "Max characters of the assistant reply sent to the citation checker (require_source_links agents). Only the trailing N chars are sent so checker cost stays bounded. Set 0 to send the full reply — use when claims often appear early in long answers; costs more tokens per check.",
+    description: "Max characters of the assistant reply sent to the citation checker (agents with citation_strictness != 'off'). Only the trailing N chars are sent so checker cost stays bounded. Set 0 to send the full reply — use when claims often appear early in long answers; costs more tokens per check.",
     category: "agent",
     tier: "B",
     requiresRestart: false,
@@ -564,7 +564,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_CITATION_MANIFEST_MAX",
     type: "int",
     default: ENV_DEFAULTS.citationManifestMax,
-    description: "Max numbered sources shown to require_source_links agents as the citation manifest (most-recent N visited via tools in this thread). Agent cites a source by writing the marker [N] inline. 0 disables the manifest (agent will be told no sources are available to cite).",
+    description: "Max numbered sources shown to agents with citation_strictness != 'off' as the citation manifest (most-recent N visited via tools in this thread, plus memory items and prior assistant turns). Agent cites a source by writing the marker [N] inline. 0 disables the manifest (agent will be told no sources are available to cite).",
     category: "agent",
     tier: "B",
     requiresRestart: false,

@@ -436,6 +436,51 @@ body {
 }
 .prose-invert ul, .prose-invert ol { margin-top: 0.25em; margin-bottom: 0.25em; }
 .prose-invert a { word-break: break-all; }
+/* The @tailwindcss/typography plugin is not installed, so `.prose` is a
+ * no-op and inline links inherit the surrounding body color with no
+ * underline. Give every link inside a chat markdown block (incl. the
+ * `[N]` citation markers we linkify pre-parse) the standard link look so
+ * they're actually clickable-looking. Special-cased links (audio embeds,
+ * unverified citations) opt out via their own classes earlier in the
+ * cascade. */
+.jarela-rich a {
+  color: var(--color-link, #38bdf8);  /* sky-400 fallback */
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+}
+.jarela-rich a:hover { text-decoration-thickness: 2px; }
+[data-theme="light"] .jarela-rich a,
+[data-theme="system"] .jarela-rich a { color: #0369a1; }  /* sky-700 */
+
+/* Inline citation markers — `[3]` linkified by MessageBubble. Rendered
+ * as Wikipedia-style superscript chips so they're visually distinct
+ * from ordinary inline links and don't disrupt reading flow. */
+.jarela-rich a.jarela-citation {
+  display: inline-block;
+  vertical-align: super;
+  font-size: 0.72em;
+  line-height: 1;
+  margin: 0 1px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--color-surface-2, rgba(125, 211, 252, 0.12));
+  color: var(--color-link, #38bdf8);
+  text-decoration: none;
+  border: 1px solid rgba(125, 211, 252, 0.25);
+  word-break: keep-all;
+  white-space: nowrap;
+}
+.jarela-rich a.jarela-citation:hover {
+  background: rgba(125, 211, 252, 0.22);
+  text-decoration: none;
+}
+[data-theme="light"] .jarela-rich a.jarela-citation,
+[data-theme="system"] .jarela-rich a.jarela-citation {
+  color: #0369a1;
+  background: rgba(2, 132, 199, 0.08);
+  border-color: rgba(2, 132, 199, 0.2);
+}
 /* Tables in chat — keep them within bubble width with horizontal scroll. */
 .prose-invert table { display: block; max-width: 100%; overflow-x: auto; }
 

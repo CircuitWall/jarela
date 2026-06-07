@@ -123,6 +123,13 @@ export const delegateToAgentTool = tool(
         result: queued.assistantContent.trim(),
         used_tools: Array.from(new Set(queued.usedTools)),
         elapsed_ms,
+        // Ready-to-paste markdown link the parent agent can drop into its
+        // reply so the user can trace the summary back to the delegate's
+        // full thread. The chat UI resolves `?thread=<tid>&agent=<aid>`
+        // via parseHref → SELECT_THREAD, which atomically sets both
+        // activeThreadId and activeAgentId (chat tab won't render the
+        // thread without the agent id).
+        cite_as: `[${child.name}'s reply](?thread=${childThread.thread_id}&agent=${child.id})`,
       });
     } catch (err) {
       return fail("child_error", err instanceof Error ? err.message : String(err), {

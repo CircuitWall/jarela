@@ -411,7 +411,7 @@ function ensureMessagesCategoryColumn(db: DatabaseSync): void {
 
 // Per-message auxiliary metadata (JSON object). NULL on legacy rows and on
 // rows that don't carry any extra data. Current consumer is the citation
-// checker (`require_source_links`), which attaches a verdict shaped like
+// checker (`citation_strictness` != 'off'), which attaches a verdict shaped like
 // `{ citations: { claims: [...], unverified: [...] } }`. Adding more keys
 // later is free — readers tolerate unknown fields.
 function ensureMessagesMetadataColumn(db: DatabaseSync): void {
@@ -648,6 +648,18 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   // Reuses `anti_hallucination_model_config` as the checker model.
   if (!names.has("require_source_links")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN require_source_links INTEGER NOT NULL DEFAULT 0");
+  }
+  // Replaces the boolean require_source_links with a 4-level strictness
+  // enum: 'off' | 'informational' | 'standard' | 'strict'.
+  //   off           — no checker, no directive (legacy require_source_links=0)
+  //   informational — checker runs; agent NOT asked to cite (UI surfaces refs)
+  //   standard      — agent nudged to cite KEY claims (legacy require_source_links=1)
+  //   strict        — agent must cite EVERY factual claim AND stall classifier
+  //                   is forced to mode='model'
+  if (!names.has("citation_strictness")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN citation_strictness TEXT NOT NULL DEFAULT 'off'");
+    // Backfill from the legacy boolean so existing agents keep their behavior.
+    db.exec("UPDATE agent_configs SET citation_strictness = 'standard' WHERE require_source_links = 1");
   }
 }
 

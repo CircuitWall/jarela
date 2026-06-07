@@ -212,6 +212,11 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.classList.add("jarela-deep-link-flash");
         setTimeout(() => el.classList.remove("jarela-deep-link-flash"), 1600);
+        // Strip the hash so the next streaming message / list-length change
+        // doesn't yank the view back to this anchor. replaceState avoids
+        // triggering a hashchange event (which would re-enter this handler).
+        const { pathname, search } = window.location;
+        window.history.replaceState(null, "", pathname + search);
       });
     }
     scrollToHashTarget();
