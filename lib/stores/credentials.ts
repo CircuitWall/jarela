@@ -35,6 +35,22 @@ export interface CredentialParams {
   [k: string]: unknown;
 }
 
+// Param keys that hold a secret and must be redacted from any
+// outbound API response. Kept in sync with the `secret: true` fields
+// of every integration manifest in `lib/stores/integrations.ts` —
+// missing a name here means the secret leaks in plaintext via
+// `GET /api/v1/credentials`.
+export const SECRET_PARAM_KEYS: ReadonlySet<string> = new Set([
+  "api_key",
+  "api_token",
+  "client_secret",
+  "refresh_token",
+  "access_token",
+  "token",
+  "password",
+  "secret",
+]);
+
 function decryptRow<T extends { params: string }>(row: T): T {
   return { ...row, params: decryptIfNeeded(row.params) };
 }

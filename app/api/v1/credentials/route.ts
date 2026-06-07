@@ -7,18 +7,18 @@
  * blob. Model configs reference credentials by `credential_id` rather
  * than carrying inline api_key fields.
  *
- * Secret fields (`api_key`, `client_secret`, `refresh_token`,
- * `access_token`) are redacted to `"***"` in every read response so a
- * compromised client never sees plaintext.
+ * Secret fields (`api_key`, `api_token`, `client_secret`,
+ * `refresh_token`, `access_token`, `token`, `password`, `secret`) are
+ * redacted to `"***"` in every read response so a compromised client
+ * never sees plaintext. See `SECRET_PARAM_KEYS` in
+ * `lib/stores/credentials.ts` for the authoritative list.
  */
 
 import { NextRequest } from "next/server";
 import { z } from "zod";
-import { createCredential, listCredentials, type CredentialAuthMethod, type CredentialRow, type CredentialType } from "@/lib/stores/credentials";
+import { createCredential, listCredentials, SECRET_PARAM_KEYS, type CredentialAuthMethod, type CredentialRow, type CredentialType } from "@/lib/stores/credentials";
 import { errorResponse, cachedJson, createdResponse } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
-
-const SECRET_FIELDS = new Set(["api_key", "client_secret", "refresh_token", "access_token"]);
 const VALID_TYPES = new Set<CredentialType>(["model", "tts", "integration", "bridge"]);
 const VALID_AUTH = new Set<CredentialAuthMethod>(["api_key", "oauth"]);
 
@@ -26,7 +26,7 @@ function publicView(row: CredentialRow) {
   const params = parseJsonSafe<Record<string, unknown>>(row.params, {});
   const safe: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (SECRET_FIELDS.has(k)) {
+    if (SECRET_PARAM_KEYS.has(k)) {
       // Preserve presence (so the UI can render "configured" badges)
       // without leaking the cleartext.
       safe[k] = typeof v === "string" && v.length > 0 ? "***" : v;

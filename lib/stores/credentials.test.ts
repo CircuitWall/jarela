@@ -15,6 +15,8 @@ const {
   nextCredentialId,
   updateCredential,
 } = await import("./credentials");
+const { SECRET_PARAM_KEYS } = await import("./credentials");
+const { INTEGRATIONS } = await import("./integrations");
 const { upsertModelConfig, getModelConfig, getModelParams } = await import("./model-config");
 
 afterAll(() => {
@@ -86,5 +88,23 @@ describe("credentials store", () => {
     expect(resolved.base_url).toBe("https://cred");
     // Inline params win on key collisions.
     expect(resolved.temperature).toBe(0.9);
+  });
+
+  // Regression: `GET /api/v1/credentials` redacts param keys present in
+  // SECRET_PARAM_KEYS. If a new integration manifest adds a secret
+  // field whose key isn't on that list, the API returns the plaintext
+  // (this leaked the github `token` field in v1.1.x before the fix).
+  // Lock the contract so adding a new integration with a secret name
+  // we don't recognise fails CI instead of silently leaking on prod.
+  it("SECRET_PARAM_KEYS covers every secret field declared by integration manifests", () => {
+    const missing: { integration: string; key: string }[] = [];
+    for (const [name, meta] of Object.entries(INTEGRATIONS) as [string, { fields: readonly { key: string; secret: boolean }[] }][]) {
+      for (const field of meta.fields) {
+        if (field.secret && !SECRET_PARAM_KEYS.has(field.key)) {
+          missing.push({ integration: name, key: field.key });
+        }
+      }
+    }
+    expect(missing, `Add these to SECRET_PARAM_KEYS in lib/stores/credentials.ts: ${JSON.stringify(missing)}`).toEqual([]);
   });
 });

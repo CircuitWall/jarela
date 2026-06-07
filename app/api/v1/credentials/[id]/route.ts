@@ -18,14 +18,13 @@ import {
   getCredential,
   getCredentialParams,
   isCredentialReferenced,
+  SECRET_PARAM_KEYS,
   updateCredential,
 } from "@/lib/stores/credentials";
 import { errorResponse } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 
 type Params = { params: Promise<{ id: string }> };
-
-const SECRET_FIELDS = new Set(["api_key", "client_secret", "refresh_token", "access_token"]);
 
 const UpdateBody = z.object({
   provider: z.string().min(1).optional(),
@@ -38,7 +37,7 @@ function publicView(row: ReturnType<typeof getCredential>) {
   const params = parseJsonSafe<Record<string, unknown>>(row.params, {});
   const safe: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (SECRET_FIELDS.has(k)) safe[k] = typeof v === "string" && v.length > 0 ? "***" : v;
+    if (SECRET_PARAM_KEYS.has(k)) safe[k] = typeof v === "string" && v.length > 0 ? "***" : v;
     else safe[k] = v;
   }
   return { ...row, params: safe };
@@ -58,7 +57,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const merged: Record<string, unknown> = { ...stored };
   if (parsed.data.params) {
     for (const [k, v] of Object.entries(parsed.data.params)) {
-      if (SECRET_FIELDS.has(k) && v === "***") continue;
+      if (SECRET_PARAM_KEYS.has(k) && v === "***") continue;
       merged[k] = v;
     }
   }
