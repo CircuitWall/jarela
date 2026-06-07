@@ -1,5 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAccess, validateRequestOrigin } from "@/lib/auth/access";
+import { isMasterKeyLocked } from "@/lib/crypto/master-key";
+import {
+  isScreenLocked,
+  recordUserActivity,
+} from "@/lib/security/screen-lock";
+
+// API paths that must stay reachable while the master key is locked, so
+// the unlock splash and its supporting probes can function. Everything
+// else under /api/v1/* gets a 423 until the user unlocks (ADR-0063).
+const LOCKED_ALLOWLIST = [
+  "/api/v1/security/",
+  "/api/v1/health",
+  "/api/v1/config",
+];
+
+// API paths that count as "passive polling" rather than user activity.
+// Background tabs poll these forever; if they counted as activity, the
+// idle timer would never elapse and the screen would never lock.
+//
+// SSE event stream + health + security state probe are the main culprits.
+// Anything else (GETs to /agents, /threads, plus all POSTs/PATCHes) is
+// treated as user-initiated.
+const ACTIVITY_IGNORE_PREFIXES = [
+  "/api/v1/health",
+  "/api/v1/events",
+  "/api/v1/security/state",
+];
+
+function isPassivePoll(path: string): boolean {
+  return ACTIVITY_IGNORE_PREFIXES.some((p) => path.startsWith(p));
+}
 
 // Tailscale identity passthrough.
 //   - Local loopback (Host = localhost / 127.0.0.1 / [::1]) → allowed, no auth.
@@ -69,6 +100,44 @@ export function proxy(req: NextRequest) {
       `Jarela: cross-origin request rejected (${origin.reason}).\n`,
       { status: 403, headers: { "Content-Type": "text/plain" } },
     );
+  }
+
+  // ADR-0063 lock gate. While the master key is locked, every
+  // /api/v1/* route that isn't on the unlock-time allowlist returns 423
+  // (Locked) so stale clients show a clear state instead of cascading
+  // 500s from MasterKeyLockedError thrown deep inside decryption.
+  const path = req.nextUrl.pathname;
+  if (path.startsWith("/api/v1/") && isMasterKeyLocked()) {
+    const allowed = LOCKED_ALLOWLIST.some((p) => path.startsWith(p));
+    if (!allowed) {
+      return NextResponse.json(
+        { error: "locked", message: "master key is locked; unlock via splash" },
+        { status: 423 },
+      );
+    }
+  }
+
+  // Screen-lock gate (presence check). Distinct from master-key lock:
+  // background work keeps running, only the UI is gated. If the request
+  // is user-initiated (not passive polling) and the screen is locked,
+  // reject with 423 + a different error code so the client knows to
+  // show the verify-PIN overlay rather than the full master-key splash.
+  // Allow the same security/health/config allowlist through so the
+  // overlay can verify the PIN.
+  if (path.startsWith("/api/v1/")) {
+    if (isScreenLocked()) {
+      const allowed = LOCKED_ALLOWLIST.some((p) => path.startsWith(p));
+      if (!allowed) {
+        return NextResponse.json(
+          { error: "screen-locked", message: "idle screen lock; verify pin" },
+          { status: 423 },
+        );
+      }
+    } else if (!isPassivePoll(path)) {
+      // Only update last-activity when NOT locked — a request arriving
+      // while the lock is up shouldn't push the timer forward.
+      recordUserActivity();
+    }
   }
 
   return NextResponse.next();

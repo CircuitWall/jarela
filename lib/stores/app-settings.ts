@@ -4,6 +4,7 @@ const now = () => new Date().toISOString();
 
 const NS = "app-settings";
 const EMBEDDING_MODEL_KEY = "embedding_model_config";
+const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
 
 export function getEmbeddingModelConfigName(): string | null {
   const row = getDb()
@@ -36,3 +37,33 @@ export function setEmbeddingModelConfigName(name: string | null): string | null 
     .run(NS, EMBEDDING_MODEL_KEY, JSON.stringify(name), created, t);
   return name;
 }
+
+export function getScreenLockIdleTimeoutMs(): number | null {
+  const row = getDb()
+    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, IDLE_TIMEOUT_KEY) as { value?: string } | undefined;
+  const raw = row?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0
+      ? Math.floor(parsed)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setScreenLockIdleTimeoutMs(ms: number): void {
+  const existing = getDb()
+    .prepare("SELECT created_at FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, IDLE_TIMEOUT_KEY) as { created_at?: string } | undefined;
+  const t = now();
+  const created = existing?.created_at ?? t;
+  getDb()
+    .prepare(
+      "INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,NULL)",
+    )
+    .run(NS, IDLE_TIMEOUT_KEY, JSON.stringify(ms), created, t);
+}
+

@@ -3,24 +3,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/ui/Logo";
 
-// PIN unlock splash for ADR-0063 PIN-wrapped keyfiles. Rendered by the
-// root route when the server detects the master key is locked. Submits
-// the 6-digit PIN to /api/v1/security/unlock; on success, reloads so
-// the server re-renders into the normal authenticated tree.
+// Screen-lock overlay (presence check). Shown when the server reports
+// `screen_locked: true` after an idle timeout. Distinct from
+// UnlockScreen — this does NOT touch the in-memory master key, just
+// verifies the human at the keyboard knows the PIN. Background work
+// (agents, scheduler, bridges) keeps running underneath.
 
 const PIN_LENGTH = 6;
 
-export function UnlockScreen() {
+export function ScreenLock({ onUnlock }: { onUnlock: () => void }) {
   const [digits, setDigits] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [retryAfterSec, setRetryAfterSec] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  // Hard guard against parallel submits. setState updaters can run more
-  // than once (dev StrictMode, concurrent rendering), so if `submit`
-  // were called from inside `setDigits` we'd POST twice and the second
-  // request would race the first into `unlockMasterKey()` after state
-  // already flipped to unlocked - the route would 500.
   const submittingRef = useRef(false);
 
   const submit = useCallback(async (pin: string) => {
@@ -29,26 +24,19 @@ export function UnlockScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/security/unlock", {
+      const res = await fetch("/api/v1/security/verify-pin", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ pin }),
       });
       if (res.ok) {
-        window.location.reload();
+        onUnlock();
         return;
       }
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         retry_after_ms?: number;
       };
-      if (res.status === 409 && body.error === "not-locked") {
-        // Master key was already unlocked (host typed the PIN, or
-        // another tab beat us to it). The goal state is reached —
-        // reload into the app shell.
-        window.location.reload();
-        return;
-      }
       if (res.status === 429 && typeof body.retry_after_ms === "number") {
         setRetryAfterSec(Math.ceil(body.retry_after_ms / 1000));
         setError("Too many attempts. Try again later.");
@@ -67,7 +55,7 @@ export function UnlockScreen() {
       submittingRef.current = false;
       setSubmitting(false);
     }
-  }, []);
+  }, [onUnlock]);
 
   const append = useCallback((d: string) => {
     if (submitting || retryAfterSec > 0) return;
@@ -75,9 +63,6 @@ export function UnlockScreen() {
     setDigits((cur) => (cur.length >= PIN_LENGTH ? cur : cur + d));
   }, [submitting, retryAfterSec]);
 
-  // Auto-submit once the buffer hits 6 digits. Effect runs once per
-  // state transition (not per updater invocation), so we POST exactly
-  // one time even under StrictMode double-render.
   useEffect(() => {
     if (digits.length === PIN_LENGTH && !submittingRef.current) {
       void submit(digits);
@@ -90,7 +75,6 @@ export function UnlockScreen() {
     setDigits((cur) => cur.slice(0, -1));
   }, [submitting]);
 
-  // Physical keyboard support.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (/^[0-9]$/.test(e.key)) {
@@ -105,7 +89,6 @@ export function UnlockScreen() {
     return () => window.removeEventListener("keydown", onKey);
   }, [append, backspace]);
 
-  // Tick down the rate-limit countdown.
   useEffect(() => {
     if (retryAfterSec <= 0) return;
     const t = setInterval(() => {
@@ -116,7 +99,6 @@ export function UnlockScreen() {
 
   return (
     <div
-      ref={containerRef}
       className="fixed inset-0 z-[1000] flex flex-col items-center justify-center gap-6 bg-surface text-fg"
       style={{
         paddingTop: "env(safe-area-inset-top)",
@@ -126,10 +108,10 @@ export function UnlockScreen() {
       <Logo className="h-16 w-auto" />
       <div className="w-full max-w-xs p-6">
         <h1 className="mb-1 text-center text-lg font-semibold text-fg">
-          Unlock Jarela
+          Locked
         </h1>
         <p className="mb-6 text-center text-xs text-fg-faint">
-          Enter your 6-digit PIN to decrypt your data.
+          Enter your 6-digit PIN to resume.
         </p>
 
         <div className="mb-6 flex justify-center gap-3" aria-label="PIN entry progress">
@@ -165,7 +147,7 @@ export function UnlockScreen() {
         >
           {retryAfterSec > 0
             ? `Try again in ${retryAfterSec}s`
-            : error ?? (submitting ? "Unlocking…" : "\u00A0")}
+            : error ?? (submitting ? "Verifying…" : "\u00A0")}
         </p>
       </div>
     </div>

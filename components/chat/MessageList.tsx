@@ -297,13 +297,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         onScroll={handleScroll}
         className="flex-1 overflow-y-auto px-4 py-4 panel-scrollbar"
         style={{
-          // Fade the top and bottom 24px of the scroll viewport so messages
-          // dissolve under the glass chrome instead of slamming into a hard
-          // edge. Vendor-prefixed for older WebKit (Safari < 15.4).
-          WebkitMaskImage:
-            "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
-          maskImage:
-            "linear-gradient(180deg, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%)",
+          // Scroll-anchor jumps (deep-link to a message) land below the
+          // floating header, not under it.
+          scrollPaddingTop: "calc(3rem + var(--app-safe-top))",
         }}
       >
         {hasMore && (

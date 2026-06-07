@@ -5,6 +5,12 @@ import { listModelConfigs } from "@/lib/stores/model-config";
 import { getDb } from "@/lib/db";
 import { isMasterKeyLocked } from "@/lib/crypto/master-key";
 
+// Re-evaluate on every request: the master-key lock state changes at
+// runtime (PIN unlock) and is not an explicit dynamic dependency Next can
+// see, so without this the page would be statically prerendered at build
+// time (when the key is locked) and served forever from the route cache.
+export const dynamic = "force-dynamic";
+
 export default function Home() {
   // Touch the DB so the master-key bootstrap runs (ADR-0005). If the
   // user enabled the PIN (ADR-0063), the master key is locked here and

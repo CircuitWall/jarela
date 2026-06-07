@@ -30,7 +30,8 @@ import { UpdateAvailableBanner } from "@/components/ui/UpdateAvailableBanner";
 import { ServerStatus } from "@/components/ui/ServerStatus";
 import { Toaster } from "@/components/ui/Toaster";
 import { Logo } from "@/components/ui/Logo";
-import { Splash } from "@/components/ui/Splash";
+import { BootScreen } from "@/components/ui/BootScreen";
+import { ScreenLock } from "@/components/setup/ScreenLock";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
@@ -106,10 +107,6 @@ export function AppShell() {
   // → useSSE.consume → useSSE.attach), and effects keyed on `attach` re-fire,
   // forcing a message refetch + chat-window scroll. Stable refs break the cascade.
   const onMessageSent = useCallback(() => {}, []);
-  const onSelectAgent = useCallback(
-    (id: string) => { dispatch({ type: "SET_AGENT", agentId: id }); },
-    [dispatch],
-  );
 
   // Click on an OS Web Notification → useEventNotifications fires a custom
   // event; handle it here to switch to the relevant agent's chat. Prefers
@@ -204,6 +201,50 @@ export function AppShell() {
     ? agents.find((a) => a.id === state.activeAgentId) ?? null
     : null;
 
+  // Screen-lock overlay. Distinct from the boot-time master-key unlock
+  // (that's gated server-side in `app/page.tsx`). This one is the
+  // presence check that fires after `idle_timeout_ms` of inactivity:
+  // background work keeps running but the UI is hidden until the user
+  // re-enters their PIN. Triggered either by a 423 `screen-locked`
+  // response from the api client or by the periodic state probe below.
+  const [screenLocked, setScreenLocked] = useState(false);
+  // Bumped after each unlock so BootScreen remounts with fresh state
+  // (its `done` / `pickedId` / `prefetchStartedRef` would otherwise
+  // suppress the picker on the second appearance).
+  const [bootSeq, setBootSeq] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    function onLocked() {
+      if (!cancelled) setScreenLocked(true);
+    }
+    window.addEventListener("jarela:screen-locked", onLocked);
+
+    // Soft poll every 30s so the overlay still appears if no user
+    // action triggered a request after the idle timer elapsed.
+    async function probe() {
+      try {
+        const res = await fetch("/api/v1/security/state");
+        if (!res.ok) return;
+        const body = (await res.json()) as { screen_locked?: boolean };
+        if (!cancelled && body.screen_locked === true) {
+          setScreenLocked(true);
+        }
+      } catch {
+        // Network blip; try again next tick.
+      }
+    }
+    void probe();
+    timer = setInterval(probe, 30_000);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+      window.removeEventListener("jarela:screen-locked", onLocked);
+    };
+  }, []);
+
   return (
     // `dvh` natively tracks the visible viewport on iOS 16.4+ / modern
     // Chromium, including the on-screen keyboard. The `--actual-vh`
@@ -216,7 +257,27 @@ export function AppShell() {
       className="flex flex-col text-fg overflow-hidden px-safe"
       style={{ height: "var(--actual-vh, 100dvh)" }}
     >
-      <Splash visible={!agentsLoaded} />
+      <BootScreen
+        key={bootSeq}
+        agents={agents}
+        agentsLoaded={agentsLoaded}
+        activeAgentId={state.activeAgentId}
+        onPickAgent={(id) => {
+          dispatch({ type: "SET_AGENT", agentId: id });
+          dispatch({ type: "SET_TAB", tab: "chat" });
+        }}
+      />
+      {screenLocked && (
+        <ScreenLock
+          onUnlock={() => {
+            // Drop the user back on the picker so they consciously
+            // re-enter their workspace rather than landing mid-chat.
+            dispatch({ type: "NEW_CHAT" });
+            setBootSeq((n) => n + 1);
+            setScreenLocked(false);
+          }}
+        />
+      )}
       <NotificationStatus />
       <Toaster />
       <ServerStatus />
@@ -225,12 +286,20 @@ export function AppShell() {
         Keeps the flex layout intact so panel content doesn't slide under
         the bar — the bar itself is `fixed` (like TopProgressBar) so it
         always sits on top of scrolling content with a glassy backdrop.
+
+        Omitted on the chat tab: the MessageList scroll viewport has a
+        top mask-image fade designed to dissolve messages under the glass
+        header. Reserving the slot would defeat that — messages would
+        butt against an empty band beneath the header instead of scrolling
+        behind it.
       */}
-      <div
-        className="shrink-0"
-        aria-hidden
-        style={{ height: "calc(3rem + var(--app-safe-top))" }}
-      />
+      {state.activeTab !== "chat" && (
+        <div
+          className="shrink-0"
+          aria-hidden
+          style={{ height: "calc(3rem + var(--app-safe-top))" }}
+        />
+      )}
       <CryptoFallbackBanner />
       <UpdateAvailableBanner />
       <header
@@ -364,7 +433,6 @@ export function AppShell() {
               showTools={showTools}
               showThinking={showThinking}
               onMessageSent={onMessageSent}
-              onSelectAgent={onSelectAgent}
             />
           </Activity>
         )}

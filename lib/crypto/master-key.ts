@@ -6,7 +6,7 @@
 // one-shot child Node process so the rest of the codebase keeps its
 // synchronous store API.
 //
-// Fallback (when keychain access fails — headless Linux, locked Mac
+// Fallback (when keychain access fails â€” headless Linux, locked Mac
 // keychain, missing keyring native binary): a 0600-permissioned file at
 // ${dataDir}/.secret-key. Same threat model as today's plaintext DB for
 // adversaries with filesystem read, but uniform so the encrypt/decrypt
@@ -40,18 +40,38 @@ export type MasterKeyState = "unlocked" | "locked";
 
 export class MasterKeyLockedError extends Error {
   constructor() {
-    super("master key is locked — call unlockMasterKey(pin) first");
+    super("master key is locked â€” call unlockMasterKey(pin) first");
     this.name = "MasterKeyLockedError";
   }
 }
 
 export { InvalidPinError };
 
-let _key: Buffer | null = null;
-let _source: MasterKeySource | null = null;
-let _state: MasterKeyState | null = null;
-let _dataDir: string | null = null;
-const _unlockListeners: Array<() => void> = [];
+// State is pinned to globalThis so duplicate module instances (Next.js
+// dev mode bundles proxy.ts and the route handlers separately, each with
+// their own ESM copy of this module) all read and write the same _globals.key /
+// _globals.state. Without this, the proxy's gate sees "unlocked" while route
+// handlers throw MasterKeyLockedError - or vice versa - and unlocking in
+// one bundle never propagates to the other.
+type MasterKeyGlobals = {
+  key: Buffer | null;
+  source: MasterKeySource | null;
+  state: MasterKeyState | null;
+  dataDir: string | null;
+  unlockListeners: Array<() => void>;
+};
+const _globalsHost = globalThis as unknown as {
+  __jarelaMasterKey?: MasterKeyGlobals;
+};
+const _globals: MasterKeyGlobals =
+  _globalsHost.__jarelaMasterKey ??
+  (_globalsHost.__jarelaMasterKey = {
+    key: null,
+    source: null,
+    state: null,
+    dataDir: null,
+    unlockListeners: [],
+  });
 
 // Synchronously read or generate the master key. Idempotent; only does
 // real work on first call. Returns where the key ended up living so
@@ -68,44 +88,44 @@ const _unlockListeners: Array<() => void> = [];
 //      with that key, and silently switching to a different key
 //      source would orphan them. To migrate to the keychain, decrypt
 //      with the keyfile + re-encrypt + delete the keyfile (see
-//      scripts/rekey-to-keychain.mjs — TODO).
+//      scripts/rekey-to-keychain.mjs â€” TODO).
 //   3. Otherwise try the OS keychain via keytar (child process).
 //   4. Otherwise generate a fresh keyfile and warn the user.
 export function initMasterKey(dataDir: string): { source: MasterKeySource; state: MasterKeyState } {
-  if (_source && _state) return { source: _source, state: _state };
+  if (_globals.source && _globals.state) return { source: _globals.source, state: _globals.state };
 
-  _dataDir = dataDir;
+  _globals.dataDir = dataDir;
   const wrappedPath = join(dataDir, WRAPPED_KEYFILE_NAME);
   const path = join(dataDir, KEYFILE_NAME);
 
-  // 1) PIN-wrapped keyfile — stay locked until unlockMasterKey() runs.
+  // 1) PIN-wrapped keyfile â€” stay locked until unlockMasterKey() runs.
   if (existsSync(wrappedPath)) {
     const buf = readFileSync(wrappedPath);
     if (!isWrappedKeyfile(buf)) {
       throw new Error(`malformed wrapped keyfile at ${wrappedPath}`);
     }
-    _source = "pin-wrapped-keyfile";
-    _state = "locked";
-    return { source: _source, state: _state };
+    _globals.source = "pin-wrapped-keyfile";
+    _globals.state = "locked";
+    return { source: _globals.source, state: _globals.state };
   }
 
-  // 2) Existing plaintext keyfile — authoritative.
+  // 2) Existing plaintext keyfile â€” authoritative.
   if (existsSync(path)) {
-    _key = readFileSync(path);
-    if (_key.length !== 32) throw new Error(`keyfile wrong length: ${_key.length}`);
-    _source = "keyfile";
-    _state = "unlocked";
-    return { source: _source, state: _state };
+    _globals.key = readFileSync(path);
+    if (_globals.key.length !== 32) throw new Error(`keyfile wrong length: ${_globals.key.length}`);
+    _globals.source = "keyfile";
+    _globals.state = "unlocked";
+    return { source: _globals.source, state: _globals.state };
   }
 
   // 3) Try keychain via a one-shot child process so we can stay sync.
   try {
     const keyB64 = loadOrCreateViaKeychain();
-    _key = Buffer.from(keyB64, "base64");
-    if (_key.length !== 32) throw new Error(`keychain key wrong length: ${_key.length}`);
-    _source = "keychain";
-    _state = "unlocked";
-    return { source: _source, state: _state };
+    _globals.key = Buffer.from(keyB64, "base64");
+    if (_globals.key.length !== 32) throw new Error(`keychain key wrong length: ${_globals.key.length}`);
+    _globals.source = "keychain";
+    _globals.state = "unlocked";
+    return { source: _globals.source, state: _globals.state };
   } catch (err) {
     console.warn(
       `[jarela] keychain unavailable, falling back to keyfile: ${(err as Error).message}`,
@@ -113,37 +133,37 @@ export function initMasterKey(dataDir: string): { source: MasterKeySource; state
   }
 
   // 4) Fallback: generate a fresh keyfile.
-  _key = randomBytes(32);
-  writeFileSync(path, _key, { mode: 0o600 });
+  _globals.key = randomBytes(32);
+  writeFileSync(path, _globals.key, { mode: 0o600 });
   try { chmodSync(path, 0o600); } catch { /* */ }
 
-  _source = "keyfile";
-  _state = "unlocked";
-  return { source: _source, state: _state };
+  _globals.source = "keyfile";
+  _globals.state = "unlocked";
+  return { source: _globals.source, state: _globals.state };
 }
 
 export function getMasterKey(): Buffer {
-  if (_state === "locked") {
+  if (_globals.state === "locked") {
     throw new MasterKeyLockedError();
   }
-  if (!_key) {
+  if (!_globals.key) {
     throw new Error(
-      "master key not initialized — initMasterKey() must run before any encrypted store access",
+      "master key not initialized â€” initMasterKey() must run before any encrypted store access",
     );
   }
-  return _key;
+  return _globals.key;
 }
 
 export function getMasterKeySource(): MasterKeySource | null {
-  return _source;
+  return _globals.source;
 }
 
 export function getMasterKeyState(): MasterKeyState | null {
-  return _state;
+  return _globals.state;
 }
 
 export function isMasterKeyLocked(): boolean {
-  return _state === "locked";
+  return _globals.state === "locked";
 }
 
 // Register a callback to run once the master key transitions from
@@ -151,13 +171,13 @@ export function isMasterKeyLocked(): boolean {
 // Used by the DB layer to defer runCryptoMigration() and by background
 // jobs that need to wait for the user's PIN before they can read state.
 export function onMasterKeyUnlocked(cb: () => void): void {
-  if (_state === "unlocked") {
+  if (_globals.state === "unlocked") {
     try { cb(); } catch (err) {
       console.warn("[jarela] onMasterKeyUnlocked callback threw:", err);
     }
     return;
   }
-  _unlockListeners.push(cb);
+  _globals.unlockListeners.push(cb);
 }
 
 // Decrypt the on-disk wrapped key with the supplied PIN. Throws
@@ -165,21 +185,39 @@ export function onMasterKeyUnlocked(cb: () => void): void {
 // InvalidPinError on wrong PIN. On success, the key lives in memory
 // and getMasterKey() works again.
 export function unlockMasterKey(pin: string): void {
-  if (_state !== "locked") {
+  if (_globals.state !== "locked") {
     throw new Error("master key is not locked");
   }
-  if (!_dataDir) throw new Error("initMasterKey() must run before unlockMasterKey()");
+  if (!_globals.dataDir) throw new Error("initMasterKey() must run before unlockMasterKey()");
 
-  const wrappedPath = join(_dataDir, WRAPPED_KEYFILE_NAME);
+  const wrappedPath = join(_globals.dataDir, WRAPPED_KEYFILE_NAME);
   const buf = readFileSync(wrappedPath);
   const key = unwrapMasterKey(buf, pin);
-  _key = key;
-  _state = "unlocked";
+  _globals.key = key;
+  _globals.state = "unlocked";
   drainUnlockListeners();
 }
 
+// Verify a PIN against the on-disk wrapped keyfile WITHOUT touching the
+// in-memory master-key state. Used by the screen-lock overlay: the key
+// is already loaded (background work keeps running), we only need to
+// confirm the human at the keyboard knows the PIN.
+//
+// Throws if no PIN-wrapped keyfile exists. Throws InvalidPinError on a
+// wrong PIN (the AES-GCM tag failure surfaces through pin-wrap.ts).
+export function verifyPin(pin: string): void {
+  if (!_globals.dataDir) throw new Error("initMasterKey() must run before verifyPin()");
+  if (_globals.source !== "pin-wrapped-keyfile") {
+    throw new Error("no PIN-wrapped keyfile");
+  }
+  const wrappedPath = join(_globals.dataDir, WRAPPED_KEYFILE_NAME);
+  const buf = readFileSync(wrappedPath);
+  const derived = unwrapMasterKey(buf, pin);
+  derived.fill(0);
+}
+
 function drainUnlockListeners(): void {
-  const listeners = _unlockListeners.splice(0, _unlockListeners.length);
+  const listeners = _globals.unlockListeners.splice(0, _globals.unlockListeners.length);
   for (const cb of listeners) {
     try { cb(); } catch (err) {
       console.warn("[jarela] onMasterKeyUnlocked callback threw:", err);
@@ -193,23 +231,23 @@ function drainUnlockListeners(): void {
 // wrap is written atomically (tmp + rename) and the legacy plaintext
 // keyfile / keychain entry is removed once the new wrap is in place.
 export function setPin(args: { currentPin?: string; newPin: string }): void {
-  if (_state !== "unlocked" || !_key) {
+  if (_globals.state !== "unlocked" || !_globals.key) {
     throw new MasterKeyLockedError();
   }
-  if (!_dataDir) throw new Error("initMasterKey() must run before setPin()");
+  if (!_globals.dataDir) throw new Error("initMasterKey() must run before setPin()");
 
-  const wrappedPath = join(_dataDir, WRAPPED_KEYFILE_NAME);
-  const keyfilePath = join(_dataDir, KEYFILE_NAME);
+  const wrappedPath = join(_globals.dataDir, WRAPPED_KEYFILE_NAME);
+  const keyfilePath = join(_globals.dataDir, KEYFILE_NAME);
 
-  if (_source === "pin-wrapped-keyfile") {
+  if (_globals.source === "pin-wrapped-keyfile") {
     // Change-PIN flow: verify the current PIN by unwrapping the blob.
-    // Throws InvalidPinError if wrong — propagate to the route.
+    // Throws InvalidPinError if wrong â€” propagate to the route.
     if (!args.currentPin) throw new Error("currentPin is required when PIN is already set");
     const existing = readFileSync(wrappedPath);
     unwrapMasterKey(existing, args.currentPin);
   }
 
-  const wrapped = wrapMasterKey(_key, args.newPin);
+  const wrapped = wrapMasterKey(_globals.key, args.newPin);
   const tmp = `${wrappedPath}.tmp`;
   writeFileSync(tmp, wrapped, { mode: 0o600 });
   try { chmodSync(tmp, 0o600); } catch { /* */ }
@@ -217,7 +255,7 @@ export function setPin(args: { currentPin?: string; newPin: string }): void {
   try { chmodSync(wrappedPath, 0o600); } catch { /* */ }
 
   // Drop the prior key material so the wrapped file is the only path in.
-  if (_source === "keychain") {
+  if (_globals.source === "keychain") {
     try { deleteFromKeychain(); } catch (err) {
       console.warn(`[jarela] setPin: failed to delete keychain entry: ${(err as Error).message}`);
     }
@@ -228,25 +266,25 @@ export function setPin(args: { currentPin?: string; newPin: string }): void {
     }
   }
 
-  _source = "pin-wrapped-keyfile";
+  _globals.source = "pin-wrapped-keyfile";
 }
 
 // Disable the PIN: verify currentPin, restore the master key to the
 // keychain (preferred) or plaintext keyfile, then delete the wrapped
 // blob. Must be called while unlocked.
 export function disablePin(currentPin: string): { source: MasterKeySource } {
-  if (_state !== "unlocked" || !_key) {
+  if (_globals.state !== "unlocked" || !_globals.key) {
     throw new MasterKeyLockedError();
   }
-  if (_source !== "pin-wrapped-keyfile") {
+  if (_globals.source !== "pin-wrapped-keyfile") {
     throw new Error("PIN is not enabled");
   }
-  if (!_dataDir) throw new Error("initMasterKey() must run before disablePin()");
+  if (!_globals.dataDir) throw new Error("initMasterKey() must run before disablePin()");
 
-  const wrappedPath = join(_dataDir, WRAPPED_KEYFILE_NAME);
-  const keyfilePath = join(_dataDir, KEYFILE_NAME);
+  const wrappedPath = join(_globals.dataDir, WRAPPED_KEYFILE_NAME);
+  const keyfilePath = join(_globals.dataDir, KEYFILE_NAME);
 
-  // Verify currentPin by unwrap — throws InvalidPinError on mismatch.
+  // Verify currentPin by unwrap â€” throws InvalidPinError on mismatch.
   const existing = readFileSync(wrappedPath);
   unwrapMasterKey(existing, currentPin);
 
@@ -254,12 +292,12 @@ export function disablePin(currentPin: string): { source: MasterKeySource } {
   // keyfile if the keychain is unavailable on this host.
   let nextSource: MasterKeySource = "keychain";
   try {
-    writeToKeychain(_key.toString("base64"));
+    writeToKeychain(_globals.key.toString("base64"));
   } catch (err) {
     console.warn(
       `[jarela] disablePin: keychain unavailable, writing keyfile: ${(err as Error).message}`,
     );
-    writeFileSync(keyfilePath, _key, { mode: 0o600 });
+    writeFileSync(keyfilePath, _globals.key, { mode: 0o600 });
     try { chmodSync(keyfilePath, 0o600); } catch { /* */ }
     nextSource = "keyfile";
   }
@@ -268,17 +306,17 @@ export function disablePin(currentPin: string): { source: MasterKeySource } {
     console.warn(`[jarela] disablePin: failed to remove wrapped keyfile: ${(err as Error).message}`);
   }
 
-  _source = nextSource;
+  _globals.source = nextSource;
   return { source: nextSource };
 }
 
 // Test-only: reset module state so each test gets a fresh init.
 export function __resetMasterKeyForTests(): void {
-  _key = null;
-  _source = null;
-  _state = null;
-  _dataDir = null;
-  _unlockListeners.length = 0;
+  _globals.key = null;
+  _globals.source = null;
+  _globals.state = null;
+  _globals.dataDir = null;
+  _globals.unlockListeners.length = 0;
 }
 
 // Spawn a child Node process that talks to the OS keyring and prints the
