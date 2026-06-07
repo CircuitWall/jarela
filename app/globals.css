@@ -135,14 +135,16 @@ html, body, #__next {
 }
 
 /* Lock the document so iOS doesn't scroll the layout viewport when the
- * on-screen keyboard appears. Use the standard `html, body { height: 100% }`
- * + `overflow: hidden` pattern (see ios-pwa-keyboard-fix reference impl) —
- * the AppShell then uses `h-dvh` and the `dvh` unit natively tracks the
- * visible viewport including the keyboard on iOS 16.4+ / modern Chromium.
- * No JS observer, no CSS variables, no counter-translates required. */
+ * on-screen keyboard appears. Standard `html, body { height: 100% }` +
+ * `overflow: hidden` pattern — the AppShell then uses `dvh` which
+ * natively tracks the visible viewport including the keyboard on iOS
+ * 16.4+ / modern Chromium. The `--actual-vh` fallback handles the
+ * separate iOS-standalone-PWA bug where 100dvh resolves ~34px short
+ * of the physical screen (the inline `iosViewportBootstrap` in
+ * layout.tsx sets the var; non-iOS keeps the 100% fallback). */
 html,
 body {
-  height: 100%;
+  height: var(--actual-vh, 100%);
   overflow: hidden;
 }
 
