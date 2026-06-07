@@ -117,4 +117,117 @@ describe("migrateIntegrationsToCredentials", () => {
     runMigrations(db);
     expect(listCredentials({ type: "integration" }).length).toBe(before);
   });
+
+  // Property-style sweep: for every shape the legacy panel could have
+  // persisted, the migration MUST preserve every field byte-for-byte.
+  // This is the regression guard against silent field loss for users
+  // upgrading from a pre-credentials build.
+  it("preserves every field for every known integration shape", async () => {
+    const db = getDb();
+    const t = new Date().toISOString();
+
+    const fixtures: Array<{ name: string; value: Record<string, string>; auth_method: "api_key" | "oauth" }> = [
+      { name: "anthropic", value: { api_key: "sk-ant-FULL" }, auth_method: "api_key" },
+      { name: "google", value: { api_key: "AIza-FULL" }, auth_method: "api_key" },
+      { name: "github", value: { token: "ghp_FULL" }, auth_method: "api_key" },
+      { name: "atlassian", value: { url: "https://team.atlassian.net", email: "user@team.io", api_token: "ATATT-FULL" }, auth_method: "api_key" },
+      { name: "jira_align", value: { url: "https://acme.jiraalign.com", api_token: "eyJ-FULL" }, auth_method: "api_key" },
+      { name: "gmail", value: { client_id: "x.apps.googleusercontent.com", client_secret: "GOCSPX-FULL", refresh_token: "1//FULL" }, auth_method: "oauth" },
+      { name: "outlook", value: { client_id: "00000000-0000-0000-0000-000000000001", client_secret: "abc~FULL", refresh_token: "0.AXoA-FULL" }, auth_method: "oauth" },
+    ];
+
+    // Wipe any state left by earlier tests in this file so we start
+    // from a known baseline before seeding the legacy memory rows.
+    db.exec("DELETE FROM credentials WHERE type='integration'");
+    db.exec("DELETE FROM memory_store WHERE namespace='integrations'");
+
+    for (const f of fixtures) {
+      db.prepare(
+        "INSERT INTO memory_store (namespace, key, value, created_at, updated_at) VALUES ('integrations', ?, ?, ?, ?)",
+      ).run(f.name, JSON.stringify(f.value), t, t);
+    }
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    for (const f of fixtures) {
+      const cred = listCredentials({ type: "integration", provider: f.name })[0];
+      expect(cred, `missing credential for ${f.name}`).toBeTruthy();
+      expect(cred.auth_method).toBe(f.auth_method);
+      expect(getCredentialParams(cred)).toEqual(f.value);
+    }
+  });
+
+  it("encrypts the migrated payload at rest (legacy plaintext does not appear in the credentials row)", async () => {
+    const db = getDb();
+    const SECRET = "sk-ant-encryption-canary-XYZ";
+
+    db.exec("DELETE FROM credentials WHERE id='integration-anthropic'");
+    db.exec("DELETE FROM memory_store WHERE namespace='integrations' AND key='anthropic'");
+    db.prepare(
+      "INSERT INTO memory_store (namespace, key, value, created_at, updated_at) VALUES ('integrations', 'anthropic', ?, ?, ?)",
+    ).run(JSON.stringify({ api_key: SECRET }), new Date().toISOString(), new Date().toISOString());
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const row = db.prepare("SELECT params FROM credentials WHERE id='integration-anthropic'").get() as { params: string };
+    expect(row).toBeTruthy();
+    // The raw column must NOT contain the plaintext secret — envelope
+    // encryption is what guarantees on-disk confidentiality once the
+    // legacy memory_store row gets swept.
+    expect(row.params.includes(SECRET)).toBe(false);
+    // But the decrypted read still returns the original value.
+    const cred = listCredentials({ type: "integration", provider: "anthropic" })[0];
+    expect(getCredentialParams(cred).api_key).toBe(SECRET);
+  });
+
+  it("does not overwrite a credential that already exists for the same integration name", async () => {
+    const db = getDb();
+    const t = new Date().toISOString();
+
+    db.exec("DELETE FROM credentials WHERE id='integration-github'");
+    db.exec("DELETE FROM memory_store WHERE namespace='integrations' AND key='github'");
+
+    // Pretend the user already saved a new credential through the new UI.
+    const { createCredential } = await import("@/lib/stores/credentials");
+    createCredential({
+      id: "integration-github",
+      type: "integration",
+      provider: "github",
+      auth_method: "api_key",
+      params: { token: "ghp_NEW_FROM_UI" },
+    });
+
+    // …and an older legacy row also lingers (e.g. user upgraded mid-edit).
+    db.prepare(
+      "INSERT INTO memory_store (namespace, key, value, created_at, updated_at) VALUES ('integrations', 'github', ?, ?, ?)",
+    ).run(JSON.stringify({ token: "ghp_OLD_LEGACY" }), t, t);
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    // Migration must NOT clobber the existing credential with the
+    // stale legacy value. The new UI write wins.
+    const cred = listCredentials({ type: "integration", provider: "github" })[0];
+    expect(getCredentialParams(cred).token).toBe("ghp_NEW_FROM_UI");
+  });
+
+  it("only migrates rows in the `integrations` namespace (leaves other memory_store rows alone)", async () => {
+    const db = getDb();
+    const t = new Date().toISOString();
+    db.prepare(
+      "INSERT OR REPLACE INTO memory_store (namespace, key, value, created_at, updated_at) VALUES (?,?,?,?,?)",
+    ).run("user_prefs", "theme", JSON.stringify({ mode: "dark" }), t, t);
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    // No `credentials` row for a non-integrations memory namespace.
+    const stray = db.prepare("SELECT id FROM credentials WHERE id LIKE 'integration-theme%'").all();
+    expect(stray.length).toBe(0);
+    // And the user_prefs row is still where it was.
+    const pref = db.prepare("SELECT value FROM memory_store WHERE namespace='user_prefs' AND key='theme'").get() as { value: string };
+    expect(pref.value).toContain("dark");
+  });
 });
