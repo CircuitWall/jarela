@@ -230,4 +230,34 @@ describe("migrateIntegrationsToCredentials", () => {
     const pref = db.prepare("SELECT value FROM memory_store WHERE namespace='user_prefs' AND key='theme'").get() as { value: string };
     expect(pref.value).toContain("dark");
   });
+
+  // Production regression guard: memory_store rows in sensitive
+  // namespaces (including `integrations`) are envelope-encrypted at
+  // rest via the on-boot encryption sweep (ADR-0005). An earlier draft
+  // of this migration tried to JSON.parse the raw value, silently
+  // failed via `catch { continue }`, and skipped EVERY integration on
+  // real user databases. This test seeds the row in the same encrypted
+  // form production stores it to lock in the fix.
+  it("handles envelope-encrypted memory_store values (production shape)", async () => {
+    const db = getDb();
+    const t = new Date().toISOString();
+
+    db.exec("DELETE FROM credentials WHERE id='integration-google'");
+    db.exec("DELETE FROM memory_store WHERE namespace='integrations' AND key='google'");
+
+    const SECRET = "AIza-PRODUCTION-SHAPE";
+    const ciphertext = encrypt(JSON.stringify({ api_key: SECRET }));
+    expect(ciphertext.includes(SECRET)).toBe(false); // sanity: actually encrypted
+
+    db.prepare(
+      "INSERT INTO memory_store (namespace, key, value, created_at, updated_at) VALUES ('integrations', 'google', ?, ?, ?)",
+    ).run(ciphertext, t, t);
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const cred = listCredentials({ type: "integration", provider: "google" })[0];
+    expect(cred, "google credential should exist after migration").toBeTruthy();
+    expect(getCredentialParams(cred).api_key).toBe(SECRET);
+  });
 });

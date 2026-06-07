@@ -1098,7 +1098,12 @@ function migrateIntegrationsToCredentials(db: DatabaseSync): void {
     if (existsCred.get(id) !== undefined) continue;
 
     let params: Record<string, unknown>;
-    try { params = JSON.parse(row.value) as Record<string, unknown>; }
+    // memory_store rows in sensitive namespaces (including `integrations`)
+    // are envelope-encrypted at rest. Decrypt before parsing — without
+    // this, JSON.parse throws and the `catch` below silently skips the
+    // row, which is what produced the empty-credentials migration on
+    // first install. See ADR-0005.
+    try { params = JSON.parse(decryptIfNeeded(row.value)) as Record<string, unknown>; }
     catch { continue; }
     if (!params || typeof params !== "object" || Object.keys(params).length === 0) continue;
 
