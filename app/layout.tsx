@@ -180,6 +180,27 @@ const iosViewportBootstrap = `(() => {
     // older iOS - recompute immediately so we don't render a bad frame.
     document.addEventListener('focusin', apply, true);
     document.addEventListener('focusout', apply, true);
+    // iOS still scrolls the layout viewport up when the keyboard opens
+    // to keep the focused input visible, even with html/body overflow:hidden.
+    // Aggressive scroll-reset on focus events counteracts it (piclaw PWA.md
+    // pattern, validated on iOS 26.x). Staggered timers cover the lag
+    // between focus and iOS's scroll-into-view.
+    function snapScroll() {
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo(0, 0);
+      }
+    }
+    document.addEventListener('focusin', function () {
+      snapScroll();
+      [16, 50, 100, 200, 400].forEach(function (ms) { setTimeout(snapScroll, ms); });
+    }, true);
+    document.addEventListener('focusout', function () {
+      [16, 50, 100, 200].forEach(function (ms) { setTimeout(snapScroll, ms); });
+    }, true);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('scroll', snapScroll);
+    }
+    window.addEventListener('scroll', snapScroll, { passive: true });
     document.addEventListener('visibilitychange', function () {
       if (!document.hidden) { setTimeout(apply, 50); setTimeout(apply, 200); }
     });
