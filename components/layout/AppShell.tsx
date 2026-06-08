@@ -51,8 +51,6 @@ export function AppShell() {
 
   const [showMenu, setShowMenu] = useState(false);
   const [showAgentPicker, setShowAgentPicker] = useState(false);
-  const [showTools, setShowTools] = useState(true);
-  const [showThinking, setShowThinking] = useState(true);
   const agentPickerRef = useRef<HTMLDivElement | null>(null);
 
   // Lazy-mount tabs on first visit, then keep them mounted via <Activity> so
@@ -431,8 +429,6 @@ export function AppShell() {
               agentId={state.activeAgentId}
               sessionLoading={sessionLoading}
               sessionError={sessionError}
-              showTools={showTools}
-              showThinking={showThinking}
               onMessageSent={onMessageSent}
             />
           </Activity>
@@ -530,16 +526,12 @@ export function AppShell() {
           <MenuPanel
             activeTab={state.activeTab}
             agentId={state.activeAgentId}
-            showTools={showTools}
-            showThinking={showThinking}
             onClose={() => setShowMenu(false)}
             onAgentChange={(agentId) => dispatch({ type: "SET_AGENT", agentId })}
             onSetTab={(tab) => {
               dispatch({ type: "SET_TAB", tab });
               setShowMenu(false);
             }}
-            onShowToolsChange={setShowTools}
-            onShowThinkingChange={setShowThinking}
           />
         )}
       </div>

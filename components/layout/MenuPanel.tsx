@@ -1,6 +1,5 @@
 "use client";
 import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, ScrollText, ServerCog, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
-import { NotificationTestButton } from "@/components/ui/NotificationStatus";
 import { useEffect, useState } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
@@ -11,13 +10,9 @@ import { useTheme, type Theme } from "@/contexts/ThemeContext";
 interface Props {
   activeTab: Tab;
   agentId: string | null;
-  showTools: boolean;
-  showThinking: boolean;
   onClose: () => void;
   onAgentChange: (agentId: string) => void;
   onSetTab: (tab: Tab) => void;
-  onShowToolsChange: (v: boolean) => void;
-  onShowThinkingChange: (v: boolean) => void;
 }
 
 const TAB_ICONS: Record<Tab, React.ReactNode> = {
@@ -231,13 +226,9 @@ function AgentSessionList({
 export function MenuPanel({
   activeTab,
   agentId,
-  showTools,
-  showThinking,
   onClose,
   onAgentChange,
   onSetTab,
-  onShowToolsChange,
-  onShowThinkingChange,
 }: Props) {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";
@@ -359,17 +350,6 @@ export function MenuPanel({
         <p className="text-[11px] text-fg-faint mb-1.5 font-medium uppercase tracking-wide">Display</p>
         <div className="flex flex-col gap-1.5">
           <ThemePicker />
-          <label className="control-tap inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
-            <input type="checkbox" className="rounded border-border" checked={showTools} onChange={(e) => onShowToolsChange(e.target.checked)} />
-            Show tool events
-          </label>
-          <label className="control-tap inline-flex items-center gap-2 cursor-pointer text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
-            <input type="checkbox" className="rounded border-border" checked={showThinking} onChange={(e) => onShowThinkingChange(e.target.checked)} />
-            Show thinking
-          </label>
-          <div className="pt-1.5">
-            <NotificationTestButton />
-          </div>
         </div>
       </div>
     </div>
