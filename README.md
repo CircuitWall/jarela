@@ -239,9 +239,12 @@ create an Outlook Calendar invite in the same turn.
   **Memory**, **Documents**, **Profile**, **Bridges**, **Scheduled tasks**,
   and **Pending approvals**.
 - **Browser extension** ([`browser-extension/`](./browser-extension)) —
-  Chrome MV3, click an element on any page and POST it to your local
-  Jarela as a new user message (ADR-0018). Loopback only; toolbar icon
-  greys out when Jarela isn't running.
+  Chrome MV3, click an element on any page and POST it (with a cropped
+  PNG of the picked element) to your local Jarela as a new user message
+  (ADR-0018). The screenshot is rendered inline in the chat bubble and
+  forwarded to vision-capable agents on the silent observer turn that
+  fires immediately after the capture. Loopback only; toolbar icon greys
+  out when Jarela isn't running.
 
 ### Operational
 

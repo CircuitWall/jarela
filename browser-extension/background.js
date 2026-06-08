@@ -1337,6 +1337,25 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, status: 200, body: { started: true } });
         return;
       }
+      if (msg.type === "jarela-capture-visible-tab") {
+        // Content scripts can't call chrome.tabs.captureVisibleTab themselves
+        // (no "tabs"/"<all_urls>" permission). The picker requests a PNG of
+        // the currently visible viewport here and crops it to the picked
+        // element's bounding rect on its side. devicePixelRatio is read in
+        // the content script (the dataURL is at that scale already).
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.id || tab.id !== _sender?.tab?.id) {
+          sendResponse({ ok: false, status: 0, body: { error: "tab mismatch" } });
+          return;
+        }
+        try {
+          const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+          sendResponse({ ok: true, status: 200, body: { dataUrl } });
+        } catch (err) {
+          sendResponse({ ok: false, status: 0, body: { error: String(err?.message ?? err) } });
+        }
+        return;
+      }
       if (msg.type === "jarela-capture") {
         const out = await postJson(captureUrl(currentConfig), msg.payload);
         await applyAgentIconHintFromBody(out?.body);

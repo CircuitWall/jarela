@@ -144,15 +144,35 @@ plugins under `~/.jarela/providers/`).
 
 ### `POST /api/v1/page-capture`
 
-Receives a page-capture upload (URL, title, selected/full text) from the
-browser extension and routes it into the active thread.
+Receives a page-capture upload from the browser extension and routes it
+into the most recently active thread on the default agent.
+
+Request body (JSON):
+
+| field                  | type   | required | notes                                                                                       |
+| ---------------------- | ------ | -------- | ------------------------------------------------------------------------------------------- |
+| `url`                  | string | yes      | Page URL the element was picked from.                                                       |
+| `text`                 | string | yes      | Element text content (truncated to 100 KB UTF-8 server-side).                              |
+| `capturedAt`           | string | yes      | ISO-8601 timestamp.                                                                         |
+| `title`                | string | no       | Document title (≤500 chars).                                                                |
+| `selector`             | string | no       | CSS selector path of the picked element (≤ 2000 chars).                                     |
+| `tagName`              | string | no       | Tag name of the picked element (≤ 64 chars).                                                |
+| `screenshot`           | string | no       | Base64-encoded PNG of just the picked element (≤ 4 MB encoded). No `data:` URL prefix.     |
+| `screenshotMediaType`  | string | no       | MIME type for the screenshot (default `image/png`).                                         |
+
+When `screenshot` is present the persisted user message is stored as a
+multipart `ContentPart[]` of `[text, image]` so the chat UI renders the
+picture inline and vision-capable models see it on the silent observer
+turn that fires immediately after.
+
+Response: `{ thread_id, msg_id, agent_id, agent_name, thread_title, created_thread, truncated, originalBytes }`.
 
 ### `OPTIONS /api/v1/page-capture`
 
 CORS preflight.
 
-- **Source:** [`app/api/v1/page-capture/route.ts`](../app/api/v1/page-capture/route.ts)
-- **Auth:** opened to the extension's origin via CORS; same-origin from the app.
+- **Source:** [`app/api/v1/page-capture/route.ts`](../app/api/v1/page-capture/route.ts), [`lib/api/page-capture.ts`](../lib/api/page-capture.ts)
+- **Auth:** loopback only (`Host:` must be `localhost` / `127.0.0.1`); CORS reflects the request `Origin` so the extension passes preflight.
 
 ---
 

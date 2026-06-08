@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Browser-extension element screenshot.** The page-capture flow now
+  ships a cropped PNG of the picked element alongside the text. The
+  content script grabs the visible viewport via
+  `chrome.tabs.captureVisibleTab` (loopback only, via the service worker)
+  and crops it to the element's bounding rect through `OffscreenCanvas`
+  at `devicePixelRatio`. The server validates the base64 payload (≤ 4 MB
+  encoded), persists the user message as a multipart `ContentPart[]` of
+  `[text, image]` so the bubble renders the picture inline, and
+  forwards the image part to the silent observer turn so vision-capable
+  agents see it on the immediate follow-up run. Falls back cleanly to
+  text-only capture if the snapshot is denied. See
+  [`docs/api.md`](./docs/api.md#post-apiv1page-capture) for the updated
+  request schema.
+
 ## [1.3.0] - 2026-06-08
 
 Two new agent capabilities and a hardening pass on tool wall-clocks.
