@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent } from "./helpers";
+import { seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the menu reorganization (common vs. advanced tabs +
 // new "Tools" entry), the persona preset on the Profile editor, and
@@ -28,6 +28,7 @@ test.beforeEach(async ({ request, page }) => {
   });
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
+  await waitForAppReady(page);
 });
 
 async function openMenu(page: import("@playwright/test").Page) {
@@ -101,6 +102,7 @@ test("Advanced section collapses and remembers state via localStorage", async ({
   // Reload → still collapsed.
   await page.reload();
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
+  await waitForAppReady(page);
   await openMenu(page);
   await expect(page.getByRole("button", { name: /^Advanced$/i })).toHaveAttribute("aria-expanded", "false");
 });
