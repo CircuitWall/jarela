@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-06-08
+
+Two follow-up fixes on top of 1.2.0.
+
+### Fixed
+
+- **Boot agent picker always shows after login**
+  ([#213](https://github.com/CircuitWall/jarela/pull/213)). The picker
+  was being skipped in some session states; it now reliably appears so
+  the user actively chooses an agent at boot instead of silently
+  inheriting one.
+- **Extension UX polish on one-shot turns**
+  ([#212](https://github.com/CircuitWall/jarela/pull/212)). Custom
+  intent collapses by default, Enter submits, writes are queued, and
+  one-shot turns drop the quality gates that didn't apply to them.
+
 ## [1.2.0] - 2026-06-08
 
 Security, runtime resilience, and a broad UI consolidation pass.
