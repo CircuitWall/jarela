@@ -307,3 +307,61 @@ describe("handlePageCapture — response shape", () => {
     });
   });
 });
+
+describe("handlePageCapture — screenshot attachment", () => {
+  // 1x1 transparent PNG, base64-encoded (no data: prefix).
+  const tinyPng =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+  it("rejects screenshot with invalid base64", async () => {
+    const res = await handlePageCapture(makeReq({ ...validBody, screenshot: "not base64!!" }));
+    expect(res.status).toBe(400);
+    expect(addMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects screenshot exceeding the size cap", async () => {
+    const huge = "A".repeat(4_000_001);
+    const res = await handlePageCapture(makeReq({ ...validBody, screenshot: huge }));
+    expect(res.status).toBe(400);
+  });
+
+  it("persists user message as a JSON ContentPart[] with text + image when screenshot is present", async () => {
+    const res = await handlePageCapture(makeReq({ ...validBody, screenshot: tinyPng }));
+    expect(res.status).toBe(200);
+    const stored = addMessageMock.mock.calls[0][2] as string;
+    const parsed = JSON.parse(stored) as Array<{ type: string; text?: string; media_type?: string; data?: string }>;
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ type: "text" });
+    expect(parsed[0].text).toContain("Captured from");
+    expect(parsed[0].text).toContain("Screenshot attached.");
+    expect(parsed[1]).toEqual({ type: "image", media_type: "image/png", data: tinyPng });
+  });
+
+  it("forwards the screenshot as a vision attachment to the silent observer run", async () => {
+    await handlePageCapture(makeReq({ ...validBody, screenshot: tinyPng }));
+    expect(runAgentTurnMock).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: [{ type: "image", media_type: "image/png", data: tinyPng }],
+    }));
+  });
+
+  it("honors a custom screenshotMediaType", async () => {
+    await handlePageCapture(makeReq({ ...validBody, screenshot: tinyPng, screenshotMediaType: "image/jpeg" }));
+    const stored = addMessageMock.mock.calls[0][2] as string;
+    const parsed = JSON.parse(stored) as Array<{ type: string; media_type?: string }>;
+    expect(parsed[1].media_type).toBe("image/jpeg");
+  });
+
+  it("keeps the legacy string-content path when no screenshot is sent", async () => {
+    await handlePageCapture(makeReq(validBody));
+    const stored = addMessageMock.mock.calls[0][2] as string;
+    // Not JSON-parseable as an array — it's the legacy plaintext body.
+    expect(() => JSON.parse(stored)).toThrow();
+    expect(stored).toContain("Captured from");
+    expect(stored).not.toContain("Screenshot attached.");
+    expect(runAgentTurnMock).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: undefined,
+    }));
+  });
+});
+
