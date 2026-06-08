@@ -1,29 +1,31 @@
-
-
-
-﻿<p align="center">
-  <img src="./public/logo-mark-transparent.png" alt="Jarela" width="160" />
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./public/icon-512.png" />
+    <img src="./public/icon-512-light.png" alt="Jarela" width="140" />
+  </picture>
 </p>
 
 <h1 align="center">Jarela</h1>
 
 <p align="center">
-  <b>A local-first, browser-based GUI for orchestrating multi-provider LLM agents.</b><br/>
-  <sub>Next.js 16 + LangGraph + SQLite. PWA-installable. No cloud backend, no telemetry.</sub>
+  <b>A local-first, browser-based GUI for orchestrating multi-provider LLM agents.</b>
+</p>
+<p align="center">
+  <sub>Next.js 16 &middot; LangGraph &middot; SQLite &middot; PWA-installable &middot; no cloud backend, no telemetry</sub>
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#configuration-guide-home--work">Config guide</a> ·
-  <a href="#supported-platforms">Platforms</a> ·
-  <a href="#features">Features</a> ·
-  <a href="#productivity-stacks-google--microsoft-at-parity">Google + Microsoft</a> ·
-  <a href="#built-in-toolbelt">Tools</a> ·
-  <a href="#providers">Providers</a> ·
-  <a href="#connections">Connections</a> ·
-  <a href="./docs/EXTENDING.md">Extending</a> ·
-  <a href="./docs/ARCHITECTURE.md">Architecture</a> ·
-  <a href="./CONTRIBUTING.md">Contributing</a> ·
+  <a href="#quick-start">Quick start</a> &middot;
+  <a href="#configuration-guide-home--work">Config guide</a> &middot;
+  <a href="#supported-platforms">Platforms</a> &middot;
+  <a href="#features">Features</a> &middot;
+  <a href="#productivity-stacks-google--microsoft-at-parity">Google + Microsoft</a> &middot;
+  <a href="#built-in-toolbelt">Tools</a> &middot;
+  <a href="#providers">Providers</a> &middot;
+  <a href="#connections">Connections</a> &middot;
+  <a href="./docs/EXTENDING.md">Extending</a> &middot;
+  <a href="./docs/ARCHITECTURE.md">Architecture</a> &middot;
+  <a href="./CONTRIBUTING.md">Contributing</a> &middot;
   <a href="#documentation">Docs</a>
 </p>
 
@@ -51,14 +53,15 @@
   </a>
 </p>
 
----
-
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180" controls width="640" muted>
-    Your browser doesn't support embedded video.
-    <a href="https://github.com/user-attachments/assets/0f33f8d3-07bb-4850-9fcc-cfc97036f180">Download the clip</a>.
+  <video src="./docs/assets/jarela-promo.webm" poster="./docs/assets/jarela-promo-poster.jpg" controls muted playsinline width="320">
+    <img src="./docs/assets/jarela-promo-poster.jpg" alt="Jarela promo &mdash; PIN unlock, agent picker, chat, panel tour" width="320" />
   </video>
+  <br/>
+  <sub><i>Tap-to-unlock &rarr; agent picker &rarr; human-paced chat &rarr; full panel tour</i> &middot; <a href="./docs/assets/jarela-promo.webm">Download .webm</a></sub>
 </p>
+
+---
 
 ## Quick start
 
@@ -916,6 +919,25 @@ GitHub Actions runs [.github/workflows/ci.yml](./.github/workflows/ci.yml)
 on every push and PR: `lint + tsc --noEmit + next build`, then the same
 live integration suite against the production server output. The build
 badge at the top of this README links straight to the latest run.
+
+## Recording a promo video
+
+[scripts/promo-record.mjs](./scripts/promo-record.mjs) drives your real
+local install (default `http://localhost:4312`) inside a 540&times;960
+vertical (9:16) PWA viewport and records a `.webm` of a five-scene tour
+in dark theme: a simulated PIN unlock, agent picker, a human-paced chat
+turn, every side panel, and a closing pose.
+
+```bash
+npm run dev            # in one terminal
+npm run promo:record   # in another — output lands in ./promo/
+```
+
+The first run opens a headed Chromium so you can manually unlock the
+install if needed; the resulting auth state is saved to
+`promo/.storage.json` and reused on every subsequent run. Override the
+target with `JARELA_PROMO_URL`, the chat line with `JARELA_PROMO_MSG`,
+or skip the actual send with `JARELA_PROMO_SKIP_CHAT=1`.
 
 ## Security
 

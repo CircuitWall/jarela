@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text-only capture if the snapshot is denied. See
   [`docs/api.md`](./docs/api.md#post-apiv1page-capture) for the updated
   request schema.
+- **Promo video recorder.** `npm run promo:record` (via
+  [`scripts/promo-record.mjs`](./scripts/promo-record.mjs)) drives your
+  real local install in a 9:16 vertical PWA viewport and records a
+  dark-theme `.webm` of the tap-to-unlock intro, agent picker, a
+  human-paced chat turn, and a tour of every side panel. First run
+  saves auth state to `promo/.storage.json` and reuses it thereafter.
 
 ## [1.3.0] - 2026-06-08
 
