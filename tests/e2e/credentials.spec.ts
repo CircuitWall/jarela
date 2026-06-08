@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent } from "./helpers";
+import { seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the Credentials consolidation (Connections folded back in
 // as a sub-tab) + Built-in tool toggles. Tests run serially: they share
@@ -25,6 +25,7 @@ test.beforeEach(async ({ request, page }) => {
   });
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
+  await waitForAppReady(page);
 });
 
 async function openMenu(page: import("@playwright/test").Page) {
