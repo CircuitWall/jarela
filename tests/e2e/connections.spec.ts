@@ -36,28 +36,17 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("Connections tab exposes Built-in integrations + MCP servers sub-tabs", async ({ page }) => {
+test("Connections tab shows the built-in integrations panel", async ({ page }) => {
   await openMenu(page);
   await page.getByRole("button", { name: "Connections", exact: true }).click();
 
-  const builtinTab = page.getByRole("tab", { name: "Built-in integrations" });
-  const mcpTab = page.getByRole("tab", { name: "MCP servers" });
-
-  await expect(builtinTab).toBeVisible();
-  await expect(mcpTab).toBeVisible();
-  await expect(builtinTab).toHaveAttribute("aria-selected", "true");
-
-  // Built-in integrations panel renders its known heading.
+  // Built-in integrations panel renders its known heading directly
+  // (no sub-tab navigation anymore — MCP moved to Tools).
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
-
-  // Switch to MCP servers — that panel mounts.
-  await mcpTab.click();
-  await expect(mcpTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
 });
 
-test("deep link ?tab=connections&item=mcp lands directly on MCP sub-tab", async ({ page }) => {
-  await page.goto("/?tab=connections&item=mcp");
+test("deep link ?tab=tools&item=mcp lands directly on the MCP sub-tab", async ({ page }) => {
+  await page.goto("/?tab=tools&item=mcp");
   await expect(page.getByRole("tab", { name: "MCP servers" })).toHaveAttribute(
     "aria-selected",
     "true",

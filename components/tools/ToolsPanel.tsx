@@ -1,6 +1,7 @@
 "use client";
 import { useAppContext } from "@/contexts/AppContext";
 import { ExtensionsPanel } from "@/components/extensions/ExtensionsPanel";
+import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
 
 // "Tools" is about *capability presence* — which categories of tools
@@ -9,22 +10,23 @@ import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
 //                    Jarela (filters the agent permission editor + blocks
 //                    invocation in lib/tools/index.ts).
 //   - "Extensions" — the Jarela browser extension.
-//
-// Credentials for any tool surface (built-in OAuth tokens, MCP env vars,
-// …) live under the Connections tab, not here. This split keeps "what
-// can the agent do" separate from "what auth does that capability need".
+//   - "MCP"        — external Model Context Protocol servers (add /
+//                    enable / disable). Credentials still flow through
+//                    Connections; this surface owns the server roster.
 
-type Sub = "builtin" | "extensions";
+type Sub = "builtin" | "extensions" | "mcp";
 
 const SUB_TITLES: Record<Sub, string> = {
   builtin: "Built-in",
   extensions: "Browser extension",
+  mcp: "MCP servers",
 };
 
 export function ToolsPanel() {
   const { state, dispatch } = useAppContext();
   const raw = state.selectedItem.tools;
-  const active: Sub = raw === "extensions" ? "extensions" : "builtin";
+  const active: Sub =
+    raw === "extensions" ? "extensions" : raw === "mcp" ? "mcp" : "builtin";
 
   const setSub = (s: Sub) => dispatch({ type: "SET_SELECTION", tab: "tools", itemId: s });
 
@@ -35,7 +37,7 @@ export function ToolsPanel() {
         aria-label="Tools sub-section"
         className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2"
       >
-        {(["builtin", "extensions"] as Sub[]).map((s) => {
+        {("builtin extensions mcp".split(" ") as Sub[]).map((s) => {
           const selected = s === active;
           return (
             <button
@@ -57,7 +59,9 @@ export function ToolsPanel() {
         })}
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
-        {active === "builtin" ? <BuiltinToolsPanel /> : <ExtensionsPanel />}
+        {active === "builtin" && <BuiltinToolsPanel />}
+        {active === "extensions" && <ExtensionsPanel />}
+        {active === "mcp" && <MCPPanel />}
       </div>
     </div>
   );

@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { seedMockAgent } from "./helpers";
 
-// The Integrations sub-tab lives under Connections (since Connections
-// consolidation in ADR-0033). It hosts the credential-vault forms for the
-// built-in providers (Anthropic, OpenAI, Atlassian, GitHub, etc.).
+// After PR #203 (MCP moved to Tools), the Connections tab is a
+// single-section host for the IntegrationsPanel \u2014 no sub-tabs anymore.
+// Verifies that ?tab=connections still lands on the integrations panel.
 
 test.describe.configure({ mode: "serial" });
 
@@ -15,15 +15,9 @@ test.beforeEach(async ({ request, page }) => {
   await page.goto("/?tab=connections");
 });
 
-test("Integrations sub-tab is the default and shows Credentials heading", async ({ page }) => {
-  const builtin = page.getByRole("tab", { name: "Built-in integrations" });
-  await expect(builtin).toBeVisible({ timeout: 15_000 });
-  await expect(builtin).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
-});
-
-test("Switching to MCP sub-tab swaps the visible panel", async ({ page }) => {
+test("Connections tab renders the integrations panel directly", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible({ timeout: 15_000 });
-  await page.getByRole("tab", { name: "MCP servers" }).click();
-  await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
+  // No sub-tab strip remains \u2014 only the integrations panel mounts.
+  await expect(page.getByRole("tab", { name: "MCP servers" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Built-in integrations" })).toHaveCount(0);
 });
