@@ -42,6 +42,15 @@ export interface ThreadRunRequest {
   context_profile?: TurnContextProfile;
 
   /**
+   * Skip the post-stream stall-retry + strict-citation audit wrapper for
+   * this turn. Use for one-shot callers (browser-extension fill / rewrite)
+   * that consume `assistantContent` as raw text and would otherwise type
+   * the visible `↻` separator and the original stalled prose into the
+   * user's input field. Chat callers leave undefined.
+   */
+  disable_quality_gates?: boolean;
+
+  /**
    * Internal - public callers leave undefined. When set by the submission
    * path, this freezes the effective model config for the turn so queued
    * runs do not drift if the agent model changes before execution starts.

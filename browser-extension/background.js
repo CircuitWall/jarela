@@ -1131,7 +1131,7 @@ async function promptForAction(tabId, frameId, state) {
       customCaret.textContent = "▸";
       customCaret.style.cssText = "display:inline-block;transition:transform 120ms;";
       const customLabel = document.createElement("span");
-      customLabel.textContent = state.original ? "Custom direction" : "Custom intent";
+      customLabel.textContent = state.original ? "Custom direction" : "Add custom direction (optional)";
       customToggle.appendChild(customCaret);
       customToggle.appendChild(customLabel);
 
@@ -1164,7 +1164,7 @@ async function promptForAction(tabId, frameId, state) {
       const footer = document.createElement("div");
       footer.style.cssText = "display:flex;justify-content:space-between;align-items:center;gap:8px;";
       const hint = document.createElement("div");
-      hint.textContent = "Esc cancels · Ctrl/⌘+Enter submits";
+      hint.textContent = "Esc cancels · Enter submits · Shift+Enter for newline";
       hint.style.cssText = "font-size:11px;color:#94a3b8;";
       const actions = document.createElement("div");
       actions.style.cssText = "display:flex;gap:8px;";
@@ -1190,8 +1190,15 @@ async function promptForAction(tabId, frameId, state) {
         cleanup({ intent: textarea.value.trim(), presetKey: selectedPreset });
       }
       function onKey(e) {
-        if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); cleanup(null); }
-        else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.stopPropagation(); e.preventDefault(); submitNow(); }
+        if (e.key === "Escape") { e.stopPropagation(); e.preventDefault(); cleanup(null); return; }
+        // Plain Enter submits from anywhere inside the dialog. Shift+Enter
+        // keeps its native newline behaviour inside the textarea so users
+        // can still write multi-line custom directions.
+        if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+          e.stopPropagation();
+          e.preventDefault();
+          submitNow();
+        }
       }
       cancel.addEventListener("click", () => cleanup(null));
       submit.addEventListener("click", submitNow);
@@ -1208,14 +1215,30 @@ async function promptForAction(tabId, frameId, state) {
       document.documentElement.appendChild(backdrop);
 
       paintChips();
-      // Fill-only path has no presets and no selection preview, so the
-      // textarea is the only real input — auto-expand it. Rewrite paths
-      // default collapsed: presets are the fast path, custom is opt-in.
-      if (!state.original) setCustomOpen(true);
-      else (submit.focus());
+      // Both paths default collapsed: the dialog stays compact and the
+      // submit button is the focused affordance, so plain Enter fires the
+      // fast path (auto-fill or preset rewrite) without the user having
+      // to click anywhere. Click the toggle to expand for a custom
+      // direction.
+      setCustomOpen(false);
+      submit.focus();
     }),
   });
   return result ?? null;
+}
+
+// FIFO queue for write turns. Server-side `enqueueThreadRun` already
+// serialises by thread, but two overlapping client runs would still
+// trample each other's spinner element + `[data-jarela-fill-target]`
+// markers. This keeps every spinner-visible-to-spinner-cleared cycle
+// non-overlapping so the user always sees one fill in progress at a
+// time. Capture and the dialog stay synchronous to the user gesture —
+// only the network + DOM-write phase queues.
+let writeQueue = Promise.resolve();
+function enqueueWrite(fn) {
+  const next = writeQueue.then(fn, fn);
+  writeQueue = next.catch(() => {});
+  return next;
 }
 
 // Unified entry point used by both context menu and Alt+J. Captures
@@ -1232,7 +1255,7 @@ async function openActionMenu(tabId) {
     if (state.hasField) await clearFillTarget(tabId, state.frameId);
     return;
   }
-  await runWrite(tabId, state, choice);
+  await enqueueWrite(() => runWrite(tabId, state, choice));
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
