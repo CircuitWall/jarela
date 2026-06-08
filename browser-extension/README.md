@@ -33,6 +33,13 @@ just close the app and the icon disables on the next heartbeat tick.
 4. Switch to the Jarela web UI — the captured content appears as a new
    user message. Type your follow-up.
 
+Each capture also includes a PNG screenshot of just the picked element
+(best-effort — falls back to text-only if the browser denies a viewport
+snapshot). The screenshot is cropped from `chrome.tabs.captureVisibleTab`
+to the element's bounding rect at `devicePixelRatio` and shown inline in
+the chat bubble. Vision-capable agents see the image on the silent
+observer turn that fires immediately after the capture.
+
 Press **ESC** during the picker to cancel without sending.
 
 ## Files

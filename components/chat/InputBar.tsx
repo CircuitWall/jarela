@@ -73,6 +73,12 @@ function fileToContentPart(file: File): Promise<ContentPart> {
   });
 }
 
+function attachmentKey(a: ContentPart, i: number): string {
+  if (a.type === "text") return `text:${i}:${a.text.length}`;
+  const name = a.type === "file" ? a.name : "";
+  return `${a.type}:${a.media_type}:${name}:${a.data.length}:${a.data.slice(0, 16)}`;
+}
+
 export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, onStop, streaming, disabled, placeholder, voiceEnabled, agentId, onVoiceTranscript }: Props) {
   // Text state is intentionally LOCAL. Lifting it to ChatView would re-render
   // the entire message list (every MessageBubble + ReactMarkdown pass) on
@@ -268,7 +274,10 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
           {attachments.map((a, i) => (
-            <div key={i} className="relative group shrink-0">
+            // Content-derived key — using the index reused DOM nodes when
+            // earlier attachments were removed, flashing the wrong preview
+            // (and the wrong filename) into the slot of the survivor.
+            <div key={attachmentKey(a, i)} className="relative group shrink-0">
               {a.type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img

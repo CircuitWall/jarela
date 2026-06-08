@@ -76,11 +76,17 @@ function nextSiblingsOf(el) {
 
 // Build the request payload, omitting absent optional fields so the
 // server's zod `optional()` validators don't reject explicit nulls.
-export function composePayload({ url, title, selector, tagName, text, capturedAt }) {
+export function composePayload({ url, title, selector, tagName, text, capturedAt, screenshot, screenshotMediaType }) {
   const p = { url, text, capturedAt };
   const t = typeof title === "string" ? title.trim() : "";
   if (t) p.title = t;
   if (selector) p.selector = selector;
   if (tagName) p.tagName = tagName;
+  if (typeof screenshot === "string" && screenshot.length > 0) {
+    p.screenshot = screenshot;
+    if (typeof screenshotMediaType === "string" && screenshotMediaType.length > 0) {
+      p.screenshotMediaType = screenshotMediaType;
+    }
+  }
   return p;
 }

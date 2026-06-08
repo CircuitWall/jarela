@@ -13,11 +13,17 @@ import {
 } from "@/lib/stores/agent-configs";
 import { publish } from "@/lib/notifications/bus";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
+import type { ContentPart } from "@/lib/tools/types";
 
 // 100KB UTF-8 cap on captured text. The LLM context window is the real
 // constraint; this cap exists to keep a runaway "<body>" pick from
 // trashing the conversation. See ADR-0018.
 export const MAX_TEXT_BYTES = 100_000;
+
+// Hard cap on the inline element screenshot (base64 chars). 4 MB of
+// base64 ≈ 3 MB decoded — generous for a single cropped element while
+// still bounding the SQLite row and the LLM vision payload.
+export const MAX_SCREENSHOT_B64 = 4_000_000;
 
 // Preamble prepended to the LLM call for the silent observer run.
 // The captured content is already persisted in the DB — this wrapper
@@ -37,6 +43,13 @@ const Body = z.object({
   tagName: z.string().max(64).optional(),
   text: z.string(),
   capturedAt: z.string().datetime(),
+  // Optional base64-encoded PNG of just the picked element (no data: URL
+  // prefix). The content script crops `chrome.tabs.captureVisibleTab`
+  // to the element bounding box before sending. When present, it is
+  // attached to the persisted user message as an image ContentPart so
+  // the chat UI renders it inline and vision-capable agents can see it.
+  screenshot: z.string().regex(/^[A-Za-z0-9+/=]+$/).max(MAX_SCREENSHOT_B64).optional(),
+  screenshotMediaType: z.string().regex(/^image\/[a-z0-9.+-]+$/).max(64).optional(),
 });
 
 function truncateUtf8(s: string, maxBytes: number): { text: string; truncated: boolean; originalBytes: number } {
@@ -102,12 +115,14 @@ function composeBody(args: {
   text: string;
   truncated: boolean;
   originalBytes: number;
+  hasScreenshot?: boolean;
 }): string {
   const heading = args.title
     ? `📎 Captured from [${args.title}](${args.url})`
     : `📎 Captured from <${args.url}>`;
   const lines = [heading];
   if (args.selector) lines.push(`Element: \`${args.selector}\``);
+  if (args.hasScreenshot) lines.push("Screenshot attached.");
   if (args.truncated) {
     lines.push(`> ⚠ Truncated to ${MAX_TEXT_BYTES.toLocaleString()} bytes (original was ${args.originalBytes.toLocaleString()} bytes)`);
   }
@@ -158,9 +173,23 @@ export async function handlePageCapture(req: Request): Promise<Response> {
     text,
     truncated,
     originalBytes,
+    hasScreenshot: Boolean(input.screenshot),
   });
 
-  const msg = addMessage(thread_id, "user", messageBody, undefined, "page_capture");
+  // When a screenshot is included, persist the user turn as a multipart
+  // ContentPart[] (text + image) — that's the same shape the chat UI and
+  // agent runner expect for inline images, so the picture renders in the
+  // bubble on reload and vision-capable models can see it on the silent
+  // observer turn. Without a screenshot we keep the legacy string body
+  // to avoid touching messages that never had an image.
+  const screenshotPart: ContentPart | null = input.screenshot
+    ? { type: "image", media_type: input.screenshotMediaType ?? "image/png", data: input.screenshot }
+    : null;
+  const storedContent: string = screenshotPart
+    ? JSON.stringify([{ type: "text", text: messageBody }, screenshotPart] satisfies ContentPart[])
+    : messageBody;
+
+  const msg = addMessage(thread_id, "user", storedContent, undefined, "page_capture");
 
   // Fire a silent observer run so the agent ingests the captured context
   // without being forced to reply — matching bridge silent/observer mode.
@@ -170,6 +199,7 @@ export async function handlePageCapture(req: Request): Promise<Response> {
     thread_id,
     queue_source: "extension",
     message: `${SILENT_CAPTURE_PREAMBLE}\n\n${messageBody}`,
+    attachments: screenshotPart ? [screenshotPart] : undefined,
     user_category: "page_capture",
     assistant_category: "page_capture",
     silent: true,

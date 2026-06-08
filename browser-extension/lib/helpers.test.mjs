@@ -118,4 +118,37 @@ describe("composePayload", () => {
     });
     expect("title" in p).toBe(false);
   });
+
+  it("forwards the screenshot field when provided", () => {
+    const p = composePayload({
+      url: "https://example.com/y",
+      text: "hello",
+      capturedAt: "2026-05-22T12:00:00.000Z",
+      screenshot: "AAAA",
+      screenshotMediaType: "image/png",
+    });
+    expect(p.screenshot).toBe("AAAA");
+    expect(p.screenshotMediaType).toBe("image/png");
+  });
+
+  it("omits screenshotMediaType when screenshot itself is absent", () => {
+    const p = composePayload({
+      url: "https://example.com/y",
+      text: "hello",
+      capturedAt: "2026-05-22T12:00:00.000Z",
+      screenshotMediaType: "image/png",
+    });
+    expect("screenshot" in p).toBe(false);
+    expect("screenshotMediaType" in p).toBe(false);
+  });
+
+  it("treats an empty-string screenshot as absent", () => {
+    const p = composePayload({
+      url: "https://example.com/y",
+      text: "hello",
+      capturedAt: "2026-05-22T12:00:00.000Z",
+      screenshot: "",
+    });
+    expect("screenshot" in p).toBe(false);
+  });
 });
