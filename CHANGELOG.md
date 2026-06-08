@@ -7,6 +7,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-06-08
+
+Security, runtime resilience, and a broad UI consolidation pass.
+The Setup surface gets a noticeable cleanup (capabilities all under
+one tab, MCP and connections folded in where they belong), runs now
+have proper watchdog coverage everywhere with an adaptive wall-clock
+that doesn't punish slow tools, and the on-disk keyfile can be
+PIN-protected with an auto-lock when the app idles.
+
+### Added
+
+- **PIN-protected keyfile + idle screen lock**
+  ([#200](https://github.com/CircuitWall/jarela/pull/200), ADR-0063).
+  The local keyfile that wraps credentials and memory rows can now be
+  protected by a user-set PIN, and the app auto-locks after an idle
+  timeout so a left-open browser tab no longer exposes secrets at rest.
+- **Per-turn output-token budget injected into the system prompt**
+  ([#197](https://github.com/CircuitWall/jarela/pull/197)). The agent
+  now sees the per-turn output ceiling alongside the context window
+  so it can plan its response length instead of getting truncated
+  mid-thought.
+- **Network env vars in the profile panel**
+  ([#201](https://github.com/CircuitWall/jarela/pull/201)). Proxy and
+  bind-address knobs now live next to the rest of the user profile
+  instead of buried in env panels.
+
+### Changed
+
+- **Capability surfaces consolidated under the Tools tab**
+  ([#208](https://github.com/CircuitWall/jarela/pull/208)). Built-in
+  tools, MCP servers, and connections each used to have their own
+  top-level tab; they're now sub-tabs under one Tools surface.
+- **MCP server management lives under Tools**
+  ([#203](https://github.com/CircuitWall/jarela/pull/203)). Setup
+  step in the larger consolidation.
+- **Connections folded back into Credentials**
+  ([#204](https://github.com/CircuitWall/jarela/pull/204)).
+  Connections and credentials always referred to the same underlying
+  rows; the split surface is gone.
+- **Workspace mode as a segmented switch**
+  ([#207](https://github.com/CircuitWall/jarela/pull/207)). Replaces
+  a single confusing toggle label with an explicit two-option switch.
+- **Show-tools / show-thinking toggles and the test-notification
+  button removed** ([#202](https://github.com/CircuitWall/jarela/pull/202)).
+  Dead UI dropped during the consolidation.
+- **Model config, credentials, citations, icons, and chat perf
+  polish** ([#194](https://github.com/CircuitWall/jarela/pull/194)).
+  Visual + interaction polish across the model picker, credential
+  rows, in-message citations, lucide icons, and message-list
+  re-render hot paths.
+
+### Fixed
+
+- **Adaptive wall-clock watchdog with full entry-point parity**
+  ([#209](https://github.com/CircuitWall/jarela/pull/209)). The
+  run-registry's idle and wall-clock watchdogs now wrap every
+  agent run — not just HTTP chat, but triggers, watchers, bridges,
+  the scheduler, the extension callback, and the delegate runner.
+  The wall-clock now bounds *agent + provider* time only: time
+  spent inside a tool call (`exec`, MCP, `fetch`) no longer counts
+  against the agent's budget, so a slow tool can't force-stop a run
+  that's otherwise making progress. Each tool already enforces its
+  own per-call timeout.
+- **Interrupted turns persist so the agent sees the cut**
+  ([#206](https://github.com/CircuitWall/jarela/pull/206)). Stopping
+  a turn mid-stream now writes the partial assistant message
+  with a clear interrupted marker, so the next turn doesn't replay
+  the same prompt against a half-written history.
+- **Scroll-to-latest button offset below glass header**
+  ([#205](https://github.com/CircuitWall/jarela/pull/205)). Button
+  no longer hides behind the translucent app bar on tall threads.
+- **Glass blur restored** ([#198](https://github.com/CircuitWall/jarela/pull/198)).
+  Reorders the `backdrop-filter` declarations so the blur layer
+  paints in browsers that picked the wrong cascade order.
+- **iOS standalone PWA viewport-height shim**
+  ([#196](https://github.com/CircuitWall/jarela/pull/196)). Patches
+  the long-standing iOS Safari bug where `100vh` in a home-screen
+  app is taller than the actual visible viewport.
+- **System theme: `color-scheme: light dark`**
+  ([#195](https://github.com/CircuitWall/jarela/pull/195)). Restores
+  native form-control theming on macOS / iOS when the OS theme is
+  set to follow the system.
+- **Dependencies refreshed** ([#210](https://github.com/CircuitWall/jarela/pull/210)).
+  Lockfile-only `npm update` covering 99 in-range transitive bumps
+  across `@smithy/*`, `@aws-sdk/*`, `@langchain/*`, and shared
+  tooling.
+
+### Tests
+
+- **`fs-watch` e2e spec skipped on non-macOS**
+  ([#199](https://github.com/CircuitWall/jarela/pull/199)). Removes
+  a persistent CI flake on Linux runners where the watcher's wakeup
+  latency exceeded the spec's budget.
+
 ## [1.1.0] - 2026-06-07
 
 Browser-extension UX is unified behind a single Alt+J action menu and
