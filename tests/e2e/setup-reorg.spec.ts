@@ -57,18 +57,16 @@ test("menu separates common from advanced and Tools opens Built-in+Extensions su
   await expect(page.getByRole("button", { name: "Bridges", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Harness", exact: true })).toBeVisible();
 
-  // Click Tools → ToolsPanel mounts with Built-in/Extensions sub-tabs.
-  // (MCP moved to Connections after the consolidation.)
+  // Click Tools → ToolsPanel mounts with Built-in / Browser extension / MCP servers sub-tabs.
   await page.getByRole("button", { name: "Tools", exact: true }).click();
-  const builtinTab = page.getByRole("tab", { name: "Built-in" });
+  const builtinTab = page.getByRole("tab", { name: "Built-in", exact: true });
   const extTab = page.getByRole("tab", { name: "Browser extension" });
+  const mcpTab = page.getByRole("tab", { name: "MCP servers" });
   await expect(builtinTab).toBeVisible();
   await expect(extTab).toBeVisible();
+  await expect(mcpTab).toBeVisible();
   await expect(builtinTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Built-in tools" })).toBeVisible();
-
-  // Tools tab should NOT show MCP sub-tab anymore (it lives in Connections).
-  await expect(page.getByRole("tab", { name: "MCP servers" })).toHaveCount(0);
 
   // Switch to Extensions sub-tab.
   await extTab.click();

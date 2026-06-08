@@ -8,10 +8,10 @@ test.beforeEach(async ({ request, page }) => {
   await page.addInitScript(() => {
     try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
   });
-  await page.goto("/?tab=connections&item=mcp");
+  await page.goto("/?tab=tools&item=mcp");
 });
 
-test("MCP servers tab mounts under Connections with header + add affordance", async ({ page }) => {
+test("MCP servers tab mounts under Tools with header + add affordance", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "New" })).toBeVisible();
 });
