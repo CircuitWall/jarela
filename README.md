@@ -54,7 +54,7 @@
 </p>
 
 <p align="center">
-  <video src="./docs/assets/jarela-promo.webm" poster="./docs/assets/jarela-promo-poster.jpg" controls muted playsinline width="320">
+  <video src="https://raw.githubusercontent.com/CircuitWall/jarela/main/docs/assets/jarela-promo.webm" poster="https://raw.githubusercontent.com/CircuitWall/jarela/main/docs/assets/jarela-promo-poster.jpg" autoplay loop muted playsinline controls width="320">
     <img src="./docs/assets/jarela-promo-poster.jpg" alt="Jarela promo &mdash; PIN unlock, agent picker, chat, panel tour" width="320" />
   </video>
   <br/>
