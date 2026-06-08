@@ -27,6 +27,7 @@ import { createRequire } from "node:module";
 import { ensureBridgeAuthDir, findRoute, removeBridgeAuthDir } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/types";
+import { saveBridgeAttachment, shouldInline } from "./attachment-store";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
 // types directly — both modules are loaded via dynamic `import()` inside
@@ -597,14 +598,44 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       }
     };
 
+    // Spill helper: persist any buffer we can't (or shouldn't) inline,
+    // and append a text pointer the agent can act on with file_read.
+    // Returns true if the buffer was spilled so callers can decide
+    // whether to also push an inline ContentPart.
+    const messageId = (rawMessage as { key?: { id?: string } })?.key?.id ?? null;
+    const spill = async (
+      buf: Buffer,
+      filename: string,
+      mime: string,
+      label: string,
+    ): Promise<void> => {
+      try {
+        const saved = await saveBridgeAttachment({
+          bridge_id: this.bridge_id,
+          filename,
+          media_type: mime,
+          message_id: messageId,
+          buffer: buf,
+        });
+        const sizeKb = Math.max(1, Math.round(saved.size / 1024));
+        text = (text ? text + "\n" : "")
+          + `[Attached ${label}: ${filename} (${mime}, ${sizeKb} KB) saved locally at ${saved.abs_path}. `
+          + `Use file_read on that path to inspect the contents.]`;
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err);
+        console.warn(`[bridge ${this.bridge_id}] failed to spill ${label} from ${remote_jid}: ${m}`);
+      }
+    };
+
     if (inner.imageMessage) {
       const buf = await download("image");
       if (buf) {
-        attachments.push({
-          type: "image",
-          media_type: sanitizeMediaType(inner.imageMessage.mimetype, "image", "image/jpeg"),
-          data: buf.toString("base64"),
-        });
+        const mime = sanitizeMediaType(inner.imageMessage.mimetype, "image", "image/jpeg");
+        if (shouldInline(mime, buf.length)) {
+          attachments.push({ type: "image", media_type: mime, data: buf.toString("base64") });
+        } else {
+          await spill(buf, `image-${messageId ?? Date.now()}.${mime.split("/")[1] ?? "bin"}`, mime, "image");
+        }
       }
     }
 
@@ -615,11 +646,12 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // models actually describe them. Animated stickers go through as
         // their raw webp; providers that can't decode animated webp will
         // typically render the first frame.
-        attachments.push({
-          type: "image",
-          media_type: sanitizeMediaType(inner.stickerMessage.mimetype, "image", "image/webp"),
-          data: buf.toString("base64"),
-        });
+        const mime = sanitizeMediaType(inner.stickerMessage.mimetype, "image", "image/webp");
+        if (shouldInline(mime, buf.length)) {
+          attachments.push({ type: "image", media_type: mime, data: buf.toString("base64") });
+        } else {
+          await spill(buf, `sticker-${messageId ?? Date.now()}.webp`, mime, "sticker");
+        }
       }
     }
 
@@ -627,24 +659,18 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       const isVoice = !!inner.audioMessage.ptt;
       const buf = await download(isVoice ? "voice" : "audio");
       if (buf) {
-        attachments.push({
-          type: "file",
-          name: isVoice ? "voice-note" : "audio",
-          media_type: sanitizeMediaType(inner.audioMessage.mimetype, "audio", "audio/ogg"),
-          data: buf.toString("base64"),
-        });
+        const mime = sanitizeMediaType(inner.audioMessage.mimetype, "audio", "audio/ogg");
+        const ext = mime.split("/")[1]?.replace(/^x-/, "") ?? "ogg";
+        await spill(buf, `${isVoice ? "voice-note" : "audio"}-${messageId ?? Date.now()}.${ext}`, mime, isVoice ? "voice note" : "audio");
       }
     }
 
     if (inner.videoMessage) {
       const buf = await download("video");
       if (buf) {
-        attachments.push({
-          type: "file",
-          name: "video",
-          media_type: sanitizeMediaType(inner.videoMessage.mimetype, "video", "video/mp4"),
-          data: buf.toString("base64"),
-        });
+        const mime = sanitizeMediaType(inner.videoMessage.mimetype, "video", "video/mp4");
+        const ext = mime.split("/")[1] ?? "mp4";
+        await spill(buf, `video-${messageId ?? Date.now()}.${ext}`, mime, "video");
       }
     }
 
@@ -656,16 +682,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           "document",
           "application/octet-stream",
         );
-        // The LLM layer (lib/agents/llm.ts) inlines text/* and
-        // application/json file parts directly as their `data` string. For
-        // those we must store the decoded UTF-8 contents, not base64.
-        const inlineAsText = mime.startsWith("text/") || mime === "application/json";
-        attachments.push({
-          type: "file",
-          name: inner.documentMessage.fileName || inner.documentMessage.title || "document",
-          media_type: mime,
-          data: inlineAsText ? buf.toString("utf8") : buf.toString("base64"),
-        });
+        const filename = inner.documentMessage.fileName || inner.documentMessage.title || `document-${messageId ?? Date.now()}`;
+        await spill(buf, filename, mime, "document");
       }
     }
 
