@@ -3,6 +3,8 @@ import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigNam
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
+import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
+import { getThread } from "@/lib/stores/threads";
 import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
 
 const NO_REPLY_RE = /^\s*NO[_ ]?REPLY\b/i;
@@ -57,48 +59,65 @@ export interface RunAgentTurnResult {
 export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTurnResult> {
   const pinnedModelConfigName = snapshotThreadModelConfigName(req.thread_id);
   const contextProfile = resolveTurnProfile(req.queue_source, req.context_profile_override);
+  const thread = getThread(req.thread_id);
   const enqueued = enqueueThreadRun(req.thread_id, req.queue_source, async () => {
-    const prepared = await prepareThreadRun({
-      thread_id: req.thread_id,
-      message: req.message,
-      attachments: req.attachments,
-      user_category: req.user_category ?? null,
-      context_profile: contextProfile,
-      _pinned_model_config_name: pinnedModelConfigName,
-      _skip_persist_message: req.skip_persist_user_message,
-    });
+    // Register in the run-registry like the HTTP route does so the idle
+    // and wall-clock watchdogs bound this execution. Without this, a
+    // hung provider stream (bad creds, dead upstream, runaway tool loop)
+    // from any non-HTTP entry point would pin the per-thread queue head
+    // indefinitely. Lives inside the queued callback so registry slots
+    // serialise with the queue.
+    const active = startRun(req.thread_id, thread?.agent_id ?? null);
+    let terminal: "done" | "error" = "error";
+    try {
+      const prepared = await prepareThreadRun({
+        thread_id: req.thread_id,
+        message: req.message,
+        attachments: req.attachments,
+        user_category: req.user_category ?? null,
+        context_profile: contextProfile,
+        signal: active.abort.signal,
+        _pinned_model_config_name: pinnedModelConfigName,
+        _skip_persist_message: req.skip_persist_user_message,
+      });
 
-    const collected = await collectStream(prepared.stream);
-    const trimmed = collected.assistantContent.trim();
-    // Silent-mode runners (bridges, watchers, schedulers) skip persistence
-    // when the model emitted nothing meaningful — but if the run was
-    // user-aborted, we still want a record so the next turn isn't blind to
-    // the interruption.
-    const skipSilent = req.silent === true
-      && !collected.aborted
-      && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
+      const collected = await collectStream(prepared.stream, {
+        onChunk: (chunk) => broadcast(active, chunk),
+      });
+      const trimmed = collected.assistantContent.trim();
+      // Silent-mode runners (bridges, watchers, schedulers) skip persistence
+      // when the model emitted nothing meaningful — but if the run was
+      // user-aborted, we still want a record so the next turn isn't blind to
+      // the interruption.
+      const skipSilent = req.silent === true
+        && !collected.aborted
+        && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
 
-    if (!skipSilent) {
-      const contentToPersist = collected.aborted
-        ? withInterruptMarker(collected.assistantContent)
-        : collected.assistantContent;
-      persistAssistantMessage(
-        req.thread_id,
-        contentToPersist,
-        collected.usedTools,
-        collected.toolEvents,
-        req.assistant_category ?? req.user_category ?? null,
-        collected.usage ?? null,
-        prepared.context_snapshot ?? null,
-        prepared.source_manifest ?? null,
-      );
+      if (!skipSilent) {
+        const contentToPersist = collected.aborted
+          ? withInterruptMarker(collected.assistantContent)
+          : collected.assistantContent;
+        persistAssistantMessage(
+          req.thread_id,
+          contentToPersist,
+          collected.usedTools,
+          collected.toolEvents,
+          req.assistant_category ?? req.user_category ?? null,
+          collected.usage ?? null,
+          prepared.context_snapshot ?? null,
+          prepared.source_manifest ?? null,
+        );
+      }
+
+      terminal = collected.terminal === "error" ? "error" : "done";
+      return {
+        assistantContent: collected.assistantContent,
+        skippedAssistant: skipSilent,
+        usage: collected.usage ?? null,
+      };
+    } finally {
+      finishRun(active, terminal);
     }
-
-    return {
-      assistantContent: collected.assistantContent,
-      skippedAssistant: skipSilent,
-      usage: collected.usage ?? null,
-    };
   });
 
   const done = await enqueued.result;

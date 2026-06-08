@@ -5,6 +5,10 @@ const prepareThreadRunMock = vi.fn();
 const collectStreamMock = vi.fn();
 const persistAssistantMessageMock = vi.fn();
 const snapshotThreadModelConfigNameMock = vi.fn();
+const startRunMock = vi.fn();
+const finishRunMock = vi.fn();
+const broadcastMock = vi.fn();
+const getThreadMock = vi.fn();
 
 vi.mock("@/lib/agents/run-queue", () => ({
   enqueueThreadRun: (...args: unknown[]) => enqueueThreadRunMock(...args),
@@ -24,6 +28,16 @@ vi.mock("@/lib/agents/stream-collector", () => ({
   collectStream: (...args: unknown[]) => collectStreamMock(...args),
 }));
 
+vi.mock("@/lib/agents/run-registry", () => ({
+  startRun: (...args: unknown[]) => startRunMock(...args),
+  finishRun: (...args: unknown[]) => finishRunMock(...args),
+  broadcast: (...args: unknown[]) => broadcastMock(...args),
+}));
+
+vi.mock("@/lib/stores/threads", () => ({
+  getThread: (...args: unknown[]) => getThreadMock(...args),
+}));
+
 const { runAgentTurn } = await import("./agent-turn");
 
 describe("runAgentTurn", () => {
@@ -33,6 +47,10 @@ describe("runAgentTurn", () => {
     collectStreamMock.mockReset();
     persistAssistantMessageMock.mockReset();
     snapshotThreadModelConfigNameMock.mockReset();
+    startRunMock.mockReset();
+    finishRunMock.mockReset();
+    broadcastMock.mockReset();
+    getThreadMock.mockReset();
 
     enqueueThreadRunMock.mockImplementation((thread_id: string, _source: string, runner: () => Promise<unknown>) => ({
       position: 0,
@@ -46,6 +64,12 @@ describe("runAgentTurn", () => {
       source_manifest: null,
     });
     snapshotThreadModelConfigNameMock.mockReturnValue("Gemini Chat");
+    startRunMock.mockImplementation((thread_id: string, agent_id: string | null) => ({
+      thread_id,
+      agent_id,
+      abort: new AbortController(),
+    }));
+    getThreadMock.mockReturnValue({ thread_id: "t-1", agent_id: "agent-x" });
   });
 
   it("queues, prepares, collects, and persists by default", async () => {
@@ -64,7 +88,7 @@ describe("runAgentTurn", () => {
       assistant_category: "scheduled_task",
     });
 
-    expect(prepareThreadRunMock).toHaveBeenCalledWith({
+    expect(prepareThreadRunMock).toHaveBeenCalledWith(expect.objectContaining({
       thread_id: "t-1",
       message: "Ping",
       attachments: undefined,
@@ -77,7 +101,11 @@ describe("runAgentTurn", () => {
       },
       _pinned_model_config_name: "Gemini Chat",
       _skip_persist_message: undefined,
-    });
+    }));
+    const prepareArg = prepareThreadRunMock.mock.calls[0][0] as { signal?: AbortSignal };
+    expect(prepareArg.signal).toBeInstanceOf(AbortSignal);
+    expect(startRunMock).toHaveBeenCalledWith("t-1", "agent-x");
+    expect(finishRunMock).toHaveBeenCalledTimes(1);
     expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
     expect(out.skippedAssistant).toBe(false);
     expect(out.preview).toContain("Hello from the assistant");
