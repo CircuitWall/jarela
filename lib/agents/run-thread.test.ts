@@ -4,6 +4,8 @@ import {
   detectToolLoop,
   looksLikeStall,
   isWriteLikeToolName,
+  withInterruptMarker,
+  INTERRUPT_MARKER,
 } from "./run-thread";
 
 describe("toolCallSignature", () => {
@@ -197,5 +199,25 @@ describe("isWriteLikeToolName", () => {
   it("is case-insensitive", () => {
     expect(isWriteLikeToolName("FILE_WRITE")).toBe(true);
     expect(isWriteLikeToolName("File_Read")).toBe(false);
+  });
+});
+
+describe("withInterruptMarker", () => {
+  it("returns the bare marker when the partial is empty", () => {
+    expect(withInterruptMarker("")).toBe(INTERRUPT_MARKER);
+    expect(withInterruptMarker("   \n  ")).toBe(INTERRUPT_MARKER);
+  });
+
+  it("appends the marker after a partial reply", () => {
+    const out = withInterruptMarker("I was about to call the tool");
+    expect(out.endsWith(INTERRUPT_MARKER)).toBe(true);
+    expect(out).toContain("I was about to call the tool");
+    expect(out).toContain("\n\n");
+  });
+
+  it("is idempotent — never double-appends the marker", () => {
+    const once = withInterruptMarker("partial");
+    const twice = withInterruptMarker(once);
+    expect(twice).toBe(once);
   });
 });

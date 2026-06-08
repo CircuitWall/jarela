@@ -14,6 +14,10 @@ vi.mock("@/lib/agents/run-thread", () => ({
   prepareThreadRun: (...args: unknown[]) => prepareThreadRunMock(...args),
   persistAssistantMessage: (...args: unknown[]) => persistAssistantMessageMock(...args),
   snapshotThreadModelConfigName: (...args: unknown[]) => snapshotThreadModelConfigNameMock(...args),
+  withInterruptMarker: (partial: string) => {
+    const t = partial.trim();
+    return t ? `${t}\n\n*⏸ Interrupted by user.*` : "*⏸ Interrupted by user.*";
+  },
 }));
 
 vi.mock("@/lib/agents/stream-collector", () => ({
@@ -121,5 +125,66 @@ describe("runAgentTurn", () => {
     expect(persistAssistantMessageMock).not.toHaveBeenCalled();
     expect(out.skippedAssistant).toBe(true);
     expect(out.assistantContent.trim()).toBe("");
+  });
+
+  it("persists partial content with interrupt marker on user abort", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "I started writing but",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+      aborted: true,
+    });
+
+    await runAgentTurn({
+      thread_id: "t-4",
+      queue_source: "user",
+      message: "Tell me a long story",
+    });
+
+    expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
+    const persistedContent = persistAssistantMessageMock.mock.calls[0][1] as string;
+    expect(persistedContent).toContain("I started writing but");
+    expect(persistedContent).toContain("Interrupted by user");
+  });
+
+  it("persists bare interrupt marker when aborted before any tokens", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+      aborted: true,
+    });
+
+    await runAgentTurn({
+      thread_id: "t-5",
+      queue_source: "user",
+      message: "Stop right away",
+    });
+
+    expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
+    const persistedContent = persistAssistantMessageMock.mock.calls[0][1] as string;
+    expect(persistedContent).toContain("Interrupted by user");
+  });
+
+  it("persists interrupt marker even in silent mode so bridges record the cut", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+      aborted: true,
+    });
+
+    const out = await runAgentTurn({
+      thread_id: "t-6",
+      queue_source: "bridge",
+      message: "Observe",
+      silent: true,
+    });
+
+    expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
+    expect(out.skippedAssistant).toBe(false);
   });
 });

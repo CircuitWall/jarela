@@ -1,5 +1,5 @@
 import type { ContentPart } from "@/lib/tools/types";
-import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigName } from "@/lib/agents/run-thread";
+import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigName, withInterruptMarker } from "@/lib/agents/run-thread";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
@@ -70,12 +70,21 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
 
     const collected = await collectStream(prepared.stream);
     const trimmed = collected.assistantContent.trim();
-    const skipSilent = req.silent === true && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
+    // Silent-mode runners (bridges, watchers, schedulers) skip persistence
+    // when the model emitted nothing meaningful — but if the run was
+    // user-aborted, we still want a record so the next turn isn't blind to
+    // the interruption.
+    const skipSilent = req.silent === true
+      && !collected.aborted
+      && (trimmed.length === 0 || NO_REPLY_RE.test(trimmed));
 
     if (!skipSilent) {
+      const contentToPersist = collected.aborted
+        ? withInterruptMarker(collected.assistantContent)
+        : collected.assistantContent;
       persistAssistantMessage(
         req.thread_id,
-        collected.assistantContent,
+        contentToPersist,
         collected.usedTools,
         collected.toolEvents,
         req.assistant_category ?? req.user_category ?? null,
