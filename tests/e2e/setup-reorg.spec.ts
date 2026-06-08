@@ -22,8 +22,8 @@ test.beforeEach(async ({ request, page }) => {
   // localStorage flag on the target origin before navigating.
   await page.addInitScript(() => {
     try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
-    // Seed advanced experience mode so the Advanced section + Memory/Bridges/Harness
-    // tabs render in the menu panel (gated in AppShell.tsx + MenuPanel.tsx).
+    // Seed advanced experience mode so the Advanced section renders in
+    // the menu panel (gated in AppShell.tsx + MenuPanel.tsx).
     try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }
   });
   await page.goto("/");
@@ -39,54 +39,61 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("menu separates common from advanced and Tools opens Built-in+Extensions sub-tabs", async ({ page }) => {
+test("menu separates common from advanced and Tools hosts capability sub-tabs", async ({ page }) => {
   await openMenu(page);
 
-  // Common tabs visible up top (MenuPanel.COMMON_TABS).
-  for (const label of ["Chat", "Dashboard", "Agents", "Documents", "Models", "Tools", "Connections", "Tasks", "Profile"]) {
+  // Common tabs visible up top (MenuPanel.COMMON_TABS). Capability surfaces
+  // (Documents, Memory, Bridges, MCP, Extensions) now live under Tools, and
+  // Models moved to Advanced.
+  for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Connections", "Tasks", "Profile"]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
+
+  // Documents / Memory / Bridges are no longer top-level buttons in the menu.
+  await expect(page.getByRole("button", { name: "Documents", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Memory", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Bridges", exact: true })).toHaveCount(0);
 
   // Advanced header is rendered with the canonical label.
   const advancedHeader = page.getByRole("button", { name: /^Advanced$/i });
   await expect(advancedHeader).toBeVisible();
   await expect(advancedHeader).toHaveAttribute("aria-expanded", "true");
 
-  // Advanced tabs visible — Memory, Bridges, Harness (MenuPanel.ADVANCED_TABS).
-  await expect(page.getByRole("button", { name: "Memory", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Bridges", exact: true })).toBeVisible();
+  // Advanced tabs visible — Models, Harness, Logs, Defaults (MenuPanel.ADVANCED_TABS).
+  await expect(page.getByRole("button", { name: "Models", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Harness", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Defaults", exact: true })).toBeVisible();
 
-  // Click Tools → ToolsPanel mounts with Built-in / Browser extension / MCP servers sub-tabs.
+  // Click Tools → ToolsPanel mounts with the full capability sub-tab strip.
   await page.getByRole("button", { name: "Tools", exact: true }).click();
   const builtinTab = page.getByRole("tab", { name: "Built-in", exact: true });
-  const extTab = page.getByRole("tab", { name: "Browser extension" });
-  const mcpTab = page.getByRole("tab", { name: "MCP servers" });
   await expect(builtinTab).toBeVisible();
-  await expect(extTab).toBeVisible();
-  await expect(mcpTab).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Documents", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "MCP servers" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Browser extension" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Bridges", exact: true })).toBeVisible();
   await expect(builtinTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Built-in tools" })).toBeVisible();
 
-  // Switch to Extensions sub-tab.
-  await extTab.click();
-  await expect(extTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Extensions" })).toBeVisible();
+  // Switch to Documents sub-tab → DocumentsPanel renders inside the Tools surface.
+  await page.getByRole("tab", { name: "Documents", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveAttribute("aria-selected", "true");
 });
 
 test("Advanced section collapses and remembers state via localStorage", async ({ page }) => {
   await openMenu(page);
   const advancedHeader = page.getByRole("button", { name: /^Advanced$/i });
-  const memoryBtn = page.getByRole("button", { name: "Memory", exact: true });
+  const modelsBtn = page.getByRole("button", { name: "Models", exact: true });
 
   // Initially expanded.
   await expect(advancedHeader).toHaveAttribute("aria-expanded", "true");
-  await expect(memoryBtn).toBeVisible();
+  await expect(modelsBtn).toBeVisible();
 
   // Collapse → hides advanced tabs and persists "0".
   await advancedHeader.click();
   await expect(advancedHeader).toHaveAttribute("aria-expanded", "false");
-  await expect(memoryBtn).toBeHidden();
+  await expect(modelsBtn).toBeHidden();
   const persisted = await page.evaluate(() => window.localStorage.getItem("jarela.menu.advanced"));
   expect(persisted).toBe("0");
 

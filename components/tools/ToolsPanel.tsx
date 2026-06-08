@@ -2,31 +2,41 @@
 import { useAppContext } from "@/contexts/AppContext";
 import { ExtensionsPanel } from "@/components/extensions/ExtensionsPanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
+import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
+import { MemoryPanel } from "@/components/memory/MemoryPanel";
+import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
 
-// "Tools" is about *capability presence* — which categories of tools
-// the agent may use:
-//   - "Built-in"   — enable / disable categories of tools that ship with
-//                    Jarela (filters the agent permission editor + blocks
-//                    invocation in lib/tools/index.ts).
-//   - "Extensions" — the Jarela browser extension.
-//   - "MCP"        — external Model Context Protocol servers (add /
-//                    enable / disable). Credentials still flow through
-//                    Connections; this surface owns the server roster.
+// "Tools" is about *capability presence* — every surface that determines
+// what an agent can sense or act on lives here:
+//   - "Built-in"   — categories of tools that ship with Jarela.
+//   - "Documents"  — indexed knowledge sources the agent can search.
+//   - "Memory"     — long-lived facts persisted across conversations.
+//   - "MCP"        — external Model Context Protocol servers.
+//   - "Extensions" — the Jarela browser extension surface.
+//   - "Bridges"    — mobile / messaging bridge pairings.
+// Credentials still flow through Connections; this surface owns the
+// capability roster.
 
-type Sub = "builtin" | "extensions" | "mcp";
+type Sub = "builtin" | "documents" | "memory" | "mcp" | "extensions" | "bridges";
+
+const SUBS: Sub[] = ["builtin", "documents", "memory", "mcp", "extensions", "bridges"];
 
 const SUB_TITLES: Record<Sub, string> = {
   builtin: "Built-in",
-  extensions: "Browser extension",
+  documents: "Documents",
+  memory: "Memory",
   mcp: "MCP servers",
+  extensions: "Browser extension",
+  bridges: "Bridges",
 };
 
 export function ToolsPanel() {
   const { state, dispatch } = useAppContext();
   const raw = state.selectedItem.tools;
-  const active: Sub =
-    raw === "extensions" ? "extensions" : raw === "mcp" ? "mcp" : "builtin";
+  const active: Sub = (SUBS as string[]).includes(raw ?? "")
+    ? (raw as Sub)
+    : "builtin";
 
   const setSub = (s: Sub) => dispatch({ type: "SET_SELECTION", tab: "tools", itemId: s });
 
@@ -35,9 +45,9 @@ export function ToolsPanel() {
       <div
         role="tablist"
         aria-label="Tools sub-section"
-        className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2"
+        className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 overflow-x-auto"
       >
-        {("builtin extensions mcp".split(" ") as Sub[]).map((s) => {
+        {SUBS.map((s) => {
           const selected = s === active;
           return (
             <button
@@ -47,7 +57,7 @@ export function ToolsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s)}
               className={
-                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors " +
+                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors whitespace-nowrap " +
                 (selected
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
                   : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
@@ -60,8 +70,11 @@ export function ToolsPanel() {
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
         {active === "builtin" && <BuiltinToolsPanel />}
-        {active === "extensions" && <ExtensionsPanel />}
+        {active === "documents" && <DocumentsPanel />}
+        {active === "memory" && <MemoryPanel />}
         {active === "mcp" && <MCPPanel />}
+        {active === "extensions" && <ExtensionsPanel />}
+        {active === "bridges" && <BridgesPanel />}
       </div>
     </div>
   );
