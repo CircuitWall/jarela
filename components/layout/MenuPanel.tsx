@@ -232,8 +232,9 @@ export function MenuPanel({
 }: Props) {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";
-  const toggleMode = () => {
-    dispatch({ type: "SET_EXPERIENCE_MODE", mode: isFullMode ? "essential" : "full" });
+  const setMode = (mode: "essential" | "full") => {
+    if ((mode === "full") === isFullMode) return;
+    dispatch({ type: "SET_EXPERIENCE_MODE", mode });
   };
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
@@ -296,19 +297,32 @@ export function MenuPanel({
       <div className="px-3 pt-2 pb-1 border-b border-border/60 bg-gradient-to-r from-surface-2/50 to-transparent">
         <div className="flex items-center justify-between gap-2">
           <span className="text-[10px] uppercase tracking-wide text-fg-faint">Workspace mode</span>
-          <button
-            type="button"
-            onClick={toggleMode}
-            title={`Switch to ${isFullMode ? "essential" : "full"} mode`}
-            aria-label={`Switch to ${isFullMode ? "essential" : "full"} mode`}
-            className={`control-tap text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border transition-colors ${
-              isFullMode
-                ? "border-accent/40 bg-accent/10 text-fg-subtle hover:bg-accent/20"
-                : "border-border bg-surface-3 text-fg-faint hover:text-fg-muted hover:border-border-strong"
-            }`}
+          <div
+            role="radiogroup"
+            aria-label="Workspace mode"
+            className="inline-flex items-center rounded-full border border-border bg-surface-3 p-0.5"
           >
-            {isFullMode ? "full" : "essential"}
-          </button>
+            {(["essential", "full"] as const).map((mode) => {
+              const active = (mode === "full") === isFullMode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => setMode(mode)}
+                  title={active ? `${mode} mode (current)` : `Switch to ${mode} mode`}
+                  className={`control-tap text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full transition-colors ${
+                    active
+                      ? "bg-accent/15 text-fg-subtle"
+                      : "text-fg-faint hover:text-fg-muted"
+                  }`}
+                >
+                  {mode}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
       <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0">
