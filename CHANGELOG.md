@@ -7,7 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.1] - 2026-06-08
+## [1.3.0] - 2026-06-08
+
+Two new agent capabilities and a hardening pass on tool wall-clocks.
+Bridge adapters (WhatsApp today) now spill large remote attachments
+to a local store instead of inlining them into the LLM context, and
+the agent picks them up by path through ``file_read``. Long-running
+tool calls can now be fired asynchronously: the LLM gets a tracking
+key back immediately and pulls the result later via a new built-in.
+
+### Added
+
+- **Bridge attachment spill store**
+  ([#215](https://github.com/CircuitWall/jarela/pull/215)). Inbound
+  bridge messages no longer base64-inline every document, voice note,
+  audio, or video into the next prompt. Buffers are persisted under
+  ``<dataDir>/bridge-attachments/<bridge>/<YYYY-MM-DD>/<id>-<name>``
+  with sanitised paths, an SHA-256, and a future-facing
+  ``pruneBridgeAttachments({ maxAgeMs })`` helper; the prompt body
+  carries a text pointer telling the agent to use ``file_read`` to
+  inspect the contents. Images and stickers ≤ 1 MB still inline so
+  vision works out of the box.
+- **Async tool execution (``async_run`` wrapper + ``tool_result_get``)**
+  ([#216](https://github.com/CircuitWall/jarela/pull/216)). Every
+  tool's schema now exposes an optional ``async_run: boolean``. When
+  set, the wrapper returns ``{ok, async, key, tool, started_at,
+  deadline_ms, hint}`` immediately and runs the work detached; the
+  LLM picks the result up via the new built-in
+  ``tool_result_get(key, wait_ms?, consume?)``. ``tool_result_list``
+  returns summaries without dumping result bodies. In-process store
+  with a 10-minute TTL and a 256-entry cap (oldest finished evicted
+  first, then oldest pending with a warn).
+
+### Changed
+
+- **Hard ceiling on tool ``deadline_ms``**
+  ([#216](https://github.com/CircuitWall/jarela/pull/216)). The
+  wall-clock budget the LLM can pick is now clamped to 30 minutes by
+  default. Values above the ceiling are clamped and a one-line
+  ``console.warn`` is emitted naming the tool, the requested value,
+  and the ceiling. Operators can raise or lower the cap with the new
+  ``JARELA_TOOL_MAX_DEADLINE_MS`` environment variable (integer
+  milliseconds). Applies to both sync and ``async_run`` paths.
+
+### Fixed
+
+- **E2E menu specs no longer race the boot agent picker**
+  ([#217](https://github.com/CircuitWall/jarela/pull/217)). Three
+  Playwright specs (``layout``, ``credentials``, ``setup-reorg``)
+  were intermittently failing because the BootScreen overlay
+  intercepted clicks on the header menu button. A new
+  ``waitForAppReady(page)`` helper picks the default agent tile and
+  waits for the overlay to detach before the test drives the UI.
+
+### Configuration
+
+- ``JARELA_TOOL_MAX_DEADLINE_MS`` — overrides the per-tool
+  wall-clock ceiling (default 1800000 ms / 30 min). Set to a smaller
+  value to tighten the cap, or larger if a regulated workload genuinely
+  needs long synchronous calls.
 
 Two follow-up fixes on top of 1.2.0.
 
