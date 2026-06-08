@@ -578,6 +578,10 @@ type Props = {
   // since those originate from automation and re-sending the persisted
   // body would replay it as a regular user prompt.
   onRetry?: (text: string, attachments: ContentPart[]) => void;
+  // Number of tool calls currently in flight for the streaming run. Drives
+  // the CountdownRing's adaptive pause so the wall-clock indicator mirrors
+  // run-registry's effective-elapsed semantics (tool time is excluded).
+  inflightToolCount?: number;
 };
 
 const GRADIENTS = [
@@ -968,7 +972,7 @@ function MapEmbed({ payload }: { payload: string }) {
 // against unchanged text on every parent render shows up as jank on long
 // threads. With memo, only the in-flight bubble re-renders during streaming;
 // persisted siblings sit idle.
-const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
+const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest, inflightToolCount = 0 }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }>; inflightToolCount?: number }) {
   // Inline-citation pre-processor. The agent writes `[3]` markers in-prose;
   // we resolve each to a markdown link `[3](href)` BEFORE react-markdown
   // parses the string so the existing <a> renderer below picks it up with
@@ -1088,7 +1092,7 @@ const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInApp
         {renderedText}
       </ReactMarkdown>
       {streaming && (        <span className="inline-flex items-center align-middle ml-1">
-          <CountdownRing />
+          <CountdownRing inflightToolCount={inflightToolCount} />
         </span>
       )}
     </div>
@@ -1412,7 +1416,7 @@ function messageTextForCopy(content: string | ContentPart[]): string {
 // reconciliations per character. Props are pure data (no callbacks), and
 // `messages` array preserves identity for unchanged rows after the
 // `concat` in handleDone, so default shallow-equality is enough.
-export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false, onRetry }: Props) {
+export const MessageBubble = memo(function MessageBubble({ message, agentConfig, userProfile, showAvatar = true, threadId = null, showToolEvents = true, contextWindowTokens = null, isLatest = false, onRetry, inflightToolCount = 0 }: Props) {
   const { dispatch } = useAppContext();
   const isUser = message.role === "user";
   const streaming = "streaming" in message && message.streaming;
@@ -1725,7 +1729,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               <div className="flex flex-col">
                 {category && <CategorySourceBadge category={category} />}
                 <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
+                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} inflightToolCount={inflightToolCount} />
                 </CollapsibleLong>
               </div>
             )
@@ -1757,7 +1761,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               })()}
               {streaming && (
         <span className="inline-flex items-center align-middle ml-1">
-          <CountdownRing />
+          <CountdownRing inflightToolCount={inflightToolCount} />
         </span>
       )}
             </div>
