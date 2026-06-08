@@ -13,6 +13,7 @@ import type { ContentPart } from "@/lib/tools/types";
 import {
   prepareThreadRun,
   persistAssistantMessage,
+  withInterruptMarker,
   RunThreadError,
   snapshotThreadModelConfigName,
   shouldEmitChunk,
@@ -112,15 +113,27 @@ export async function POST(req: NextRequest, { params }: Params) {
         assistantContent = collected.assistantContent;
         terminal = collected.terminal;
         // If the stream threw mid-iteration, collectStream returns terminal="error"
-        // but no `error` chunk was broadcast — surface one to subscribers.
-        if (collected.terminal === "error" && collected.errorMessage) {
+        // but no `error` chunk was broadcast — surface one to subscribers. Skip
+        // when the run was deliberately aborted: llm.ts already emitted an
+        // `error{code:"aborted"}` chunk for that path and re-broadcasting as
+        // `stream_error` would mask the intent.
+        if (collected.terminal === "error" && collected.errorMessage && !collected.aborted) {
           broadcast(active, {
             type: "error",
             data: { message: collected.errorMessage, code: "stream_error" },
           });
         }
         try {
-          persistAssistantMessage(thread_id, collected.assistantContent, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
+          // On a user abort (Stop / steer), append the interrupt footer so
+          // the partial reply is never silently dropped and the next agent
+          // turn sees a clear marker explaining the cut. withInterruptMarker
+          // returns the bare marker when the partial is empty, which forces
+          // persistAssistantMessage past its skip-empty guard so the thread
+          // always has a row recording what happened.
+          const contentToPersist = collected.aborted
+            ? withInterruptMarker(collected.assistantContent)
+            : collected.assistantContent;
+          persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
         } catch (persistErr) {
           terminal = "error";
           broadcast(active, {
