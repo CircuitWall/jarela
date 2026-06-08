@@ -19,6 +19,11 @@ export interface CollectedRun {
   toolEvents: PersistedToolEvent[];
   terminal: "done" | "error";
   errorMessage?: string;
+  // True when the run ended because the user hit Stop or steered. Distinct
+  // from a generic stream error so persistence can mark the partial turn
+  // with an interrupt footer instead of an error one — the next agent turn
+  // reads the marker and knows the previous reply was cut, not stalled.
+  aborted?: boolean;
   // ADR-0041: provider-reported token usage + model/provider snapshot from
   // the terminal `done` chunk. Undefined when the stream errored out before
   // a usage event arrived (or the provider didn't report one).
@@ -75,8 +80,10 @@ export async function collectStream(
         }
         case "error": {
           result.terminal = "error";
-          const msg = (chunk.data as { message?: unknown })?.message;
+          const data = chunk.data as { message?: unknown; code?: unknown };
+          const msg = data?.message;
           if (typeof msg === "string") result.errorMessage = msg;
+          if (data?.code === "aborted") result.aborted = true;
           return result;
         }
         case "done": {
@@ -111,7 +118,10 @@ export async function collectStream(
     }
   } catch (err) {
     result.terminal = "error";
-    result.errorMessage = err instanceof Error ? err.message : String(err);
+    const name = err instanceof Error ? err.name : "";
+    const msg = err instanceof Error ? err.message : String(err);
+    result.errorMessage = msg;
+    if (name === "AbortError" || /aborted/i.test(msg)) result.aborted = true;
   }
 
   return result;

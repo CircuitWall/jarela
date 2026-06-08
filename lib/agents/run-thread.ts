@@ -569,6 +569,20 @@ export interface AssistantUsageSnapshot {
   model_config_name: string | null;
 }
 
+// Footer appended to an assistant message that was cut off by the user
+// (Stop button or steer-while-streaming). Both human readers and the LLM
+// see this on the next turn — the agent treats it as "the previous reply
+// was abandoned; the user's next message is the new direction".
+export const INTERRUPT_MARKER = "*⏸ Interrupted by user.*";
+
+/** Append the interrupt footer to a (possibly empty) partial reply. */
+export function withInterruptMarker(partial: string): string {
+  const trimmed = partial.trim();
+  if (!trimmed) return INTERRUPT_MARKER;
+  if (trimmed.endsWith(INTERRUPT_MARKER)) return trimmed;
+  return `${trimmed}\n\n${INTERRUPT_MARKER}`;
+}
+
 export function persistAssistantMessage(
   thread_id: string,
   content: string,
@@ -582,6 +596,11 @@ export function persistAssistantMessage(
   const trimmed = content.trim();
   let final = trimmed;
   const toolList = usedTools ? Array.from(new Set(usedTools.filter(Boolean))) : [];
+  // Skip stall + fabrication footers when the user explicitly interrupted
+  // the run — the message wasn't a model stall, it was a deliberate stop,
+  // and the interrupt marker already explains the cut to both reader and
+  // the next agent turn.
+  const wasInterrupted = trimmed.endsWith(INTERRUPT_MARKER);
   // Stall detector: model ended its turn with a promise-shaped tail but
   // either invoked no tool, OR called only read-only tools while
   // narrating a write. Both shapes look identical to the user — a chat
@@ -589,7 +608,7 @@ export function persistAssistantMessage(
   // The retry budget (MAX_STALL_AUTO_RETRIES) is exhausted by the time
   // we hit this code path, so the footer is the user's manual recovery
   // affordance: "Reply continue".
-  const isStallProse = !!trimmed && looksLikeStall(trimmed);
+  const isStallProse = !!trimmed && !wasInterrupted && looksLikeStall(trimmed);
   const noTool = toolList.length === 0;
   const noWriteTool = toolList.length > 0 && !toolList.some(isWriteLikeToolName);
   if (isStallProse && (noTool || noWriteTool)) {
@@ -598,7 +617,7 @@ export function persistAssistantMessage(
   // Fabrication footer (ADR-0037): runs after the retry budget is exhausted
   // and a flagged reply still made it through. Look up allowed tools from
   // the agent config so callers don't have to thread it through.
-  if (trimmed && !final.includes("*⚠️ Agent stalled")) {
+  if (trimmed && !wasInterrupted && !final.includes("*⚠️ Agent stalled")) {
     const allowedTools = lookupAllowedToolsForThread(thread_id);
     const v = validateAssistantOutput(trimmed, toolList, allowedTools);
     if (!v.ok) {
