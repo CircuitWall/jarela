@@ -420,7 +420,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
-          style={{ top: `calc(${toolbarH}px + 0.75rem)` }}
+          style={{ top: `calc(3rem + var(--app-safe-top) + ${toolbarH}px + 0.75rem)` }}
           className="absolute left-1/2 -translate-x-1/2 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-top-2 duration-200 z-20"
           title="Scroll to latest message"
           aria-label="Scroll to latest message"
