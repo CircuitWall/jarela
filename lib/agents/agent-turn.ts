@@ -41,6 +41,14 @@ export interface RunAgentTurnRequest {
    * the category default.
    */
   context_profile_override?: Partial<TurnContextProfile> | null;
+
+  /**
+   * Skip the stall-retry + strict-citation audit wrapper. One-shot
+   * callers (browser-extension fill / rewrite) want the raw assistant
+   * text without the `↻` separator or pre-retry stall prose that the
+   * wrapper would otherwise inject into the streamed content.
+   */
+  disable_quality_gates?: boolean;
 }
 
 export interface RunAgentTurnResult {
@@ -76,6 +84,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         attachments: req.attachments,
         user_category: req.user_category ?? null,
         context_profile: contextProfile,
+        disable_quality_gates: req.disable_quality_gates,
         signal: active.abort.signal,
         _pinned_model_config_name: pinnedModelConfigName,
         _skip_persist_message: req.skip_persist_user_message,

@@ -292,8 +292,16 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
   const overheadTokens = estimateTokens(systemPrompt);
+  // One-shot callers (extension fill/rewrite) consume `assistantContent` as
+  // raw text. The stall-retry wrapper would otherwise leak the `↻` separator
+  // and the pre-retry stalled prose into the user's input field, and the
+  // strict-citation audit (which lives inside the same wrapper) would do
+  // the same with retry continuations. Bypass it entirely for those callers.
+  const stream = req.disable_quality_gates
+    ? rawStream
+    : stallRetryStream(rawStream, req, allowedTools, retriesLeft);
   return {
-    stream: stallRetryStream(rawStream, req, allowedTools, retriesLeft),
+    stream,
     thread_id: req.thread_id,
     context_snapshot: {
       context_window_tokens: historyWindow.budget.contextWindowTokens,
