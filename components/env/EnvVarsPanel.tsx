@@ -180,7 +180,7 @@ export function EnvVarsPanel() {
   return (
     <div className="flex flex-col h-full min-h-0 p-4 gap-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <h2 className="text-sm font-medium text-fg">Environment</h2>
+        <h2 className="text-sm font-medium text-fg">Defaults</h2>
         <span className="text-[10px] text-fg-faint">{rows.length} vars</span>
         <div className="flex-1" />
         <label className="inline-flex items-center gap-1 text-[11px] text-fg-faint cursor-pointer">

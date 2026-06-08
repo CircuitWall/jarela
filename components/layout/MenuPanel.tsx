@@ -52,7 +52,7 @@ const TAB_TITLES: Record<Tab, string> = {
   profile: "Profile",
   harness: "Harness",
   logs: "Logs",
-  env: "Environment",
+  env: "Defaults",
 };
 
 const TAB_SHORT: Record<Tab, string> = {
@@ -72,23 +72,24 @@ const TAB_SHORT: Record<Tab, string> = {
   profile: "Me",
   harness: "Test",
   logs: "Logs",
-  env: "Env",
+  env: "Defaults",
 };
 
 // Two-tier menu. "Common" surfaces the day-to-day verbs plus the most
-// relevant configuration touchpoints (models, tools). "Advanced" hides the
-// less-frequently used engine-room surfaces behind a collapsible header.
+// relevant configuration touchpoints. "Advanced" hides the less-frequently
+// used engine-room surfaces behind a collapsible header.
 //
-// "connections" is the single home for every auth surface (built-in
-// integrations + MCP server credentials) and lives in Common so normal-mode
-// users can wire Gmail, Google, GitHub etc. without flipping modes. "tools"
-// is purely about capability presence — what categories of tools the agent
-// may use. "bridges" (mobile companion pairing) sits in Advanced since most
-// users won't pair a phone on first setup. The legacy top-level "mcp" and
-// "extensions" tabs remain wired for deep-link back-compat but are hidden
-// here.
-const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "documents", "models", "credentials", "tools", "connections", "tasks", "profile"];
-const ADVANCED_TABS: Tab[] = ["memory", "bridges", "harness", "logs", "env"];
+// Capability-presence surfaces (documents, memory, MCP, extensions,
+// bridges, built-in tool categories) all live under the "Tools" tab now —
+// they were scattered across the top-level menu before but they're all
+// answering the same question: "what can the agent see / do?". The legacy
+// top-level Tab entries remain wired so deep-links (?tab=documents&item=…)
+// still resolve, but they're hidden from the menu grid.
+//
+// "models" lives in Advanced — most users let the default model do its
+// job; switching providers is power-user territory.
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "credentials", "tools", "connections", "tasks", "profile"];
+const ADVANCED_TABS: Tab[] = ["models", "harness", "logs", "env"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
