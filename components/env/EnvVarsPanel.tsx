@@ -21,7 +21,6 @@ interface EnvRow {
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
-  network: "Network",
   agent: "Agent",
   tools: "Tools",
   lifecycle: "Lifecycle",
@@ -33,7 +32,6 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 const CATEGORY_ORDER = [
-  "network",
   "agent",
   "tools",
   "lifecycle",
@@ -67,7 +65,9 @@ export function EnvVarsPanel() {
       const r = await fetch("/api/v1/env", { cache: "no-store" });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const body = (await r.json()) as { entries: EnvRow[] };
-      setRows(body.entries);
+      // Network vars are surfaced in the Profile page's NetworkPanel
+      // so they don't appear in both places. Drop them here.
+      setRows(body.entries.filter((row) => row.category !== "network"));
       setError(null);
     } catch (e) {
       setError((e as Error).message);
