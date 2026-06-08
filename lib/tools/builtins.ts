@@ -33,3 +33,4 @@ import "./list-tools";
 import "./providers-info";
 import "./mcp-servers-info";
 import "./extension-surfaces";
+import "./async-results-tool";
