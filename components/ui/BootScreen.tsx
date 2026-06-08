@@ -150,16 +150,6 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
     };
   }, [activeAgentId, pickedId, agentsLoaded, markStep]);
 
-  // Returning users with a saved default skip the manual tile-click.
-  useEffect(() => {
-    if (suppressed) return;
-    if (!agentsLoaded) return;
-    if (activeAgentId || pickedId) return;
-    if (!defaultAgent) return;
-    setPickedId(defaultAgent.id);
-    onPickAgent(defaultAgent.id);
-  }, [suppressed, agentsLoaded, activeAgentId, pickedId, defaultAgent, onPickAgent]);
-
   if (done) return null;
   if (suppressed) return null;
 
