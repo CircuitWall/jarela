@@ -91,6 +91,13 @@ async function runExtensionAction(action: z.infer<typeof ExtensionAction>, input
     message: prompt,
     user_category: "extension",
     assistant_category: "extension",
+    // The extension types `assistantContent` directly into the user's
+    // input field. The stall-retry wrapper and the strict-citation audit
+    // would otherwise inject the `↻` separator, the original stalled
+    // prose, and audit-retry continuations into that text — pollution
+    // the user then has to manually scrub. Both gates are chat
+    // affordances; skip them for one-shot writes.
+    disable_quality_gates: true,
   });
 
   // Ping the events bus so any open chat view on this thread re-fetches.
