@@ -207,7 +207,7 @@ describe("run-registry watchdog", () => {
     }
   });
 
-  it("wall-clock watchdog still fires even with a tool in flight", () => {
+  it("wall-clock watchdog discounts tool-execution time from elapsed", () => {
     const prevIdle = process.env.JARELA_RUN_IDLE_MS;
     const prevMax = process.env.JARELA_RUN_MAX_MS;
     process.env.JARELA_RUN_IDLE_MS = "5000";
@@ -215,9 +215,19 @@ describe("run-registry watchdog", () => {
     try {
       const tid = `t-tool-wall-${Date.now()}`;
       const run = startRun(tid, null);
-      broadcast(run, toolCall("forever"));
-      // Tool never resolves. Idle watchdog stays paused, but the wall-clock
-      // backstop must still terminate the run.
+      // Tool runs for 10× the wall-clock budget. Per-tool timeouts are the
+      // tool's responsibility (exec.ts caps at 60s, MCP SDKs at their own
+      // limits); the agent's wall-clock bounds agent + provider time and
+      // must NOT count tool execution against it.
+      broadcast(run, toolCall("slow"));
+      vi.advanceTimersByTime(600_000);
+      expect(run.status).toBe("running");
+      // Tool resolves — the agent has burned 0ms of its own budget so far.
+      broadcast(run, toolResult("slow"));
+      // Now silence stretches past the wall-clock; watchdog fires once
+      // effective elapsed (post-tool) crosses runMaxMs. The idle watchdog
+      // would fire first at 5s, so this assert covers both: at 60s+10
+      // post-resolve the run is dead either way.
       vi.advanceTimersByTime(60_000 + 10);
       expect(run.status).toBe("error");
     } finally {

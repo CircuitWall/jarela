@@ -44,8 +44,21 @@ export interface ActiveRun {
   // resolved (tool_result). The idle watchdog pauses while this is
   // non-empty: silence between a tool_call and its tool_result is the
   // tool executing, not a wedged provider stream, and tools have their
-  // own per-tool timeouts. The wall-clock watchdog is still the backstop.
+  // own per-tool timeouts.
   inflight_tools: Set<string>;
+  // Per-tool start timestamps for the entries in `inflight_tools`. The
+  // wall-clock watchdog uses these (plus `tool_time_ms_done`) to
+  // discount tool execution from the agent's wall-clock budget — see
+  // `effectiveElapsedMs()`. The agent's wall-clock bounds *agent +
+  // provider* time; long-running tools (a big shell exec, a slow MCP
+  // call) shouldn't burn it. Each tool already enforces its own
+  // per-call timeout (lib/tools/exec.ts, lib/tools/fetch.ts, MCP SDKs)
+  // so a hung tool still terminates — it just doesn't pull the agent
+  // loop down with it.
+  tool_started_at: Map<string, number>;
+  // Cumulative wall-clock time spent inside completed tool calls. Adds
+  // on each tool_result; never decreases.
+  tool_time_ms_done: number;
 }
 
 const runs = new Map<string, ActiveRun>();
@@ -69,6 +82,8 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     abort: new AbortController(),
     last_chunk_at: now,
     inflight_tools: new Set<string>(),
+    tool_started_at: new Map<string, number>(),
+    tool_time_ms_done: 0,
   };
   runs.set(thread_id, run);
   scheduleIdleWatchdog(run);
@@ -128,11 +143,9 @@ function scheduleIdleWatchdog(run: ActiveRun): void {
       return;
     }
     if (run.inflight_tools.size > 0) {
-      // Tool execution in progress — silence here is the tool working, not a
-      // wedged provider stream. Skip the kill, re-check in idleMs. The
-      // tool_result will bump last_chunk_at when it lands; the wall-clock
-      // watchdog (runMaxMs) is still the backstop for a tool that never
-      // resolves.
+      // Tool execution in progress — silence here is the tool working,
+      // not a wedged provider stream. Skip the kill, re-check in idleMs.
+      // The tool_result will bump last_chunk_at when it lands.
       setTimeout(() => scheduleIdleWatchdog(run), idleMs).unref?.();
       return;
     }
@@ -147,21 +160,45 @@ function scheduleIdleWatchdog(run: ActiveRun): void {
   }, fireIn).unref?.();
 }
 
+// Wall-clock elapsed minus time spent inside tool calls (both completed and
+// currently in flight). The wall-clock watchdog uses this so a 5-minute
+// shell exec or a slow MCP roundtrip doesn't burn the agent's budget;
+// tools enforce their own timeouts. See ActiveRun.tool_started_at for the
+// rationale.
+function effectiveElapsedMs(run: ActiveRun, now: number): number {
+  let inflightToolMs = 0;
+  for (const startedAt of run.tool_started_at.values()) {
+    inflightToolMs += Math.max(0, now - startedAt);
+  }
+  return Math.max(0, (now - run.started_at) - run.tool_time_ms_done - inflightToolMs);
+}
+
 function scheduleMaxWatchdog(run: ActiveRun): void {
   const max = runMaxMs();
+  const now = Date.now();
+  const fireIn = Math.max(0, max - effectiveElapsedMs(run, now));
   setTimeout(() => {
     const cur = runs.get(run.thread_id);
     if (cur !== run) return;
     if (run.status !== "running") return;
-    console.warn(`[run-registry] wall-clock watchdog: force-finishing run for thread ${run.thread_id} after ${max}ms`);
+    const elapsed = effectiveElapsedMs(run, Date.now());
+    if (elapsed < max) {
+      // Tool time pushed the effective elapsed back below the ceiling —
+      // re-arm for the remaining budget. Without this, a tool that runs
+      // for longer than `max` between firing and resolving would let
+      // the next setTimeout overshoot.
+      scheduleMaxWatchdog(run);
+      return;
+    }
+    console.warn(`[run-registry] wall-clock watchdog: force-finishing run for thread ${run.thread_id} after ${elapsed}ms of agent time (excluding tool execution)`);
     emitWatchdogTermination(
       run,
       "run_max_timeout",
-      `Run exceeded the wall-clock limit (${Math.round(max / 1000)}s). The agent was force-stopped. Try a smaller scope or raise JARELA_RUN_MAX_MS if this is expected.`,
+      `Run exceeded the wall-clock limit (${Math.round(max / 1000)}s of agent time, excluding tool execution). The agent was force-stopped. Try a smaller scope or raise JARELA_RUN_MAX_MS if this is expected.`,
     );
     try { run.abort.abort("run_watchdog_timeout"); } catch { /* */ }
     finishRun(run, "error");
-  }, max).unref?.();
+  }, fireIn).unref?.();
 }
 
 export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
@@ -173,10 +210,23 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
     run.final_text += (chunk.data.delta as string) ?? "";
   } else if (chunk.type === "tool_call") {
     const id = (chunk.data as { id?: string }).id;
-    if (id) run.inflight_tools.add(id);
+    if (id) {
+      run.inflight_tools.add(id);
+      run.tool_started_at.set(id, Date.now());
+    }
   } else if (chunk.type === "tool_result") {
     const id = (chunk.data as { id?: string }).id;
-    if (id) run.inflight_tools.delete(id);
+    if (id) {
+      run.inflight_tools.delete(id);
+      const startedAt = run.tool_started_at.get(id);
+      if (startedAt !== undefined) {
+        run.tool_time_ms_done += Math.max(0, Date.now() - startedAt);
+        run.tool_started_at.delete(id);
+        // The tool just gave the agent its budget back; re-arm the
+        // wall-clock watchdog against the new effective elapsed.
+        scheduleMaxWatchdog(run);
+      }
+    }
   }
   if (run.events.length < MAX_BUFFERED) {
     run.events.push(chunk);

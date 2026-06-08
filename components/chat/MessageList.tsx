@@ -115,6 +115,19 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (toolEvents && toolEvents.length > 0) set.add("tool_use");
     return MESSAGE_FILTER_KEYS.filter((k) => set.has(k));
   }, [messages, thinkingContent, toolEvents]);
+  // Count of tool_call ids that haven't been matched by a tool_result yet.
+  // Drives the streaming-bubble's CountdownRing pause so the wall-clock
+  // indicator matches the run-registry's effective-elapsed semantics
+  // (tool execution time is excluded from the agent's budget).
+  const inflightToolCount = useMemo(() => {
+    if (!toolEvents || toolEvents.length === 0) return 0;
+    const open = new Set<string>();
+    for (const ev of toolEvents) {
+      if (ev.phase === "call") open.add(ev.id);
+      else if (ev.phase === "result") open.delete(ev.id);
+    }
+    return open.size;
+  }, [toolEvents]);
   // Tracks whether the user was at the bottom on the most recent scroll event.
   // After every render, if true, we snap to bottom — which means: while the
   // user is at the bottom they "follow" automatically; if they scroll away,
@@ -400,6 +413,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           threadId={threadId ?? null}
           agentConfig={agentConfig ?? null}
           showAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
+          inflightToolCount={inflightToolCount}
         />
       )}
       {queuedMessages && queuedMessages.length > 0 && (
@@ -500,11 +514,13 @@ const StreamingBubble = memo(function StreamingBubble({
   threadId,
   agentConfig,
   showAvatar,
+  inflightToolCount,
 }: {
   content: string;
   threadId: string | null;
   agentConfig: AgentConfig | null;
   showAvatar: boolean;
+  inflightToolCount: number;
 }) {
   const message = useMemo(
     () => ({ role: "assistant" as const, content, streaming: true }),
@@ -516,6 +532,7 @@ const StreamingBubble = memo(function StreamingBubble({
       threadId={threadId}
       agentConfig={agentConfig}
       showAvatar={showAvatar}
+      inflightToolCount={inflightToolCount}
     />
   );
 });

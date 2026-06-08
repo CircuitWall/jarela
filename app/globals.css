@@ -687,9 +687,6 @@ body {
   color: var(--color-fg-faint);
   line-height: 0;
 }
-.jarela-countdown-progress {
-  animation: jarela-countdown-drain var(--jarela-countdown-ms, 1200000ms) linear forwards;
-}
 .jarela-countdown-spinner {
   transform-origin: 50% 50%;
   animation: jarela-countdown-spin 1s linear infinite;
@@ -699,10 +696,6 @@ body {
 @keyframes jarela-countdown-spin {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
-}
-@keyframes jarela-countdown-drain {
-  from { stroke-dashoffset: 0; }
-  to   { stroke-dashoffset: var(--jarela-countdown-circumference, 34.557); }
 }
 @media (prefers-reduced-motion: reduce) {
   .jarela-countdown-spinner { animation: none; }
