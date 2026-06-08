@@ -19,8 +19,6 @@ interface Props {
   agentId: string | null;
   sessionLoading?: boolean;
   sessionError?: string | null;
-  showTools: boolean;
-  showThinking: boolean;
   onMessageSent: () => void;
 }
 
@@ -29,7 +27,7 @@ function isRecoverableSessionError(err: string | null | undefined): boolean {
   return /timed?\s*out|timeout|aborterror|failed to fetch|network|temporar|econnreset|503|429/i.test(err);
 }
 
-export function ChatView({ threadId, agentId, sessionLoading, sessionError, showTools, showThinking, onMessageSent }: Props) {
+export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMessageSent }: Props) {
   const { state } = useAppContext();
   const [messages, setMessages] = useState<Message[]>([]);
   const [notices, setNotices] = useState<SystemNotice[]>([]);
@@ -364,7 +362,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, show
       threadId,
       text,
       {
-        filters: { include_tools: showTools, include_thinking: showThinking },
+        filters: { include_tools: true, include_thinking: true },
         ui_experience_mode: state.experienceMode,
       },
       atts.length ? atts : undefined,
