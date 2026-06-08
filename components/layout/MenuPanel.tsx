@@ -26,7 +26,6 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   mcp: <Wrench size={13} />,
   extensions: <Wrench size={13} />,
   tools: <Wrench size={13} />,
-  connections: <Key size={13} />,
   tasks: <Calendar size={13} />,
   bridges: <Smartphone size={13} />,
   profile: <User size={13} />,
@@ -46,7 +45,6 @@ const TAB_TITLES: Record<Tab, string> = {
   mcp: "MCP",
   extensions: "Extensions",
   tools: "Tools",
-  connections: "Connections",
   tasks: "Tasks",
   bridges: "Bridges",
   profile: "Profile",
@@ -66,7 +64,6 @@ const TAB_SHORT: Record<Tab, string> = {
   mcp: "MCP",
   extensions: "Ext",
   tools: "Tools",
-  connections: "Conn",
   tasks: "Tasks",
   bridges: "Bridge",
   profile: "Me",
@@ -86,9 +83,13 @@ const TAB_SHORT: Record<Tab, string> = {
 // top-level Tab entries remain wired so deep-links (?tab=documents&item=…)
 // still resolve, but they're hidden from the menu grid.
 //
+// "credentials" is the single home for every auth surface — saved API
+// keys + built-in integrations (Gmail, GitHub, Atlassian…) live there as
+// sub-tabs.
+//
 // "models" lives in Advanced — most users let the default model do its
 // job; switching providers is power-user territory.
-const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "credentials", "tools", "connections", "tasks", "profile"];
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "credentials", "tools", "tasks", "profile"];
 const ADVANCED_TABS: Tab[] = ["models", "harness", "logs", "env"];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
@@ -111,7 +112,6 @@ const TAB_ACCENT: Partial<Record<Tab, string>> = {
   tasks: "from-rose-500/20 to-pink-500/5",
   bridges: "from-blue-500/20 to-indigo-500/5",
   profile: "from-fuchsia-500/20 to-purple-500/5",
-  connections: "from-cyan-500/20 to-sky-500/5",
   models: "from-violet-500/20 to-indigo-500/5",
   credentials: "from-amber-500/20 to-yellow-500/5",
   tools: "from-emerald-500/20 to-lime-500/5",

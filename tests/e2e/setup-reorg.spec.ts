@@ -12,7 +12,7 @@ test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ request, page }) => {
   await seedMockAgent(request);
-  // Reset the profile preset so the Connections-chip + Profile-preset
+  // Reset the profile preset so the persona-chip + Profile-preset
   // tests don't bleed into each other (or into reruns).
   await request.put("/api/v1/profile", { data: { preset: null } });
   // CI runs without an OS keychain, so the at-rest crypto bootstrap falls
@@ -43,16 +43,17 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
   await openMenu(page);
 
   // Common tabs visible up top (MenuPanel.COMMON_TABS). Capability surfaces
-  // (Documents, Memory, Bridges, MCP, Extensions) now live under Tools, and
-  // Models moved to Advanced.
-  for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Connections", "Tasks", "Profile"]) {
+  // (Documents, Memory, Bridges, MCP, Extensions) now live under Tools,
+  // Models moved to Advanced, and Connections is folded into Credentials.
+  for (const label of ["Chat", "Dashboard", "Agents", "Credentials", "Tools", "Tasks", "Profile"]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
 
-  // Documents / Memory / Bridges are no longer top-level buttons in the menu.
+  // Documents / Memory / Bridges / Connections are no longer top-level buttons in the menu.
   await expect(page.getByRole("button", { name: "Documents", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Memory", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Bridges", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Connections", exact: true })).toHaveCount(0);
 
   // Advanced header is rendered with the canonical label.
   const advancedHeader = page.getByRole("button", { name: /^Advanced$/i });
@@ -109,7 +110,7 @@ test("Profile preset picker round-trips through the API", async ({ page, request
   await page.getByRole("button", { name: "Profile", exact: true }).click();
 
   // Persona section heading.
-  await expect(page.getByText(/Filters the Connections panel/i)).toBeVisible();
+  await expect(page.getByText(/Filters the Built-in integrations panel/i)).toBeVisible();
 
   // Pick the "Work" preset.
   const workBtn = page.getByRole("button", { name: /^Work\b/ });
@@ -126,13 +127,14 @@ test("Profile preset picker round-trips through the API", async ({ page, request
   expect(body.preset).toBe("work");
 });
 
-test("Connections panel filter chip reflects the active preset", async ({ page, request }) => {
+test("Built-in integrations panel filter chip reflects the active preset", async ({ page, request }) => {
   // Pre-set the preset via the API so the panel renders with it on first paint.
   const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
   expect(put.ok()).toBeTruthy();
 
   await openMenu(page);
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Credentials", exact: true }).click();
+  await page.getByRole("tab", { name: "Built-in integrations" }).click();
 
   // Header chip shows the human label and is clickable.
   const chip = page.getByRole("button", { name: /^Home/ });
@@ -147,7 +149,7 @@ test("Connections panel filter chip reflects the active preset", async ({ page, 
 
   // Click chip → navigates to Profile.
   await chip.click();
-  await expect(page.getByText(/Filters the Connections panel/i)).toBeVisible();
+  await expect(page.getByText(/Filters the Built-in integrations panel/i)).toBeVisible();
 });
 
 test("memory panel renders structured values and masks secret-shaped keys", async ({ page, request }) => {
@@ -162,7 +164,8 @@ test("memory panel renders structured values and masks secret-shaped keys", asyn
   expect(seedCred.ok()).toBeTruthy();
 
   await openMenu(page);
-  await page.getByRole("button", { name: "Memory", exact: true }).click();
+  await page.getByRole("button", { name: "Tools", exact: true }).click();
+  await page.getByRole("tab", { name: "Memory", exact: true }).click();
 
   // Filter to our namespace so the list is bounded.
   await page.getByRole("combobox").selectOption("e2e-demo");

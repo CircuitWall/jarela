@@ -15,8 +15,8 @@ import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
 //   - "MCP"        — external Model Context Protocol servers.
 //   - "Extensions" — the Jarela browser extension surface.
 //   - "Bridges"    — mobile / messaging bridge pairings.
-// Credentials still flow through Connections; this surface owns the
-// capability roster.
+// Credentials still flow through the Credentials tab; this surface owns
+// the capability roster.
 
 type Sub = "builtin" | "documents" | "memory" | "mcp" | "extensions" | "bridges";
 

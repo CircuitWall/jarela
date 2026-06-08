@@ -14,11 +14,11 @@ function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: 
   switch (action.kind) {
     case "enable_integration": {
       const id = str("id");
-      return id ? { href: `?tab=connections&item=${encodeURIComponent(id)}`, hrefLabel: "Open in Settings →", title: `${id} enabled` } : null;
+      return id ? { href: `?tab=credentials&item=integrations`, hrefLabel: "Open in Credentials →", title: `${id} enabled` } : null;
     }
     case "start_oauth": {
       const id = str("integration_id");
-      return id ? { href: `?tab=connections&item=${encodeURIComponent(id)}`, hrefLabel: "Open in Settings →", title: `${id} authorized` } : null;
+      return id ? { href: `?tab=credentials&item=integrations`, hrefLabel: "Open in Credentials →", title: `${id} authorized` } : null;
     }
     case "set_provider_key": {
       const name = str("name") ?? str("provider");

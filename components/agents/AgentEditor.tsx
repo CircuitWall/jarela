@@ -774,11 +774,12 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
                       type="button"
                       onClick={() => {
                         onClose();
-                        dispatch({ type: "SET_TAB", tab: "connections" });
+                        dispatch({ type: "SET_TAB", tab: "credentials" });
+                        dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: "integrations" });
                       }}
                       className="rounded-md border border-amber-600/30 bg-white/50 px-2 py-1 text-[11px] font-medium text-amber-900 dark:bg-black/10 dark:text-amber-100"
                     >
-                      Open Connections
+                      Open Credentials
                     </button>
                   )}
                 </div>

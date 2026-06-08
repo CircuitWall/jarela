@@ -1,9 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { seedMockAgent } from "./helpers";
 
-// Coverage for the Connections consolidation + Built-in tool toggles.
-// Tests in this file run serially: they share the dev-server's
-// JARELA_DB_DIR, so toggles set by one test would leak into the next.
+// Coverage for the Credentials consolidation (Connections folded back in
+// as a sub-tab) + Built-in tool toggles. Tests run serially: they share
+// the dev-server's JARELA_DB_DIR, so toggles set by one test would leak.
 test.describe.configure({ mode: "serial" });
 
 test.beforeEach(async ({ request, page }) => {
@@ -36,22 +36,33 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("Connections tab shows the built-in integrations panel", async ({ page }) => {
+test("Credentials tab exposes API keys + Built-in integrations sub-tabs", async ({ page }) => {
   await openMenu(page);
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Credentials", exact: true }).click();
 
-  // Built-in integrations panel renders its known heading directly
-  // (no sub-tab navigation anymore — MCP moved to Tools).
+  const listTab = page.getByRole("tab", { name: "API keys & secrets" });
+  const integrationsTab = page.getByRole("tab", { name: "Built-in integrations" });
+
+  await expect(listTab).toBeVisible();
+  await expect(integrationsTab).toBeVisible();
+  await expect(listTab).toHaveAttribute("aria-selected", "true");
+
+  // Default sub-tab is the credentials list, which renders its known heading.
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
+
+  // Switch to Built-in integrations — that panel mounts with its own heading.
+  await integrationsTab.click();
+  await expect(integrationsTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Built-in integrations" })).toBeVisible();
 });
 
-test("deep link ?tab=tools&item=mcp lands directly on the MCP sub-tab", async ({ page }) => {
-  await page.goto("/?tab=tools&item=mcp");
-  await expect(page.getByRole("tab", { name: "MCP servers" })).toHaveAttribute(
+test("deep link ?tab=credentials&item=integrations lands directly on Built-in integrations sub-tab", async ({ page }) => {
+  await page.goto("/?tab=credentials&item=integrations");
+  await expect(page.getByRole("tab", { name: "Built-in integrations" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  await expect(page.getByRole("heading", { name: "MCP Servers" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Built-in integrations" })).toBeVisible();
 });
 
 test("Built-in tools panel lists categories and toggles persist", async ({ page, request }) => {
