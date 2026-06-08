@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent } from "./helpers";
+import { seedMockAgent, waitForAppReady } from "./helpers";
 
 // These tests pin down layout regressions on iOS PWA where position:absolute
 // elements rode along when the on-screen keyboard scrolled the body up.
@@ -12,6 +12,7 @@ test.beforeEach(async ({ request }) => {
 test("menu tray uses position:fixed when open", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
+  await waitForAppReady(page);
 
   // Open the menu via the hamburger in the header. The button doesn't have
   // a stable aria-label, so locate by its lucide icon's data attr or fall
@@ -33,6 +34,7 @@ test("menu tray uses position:fixed when open", async ({ page }) => {
 test("update banner (when shown) anchors below the header", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
+  await waitForAppReady(page);
 
   // The banner may or may not be visible depending on whether main/npm
   // reports a newer version. Only assert positioning when it's present.
