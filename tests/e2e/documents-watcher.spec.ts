@@ -14,14 +14,22 @@ import { join } from "node:path";
 // JARELA_SCHEDULER_TICK_MS=250, so debounce (500 ms) + tick (250 ms) +
 // indexing settle inside the 15 s polling budget below.
 //
-// Skipped on Linux: fs.watch with `recursive: true` is unsupported there
-// (the handler at lib/triggers/handlers/fs-watch.ts logs once and falls
-// back to the 10-min full sweep). 10 min >> 15 s budget, so this e2e
-// would always time out. The macOS / Windows runners exercise the
-// recursive path; Linux coverage of the same flow lives in the
-// per-handler vitest suite.
+// Skipped on Linux: fs.watch with `recursive: true` is unsupported
+// there (the handler at lib/triggers/handlers/fs-watch.ts logs once
+// and falls back to the 10-min full sweep). CI runs on ubuntu-latest
+// so this spec never runs on CI.
+//
+// Skipped on Windows: fs.watch is best-effort on NTFS and drops
+// events under concurrent IO load (the parallel Playwright projects +
+// the doc-source sweep all hammer the same watcher state). The same
+// behaviour is fully covered by the deterministic unit suite at
+// lib/triggers/handlers/fs-watch.test.ts which uses the
+// __pushEventForTest seam — that's where regression coverage lives.
 test.describe.configure({ mode: "serial" });
-test.skip(process.platform === "linux", "fs.watch recursive unsupported on Linux — covered by unit tests");
+test.skip(
+  process.platform !== "darwin",
+  "fs-watch e2e is macOS-only — Linux lacks recursive fs.watch, Windows drops events under load; unit tests cover both",
+);
 
 let sourceDir: string;
 let sourceId: string | null = null;
