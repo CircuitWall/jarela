@@ -46,16 +46,17 @@ interface Props {
   // Called after a successful save with the integration name that was
   // configured. Hosts can use this to refresh their views.
   onSaved?: (integrationName: string) => void;
-  // Hook for "open in Connections panel" — host wires it to navigate
-  // tabs. Receives the integration name. When omitted the link is hidden.
-  onOpenInConnections?: (integrationName: string) => void;
+  // Hook for "open in Built-in integrations sub-tab" — host wires it to
+  // flip the Credentials tab onto the integrations sub. When omitted the
+  // link is hidden.
+  onOpenInIntegrations?: (integrationName: string) => void;
 }
 
 // Unified picker for adding/editing any credential. Shows manifest
 // providers grouped by category, then drops the user into a manifest-
 // driven form. Backed by api.integrations.* — saves land in the same
 // credentials table the IntegrationsPanel writes to.
-export function AddCredentialDialog({ initialCategory, directProviderName, lockCategory, onClose, onSaved, onOpenInConnections }: Props) {
+export function AddCredentialDialog({ initialCategory, directProviderName, lockCategory, onClose, onSaved, onOpenInIntegrations }: Props) {
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [loading, setLoading] = useState(true);
@@ -185,7 +186,7 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
               onClose();
             }}
             onCancel={lockCategory || directProviderName ? onClose : backToPicker}
-            onOpenInConnections={onOpenInConnections ? () => { onOpenInConnections(activeDef.name); onClose(); } : undefined}
+            onOpenInIntegrations={onOpenInIntegrations ? () => { onOpenInIntegrations(activeDef.name); onClose(); } : undefined}
           />
         )}
         {step === "form" && !activeDef && (
@@ -201,10 +202,10 @@ interface ProviderFormProps {
   status: IntegrationStatus | null;
   onSaved: () => void;
   onCancel: () => void;
-  onOpenInConnections?: () => void;
+  onOpenInIntegrations?: () => void;
 }
 
-function ProviderForm({ def, status, onSaved, onCancel, onOpenInConnections }: ProviderFormProps) {
+function ProviderForm({ def, status, onSaved, onCancel, onOpenInIntegrations }: ProviderFormProps) {
   const [values, setValues] = useState<Record<string, string>>(() => ({ ...(status?.values ?? {}) }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -241,14 +242,14 @@ function ProviderForm({ def, status, onSaved, onCancel, onOpenInConnections }: P
     <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
       <p className="text-[11px] text-fg-muted leading-snug">{def.description}</p>
 
-      {isOauth && onOpenInConnections && (
+      {isOauth && onOpenInIntegrations && (
         <div className="px-3 py-2 rounded border border-sky-700/40 bg-sky-900/15 text-[11px] text-sky-700 dark:text-sky-300 flex items-start gap-2">
           <span className="flex-1">
-            This provider supports one-click OAuth. The Connections panel has the “Connect” button that walks you through it.
+            This provider supports one-click OAuth. Built-in integrations has the “Connect” button that walks you through it.
           </span>
           <button
             type="button"
-            onClick={onOpenInConnections}
+            onClick={onOpenInIntegrations}
             className="text-[11px] underline hover:text-sky-600 dark:hover:text-sky-200 shrink-0"
           >
             Open
@@ -300,12 +301,12 @@ function ProviderForm({ def, status, onSaved, onCancel, onOpenInConnections }: P
         >
           Cancel
         </button>
-        {onOpenInConnections && (
+        {onOpenInIntegrations && (
           <button
             type="button"
-            onClick={onOpenInConnections}
+            onClick={onOpenInIntegrations}
             className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent/80"
-            title="Open in Connections panel — full editor with Test/OAuth"
+            title="Open in Built-in integrations — full editor with Test/OAuth"
           >
             Advanced <ExternalLink size={10} />
           </button>

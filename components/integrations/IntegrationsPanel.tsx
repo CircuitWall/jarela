@@ -31,7 +31,7 @@ export function IntegrationsPanel() {
   const [aliasEditorOpen, setAliasEditorOpen] = useState(false);
   const [preset, setPreset] = useState<UserProfile["preset"]>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  useDeepLinkScroll("connections", "integration", containerRef);
+  useDeepLinkScroll("credentials", "integration", containerRef);
 
   async function load() {
     setLoading(true);
@@ -103,7 +103,7 @@ export function IntegrationsPanel() {
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
         <Key size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Credentials</h2>
+        <h2 className="text-sm font-semibold text-fg mr-auto">Built-in integrations</h2>
         {preset && preset !== "custom" && (
           <button
             type="button"

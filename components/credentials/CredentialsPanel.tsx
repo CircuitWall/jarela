@@ -1,11 +1,30 @@
 "use client";
-import { ExternalLink, Key, Pencil, Plus, Trash2 } from "lucide-react";
+import { Key, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { IntegrationsPanel } from "@/components/integrations/IntegrationsPanel";
 import { AddCredentialDialog } from "./AddCredentialDialog";
+
+// "Credentials" is the single home for every auth surface. The default
+// sub-tab is the lightweight, category-grouped list of saved credentials
+// ("API keys & secrets"); the second sub-tab hosts the rich
+// IntegrationsPanel with one-click OAuth, Test buttons, env-sync, and
+// the network section.
+//
+// MCP servers (a capability, not an auth) moved out to Tools; built-in
+// integrations (which used to live under their own "Connections" tab)
+// moved in here. Result: one mental model — *Credentials* answers
+// "what accounts has this agent been given access to".
+
+type Sub = "list" | "integrations";
+
+const SUB_TITLES: Record<Sub, string> = {
+  list: "API keys & secrets",
+  integrations: "Built-in integrations",
+};
 
 type Category = NonNullable<IntegrationDefinition["category"]>;
 
@@ -29,9 +48,6 @@ const CATEGORY_LABELS: Record<Category, string> = {
   other: "Other",
 };
 
-// One-line status. Integration credentials don't all use `api_key` —
-// atlassian stores `api_token`, github stores `token`, gmail stores OAuth
-// shape — so describe by which secret fields are present.
 function describeCredential(c: Credential): string {
   const keys = Object.keys(c.params).filter((k) => k !== "base_url" && k !== "extra_headers");
   if (keys.length === 0) return "Not configured";
@@ -42,6 +58,49 @@ function describeCredential(c: Credential): string {
 }
 
 export function CredentialsPanel() {
+  const { state, dispatch } = useAppContext();
+  const raw = state.selectedItem.credentials;
+  const active: Sub = raw === "integrations" ? "integrations" : "list";
+
+  const setSub = (s: Sub) =>
+    dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: s });
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div
+        role="tablist"
+        aria-label="Credentials sub-section"
+        className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2"
+      >
+        {(["list", "integrations"] as Sub[]).map((s) => {
+          const selected = s === active;
+          return (
+            <button
+              key={s}
+              role="tab"
+              type="button"
+              aria-selected={selected}
+              onClick={() => setSub(s)}
+              className={
+                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors " +
+                (selected
+                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
+                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
+              }
+            >
+              {SUB_TITLES[s]}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto">
+        {active === "list" ? <CredentialsListPanel /> : <IntegrationsPanel />}
+      </div>
+    </div>
+  );
+}
+
+function CredentialsListPanel() {
   const { dispatch } = useAppContext();
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
@@ -75,8 +134,6 @@ export function CredentialsPanel() {
     };
   }, [refresh]);
 
-  // Provider name → manifest definition. Drives the category grouping
-  // and the "Edit" affordance (opens the picker pre-filled).
   const defByName = useMemo(() => {
     const m = new Map<string, IntegrationDefinition>();
     for (const d of defs) m.set(d.name, d);
@@ -86,10 +143,6 @@ export function CredentialsPanel() {
   async function handleDelete(c: Credential) {
     setDeleteError(null);
     try {
-      // Integration credentials route through the integration API so the
-      // server clears meta + legacy rows together. Non-integration types
-      // (legacy `type='model'` rows from older versions) use the raw
-      // credentials delete path.
       if (c.type === "integration") {
         await api.integrations.delete(c.provider);
       } else {
@@ -101,21 +154,13 @@ export function CredentialsPanel() {
     }
   }
 
-  function openConnectionsForName(name: string) {
-    dispatch({ type: "SET_TAB", tab: "connections" });
-    dispatch({ type: "SET_SELECTION", tab: "connections", itemId: "builtin" });
-    if (typeof window !== "undefined") {
-      try {
-        const url = new URL(window.location.href);
-        url.hash = `#?tab=connections&item=builtin&deep=${encodeURIComponent(name)}`;
-        history.replaceState(null, "", url.toString());
-      } catch { /* noop */ }
-    }
+  // OAuth providers + advanced editors live on the Built-in integrations
+  // sub-tab. The "open" affordance just flips the sub-tab; per-row scroll
+  // would require routing two ids and the integrations list is short.
+  function openIntegrationsSubTab() {
+    dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: "integrations" });
   }
 
-  // Group rows by manifest category. Rows whose provider isn't in the
-  // manifest (legacy `type='model'`, exotic integrations) land in "other"
-  // so nothing silently disappears.
   const grouped = useMemo(() => {
     const byCat = new Map<Category, Credential[]>();
     for (const c of credentials) {
@@ -137,7 +182,7 @@ export function CredentialsPanel() {
         <button
           onClick={() => setAddOpen(true)}
           className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
-          title="Pick a provider and connect it. Same row also shows in the Connections panel."
+          title="Pick a provider and connect it. Same row also shows in Built-in integrations."
         >
           <Plus size={14} /> Add credential
         </button>
@@ -172,21 +217,13 @@ export function CredentialsPanel() {
                         <p className="text-[11px] text-fg-subtle">{describeCredential(c)}</p>
                       </div>
                       <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-                        {def ? (
+                        {def && (
                           <button
                             onClick={() => setEditingProvider(c.provider)}
                             className="p-1 text-fg-subtle hover:text-fg transition-colors"
                             title="Edit credential"
                           >
                             <Pencil size={13} />
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => openConnectionsForName(c.provider)}
-                            className="p-1 text-fg-subtle hover:text-fg transition-colors"
-                            title="Open in Connections"
-                          >
-                            <ExternalLink size={13} />
                           </button>
                         )}
                         <button
@@ -210,7 +247,7 @@ export function CredentialsPanel() {
         <AddCredentialDialog
           onClose={() => { setAddOpen(false); refresh(); }}
           onSaved={() => refresh()}
-          onOpenInConnections={(name) => { setAddOpen(false); openConnectionsForName(name); }}
+          onOpenInIntegrations={() => { setAddOpen(false); openIntegrationsSubTab(); }}
         />
       )}
       {editingProvider && (
@@ -218,7 +255,7 @@ export function CredentialsPanel() {
           directProviderName={editingProvider}
           onClose={() => { setEditingProvider(null); refresh(); }}
           onSaved={() => refresh()}
-          onOpenInConnections={(name) => { setEditingProvider(null); openConnectionsForName(name); }}
+          onOpenInIntegrations={() => { setEditingProvider(null); openIntegrationsSubTab(); }}
         />
       )}
     </div>

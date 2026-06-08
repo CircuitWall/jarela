@@ -17,7 +17,6 @@ import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { ExtensionsPanel } from "@/components/extensions/ExtensionsPanel";
 import { ToolsPanel } from "@/components/tools/ToolsPanel";
-import { ConnectionsPanel } from "@/components/connections/ConnectionsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { HarnessPanel } from "@/components/harness/HarnessPanel";
@@ -476,11 +475,6 @@ export function AppShell() {
         {mountedTabs.has("tools") && (
           <Activity mode={state.activeTab === "tools" ? "visible" : "hidden"}>
             <ToolsPanel />
-          </Activity>
-        )}
-        {mountedTabs.has("connections") && (
-          <Activity mode={state.activeTab === "connections" ? "visible" : "hidden"}>
-            <ConnectionsPanel />
           </Activity>
         )}
         {mountedTabs.has("tasks") && (

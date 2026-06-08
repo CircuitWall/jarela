@@ -13,14 +13,14 @@ function parseStoredMode(raw: string | null): ExperienceMode | null {
   return null;
 }
 
-export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "credentials" | "mcp" | "extensions" | "tools" | "connections" | "tasks" | "bridges" | "profile" | "harness" | "logs" | "env";
+export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "credentials" | "mcp" | "extensions" | "tools" | "tasks" | "bridges" | "profile" | "harness" | "logs" | "env";
 
 interface AppState {
   activeThreadId: string | null;
   activeAgentId: string | null;
   activeTab: Tab;
   experienceMode: ExperienceMode;
-  // Per-tab sub-selection (gmail in connections, an mcp server name, an
+  // Per-tab sub-selection (a sub-tab key under credentials, an mcp server name, an
   // agent uuid, a profile subsection slug, …). Settings panels read their
   // slot to scroll-to + highlight; the URL mirrors this via `?item=<id>`.
   selectedItem: Partial<Record<Tab, string>>;
