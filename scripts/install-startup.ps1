@@ -35,15 +35,17 @@ $principal = New-ScheduledTaskPrincipal `
   -RunLevel Limited
 
 # Settings: hidden, restart on failure, no idle/battery constraints, allow start
-# even when on battery (laptops), no time limit.
+# even when on battery (laptops), no time limit. Retries are intentionally
+# bounded (3 attempts @ 5min) because with an encrypted master key each
+# restart requires a manual PIN re-entry, so silent churn is undesirable.
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
   -DontStopIfGoingOnBatteries `
   -StartWhenAvailable `
   -Hidden `
   -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
-  -RestartInterval (New-TimeSpan -Minutes 1) `
-  -RestartCount 999 `
+  -RestartInterval (New-TimeSpan -Minutes 5) `
+  -RestartCount 3 `
   -MultipleInstances IgnoreNew
 
 $task = New-ScheduledTask `
