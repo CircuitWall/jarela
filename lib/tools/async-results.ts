@@ -58,6 +58,17 @@ function ensureSweeper(): void {
 }
 
 /**
+ * Tear down the sweeper. Called from the shutdown drain so the timer
+ * isn't keeping the event loop alive past close-time. Idempotent.
+ */
+export function stopAsyncResults(): void {
+  if (sweeper) {
+    clearInterval(sweeper);
+    sweeper = null;
+  }
+}
+
+/**
  * Carve out a slot for a new async tool call and return its key.
  * The key is opaque and URL-safe — the agent treats it as a token.
  */

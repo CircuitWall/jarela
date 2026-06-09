@@ -182,7 +182,10 @@ async function indexGmailMail(row: DocumentSourceRow): Promise<RemoteIndexStats>
     const batch = list.messages ?? [];
     if (batch.length === 0) break;
 
-    const results = await Promise.all(batch.slice(0, limit).map(async (entry) => {
+    // Use allSettled so a single 404/transient 5xx on one message
+    // doesn't bin the whole page (and stall the cursor on the next
+    // run). Failures get counted into stats.errors instead.
+    const settled = await Promise.allSettled(batch.slice(0, limit).map(async (entry) => {
       const msg = await googleFetch(
         auth,
         "Gmail",
@@ -212,10 +215,16 @@ async function indexGmailMail(row: DocumentSourceRow): Promise<RemoteIndexStats>
       });
     }));
 
-    for (const [index, item] of results.entries()) {
+    for (const [index, outcome] of settled.entries()) {
       const id = batch[index]?.id ?? "";
       if (id) keep.add(`gmail://${id}`);
       stats.scanned++;
+      if (outcome.status === "rejected") {
+        stats.errors++;
+        console.warn(`[mail-indexer] message ${id} failed:`, outcome.reason);
+        continue;
+      }
+      const item = outcome.value;
       stats.added += item.status === "added" ? 1 : 0;
       stats.updated += item.status === "updated" ? 1 : 0;
       stats.unchanged += item.status === "unchanged" ? 1 : 0;

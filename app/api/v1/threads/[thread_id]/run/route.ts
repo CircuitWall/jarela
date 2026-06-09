@@ -233,9 +233,17 @@ function attachStream(
   thread_id: string,
   stream_options?: StreamOptions,
 ): Response {
+  // Captured by both start() and cancel() so the cancel branch can tear
+  // down the poll timer + subscription when the client disconnects.
+  // Without this, navigating away from a long-running thread leaks an
+  // event subscriber + 2Hz setInterval per visit until the run finishes
+  // (or forever if it doesn't).
+  let poll: ReturnType<typeof setInterval> | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let clientGone = false;
+
   const stream = new ReadableStream({
     start(controller) {
-      let clientGone = false;
       const safeEnqueue = (chunk: Uint8Array): void => {
         if (clientGone) return;
         try { controller.enqueue(chunk); } catch { clientGone = true; }
@@ -246,14 +254,15 @@ function attachStream(
         safeEnqueue(sse({ type: ev.type, ...ev.data }));
       };
 
-      const { run, unsubscribe } = subscribe(thread_id, onEvent);
-      if (!run) {
+      const sub = subscribe(thread_id, onEvent);
+      unsubscribe = sub.unsubscribe;
+      if (!sub.run) {
         controller.close();
         return;
       }
 
       // If run already terminal, close after replay.
-      if (run.status !== "running") {
+      if (sub.run.status !== "running") {
         try { controller.close(); } catch { /* */ }
         return;
       }
@@ -261,11 +270,11 @@ function attachStream(
       // When the run finishes (status changes), close our response. We
       // poll lightly because the run might finish due to other subscribers'
       // signals; simpler than wiring a second listener channel.
-      const poll = setInterval(() => {
+      poll = setInterval(() => {
         const r = getRun(thread_id);
         if (!r || r.status !== "running") {
-          clearInterval(poll);
-          unsubscribe();
+          if (poll) { clearInterval(poll); poll = null; }
+          if (unsubscribe) { unsubscribe(); unsubscribe = null; }
           if (!clientGone) {
             try { controller.close(); } catch { /* */ }
           }
@@ -274,7 +283,12 @@ function attachStream(
       poll.unref?.();
     },
     cancel() {
-      // Client navigated away — agent run keeps going in registry.
+      // Client navigated away — agent run keeps going in registry, but
+      // tear down OUR poll + subscription so we don't leak a timer +
+      // subscriber per disconnect.
+      clientGone = true;
+      if (poll) { clearInterval(poll); poll = null; }
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     },
   });
 

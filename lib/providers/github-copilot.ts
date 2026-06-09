@@ -53,6 +53,7 @@ async function getCopilotToken(pat: string): Promise<string> {
       Authorization: `token ${pat}`,
       "User-Agent": "Jarela/1.0",
     },
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!res.ok) {

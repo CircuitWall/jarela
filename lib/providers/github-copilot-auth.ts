@@ -44,6 +44,7 @@ export async function startDeviceFlow(): Promise<DeviceCodeResponse> {
       "User-Agent": "Jarela/1.0",
     },
     body: JSON.stringify({ client_id: COPILOT_CLIENT_ID, scope: SCOPE }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => res.statusText);
@@ -69,6 +70,7 @@ export async function pollDeviceFlow(device_code: string): Promise<PollResult> {
       device_code,
       grant_type: "urn:ietf:params:oauth:grant-type:device_code",
     }),
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
     return { status: "error", error: `HTTP ${res.status}` };
