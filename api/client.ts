@@ -157,20 +157,21 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
         signal: timeoutCtrl.signal,
       });
       if (!res.ok) {
-        // 423 screen-locked: surface a window event so the AppShell can
-        // mount the ScreenLock overlay. We still throw so the caller
-        // sees the failure, but no point retrying — the lock isn't
-        // going to clear on its own.
+        // 423 lock states: distinct events so AppShell can mount the
+        // right overlay (decrypt vs presence-check). Both throw so the
+        // caller still sees the failure — no point retrying, the lock
+        // isn't going to clear on its own.
         if (res.status === 423) {
           const cloned = res.clone();
           const body = (await cloned.json().catch(() => null)) as
             | { error?: string }
             | null;
-          if (
-            body?.error === "screen-locked" &&
-            typeof window !== "undefined"
-          ) {
-            window.dispatchEvent(new CustomEvent("jarela:screen-locked"));
+          if (typeof window !== "undefined") {
+            if (body?.error === "screen-locked") {
+              window.dispatchEvent(new CustomEvent("jarela:screen-locked"));
+            } else if (body?.error === "locked") {
+              window.dispatchEvent(new CustomEvent("jarela:master-key-locked"));
+            }
           }
           throw new Error(`423 ${body?.error ?? "locked"}`);
         }

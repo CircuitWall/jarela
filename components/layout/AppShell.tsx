@@ -31,6 +31,7 @@ import { Toaster } from "@/components/ui/Toaster";
 import { Logo } from "@/components/ui/Logo";
 import { BootScreen } from "@/components/ui/BootScreen";
 import { ScreenLock } from "@/components/setup/ScreenLock";
+import { UnlockScreen } from "@/components/setup/UnlockScreen";
 import { clearUnreadForAgent, useUnreadCount } from "@/lib/ui/toasts";
 import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
@@ -198,25 +199,31 @@ export function AppShell() {
     ? agents.find((a) => a.id === state.activeAgentId) ?? null
     : null;
 
-  // Screen-lock overlay. Distinct from the boot-time master-key unlock
-  // (that's gated server-side in `app/page.tsx`). This one is the
-  // presence check that fires after `idle_timeout_ms` of inactivity:
-  // background work keeps running but the UI is hidden until the user
-  // re-enters their PIN. Triggered either by a 423 `screen-locked`
-  // response from the api client or by the periodic state probe below.
+  // Screen-lock overlay (presence check) AND master-key-locked overlay
+  // (decrypt). Distinct from the boot-time gate in `app/page.tsx`:
+  // those mounts are triggered mid-session — either by an idle timer
+  // (screen-lock) or by the master key being re-locked by an external
+  // process (decrypt). Both are signalled by the API client when it
+  // sees the matching 423 response.
   const [screenLocked, setScreenLocked] = useState(false);
+  const [masterKeyLocked, setMasterKeyLocked] = useState(false);
   // Bumped after each unlock so BootScreen remounts with fresh state
   // (its `done` / `pickedId` / `prefetchStartedRef` would otherwise
-  // suppress the picker on the second appearance).
+  // suppress the picker on the second appearance). Both unlock paths
+  // bump this — the agent selector is always the post-unlock landing.
   const [bootSeq, setBootSeq] = useState(0);
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
 
-    function onLocked() {
+    function onScreenLocked() {
       if (!cancelled) setScreenLocked(true);
     }
-    window.addEventListener("jarela:screen-locked", onLocked);
+    function onMasterKeyLocked() {
+      if (!cancelled) setMasterKeyLocked(true);
+    }
+    window.addEventListener("jarela:screen-locked", onScreenLocked);
+    window.addEventListener("jarela:master-key-locked", onMasterKeyLocked);
 
     // Soft poll every 30s so the overlay still appears if no user
     // action triggered a request after the idle timer elapsed.
@@ -224,12 +231,19 @@ export function AppShell() {
       try {
         const res = await fetch("/api/v1/security/state");
         if (!res.ok) return;
-        const body = (await res.json()) as { screen_locked?: boolean };
-        if (!cancelled && body.screen_locked === true) {
-          setScreenLocked(true);
+        const body = (await res.json()) as {
+          screen_locked?: boolean;
+          state?: string;
+        };
+        if (cancelled) return;
+        if (body.state === "locked") setMasterKeyLocked(true);
+        if (body.screen_locked === true) setScreenLocked(true);
+      } catch (err) {
+        // Network blip; try again next tick. Logged at debug-level so
+        // a sustained outage is at least findable in devtools.
+        if (process.env.NODE_ENV !== "production") {
+          console.debug("[security/state] probe failed:", err);
         }
-      } catch {
-        // Network blip; try again next tick.
       }
     }
     void probe();
@@ -238,9 +252,19 @@ export function AppShell() {
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
-      window.removeEventListener("jarela:screen-locked", onLocked);
+      window.removeEventListener("jarela:screen-locked", onScreenLocked);
+      window.removeEventListener("jarela:master-key-locked", onMasterKeyLocked);
     };
   }, []);
+
+  // Shared post-unlock landing: clear the current chat and force the
+  // BootScreen to remount so the user lands on the agent picker. Used
+  // by BOTH the screen-unlock and the master-key decrypt paths so the
+  // two transitions feel identical from the user's side.
+  const landOnAgentPicker = useCallback(() => {
+    dispatch({ type: "NEW_CHAT" });
+    setBootSeq((n) => n + 1);
+  }, [dispatch]);
 
   return (
     // `dvh` natively tracks the visible viewport on iOS 16.4+ / modern
@@ -270,9 +294,21 @@ export function AppShell() {
           onUnlock={() => {
             // Drop the user back on the picker so they consciously
             // re-enter their workspace rather than landing mid-chat.
-            dispatch({ type: "NEW_CHAT" });
-            setBootSeq((n) => n + 1);
+            landOnAgentPicker();
             setScreenLocked(false);
+          }}
+        />
+      )}
+      {masterKeyLocked && !screenLocked && (
+        // Master key got re-locked mid-session (e.g. external lock
+        // command). Mount the decrypt splash — same shared keypad as
+        // boot — and on success drop back to the agent picker. The
+        // existing components below stay mounted underneath; once
+        // unlocked they resume against the now-unlocked DB.
+        <UnlockScreen
+          onUnlock={() => {
+            landOnAgentPicker();
+            setMasterKeyLocked(false);
           }}
         />
       )}
