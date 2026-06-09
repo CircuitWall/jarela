@@ -53,7 +53,8 @@ export async function GET(req: NextRequest) {
         source: "manual",
         updated_at: new Date().toISOString(),
       }, 3600);
-    } catch {
+    } catch (err) {
+      console.warn("[currency] manual lookup failed, falling back to USD:", err);
       return cachedJson<CurrencyResponse>({
         currency: "USD",
         rate_from_usd: 1,
@@ -116,7 +117,8 @@ export async function GET(req: NextRequest) {
       source: "location",
       updated_at: new Date().toISOString(),
     }, 3600);
-  } catch {
+  } catch (err) {
+    console.warn("[currency] location lookup failed, falling back to USD:", err);
     return cachedJson<CurrencyResponse>({
       currency: "USD",
       rate_from_usd: 1,
@@ -140,6 +142,7 @@ async function reverseCountryCode(lat: number, lng: number): Promise<string | nu
       "user-agent": "jarela-dashboard-currency/1.0",
       accept: "application/json",
     },
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) return null;
   const body = await res.json() as {
@@ -158,6 +161,7 @@ async function resolveCurrencyForCountry(countryCode: string): Promise<string | 
 
   const res = await fetch(`https://restcountries.com/v3.1/alpha/${countryCode}?fields=currencies`, {
     headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) return null;
   const body = await res.json() as Array<{ currencies?: Record<string, { name?: string }> }>;
@@ -173,6 +177,7 @@ async function fetchFxRates(): Promise<Record<string, number>> {
 
   const res = await fetch("https://open.er-api.com/v6/latest/USD", {
     headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) throw new Error(`fx status ${res.status}`);
 

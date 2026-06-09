@@ -66,14 +66,25 @@ export async function POST(req: NextRequest, { params }: Params) {
     try { await (iter as { return?: () => Promise<unknown> }).return?.(); } catch { /* best-effort */ }
   };
 
+  let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     await Promise.race([
       probe(),
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`probe timed out after ${PROBE_TIMEOUT_MS}ms`)), PROBE_TIMEOUT_MS)),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`probe timed out after ${PROBE_TIMEOUT_MS}ms`)),
+          PROBE_TIMEOUT_MS,
+        );
+      }),
     ]);
     return NextResponse.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ ok: false, error: msg });
+  } finally {
+    // Without this, the 15s timer keeps firing after probe() wins the
+    // race and the route returns — leaking an unhandled rejection per
+    // probe (which then trips the global handler).
+    if (timer) clearTimeout(timer);
   }
 }

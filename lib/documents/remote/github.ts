@@ -216,10 +216,23 @@ async function runGithubPullsIndexer(source: DocumentSourceRow): Promise<GithubI
       if (Number.isFinite(sinceMs) && Number.isFinite(updatedMs) && updatedMs <= sinceMs) break outer;
 
       try {
-        const [comments, reviews] = await Promise.all([
+        // allSettled so a failed comments fetch doesn't also discard
+        // the reviews (and vice versa); we still index what we have and
+        // count the partial as an error.
+        const [commentsRes, reviewsRes] = await Promise.allSettled([
           listIssueComments(auth, cfg.owner, cfg.repo, pr.number),
           listReviews(auth, cfg.owner, cfg.repo, pr.number),
         ]);
+        const comments = commentsRes.status === "fulfilled" ? commentsRes.value : [];
+        const reviews = reviewsRes.status === "fulfilled" ? reviewsRes.value : [];
+        if (commentsRes.status === "rejected") {
+          stats.errors++;
+          console.warn(`[github-indexer] pr#${pr.number} comments failed:`, commentsRes.reason);
+        }
+        if (reviewsRes.status === "rejected") {
+          stats.errors++;
+          console.warn(`[github-indexer] pr#${pr.number} reviews failed:`, reviewsRes.reason);
+        }
         const text = flattenPull(pr, comments, reviews);
         const res = await upsertRemoteDocument(source.id, {
           path: `github-pull://${cfg.owner}/${cfg.repo}/${pr.number}`,
@@ -229,8 +242,9 @@ async function runGithubPullsIndexer(source: DocumentSourceRow): Promise<GithubI
         });
         applyUpsert(stats, res);
         if (updated && (!highWater || updated > highWater)) highWater = updated;
-      } catch {
+      } catch (err) {
         stats.errors++;
+        console.warn(`[github-indexer] pr#${pr.number} upsert failed:`, err);
       }
     }
     if (pulls.length < PR_PAGE_LIMIT) break;

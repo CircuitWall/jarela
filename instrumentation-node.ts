@@ -28,6 +28,8 @@ export async function bootNode(): Promise<void> {
   const { installConsolePatch } = await import("@/lib/logging/sink");
   installConsolePatch();
 
+  installGlobalErrorHandlers();
+
   const { registerShutdownHandlers } = await import("@/lib/lifecycle/shutdown");
   registerShutdownHandlers();
 
@@ -70,4 +72,41 @@ function warnIfExposedBind(): void {
       `           Bind to 127.0.0.1 or set JARELA_ALLOW_NONLOOPBACK_BIND=1 to\n` +
       `           silence this warning.\n`,
   );
+}
+
+// Global last-resort handlers for errors that escape every other try/catch.
+// Without these, Node's default behaviour is to print a stack to stderr
+// and (for uncaughtException) exit the process. We instead route them
+// through the patched console so the in-memory log ring and the Logs
+// panel capture them, and we keep the process alive — the launcher
+// supervisor already restarts on hard crashes, but most stray rejections
+// in HTTP handlers or background jobs shouldn't kill the whole server.
+// Idempotent via a Symbol so dev HMR / multiple imports never stack
+// handlers (which would double-log every event).
+const HANDLERS_INSTALLED: unique symbol = Symbol.for("@jarela/global-error-handlers");
+type ProcessWithFlag = NodeJS.Process & { [HANDLERS_INSTALLED]?: true };
+function installGlobalErrorHandlers(): void {
+  const p = process as ProcessWithFlag;
+  if (p[HANDLERS_INSTALLED]) return;
+  process.on("uncaughtException", (err, origin) => {
+    try {
+      console.error(
+        `[uncaughtException] origin=${origin}:`,
+        err instanceof Error ? (err.stack ?? err.message) : String(err),
+      );
+    } catch {
+      /* logging itself failed — nothing safe to do */
+    }
+  });
+  process.on("unhandledRejection", (reason) => {
+    try {
+      console.error(
+        `[unhandledRejection]:`,
+        reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+      );
+    } catch {
+      /* logging itself failed — nothing safe to do */
+    }
+  });
+  p[HANDLERS_INSTALLED] = true;
 }

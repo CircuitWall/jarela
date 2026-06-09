@@ -131,6 +131,15 @@ async function runShutdown(): Promise<void> {
     console.error("[jarela] waiting for runs failed:", err);
   }
 
+  // 4b. Stop the async-tool-results sweeper. Holds a setInterval that
+  //     would otherwise keep the event loop alive past closeDb().
+  try {
+    const { stopAsyncResults } = await import("@/lib/tools/async-results");
+    stopAsyncResults();
+  } catch (err) {
+    console.error("[jarela] stopping async-results sweeper failed:", err);
+  }
+
   // 5. Close the DB. WAL is checkpointed so the next boot is fast and we
   //    leave no stale -shm/-wal sidecars on disk.
   try {
