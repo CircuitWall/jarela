@@ -120,41 +120,105 @@ $env:PORT     = "$Port"
 $env:HOSTNAME = '127.0.0.1'
 $env:NODE_ENV = 'production'
 
-# Separate files for the node child's stdout/stderr. The launcher writes its
-# own supervisor messages to $LogFile; Start-Process cannot share that handle
-# with a child or it fails silently on Windows ("file is in use").
+# Separate files for the node child's stdout/stderr. We append (>>) instead
+# of truncating each spawn so a crash-and-respawn cycle keeps the prior
+# stderr lines around for diagnosis.
 $ServerOut = Join-Path $LogDir 'server.out.log'
 $ServerErr = Join-Path $LogDir 'server.err.log'
 
+# Spawn node and reliably capture stdout/stderr to files. Background:
+# `Start-Process -NoNewWindow -RedirectStandardOutput X -RedirectStandardError Y`
+# silently drops both streams when the parent chain is wscript -> powershell
+# (i.e. when there is no console attached to the PowerShell host). Under that
+# setup, server.out.log / server.err.log stay 0 bytes forever, hiding crash
+# reasons. Switching to a raw `[System.Diagnostics.Process]` with async
+# `BeginOutputReadLine`/`BeginErrorReadLine` event handlers works regardless
+# of console attachment because the read loop runs on a .NET worker thread.
+function Start-NodeChild([string]$nodeExe, [string]$workDir, [string]$outFile, [string]$errFile) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName               = $nodeExe
+  $psi.Arguments              = 'server.js'
+  $psi.WorkingDirectory       = $workDir
+  $psi.UseShellExecute        = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError  = $true
+  $psi.CreateNoWindow         = $true
+  # Env (PORT, HOSTNAME, NODE_ENV set above) is inherited by default.
+
+  $proc = New-Object System.Diagnostics.Process
+  $proc.StartInfo           = $psi
+  $proc.EnableRaisingEvents = $true
+
+  # StreamWriters with AutoFlush=true so every line lands on disk immediately.
+  $outFs = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+  $errFs = [System.IO.File]::Open($errFile, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+  $outSw = New-Object System.IO.StreamWriter($outFs, [System.Text.Encoding]::UTF8)
+  $errSw = New-Object System.IO.StreamWriter($errFs, [System.Text.Encoding]::UTF8)
+  $outSw.AutoFlush = $true
+  $errSw.AutoFlush = $true
+
+  $outEvent = Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -MessageData $outSw -Action {
+    if ($EventArgs.Data -ne $null) { $Event.MessageData.WriteLine($EventArgs.Data) }
+  }
+  $errEvent = Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived -MessageData $errSw -Action {
+    if ($EventArgs.Data -ne $null) { $Event.MessageData.WriteLine($EventArgs.Data) }
+  }
+
+  if (-not $proc.Start()) { return $null }
+  $proc.BeginOutputReadLine()
+  $proc.BeginErrorReadLine()
+
+  return [PSCustomObject]@{
+    Process    = $proc
+    OutWriter  = $outSw
+    ErrWriter  = $errSw
+    OutFs      = $outFs
+    ErrFs      = $errFs
+    OutEvent   = $outEvent
+    ErrEvent   = $errEvent
+  }
+}
+
 # Supervisor loop: respawn server.js if it exits. Bail after too many rapid
-# restarts so Task Scheduler can retry the whole task.
+# restarts (3 in 60s) so Task Scheduler can decide. With an encrypted master
+# key, every restart costs the user a manual PIN entry, so we prefer to fail
+# loudly rather than churn silently.
 $restartCount = 0
 $windowStart  = Get-Date
 
 while ($true) {
   Write-Log "Starting 'node server.js' on http://127.0.0.1:$Port (out=$ServerOut)"
-  $proc = Start-Process -FilePath $node `
-            -ArgumentList 'server.js' `
-            -WorkingDirectory $InstallDir `
-            -NoNewWindow `
-            -PassThru `
-            -RedirectStandardOutput $ServerOut `
-            -RedirectStandardError  $ServerErr
-  if (-not $proc) {
-    Write-Log "FATAL: Start-Process returned null for node server.js"
+  $child = Start-NodeChild -nodeExe $node -workDir $InstallDir -outFile $ServerOut -errFile $ServerErr
+  if (-not $child -or -not $child.Process) {
+    Write-Log "FATAL: failed to start node server.js"
     Start-Sleep -Seconds 5
     exit 1
   }
-  Write-Log "spawned node PID $($proc.Id)"
-  Wait-ProcessExit $proc.Id
-  Write-Log "server.js exited (PID $($proc.Id))"
+  $childPid = $child.Process.Id
+  Write-Log "spawned node PID $childPid"
+
+  Wait-ProcessExit $childPid
+  $exitCode = $null
+  try { $exitCode = $child.Process.ExitCode } catch {}
+
+  # Drain remaining async reads, then unregister handlers and close files.
+  try { $child.Process.WaitForExit() } catch {}
+  try { Unregister-Event -SourceIdentifier $child.OutEvent.Name -ErrorAction SilentlyContinue } catch {}
+  try { Unregister-Event -SourceIdentifier $child.ErrEvent.Name -ErrorAction SilentlyContinue } catch {}
+  try { $child.OutWriter.Dispose() } catch {}
+  try { $child.ErrWriter.Dispose() } catch {}
+  try { $child.OutFs.Dispose() }    catch {}
+  try { $child.ErrFs.Dispose() }    catch {}
+  try { $child.Process.Dispose() }  catch {}
+
+  Write-Log "server.js exited (PID $childPid, exit=$exitCode)"
 
   if (((Get-Date) - $windowStart).TotalSeconds -gt 60) {
     $restartCount = 0
     $windowStart  = Get-Date
   }
   $restartCount++
-  if ($restartCount -ge 5) {
+  if ($restartCount -ge 3) {
     Write-Log "Too many rapid restarts ($restartCount in <60s). Exiting; Task Scheduler will retry."
     exit 1
   }
