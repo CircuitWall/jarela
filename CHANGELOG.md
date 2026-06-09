@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-09
+
+A reliability + UX polish patch on top of 1.4.0. The PIN keypad used at
+boot-time decrypt and screen-unlock has been collapsed into a single
+component with two modes, the API client treats both 423 lock states
+symmetrically (master-key-locked is no longer surfaced as a toast
+error), and several silent failure modes uncovered during last
+night's launcher diagnosis are now bounded and observable.
+
+### Changed
+
+- **Unified PIN keypad**
+  ([#226](https://github.com/CircuitWall/jarela/pull/226)).
+  `UnlockScreen` and `ScreenLock` were near-duplicate 6-digit keypads;
+  collapsed into a single `PinKeypad` with `mode: "decrypt" | "unlock"`.
+  Both unlock paths converge on a shared `landOnAgentPicker()` so the
+  user always lands on the agent selector. Boot-time decrypt now uses
+  `router.refresh()` instead of a full `window.location.reload()`, so
+  the transition to the AppShell is seamless. The API client handles
+  423 `locked` symmetrically with `screen-locked` — neither lock state
+  is surfaced as a toast error any more; the matching overlay mounts
+  instead.
+
+### Fixed
+
+- **Bounded resource leaks and last-resort error handlers**
+  ([#227](https://github.com/CircuitWall/jarela/pull/227)). Installs
+  `process.on("uncaughtException")` and `process.on("unhandledRejection")`
+  in `instrumentation-node.ts` so stray async errors land in the in-memory
+  log ring instead of going to raw stderr or killing the server. The
+  thread-run SSE route's `cancel()` now tears down its 500 ms poll and
+  event subscriber on client disconnect; the provider-probe route clears
+  its timeout on the win-path; `lib/tools/async-results` exposes
+  `stopAsyncResults()` and the shutdown drain calls it. Gmail and GitHub
+  page-walkers switched from `Promise.all` to `Promise.allSettled` so one
+  failed item no longer bins the whole page. `AbortSignal.timeout()`
+  added to the dashboard currency lookups (Nominatim, restcountries,
+  open.er-api) and the GitHub-Copilot provider fetches.
+- **Installer captures node stdio and bounds task retries**
+  ([#225](https://github.com/CircuitWall/jarela/pull/225)). Replaces
+  `Start-Process -RedirectStandardOutput/Error` (which silently dropped
+  both streams under `wscript -> powershell`) with a raw
+  `[System.Diagnostics.Process]` plus async `BeginOutputReadLine` /
+  `BeginErrorReadLine` writing through autoflushed `StreamWriter` s, so
+  `server.out.log` and `server.err.log` actually contain output. Logs
+  node's exit code on every cycle. Tightens the in-launcher rate limiter
+  from 5 to 3 restarts in 60 s. Reduces the scheduled-task retry policy
+  from `RestartCount=999, RestartInterval=1m` to `RestartCount=3,
+  RestartInterval=5m` — with an encrypted master key, every retry needs
+  manual PIN re-entry, so 999 silent retries was strictly worse than
+  failing loudly.
+- **README promo video renders**
+  ([#223](https://github.com/CircuitWall/jarela/pull/223)). GitHub raw
+  was serving the audio-less `.webm` as `audio/webm` (mime-sniffer
+  mis-classifies); browsers refused to render it in a `<video>`.
+  Re-encoded to h264 mp4 (faststart, video-only) which raw.githubusercontent.com
+  tags as `video/mp4`, and switched the README to absolute raw URLs for
+  `src` and `poster` since the markdown sanitizer doesn't rewrite
+  relative paths inside `<video>`.
+
 ## [1.4.0] - 2026-06-08
 
 ### Added
