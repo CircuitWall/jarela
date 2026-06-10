@@ -726,6 +726,12 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   if (!names.has("warm_summary"))            db.exec("ALTER TABLE threads ADD COLUMN warm_summary TEXT");
   if (!names.has("warm_summary_before"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before TEXT");
   if (!names.has("warm_summary_computed_at")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_computed_at TEXT");
+  // Compaction stats — message count + original transcript char count of the
+  // material that fed `warm_summary`. The chat UI displays them on the
+  // boundary chip so the user can see how much was compressed and by how
+  // much. NULL on legacy rows / rows summarised before these columns existed.
+  if (!names.has("warm_summary_source_messages")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_source_messages INTEGER");
+  if (!names.has("warm_summary_source_chars"))    db.exec("ALTER TABLE threads ADD COLUMN warm_summary_source_chars INTEGER");
 }
 
 // Per-tier input-token breakdown so the chat UI can show actual

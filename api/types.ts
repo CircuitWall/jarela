@@ -240,6 +240,10 @@ export interface ThreadDetail extends ThreadSummary {
   warm_summary?: string | null;
   warm_summary_before?: string | null;
   warm_summary_computed_at?: string | null;
+  // Compaction stats — drive the boundary chip's "N msgs · old → new chars"
+  // readout. Null when the summary was produced before these columns existed.
+  warm_summary_source_messages?: number | null;
+  warm_summary_source_chars?: number | null;
 }
 
 export interface ThreadContextPin {
@@ -247,6 +251,8 @@ export interface ThreadContextPin {
   warm_summary: string | null;
   warm_summary_before: string | null;
   warm_summary_computed_at: string | null;
+  warm_summary_source_messages: number | null;
+  warm_summary_source_chars: number | null;
 }
 
 export interface MemoryItem {

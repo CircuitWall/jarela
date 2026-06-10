@@ -19,6 +19,11 @@ export interface ThreadRow {
   warm_summary?: string | null;
   warm_summary_before?: string | null;
   warm_summary_computed_at?: string | null;
+  // Compaction-stat columns — set alongside warm_summary. Null when the
+  // summary predates these columns or was computed in a path that doesn't
+  // know the source counts.
+  warm_summary_source_messages?: number | null;
+  warm_summary_source_chars?: number | null;
 }
 export interface MessageRow {
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
@@ -248,10 +253,19 @@ export function setThreadWarmSummary(
   thread_id: string,
   summary: string,
   before: string | null,
+  sourceMessages?: number | null,
+  sourceChars?: number | null,
 ): void {
   getDb()
     .prepare(
-      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=? WHERE thread_id=?",
+      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=? WHERE thread_id=?",
     )
-    .run(summary, before, now(), thread_id);
+    .run(
+      summary,
+      before,
+      now(),
+      typeof sourceMessages === "number" ? sourceMessages : null,
+      typeof sourceChars === "number" ? sourceChars : null,
+      thread_id,
+    );
 }

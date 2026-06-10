@@ -141,7 +141,14 @@ export async function buildHistoryWindow(
         // when there's no explicit pin because the time-windowed boundary
         // shifts every turn — caching it would never hit.
         if (warmSummaryCtx && hotSince) {
-          setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince);
+          // Compaction-stat columns: count of messages older than the hot
+          // slice + their flattened transcript length. The chat UI shows
+          // these on the boundary chip so the user can see the savings.
+          const warmMsgCount = Math.max(0, allWindowMessages.length - (hotMessages?.length ?? 0));
+          const warmSourceChars = allWindowMessages
+            .slice(0, warmMsgCount)
+            .reduce((acc, m) => acc + transcriptText(m.content).length, 0);
+          setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince, warmMsgCount, warmSourceChars);
         }
       }
       const used = estimateTokens(warmSummaryCtx);

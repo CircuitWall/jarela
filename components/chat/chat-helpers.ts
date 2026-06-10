@@ -17,6 +17,8 @@ export interface ThreadMetaApplier {
   setWarmSummary: (v: string | null) => void;
   setWarmSummaryBefore: (v: string | null) => void;
   setWarmSummaryComputedAt: (v: string | null) => void;
+  setWarmSummarySourceMessages: (v: number | null) => void;
+  setWarmSummarySourceChars: (v: number | null) => void;
   setContextWindowTokens: (v: number | null) => void;
 }
 
@@ -25,6 +27,8 @@ export interface ThreadGetPayload {
   warm_summary?: string | null;
   warm_summary_before?: string | null;
   warm_summary_computed_at?: string | null;
+  warm_summary_source_messages?: number | null;
+  warm_summary_source_chars?: number | null;
   context_window_tokens?: number | null;
 }
 
@@ -47,6 +51,8 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
   meta.setWarmSummary(payload.warm_summary ?? null);
   meta.setWarmSummaryBefore(payload.warm_summary_before ?? null);
   meta.setWarmSummaryComputedAt(payload.warm_summary_computed_at ?? null);
+  meta.setWarmSummarySourceMessages(payload.warm_summary_source_messages ?? null);
+  meta.setWarmSummarySourceChars(payload.warm_summary_source_chars ?? null);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
 }
 

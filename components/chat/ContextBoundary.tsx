@@ -97,24 +97,71 @@ export function WarmSummaryCard({
 }
 
 interface ContextBoundaryDividerProps {
-  // Reserved for future variations of the divider (e.g. compact mode).
-  // Kept as an empty object so MessageList's call site stays stable.
-  className?: string;
+  // Stats for the chip readout: how many messages went into the warm
+  // summary, the size of their flattened transcript, and the size of the
+  // resulting summary. All three are NULL on threads whose summary
+  // predates the stat columns — the chip falls back to just the label.
+  sourceMessages?: number | null;
+  sourceChars?: number | null;
+  summaryChars?: number | null;
 }
 
-export function ContextBoundaryDivider(_props: ContextBoundaryDividerProps = {}) {
+export function ContextBoundaryDivider({
+  sourceMessages,
+  sourceChars,
+  summaryChars,
+}: ContextBoundaryDividerProps = {}) {
+  const hasStats =
+    typeof sourceMessages === "number" && sourceMessages > 0 &&
+    typeof sourceChars === "number" && sourceChars > 0;
+  const ratio = hasStats && typeof summaryChars === "number" && summaryChars > 0 && sourceChars! > 0
+    ? Math.max(0, Math.round((1 - summaryChars / sourceChars!) * 100))
+    : null;
   return (
     <div className="relative my-3 select-none" aria-label="context boundary">
       <div className="absolute inset-0 flex items-center" aria-hidden>
         <div className="w-full border-t border-dashed border-accent/40" />
       </div>
       <div className="relative flex justify-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider bg-surface border border-accent/40 text-accent shadow-sm">
+        <div
+          className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider bg-surface border border-accent/40 text-accent shadow-sm"
+          title={
+            hasStats
+              ? `Compacted ${sourceMessages} message${sourceMessages === 1 ? "" : "s"} (${sourceChars!.toLocaleString()} chars) into ${typeof summaryChars === "number" ? `${summaryChars.toLocaleString()} chars` : "memory"}`
+              : undefined
+          }
+        >
           <span>Context boundary</span>
+          {hasStats && (
+            <>
+              <span className="opacity-40" aria-hidden>·</span>
+              <span className="normal-case tracking-normal font-normal text-fg-muted">
+                {sourceMessages} msg{sourceMessages === 1 ? "" : "s"} ·{" "}
+                {formatBytes(sourceChars!)}
+                {typeof summaryChars === "number" && summaryChars > 0 && (
+                  <>
+                    {" → "}
+                    {formatBytes(summaryChars)}
+                    {ratio !== null && ratio > 0 && (
+                      <span className="ml-1 text-[9px] text-accent/80">(−{ratio}%)</span>
+                    )}
+                  </>
+                )}
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>
   );
+}
+
+// Compact character-count formatter: 4321 → "4.3k", 18234 → "18k".
+function formatBytes(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return "0";
+  if (n < 1000) return `${n}`;
+  const k = n / 1000;
+  return k >= 100 ? `${Math.round(k)}k` : `${k.toFixed(1).replace(/\.0$/, "")}k`;
 }
 
 // `buildWarmSummary` prepends a couple of plain-text header lines that read
