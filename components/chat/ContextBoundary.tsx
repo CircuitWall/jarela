@@ -6,7 +6,7 @@
 // (accent / surface-2 / fg-* / border) so they read as native chat chrome.
 
 import { useState } from "react";
-import { Archive, ChevronDown, ChevronUp, Plus } from "lucide-react";
+import { Archive, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 
 interface WarmSummaryCardProps {
@@ -97,19 +97,12 @@ export function WarmSummaryCard({
 }
 
 interface ContextBoundaryDividerProps {
-  /** When true, an "+ N earlier" affordance rolls the boundary back one page. */
-  canIncludeMore: boolean;
-  /** Click handler for the affordance — wires up to ChatView.setContextPin. */
-  onIncludeMore?: () => void;
-  /** Number of older messages currently summarised, for the chip label. */
-  hiddenCount: number;
+  // Reserved for future variations of the divider (e.g. compact mode).
+  // Kept as an empty object so MessageList's call site stays stable.
+  className?: string;
 }
 
-export function ContextBoundaryDivider({
-  canIncludeMore,
-  onIncludeMore,
-  hiddenCount,
-}: ContextBoundaryDividerProps) {
+export function ContextBoundaryDivider(_props: ContextBoundaryDividerProps = {}) {
   return (
     <div className="relative my-3 select-none" aria-label="context boundary">
       <div className="absolute inset-0 flex items-center" aria-hidden>
@@ -118,17 +111,6 @@ export function ContextBoundaryDivider({
       <div className="relative flex justify-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider bg-surface border border-accent/40 text-accent shadow-sm">
           <span>Context boundary</span>
-          {canIncludeMore && (
-            <button
-              type="button"
-              onClick={onIncludeMore}
-              className="inline-flex items-center gap-0.5 -mr-1 px-1.5 py-0.5 rounded-full bg-accent/10 hover:bg-accent/20 text-accent transition-colors normal-case tracking-normal"
-              title="Include the next page of older messages in the agent's hot context"
-            >
-              <Plus className="w-3 h-3" />
-              <span>{hiddenCount > 0 ? `${hiddenCount} earlier` : "include earlier"}</span>
-            </button>
-          )}
         </div>
       </div>
     </div>
