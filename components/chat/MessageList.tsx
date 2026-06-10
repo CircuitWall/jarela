@@ -371,19 +371,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               computedAt={warmSummaryComputedAt ?? null}
               streaming={!!streaming}
             />
-            <ContextBoundaryDivider
-              canIncludeMore={hasMore || olderInVisible > 0}
-              hiddenCount={olderCountLabel}
-              onIncludeMore={() => {
-                // Bump the pin to the oldest visible message so the entire
-                // current viewport becomes hot, AND request the next older
-                // page so the user can keep scrolling for context.
-                if (visibleMessages.length > 0 && onSetContextPin) {
-                  onSetContextPin(visibleMessages[0].created_at);
-                }
-                if (hasMore && onLoadMore) onLoadMore();
-              }}
-            />
+            <ContextBoundaryDivider />
           </div>
         );
 
