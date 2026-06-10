@@ -289,7 +289,7 @@ export function AppShell() {
         }}
         suppressed={state.activeTab !== "chat"}
       />
-      {screenLocked && (
+      {screenLocked && !masterKeyLocked && (
         <ScreenLock
           onUnlock={() => {
             // Drop the user back on the picker so they consciously
@@ -299,16 +299,21 @@ export function AppShell() {
           }}
         />
       )}
-      {masterKeyLocked && !screenLocked && (
+      {masterKeyLocked && (
         // Master key got re-locked mid-session (e.g. external lock
         // command). Mount the decrypt splash — same shared keypad as
         // boot — and on success drop back to the agent picker. The
         // existing components below stay mounted underneath; once
         // unlocked they resume against the now-unlocked DB.
+        //
+        // If the screen-lock flag is also up (idle overlap), the
+        // decrypt route clears it server-side, so we also drop the
+        // screen-lock flag here. One PIN entry covers both.
         <UnlockScreen
           onUnlock={() => {
             landOnAgentPicker();
             setMasterKeyLocked(false);
+            if (screenLocked) setScreenLocked(false);
           }}
         />
       )}

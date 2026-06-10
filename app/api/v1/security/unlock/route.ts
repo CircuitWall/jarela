@@ -32,6 +32,7 @@ import {
   recordPinFailure,
   recordPinSuccess,
 } from "@/lib/auth/pin-rate-limit";
+import { unlockScreen } from "@/lib/security/screen-lock";
 
 const Body = z.object({ pin: z.string() });
 
@@ -65,6 +66,10 @@ export async function POST(req: Request) {
   try {
     unlockMasterKey(parsed.data.pin);
     recordPinSuccess(remote);
+    // Decrypting the master key proves the human is present, so also
+    // clear any pending screen-lock. Otherwise a user staring at both
+    // overlays at once would have to enter the same PIN twice.
+    unlockScreen();
     return NextResponse.json({ ok: true });
   } catch (err) {
     if (err instanceof InvalidPinError) {
@@ -78,6 +83,7 @@ export async function POST(req: Request) {
     }    if (err instanceof Error && /is not locked/.test(err.message)) {
       // Parallel unlock won the race between our isMasterKeyLocked()
       // check and unwrap. The goal state is achieved - treat as success.
+      unlockScreen();
       return NextResponse.json({ ok: true });
     }    console.error("[security/unlock] unexpected error:", err);
     return NextResponse.json({ error: "internal" }, { status: 500 });
