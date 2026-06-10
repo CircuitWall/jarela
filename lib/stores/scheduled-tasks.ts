@@ -259,3 +259,21 @@ export function markTaskRan(id: string, kind: ScheduleKind, schedule: string, er
     .prepare("UPDATE scheduled_tasks SET last_run_at=?, last_error=?, next_run_at=?, updated_at=? WHERE id=?")
     .run(t, error ?? null, nextRun, t, id);
 }
+
+// Stamp `last_error` on due tasks the scheduler cannot run right now
+// (currently: at-rest key locked). Does NOT advance next_run_at, so the
+// rows stay due and fire as soon as the blocker clears. Only updates
+// rows whose last_error differs, so repeated locked ticks don't churn
+// updated_at or rewrite the row on every poll.
+export function markTasksDeferred(ids: string[], reason: string): number {
+  if (ids.length === 0) return 0;
+  const t = now();
+  const placeholders = ids.map(() => "?").join(",");
+  const r = getDb()
+    .prepare(
+      `UPDATE scheduled_tasks SET last_error=?, updated_at=?
+       WHERE id IN (${placeholders}) AND (last_error IS NULL OR last_error != ?)`,
+    )
+    .run(reason, t, ...ids, reason);
+  return Number(r.changes ?? 0);
+}
