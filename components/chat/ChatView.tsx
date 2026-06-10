@@ -5,6 +5,7 @@ import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types
 import { useSSE } from "@/hooks/useSSE";
 import { useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading } from "@/lib/ui/loading";
+import { reportError } from "@/lib/ui/error-message";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
@@ -20,11 +21,6 @@ interface Props {
   sessionLoading?: boolean;
   sessionError?: string | null;
   onMessageSent: () => void;
-}
-
-function isRecoverableSessionError(err: string | null | undefined): boolean {
-  if (!err) return false;
-  return /timed?\s*out|timeout|aborterror|failed to fetch|network|temporar|econnreset|503|429/i.test(err);
 }
 
 export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMessageSent }: Props) {
@@ -51,7 +47,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   // baseline. Re-fetched on every thread load alongside hot_since / warm
   // summary state so a model swap is reflected immediately.
   const [contextWindowTokens, setContextWindowTokens] = useState<number | null>(null);
-  const recoverableSessionError = isRecoverableSessionError(sessionError);
 
   const addNotice = (text: string) =>
     setNotices((p) => [...p, { id: `notice-${Date.now()}`, text }]);
@@ -180,6 +175,35 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
 
   const { streaming, streamingContent, thinkingContent, toolEvents, error, start, stop, attach, clearStreamingContent } = useSSE(handleDone);
   clearStreamingRef.current = clearStreamingContent;
+
+  // Surface session-load and stream errors as toasts instead of
+  // disabling the input or rendering an inline red banner. Toasts are
+  // dismissible, dedupe-by-id, and carry the Report path. The chat
+  // stays interactive so the user can retry without reloading.
+  const lastSessionErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sessionError) { lastSessionErrorRef.current = null; return; }
+    if (lastSessionErrorRef.current === sessionError) return;
+    lastSessionErrorRef.current = sessionError;
+    reportError({
+      error: sessionError,
+      fallbackTitle: "Couldn't load session",
+      summary: "The agent's thread didn't load. Retry by re-selecting the agent.",
+      context: { agent_id: agentId, panel: "chat", action: "session.load" },
+    });
+  }, [sessionError, agentId]);
+
+  const lastStreamErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!error) { lastStreamErrorRef.current = null; return; }
+    if (lastStreamErrorRef.current === error) return;
+    lastStreamErrorRef.current = error;
+    reportError({
+      error,
+      fallbackTitle: "Chat stream error",
+      context: { agent_id: agentId, thread_id: threadId, panel: "chat", action: "stream" },
+    });
+  }, [error, agentId, threadId]);
 
   // Mirror `streaming` in a ref so the cross-device sync listener below can
   // bail out without re-binding on every transport state change.
@@ -458,11 +482,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       if (!msg) return;
     }
 
-    if (sessionError && !recoverableSessionError) {
-      setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
-      return;
-    }
-
     const currentAttachments = attachments;
     setAttachments([]);
 
@@ -498,11 +517,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     // to handleSubmit so the prefix is parsed and routed correctly.
     if (msg.toLowerCase() === "/new" || msg.toLowerCase().startsWith("/btw ")) {
       await handleSubmit(rawInput);
-      return;
-    }
-
-    if (sessionError && !recoverableSessionError) {
-      setNotices([{ id: `notice-${Date.now()}`, text: `Session failed to load: ${sessionError}` }]);
       return;
     }
 
@@ -562,12 +576,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         onRetryMessage={handleRetryMessage}
       />
 
-      {error && (
-        <div className="mx-4 mb-2 px-3 py-2 rounded bg-red-900/40 border border-red-700 text-red-700 dark:text-red-300 text-xs max-h-48 overflow-y-auto">
-          <pre className="whitespace-pre-wrap break-all font-mono">{error}</pre>
-        </div>
-      )}
-
       <ApprovalsBanner agentId={agentId} />
 
       <InputBar
@@ -599,10 +607,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
             void launchRun(msg, []);
           }
         }}
-        disabled={
-          !agentId ||
-          (!!sessionError && !recoverableSessionError)
-        }
+        disabled={!agentId}
         placeholder={
           compacting ? "Compacting session\u2026 your messages will queue" :
           sessionLoading ? "Loading session\u2026 your messages will queue" :

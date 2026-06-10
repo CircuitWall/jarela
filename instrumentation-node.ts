@@ -85,25 +85,38 @@ function warnIfExposedBind(): void {
 // handlers (which would double-log every event).
 const HANDLERS_INSTALLED: unique symbol = Symbol.for("@jarela/global-error-handlers");
 type ProcessWithFlag = NodeJS.Process & { [HANDLERS_INSTALLED]?: true };
+
+// Render a thrown value with enough diagnostic surface to pin down errors
+// whose stack is entirely ignore-listed (Node-internal frames hidden by
+// --enable-source-maps), which is the default for stream/web throws like
+// "Invalid state: Controller is already closed". Surfaces constructor
+// name + .code so the original symbol is recoverable from the log.
+function describeThrown(err: unknown): string {
+  if (err == null) return String(err);
+  if (typeof err !== "object") return String(err);
+  const e = err as { name?: string; code?: string | number; message?: string; stack?: string; constructor?: { name?: string } };
+  const ctor = e.constructor?.name ?? "Object";
+  const name = e.name ?? ctor;
+  const code = e.code != null ? ` code=${String(e.code)}` : "";
+  const stack = typeof e.stack === "string" ? e.stack : null;
+  if (stack) return `[${name}${code}] ${stack}`;
+  const msg = typeof e.message === "string" ? e.message : String(err);
+  return `[${name}${code}] ${msg}`;
+}
+
 function installGlobalErrorHandlers(): void {
   const p = process as ProcessWithFlag;
   if (p[HANDLERS_INSTALLED]) return;
   process.on("uncaughtException", (err, origin) => {
     try {
-      console.error(
-        `[uncaughtException] origin=${origin}:`,
-        err instanceof Error ? (err.stack ?? err.message) : String(err),
-      );
+      console.error(`[uncaughtException] origin=${origin}: ${describeThrown(err)}`);
     } catch {
       /* logging itself failed — nothing safe to do */
     }
   });
   process.on("unhandledRejection", (reason) => {
     try {
-      console.error(
-        `[unhandledRejection]:`,
-        reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
-      );
+      console.error(`[unhandledRejection]: ${describeThrown(reason)}`);
     } catch {
       /* logging itself failed — nothing safe to do */
     }
