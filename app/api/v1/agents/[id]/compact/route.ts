@@ -79,18 +79,51 @@ export async function POST(_req: Request, { params }: Params) {
 
   const providerParams: ProviderParams = getModelParams(cfg);
 
+  // Incremental compaction: when a prior warm summary covers messages up to
+  // `warm_summary_before`, only summarise the *new* messages on top of that
+  // existing summary. Resummarising the whole transcript every /compact is
+  // both wasteful (long input, lossy summary-of-summary) and unsafe — once
+  // pruneThreadMessages has trimmed older rows from the DB, they are gone
+  // from `rows` entirely and a from-scratch summary would silently lose
+  // everything the old summary used to cover.
+  const priorSummary = (thread.warm_summary ?? "").trim();
+  const priorBefore = thread.warm_summary_before ?? null;
+  const priorSourceMessages = thread.warm_summary_source_messages ?? 0;
+  const priorSourceChars = thread.warm_summary_source_chars ?? 0;
+  const hasPriorSummary = priorSummary.length > 0 && !!priorBefore;
+
+  const newRows = hasPriorSummary
+    ? rows.filter((r) => r.created_at > (priorBefore as string))
+    : rows;
+
+  if (hasPriorSummary && newRows.length === 0) {
+    return NextResponse.json({ compacted: false, reason: "nothing new since last compact" });
+  }
+
   // Build transcript (text-flattened so base64 image data doesn't poison the
   // summarization prompt) BEFORE touching the thread. If anything below fails
   // we don't want to have already wiped the user's history.
-  const flattened = rows.map((r) => ({
+  const flattened = newRows.map((r) => ({
     role: r.role,
     text: transcriptText(r.content),
   }));
-  const transcript = flattened
+  const newTurnsText = flattened
     .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.text}`)
     .join("\n\n");
-  const contextChars = transcript.length;
-  const messageCount = rows.length;
+
+  const transcript = hasPriorSummary
+    ? [
+        "Previous compressed memory (preserve every fact, identifier, and decision below):",
+        priorSummary,
+        "",
+        "--- New turns since the above summary ---",
+        newTurnsText,
+      ].join("\n\n")
+    : newTurnsText;
+
+  const newCharCount = newTurnsText.length;
+  const contextChars = hasPriorSummary ? priorSourceChars + newCharCount : newCharCount;
+  const messageCount = hasPriorSummary ? priorSourceMessages + newRows.length : newRows.length;
 
   const provider = getProvider(cfg.provider);
 
