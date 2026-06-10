@@ -24,7 +24,13 @@
  */
 
 import { createRequire } from "node:module";
-import { ensureBridgeAuthDir, findRoute, removeBridgeAuthDir } from "@/lib/stores/bridges";
+import {
+  bumpRouteLastSeenTs,
+  ensureBridgeAuthDir,
+  findRoute,
+  getMaxRouteLastSeenTs,
+  removeBridgeAuthDir,
+} from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/types";
 import { saveBridgeAttachment, shouldInline } from "./attachment-store";
@@ -92,6 +98,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   private sentIds: string[] = [];
   private sentIdsSet = new Set<string>();
   private static readonly SENT_IDS_MAX = 500;
+  // Dedupe ring for INBOUND message ids. WhatsApp replays the queued
+  // backlog after a reconnect (delivered as `messages.upsert` with type
+  // `append` rather than `notify`), and on a same-process reconnect we
+  // also get re-fired live `notify` events for messages we already
+  // processed. Tracking the last N message ids in memory lets us accept
+  // both notify+append without delivering duplicates to the agent.
+  private recvIds: string[] = [];
+  private recvIdsSet = new Set<string>();
+  private static readonly RECV_IDS_MAX = 2000;
   /**
    * Cap on per-attachment payload size we'll forward to the LLM. WhatsApp
    * compresses images to a few hundred KB; voice notes / short videos
@@ -245,7 +260,22 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
 
     sock.ev.on("messages.upsert", async (...args: unknown[]) => {
       const payload = (args[0] ?? {}) as { messages?: unknown[]; type?: string };
-      if (payload.type !== "notify") return; // ignore history/append
+      // Accept both `notify` (real-time inbound) AND `append` (server
+      // backlog replayed after a reconnect / catch-up). Dropping `append`
+      // would silently lose messages that arrived while the server was
+      // unreachable to us — exactly the case the per-route watermark +
+      // recv-id dedupe below are designed to handle safely.
+      // Other types we still skip: `prepend` (Baileys' initial
+      // messaging-history backfill — large, old, and not what a live
+      // adapter should re-deliver to agents) and the legacy
+      // `replace`/`update` events that arrive via messages.update.
+      if (payload.type !== "notify" && payload.type !== "append") return;
+      // On a fresh adapter boot the watermark is whatever the last run
+      // persisted. Read it once per batch (cheap SQLite call) so we can
+      // hard-reject very old appends without doing any per-message work.
+      const watermark = payload.type === "append"
+        ? getMaxRouteLastSeenTs(this.bridge_id)
+        : 0;
       for (const raw of payload.messages ?? []) {
         const m = raw as {
           key?: { remoteJid?: string; remoteJidAlt?: string; fromMe?: boolean; id?: string; participant?: string };
@@ -260,6 +290,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           // bridge-authored echoes to prevent bot loopbacks.
           if (m.key.id && this.sentIdsSet.has(m.key.id)) continue;
         }
+        // Inbound dedupe — covers (a) the `notify` that fires for the same
+        // message we already delivered on an earlier `notify`/`append`,
+        // and (b) duplicate entries inside a single `append` batch.
+        if (m.key.id && this.recvIdsSet.has(m.key.id)) continue;
         // Baileys 7 / modern WhatsApp delivers many personal chats with a
         // `@lid` ("Local IDentifier") remoteJid instead of `@s.whatsapp.net`.
         // The chat picker filters those out (they aren't valid sendMessage
@@ -275,6 +309,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         const ts = typeof m.messageTimestamp === "number"
           ? m.messageTimestamp * 1000
           : (m.messageTimestamp?.low ?? 0) * 1000 || Date.now();
+        // Watermark gate: on `append` batches, skip anything strictly
+        // older than the highest per-route watermark we've persisted. This
+        // prevents the server's reconnect replay from re-delivering
+        // messages we already routed in a previous process lifetime.
+        // `notify` events skip this check — they're live and may legitimately
+        // arrive in any order relative to the cross-route max.
+        if (payload.type === "append" && watermark > 0 && ts > 0 && ts <= watermark) {
+          continue;
+        }
         // In groups, pushName is typically the participant's display name,
         // not the group subject. Avoid poisoning the group chat label.
         this.observeChat(remote_jid, is_group ? null : (m.pushName ?? null), ts);
@@ -288,6 +331,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // Drop messages we can't represent at all (e.g. protocol/system
         // notices, reactions, unsupported message types).
         if (!text && attachments.length === 0) continue;
+        // Mark as seen before invoking the handler so a re-fired upsert
+        // during the same tick (or a sync handler that itself triggers more
+        // events) can't slip a duplicate through.
+        if (m.key.id) this.rememberRecvId(m.key.id);
         // In group chats `key.participant` is the actual sender's JID
         // (the chat-level remote_jid is the group, not the person). In 1:1
         // chats it's undefined — the sender == remote_jid. Normalize so the
@@ -320,6 +367,10 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
             console.error(`[bridge ${this.bridge_id}] inbound handler threw:`, err);
           }
         }
+        // Persist the per-route watermark only after the handler has had a
+        // chance to run. Bump uses MAX(old, new) inside the store so
+        // out-of-order appends don't roll it backward.
+        if (ts > 0) bumpRouteLastSeenTs(this.bridge_id, remote_jid, ts);
       }
     });
 
@@ -389,6 +440,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     this.selfJid = null;
     this.sentIds = [];
     this.sentIdsSet.clear();
+    this.recvIds = [];
+    this.recvIdsSet.clear();
     if (!sock) return;
     try {
       // logout() also wipes server-side auth — we just want to close the
@@ -443,6 +496,16 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     while (this.sentIds.length > WhatsAppBridgeAdapter.SENT_IDS_MAX) {
       const evict = this.sentIds.shift();
       if (evict) this.sentIdsSet.delete(evict);
+    }
+  }
+
+  private rememberRecvId(id: string): void {
+    if (this.recvIdsSet.has(id)) return;
+    this.recvIds.push(id);
+    this.recvIdsSet.add(id);
+    while (this.recvIds.length > WhatsAppBridgeAdapter.RECV_IDS_MAX) {
+      const evict = this.recvIds.shift();
+      if (evict) this.recvIdsSet.delete(evict);
     }
   }
 

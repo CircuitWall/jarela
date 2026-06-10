@@ -695,6 +695,14 @@ function ensureBridgeRouteColumns(db: DatabaseSync): void {
   if (!names.has("respond_to")) {
     db.exec("ALTER TABLE bridge_routes ADD COLUMN respond_to TEXT NOT NULL DEFAULT 'counterpart'");
   }
+  // Per-route catch-up watermark. Stores the messageTimestamp (epoch ms) of
+  // the most recent inbound delivered to the agent. On reconnect, the
+  // adapter accepts both `notify` (live) and `append` (server-replayed
+  // backlog) upserts and uses this watermark to skip anything we already
+  // processed. NULL on legacy rows / brand-new routes => no skip.
+  if (!names.has("last_seen_ts")) {
+    db.exec("ALTER TABLE bridge_routes ADD COLUMN last_seen_ts INTEGER");
+  }
 }
 
 function ensureTaskAssignmentColumns(db: DatabaseSync): void {
