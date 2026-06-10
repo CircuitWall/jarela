@@ -344,11 +344,20 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         // banner). `boundaryIndex` is the index of the first hot message in
         // the visible list; everything before it is older-than-pin and gets
         // covered by the warm summary card sitting above the divider.
+        //
+        // If `hotSince` sits strictly after every loaded message (the
+        // post-/compact "/new" state), every visible message is warm and
+        // the boundary is rendered AFTER the last bubble.
         const boundaryIndex = hotSince
           ? visibleMessages.findIndex((m) => m.created_at >= hotSince)
           : -1;
-        const hasBoundary = !!hotSince && boundaryIndex !== -1;
-        const olderInVisible = hasBoundary ? boundaryIndex : 0;
+        const pinAfterAll =
+          !!hotSince && visibleMessages.length > 0 && boundaryIndex === -1
+          && visibleMessages[visibleMessages.length - 1].created_at < hotSince;
+        const hasBoundary = !!hotSince && (boundaryIndex !== -1 || pinAfterAll);
+        const olderInVisible = pinAfterAll
+          ? visibleMessages.length
+          : hasBoundary ? boundaryIndex : 0;
         // "+ N more we don't know about yet" — older pages are likely unloaded.
         const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
 
@@ -378,11 +387,13 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           </div>
         );
 
-        return visibleMessages.flatMap((msg, i) => {
+        const nodes = visibleMessages.flatMap((msg, i) => {
           const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
-          const nodes = [] as React.ReactNode[];
-          if (hasBoundary && i === boundaryIndex) nodes.push(renderBoundary(`boundary-${msg.id}`));
-          nodes.push(
+          const out = [] as React.ReactNode[];
+          if (hasBoundary && !pinAfterAll && i === boundaryIndex) {
+            out.push(renderBoundary(`boundary-${msg.id}`));
+          }
+          out.push(
             <div
               key={msg.id}
               id={`msg-${msg.id}`}
@@ -402,8 +413,10 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               />
             </div>,
           );
-          return nodes;
+          return out;
         });
+        if (pinAfterAll) nodes.push(renderBoundary("boundary-tail"));
+        return nodes;
       })()}
       {thinkingContent && filters.thinking && <ThinkingLine text={thinkingContent} />}
       {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}

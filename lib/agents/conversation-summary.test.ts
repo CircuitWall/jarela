@@ -51,7 +51,8 @@ describe("summarizeTranscript", () => {
   it("sends summarizer system prompt and transcript payload", async () => {
     const chat = vi.fn(async (_modelId: string, messages: ProviderMessage[], _params: ProviderParams) => {
       expect(messages[0].role).toBe("system");
-      expect(String(messages[0].content)).toContain("concise summarizer");
+      expect(String(messages[0].content)).toContain("compressing a chat transcript");
+      expect(String(messages[0].content)).toContain("Artefacts (verbatim)");
       expect(messages[1].role).toBe("user");
       expect(String(messages[1].content)).toContain("Conversation to summarize");
       expect(String(messages[1].content)).toContain("alpha beta");

@@ -14,6 +14,7 @@ const {
   getThread,
   setThreadContextPin,
   setThreadWarmSummary,
+  pruneThreadMessages,
   deleteThread,
   listThreads,
 } = await import("./threads");
@@ -102,5 +103,40 @@ describe("addMessage metadata", () => {
     addMessage(t.thread_id, "assistant", "claim with [src](https://a)", undefined, null, meta);
     const [row] = getMessages(t.thread_id);
     expect(row.metadata).toBe(JSON.stringify(meta));
+  });
+});
+
+describe("pruneThreadMessages", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("is a no-op when message count is at or below the cap", () => {
+    const t = createThread("agent-prune");
+    addMessage(t.thread_id, "user", "a");
+    addMessage(t.thread_id, "assistant", "b");
+    expect(pruneThreadMessages(t.thread_id, 10)).toBe(0);
+    expect(getMessages(t.thread_id)).toHaveLength(2);
+  });
+
+  it("ignores non-positive caps (defensive)", () => {
+    const t = createThread("agent-prune");
+    addMessage(t.thread_id, "user", "a");
+    expect(pruneThreadMessages(t.thread_id, 0)).toBe(0);
+    expect(pruneThreadMessages(t.thread_id, -5)).toBe(0);
+    expect(getMessages(t.thread_id)).toHaveLength(1);
+  });
+
+  it("keeps the most recent N and deletes the older overflow", () => {
+    const t = createThread("agent-prune");
+    for (let i = 0; i < 6; i++) addMessage(t.thread_id, i % 2 === 0 ? "user" : "assistant", `m${i}`);
+    const removed = pruneThreadMessages(t.thread_id, 4);
+    expect(removed).toBe(2);
+    const rows = getMessages(t.thread_id);
+    expect(rows).toHaveLength(4);
+    // Oldest two (m0, m1) gone; remaining are m2..m5 in order.
+    expect(rows.map((r) => r.content)).toEqual(["m2", "m3", "m4", "m5"]);
+    // message_count column tracks the live row count after pruning.
+    expect(getThread(t.thread_id)?.message_count).toBe(4);
   });
 });
