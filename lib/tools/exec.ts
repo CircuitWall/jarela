@@ -32,6 +32,65 @@ function clipOutput(text: string, max = maxOutputBytes()): { value: string; trun
   return { value: `${text.slice(0, max)}\n[output truncated]`, truncated: true };
 }
 
+// Resolves cwd + env using the documented precedence:
+//   - cwd: explicit options.cwd > active workspace root > process.cwd()
+//   - env: process.env < integration-store injected env < explicit options.env
+// The workspace root takes priority over process.cwd() so the agent doesn't
+// have to thread `cwd` into every shell call once it's called workspace_init.
+// The integration-store envelope lets a service install (launchd, systemd)
+// hand encrypted credentials to subprocesses even when ANTHROPIC_API_KEY
+// etc. were never exported in the service's environment.
+function resolveExecEnvironment(options: {
+  cwd?: string;
+  env?: Record<string, string>;
+  workspaceRoot?: string;
+}): { cwd: string; env: NodeJS.ProcessEnv } {
+  const cwd = options.cwd?.trim() ? options.cwd : options.workspaceRoot ?? process.cwd();
+  const env: NodeJS.ProcessEnv = { ...process.env, ...getInjectedSubprocessEnv(), ...options.env };
+  return { cwd, env };
+}
+
+// Translates the variety of failure shapes execSync throws into the same
+// JSON envelope as the success path. Node surfaces a `timeout` kill as
+// `signal: "SIGTERM"` and/or `killed: true` with no exit status, which
+// would otherwise read as a bare exit_code=1 + empty stderr and lead the
+// agent to retry — call timeouts out explicitly instead.
+function formatExecFailure(
+  err: unknown,
+  cwd: string,
+  timeout: number,
+): string {
+  const e = err as {
+    stdout?: string; stderr?: string; status?: number; message?: string;
+    signal?: string; code?: string; killed?: boolean;
+  };
+  const out = clipOutput(String(e.stdout ?? ""));
+  const timedOut = e.code === "ETIMEDOUT"
+    || e.signal === "SIGTERM"
+    || (e.killed === true && (e.status == null || e.status === 0));
+  if (timedOut) {
+    const errText = clipOutput(String(e.stderr ?? ""), 2_000);
+    return JSON.stringify({
+      exit_code: 124,
+      stdout: out.value,
+      stderr: errText.value,
+      truncated: out.truncated || errText.truncated,
+      cwd,
+      timed_out: true,
+      timeout_ms: timeout,
+      error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope, a smaller working set, or pass a larger timeout_ms.`,
+    });
+  }
+  const errText = clipOutput(String(e.stderr ?? e.message ?? ""), 2_000);
+  return JSON.stringify({
+    exit_code: e.status ?? 1,
+    stdout: out.value,
+    stderr: errText.value,
+    truncated: out.truncated || errText.truncated,
+    cwd,
+  });
+}
+
 function runLocalCommand(
   command: string,
   options: {
@@ -58,22 +117,7 @@ function runLocalCommand(
     return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
   }
 
-  // Precedence: explicit options.cwd > active workspace root > process.cwd().
-  // The workspace root takes priority over process.cwd() so the agent
-  // doesn't have to thread `cwd` into every shell call once it's called
-  // workspace_init.
-  const cwd = options.cwd?.trim()
-    ? options.cwd
-    : options.workspaceRoot ?? process.cwd();
-  // Layered env. Later spreads win:
-  //   1. process.env — PATH, HOME, locale, the shell's exports
-  //   2. integration-store credentials — so a service install (launchd,
-  //      systemd) where ANTHROPIC_API_KEY etc. were never exported in the
-  //      service's environment still hands those values to subprocesses.
-  //      The encrypted store, populated by env-sync from the user's rc
-  //      or via the Integrations panel, is the canonical source.
-  //   3. options.env — explicit per-call override always wins.
-  const env = { ...process.env, ...getInjectedSubprocessEnv(), ...options.env };
+  const { cwd, env } = resolveExecEnvironment(options);
 
   try {
     const output = execSync(command, {
@@ -87,37 +131,7 @@ function runLocalCommand(
     const clipped = clipOutput(output);
     return JSON.stringify({ exit_code: 0, stdout: clipped.value, truncated: clipped.truncated, cwd });
   } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; status?: number; message?: string; signal?: string; code?: string; killed?: boolean };
-    const out = clipOutput(String(e.stdout ?? ""));
-    // Node's execSync surfaces a `timeout` kill as `signal: "SIGTERM"`
-    // and/or `killed: true` with no exit status. Bare exit_code=1 +
-    // empty stderr would lead the agent to retry the same command;
-    // call out the timeout explicitly so it narrows scope or raises
-    // timeout_ms instead.
-    const timedOut = e.code === "ETIMEDOUT"
-      || e.signal === "SIGTERM"
-      || (e.killed === true && (e.status == null || e.status === 0));
-    if (timedOut) {
-      const errText = clipOutput(String(e.stderr ?? ""), 2_000);
-      return JSON.stringify({
-        exit_code: 124,
-        stdout: out.value,
-        stderr: errText.value,
-        truncated: out.truncated || errText.truncated,
-        cwd,
-        timed_out: true,
-        timeout_ms: timeout,
-        error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope, a smaller working set, or pass a larger timeout_ms.`,
-      });
-    }
-    const errText = clipOutput(String(e.stderr ?? e.message ?? ""), 2_000);
-    return JSON.stringify({
-      exit_code: e.status ?? 1,
-      stdout: out.value,
-      stderr: errText.value,
-      truncated: out.truncated || errText.truncated,
-      cwd,
-    });
+    return formatExecFailure(err, cwd, timeout);
   }
 }
 
