@@ -206,8 +206,8 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!run) {
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(sse({ type: "done" }));
-        controller.close();
+        try { controller.enqueue(sse({ type: "done" })); } catch { /* */ }
+        try { controller.close(); } catch { /* */ }
       },
     });
     return sseResponse(stream);
@@ -257,7 +257,7 @@ function attachStream(
       const sub = subscribe(thread_id, onEvent);
       unsubscribe = sub.unsubscribe;
       if (!sub.run) {
-        controller.close();
+        try { controller.close(); } catch { /* */ }
         return;
       }
 
