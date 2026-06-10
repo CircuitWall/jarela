@@ -44,8 +44,10 @@ export class RunThreadError extends Error {
 // Hard cap on how long we wait for the embedding-based recall pass before
 // starting the LLM stream without it. Recall is best-effort context — making
 // users wait on a cold OpenAI embeddings round-trip every turn is a worse UX
-// than occasionally missing a memory hit.
-const RECALL_BUDGET_MS = 400;
+// than occasionally missing a memory hit. 400ms was too tight: warm OpenAI
+// text-embedding-3-small calls land in 200–800ms, cold ones longer, so the
+// race silently lost on most turns and recall effectively never fired.
+const RECALL_BUDGET_MS = Number(process.env.JARELA_RECALL_BUDGET_MS) || 1500;
 
 function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise<T>((resolve) => {
