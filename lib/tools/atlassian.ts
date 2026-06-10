@@ -136,150 +136,196 @@ export const jiraSearchTool = tool(
   },
 );
 
+type ResolvedCustomField = { input: string; id: string; name: string };
+
+// Resolves caller-supplied custom-field display names / ids into Jira field
+// ids, builds the `expand` + `fields` query string for /rest/api/3/issue/...,
+// and returns the prepared resolved set. Returns an error JSON string for the
+// tool to forward verbatim if any input is unresolvable.
+async function prepareJiraGetIssueQuery(
+  auth: AtlassianAuth,
+  customFields: string[] | undefined,
+  expand: string[] | undefined,
+): Promise<{ resolved: ResolvedCustomField[]; qs: string } | { error: string }> {
+  let resolvedCustom: ResolvedCustomField[] = [];
+  if (customFields?.length) {
+    const fieldList = await loadJiraFields(auth);
+    if (!Array.isArray(fieldList)) return { error: JSON.stringify(fieldList) };
+    const r = resolveCustomFieldNames(customFields, fieldList);
+    if (r.unresolved.length) {
+      const candidates = fieldList
+        .filter((f) => f.custom).slice(0, 25)
+        .map((f) => `${f.name} (${f.id})`).join("; ");
+      return {
+        error: JSON.stringify({
+          error: `unresolved custom_fields: ${r.unresolved.join(", ")}. Pass either the customfield_NNNNN id or the exact display name.`,
+          hint_first_25_custom_fields: candidates,
+        }),
+      };
+    }
+    resolvedCustom = r.resolved;
+  }
+  const expandSet = new Set(expand ?? []);
+  if (resolvedCustom.length) {
+    expandSet.add("names");
+    expandSet.add("renderedFields");
+  }
+  // Always pull issuelinks/subtasks/attachment/parent so callers see what's
+  // attached to the issue without a follow-up call. Custom fields are
+  // additive — when present we enumerate base + customs to keep the
+  // response shape stable.
+  const baseFields = [
+    "summary", "description", "status", "issuetype", "priority",
+    "assignee", "reporter", "created", "updated", "labels", "components", "comment",
+    "issuelinks", "subtasks", "attachment", "parent",
+  ];
+  const fieldsParam = resolvedCustom.length
+    ? `fields=${[...baseFields, ...resolvedCustom.map((c) => c.id)].join(",")}`
+    : `fields=${baseFields.join(",")}`;
+  const params: string[] = [];
+  if (expandSet.size) params.push(`expand=${[...expandSet].join(",")}`);
+  params.push(fieldsParam);
+  return { resolved: resolvedCustom, qs: `?${params.join("&")}` };
+}
+
+// Issue links: each entry has an `id` (needed by jira_delete_link), a type,
+// and one of inwardIssue / outwardIssue depending on direction.
+function mapIssueLinks(raw: unknown): Array<Record<string, unknown>> {
+  return ((raw as Array<Record<string, unknown>>) ?? []).map((l) => {
+    const t = l.type as Record<string, unknown> | undefined;
+    const inward = l.inwardIssue as Record<string, unknown> | undefined;
+    const outward = l.outwardIssue as Record<string, unknown> | undefined;
+    return {
+      id: l.id,
+      type: t?.name,
+      direction: inward ? "inward" : "outward",
+      verb: inward ? t?.inward : t?.outward,
+      other_issue: inward
+        ? { key: inward.key, summary: (inward.fields as Record<string, unknown>)?.summary }
+        : outward
+        ? { key: outward.key, summary: (outward.fields as Record<string, unknown>)?.summary }
+        : null,
+    };
+  });
+}
+
+function mapIssueSubtasks(raw: unknown): Array<Record<string, unknown>> {
+  return ((raw as Array<Record<string, unknown>>) ?? []).map((s) => ({
+    key: s.key,
+    summary: (s.fields as Record<string, unknown>)?.summary,
+    status: ((s.fields as Record<string, unknown>)?.status as Record<string, unknown>)?.name,
+  }));
+}
+
+function mapIssueAttachments(raw: unknown): Array<Record<string, unknown>> {
+  return ((raw as Array<Record<string, unknown>>) ?? []).map((a) => ({
+    id: a.id,
+    filename: a.filename,
+    size: a.size,
+    mime_type: a.mimeType,
+    created: a.created,
+    author: (a.author as Record<string, unknown>)?.displayName,
+    content_url: a.content,
+  }));
+}
+
+function mapEmbeddedComments(rawComment: unknown): Array<Record<string, unknown>> {
+  const comments = ((rawComment as Record<string, unknown>)?.comments as Array<Record<string, unknown>>) ?? [];
+  return comments.map((c) => ({
+    id: c.id,
+    author: (c.author as Record<string, unknown>)?.displayName ?? null,
+    created: c.created,
+    updated: c.updated,
+    body: simplifyADF(c.body),
+  }));
+}
+
+// Remote/web links live under a separate endpoint — only fetched when the
+// caller passes expand=remoteLinks so we don't waste a call on every get.
+async function fetchIssueRemoteLinks(
+  auth: AtlassianAuth,
+  issueKey: string,
+): Promise<Array<Record<string, unknown>> | undefined> {
+  const rl = await atlassianFetch(
+    auth,
+    `/rest/api/3/issue/${encodeURIComponent(issueKey)}/remotelink`,
+  ) as Array<Record<string, unknown>> | { error?: string };
+  if (!Array.isArray(rl)) return undefined;
+  return rl.map((entry) => {
+    const obj = entry.object as Record<string, unknown> | undefined;
+    return { id: entry.id, url: obj?.url, title: obj?.title, summary: obj?.summary };
+  });
+}
+
+function formatJiraGetIssueResponse(
+  data: Record<string, unknown>,
+  auth: AtlassianAuth,
+  opts: {
+    includeComments: boolean | undefined;
+    resolvedCustom: ResolvedCustomField[];
+    remoteLinks: Array<Record<string, unknown>> | undefined;
+  },
+): Record<string, unknown> {
+  const f = (data.fields ?? {}) as Record<string, unknown>;
+  const rendered = (data.renderedFields ?? {}) as Record<string, unknown>;
+  const customOut: Record<string, unknown> = {};
+  for (const c of opts.resolvedCustom) {
+    customOut[c.name] = extractFieldValue(f[c.id], rendered[c.id]);
+  }
+  const parentRaw = f.parent as Record<string, unknown> | undefined;
+  return {
+    key: data.key,
+    url: `${auth.url}/browse/${data.key}`,
+    summary: f.summary,
+    description: simplifyADF(f.description),
+    status: (f.status as Record<string, unknown>)?.name,
+    type: (f.issuetype as Record<string, unknown>)?.name,
+    priority: (f.priority as Record<string, unknown>)?.name,
+    assignee: (f.assignee as Record<string, unknown>)?.displayName ?? null,
+    reporter: (f.reporter as Record<string, unknown>)?.displayName ?? null,
+    created: f.created,
+    updated: f.updated,
+    labels: f.labels,
+    components: ((f.components as Array<Record<string, unknown>>) ?? []).map((c) => c.name),
+    comments_count: ((f.comment as Record<string, unknown>)?.total) ?? 0,
+    ...(opts.includeComments ? { comments: mapEmbeddedComments(f.comment) } : {}),
+    parent: parentRaw ? {
+      key: parentRaw.key,
+      summary: (parentRaw.fields as Record<string, unknown>)?.summary,
+    } : null,
+    subtasks: mapIssueSubtasks(f.subtasks),
+    issue_links: mapIssueLinks(f.issuelinks),
+    attachments: mapIssueAttachments(f.attachment),
+    ...(opts.remoteLinks !== undefined ? { remote_links: opts.remoteLinks } : {}),
+    ...(opts.resolvedCustom.length ? { custom_fields: customOut } : {}),
+  };
+}
+
 export const jiraGetIssueTool = tool(
   async ({ issue_key, expand, custom_fields, include_comments }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
-    let resolvedCustom: Array<{ input: string; id: string; name: string }> = [];
-    if (custom_fields?.length) {
-      const fieldList = await loadJiraFields(auth);
-      if (!Array.isArray(fieldList)) return JSON.stringify(fieldList);
-      const r = resolveCustomFieldNames(custom_fields, fieldList);
-      if (r.unresolved.length) {
-        const candidates = fieldList
-          .filter((f) => f.custom)
-          .slice(0, 25)
-          .map((f) => `${f.name} (${f.id})`)
-          .join("; ");
-        return JSON.stringify({
-          error: `unresolved custom_fields: ${r.unresolved.join(", ")}. Pass either the customfield_NNNNN id or the exact display name.`,
-          hint_first_25_custom_fields: candidates,
-        });
-      }
-      resolvedCustom = r.resolved;
-    }
-
-    const expandSet = new Set(expand ?? []);
-    if (resolvedCustom.length) {
-      expandSet.add("names");
-      expandSet.add("renderedFields");
-    }
-    const params: string[] = [];
-    if (expandSet.size) params.push(`expand=${[...expandSet].join(",")}`);
-    // Always pull issuelinks/subtasks/attachment/parent so callers see what's
-    // attached to the issue without a follow-up call. Custom fields are
-    // additive — when the caller asked for any, we explicitly enumerate the
-    // base set + customs to keep the response shape stable.
-    const baseFields = [
-      "summary", "description", "status", "issuetype", "priority",
-      "assignee", "reporter", "created", "updated", "labels", "components", "comment",
-      "issuelinks", "subtasks", "attachment", "parent",
-    ];
-    if (resolvedCustom.length) {
-      params.push(`fields=${[...baseFields, ...resolvedCustom.map((c) => c.id)].join(",")}`);
-    } else {
-      params.push(`fields=${baseFields.join(",")}`);
-    }
-    const qs = params.length ? `?${params.join("&")}` : "";
+    const prepared = await prepareJiraGetIssueQuery(auth, custom_fields, expand);
+    if ("error" in prepared) return prepared.error;
 
     const data = await atlassianFetch(
       auth,
-      `/rest/api/3/issue/${encodeURIComponent(issue_key)}${qs}`,
+      `/rest/api/3/issue/${encodeURIComponent(issue_key)}${prepared.qs}`,
     ) as Record<string, unknown> & { error?: string };
     if (data.error) return JSON.stringify(data);
 
-    const f = (data.fields ?? {}) as Record<string, unknown>;
-    const rendered = (data.renderedFields ?? {}) as Record<string, unknown>;
+    const remoteLinks = (expand ?? []).includes("remoteLinks")
+      ? await fetchIssueRemoteLinks(auth, issue_key)
+      : undefined;
 
-    const customOut: Record<string, unknown> = {};
-    for (const c of resolvedCustom) {
-      customOut[c.name] = extractFieldValue(f[c.id], rendered[c.id]);
-    }
-
-    // Issue links: each entry has an `id` (needed by jira_delete_link),
-    // a type, and one of inwardIssue / outwardIssue depending on direction.
-    const issueLinks = ((f.issuelinks as Array<Record<string, unknown>>) ?? []).map((l) => {
-      const t = l.type as Record<string, unknown> | undefined;
-      const inward = l.inwardIssue as Record<string, unknown> | undefined;
-      const outward = l.outwardIssue as Record<string, unknown> | undefined;
-      return {
-        id: l.id,
-        type: t?.name,
-        direction: inward ? "inward" : "outward",
-        verb: inward ? t?.inward : t?.outward,
-        other_issue: inward
-          ? { key: inward.key, summary: (inward.fields as Record<string, unknown>)?.summary }
-          : outward
-          ? { key: outward.key, summary: (outward.fields as Record<string, unknown>)?.summary }
-          : null,
-      };
-    });
-
-    // Remote/web links live under a separate endpoint — fetch in parallel
-    // when requested (and if the issue actually has any) so we don't waste a
-    // call on every get. Cheap heuristic: only fetch when the caller passed
-    // include_remote_links, or always if expand contains "remoteLinks".
-    let remoteLinks: Array<Record<string, unknown>> | undefined;
-    if (expandSet.has("remoteLinks")) {
-      const rl = await atlassianFetch(
-        auth,
-        `/rest/api/3/issue/${encodeURIComponent(issue_key)}/remotelink`,
-      ) as Array<Record<string, unknown>> | { error?: string };
-      if (Array.isArray(rl)) {
-        remoteLinks = rl.map((entry) => {
-          const obj = entry.object as Record<string, unknown> | undefined;
-          return { id: entry.id, url: obj?.url, title: obj?.title, summary: obj?.summary };
-        });
-      }
-    }
-
-    return JSON.stringify({
-      key: data.key,
-      url: `${auth.url}/browse/${data.key}`,
-      summary: f.summary,
-      description: simplifyADF(f.description),
-      status: (f.status as Record<string, unknown>)?.name,
-      type: (f.issuetype as Record<string, unknown>)?.name,
-      priority: (f.priority as Record<string, unknown>)?.name,
-      assignee: (f.assignee as Record<string, unknown>)?.displayName ?? null,
-      reporter: (f.reporter as Record<string, unknown>)?.displayName ?? null,
-      created: f.created,
-      updated: f.updated,
-      labels: f.labels,
-      components: ((f.components as Array<Record<string, unknown>>) ?? []).map((c) => c.name),
-      comments_count: ((f.comment as Record<string, unknown>)?.total) ?? 0,
-      ...(include_comments ? {
-        comments: (((f.comment as Record<string, unknown>)?.comments as Array<Record<string, unknown>>) ?? []).map((c) => ({
-          id: c.id,
-          author: (c.author as Record<string, unknown>)?.displayName ?? null,
-          created: c.created,
-          updated: c.updated,
-          body: simplifyADF(c.body),
-        })),
-      } : {}),
-      parent: f.parent ? {
-        key: (f.parent as Record<string, unknown>).key,
-        summary: ((f.parent as Record<string, unknown>).fields as Record<string, unknown>)?.summary,
-      } : null,
-      subtasks: ((f.subtasks as Array<Record<string, unknown>>) ?? []).map((s) => ({
-        key: s.key,
-        summary: (s.fields as Record<string, unknown>)?.summary,
-        status: ((s.fields as Record<string, unknown>)?.status as Record<string, unknown>)?.name,
-      })),
-      issue_links: issueLinks,
-      attachments: ((f.attachment as Array<Record<string, unknown>>) ?? []).map((a) => ({
-        id: a.id,
-        filename: a.filename,
-        size: a.size,
-        mime_type: a.mimeType,
-        created: a.created,
-        author: (a.author as Record<string, unknown>)?.displayName,
-        content_url: a.content,
-      })),
-      ...(remoteLinks !== undefined ? { remote_links: remoteLinks } : {}),
-      ...(resolvedCustom.length ? { custom_fields: customOut } : {}),
-    });
+    return JSON.stringify(
+      formatJiraGetIssueResponse(data, auth, {
+        includeComments: include_comments,
+        resolvedCustom: prepared.resolved,
+        remoteLinks,
+      }),
+    );
   },
   {
     name: "jira_get_issue",
@@ -424,6 +470,109 @@ export const jiraFindUserTool = tool(
   },
 );
 
+// Resolves caller-supplied custom-field display names / ids into id→value
+// pairs ready to merge into the PUT body. Empty/missing input is treated as
+// "nothing to update" and returns {}.  An error result short-circuits the tool.
+async function resolveJiraUpdateCustomFields(
+  auth: AtlassianAuth,
+  customFields: Record<string, unknown> | undefined,
+): Promise<Record<string, unknown> | { error: string }> {
+  if (!customFields || typeof customFields !== "object" || Object.keys(customFields).length === 0) {
+    return {};
+  }
+  const inputs = Object.keys(customFields);
+  const fieldList = await loadJiraFields(auth);
+  if (!Array.isArray(fieldList)) return { error: JSON.stringify(fieldList) };
+  const r = resolveCustomFieldNames(inputs, fieldList);
+  if (r.unresolved.length) {
+    return {
+      error: JSON.stringify({
+        error: `unresolved custom_fields: ${r.unresolved.join(", ")}. Pass either the customfield_NNNNN id or the exact display name.`,
+        hint_first_25_custom_fields: fieldList
+          .filter((f) => f.custom).slice(0, 25)
+          .map((f) => `${f.name} (${f.id})`).join("; "),
+      }),
+    };
+  }
+  const out: Record<string, unknown> = {};
+  for (const c of r.resolved) out[c.id] = (customFields as Record<string, unknown>)[c.input];
+  return out;
+}
+
+function buildLabelOps(
+  add: string[] | undefined,
+  remove: string[] | undefined,
+): Array<Record<string, string>> {
+  const ops: Array<Record<string, string>> = [];
+  for (const l of add ?? []) ops.push({ add: l });
+  for (const l of remove ?? []) ops.push({ remove: l });
+  return ops;
+}
+
+// Translates the two assignee inputs into the field value the PUT body
+// expects. Returns undefined if neither input was supplied (leave field
+// untouched), or an error string for an unresolvable email.
+async function resolveAssigneeUpdate(
+  auth: AtlassianAuth,
+  accountId: string | null | undefined,
+  email: string | undefined,
+): Promise<{ accountId: string | null } | { error: string } | undefined> {
+  if (accountId !== undefined) {
+    if (accountId === null || accountId === "" || accountId === "unassigned") {
+      return { accountId: null };
+    }
+    return { accountId };
+  }
+  if (typeof email !== "string" || email.length === 0) return undefined;
+  if (email === "unassigned") return { accountId: null };
+  const users = await atlassianFetch(
+    auth,
+    `/rest/api/3/user/search?query=${encodeURIComponent(email)}`,
+  ) as Array<{ accountId?: string; emailAddress?: string }> | { error?: string };
+  if (!Array.isArray(users)) return { error: JSON.stringify(users) };
+  // Prefer exact email match (case-insensitive); fall back to single result.
+  const exact = users.find(
+    (u) => (u.emailAddress ?? "").toLowerCase() === email.toLowerCase(),
+  );
+  const picked = exact ?? (users.length === 1 ? users[0] : undefined);
+  if (!picked?.accountId) {
+    return {
+      error: JSON.stringify({
+        error: `could not resolve assignee_email "${email}" — got ${users.length} matches; ` +
+          `pass assignee_account_id explicitly`,
+        candidates: users.map((u) => ({ email: u.emailAddress, account_id: u.accountId })),
+      }),
+    };
+  }
+  return { accountId: picked.accountId };
+}
+
+// Translates the flat tool input into the `fields` map for the PUT body.
+// Custom fields and assignee resolution are async / can fail with an error
+// string, so they're handled in the caller and merged in afterwards.
+function buildJiraUpdateFields(input: {
+  summary?: string;
+  description?: string;
+  priority?: string;
+  parent_key?: string;
+  fix_versions?: string[];
+  labels?: string[];
+}): Record<string, unknown> {
+  const fields: Record<string, unknown> = {};
+  if (typeof input.summary === "string") fields.summary = input.summary;
+  if (typeof input.description === "string") fields.description = textToADF(input.description);
+  if (typeof input.priority === "string") fields.priority = { name: input.priority };
+  if (typeof input.parent_key === "string") {
+    // Empty string clears the parent (detach from epic / promote sub-task to standalone).
+    fields.parent = input.parent_key.length > 0 ? { key: input.parent_key } : null;
+  }
+  if (Array.isArray(input.fix_versions)) {
+    fields.fixVersions = input.fix_versions.map((name) => ({ name }));
+  }
+  if (Array.isArray(input.labels)) fields.labels = input.labels;
+  return fields;
+}
+
 export const jiraUpdateIssueTool = tool(
   async ({
     issue_key, summary, description, priority, assignee_account_id, assignee_email,
@@ -432,85 +581,27 @@ export const jiraUpdateIssueTool = tool(
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
-    const fields: Record<string, unknown> = {};
-    const update: Record<string, Array<Record<string, unknown>>> = {};
-
-    if (typeof summary === "string") fields.summary = summary;
-    if (typeof description === "string") fields.description = textToADF(description);
-    if (typeof priority === "string") fields.priority = { name: priority };
-    if (typeof parent_key === "string") {
-      // Empty string clears the parent (detach from epic / promote sub-task to standalone).
-      fields.parent = parent_key.length > 0 ? { key: parent_key } : null;
-    }
-    if (Array.isArray(fix_versions)) fields.fixVersions = fix_versions.map((name) => ({ name }));
-    if (Array.isArray(labels)) fields.labels = labels;
+    const fields = buildJiraUpdateFields({
+      summary, description, priority, parent_key, fix_versions, labels,
+    });
 
     // Custom fields: caller passes display names ("Due Date") or ids
-    // (customfield_10015) → values. We resolve names → ids via the same
-    // /rest/api/3/field cache jira_get_issue uses. Values are passed through
-    // verbatim — Jira accepts strings, numbers, arrays, or full ADF docs
-    // depending on the field's underlying type, and forcing one shape here
-    // would break the others. The model already knows the field type from a
-    // prior get_issue call (or an error message will steer it).
-    if (custom_fields && typeof custom_fields === "object" && Object.keys(custom_fields).length > 0) {
-      const inputs = Object.keys(custom_fields);
-      const fieldList = await loadJiraFields(auth);
-      if (!Array.isArray(fieldList)) return JSON.stringify(fieldList);
-      const r = resolveCustomFieldNames(inputs, fieldList);
-      if (r.unresolved.length) {
-        return JSON.stringify({
-          error: `unresolved custom_fields: ${r.unresolved.join(", ")}. Pass either the customfield_NNNNN id or the exact display name.`,
-          hint_first_25_custom_fields: fieldList
-            .filter((f) => f.custom)
-            .slice(0, 25)
-            .map((f) => `${f.name} (${f.id})`)
-            .join("; "),
-        });
-      }
-      for (const c of r.resolved) {
-        fields[c.id] = (custom_fields as Record<string, unknown>)[c.input];
-      }
-    }
+    // (customfield_10015) → values. Values are passed through verbatim —
+    // Jira accepts strings, numbers, arrays, or full ADF docs depending on
+    // the field's underlying type, and forcing one shape here would break
+    // the others. The model already knows the field type from a prior
+    // get_issue call (or an error message will steer it).
+    const customResolved = await resolveJiraUpdateCustomFields(auth, custom_fields);
+    if ("error" in customResolved) return customResolved.error;
+    Object.assign(fields, customResolved);
 
-    if (Array.isArray(labels_add) || Array.isArray(labels_remove)) {
-      const ops: Array<Record<string, string>> = [];
-      for (const l of labels_add ?? []) ops.push({ add: l });
-      for (const l of labels_remove ?? []) ops.push({ remove: l });
-      if (ops.length) update.labels = ops;
-    }
+    const assignee = await resolveAssigneeUpdate(auth, assignee_account_id, assignee_email);
+    if (assignee && "error" in assignee) return assignee.error;
+    if (assignee) fields.assignee = assignee;
 
-    // Assignee: explicit accountId wins; otherwise resolve email; "unassigned" / null clears.
-    if (assignee_account_id !== undefined) {
-      const v = assignee_account_id;
-      if (v === null || v === "" || v === "unassigned") {
-        fields.assignee = { accountId: null };
-      } else {
-        fields.assignee = { accountId: v };
-      }
-    } else if (typeof assignee_email === "string" && assignee_email.length > 0) {
-      if (assignee_email === "unassigned") {
-        fields.assignee = { accountId: null };
-      } else {
-        const users = await atlassianFetch(
-          auth,
-          `/rest/api/3/user/search?query=${encodeURIComponent(assignee_email)}`,
-        ) as Array<{ accountId?: string; emailAddress?: string }> | { error?: string };
-        if (!Array.isArray(users)) return JSON.stringify(users);
-        // Prefer exact email match (case-insensitive); fall back to single result.
-        const exact = users.find(
-          (u) => (u.emailAddress ?? "").toLowerCase() === assignee_email.toLowerCase(),
-        );
-        const picked = exact ?? (users.length === 1 ? users[0] : undefined);
-        if (!picked?.accountId) {
-          return JSON.stringify({
-            error: `could not resolve assignee_email "${assignee_email}" — got ${users.length} matches; ` +
-              `pass assignee_account_id explicitly`,
-            candidates: users.map((u) => ({ email: u.emailAddress, account_id: u.accountId })),
-          });
-        }
-        fields.assignee = { accountId: picked.accountId };
-      }
-    }
+    const update: Record<string, Array<Record<string, unknown>>> = {};
+    const labelOps = buildLabelOps(labels_add, labels_remove);
+    if (labelOps.length) update.labels = labelOps;
 
     if (Object.keys(fields).length === 0 && Object.keys(update).length === 0) {
       return JSON.stringify({ error: "no fields to update — pass at least one of summary, description, priority, assignee_*, fix_versions, labels, labels_add, labels_remove, parent_key, custom_fields" });
@@ -615,32 +706,52 @@ export const jiraTransitionsTool = tool(
   },
 );
 
+type IssueLinkType = { id: string; name: string; inward: string; outward: string };
+
+// Loads the site's configured link types and returns either the requested
+// match, an error JSON for the tool to forward, or the list itself when the
+// caller probed without enough args.
+async function resolveJiraLinkType(
+  auth: AtlassianAuth,
+  linkType: string | undefined,
+  fromIssue: string | undefined,
+  toIssue: string | undefined,
+): Promise<{ match: IssueLinkType } | { listing: string }> {
+  const list = await atlassianFetch(auth, `/rest/api/3/issueLinkType`) as
+    | { issueLinkTypes?: IssueLinkType[]; error?: string };
+  if ("error" in list && list.error) return { listing: JSON.stringify(list) };
+  const types = list.issueLinkTypes ?? [];
+  if (!linkType || !fromIssue || !toIssue) {
+    return {
+      listing: JSON.stringify({
+        available_link_types: types.map((t) => ({ name: t.name, outward: t.outward, inward: t.inward })),
+        usage: "Pass from_issue, to_issue, and link_type (e.g. 'Blocks'). The link reads as: '<from_issue> <outward verb> <to_issue>'.",
+      }),
+    };
+  }
+  const wanted = linkType.toLowerCase();
+  const match = types.find((t) => t.name.toLowerCase() === wanted);
+  if (!match) {
+    return {
+      listing: JSON.stringify({
+        error: `link_type "${linkType}" not configured for this site`,
+        available: types.map((t) => t.name),
+      }),
+    };
+  }
+  return { match };
+}
+
 export const jiraLinkIssuesTool = tool(
   async ({ from_issue, to_issue, link_type, comment }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
-    // Step 1: load global link types and resolve the requested name. Same
-    // "omit to list" pattern as jira_transition_issue — agents can probe this
-    // tool to discover what's available without a separate list endpoint.
-    const list = await atlassianFetch(auth, `/rest/api/3/issueLinkType`) as
-      | { issueLinkTypes?: Array<{ id: string; name: string; inward: string; outward: string }>; error?: string };
-    if ("error" in list && list.error) return JSON.stringify(list);
-    const types = list.issueLinkTypes ?? [];
-    if (!link_type || !from_issue || !to_issue) {
-      return JSON.stringify({
-        available_link_types: types.map((t) => ({ name: t.name, outward: t.outward, inward: t.inward })),
-        usage: "Pass from_issue, to_issue, and link_type (e.g. 'Blocks'). The link reads as: '<from_issue> <outward verb> <to_issue>'.",
-      });
-    }
-    const wanted = link_type.toLowerCase();
-    const match = types.find((t) => t.name.toLowerCase() === wanted);
-    if (!match) {
-      return JSON.stringify({
-        error: `link_type "${link_type}" not configured for this site`,
-        available: types.map((t) => t.name),
-      });
-    }
+    // Same "omit to list" pattern as jira_transition_issue — agents can probe
+    // this tool to discover available link types without a separate endpoint.
+    const resolved = await resolveJiraLinkType(auth, link_type, from_issue, to_issue);
+    if ("listing" in resolved) return resolved.listing;
+    const { match } = resolved;
 
     // Jira's outwardIssue is the SOURCE (subject of the outward verb), inwardIssue
     // is the TARGET. So `{from: A, to: B, type: "Blocks"}` reads as "A blocks B".
@@ -702,6 +813,45 @@ const bulkIssueSchema = z.object({
   custom_fields: z.record(z.string(), z.unknown()).optional(),
 });
 
+type BulkIssueInput = {
+  project_key: string;
+  summary: string;
+  description?: string;
+  issue_type?: string;
+  parent_key?: string;
+  labels?: string[];
+  assignee_account_id?: string;
+  custom_fields?: Record<string, unknown>;
+};
+
+// Builds the `fields` map for one issue inside a bulk-create request.
+// Returns either the prepared map or an error JSON string for the tool to
+// short-circuit on (unresolvable custom field name/id).
+function buildBulkCreateFields(
+  i: BulkIssueInput,
+  fieldList: JiraFieldDef[] | undefined,
+): { fields: Record<string, unknown> } | { error: string } {
+  const fields: Record<string, unknown> = {
+    project: { key: i.project_key },
+    summary: i.summary,
+    issuetype: { name: i.issue_type ?? "Task" },
+  };
+  if (i.description) fields.description = textToADF(i.description);
+  if (i.parent_key) fields.parent = { key: i.parent_key };
+  if (Array.isArray(i.labels)) fields.labels = i.labels;
+  if (i.assignee_account_id) fields.assignee = { accountId: i.assignee_account_id };
+  if (i.custom_fields && fieldList) {
+    const r = resolveCustomFieldNames(Object.keys(i.custom_fields), fieldList);
+    if (r.unresolved.length) {
+      return { error: JSON.stringify({ error: `unresolved custom_fields on "${i.summary}": ${r.unresolved.join(", ")}` }) };
+    }
+    for (const c of r.resolved) {
+      fields[c.id] = (i.custom_fields as Record<string, unknown>)[c.input];
+    }
+  }
+  return { fields };
+}
+
 export const jiraCreateIssuesBulkTool = tool(
   async ({ issues }) => {
     const auth = resolveAuth();
@@ -722,25 +872,9 @@ export const jiraCreateIssuesBulkTool = tool(
 
     const issueUpdates: Array<{ fields: Record<string, unknown> }> = [];
     for (const i of issues) {
-      const fields: Record<string, unknown> = {
-        project: { key: i.project_key },
-        summary: i.summary,
-        issuetype: { name: i.issue_type ?? "Task" },
-      };
-      if (i.description) fields.description = textToADF(i.description);
-      if (i.parent_key) fields.parent = { key: i.parent_key };
-      if (Array.isArray(i.labels)) fields.labels = i.labels;
-      if (i.assignee_account_id) fields.assignee = { accountId: i.assignee_account_id };
-      if (i.custom_fields && fieldList) {
-        const r = resolveCustomFieldNames(Object.keys(i.custom_fields), fieldList);
-        if (r.unresolved.length) {
-          return JSON.stringify({ error: `unresolved custom_fields on "${i.summary}": ${r.unresolved.join(", ")}` });
-        }
-        for (const c of r.resolved) {
-          fields[c.id] = (i.custom_fields as Record<string, unknown>)[c.input];
-        }
-      }
-      issueUpdates.push({ fields });
+      const built = buildBulkCreateFields(i as BulkIssueInput, fieldList);
+      if ("error" in built) return built.error;
+      issueUpdates.push({ fields: built.fields });
     }
 
     const data = await atlassianFetch(auth, `/rest/api/3/issue/bulk`, {

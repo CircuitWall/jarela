@@ -68,3 +68,6 @@ promo/
 backend-archived/
 node_modules
 lint_output.txt
+
+# survey output
+.survey-long-functions.json

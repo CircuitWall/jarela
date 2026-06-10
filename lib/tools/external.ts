@@ -81,6 +81,50 @@ function isValid(p: unknown): p is ExternalToolDef {
   return true;
 }
 
+// Loads one source file and returns the validated ExternalToolDef, or an
+// error string for the loader to record + skip. Uses the bypassed
+// createRequire so the dynamic require survives the Next build.
+function loadOneExternalTool(
+  req: NodeJS.Require,
+  fullPath: string,
+  entry: string,
+): { def: ExternalToolDef } | { error: string } {
+  let mod: unknown;
+  try {
+    delete req.cache[req.resolve(fullPath)];
+    mod = req(fullPath);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[tools] failed to load ${entry}:`, err);
+    return { error: message };
+  }
+  const candidate = (mod as { default?: unknown })?.default ?? (mod as unknown);
+  if (!isValid(candidate)) {
+    const msg = "does not export a valid ExternalToolDef (need { name, description, schema, run })";
+    console.error(`[tools] ${entry} ${msg}`);
+    return { error: msg };
+  }
+  return { def: candidate };
+}
+
+function wrapExternalTool(def: ExternalToolDef): StructuredToolInterface {
+  return tool(
+    async (args: unknown, _runManager?: unknown, config?: RunnableConfig) => {
+      const ctx = {
+        thread_id: config?.configurable?.thread_id as string | undefined,
+        getSecret: (key: string) => getToolSecret(def.name, key),
+      };
+      const result = await def.run(args as Record<string, unknown>, ctx);
+      return typeof result === "string" ? result : JSON.stringify(result);
+    },
+    {
+      name: def.name,
+      description: def.description,
+      schema: def.schema as never,
+    },
+  ) as unknown as StructuredToolInterface;
+}
+
 export function loadExternalTools(
   builtinNames: ReadonlySet<string>,
 ): ExternalToolsResult {
@@ -120,28 +164,10 @@ export function loadExternalTools(
       continue;
     }
 
-    let mod: unknown;
-    try {
-      delete req.cache[req.resolve(path)];
-      mod = req(path);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      errors.push({ file: entry, error: message });
-      console.error(`[tools] failed to load ${entry}:`, err);
-      continue;
-    }
+    const loaded = loadOneExternalTool(req, path, entry);
+    if ("error" in loaded) { errors.push({ file: entry, error: loaded.error }); continue; }
+    const def = loaded.def;
 
-    const candidate =
-      (mod as { default?: unknown })?.default ?? (mod as unknown);
-    if (!isValid(candidate)) {
-      const msg =
-        "does not export a valid ExternalToolDef (need { name, description, schema, run })";
-      errors.push({ file: entry, error: msg });
-      console.error(`[tools] ${entry} ${msg}`);
-      continue;
-    }
-
-    const def = candidate;
     if (builtinNames.has(def.name)) {
       const msg = `name "${def.name}" collides with a built-in tool — built-in takes precedence`;
       errors.push({ file: entry, error: msg });
@@ -156,23 +182,7 @@ export function loadExternalTools(
     }
     seen.add(def.name);
 
-    const wrapped = tool(
-      async (args: unknown, _runManager?: unknown, config?: RunnableConfig) => {
-        const ctx = {
-          thread_id: config?.configurable?.thread_id as string | undefined,
-          getSecret: (key: string) => getToolSecret(def.name, key),
-        };
-        const result = await def.run(args as Record<string, unknown>, ctx);
-        return typeof result === "string" ? result : JSON.stringify(result);
-      },
-      {
-        name: def.name,
-        description: def.description,
-        schema: def.schema as never,
-      },
-    ) as unknown as StructuredToolInterface;
-
-    tools.push(wrapped);
+    tools.push(wrapExternalTool(def));
     files.set(def.name, entry);
     if (def.category) categories.set(def.name, def.category);
     secrets.set(def.name, def.secrets ?? []);

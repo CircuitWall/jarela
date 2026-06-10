@@ -440,6 +440,89 @@ const initSchema = z.object({
     .describe("Additional workspace-relative paths to append to required_reading. Absolute paths and '..' segments are rejected."),
 });
 
+type WorkspaceProbe = {
+  git: GitProbe;
+  languages: Awaited<ReturnType<typeof detectLanguages>>;
+  packageManager: Awaited<ReturnType<typeof detectPackageManager>> | "none";
+  makefileTargets: string[];
+  tree: { entries: TreeEntry[]; truncated: boolean };
+  readme: Awaited<ReturnType<typeof readReadme>>;
+  conventions: Awaited<ReturnType<typeof detectConventionFiles>>;
+  hasDockerfile: boolean;
+  hasDevcontainer: boolean;
+};
+
+// Validates the user-supplied path: must resolve cleanly, exist, be a
+// directory, and (unless explicitly allowed) not be inside a sensitive root.
+async function validateWorkspacePath(
+  rawPath: string,
+): Promise<{ abs: string } | { error: string }> {
+  let abs: string;
+  try {
+    abs = resolveAgentPath(rawPath);
+  } catch (err) {
+    return { error: JSON.stringify({ ok: false, error: (err as Error).message, code: "WORKSPACE_BAD_PATH" }) };
+  }
+  let stat: import("node:fs").Stats;
+  try {
+    stat = await withTimeout("workspace_init.stat", fs.stat(abs));
+  } catch (err) {
+    const msg = (err as Error).message;
+    const code = msg.includes("ENOENT") ? "WORKSPACE_NOT_FOUND" : msg.includes("timed out") ? "WORKSPACE_TIMEOUT" : "WORKSPACE_ERROR";
+    return { error: JSON.stringify({ ok: false, path: abs, error: msg, code }) };
+  }
+  if (!stat.isDirectory()) {
+    return { error: JSON.stringify({ ok: false, path: abs, error: "path is not a directory", code: "WORKSPACE_NOT_DIR" }) };
+  }
+  // Sensitive-root guard. Override by setting JARELA_ALLOW_SENSITIVE_FILES=1
+  // (same opt-out as the per-file denylist in files.ts).
+  if (process.env.JARELA_ALLOW_SENSITIVE_FILES !== "1") {
+    for (const base of sensitiveRoots()) {
+      if (isInside(abs, base)) {
+        return { error: JSON.stringify({
+          ok: false,
+          path: abs,
+          error: `refused: '${abs}' is inside a sensitive directory (${path.basename(base)}). Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
+          code: "WORKSPACE_SENSITIVE",
+        }) };
+      }
+    }
+  }
+  return { abs };
+}
+
+// Probes everything in parallel and tolerates individual failures. Each
+// probe is gated on the matching include_* flag so callers can opt out
+// (e.g. for a tiny init in an enormous monorepo).
+async function probeWorkspace(
+  abs: string,
+  opts: {
+    include_git: boolean;
+    include_tree: boolean;
+    include_scripts: boolean;
+    include_readme: boolean;
+    max_tree_entries: number | undefined;
+  },
+): Promise<WorkspaceProbe & { pkg: Awaited<ReturnType<typeof readJsonIfExists>> }> {
+  const pkg = opts.include_scripts ? await readJsonIfExists(path.join(abs, "package.json")) : null;
+
+  const [git, languages, packageManager, makefileTargets, tree, readme, conventions, hasDockerfile, hasDevcontainer] = await Promise.all([
+    opts.include_git ? withTimeout("workspace_init.git", probeGit(abs)).catch(() => ({ is_repo: false } as GitProbe)) : Promise.resolve({ is_repo: false } as GitProbe),
+    detectLanguages(abs),
+    opts.include_scripts ? detectPackageManager(abs, pkg) : Promise.resolve("none" as const),
+    opts.include_scripts ? parseMakefileTargets(abs) : Promise.resolve([] as string[]),
+    opts.include_tree
+      ? buildTree(abs, Math.min(opts.max_tree_entries ?? MAX_TREE_DEFAULT, MAX_TREE_HARD_CAP))
+      : Promise.resolve({ entries: [] as TreeEntry[], truncated: false }),
+    opts.include_readme ? readReadme(abs) : Promise.resolve(null),
+    detectConventionFiles(abs),
+    fileExists(path.join(abs, "Dockerfile")),
+    fileExists(path.join(abs, ".devcontainer", "devcontainer.json")),
+  ]);
+
+  return { git, languages, packageManager, makefileTargets, tree, readme, conventions, hasDockerfile, hasDevcontainer, pkg };
+}
+
 export const workspaceInitTool = tool(
   async (input, config?: ToolConfig) => {
     const {
@@ -453,81 +536,37 @@ export const workspaceInitTool = tool(
       extra_required_reading = [],
     } = input;
 
-    let abs: string;
-    try {
-      abs = resolveAgentPath(rawPath);
-    } catch (err) {
-      return JSON.stringify({ ok: false, error: (err as Error).message, code: "WORKSPACE_BAD_PATH" });
-    }
-
-    // Validate the path exists and is a directory.
-    let stat: import("node:fs").Stats;
-    try {
-      stat = await withTimeout("workspace_init.stat", fs.stat(abs));
-    } catch (err) {
-      const msg = (err as Error).message;
-      const code = msg.includes("ENOENT") ? "WORKSPACE_NOT_FOUND" : msg.includes("timed out") ? "WORKSPACE_TIMEOUT" : "WORKSPACE_ERROR";
-      return JSON.stringify({ ok: false, path: abs, error: msg, code });
-    }
-    if (!stat.isDirectory()) {
-      return JSON.stringify({ ok: false, path: abs, error: "path is not a directory", code: "WORKSPACE_NOT_DIR" });
-    }
-
-    // Sensitive-root guard. Override by setting JARELA_ALLOW_SENSITIVE_FILES=1
-    // (same opt-out as the per-file denylist in files.ts).
-    if (process.env.JARELA_ALLOW_SENSITIVE_FILES !== "1") {
-      for (const base of sensitiveRoots()) {
-        if (isInside(abs, base)) {
-          return JSON.stringify({
-            ok: false,
-            path: abs,
-            error: `refused: '${abs}' is inside a sensitive directory (${path.basename(base)}). Set JARELA_ALLOW_SENSITIVE_FILES=1 to override.`,
-            code: "WORKSPACE_SENSITIVE",
-          });
-        }
-      }
-    }
+    const validated = await validateWorkspacePath(rawPath);
+    if ("error" in validated) return validated.error;
+    const { abs } = validated;
 
     // Install the workspace before probing — so probe-time errors don't
     // leave the agent without an active workspace.
     setWorkspace({ root: abs, scoped, opened_at: Date.now() }, config);
 
-    // Probe everything in parallel and tolerate individual failures.
-    const pkg = include_scripts ? await readJsonIfExists(path.join(abs, "package.json")) : null;
-
-    const [git, languages, packageManager, makefileTargets, tree, readme, conventions, hasDockerfile, hasDevcontainer] = await Promise.all([
-      include_git ? withTimeout("workspace_init.git", probeGit(abs)).catch(() => ({ is_repo: false } as GitProbe)) : Promise.resolve({ is_repo: false } as GitProbe),
-      detectLanguages(abs),
-      include_scripts ? detectPackageManager(abs, pkg) : Promise.resolve("none"),
-      include_scripts ? parseMakefileTargets(abs) : Promise.resolve([] as string[]),
-      include_tree
-        ? buildTree(abs, Math.min(max_tree_entries ?? MAX_TREE_DEFAULT, MAX_TREE_HARD_CAP))
-        : Promise.resolve({ entries: [] as TreeEntry[], truncated: false }),
-      include_readme ? readReadme(abs) : Promise.resolve(null),
-      detectConventionFiles(abs),
-      fileExists(path.join(abs, "Dockerfile")),
-      fileExists(path.join(abs, ".devcontainer", "devcontainer.json")),
-    ]);
+    const probe = await probeWorkspace(abs, {
+      include_git, include_tree, include_scripts, include_readme, max_tree_entries,
+    });
 
     return JSON.stringify({
       ok: true,
       root: abs,
       scoped,
-      git,
+      git: probe.git,
       project: {
-        languages,
-        package_manager: packageManager,
-        framework_hints: detectFrameworks(pkg),
-        test_runner: detectTestRunner(pkg),
-        scripts: pkg?.scripts ?? {},
-        makefile_targets: makefileTargets,
-        has_dockerfile: hasDockerfile,
-        has_devcontainer: hasDevcontainer,
+        languages: probe.languages,
+        package_manager: probe.packageManager,
+        framework_hints: detectFrameworks(probe.pkg),
+        test_runner: detectTestRunner(probe.pkg),
+        scripts: probe.pkg?.scripts ?? {},
+        makefile_targets: probe.makefileTargets,
+        has_dockerfile: probe.hasDockerfile,
+        has_devcontainer: probe.hasDevcontainer,
       },
-      tree: include_tree ? tree : undefined,
-      readme,
-      conventions,
-      required_reading: await buildRequiredReading(abs, conventions, readme, extra_required_reading),
+      tree: include_tree ? probe.tree : undefined,
+      readme: probe.readme,
+      conventions: probe.conventions,
+      required_reading: await buildRequiredReading(abs, probe.conventions, probe.readme, extra_required_reading),
     });
   },
   {
