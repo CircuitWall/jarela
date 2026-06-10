@@ -229,7 +229,18 @@ export const api = {
     getThread: (id: string) =>
       request<ThreadSummary>(`/agents/${encodeURIComponent(id)}/thread`),
     compact: (id: string) =>
-      request<{ compacted: boolean; summary?: string; reason?: string; message_count?: number; context_chars?: number }>(
+      request<{
+        compacted: boolean;
+        summary?: string;
+        reason?: string;
+        message_count?: number;
+        context_chars?: number;
+        pruned?: number;
+        hot_since?: string | null;
+        warm_summary?: string | null;
+        warm_summary_before?: string | null;
+        warm_summary_computed_at?: string | null;
+      }>(
         `/agents/${encodeURIComponent(id)}/compact`,
         // Conversation summarization can take longer than normal API calls,
         // so avoid tripping the default HTTP timeout for large threads.

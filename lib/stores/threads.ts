@@ -199,6 +199,31 @@ export function clearThreadMessages(threadId: string): void {
     .run(new Date().toISOString(), threadId);
 }
 
+// Retention guardrail: keep at most `keepLast` most-recent messages on a
+// thread and delete the rest. Used by /compact so /new doesn't grow the
+// transcript unboundedly across many compactions. Returns the number of
+// rows actually removed (0 if the thread is already within the cap).
+export function pruneThreadMessages(threadId: string, keepLast: number): number {
+  if (!Number.isFinite(keepLast) || keepLast <= 0) return 0;
+  const db = getDb();
+  const total = (db
+    .prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=?")
+    .get(threadId) as { n: number } | undefined)?.n ?? 0;
+  if (total <= keepLast) return 0;
+  const removeCount = total - keepLast;
+  const r = db
+    .prepare(
+      "DELETE FROM messages WHERE msg_id IN (" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY created_at ASC LIMIT ?" +
+      ")",
+    )
+    .run(threadId, removeCount);
+  const removed = Number(r.changes);
+  db.prepare("UPDATE threads SET message_count=?, updated_at=? WHERE thread_id=?")
+    .run(Math.max(0, total - removed), new Date().toISOString(), threadId);
+  return removed;
+}
+
 export function touchThread(thread_id: string, firstMsg?: string): void {
   const t = now();
   getDb()
