@@ -150,6 +150,17 @@ describe("POST /api/v1/security/unlock", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
   });
+
+  it("also clears the screen-lock flag so a simultaneous idle lock doesn't re-prompt", async () => {
+    screenLock.lockScreen();
+    expect(screenLock.isScreenLocked()).toBe(true);
+    const res = await unlockRoute.POST(loopback({
+      method: "POST",
+      body: JSON.stringify({ pin: PIN }),
+    }));
+    expect(res.status).toBe(200);
+    expect(screenLock.isScreenLocked()).toBe(false);
+  });
 });
 
 // Helpers for the verify-pin/idle-timeout suites — they need the master
