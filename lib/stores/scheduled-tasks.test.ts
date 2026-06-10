@@ -12,6 +12,7 @@ const {
   getScheduledTask,
   deleteScheduledTask,
   updateScheduledTask,
+  markTasksDeferred,
 } = await import("./scheduled-tasks");
 
 const { registerScript } = await import("@/lib/triggers/scripts");
@@ -154,6 +155,39 @@ describe("scheduled-tasks store (ADR-0032)", () => {
     expect(fetched.reaction_kind).toBe("script");
     expect(fetched.reaction_script).toBe("reaction.test");
     expect(fetched.reaction_script_args).toBe(JSON.stringify({ hello: "world" }));
+  });
+
+  describe("markTasksDeferred", () => {
+    it("stamps last_error on the given rows without advancing next_run_at", () => {
+      const t = createScheduledTask({
+        agent_id: "a",
+        prompt: "x",
+        kind: "cron",
+        schedule: "0 * * * *",
+      });
+      const before = getScheduledTask(t.id)!;
+      const changes = markTasksDeferred([t.id], "Deferred: locked");
+      expect(changes).toBe(1);
+      const after = getScheduledTask(t.id)!;
+      expect(after.last_error).toBe("Deferred: locked");
+      expect(after.next_run_at).toBe(before.next_run_at);
+      expect(after.last_run_at).toBeNull();
+    });
+
+    it("is idempotent: re-stamping the same reason makes no changes", () => {
+      const t = createScheduledTask({
+        agent_id: "a",
+        prompt: "x",
+        kind: "cron",
+        schedule: "0 * * * *",
+      });
+      expect(markTasksDeferred([t.id], "Deferred: locked")).toBe(1);
+      expect(markTasksDeferred([t.id], "Deferred: locked")).toBe(0);
+    });
+
+    it("returns 0 for an empty id list", () => {
+      expect(markTasksDeferred([], "Deferred: locked")).toBe(0);
+    });
   });
 
   it("updateScheduledTask: re-associates a task to a different agent without rescheduling", () => {

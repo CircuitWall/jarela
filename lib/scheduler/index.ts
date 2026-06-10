@@ -6,8 +6,12 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
-import { isMasterKeyLocked } from "@/lib/crypto/master-key";
-import type { ScheduledTaskRow } from "@/lib/stores/scheduled-tasks";
+import { isMasterKeyLocked, onMasterKeyUnlocked } from "@/lib/crypto/master-key";
+import {
+  getDueTasks,
+  markTasksDeferred,
+  type ScheduledTaskRow,
+} from "@/lib/stores/scheduled-tasks";
 
 // Env-tunable so e2e tests can ride a tighter loop without waiting 30 s
 // per fs-watch firing. Production / dev use the 30 s default; tests
@@ -35,6 +39,10 @@ interface SchedulerState {
   running: boolean;
   tickCount: number;
   healthTickCount: number;
+  // Count of scheduled tasks deferred on the previous locked tick. Only
+  // log the deferral when this transitions (0 → N, N → M) so a long
+  // lock window doesn't spam the console every 30s.
+  lastDeferredCount: number;
 }
 const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   started: false,
@@ -42,7 +50,11 @@ const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   running: false,
   tickCount: 0,
   healthTickCount: 0,
+  lastDeferredCount: 0,
 }));
+
+const LOCKED_DEFERRAL_REASON =
+  "Deferred: app was locked when this task was due. It will run as soon as the app is unlocked.";
 
 // Idempotent — call repeatedly; only the first call starts the loop.
 export function startScheduler(): void {
@@ -62,6 +74,11 @@ export function startScheduler(): void {
       );
     });
   }
+  // Drain catch-up firings the moment the user unlocks, instead of
+  // waiting up to POLL_INTERVAL_MS for the next timer tick. Idempotent:
+  // onMasterKeyUnlocked runs the callback synchronously if already
+  // unlocked, and tick() is internally guarded against re-entry.
+  onMasterKeyUnlocked(() => { setImmediate(() => { void tick(); }); });
 }
 
 export function stopScheduler(): void {
@@ -74,11 +91,39 @@ export function stopScheduler(): void {
 
 async function tick(): Promise<void> {
   if (state.running) return;
-  // Skip the entire tick while the at-rest key is locked (ADR-0063):
-  // every encrypted store read would throw MasterKeyLockedError and
-  // pollute the console. The tick resumes naturally once the user
-  // unlocks via the splash.
-  if (isMasterKeyLocked()) return;
+  // Skip the firing phase while the at-rest key is locked (ADR-0063):
+  // every encrypted store read inside the agent runner would throw
+  // MasterKeyLockedError. Before returning, surface any due scheduled
+  // tasks so the user can see WHY they didn't fire — both in the logs
+  // and in the Tasks panel (last_error column). The plain-text
+  // scheduled_tasks table itself is readable while locked.
+  if (isMasterKeyLocked()) {
+    try {
+      const due = getDueTasks();
+      const ids = due.map((t) => t.id);
+      if (ids.length > 0) {
+        markTasksDeferred(ids, LOCKED_DEFERRAL_REASON);
+      }
+      if (ids.length !== state.lastDeferredCount) {
+        if (ids.length > 0) {
+          console.warn(
+            `[scheduler] ${ids.length} scheduled task(s) deferred — app is locked. ` +
+              `They will fire as soon as the user unlocks via the splash.`,
+          );
+        } else if (state.lastDeferredCount > 0) {
+          console.log("[scheduler] no more deferred tasks pending");
+        }
+        state.lastDeferredCount = ids.length;
+      }
+    } catch (err) {
+      console.error(
+        "[scheduler] locked-tick deferral bookkeeping failed:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    return;
+  }
+  state.lastDeferredCount = 0;
   state.running = true;
   try {
     await runTriggerTick();
