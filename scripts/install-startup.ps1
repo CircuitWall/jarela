@@ -1,11 +1,25 @@
-# install-startup.ps1 — register Jarela as a per-user scheduled task that runs
-# at logon, hidden, with automatic restart on failure.
+# install-startup.ps1 — register Jarela as a scheduled task that runs hidden
+# with automatic restart on failure.
 #
-# Usage (no admin required):
+# Default (no admin required): starts at the current user's logon.
 #   powershell -ExecutionPolicy Bypass -File scripts\install-startup.ps1
+#
+# -Boot (requires admin): starts at machine boot, before anyone logs in.
+# Uses S4U so no password is stored, and still runs as the current user so
+# the SQLite DB under %USERPROFILE%\.jarela stays owned by the right account.
+#   powershell -ExecutionPolicy Bypass -File scripts\install-startup.ps1 -Boot
+#
+# Note on -Boot: if you've set an encryption PIN (lib/crypto/pin-wrap.ts) the
+# server will boot but stay locked until you visit the UI and enter it. With
+# no PIN, the master key is protected only by NTFS ACLs on ~/.jarela.
 #
 # To remove: scripts\uninstall-startup.ps1
 # To inspect: Get-ScheduledTask -TaskName Jarela | Format-List *
+
+[CmdletBinding()]
+param(
+  [switch]$Boot
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -17,6 +31,15 @@ if (-not (Test-Path $Launcher)) {
   throw "Launcher not found at $Launcher"
 }
 
+if ($Boot) {
+  $isAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+  ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if (-not $isAdmin) {
+    throw "-Boot requires an elevated PowerShell. Right-click PowerShell -> Run as administrator and re-run."
+  }
+}
+
 # The action: run powershell.exe hidden, executing our launcher script.
 # -WindowStyle Hidden so no console window flashes at logon.
 $action = New-ScheduledTaskAction `
@@ -24,15 +47,26 @@ $action = New-ScheduledTaskAction `
   -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Launcher`"" `
   -WorkingDirectory $RepoRoot
 
-# Trigger: at user logon.
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-
-# Principal: run as the current user, no elevation. Critical so the SQLite DB
-# under %USERPROFILE%\.jarela stays owned by the right user.
-$principal = New-ScheduledTaskPrincipal `
-  -UserId $env:USERNAME `
-  -LogonType Interactive `
-  -RunLevel Limited
+if ($Boot) {
+  # Trigger: at machine boot. No interactive session needed.
+  $trigger = New-ScheduledTaskTrigger -AtStartup
+  # S4U: run as the current user without storing a password. No network drives,
+  # no desktop — fine for a localhost HTTP server. RunLevel stays Limited so
+  # the SQLite DB at %USERPROFILE%\.jarela keeps the right ownership.
+  $principal = New-ScheduledTaskPrincipal `
+    -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    -LogonType S4U `
+    -RunLevel Limited
+} else {
+  # Trigger: at user logon.
+  $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  # Principal: run as the current user, no elevation. Critical so the SQLite DB
+  # under %USERPROFILE%\.jarela stays owned by the right user.
+  $principal = New-ScheduledTaskPrincipal `
+    -UserId $env:USERNAME `
+    -LogonType Interactive `
+    -RunLevel Limited
+}
 
 # Settings: hidden, restart on failure, no idle/battery constraints, allow start
 # even when on battery (laptops), no time limit. Retries are intentionally
@@ -48,12 +82,18 @@ $settings = New-ScheduledTaskSettingsSet `
   -RestartCount 3 `
   -MultipleInstances IgnoreNew
 
+$desc = if ($Boot) {
+  'Jarela — local LangGraph chat UI. Auto-starts at boot on http://localhost:4312'
+} else {
+  'Jarela — local LangGraph chat UI. Auto-starts at logon on http://localhost:4312'
+}
+
 $task = New-ScheduledTask `
   -Action $action `
   -Trigger $trigger `
   -Principal $principal `
   -Settings $settings `
-  -Description 'Jarela — local LangGraph chat UI. Auto-starts at logon on http://localhost:4312'
+  -Description $desc
 
 # Replace any existing registration with the same name.
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -69,7 +109,8 @@ Write-Host "Starting Jarela now (first run will install deps + build, give it a 
 Start-ScheduledTask -TaskName $TaskName
 
 Write-Host ""
-Write-Host "Done. Jarela will start automatically every time you log on."
+$when = if ($Boot) { 'every time this machine boots (no logon required)' } else { 'every time you log on' }
+Write-Host "Done. Jarela will start automatically $when."
 Write-Host "  URL:   http://localhost:4312"
 Write-Host "  Logs:  $env:LOCALAPPDATA\Jarela\logs\app.log"
 Write-Host "  Stop:  Stop-ScheduledTask -TaskName $TaskName"

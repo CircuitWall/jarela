@@ -12,19 +12,40 @@
 #
 # To run with a custom install location:
 #   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1 -InstallDir 'D:\Apps\Jarela'
+#
+# -Boot (requires elevated PowerShell): registers the scheduled task to start
+# at machine boot instead of at user logon. Uses S4U so no password is stored
+# and the task still runs as the current user (the SQLite DB at
+# %USERPROFILE%\.jarela stays owned by the right account).
+#   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1 -Boot
+# Also reachable via: make install-task -Boot
+#
+# Note: if you've set an encryption PIN (lib/crypto/pin-wrap.ts) the server
+# will boot but stay locked until you visit the UI and enter it. With no PIN,
+# the master key is protected only by NTFS ACLs on ~/.jarela.
 
 [CmdletBinding()]
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Jarela'),
   [switch]$SkipBuild,
   [switch]$NoStart,
-  [switch]$SkipTailscale
+  [switch]$SkipTailscale,
+  [switch]$Boot
 )
 
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $TaskName = 'Jarela'
+
+if ($Boot) {
+  $isAdmin = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+  ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if (-not $isAdmin) {
+    throw "-Boot requires an elevated PowerShell. Right-click PowerShell -> Run as administrator and re-run."
+  }
+}
 
 function Step([string]$msg) { Write-Host ("==> " + $msg) -ForegroundColor Cyan }
 function Info([string]$msg) { Write-Host ("    " + $msg) -ForegroundColor DarkGray }
@@ -232,12 +253,24 @@ $action = New-ScheduledTaskAction `
   -Argument ('"' + $launcherVbs + '"') `
   -WorkingDirectory $InstallDir
 
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-
-$principal = New-ScheduledTaskPrincipal `
-  -UserId $env:USERNAME `
-  -LogonType Interactive `
-  -RunLevel Limited
+if ($Boot) {
+  # Boot trigger + S4U principal: starts before anyone logs in, runs as the
+  # current user without storing a password, no interactive desktop. Fine
+  # for a localhost HTTP server.
+  $trigger = New-ScheduledTaskTrigger -AtStartup
+  $principal = New-ScheduledTaskPrincipal `
+    -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    -LogonType S4U `
+    -RunLevel Limited
+  $descWhen = 'auto-start at boot'
+} else {
+  $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+  $principal = New-ScheduledTaskPrincipal `
+    -UserId $env:USERNAME `
+    -LogonType Interactive `
+    -RunLevel Limited
+  $descWhen = 'auto-start at logon'
+}
 
 $settings = New-ScheduledTaskSettingsSet `
   -AllowStartIfOnBatteries `
@@ -254,7 +287,7 @@ $task = New-ScheduledTask `
   -Trigger $trigger `
   -Principal $principal `
   -Settings $settings `
-  -Description ("Jarela standalone install at " + $InstallDir + " - auto-start at logon on http://localhost:4312")
+  -Description ("Jarela standalone install at " + $InstallDir + " - " + $descWhen + " on http://localhost:4312")
 
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
   Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
