@@ -132,10 +132,24 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     setCompacting(true);
     try {
       const result = await api.agents.compact(agentId);
-      thread.setMessages([]);
-      thread.setNotices([]);
       if (result.compacted) {
-        thread.addNotice(`Session saved to memory (${result.message_count} msgs, ~${Math.round((result.context_chars||0)/1000)}k chars). Starting fresh.`);
+        // Server moved the hot/warm pin to just after the last existing
+        // message and persisted the warm summary. Mirror that in-place so
+        // the boundary divider drops to the bottom of the chat and the
+        // warm card shows the fresh summary — without wiping the visible
+        // transcript. The user can still scroll up to read prior turns;
+        // older history past JARELA_MAX_THREAD_MESSAGES has been pruned
+        // server-side but its content lives on inside the warm summary.
+        thread.metaApplier.setHotSince(result.hot_since ?? null);
+        thread.metaApplier.setWarmSummary(result.warm_summary ?? null);
+        thread.metaApplier.setWarmSummaryBefore(result.warm_summary_before ?? null);
+        thread.metaApplier.setWarmSummaryComputedAt(result.warm_summary_computed_at ?? null);
+        const prunedTail = result.pruned && result.pruned > 0
+          ? ` ${result.pruned} oldest msg${result.pruned === 1 ? "" : "s"} archived.`
+          : "";
+        thread.addNotice(
+          `Session saved to memory (${result.message_count} msgs, ~${Math.round((result.context_chars || 0) / 1000)}k chars). Boundary moved — scroll up for history.${prunedTail}`,
+        );
       } else {
         thread.addNotice("Nothing to compact yet — send some messages first.");
       }
