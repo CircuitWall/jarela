@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ContentPart } from "@/api/types";
 import { makeQueuedId, type QueuedMessage } from "./chat-helpers";
 
@@ -33,6 +33,19 @@ export function useChatQueue({ threadId, streaming, compacting, launchRun }: Par
   const queueRef = useRef<QueuedMessage[]>([]);
   queueRef.current = queue;
 
+  // Mirror readiness state into refs so the drain closure reads the live
+  // values instead of whatever was captured during the render that built
+  // it. handleCompact's finally calls drainQueueRef.current() synchronously
+  // right after setCompacting(false) — at that point React hasn't committed
+  // the new render, so a closure-captured `compacting` would still be true
+  // and the drain would bail out, leaving queued messages stranded.
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
+  const compactingRef = useRef(compacting);
+  compactingRef.current = compacting;
+  const threadIdRef = useRef(threadId);
+  threadIdRef.current = threadId;
+
   const drainQueueRef = useRef<() => void>(() => {});
   // `launchRun` is plain function re-created each render; read through ref
   // to keep drain stable.
@@ -40,7 +53,7 @@ export function useChatQueue({ threadId, streaming, compacting, launchRun }: Par
   launchRunRef.current = launchRun;
 
   drainQueueRef.current = () => {
-    if (streaming || compacting || !threadId) return;
+    if (streamingRef.current || compactingRef.current || !threadIdRef.current) return;
     setQueue((q) => {
       if (q.length === 0) return q;
       const text = q.map((m) => m.text).join("\n\n");
@@ -49,6 +62,16 @@ export function useChatQueue({ threadId, streaming, compacting, launchRun }: Par
       return [];
     });
   };
+
+  // Belt-and-braces: also drain whenever readiness flips back to ready.
+  // Covers paths that change `streaming` / `compacting` without calling
+  // drainQueueRef.current() in a finally (e.g. compact error before the
+  // finally lands, or external state updates from useThreadCrossDeviceSync).
+  useEffect(() => {
+    if (streaming || compacting || !threadId) return;
+    if (queue.length === 0) return;
+    drainQueueRef.current();
+  }, [streaming, compacting, threadId, queue.length]);
 
   const isReady = useCallback(
     () => !streaming && !compacting && !!threadId && queueRef.current.length === 0,
