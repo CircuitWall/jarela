@@ -42,6 +42,11 @@ export interface BridgeRouteRow {
   // The agent always RUNS on every inbound message (so it sees the full
   // conversation context) — this only gates whether the reply is sent.
   respond_to: "user" | "counterpart";
+  // Catch-up watermark: epoch-ms of the most recent inbound message that
+  // reached the agent on this route. The WhatsApp adapter uses it on
+  // reconnect to (a) skip backlog upserts older than the watermark and
+  // (b) tighten the inbound-id dedupe LRU. NULL = no watermark yet.
+  last_seen_ts: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -193,6 +198,7 @@ export function createRoute(input: {
     label: input.label ?? null,
     silent_mode: silent,
     respond_to: respondTo,
+    last_seen_ts: null,
     created_at: t,
     updated_at: t,
   };
@@ -228,4 +234,29 @@ export function updateRoute(
 export function deleteRoute(id: string): boolean {
   const r = getDb().prepare("DELETE FROM bridge_routes WHERE id=?").run(id);
   return r.changes > 0;
+}
+
+// Catch-up watermark. The WhatsApp adapter calls this with the
+// messageTimestamp (epoch ms) of the most recent inbound that reached the
+// agent. Only writes when `ts` is strictly greater than the persisted
+// value so out-of-order replays from the server-side backlog can't roll
+// the watermark backward. No-op when no route exists for the pair
+// (catch-all routing handles those at the dispatcher layer).
+export function bumpRouteLastSeenTs(bridgeId: string, remoteJid: string, ts: number): void {
+  if (!Number.isFinite(ts) || ts <= 0) return;
+  getDb()
+    .prepare(
+      "UPDATE bridge_routes SET last_seen_ts=? WHERE bridge_id=? AND remote_jid=? AND (last_seen_ts IS NULL OR last_seen_ts < ?)",
+    )
+    .run(ts, bridgeId, remoteJid, ts);
+}
+
+// Snapshot the highest watermark across every route on a bridge. The
+// adapter uses this on reconnect to short-circuit very-old appends before
+// it has loaded individual route rows.
+export function getMaxRouteLastSeenTs(bridgeId: string): number {
+  const row = getDb()
+    .prepare("SELECT MAX(last_seen_ts) AS m FROM bridge_routes WHERE bridge_id=?")
+    .get(bridgeId) as { m: number | null } | undefined;
+  return row?.m ?? 0;
 }
