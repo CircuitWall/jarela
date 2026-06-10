@@ -69,6 +69,92 @@ function resolveUrl(u: string | null | undefined, base: string): string | null {
   try { return new URL(u, base).toString(); } catch { return null; }
 }
 
+// Manual redirect chasing so each hop is re-checked against the SSRF
+// policy. A 30x to an attacker-controlled host could otherwise bounce us
+// into 169.254.x even though the initial URL looked public. Returns the
+// final Response + URL, or an error JSON string for the tool to forward.
+async function followRedirectsWithSsrfCheck(
+  startUrl: string,
+  signal: AbortSignal,
+): Promise<{ res: Response; finalUrl: string } | { error: string }> {
+  let currentUrl = startUrl;
+  let res: Response;
+  for (let hop = 0; ; hop++) {
+    res = await fetch(currentUrl, {
+      signal,
+      redirect: "manual",
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+    });
+    if (res.status < 300 || res.status >= 400) break;
+    const loc = res.headers.get("location");
+    if (!loc) break;
+    if (hop >= MAX_REDIRECTS) {
+      return { error: JSON.stringify({ url: currentUrl, error: `too many redirects (>${MAX_REDIRECTS})` }) };
+    }
+    let next: string;
+    try { next = new URL(loc, currentUrl).toString(); }
+    catch { return { error: JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}` }) }; }
+    const hopCheck = await checkPublicUrl(next);
+    if (!hopCheck.allowed) {
+      return { error: JSON.stringify({
+        url: next,
+        error: `Refused redirect to private/loopback address (${hopCheck.reason}).`,
+      }) };
+    }
+    currentUrl = next;
+  }
+  return { res, finalUrl: res.url || currentUrl };
+}
+
+// Read up to maxBytes from the response body so a 5MB page doesn't blow
+// the agent's context. Returns the decoded text plus whether we hit the cap.
+async function readBodyCapped(
+  res: Response,
+  maxBytes: number,
+): Promise<{ raw: string; bytesRead: number; truncated: boolean }> {
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+  let bytesRead = 0;
+  let raw = "";
+  if (reader) {
+    while (bytesRead < maxBytes) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytesRead += value.byteLength;
+      raw += decoder.decode(value, { stream: true });
+      if (bytesRead >= maxBytes) {
+        await reader.cancel();
+        break;
+      }
+    }
+  }
+  return { raw, bytesRead, truncated: bytesRead >= maxBytes };
+}
+
+function formatFetchError(
+  err: unknown,
+  url: string,
+  ctrl: AbortController,
+  timeoutMs: number,
+): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const aborted = ctrl.signal.aborted
+    || (err instanceof Error && (err.name === "AbortError" || /abort/i.test(msg)));
+  if (aborted) {
+    return JSON.stringify({
+      url,
+      error: `timed out after ${Math.round(timeoutMs / 1000)}s. The page is slow or unresponsive — try a different URL or pass a larger deadline_ms.`,
+      timed_out: true,
+      timeout_ms: timeoutMs,
+    });
+  }
+  return JSON.stringify({ url, error: msg });
+}
+
 export const webFetchTool = tool(
   async ({ url, mode, max_chars }) => {
     if (!/^https?:\/\//.test(url)) {
@@ -94,64 +180,12 @@ export const webFetchTool = tool(
         });
       }
 
-      // Manual redirect chasing so each hop is re-checked against the
-      // SSRF policy. A 30x to an attacker-controlled host could otherwise
-      // bounce us into 169.254.x even though the initial URL looked
-      // public.
-      let currentUrl = url;
-      let res: Response;
-      for (let hop = 0; ; hop++) {
-        res = await fetch(currentUrl, {
-          signal: ctrl.signal,
-          redirect: "manual",
-          headers: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-        });
-        if (res.status < 300 || res.status >= 400) break;
-        const loc = res.headers.get("location");
-        if (!loc) break;
-        if (hop >= MAX_REDIRECTS) {
-          return JSON.stringify({ url: currentUrl, error: `too many redirects (>${MAX_REDIRECTS})` });
-        }
-        let next: string;
-        try {
-          next = new URL(loc, currentUrl).toString();
-        } catch {
-          return JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}` });
-        }
-        const hopCheck = await checkPublicUrl(next);
-        if (!hopCheck.allowed) {
-          return JSON.stringify({
-            url: next,
-            error: `Refused redirect to private/loopback address (${hopCheck.reason}).`,
-          });
-        }
-        currentUrl = next;
-      }
+      const hopResult = await followRedirectsWithSsrfCheck(url, ctrl.signal);
+      if ("error" in hopResult) return hopResult.error;
+      const { res, finalUrl } = hopResult;
 
       const contentType = res.headers.get("content-type") ?? "";
-      const finalUrl = res.url || currentUrl;
-      // Read up to MAX_BYTES so a 5MB page doesn't blow the agent's context.
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      let bytesRead = 0;
-      let raw = "";
-      if (reader) {
-        while (bytesRead < MAX_BYTES) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          bytesRead += value.byteLength;
-          raw += decoder.decode(value, { stream: true });
-          if (bytesRead >= MAX_BYTES) {
-            await reader.cancel();
-            break;
-          }
-        }
-      }
-      const truncated = bytesRead >= MAX_BYTES;
+      const { raw, bytesRead, truncated } = await readBodyCapped(res, MAX_BYTES);
       const cap = max_chars ?? 8000;
       const wantHtml = mode === "html";
       const title = extractTitle(raw);
@@ -171,18 +205,7 @@ export const webFetchTool = tool(
         images,
       });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const aborted = ctrl.signal.aborted
-        || (err instanceof Error && (err.name === "AbortError" || /abort/i.test(msg)));
-      if (aborted) {
-        return JSON.stringify({
-          url,
-          error: `timed out after ${Math.round(TIMEOUT_MS / 1000)}s. The page is slow or unresponsive — try a different URL or pass a larger deadline_ms.`,
-          timed_out: true,
-          timeout_ms: TIMEOUT_MS,
-        });
-      }
-      return JSON.stringify({ url, error: msg });
+      return formatFetchError(err, url, ctrl, TIMEOUT_MS);
     } finally {
       clearTimeout(timeout);
     }

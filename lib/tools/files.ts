@@ -468,6 +468,73 @@ const listSchema = z.object({
     .describe("Optional case-insensitive substring filter applied to the basename"),
 });
 
+type ListEntry = { path: string; kind: "file" | "directory" | "other"; size?: number };
+
+// Walks the readdir result applying include_hidden / pattern filters and
+// returns the kept entries plus whether we hit the cap.
+async function buildListEntries(
+  abs: string,
+  items: import("node:fs").Dirent[],
+  cap: number,
+  includeHidden: boolean | undefined,
+  filter: string | null,
+): Promise<{ entries: ListEntry[]; truncated: boolean }> {
+  const entries: ListEntry[] = [];
+  let truncated = false;
+  for (const it of items) {
+    if (entries.length >= cap) { truncated = true; break; }
+    if (!includeHidden && it.name.startsWith(".")) continue;
+    if (filter && !it.name.toLowerCase().includes(filter)) continue;
+    const full = path.join(abs, it.name);
+    const kind: ListEntry["kind"] = it.isDirectory()
+      ? "directory" : it.isFile() ? "file" : "other";
+    let size: number | undefined;
+    if (kind === "file") {
+      try {
+        const st = await withFsDeadline("file_list.stat", full, () => fs.stat(full));
+        size = st.size;
+      } catch { /* ignore stat failures */ }
+    }
+    entries.push({ path: full, kind, size });
+  }
+  return { entries, truncated };
+}
+
+// Build the payload, then enforce a hard JSON byte cap. If the entry list
+// itself is too large (e.g. extremely long filenames), drop entries from
+// the tail until we fit so the LLM never gets a result that blows past
+// its prompt budget.
+function buildListPayload(
+  abs: string,
+  entries: ListEntry[],
+  truncated: boolean,
+  filters: { include_hidden: boolean; pattern: string | null; max_entries: number },
+): string {
+  const build = (es: ListEntry[], droppedForSize: number) => JSON.stringify({
+    ok: true,
+    path: abs,
+    entries: es,
+    count: es.length,
+    total_in_dir_after_filters: entries.length,
+    truncated: truncated || droppedForSize > 0,
+    truncated_hint: (truncated || droppedForSize > 0)
+      ? "Result truncated. Lower max_entries, add a `pattern` filter, or descend into a more specific subdirectory."
+      : undefined,
+    dropped_for_size: droppedForSize > 0 ? droppedForSize : undefined,
+    filters,
+  });
+  let payload = build(entries, 0);
+  if (payload.length <= MAX_LIST_JSON_BYTES) return payload;
+  // Binary-trim entries from the tail until we fit.
+  let lo = 0, hi = entries.length;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi + 1) / 2);
+    if (build(entries.slice(0, mid), entries.length - mid).length <= MAX_LIST_JSON_BYTES) lo = mid;
+    else hi = mid - 1;
+  }
+  return build(entries.slice(0, lo), entries.length - lo);
+}
+
 export const fileListTool = tool(
   async ({ path: dirPath, max_entries, include_hidden, pattern }, config?: ToolConfig) => {
     let abs = dirPath;
@@ -479,8 +546,6 @@ export const fileListTool = tool(
     }
     const cap = max_entries ?? 200;
     const filter = pattern?.toLowerCase() ?? null;
-    const entries: Array<{ path: string; kind: "file" | "directory" | "other"; size?: number }> = [];
-    let truncated = false;
     try {
       let items: import("node:fs").Dirent[];
       try {
@@ -489,63 +554,12 @@ export const fileListTool = tool(
         return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
       }
       items.sort((a, b) => a.name.localeCompare(b.name));
-      for (const it of items) {
-        if (entries.length >= cap) {
-          truncated = true;
-          break;
-        }
-        if (!include_hidden && it.name.startsWith(".")) continue;
-        if (filter && !it.name.toLowerCase().includes(filter)) continue;
-        const full = path.join(abs, it.name);
-        const kind: "file" | "directory" | "other" = it.isDirectory()
-          ? "directory"
-          : it.isFile()
-            ? "file"
-            : "other";
-        let size: number | undefined;
-        if (kind === "file") {
-          try {
-            const st = await withFsDeadline("file_list.stat", full, () => fs.stat(full));
-            size = st.size;
-          } catch {
-            // ignore
-          }
-        }
-        entries.push({ path: full, kind, size });
-      }
-      // Build the payload, then enforce a hard JSON byte cap. If the entry
-      // list itself is too large (e.g. extremely long filenames), drop
-      // entries from the tail until we fit so the LLM never gets a result
-      // that blows past its prompt budget.
-      const build = (es: typeof entries, droppedForSize: number) => JSON.stringify({
-        ok: true,
-        path: abs,
-        entries: es,
-        count: es.length,
-        total_in_dir_after_filters: entries.length,
-        truncated: truncated || droppedForSize > 0,
-        truncated_hint: (truncated || droppedForSize > 0)
-          ? "Result truncated. Lower max_entries, add a `pattern` filter, or descend into a more specific subdirectory."
-          : undefined,
-        dropped_for_size: droppedForSize > 0 ? droppedForSize : undefined,
-        filters: {
-          include_hidden: !!include_hidden,
-          pattern: pattern ?? null,
-          max_entries: cap,
-        },
+      const { entries, truncated } = await buildListEntries(abs, items, cap, include_hidden, filter);
+      return buildListPayload(abs, entries, truncated, {
+        include_hidden: !!include_hidden,
+        pattern: pattern ?? null,
+        max_entries: cap,
       });
-      let payload = build(entries, 0);
-      if (payload.length > MAX_LIST_JSON_BYTES) {
-        // Binary-trim entries from the tail until we fit.
-        let lo = 0, hi = entries.length;
-        while (lo < hi) {
-          const mid = Math.floor((lo + hi + 1) / 2);
-          if (build(entries.slice(0, mid), entries.length - mid).length <= MAX_LIST_JSON_BYTES) lo = mid;
-          else hi = mid - 1;
-        }
-        payload = build(entries.slice(0, lo), entries.length - lo);
-      }
-      return payload;
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
     }

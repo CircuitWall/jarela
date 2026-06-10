@@ -238,6 +238,52 @@ interface GrepMatch {
   after?: string[];
 }
 
+// Reads one candidate file and pushes any line matches into `matches`.
+// Returns whether the cap was hit (caller stops walking) and whether this
+// file contributed at least one match (for the files_with_matches count).
+// Skips binaries (NUL-byte heuristic), >1 MB files, and unreadable entries.
+async function scanFileForGrepMatches(
+  abs: string,
+  rel: string,
+  re: RegExp,
+  cap: number,
+  ctx: number,
+  matches: GrepMatch[],
+): Promise<{ skipped: boolean; fileHadMatch: boolean; capReached: boolean }> {
+  let stat: import("node:fs").Stats;
+  try { stat = await fs.stat(abs); }
+  catch { return { skipped: true, fileHadMatch: false, capReached: false }; }
+  if (stat.size > MAX_GREP_FILE_BYTES) return { skipped: true, fileHadMatch: false, capReached: false };
+  let raw: string;
+  try { raw = await fs.readFile(abs, "utf8"); }
+  catch { return { skipped: true, fileHadMatch: false, capReached: false }; } // unreadable / binary
+  // Quick binary heuristic — if a NUL byte is present, skip.
+  if (raw.length > 0 && raw.indexOf("\u0000") !== -1) {
+    return { skipped: true, fileHadMatch: false, capReached: false };
+  }
+
+  const lines = raw.split(/\r?\n/);
+  let fileHadMatch = false;
+  for (let i = 0; i < lines.length; i++) {
+    // Use test, then reset lastIndex defensively in case the user passed /g.
+    if (re.test(lines[i])) {
+      re.lastIndex = 0;
+      fileHadMatch = true;
+      const text = clipLine(lines[i]);
+      const m: GrepMatch = { path: rel, line: i + 1, text };
+      if (ctx > 0) {
+        m.before = lines.slice(Math.max(0, i - ctx), i).map(clipLine);
+        m.after = lines.slice(i + 1, Math.min(lines.length, i + 1 + ctx)).map(clipLine);
+      }
+      matches.push(m);
+      if (matches.length >= cap) {
+        return { skipped: false, fileHadMatch, capReached: true };
+      }
+    }
+  }
+  return { skipped: false, fileHadMatch, capReached: false };
+}
+
 export const fileGrepTool = tool(
   async (input, config?: ToolConfig) => {
     const {
@@ -276,49 +322,14 @@ export const fileGrepTool = tool(
     let filesScanned = 0;
     let truncated = walked.truncated;
 
-    outer: for (const rel of walked.files) {
+    for (const rel of walked.files) {
       if (fileRe && !fileRe.test(rel)) continue;
       const abs = path.join(rootAbs, rel);
-      let stat: import("node:fs").Stats;
-      try {
-        stat = await fs.stat(abs);
-      } catch {
-        continue;
-      }
-      if (stat.size > MAX_GREP_FILE_BYTES) continue;
+      const result = await scanFileForGrepMatches(abs, rel, re, cap, ctx, matches);
+      if (result.skipped) continue;
       filesScanned++;
-
-      let raw: string;
-      try {
-        raw = await fs.readFile(abs, "utf8");
-      } catch {
-        continue; // unreadable / binary
-      }
-      // Quick binary heuristic — if a NUL byte is in the first 8 KB, skip.
-      if (raw.length > 0 && raw.indexOf("\u0000") !== -1) continue;
-
-      const lines = raw.split(/\r?\n/);
-      let fileHadMatch = false;
-      for (let i = 0; i < lines.length; i++) {
-        // Use exec so we don't share a global regex's lastIndex across calls.
-        if (re.test(lines[i])) {
-          // Reset lastIndex defensively in case the user passed /g.
-          re.lastIndex = 0;
-          fileHadMatch = true;
-          const text = clipLine(lines[i]);
-          const m: GrepMatch = { path: rel, line: i + 1, text };
-          if (ctx > 0) {
-            m.before = lines.slice(Math.max(0, i - ctx), i).map(clipLine);
-            m.after = lines.slice(i + 1, Math.min(lines.length, i + 1 + ctx)).map(clipLine);
-          }
-          matches.push(m);
-          if (matches.length >= cap) {
-            truncated = true;
-            break outer;
-          }
-        }
-      }
-      if (fileHadMatch) filesWithMatches++;
+      if (result.fileHadMatch) filesWithMatches++;
+      if (result.capReached) { truncated = true; break; }
     }
 
     return JSON.stringify({

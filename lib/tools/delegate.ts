@@ -39,71 +39,87 @@ function fail(code: string, message: string, extra: Record<string, unknown> = {}
   return JSON.stringify({ ok: false, error_code: code, message, ...extra });
 }
 
+// Validates that delegation is allowed: target isn't self, isn't an ancestor
+// (cycle), depth is within budget, and target is in the parent's roster.
+// Returns the resolved child config on success, or an error JSON to forward.
+function validateDelegationTarget(
+  agentId: string,
+  ctx: DelegateContext,
+): { child: NonNullable<ReturnType<typeof getAgentConfig>> } | { error: string } {
+  const parent = getAgentConfig(ctx.parentAgentId);
+  if (!parent) return { error: fail("agent_not_found", `Parent agent "${ctx.parentAgentId}" not found`) };
+  if (agentId === ctx.parentAgentId) return { error: fail("cycle_detected", "Cannot delegate to self") };
+  if (ctx.ancestors.includes(agentId)) {
+    return { error: fail("cycle_detected", `Delegation cycle: ${agentId} is already in the chain [${ctx.ancestors.join(" -> ")}]`) };
+  }
+  if (ctx.depth >= MAX_DELEGATION_DEPTH) {
+    return { error: fail(
+      "depth_exceeded",
+      `Maximum delegation depth (${MAX_DELEGATION_DEPTH}) reached. Chain: [${[...ctx.ancestors, ctx.parentAgentId].join(" -> ")}]`,
+    ) };
+  }
+  const roster = parseDelegateTargets(parent.delegate_targets);
+  if (!roster.includes(agentId)) {
+    return { error: fail(
+      "not_in_roster",
+      `Agent "${agentId}" is not in the delegate roster for "${parent.id}". Available: [${roster.join(", ") || "none"}]`,
+    ) };
+  }
+  const child = getAgentConfig(agentId);
+  if (!child) return { error: fail("agent_not_found", `Delegate agent "${agentId}" not found`) };
+  return { child };
+}
+
+// Runs the child agent's turn inside the run-queue so it serialises with
+// every other entry point (HTTP POST, scheduler, watcher, bridge, sibling
+// delegations) on the child thread — see lib/agents/run-queue.ts. A delegate
+// fired while the child is already running waits in the child's queue
+// instead of racing the checkpoint store.
+async function runDelegatedTurn(
+  childThreadId: string,
+  task: string,
+  ctx: DelegateContext,
+): Promise<Awaited<ReturnType<typeof collectStream>>> {
+  return enqueueThreadRun(childThreadId, "delegate", async () => {
+    const prepared = await prepareThreadRun({
+      thread_id: childThreadId,
+      message: task,
+      user_category: "delegation",
+      context_profile: resolveTurnProfile("delegate"),
+      _delegation_depth: ctx.depth + 1,
+      _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
+    });
+    const collected = await collectStream(prepared.stream);
+    if (collected.terminal !== "error") {
+      persistAssistantMessage(
+        childThreadId,
+        collected.assistantContent,
+        collected.usedTools,
+        collected.toolEvents,
+        "delegation",
+        collected.usage ?? null,
+        prepared.context_snapshot ?? null,
+        prepared.source_manifest ?? null,
+      );
+    }
+    return collected;
+  }).result;
+}
+
 export const delegateToAgentTool = tool(
   async ({ agent_id, task }, config) => {
     const ctx = readDelegateContext(config);
     if (!ctx) return fail("no_context", "No agent context (missing thread_id)");
 
-    const parent = getAgentConfig(ctx.parentAgentId);
-    if (!parent) return fail("agent_not_found", `Parent agent "${ctx.parentAgentId}" not found`);
-
-    if (agent_id === ctx.parentAgentId) {
-      return fail("cycle_detected", "Cannot delegate to self");
-    }
-    if (ctx.ancestors.includes(agent_id)) {
-      return fail("cycle_detected", `Delegation cycle: ${agent_id} is already in the chain [${ctx.ancestors.join(" -> ")}]`);
-    }
-    if (ctx.depth >= MAX_DELEGATION_DEPTH) {
-      return fail(
-        "depth_exceeded",
-        `Maximum delegation depth (${MAX_DELEGATION_DEPTH}) reached. Chain: [${[...ctx.ancestors, ctx.parentAgentId].join(" -> ")}]`,
-      );
-    }
-
-    const roster = parseDelegateTargets(parent.delegate_targets);
-    if (!roster.includes(agent_id)) {
-      return fail(
-        "not_in_roster",
-        `Agent "${agent_id}" is not in the delegate roster for "${parent.id}". Available: [${roster.join(", ") || "none"}]`,
-      );
-    }
-
-    const child = getAgentConfig(agent_id);
-    if (!child) return fail("agent_not_found", `Delegate agent "${agent_id}" not found`);
+    const validated = validateDelegationTarget(agent_id, ctx);
+    if ("error" in validated) return validated.error;
+    const { child } = validated;
 
     const childThread = getOrCreateAgentThread(agent_id);
     const startedAt = Date.now();
 
     try {
-      // Serialise on the child thread_id with every other entry point
-      // (HTTP POST, scheduler, watcher, bridge, sibling delegations) —
-      // see lib/agents/run-queue.ts. A delegate fired while the child is
-      // already running waits in the child's queue instead of racing the
-      // checkpoint store.
-      const queued = await enqueueThreadRun(childThread.thread_id, "delegate", async () => {
-        const prepared = await prepareThreadRun({
-          thread_id: childThread.thread_id,
-          message: task,
-          user_category: "delegation",
-          context_profile: resolveTurnProfile("delegate"),
-          _delegation_depth: ctx.depth + 1,
-          _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
-        });
-        const collected = await collectStream(prepared.stream);
-        if (collected.terminal !== "error") {
-          persistAssistantMessage(
-            childThread.thread_id,
-            collected.assistantContent,
-            collected.usedTools,
-            collected.toolEvents,
-            "delegation",
-            collected.usage ?? null,
-            prepared.context_snapshot ?? null,
-            prepared.source_manifest ?? null,
-          );
-        }
-        return collected;
-      }).result;
+      const queued = await runDelegatedTurn(childThread.thread_id, task, ctx);
       const elapsed_ms = Date.now() - startedAt;
 
       if (queued.terminal === "error") {
