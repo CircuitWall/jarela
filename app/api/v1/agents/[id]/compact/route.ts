@@ -129,7 +129,7 @@ export async function POST(_req: Request, { params }: Params) {
   const newPin = new Date(pinMs).toISOString();
 
   setThreadContextPin(thread.thread_id, newPin);
-  setThreadWarmSummary(thread.thread_id, summary, newPin);
+  setThreadWarmSummary(thread.thread_id, summary, newPin, messageCount, contextChars);
 
   // Retention: cap the persisted transcript. Older messages above the cap
   // are unrecoverable from the chat UI but their content lives on inside
@@ -149,5 +149,7 @@ export async function POST(_req: Request, { params }: Params) {
     warm_summary: updated?.warm_summary ?? summary,
     warm_summary_before: updated?.warm_summary_before ?? newPin,
     warm_summary_computed_at: updated?.warm_summary_computed_at ?? null,
+    warm_summary_source_messages: updated?.warm_summary_source_messages ?? messageCount,
+    warm_summary_source_chars: updated?.warm_summary_source_chars ?? contextChars,
   });
 }

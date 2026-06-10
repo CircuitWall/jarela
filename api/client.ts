@@ -236,10 +236,13 @@ export const api = {
         message_count?: number;
         context_chars?: number;
         pruned?: number;
+        archive_pruned?: number;
         hot_since?: string | null;
         warm_summary?: string | null;
         warm_summary_before?: string | null;
         warm_summary_computed_at?: string | null;
+        warm_summary_source_messages?: number | null;
+        warm_summary_source_chars?: number | null;
       }>(
         `/agents/${encodeURIComponent(id)}/compact`,
         // Conversation summarization can take longer than normal API calls,

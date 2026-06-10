@@ -41,6 +41,8 @@ interface Props {
   warmSummary?: string | null;
   warmSummaryBefore?: string | null;
   warmSummaryComputedAt?: string | null;
+  warmSummarySourceMessages?: number | null;
+  warmSummarySourceChars?: number | null;
   onSetContextPin?: (hot_since: string | null) => void;
   streaming?: boolean;
   // Thread-level context window cap, forwarded to each MessageBubble so
@@ -52,7 +54,7 @@ interface Props {
   onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
@@ -371,7 +373,11 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               computedAt={warmSummaryComputedAt ?? null}
               streaming={!!streaming}
             />
-            <ContextBoundaryDivider />
+            <ContextBoundaryDivider
+              sourceMessages={warmSummarySourceMessages ?? null}
+              sourceChars={warmSummarySourceChars ?? null}
+              summaryChars={warmSummary ? warmSummary.length : null}
+            />
           </div>
         );
 

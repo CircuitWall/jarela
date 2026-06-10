@@ -32,5 +32,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     warm_summary: updated?.warm_summary ?? null,
     warm_summary_before: updated?.warm_summary_before ?? null,
     warm_summary_computed_at: updated?.warm_summary_computed_at ?? null,
+    warm_summary_source_messages: updated?.warm_summary_source_messages ?? null,
+    warm_summary_source_chars: updated?.warm_summary_source_chars ?? null,
   });
 }

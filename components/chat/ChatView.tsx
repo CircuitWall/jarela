@@ -144,6 +144,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setWarmSummary(result.warm_summary ?? null);
         thread.metaApplier.setWarmSummaryBefore(result.warm_summary_before ?? null);
         thread.metaApplier.setWarmSummaryComputedAt(result.warm_summary_computed_at ?? null);
+        thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
+        thread.metaApplier.setWarmSummarySourceChars(result.warm_summary_source_chars ?? null);
         const prunedTail = result.pruned && result.pruned > 0
           ? ` ${result.pruned} oldest msg${result.pruned === 1 ? "" : "s"} archived.`
           : "";
@@ -242,6 +244,8 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         warmSummary={thread.warmSummary}
         warmSummaryBefore={thread.warmSummaryBefore}
         warmSummaryComputedAt={thread.warmSummaryComputedAt}
+        warmSummarySourceMessages={thread.warmSummarySourceMessages}
+        warmSummarySourceChars={thread.warmSummarySourceChars}
         onSetContextPin={thread.setContextPin}
         streaming={sse.streaming}
         contextWindowTokens={thread.contextWindowTokens}
