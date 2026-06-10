@@ -146,12 +146,6 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setWarmSummaryComputedAt(result.warm_summary_computed_at ?? null);
         thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
         thread.metaApplier.setWarmSummarySourceChars(result.warm_summary_source_chars ?? null);
-        const prunedTail = result.pruned && result.pruned > 0
-          ? ` ${result.pruned} oldest msg${result.pruned === 1 ? "" : "s"} archived.`
-          : "";
-        thread.addNotice(
-          `Session saved to memory (${result.message_count} msgs, ~${Math.round((result.context_chars || 0) / 1000)}k chars). Boundary moved — scroll up for history.${prunedTail}`,
-        );
       } else {
         thread.addNotice("Nothing to compact yet — send some messages first.");
       }
