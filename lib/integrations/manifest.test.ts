@@ -29,10 +29,16 @@ describe("validateManifest", () => {
     expect(out.steps[0].proposes).toBe("enable_integration");
   });
 
-  it("rejects manifests with a non-kebab id", () => {
+  it("rejects manifests with an invalid id", () => {
     expect(() => validateManifest({ ...valid, id: "Atlassian" })).toThrow();
-    expect(() => validateManifest({ ...valid, id: "atlassian_pro" })).toThrow();
+    expect(() => validateManifest({ ...valid, id: "1atlassian" })).toThrow();
+    expect(() => validateManifest({ ...valid, id: "atlassian!" })).toThrow();
     expect(() => validateManifest({ ...valid, id: "" })).toThrow();
+  });
+
+  it("accepts both kebab-case and snake_case ids", () => {
+    expect(() => validateManifest({ ...valid, id: "atlassian-pro" })).not.toThrow();
+    expect(() => validateManifest({ ...valid, id: "jira_align" })).not.toThrow();
   });
 
   it("requires at least one step", () => {
