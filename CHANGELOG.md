@@ -19,6 +19,12 @@ maintainability.
 
 ### Added
 
+- **Jira Align integration with write-side coverage**
+  ([#238](https://github.com/CircuitWall/jarela/pull/238)). Adds a
+  manifest entry and a `jira-align` tool that covers the write side of
+  the Jira Align REST API (create / update / link work items), so an
+  agent can drive an Align portfolio backlog end-to-end alongside the
+  existing read-only coverage.
 - **WhatsApp bridge catches up missed messages on reconnect**
   ([#234](https://github.com/CircuitWall/jarela/pull/234)). Baileys
   delivers offline-queued messages as `messages.upsert` type=`append`,
@@ -52,6 +58,16 @@ maintainability.
 
 ### Changed
 
+- **Facts tier retrieves via semantic recall instead of substring LIKE**
+  ([#239](https://github.com/CircuitWall/jarela/pull/239)).
+  `buildFactsContext` previously shortlisted facts with a SQLite
+  `LIKE %query%` against each fact's key+value, requiring a literal
+  substring overlap between the question and the stored fact. It now
+  routes through the same `recall()` cosine path used by the recall
+  context tier, filtered to `namespace=facts`, so semantically related
+  facts surface even when no words overlap. Substring `LIKE` is
+  retained as a fallback for workspaces with no embedding provider
+  configured.
 - **`/compact` (`/new`) preserves the transcript**
   ([#234](https://github.com/CircuitWall/jarela/pull/234)). Compacting
   no longer wipes the visible chat. The hot/warm boundary moves to just
@@ -73,9 +89,22 @@ maintainability.
 
 ### Fixed
 
+- **Idle watchdog stays alive during silent tool-arg streaming**
+  ([#240](https://github.com/CircuitWall/jarela/pull/240)). Some
+  providers stream long tool-call argument JSON without emitting any
+  user-visible token deltas, which used to trip the idle watchdog and
+  abort the turn mid-tool-call. The watchdog now treats tool-arg
+  chunks as a heartbeat so a slow function-call stream no longer
+  cancels itself.
+- **Warm summary no longer restates user identity**
+  ([#237](https://github.com/CircuitWall/jarela/pull/237)). The
+  summariser prompt was asking for "stable user facts," which made
+  every `/compact` re-emit the user's name / email / location into the
+  warm tier on top of the dedicated identity injection from
+  `user_profile`. Tightened the prompt to explicitly skip identity
+  fields so the warm summary stays focused on conversation content.
 - **`/compact` extends the prior warm summary instead of resummarising
-  every time** ([#235](https://github.com/CircuitWall/jarela/pull/235)).
-  Previously each `/compact` rebuilt the warm summary by passing every
+  every time** ([#235](https://github.com/CircuitWall/jarela/pull/235)).  Previously each `/compact` rebuilt the warm summary by passing every
   retained message back through the LLM. Two problems: (1) wasteful —
   long input every time and lossy summary-of-the-summary; (2) **unsafe**
   — once `pruneThreadMessages` had trimmed older rows past the retention
