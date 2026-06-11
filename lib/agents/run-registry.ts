@@ -206,6 +206,13 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   // the replacement entry in the registry.
   if (runs.get(run.thread_id) !== run) return;
   run.last_chunk_at = Date.now();
+  // Heartbeats exist solely to reset the idle watchdog when the provider
+  // is producing chunks that don't surface downstream (most commonly
+  // partial tool-call args while the model streams a large file_write
+  // body). The last_chunk_at bump above is the entire payload — don't
+  // buffer, don't fan out to subscribers, or the SSE wire would carry
+  // meaningless tick events.
+  if (chunk.type === "heartbeat") return;
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
   } else if (chunk.type === "tool_call") {
