@@ -740,6 +740,25 @@ export const api = {
         method: "DELETE",
       }),
   },
+
+  allowedSites: {
+    list: () =>
+      request<{ sites: import("./types").AllowedSiteStatus[] }>("/allowed-sites"),
+    add: (input: { hostname: string; ssrf_bypass?: boolean }) =>
+      request<{ site: import("./types").AllowedSiteStatus }>("/allowed-sites", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    remove: (hostname: string) =>
+      request<{ deleted: boolean }>(`/allowed-sites/${encodeURIComponent(hostname)}`, {
+        method: "DELETE",
+      }),
+    setSsrfBypass: (hostname: string, ssrf_bypass: boolean) =>
+      request<{ ok: boolean }>(`/allowed-sites/${encodeURIComponent(hostname)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ ssrf_bypass }),
+      }),
+  },
 };
 
 

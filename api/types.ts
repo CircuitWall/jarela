@@ -1089,6 +1089,18 @@ export interface ProxyConfigEnvelope {
   applied?: ProxyApplyResult;        // present on PUT/DELETE responses
 }
 
+// A host the user has approved the agent to use as them. The single
+// approval grants both browser-RPC navigation and cookie passthrough.
+// Cookie values never appear here — only `has_cookies` and the timestamps.
+export interface AllowedSiteStatus {
+  hostname: string;
+  ssrf_bypass: boolean;
+  has_cookies: boolean;
+  created_at: string;
+  last_used_at: string | null;
+  cookies_updated_at: string | null;
+}
+
 export interface TailscaleStatus {
   installed: boolean;
   logged_in: boolean;

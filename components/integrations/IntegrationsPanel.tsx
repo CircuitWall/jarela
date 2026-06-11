@@ -7,6 +7,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { useAppContext } from "@/contexts/AppContext";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { NetworkSection } from "./NetworkSection";
+import { AllowedSitesSection } from "./AllowedSitesSection";
 import { EnvAliasEditor } from "./EnvAliasEditor";
 
 const SECRET_MASK = "********";
@@ -154,6 +155,7 @@ export function IntegrationsPanel() {
           />
         )}
         <NetworkSection />
+        <AllowedSitesSection />
         {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
         {!loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No integrations available.</p>}
         {visibleDefs.map((def) => (

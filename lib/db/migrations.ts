@@ -193,6 +193,21 @@ export function runMigrations(db: DatabaseSync): void {
       ca_bundle   TEXT,                                    -- PEM, plaintext (public cert, ADR-0012)
       updated_at  TEXT    NOT NULL
     );
+    -- Sites the agent can use as the user. The user grants approval once
+    -- (Settings panel or in-browser dialog). The single approval enables
+    -- both browser-RPC navigation (the extension drives a tab on this
+    -- host) and cookie passthrough (cookies the extension scrapes get
+    -- attached to web_fetch requests for this host). The two capabilities
+    -- intentionally share one row: removing the host instantly disables
+    -- both.
+    CREATE TABLE IF NOT EXISTS allowed_sites (
+      hostname            TEXT PRIMARY KEY,                 -- exact host, lowercased; suffix match handled in code
+      ssrf_bypass         INTEGER NOT NULL DEFAULT 0,       -- 1 = let web_fetch reach private/loopback addresses for this host
+      cookies_blob        TEXT,                             -- envelope-encrypted "name=value; …"; NULL until extension first PUTs cookies
+      created_at          TEXT NOT NULL,
+      last_used_at        TEXT,
+      cookies_updated_at  TEXT
+    );
     -- Document RAG (ADR-0024). A document_sources row is a folder the
     -- user asked Jarela to index for semantic search. Walked on each
     -- scheduler tick (cheap stat()); files whose mtime/size changed get

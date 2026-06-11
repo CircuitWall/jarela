@@ -2,8 +2,24 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { checkPublicUrl } from "@/lib/utils/private-ip";
+import { getCookieHeaderForUrl, isHostAllowed } from "@/lib/cookies/jar";
 import { registerTools } from "./registry";
 import { getConfig } from "@/lib/env/config";
+
+// Whether the SSRF refusal for a private/loopback host should be
+// overridden because the user explicitly approved this host (with
+// ssrf_bypass=1) via the allowed-sites Settings panel. Lets the agent
+// reach intranet/SSO sites the user logged into in their browser
+// without flipping the global JARELA_ALLOW_PRIVATE_FETCH escape hatch.
+function ssrfBypassedForUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    const m = isHostAllowed(host);
+    return m.allowed && m.ssrfBypass;
+  } catch {
+    return false;
+  }
+}
 
 // JARELA_FETCH_TOOL_MAX_BYTES overrides the byte cap.
 function maxBytes(): number { return getConfig().fetchToolMaxBytes; }
@@ -80,14 +96,21 @@ async function followRedirectsWithSsrfCheck(
   let currentUrl = startUrl;
   let res: Response;
   for (let hop = 0; ; hop++) {
+    // Re-resolve cookies on every hop against the *current* URL's host.
+    // A redirect off an allow-listed host strips the Cookie header so we
+    // never leak intranet.example.com cookies to a redirect that lands
+    // somewhere else.
+    const cookieHeader = getCookieHeaderForUrl(currentUrl);
+    const headers: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+    };
+    if (cookieHeader) headers["Cookie"] = cookieHeader;
     res = await fetch(currentUrl, {
       signal,
       redirect: "manual",
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
+      headers,
     });
     if (res.status < 300 || res.status >= 400) break;
     const loc = res.headers.get("location");
@@ -99,7 +122,7 @@ async function followRedirectsWithSsrfCheck(
     try { next = new URL(loc, currentUrl).toString(); }
     catch { return { error: JSON.stringify({ url: currentUrl, error: `invalid redirect target: ${loc}` }) }; }
     const hopCheck = await checkPublicUrl(next);
-    if (!hopCheck.allowed) {
+    if (!hopCheck.allowed && !ssrfBypassedForUrl(next)) {
       return { error: JSON.stringify({
         url: next,
         error: `Refused redirect to private/loopback address (${hopCheck.reason}).`,
@@ -173,10 +196,10 @@ export const webFetchTool = tool(
       // Operators with a legitimate intranet need can opt back in via
       // JARELA_ALLOW_PRIVATE_FETCH=1.
       const initialCheck = await checkPublicUrl(url);
-      if (!initialCheck.allowed) {
+      if (!initialCheck.allowed && !ssrfBypassedForUrl(url)) {
         return JSON.stringify({
           url,
-          error: `Refused to fetch private/loopback address (${initialCheck.reason}). Set JARELA_ALLOW_PRIVATE_FETCH=1 to override.`,
+          error: `Refused to fetch private/loopback address (${initialCheck.reason}). Set JARELA_ALLOW_PRIVATE_FETCH=1 to override, or approve this host with SSRF bypass in Settings → Allowed sites.`,
         });
       }
 
