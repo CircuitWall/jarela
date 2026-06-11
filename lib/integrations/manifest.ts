@@ -52,7 +52,10 @@ export const IntegrationManifestSchema = z.object({
   id: z
     .string()
     .min(1)
-    .regex(/^[a-z][a-z0-9-]*$/, "id must be lowercase kebab-case"),
+    // Lowercase, alnum + '-' + '_'. Underscores are allowed so the manifest
+    // id can match legacy INTEGRATIONS keys (e.g. 'jira_align') without a
+    // separate alias mapping in manifestStatus().
+    .regex(/^[a-z][a-z0-9_-]*$/, "id must be lowercase alnum with '-' or '_' separators"),
   name: z.string().min(1),
   summary: z.string().min(1),
   category: z.enum(["llm", "mail", "calendar", "issue-tracker", "chat", "infrastructure", "other"]),

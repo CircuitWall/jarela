@@ -450,6 +450,111 @@ export const jiraAlignAddCommentTool = tool(
   },
 );
 
+export const jiraAlignListCommentsTool = tool(
+  async ({ type, item_id, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    const params = new URLSearchParams();
+    params.set("limit", String(Math.min(max_results ?? 25, 100)));
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}/comments?${params.toString()}`,
+    ) as { items?: Array<Record<string, unknown>>; nextPageToken?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      type, item_id,
+      comments: (data.items ?? []).map((c) => ({
+        id: c.id,
+        body: c.body ?? c.text ?? null,
+        author: c.author ?? c.createdBy ?? null,
+        created_at: c.createDate ?? c.createdAt ?? null,
+        updated_at: c.lastUpdated ?? c.updatedAt ?? null,
+      })),
+      next_page_token: data.nextPageToken ?? null,
+    });
+  },
+  {
+    name: "jira_align_list_comments",
+    description:
+      "List comments on a Jira Align work item. **`type` is required** to route to the correct " +
+      "/<type>s/{id}/comments resource. Returns id, body, author, and timestamps. Call this to " +
+      "discover a comment_id before jira_align_update_comment / jira_align_delete_comment.",
+    schema: z.object({
+      type: TYPE_ENUM,
+      item_id: z.string(),
+      max_results: z.number().optional().describe("Default 25, max 100"),
+    }),
+  },
+);
+
+export const jiraAlignUpdateCommentTool = tool(
+  async ({ type, item_id, comment_id, body }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}/comments/${encodeURIComponent(comment_id)}`,
+      { method: "PATCH", body: JSON.stringify({ body }) },
+    ) as { error?: string };
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, comment_id, type, item_id });
+  },
+  {
+    name: "jira_align_update_comment",
+    description:
+      "Edit the body of an existing comment on a Jira Align work item. **`type` is required** to " +
+      "route to /<type>s/{item_id}/comments/{comment_id}. Use jira_align_list_comments first to " +
+      "find the comment_id. **Disable this tool to make the agent read-only.**",
+    schema: z.object({
+      type: TYPE_ENUM,
+      item_id: z.string(),
+      comment_id: z.string(),
+      body: z.string().describe("Replacement comment text"),
+    }),
+  },
+);
+
+export const jiraAlignDeleteCommentTool = tool(
+  async ({ type, item_id, comment_id, confirm }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = collectionFor(type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    if (confirm !== comment_id) {
+      return JSON.stringify({
+        error:
+          `Refusing to delete comment ${comment_id}: pass \`confirm\` set to the same comment_id ` +
+          `to proceed. Comment deletes are not undoable in Jira Align — verify with the user first.`,
+      });
+    }
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/${collection}/${encodeURIComponent(item_id)}/comments/${encodeURIComponent(comment_id)}`,
+      { method: "DELETE" },
+    ) as { error?: string };
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_comment_id: comment_id, type, item_id });
+  },
+  {
+    name: "jira_align_delete_comment",
+    description:
+      "Permanently delete a comment from a Jira Align work item. **Irreversible.** **`type` is " +
+      "required.** The agent must also pass `confirm` set to the same `comment_id` — a deliberate " +
+      "two-arg gate so a mis-issued tool call can't wipe a comment. **Leave this tool disabled " +
+      "unless the user explicitly wants delete capability.**",
+    schema: z.object({
+      type: TYPE_ENUM,
+      item_id: z.string(),
+      comment_id: z.string(),
+      confirm: z.string().describe("Must equal `comment_id` for the delete to proceed."),
+    }),
+  },
+);
+
 // ── Hierarchy entities (read-only listing — ADR-0035) ──────────────────────
 //
 // Jira Align organizes work-items inside a hierarchy of programs, teams,
@@ -564,6 +669,268 @@ export const jiraAlignGetEntityTool = tool(
   },
 );
 
+// ── Dependencies (cross-item links) ─────────────────────────────────────────
+//
+// JA models cross-item dependencies as a separate /dependencies resource (not
+// a sub-collection of items) — every dependency has its own id, a predecessor,
+// a successor, and a type (FS / SS / FF / blocks / etc., instance-specific).
+// These tools let the agent answer "what blocks X?" / "X must complete before
+// Y" without falling back to manual lookups in the JA web UI.
+//
+// Endpoint shape varies across JA versions; the comment on jira_align_create_dependency
+// flags this. If a 4xx surfaces, the user should consult their Swagger.
+
+export const jiraAlignListDependenciesTool = tool(
+  async ({ item_id, direction, max_results }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const params = new URLSearchParams();
+    // direction='predecessor' → others are predecessors of this item (i.e.
+    // this item is blocked by them). 'successor' → this item is the predecessor.
+    // 'either' (default) → both inbound and outbound.
+    let clause: string;
+    if (direction === "predecessor") clause = `successorId eq ${item_id}`;
+    else if (direction === "successor") clause = `predecessorId eq ${item_id}`;
+    else clause = `(predecessorId eq ${item_id} or successorId eq ${item_id})`;
+    params.set("$filter", clause);
+    params.set("limit", String(Math.min(max_results ?? 50, 100)));
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/dependencies?${params.toString()}`,
+    ) as { items?: Array<Record<string, unknown>>; nextPageToken?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      item_id,
+      direction: direction ?? "either",
+      dependencies: (data.items ?? []).map((d) => ({
+        id: d.id,
+        predecessor_id: d.predecessorId ?? d.predecessorID ?? null,
+        successor_id: d.successorId ?? d.successorID ?? null,
+        dependency_type: d.dependencyType ?? d.type ?? null,
+        description: d.description ?? null,
+        state: d.state ?? null,
+      })),
+      next_page_token: data.nextPageToken ?? null,
+    });
+  },
+  {
+    name: "jira_align_list_dependencies",
+    description:
+      "List Jira Align dependencies (links between work items) involving a given item. By default " +
+      "returns both inbound and outbound; pass direction='predecessor' for items the given item " +
+      "depends on (blockers), or direction='successor' for items that depend on the given item " +
+      "(dependents). Returns id, predecessor_id, successor_id, dependency_type, state. Use this " +
+      "to find a dependency_id before calling jira_align_delete_dependency.",
+    schema: z.object({
+      item_id: z.string().describe("Numeric Jira Align item id (any type)"),
+      direction: z.enum(["predecessor", "successor", "either"]).optional().describe(
+        "predecessor = blockers; successor = dependents; either = both. Default: either.",
+      ),
+      max_results: z.number().optional().describe("Default 50, max 100"),
+    }),
+  },
+);
+
+export const jiraAlignCreateDependencyTool = tool(
+  async ({ predecessor_id, successor_id, dependency_type, description }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const body: Record<string, unknown> = {
+      predecessorId: predecessor_id,
+      successorId: successor_id,
+    };
+    if (dependency_type) body.dependencyType = dependency_type;
+    if (description) body.description = description;
+    const data = await jaFetch(auth, `/rest/align/api/2/dependencies`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }) as { id?: string; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      dependency_id: data.id,
+      predecessor_id,
+      successor_id,
+      dependency_type: dependency_type ?? null,
+    });
+  },
+  {
+    name: "jira_align_create_dependency",
+    description:
+      "Link two Jira Align work items as a dependency: the predecessor must complete before the " +
+      "successor can. `dependency_type` defaults to the instance default (typically 'FS' / " +
+      "finish-to-start) when omitted. Items can be of any type — JA dependencies cross the " +
+      "epic/feature/story hierarchy. **Disable this tool to make the agent read-only.** Note: " +
+      "dependency endpoint shape varies across JA versions — if this 4xx's, check your instance's Swagger.",
+    schema: z.object({
+      predecessor_id: z.string().describe("Item that must complete first"),
+      successor_id: z.string().describe("Item that's blocked by the predecessor"),
+      dependency_type: z.string().optional().describe(
+        "e.g. 'FS' (finish-to-start), 'SS', 'FF', 'blocks'. Instance-specific.",
+      ),
+      description: z.string().optional(),
+    }),
+  },
+);
+
+export const jiraAlignDeleteDependencyTool = tool(
+  async ({ dependency_id, confirm }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    if (confirm !== dependency_id) {
+      return JSON.stringify({
+        error:
+          `Refusing to delete dependency ${dependency_id}: pass \`confirm\` set to the same id to ` +
+          `proceed. Dependency deletes are not undoable — verify with the user first.`,
+      });
+    }
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/dependencies/${encodeURIComponent(dependency_id)}`,
+      { method: "DELETE" },
+    ) as { error?: string };
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_dependency_id: dependency_id });
+  },
+  {
+    name: "jira_align_delete_dependency",
+    description:
+      "Permanently remove a Jira Align dependency link. **Irreversible.** Use " +
+      "jira_align_list_dependencies first to find the dependency_id. The agent must pass " +
+      "`confirm` equal to `dependency_id` — a two-arg gate against accidental deletes. " +
+      "**Leave this tool disabled unless the user explicitly wants delete capability.**",
+    schema: z.object({
+      dependency_id: z.string(),
+      confirm: z.string().describe("Must equal `dependency_id` for the delete to proceed."),
+    }),
+  },
+);
+
+// ── Hierarchy entity writes (create / update / delete) ─────────────────────
+//
+// Mirror the read-only entity tools above (jira_align_list_entities,
+// jira_align_get_entity) so the agent can stand up a new program/team/sprint,
+// rename one, or retire one. Reuses ENTITY_TO_COLLECTION + summarizeEntity to
+// stay in lockstep with the read side.
+
+export const jiraAlignCreateEntityTool = tool(
+  async ({ entity_type, name, description, parent_id, program_id, portfolio_id, start_date, end_date }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = entityCollectionFor(entity_type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    const body: Record<string, unknown> = { name };
+    if (description) body.description = description;
+    if (parent_id) body.parentId = parent_id;
+    if (program_id) body.programId = program_id;
+    if (portfolio_id) body.portfolioId = portfolio_id;
+    if (start_date) body.startDate = start_date;
+    if (end_date) body.endDate = end_date;
+    const data = await jaFetch(auth, `/rest/align/api/2/${collection}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }) as Record<string, unknown> & { error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, ...summarizeEntity(entity_type, data) });
+  },
+  {
+    name: "jira_align_create_entity",
+    description:
+      "Create a Jira Align hierarchy entity: program, team, release, sprint (PI), portfolio, or " +
+      "value stream. Use to spin up a new program/team or schedule a new sprint. Optional dates " +
+      "must be ISO-8601 (e.g. '2026-07-01'). **Disable this tool to make the agent read-only.**",
+    schema: z.object({
+      entity_type: ENTITY_ENUM,
+      name: z.string(),
+      description: z.string().optional(),
+      parent_id: z.string().optional().describe(
+        "Attach under this parent entity (portfolio→value-stream, program→team, etc.)",
+      ),
+      program_id: z.string().optional(),
+      portfolio_id: z.string().optional(),
+      start_date: z.string().optional().describe("ISO date (YYYY-MM-DD)"),
+      end_date: z.string().optional().describe("ISO date (YYYY-MM-DD)"),
+    }),
+  },
+);
+
+export const jiraAlignUpdateEntityTool = tool(
+  async ({ entity_type, entity_id, fields }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = entityCollectionFor(entity_type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    if (!fields || Object.keys(fields).length === 0) {
+      return JSON.stringify({ error: "fields object must contain at least one field to update" });
+    }
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/${collection}/${encodeURIComponent(entity_id)}`,
+      { method: "PATCH", body: JSON.stringify(fields) },
+    ) as { error?: string };
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({
+      ok: true,
+      id: entity_id,
+      entity_type,
+      updated_fields: Object.keys(fields),
+    });
+  },
+  {
+    name: "jira_align_update_entity",
+    description:
+      "Patch fields on a Jira Align hierarchy entity (program/team/release/sprint/portfolio/value " +
+      "stream). Only the listed fields are touched. Use camelCase JA REST field names (name, " +
+      "description, parentId, startDate, endDate, isActive, …). **Disable this tool to make the " +
+      "agent read-only.**",
+    schema: z.object({
+      entity_type: ENTITY_ENUM,
+      entity_id: z.string(),
+      fields: z.record(z.string(), z.unknown()).describe(
+        "Map of field name → new value. Use the camelCase JA REST field names.",
+      ),
+    }),
+  },
+);
+
+export const jiraAlignDeleteEntityTool = tool(
+  async ({ entity_type, entity_id, confirm }) => {
+    const auth = resolveAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const collection = entityCollectionFor(entity_type);
+    if (typeof collection !== "string") return JSON.stringify(collection);
+    if (confirm !== entity_id) {
+      return JSON.stringify({
+        error:
+          `Refusing to delete ${entity_type} ${entity_id}: pass \`confirm\` set to the same id to ` +
+          `proceed. Entity deletes can cascade in Jira Align (e.g. a program owns work items) — ` +
+          `verify with the user first.`,
+      });
+    }
+    const data = await jaFetch(
+      auth,
+      `/rest/align/api/2/${collection}/${encodeURIComponent(entity_id)}`,
+      { method: "DELETE" },
+    ) as { error?: string };
+    if (data && typeof data === "object" && "error" in data) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, deleted_id: entity_id, entity_type });
+  },
+  {
+    name: "jira_align_delete_entity",
+    description:
+      "Permanently delete a Jira Align hierarchy entity (program/team/release/sprint/portfolio/" +
+      "value stream). **Irreversible** and may cascade — deleting a program can affect every " +
+      "work item scoped to it. The agent must pass `confirm` equal to `entity_id` — a two-arg " +
+      "gate against accidental deletes. **Leave this tool disabled unless the user explicitly " +
+      "wants delete capability.**",
+    schema: z.object({
+      entity_type: ENTITY_ENUM,
+      entity_id: z.string(),
+      confirm: z.string().describe("Must equal `entity_id` for the delete to proceed."),
+    }),
+  },
+);
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 // JA's $filter accepts ISO-8601 date literals without quotes. Map a small set
@@ -587,9 +954,13 @@ function escapeOData(s: string): string {
 registerTools("JiraAlign", "read", [
   jiraAlignGetItemTool, jiraAlignSearchItemsTool, jiraAlignListChildrenTool,
   jiraAlignListEntitiesTool, jiraAlignGetEntityTool,
+  jiraAlignListCommentsTool, jiraAlignListDependenciesTool,
 ]);
 registerTools("JiraAlign", "write", [
   jiraAlignCreateItemTool, jiraAlignUpdateItemTool,
   jiraAlignDeleteItemTool, jiraAlignAddCommentTool,
+  jiraAlignUpdateCommentTool, jiraAlignDeleteCommentTool,
+  jiraAlignCreateDependencyTool, jiraAlignDeleteDependencyTool,
+  jiraAlignCreateEntityTool, jiraAlignUpdateEntityTool, jiraAlignDeleteEntityTool,
 ]);
 registerTools("JiraAlign", "execute", [jiraAlignTransitionItemTool]);
