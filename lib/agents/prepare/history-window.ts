@@ -22,6 +22,7 @@ import {
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
 import type { MessageRow } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
+import { recall } from "@/lib/embeddings";
 import { getProvider } from "@/lib/providers";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
 import type { ContentPart } from "@/lib/tools/types";
@@ -155,7 +156,7 @@ export async function buildHistoryWindow(
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
     } else {
       const factsCap = budget.tierBudgets.facts + spill;
-      factsCtx = buildFactsContext(trimmedMessage, factsCap);
+      factsCtx = await buildFactsContext(trimmedMessage, factsCap);
       const used = estimateTokens(factsCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.facts, spill, used));
     }
@@ -270,19 +271,43 @@ async function buildWarmSummary(
   }
 }
 
-function buildFactsContext(query: string, factsBudgetTokens: number): string {
+// Pull the most relevant facts for this turn. Uses semantic recall first
+// (cosine over embedded memory_store rows, with a keyword-overlap fallback
+// for rows still pending embedding), filtered to namespace=facts. Falls
+// back to the cheap substring LIKE on listMemory only when recall returns
+// nothing — that path covers the no-embeddings-configured case where the
+// stored facts also have no vector, so a verbatim-match query still surfaces
+// something useful. recall() may throw if the embedding provider is
+// misconfigured; we swallow the error and fall through.
+async function buildFactsContext(query: string, factsBudgetTokens: number): Promise<string> {
   if (factsBudgetTokens <= 16) return "";
+  if (!query.trim()) return "";
   const charBudget = factsBudgetTokens * 4;
-  const rows = listMemory("facts", query.slice(0, 120), 12);
-  if (rows.length === 0) return "";
+
+  let hits: Array<{ key: string; value: string }> = [];
+  try {
+    const recalled = await recall(query, 30);
+    hits = recalled
+      .filter((h) => h.source === "memory" && h.namespace === "facts" && !!h.key)
+      .slice(0, 12)
+      .map((h) => ({ key: h.key as string, value: h.content }));
+  } catch {
+    // fall through to LIKE
+  }
+
+  if (hits.length === 0) {
+    const rows = listMemory("facts", query.slice(0, 120), 12);
+    hits = rows.map((r) => ({ key: r.key, value: String(r.value) }));
+    if (hits.length === 0) return "";
+  }
 
   const lines = [
     "--- Facts memory ---",
     "Durable fact entries from memory_store namespace=facts:",
   ];
   let used = 0;
-  for (const row of rows) {
-    const line = `- ${row.key}: ${String(row.value).slice(0, 220)}`;
+  for (const h of hits) {
+    const line = `- ${h.key}: ${h.value.slice(0, 220)}`;
     if (used > 0 && used + line.length > charBudget) break;
     lines.push(line);
     used += line.length;
