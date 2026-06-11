@@ -81,6 +81,10 @@ export function extensionRefineUrl(cfg) { return `${buildBase(cfg)}/api/v1/exten
 export function extensionFillUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/fill`; }
 export function extensionTurnUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/turn`; }
 export function extensionAgentsUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/agents`; }
+export function allowedSitesUrl(cfg) { return `${buildBase(cfg)}/api/v1/allowed-sites`; }
+export function allowedSiteHostUrl(cfg, hostname) {
+  return `${buildBase(cfg)}/api/v1/allowed-sites/${encodeURIComponent(hostname)}`;
+}
 export function appUrl(cfg) { return `${buildBase(cfg)}/`; }
 
 // Origin match patterns to request via chrome.permissions.request(). We

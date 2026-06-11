@@ -16,6 +16,8 @@ import {
   extensionFillUrl,
   extensionTurnUrl,
   extensionAgentsUrl,
+  allowedSitesUrl,
+  allowedSiteHostUrl,
   buildBase,
 } from "./lib/config.mjs";
 
@@ -151,6 +153,129 @@ async function tickHealth() {
   await loadConfig();
   const ok = await checkHealth();
   await applyHealthState(ok);
+  // Cookie watcher rides the same heartbeat — refresh the allow-list
+  // cache from the server whenever we already know we can talk to it.
+  if (ok) void refreshAllowedSites();
+}
+
+// ---------------------------------------------------------------------------
+// Cookie passthrough — sync browser cookies for allow-listed hosts.
+// ---------------------------------------------------------------------------
+//
+// On each health tick we fetch GET /api/v1/allowed-sites and rebuild a
+// local Set of approved hostnames. A single chrome.cookies.onChanged
+// listener filters events through that Set; on a hit we debounce per-host
+// 500ms then snapshot the host's full cookie set via chrome.cookies.getAll
+// and PUT it to /api/v1/allowed-sites/<host>. Keeps the server-side cookie
+// blob fresh without the user clicking "sync".
+//
+// chrome.cookies.getAll requires host_permissions for the origin. The
+// extension declares optional_host_permissions: ["http://*/*", "https://*/*"]
+// which the user grants per host on demand. Until granted, getAll returns
+// nothing and the PUT is a no-op — no spam, no error toast.
+
+const COOKIE_DEBOUNCE_MS = 500;
+const allowedHosts = new Set();
+const cookiePushTimers = new Map();
+
+async function refreshAllowedSites() {
+  try {
+    const res = await getJson(allowedSitesUrl(currentConfig));
+    if (!res.ok || !Array.isArray(res.body?.sites)) return;
+    allowedHosts.clear();
+    for (const s of res.body.sites) {
+      if (s && typeof s.hostname === "string") allowedHosts.add(s.hostname.toLowerCase());
+    }
+  } catch {
+    // Server unreachable — keep the previous cache. The next health tick
+    // will retry.
+  }
+}
+
+// Suffix-match the cookie's domain against the persistent allow-list.
+// Mirror of the server-side rule: a request to `foo.bar.example.com`
+// matches an entry of `bar.example.com` or `example.com` but not
+// `notexample.com`. Returns the matched allow-list hostname (so we PUT
+// to the canonical entry, not the cookie's possibly-leading-dot domain).
+function matchAllowedHost(cookieDomain) {
+  if (typeof cookieDomain !== "string") return null;
+  const d = cookieDomain.replace(/^\./, "").toLowerCase();
+  if (!d) return null;
+  if (allowedHosts.has(d)) return d;
+  for (const host of allowedHosts) {
+    if (d.endsWith("." + host)) return host;
+  }
+  return null;
+}
+
+async function hasCookieAccess(host) {
+  try {
+    return await chrome.permissions.contains({
+      origins: [`https://${host}/*`, `http://${host}/*`],
+    });
+  } catch {
+    return false;
+  }
+}
+
+async function pushCookiesForHost(host) {
+  // chrome.cookies.getAll requires host_permissions for the origin.
+  // Without it, getAll returns nothing — indistinguishable from "no
+  // cookies set". Gate the push on permissions first so we don't
+  // mistakenly clobber the server's blob with an empty array.
+  const granted = await hasCookieAccess(host);
+  if (!granted) return;
+  let cookies;
+  try {
+    cookies = await chrome.cookies.getAll({ domain: host });
+  } catch {
+    return;
+  }
+  const payload = {
+    cookies: (cookies ?? []).map((c) => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path,
+      secure: c.secure,
+      httpOnly: c.httpOnly,
+      // chrome.cookies.Cookie.expirationDate is seconds since epoch;
+      // session cookies omit it. Pass through unchanged.
+      ...(typeof c.expirationDate === "number" ? { expirationDate: c.expirationDate } : {}),
+    })),
+  };
+  try {
+    await fetch(allowedSiteHostUrl(currentConfig, host), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    // Treat any non-2xx as benign (e.g., 403 if the user just removed
+    // the host from the allow-list between our cache refresh and the
+    // PUT). The next refreshAllowedSites tick will reconcile.
+  } catch {
+    // Server unreachable; the next cookie change will retry.
+  }
+}
+
+function scheduleCookiePush(host) {
+  const existing = cookiePushTimers.get(host);
+  if (existing) clearTimeout(existing);
+  const t = setTimeout(() => {
+    cookiePushTimers.delete(host);
+    void pushCookiesForHost(host);
+  }, COOKIE_DEBOUNCE_MS);
+  cookiePushTimers.set(host, t);
+}
+
+if (chrome.cookies?.onChanged) {
+  chrome.cookies.onChanged.addListener((change) => {
+    const cookie = change?.cookie;
+    if (!cookie) return;
+    const matched = matchAllowedHost(cookie.domain);
+    if (!matched) return;
+    scheduleCookiePush(matched);
+  });
 }
 
 chrome.runtime.onInstalled.addListener(() => {

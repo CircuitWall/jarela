@@ -4,7 +4,7 @@
   "version": "0.1.2",
   "description": "Browser companion for Jarela: pick page elements, fill fields, rewrite text, and open the side panel.",
   "minimum_chrome_version": "120",
-  "permissions": ["activeTab", "scripting", "storage", "alarms", "notifications", "contextMenus", "sidePanel"],
+  "permissions": ["activeTab", "scripting", "storage", "alarms", "notifications", "contextMenus", "sidePanel", "cookies"],
   "optional_permissions": ["management"],
   "host_permissions": [
     "http://localhost:4312/*",
