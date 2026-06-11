@@ -7,7 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.4.1] - 2026-06-09
+## [1.5.0] - 2026-06-11
+
+A feature drop on top of 1.4.1. Headlines: WhatsApp bridges no longer
+lose messages while the app is offline; the onboarding wizard is now a
+real step-by-step flow; the in-chat `/compact` command preserves the
+visible transcript and shows what it actually compressed; scheduled
+tasks that fire while the app is locked are no longer silently dropped;
+and large editor/panel components were split into focused sub-files for
+maintainability.
+
+### Added
+
+- **WhatsApp bridge catches up missed messages on reconnect**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). Baileys
+  delivers offline-queued messages as `messages.upsert` type=`append`,
+  not `notify`. The adapter previously ignored `append` batches —
+  silently dropping every message received while the bridge was down.
+  Now accepts both message types, watermarks per-route progress with a
+  monotonic `last_seen_ts`, and dedupes against an LRU ring of the last
+  ~2000 message IDs so a server restart no longer means lost messages.
+- **Scheduled tasks deferred while the app is locked**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). Cron-fired
+  tasks that hit a locked vault are queued instead of erroring; on the
+  next unlock the scheduler replays them in order. Surfaces the deferred
+  list in the UI so the operator can see what is waiting.
+- **Onboarding wizard is now a real step-by-step flow**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). Replaces the
+  scrollable cards with a fullscreen one-step-at-a-time wizard
+  (Profile → Model → Agent → Review) so first-run users can't skip
+  prerequisites. Each step is its own component under
+  `components/setup/wizard/`.
+- **Boot-time autostart in the installer**
+  ([#232](https://github.com/CircuitWall/jarela/pull/232)).
+  `install-startup.ps1` now accepts `-Boot` to register Jarela as a
+  scheduled task that runs at machine startup (in addition to the
+  existing logon trigger), so the launcher comes up before any user
+  signs in.
+- **Compaction stats on the context boundary chip**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). The divider
+  between the warm summary and hot context now reads
+  `N msgs · 18.2k → 1.4k (-92%)` so you can see at a glance what the
+  most recent compact actually saved.
+
+### Changed
+
+- **`/compact` (`/new`) preserves the transcript**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). Compacting
+  no longer wipes the visible chat. The hot/warm boundary moves to just
+  after the last message and the summary lands behind the divider; the
+  user can still scroll up through the prior turns. Long-term growth is
+  still bounded — `JARELA_MAX_THREAD_MESSAGES` (default 1000) caps the
+  retained transcript and `JARELA_MAX_SESSION_ARCHIVES` caps the
+  per-agent session-summary archive.
+- **Large editor/panel components split into focused pieces**
+  ([#233](https://github.com/CircuitWall/jarela/pull/233)). `AgentEditor`,
+  `ModelEditor`, `DocumentsPanel`, `ChatView`, `DashboardPanel` and the
+  long tool-callback files in `lib/tools/` were broken into
+  single-purpose sub-files and hooks. Mechanical extraction only — same
+  props, same state — but each unit now fits on one screen and is
+  independently testable.
+- **Source-map and glob deprecation warnings remediated**
+  ([#229](https://github.com/CircuitWall/jarela/pull/229)). Bumps
+  transitive deps and silences the noisy warnings emitted on `next dev`.
+
+### Fixed
+
+- **`/compact` extends the prior warm summary instead of resummarising
+  every time** ([#235](https://github.com/CircuitWall/jarela/pull/235)).
+  Previously each `/compact` rebuilt the warm summary by passing every
+  retained message back through the LLM. Two problems: (1) wasteful —
+  long input every time and lossy summary-of-the-summary; (2) **unsafe**
+  — once `pruneThreadMessages` had trimmed older rows past the retention
+  cap, those rows were gone from the DB, so a from-scratch resummary
+  silently dropped everything the previous summary used to cover. Now,
+  when a non-empty warm summary already exists, the route only
+  summarises the messages newer than `warm_summary_before` and folds the
+  prior summary forward.
+- **One PIN entry covers both decrypt and screen-unlock**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). Server-side
+  complement to #226: `/api/v1/security/unlock` also clears the
+  screen-lock flag on success, and `AppShell` renders only the decrypt
+  overlay when both flags are up. Decrypting proves human presence,
+  which is exactly what the screen-lock check confirms — so requiring a
+  second PIN immediately afterwards was pure friction.
+- **`/compact` flushes the message queue when it finishes**
+  ([#234](https://github.com/CircuitWall/jarela/pull/234)). Messages
+  typed while compaction was in flight previously stayed queued until
+  the next user submit; they now drain automatically once the compact
+  request resolves.
+- **Drop the `+ N earlier` affordance from the context boundary
+  divider** ([#234](https://github.com/CircuitWall/jarela/pull/234)).
+  The link pointed at content already represented by the warm summary;
+  the divider chip alone is enough.
+- **Drop the redundant `/compact succeeded` toast**
+  ([#235](https://github.com/CircuitWall/jarela/pull/235)). The boundary
+  chip already shows the same `N msgs · before → after (-N%)` numbers
+  immediately above; the toast was duplicating the same information.
+- **Surface session and stream errors as toasts**
+  ([#230](https://github.com/CircuitWall/jarela/pull/230)). 4xx/5xx
+  responses from `/api/v1/agents/.../session` and stream-side aborts
+  now produce an in-chat toast instead of failing silently.
+- **Raise the recall budget for the agent boot path from 400 ms to
+  1500 ms** ([#231](https://github.com/CircuitWall/jarela/pull/231)).
+  Slow embedding models were timing out before recall could populate
+  the warm context, which silently degraded answer quality on the very
+  first turn.
+- **README promo video renders with autoplay**
+  ([#224](https://github.com/CircuitWall/jarela/pull/224)). Re-encoded
+  the source promo so GitHub serves it as `video/mp4` instead of the
+  audio-less webm (which the markdown sanitizer refused to render).
+
+
 
 A reliability + UX polish patch on top of 1.4.0. The PIN keypad used at
 boot-time decrypt and screen-unlock has been collapsed into a single
