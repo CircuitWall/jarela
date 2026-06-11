@@ -203,6 +203,7 @@ export async function* streamWithConfig(
             }
             sawUsage = true;
           }
+          let emittedVisibleChunk = false;
           if (typeof chunk.content === "string" && chunk.content) {
             // After a tool result, the next AI text starts a new conceptual
             // turn. Insert a paragraph break so the pre-tool plan and the
@@ -215,15 +216,28 @@ export async function* streamWithConfig(
             textEmittedSinceLastBreak = true;
             totalOutputTokens += 1;
             yield { type: "text_delta", data: { delta } };
+            emittedVisibleChunk = true;
           }
           const reasoning = chunk.additional_kwargs?.reasoning_content;
           if (typeof reasoning === "string" && reasoning) {
             yield { type: "thinking_delta", data: { delta: reasoning } };
+            emittedVisibleChunk = true;
           }
           if (chunk.additional_kwargs?.stop_reason === "length") {
             truncatedByLength = true;
           }
           pendingAIChunk = pendingAIChunk ? pendingAIChunk.concat(chunk) : chunk;
+          // Silent provider progress (most often partial tool-call args
+          // streaming — e.g. the model is mid-way through emitting a
+          // large file_write body and each chunk carries only an
+          // argument delta, no content). Without a heartbeat the idle
+          // watchdog at JARELA_RUN_IDLE_MS (default 120s) would kill
+          // the run despite steady forward progress. Heartbeats are
+          // dropped by broadcast() after bumping last_chunk_at — they
+          // never reach subscribers or the SSE wire.
+          if (!emittedVisibleChunk) {
+            yield { type: "heartbeat", data: {} };
+          }
         } else if (chunk instanceof ToolMessage) {
           yield* flushPendingToolCalls();
           let result: unknown = chunk.content;

@@ -35,6 +35,13 @@ export interface StreamOptions {
 }
 
 export interface StreamChunk {
-  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "done" | "error";
+  // "heartbeat" exists so silent provider activity — most commonly an
+  // AIMessageChunk that carries only partial tool-call argument deltas
+  // (e.g. while the model is streaming a large file_write body) — can
+  // reset the idle watchdog without surfacing anything to subscribers.
+  // See broadcast() in run-registry.ts: heartbeats bump last_chunk_at
+  // and are dropped before buffering / fan-out, so the SSE wire never
+  // carries meaningless tick events.
+  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "done" | "error" | "heartbeat";
   data: Record<string, unknown>;
 }

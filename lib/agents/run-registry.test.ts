@@ -6,6 +6,7 @@ import type { StreamChunk } from "./base";
 const delta = (s: string): StreamChunk => ({ type: "text_delta", data: { delta: s } } as StreamChunk);
 const toolCall = (id: string): StreamChunk => ({ type: "tool_call", data: { id, name: "x", arguments: {} } } as StreamChunk);
 const toolResult = (id: string): StreamChunk => ({ type: "tool_result", data: { id, name: "x", result: null } } as StreamChunk);
+const heartbeat = (): StreamChunk => ({ type: "heartbeat", data: {} } as StreamChunk);
 
 describe("run-registry watchdog", () => {
   beforeEach(() => {
@@ -252,6 +253,46 @@ describe("run-registry watchdog", () => {
       }
       expect(run.status).toBe("running");
       // Now go quiet and confirm it fires.
+      vi.advanceTimersByTime(5_000 + 10);
+      expect(run.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
+      else process.env.JARELA_RUN_IDLE_MS = prev;
+    }
+  });
+
+  // Regression for the user-reported "2-min hang during silent tool-arg
+  // streaming" symptom: while the model is mid-way through emitting a
+  // large file_write body, each AIMessageChunk carries only partial
+  // tool-call args and produces no text_delta / tool_call / tool_result.
+  // llm.ts now yields a "heartbeat" chunk for each such silent chunk so
+  // the idle watchdog sees forward progress. Heartbeats must (a) reset
+  // last_chunk_at and (b) be dropped before subscribers / buffer so the
+  // SSE wire stays clean.
+  it("heartbeat chunks reset the idle watchdog without buffering or fan-out", () => {
+    const prev = process.env.JARELA_RUN_IDLE_MS;
+    process.env.JARELA_RUN_IDLE_MS = "5000";
+    try {
+      const tid = `t-heartbeat-${Date.now()}`;
+      const run = startRun(tid, null);
+      const seen: StreamChunk[] = [];
+      run.subscribers.add((chunk) => { seen.push(chunk); });
+
+      // Heartbeats every 2s for 12s — total elapsed > idleMs but never
+      // idle for >5s in a row. Without the timestamp bump in broadcast()
+      // the watchdog would fire at 5s.
+      for (let i = 0; i < 6; i++) {
+        vi.advanceTimersByTime(2_000);
+        broadcast(run, heartbeat());
+      }
+      expect(run.status).toBe("running");
+      // Heartbeats must NOT appear in the replay buffer (otherwise a
+      // reconnecting subscriber would receive a flood of ticks) and must
+      // NOT reach live subscribers (the SSE wire stays clean).
+      expect(run.events).toHaveLength(0);
+      expect(seen).toHaveLength(0);
+
+      // Once heartbeats stop, the watchdog still fires normally.
       vi.advanceTimersByTime(5_000 + 10);
       expect(run.status).toBe("error");
     } finally {
