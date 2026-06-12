@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent-driven browser navigation via the extension.** Six new tools
+  register under the **Web** category and let an agent drive the user's
+  active browser tab through the Jarela browser extension:
+  `browser_navigate`, `browser_click`, `browser_fill`, `browser_scroll`,
+  `browser_screenshot`, `browser_extract`. The agent enqueues commands
+  on a server-side FIFO queue
+  (`POST /api/v1/extension/browser/poll` long-poll,
+  `POST /api/v1/extension/browser/result` submission); the extension
+  service worker pulls them and executes them via
+  `chrome.scripting.executeScript` in the active tab. Loopback-only auth
+  on both endpoints. Screenshots are cropped to the element bounding
+  rect via `OffscreenCanvas` and persisted under `~/.jarela/files/`.
+  Commands time out cleanly when the extension is not loaded — no
+  headless browser process is spawned, preserving the single-process
+  invariant.
+
 ## [1.7.0] - 2026-06-12
 
 A feature drop on top of 1.6.0. Headline: outbound mask-and-rehydrate
