@@ -23,23 +23,29 @@
   window.__jarelaAgentOverlayInstalled = true;
 
   const HOST_ID = "__jarela-agent-overlay-host";
-  let hostEl = document.getElementById(HOST_ID);
-  if (!hostEl) {
-    hostEl = document.createElement("div");
-    hostEl.id = HOST_ID;
-    // The host is positioned via fixed coordinates so it floats above
-    // every page chrome. The contents live in a closed shadow root so
-    // page rules can't restyle us.
-    hostEl.style.cssText = [
-      "all: initial",
-      "position: fixed",
-      "inset: 0",
-      "pointer-events: none",
-      "z-index: 2147483647",
-    ].join(";");
-    document.documentElement.appendChild(hostEl);
-  }
-  const shadow = hostEl.shadowRoot || hostEl.attachShadow({ mode: "closed" });
+  // A host left over from a prior extension context (e.g. after the
+  // extension was reloaded or updated) still carries its old `mode:
+  // "closed"` shadow root, which the new isolated-world context cannot
+  // read back via `hostEl.shadowRoot`. attachShadow() would then throw
+  // NotSupportedError. The safe move is to tear the orphan down and
+  // rebuild from scratch — its event listeners belonged to the dead
+  // context anyway.
+  const stale = document.getElementById(HOST_ID);
+  if (stale) stale.remove();
+  const hostEl = document.createElement("div");
+  hostEl.id = HOST_ID;
+  // The host is positioned via fixed coordinates so it floats above
+  // every page chrome. The contents live in a closed shadow root so
+  // page rules can't restyle us.
+  hostEl.style.cssText = [
+    "all: initial",
+    "position: fixed",
+    "inset: 0",
+    "pointer-events: none",
+    "z-index: 2147483647",
+  ].join(";");
+  document.documentElement.appendChild(hostEl);
+  const shadow = hostEl.attachShadow({ mode: "closed" });
 
   const STYLE = `
     .banner {
