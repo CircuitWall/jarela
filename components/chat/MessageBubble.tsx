@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, User, Users, X, Zap } from "lucide-react";
+import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -1227,6 +1227,53 @@ function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ te
   );
 }
 
+// Shield indicator (ADR-0064 transparency requirement). Renders when the
+// turn redacted at least one sensitive value before sending to the LLM.
+// The user's local view always shows real values (rehydrated at render
+// time) — this affordance is the visible signal that secrets stayed on
+// the device. Tooltip explains the trust boundary; click expands to a
+// per-type breakdown.
+function RedactionShield({
+  summary,
+}: {
+  summary: ReadonlyArray<{ type_hint: string; count: number }>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (summary.length === 0) return null;
+  const total = summary.reduce((acc, e) => acc + e.count, 0);
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400/85 hover:opacity-80 transition-colors"
+        title="Sensitive values were replaced with placeholders before being sent to the LLM. Real values stayed on this device."
+        aria-expanded={open}
+      >
+        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <ShieldCheck size={11} />
+        <span>{total} {total === 1 ? "value" : "values"} held back from LLM</span>
+      </button>
+      {open && (
+        <div className="mt-1 pl-4">
+          <ul className="space-y-0.5">
+            {summary.map((e, i) => (
+              <li key={`${e.type_hint}-${i}`} className="text-[11px] text-fg-muted">
+                <span className="tabular-nums">{e.count}</span>
+                {" × "}
+                <span className="font-mono opacity-85">{e.type_hint}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-1 text-[10px] text-fg-faint italic">
+            Real values stay on this device. Add patterns at <span className="font-mono">~/.jarela/redaction-patterns.json</span>.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
   const [open, setOpen] = useState(false);
   if (refs.length === 0) return null;
@@ -1623,6 +1670,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const citations = !isUser && "metadata" in message
     ? (message.metadata as { citations?: { checker_model?: string; claims?: Array<{ text?: string; link: string | null; verified: boolean; reason?: string; impact?: "high" | "med" | "low" }>; unverified_links?: string[]; sources?: Array<{ n: number; label: string; href: string }> } } | null | undefined)?.citations ?? null
     : null;
+  // ADR-0064 transparency surface — values the redaction layer kept off
+  // the wire during this turn. Read from the same metadata blob; absent
+  // on legacy rows and on turns where nothing matched.
+  const redactionSummary = !isUser && "metadata" in message
+    ? (message.metadata as { redaction_summary?: Array<{ type_hint: string; count: number }> } | null | undefined)?.redaction_summary ?? null
+    : null;
   const unverifiedLinks = useMemo<ReadonlySet<string> | undefined>(
     () => citations?.unverified_links?.length ? new Set(citations.unverified_links) : undefined,
     [citations],
@@ -1783,6 +1836,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         )}
         {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
           <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />
+        )}
+        {redactionSummary && redactionSummary.length > 0 && (
+          <RedactionShield summary={redactionSummary} />
         )}
         {refs.length > 0 && <RefsFooter refs={refs} />}
       </div>
