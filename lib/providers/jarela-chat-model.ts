@@ -15,6 +15,7 @@ import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { Runnable } from "@langchain/core/runnables";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/types";
+import { maskInvokeMessages } from "@/lib/redaction/mask-messages";
 
 interface Fields {
   provider: ModelProvider;
@@ -78,7 +79,7 @@ export class JarelaChatModel extends BaseChatModel {
     _options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
-    const invokeMessages = toInvokeMessages(messages);
+    const invokeMessages = maskInvokeMessages(toInvokeMessages(messages));
     const openaiTools = this._convertedTools();
 
     // Streaming path — assemble chunks into a final message.
@@ -133,7 +134,7 @@ export class JarelaChatModel extends BaseChatModel {
     _options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
-    const invokeMessages = toInvokeMessages(messages);
+    const invokeMessages = maskInvokeMessages(toInvokeMessages(messages));
     const openaiTools = this._convertedTools();
 
     if (!this._provider.streamInvoke) {
