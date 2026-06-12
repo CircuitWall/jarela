@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dispatchCommand, pageClickFn, pageFillFn, pageScrollFn, pageExtractFn } from "./browser-control.mjs";
+import { dispatchCommand, pageClickFn, pageFillFn, pageScrollFn, pageExtractFn, pageSnapshotFn } from "./browser-control.mjs";
 
 // Provide DOM globals the page-functions touch when invoked in Node.
 // They run inside the page (via chrome.scripting.executeScript) in
@@ -128,6 +128,18 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     const r = await dispatchCommand(deps, { type: "extract", selector: "main", format: "text" });
     expect(r.ok).toBe(true);
     expect(r.data).toEqual({ matched: true, content: "Hello.", format: "text" });
+  });
+
+  it("snapshot routes to pageSnapshotFn with options", async () => {
+    const fakeSnap = { url: "https://x", title: "x", interactive: [] };
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: fakeSnap }]),
+    });
+    const r = await dispatchCommand(deps, { type: "snapshot", max_items: 25, include_hidden: true });
+    expect(r.ok).toBe(true);
+    expect(r.data).toEqual(fakeSnap);
+    const [opts] = deps.executeScript.mock.calls[0];
+    expect(opts.args).toEqual([{ max_items: 25, include_hidden: true }]);
   });
 });
 

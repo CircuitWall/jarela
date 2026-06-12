@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`browser_snapshot` tool — structured page reads, no vision needed.**
+  Returns a compact JSON map of the active tab: URL, title, viewport,
+  headings, ARIA landmarks, and a numbered list of every interactive
+  control (links, buttons, inputs, selects, textareas, custom widgets)
+  with `role`, accessible `name`, and a ready-to-use CSS `selector`
+  the agent can pass straight to `browser_click` / `browser_fill`.
+  Dramatically faster than the previous navigate → screenshot → vision
+  → click loop: a snapshot is ~1–5 KB of text and skips the
+  multi-second image upload + analysis round-trip on every step.
+  The `browser_navigate` tool now points the agent at `browser_snapshot`
+  by default; `browser_screenshot` stays for cases where the visual
+  layout itself matters (charts, captchas, layout choices).
 - **Tab pinning for the browser-control agent.** The popup now has a
   **Pin this tab** button that locks the agent onto a specific browser
   tab by ID. Once pinned, every browser-control command runs against

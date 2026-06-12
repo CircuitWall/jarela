@@ -82,6 +82,12 @@ const ExtractCommandShape = z.object({
   max_chars: z.number().int().positive().max(200_000).optional(),
 });
 
+const SnapshotCommandShape = z.object({
+  type: z.literal("snapshot"),
+  max_items: z.number().int().positive().max(300).optional(),
+  include_hidden: z.boolean().optional(),
+});
+
 const CommandShape = z.discriminatedUnion("type", [
   NavigateCommandShape,
   ClickCommandShape,
@@ -89,6 +95,7 @@ const CommandShape = z.discriminatedUnion("type", [
   ScrollCommandShape,
   ScreenshotCommandShape,
   ExtractCommandShape,
+  SnapshotCommandShape,
 ]);
 
 export type BrowserCommandPayload = z.infer<typeof CommandShape>;

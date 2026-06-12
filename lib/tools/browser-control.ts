@@ -62,7 +62,7 @@ export const browserNavigateTool = tool(
     name: "browser_navigate",
     description:
       "Drive the user's browser: navigate the active tab to `url`. The Jarela browser extension must be installed and connected. " +
-      "Returns once the page reports loaded (or `wait_for_selector` resolves). After navigation, call `browser_extract` to read the new page content or `browser_screenshot` for a visual. " +
+      "Returns once the page reports loaded (or `wait_for_selector` resolves). After navigation, prefer `browser_snapshot` to see the structured page (URL, headings, every clickable/fillable element with a ready-to-use selector) — it's far faster than a screenshot-and-vision round-trip. Reach for `browser_screenshot` only when the visual layout itself matters. " +
       "Use this only when the user has explicitly asked you to drive their browser — opening arbitrary URLs surprises users.",
     schema: z.object({
       url: z.string().url().describe("Absolute http(s) URL to navigate the active tab to."),
@@ -242,7 +242,41 @@ export const browserExtractTool = tool(
   },
 );
 
-registerTools("Web", "read", [browserScreenshotTool, browserExtractTool]);
+// --------------------------------------------------------------------- //
+// snapshot                                                              //
+// --------------------------------------------------------------------- //
+
+export const browserSnapshotTool = tool(
+  async ({ max_items, include_hidden, timeout_ms }) => {
+    const result = await run(
+      { type: "snapshot", max_items, include_hidden },
+      timeout_ms,
+    );
+    return stringifyResult("browser_snapshot", result);
+  },
+  {
+    name: "browser_snapshot",
+    description:
+      "Return a compact, structured map of the active tab — URL, title, headings, landmarks, and a numbered list of every interactive control (links, buttons, inputs, selects, etc.) with `role`, accessible `name`, and a CSS `selector` you can pass straight to `browser_click` / `browser_fill`. " +
+      "Prefer this over `browser_screenshot` when deciding what to click or fill: it's an order of magnitude faster than a vision round-trip and gives the agent the exact selector to use. Only fall back to `browser_screenshot` when the visual layout itself matters (charts, images, captchas, layout-driven choices).",
+    schema: z.object({
+      max_items: z
+        .number()
+        .int()
+        .positive()
+        .max(300)
+        .optional()
+        .describe("Cap the number of interactive elements returned. Defaults to 80."),
+      include_hidden: z
+        .boolean()
+        .optional()
+        .describe("Include elements hidden by CSS / aria-hidden. Defaults to false."),
+      timeout_ms: TimeoutMs,
+    }),
+  },
+);
+
+registerTools("Web", "read", [browserScreenshotTool, browserExtractTool, browserSnapshotTool]);
 registerTools("Web", "write", [
   browserNavigateTool,
   browserClickTool,
