@@ -18,10 +18,14 @@ import {
   extensionAgentsUrl,
   allowedSitesUrl,
   allowedSiteHostUrl,
+  browserPollUrl,
+  browserResultUrl,
   buildBase,
 } from "./lib/config.mjs";
+import { dispatchCommand } from "./lib/browser-control.mjs";
 
 const ALARM_NAME = "jarela-health";
+const BROWSER_POLL_ALARM_NAME = "jarela-browser-poll";
 const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
 const STORAGE_SELECTED_AGENT_ID = "jarelaSelectedAgentId";
@@ -130,6 +134,7 @@ async function checkHealth() {
 }
 
 async function applyHealthState(healthy) {
+  const wasHealthy = lastHealthy;
   lastHealthy = healthy;
   const prefersDark = await detectPrefersDarkFromActiveTab();
   const stem = pickIconStem(prefersDark);
@@ -147,6 +152,7 @@ async function applyHealthState(healthy) {
       ? `Capture an element to Jarela (${where})`
       : `Jarela isn't reachable at ${where} — click to open settings`,
   });
+  if (healthy && !wasHealthy) resumeBrowserPollLoop();
 }
 
 async function tickHealth() {
@@ -291,6 +297,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM_NAME) void tickHealth();
+  if (alarm.name === BROWSER_POLL_ALARM_NAME) void resumeBrowserPollLoop();
 });
 
 chrome.tabs.onActivated.addListener(() => {
@@ -1542,4 +1549,171 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     }
   })();
   return true; // async response
+});
+
+// --------------------------------------------------------------------- //
+// Browser-control long-poll loop                                        //
+// --------------------------------------------------------------------- //
+//
+// The Jarela agent enqueues browser commands (navigate, click, fill,
+// scroll, screenshot, extract) on the server queue at
+// /api/v1/extension/browser/poll. The SW long-polls (~25s) for the next
+// command, dispatches it through ./lib/browser-control.mjs into the
+// active tab, then POSTs the outcome to /browser/result.
+//
+// MV3 SWs get killed at ~30s idle. The 1-minute alarm
+// (BROWSER_POLL_ALARM_NAME) revives us so the loop self-heals after a
+// kill or a network blip.
+
+let browserPollLoopActive = false;
+
+async function pollOnceForCommand() {
+  const ctrl = new AbortController();
+  // Slightly above POLL_WAIT_MS on the server (25s) so a server-side
+  // idle resolve always lands before this client abort fires.
+  const t = setTimeout(() => ctrl.abort(), 28_000);
+  try {
+    const res = await fetch(browserPollUrl(currentConfig), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wait_ms: 25_000 }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body?.command ?? null;
+  } catch {
+    clearTimeout(t);
+    return null;
+  }
+}
+
+async function postCommandResult(cmdId, outcome) {
+  try {
+    await fetch(browserResultUrl(currentConfig), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cmd_id: cmdId, ...outcome }),
+    });
+  } catch (err) {
+    console.warn("[jarela] failed to POST browser-control result:", err);
+  }
+}
+
+// chrome.tabs.captureVisibleTab ? base64 dataUrl. We expose it via the
+// dependency interface so the dispatcher stays mockable.
+function captureVisibleTabDep(windowId, opts) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.captureVisibleTab(windowId ?? null, { format: opts?.format ?? "png" }, (dataUrl) => {
+      const err = chrome.runtime.lastError;
+      if (err) {
+        reject(new Error(err.message ?? "captureVisibleTab failed"));
+        return;
+      }
+      resolve(dataUrl);
+    });
+  });
+}
+
+// Wait until a navigated tab reports `status === "complete"`. Returns
+// even if the timeout elapses so the dispatcher can continue.
+function waitTabLoaded(tabId, timeoutMs) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      try { chrome.tabs.onUpdated.removeListener(listener); } catch { /* */ }
+      resolve();
+    };
+    const listener = (changedId, info) => {
+      if (changedId === tabId && info.status === "complete") settle();
+    };
+    chrome.tabs.onUpdated.addListener(listener);
+    setTimeout(settle, Math.max(1000, timeoutMs ?? 30_000));
+  });
+}
+
+// Crop a base64 PNG/JPEG to the element bounds reported by the page.
+// Runs in the SW via OffscreenCanvas (available in MV3 service workers
+// since Chrome 119; manifest already requires >= 120).
+async function cropBase64Image(base64Full, bounds, format) {
+  const blob = await (await fetch(`data:image/${format};base64,${base64Full}`)).blob();
+  const bitmap = await createImageBitmap(blob);
+  const dpr = bounds.dpr ?? 1;
+  const x = Math.max(0, Math.round(bounds.x * dpr));
+  const y = Math.max(0, Math.round(bounds.y * dpr));
+  const w = Math.min(bitmap.width - x, Math.round(bounds.width * dpr));
+  const h = Math.min(bitmap.height - y, Math.round(bounds.height * dpr));
+  if (w <= 0 || h <= 0) throw new Error("element bounds reduced to zero after clipping to viewport");
+  const canvas = new OffscreenCanvas(w, h);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(bitmap, x, y, w, h, 0, 0, w, h);
+  const cropped = await canvas.convertToBlob({ type: `image/${format}` });
+  const buf = await cropped.arrayBuffer();
+  // Convert to base64 without exhausting the call stack on large images.
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(bin);
+}
+
+// chrome.* dependency bundle handed to the pure dispatcher.
+const chromeDeps = {
+  queryActiveTab: (opts) => chrome.tabs.query(opts),
+  updateTab: (opts) => chrome.tabs.update(opts.tabId, { url: opts.url }),
+  executeScript: (opts) => chrome.scripting.executeScript(opts),
+  captureVisibleTab: captureVisibleTabDep,
+  waitTabLoaded,
+  cropPngBase64: cropBase64Image,
+};
+
+async function browserPollLoop() {
+  if (browserPollLoopActive) return;
+  browserPollLoopActive = true;
+  try {
+    while (true) {
+      const cmd = await pollOnceForCommand();
+      if (!cmd) {
+        // Either the server idled out (200 with null) or the request
+        // errored. Loop again � pollOnceForCommand has its own timeout
+        // so we don't tight-loop on a wedged connection.
+        continue;
+      }
+      let outcome;
+      try {
+        outcome = await dispatchCommand(chromeDeps, cmd);
+      } catch (err) {
+        outcome = { ok: false, error: err instanceof Error ? err.message : String(err) };
+      }
+      await postCommandResult(cmd.cmd_id, outcome);
+    }
+  } finally {
+    browserPollLoopActive = false;
+  }
+}
+
+function resumeBrowserPollLoop() {
+  if (!lastHealthy) return;
+  if (browserPollLoopActive) return;
+  void browserPollLoop();
+}
+
+// Re-arm the loop whenever the server first becomes reachable.
+// (Hook lives inside applyHealthState; this comment kept as a marker so
+// future readers don't add a duplicate.)
+
+// 1-minute revival alarm � MV3 kills idle SWs at ~30s, so we ensure the
+// loop is back up on the next alarm tick after any kill.
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 1 });
+  resumeBrowserPollLoop();
+});
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 1 });
+  resumeBrowserPollLoop();
 });

@@ -85,6 +85,8 @@ export function allowedSitesUrl(cfg) { return `${buildBase(cfg)}/api/v1/allowed-
 export function allowedSiteHostUrl(cfg, hostname) {
   return `${buildBase(cfg)}/api/v1/allowed-sites/${encodeURIComponent(hostname)}`;
 }
+export function browserPollUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/poll`; }
+export function browserResultUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/result`; }
 export function appUrl(cfg) { return `${buildBase(cfg)}/`; }
 
 // Origin match patterns to request via chrome.permissions.request(). We
