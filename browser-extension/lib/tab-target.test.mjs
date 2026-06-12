@@ -184,4 +184,42 @@ describe("resolveTargetTab", () => {
     expect(r.tab).toBeNull();
     expect(r.reason).toMatch(/no usable/);
   });
+
+  it("prefers the foreground-tracker tab over the live fallback", async () => {
+    const fgTab = { id: 33, url: "https://foreground.test/", active: false };
+    const liveTab = { id: 99, url: "https://stale.test/", active: true };
+    const deps = makeDeps({
+      getTabImpl: (id) => Promise.resolve(id === 33 ? fgTab : liveTab),
+      tabsByQuery: { lastFocused: [liveTab] },
+    });
+    deps.getForegroundTab = vi.fn().mockResolvedValue({ tabId: 33, url: "https://foreground.test/" });
+    const r = await resolveTargetTab(deps);
+    expect(r.source).toBe("foreground");
+    expect(r.tab.id).toBe(33);
+  });
+
+  it("falls back to the live query when the tracked foreground tab is gone", async () => {
+    const liveTab = { id: 99, url: "https://stale.test/", active: true };
+    const deps = makeDeps({
+      getTabImpl: () => Promise.reject(new Error("No tab with id 33")),
+      tabsByQuery: { lastFocused: [liveTab] },
+    });
+    deps.getForegroundTab = vi.fn().mockResolvedValue({ tabId: 33, url: "https://foreground.test/" });
+    const r = await resolveTargetTab(deps);
+    expect(r.source).toBe("active");
+    expect(r.tab.id).toBe(99);
+  });
+
+  it("ignores a tracked foreground tab whose URL turned unusable", async () => {
+    const liveTab = { id: 99, url: "https://stale.test/", active: true };
+    const deps = makeDeps({
+      getTabImpl: (id) =>
+        Promise.resolve(id === 33 ? { id: 33, url: "chrome://settings/" } : liveTab),
+      tabsByQuery: { lastFocused: [liveTab] },
+    });
+    deps.getForegroundTab = vi.fn().mockResolvedValue({ tabId: 33, url: "chrome://settings/" });
+    const r = await resolveTargetTab(deps);
+    expect(r.source).toBe("active");
+    expect(r.tab.id).toBe(99);
+  });
 });

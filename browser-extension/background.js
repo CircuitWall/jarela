@@ -31,6 +31,14 @@ import {
   clearPinnedTab,
   isUsableUrl,
 } from "./lib/tab-target.mjs";
+import {
+  getForegroundTab,
+  handleTabActivated as handleTabActivatedFg,
+  handleTabUpdated as handleTabUpdatedFg,
+  handleWindowFocused as handleWindowFocusedFg,
+  handleTabRemoved as handleTabRemovedFg,
+  seedForegroundTab,
+} from "./lib/foreground-tab.mjs";
 
 const ALARM_NAME = "jarela-health";
 const BROWSER_POLL_ALARM_NAME = "jarela-browser-poll";
@@ -296,11 +304,13 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: HEALTH_INTERVAL_MIN });
   void ensureContextMenus();
   void tickHealth();
+  void seedForegroundTab(foregroundTrackerDeps);
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: HEALTH_INTERVAL_MIN });
   void ensureContextMenus();
   void tickHealth();
+  void seedForegroundTab(foregroundTrackerDeps);
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
@@ -308,12 +318,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === BROWSER_POLL_ALARM_NAME) void resumeBrowserPollLoop();
 });
 
-chrome.tabs.onActivated.addListener(() => {
+chrome.tabs.onActivated.addListener((info) => {
   void applyHealthState(lastHealthy);
+  void handleTabActivatedFg(foregroundTrackerDeps, info);
 });
 
-chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete") void applyHealthState(lastHealthy);
+  void handleTabUpdatedFg(foregroundTrackerDeps, tabId, changeInfo, tab);
+});
+
+// Window-level focus change is the missing signal that v1 dropped on
+// the floor: when the user alt-tabs from Jarela's window back to
+// their browser window, lastFocusedWindow flips and the live query
+// would have picked the wrong tab. Capture the active tab in the
+// newly focused window so the resolver has a stable target.
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  void handleWindowFocusedFg(foregroundTrackerDeps, windowId);
 });
 
 // Auto-invalidate a pinned tab when it's closed. Without this the next
@@ -328,6 +349,11 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     }
   } catch (err) {
     console.warn("[jarela] failed to auto-clear pinned tab on close:", err);
+  }
+  try {
+    await handleTabRemovedFg(foregroundTrackerDeps, tabId);
+  } catch (err) {
+    console.warn("[jarela] failed to clear foreground tab on close:", err);
   }
 });
 
@@ -1571,6 +1597,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, status: 200, body: { pin } });
         return;
       }
+      if (msg.type === "jarela-get-foreground-tab") {
+        const foreground = await getForegroundTab(chrome.storage.local);
+        sendResponse({ ok: true, status: 200, body: { foreground } });
+        return;
+      }
       if (msg.type === "jarela-pin-current-tab") {
         // Captures whatever tab the user currently considers "this tab"
         // when they click the popup. Uses the resolver so we pick the
@@ -1728,12 +1759,25 @@ async function cropBase64Image(base64Full, bounds, format) {
   return btoa(bin);
 }
 
+// Deps the foreground-tab tracker needs (storage + a couple of
+// tabs.* calls). Used by the chrome.tabs / chrome.windows listeners
+// above to keep `jarelaForegroundTab` in storage up to date.
+const foregroundTrackerDeps = {
+  storage: chrome.storage.local,
+  getTab: (id) => chrome.tabs.get(id),
+  queryTabs: (q) => chrome.tabs.query(q),
+};
+
 // Deps the pure tab-resolver needs (storage + a couple of tabs.* calls).
 // Kept separate from the dispatcher's deps so the resolver stays tiny.
 const tabTargetDeps = {
   storage: chrome.storage.local,
   getTab: (id) => chrome.tabs.get(id),
   queryTabs: (q) => chrome.tabs.query(q),
+  // Lets the resolver consult the foreground tracker before falling
+  // back to a live `chrome.tabs.query`. This is the main fix for
+  // "agent targets the wrong tab when the popup steals focus".
+  getForegroundTab: () => getForegroundTab(chrome.storage.local),
 };
 
 // chrome.* dependency bundle handed to the pure dispatcher.

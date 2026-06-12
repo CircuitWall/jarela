@@ -206,15 +206,19 @@ function shortenUrl(url) {
 }
 
 async function renderTargetCard() {
-  // We render two independent pieces of state into the same card: the
-  // pinned tab (if any) drives the host/sub text, and the SW health
-  // drives the dot colour. They can be out of sync (pinned tab but
-  // server down, etc.) and that's intentional.
-  const [pinRes, statusRes] = await Promise.all([
+  // We render three independent pieces of state into the same card:
+  //   - SW health drives the dot colour (server reachable or not).
+  //   - The pinned tab (if any) drives the host/sub text.
+  //   - The tracked foreground tab is shown when no pin is set, so
+  //     the user can see exactly which tab the agent will drive
+  //     without having to pin anything first.
+  const [pinRes, statusRes, fgRes] = await Promise.all([
     callBackground("jarela-get-pinned-tab"),
     callBackground("jarela-get-status"),
+    callBackground("jarela-get-foreground-tab"),
   ]);
   const pin = pinRes?.body?.pin ?? null;
+  const fg = fgRes?.body?.foreground ?? null;
   const healthy = statusRes?.body?.healthy === true;
 
   const dot = TARGET_CARD.dot();
@@ -226,10 +230,15 @@ async function renderTargetCard() {
     TARGET_CARD.sub().textContent = pin.title || shortenUrl(pin.url) || "Pinned tab";
     TARGET_CARD.pin().hidden = true;
     TARGET_CARD.unpin().hidden = false;
+  } else if (fg) {
+    TARGET_CARD.host().textContent = `👁️ ${fg.host || "(unknown host)"}`;
+    TARGET_CARD.sub().textContent = fg.title || shortenUrl(fg.url) || "Foreground tab";
+    TARGET_CARD.pin().hidden = false;
+    TARGET_CARD.unpin().hidden = true;
   } else {
-    TARGET_CARD.host().textContent = "No tab pinned";
+    TARGET_CARD.host().textContent = "No active tab";
     TARGET_CARD.sub().textContent = healthy
-      ? "Falling back to last-focused window"
+      ? "Open an http/https page to start"
       : "Jarela server not reachable";
     TARGET_CARD.pin().hidden = false;
     TARGET_CARD.unpin().hidden = true;
@@ -262,7 +271,10 @@ document.getElementById("unpin-tab").addEventListener("click", async () => {
 // open).
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (Object.prototype.hasOwnProperty.call(changes, "jarelaPinnedTab")) {
+  if (
+    Object.prototype.hasOwnProperty.call(changes, "jarelaPinnedTab") ||
+    Object.prototype.hasOwnProperty.call(changes, "jarelaForegroundTab")
+  ) {
     void renderTargetCard();
   }
 });
