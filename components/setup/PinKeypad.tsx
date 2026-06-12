@@ -190,7 +190,7 @@ export function PinKeypad({ mode, onSuccess }: PinKeypadProps) {
             disabled={submitting || retryAfterSec > 0}
           />
           <PinKey
-            digit="\u2190"
+            digit={"\u2190"}
             onPress={backspace}
             disabled={submitting || digits.length === 0}
             ariaLabel="Backspace"
