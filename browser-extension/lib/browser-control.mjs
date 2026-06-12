@@ -151,9 +151,19 @@ export function pageElementBoundsFn(selector) {
  * @property {(opts: { target: { tabId: number }, func: Function, args?: any[] }) => Promise<any[]>} executeScript
  * @property {(opts: { tabId: number }, fn: () => void) => Promise<void>} [onTabComplete]
  * @property {(opts: { windowId?: number, format?: string }) => Promise<string>} captureVisibleTab
+ * @property {() => Promise<{tab: any, source: string} | {tab: null, source: "none", reason: string}>} [resolveTargetTab]
  */
 
 async function pickActiveTab(deps) {
+  // Prefer the smarter resolver when the SW injected one (handles tab
+  // pinning + last-focused-window fallback). Fall back to the old
+  // active+currentWindow query for back-compat with unit tests that
+  // don't construct a resolveTargetTab.
+  if (typeof deps.resolveTargetTab === "function") {
+    const r = await deps.resolveTargetTab();
+    if (r?.tab?.id) return r.tab;
+    return null;
+  }
   const tabs = await deps.queryActiveTab({ active: true, currentWindow: true });
   const tab = tabs?.[0];
   if (!tab?.id) return null;
@@ -193,9 +203,23 @@ export async function dispatchCommand(deps, command) {
     return { ok: false, error: "invalid command" };
   }
   const timeout = command.timeout_ms ?? DEFAULT_TIMEOUT_MS;
-  const tab = await pickActiveTab(deps);
+  // Surface a precise reason from the resolver when available — e.g.
+  // "pinned tab navigated to chrome://settings/" tells the user exactly
+  // what went wrong without them having to inspect the popup.
+  let resolutionReason = "no active tab — open an http/https page and retry";
+  let tab = null;
+  if (typeof deps.resolveTargetTab === "function") {
+    const r = await deps.resolveTargetTab();
+    if (r?.tab?.id) {
+      tab = r.tab;
+    } else if (r?.reason) {
+      resolutionReason = r.reason;
+    }
+  } else {
+    tab = await pickActiveTab(deps);
+  }
   if (!tab) {
-    return { ok: false, error: "no active tab — open one and retry" };
+    return { ok: false, error: resolutionReason };
   }
 
   try {

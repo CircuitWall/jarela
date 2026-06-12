@@ -181,3 +181,90 @@ document.getElementById("open-jarela").addEventListener("click", (event) => {
 
 void loadAgents();
 void primeSidePanelContext();
+
+// --------------------------------------------------------------------- //
+// Tab pinning + connection status                                       //
+// --------------------------------------------------------------------- //
+
+const TARGET_CARD = {
+  dot: () => document.getElementById("target-dot"),
+  host: () => document.getElementById("target-host"),
+  sub: () => document.getElementById("target-sub"),
+  pin: () => document.getElementById("pin-tab"),
+  unpin: () => document.getElementById("unpin-tab"),
+};
+
+function shortenUrl(url) {
+  if (typeof url !== "string" || url.length === 0) return "";
+  try {
+    const u = new URL(url);
+    const path = `${u.pathname}${u.search}`;
+    return path.length > 42 ? `${path.slice(0, 39)}…` : path;
+  } catch {
+    return url.length > 42 ? `${url.slice(0, 39)}…` : url;
+  }
+}
+
+async function renderTargetCard() {
+  // We render two independent pieces of state into the same card: the
+  // pinned tab (if any) drives the host/sub text, and the SW health
+  // drives the dot colour. They can be out of sync (pinned tab but
+  // server down, etc.) and that's intentional.
+  const [pinRes, statusRes] = await Promise.all([
+    callBackground("jarela-get-pinned-tab"),
+    callBackground("jarela-get-status"),
+  ]);
+  const pin = pinRes?.body?.pin ?? null;
+  const healthy = statusRes?.body?.healthy === true;
+
+  const dot = TARGET_CARD.dot();
+  dot.className = `target-dot ${healthy ? "ok" : "err"}`;
+  dot.title = healthy ? "Connected to Jarela" : "Not connected to Jarela";
+
+  if (pin) {
+    TARGET_CARD.host().textContent = `🎯 ${pin.host || "(unknown host)"}`;
+    TARGET_CARD.sub().textContent = pin.title || shortenUrl(pin.url) || "Pinned tab";
+    TARGET_CARD.pin().hidden = true;
+    TARGET_CARD.unpin().hidden = false;
+  } else {
+    TARGET_CARD.host().textContent = "No tab pinned";
+    TARGET_CARD.sub().textContent = healthy
+      ? "Falling back to last-focused window"
+      : "Jarela server not reachable";
+    TARGET_CARD.pin().hidden = false;
+    TARGET_CARD.unpin().hidden = true;
+  }
+}
+
+document.getElementById("pin-tab").addEventListener("click", async () => {
+  setStatus("Pinning current tab…");
+  const res = await callBackground("jarela-pin-current-tab");
+  if (res?.ok) {
+    setStatus(`Pinned ${res.body?.pin?.host ?? "tab"}.`, "ok");
+    await renderTargetCard();
+  } else {
+    setStatus(`Could not pin tab: ${res?.body?.error ?? "unknown error"}`, "err");
+  }
+});
+
+document.getElementById("unpin-tab").addEventListener("click", async () => {
+  const res = await callBackground("jarela-unpin-tab");
+  if (res?.ok) {
+    setStatus("Unpinned.", "ok");
+    await renderTargetCard();
+  } else {
+    setStatus(`Could not unpin: ${res?.body?.error ?? "unknown error"}`, "err");
+  }
+});
+
+// Keep the card live if the pin changes from outside this popup (e.g.
+// the SW auto-cleared it when the tab was closed while the popup was
+// open).
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (Object.prototype.hasOwnProperty.call(changes, "jarelaPinnedTab")) {
+    void renderTargetCard();
+  }
+});
+
+void renderTargetCard();

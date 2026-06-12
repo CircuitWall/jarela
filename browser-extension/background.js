@@ -24,6 +24,13 @@ import {
 } from "./lib/config.mjs";
 import { dispatchCommand } from "./lib/browser-control.mjs";
 import { gateCommand, setApproval } from "./lib/approvals.mjs";
+import {
+  resolveTargetTab as resolveTargetTabPure,
+  getPinnedTab,
+  setPinnedTab,
+  clearPinnedTab,
+  isUsableUrl,
+} from "./lib/tab-target.mjs";
 
 const ALARM_NAME = "jarela-health";
 const BROWSER_POLL_ALARM_NAME = "jarela-browser-poll";
@@ -307,6 +314,21 @@ chrome.tabs.onActivated.addListener(() => {
 
 chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
   if (changeInfo.status === "complete") void applyHealthState(lastHealthy);
+});
+
+// Auto-invalidate a pinned tab when it's closed. Without this the next
+// dispatch would just see the resolver fall back, which is fine — but
+// the popup card would still show a stale pin until the next storage
+// write. Clearing here keeps the UI honest.
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  try {
+    const pin = await getPinnedTab(chrome.storage.local);
+    if (pin && pin.tabId === tabId) {
+      await clearPinnedTab(chrome.storage.local);
+    }
+  } catch (err) {
+    console.warn("[jarela] failed to auto-clear pinned tab on close:", err);
+  }
 });
 
 async function startPickerInTab(tabId) {
@@ -1544,6 +1566,44 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, status: 200, body: { opened: true } });
         return;
       }
+      if (msg.type === "jarela-get-pinned-tab") {
+        const pin = await getPinnedTab(chrome.storage.local);
+        sendResponse({ ok: true, status: 200, body: { pin } });
+        return;
+      }
+      if (msg.type === "jarela-pin-current-tab") {
+        // Captures whatever tab the user currently considers "this tab"
+        // when they click the popup. Uses the resolver so we pick the
+        // last-focused http(s) tab, not the popup tab itself.
+        const resolved = await resolveTargetTabPure(tabTargetDeps);
+        if (!resolved?.tab?.id) {
+          sendResponse({ ok: false, status: 0, body: { error: resolved?.reason ?? "no tab to pin" } });
+          return;
+        }
+        if (!isUsableUrl(resolved.tab.url)) {
+          sendResponse({ ok: false, status: 0, body: { error: "tab URL is not scriptable (chrome:// / blank / extension page)" } });
+          return;
+        }
+        const saved = await setPinnedTab(chrome.storage.local, resolved.tab);
+        sendResponse({ ok: true, status: 200, body: { pin: saved } });
+        return;
+      }
+      if (msg.type === "jarela-unpin-tab") {
+        await clearPinnedTab(chrome.storage.local);
+        sendResponse({ ok: true, status: 200, body: { pin: null } });
+        return;
+      }
+      if (msg.type === "jarela-get-status") {
+        sendResponse({
+          ok: true,
+          status: 200,
+          body: {
+            healthy: typeof lastHealthy === "boolean" ? lastHealthy : null,
+            pollLoopActive: browserPollLoopActive,
+          },
+        });
+        return;
+      }
       sendResponse({ ok: false, status: 0, body: { error: `Unknown message type: ${msg.type}` } });
     } catch (err) {
       sendResponse({ ok: false, status: 0, body: { error: String(err) } });
@@ -1567,7 +1627,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // kill or a network blip.
 
 let browserPollLoopActive = false;
+let browserPollConsecutiveErrors = 0;
 
+// Returns one of:
+//   { command: <cmd> }     — server delivered a command
+//   { idle: true }          — server resolved with no command (long-poll timeout)
+//   { error: true }         — fetch failed or non-2xx
 async function pollOnceForCommand() {
   const ctrl = new AbortController();
   // Slightly above POLL_WAIT_MS on the server (25s) so a server-side
@@ -1581,12 +1646,12 @@ async function pollOnceForCommand() {
       signal: ctrl.signal,
     });
     clearTimeout(t);
-    if (!res.ok) return null;
+    if (!res.ok) return { error: true };
     const body = await res.json();
-    return body?.command ?? null;
+    return body?.command ? { command: body.command } : { idle: true };
   } catch {
     clearTimeout(t);
-    return null;
+    return { error: true };
   }
 }
 
@@ -1663,9 +1728,20 @@ async function cropBase64Image(base64Full, bounds, format) {
   return btoa(bin);
 }
 
+// Deps the pure tab-resolver needs (storage + a couple of tabs.* calls).
+// Kept separate from the dispatcher's deps so the resolver stays tiny.
+const tabTargetDeps = {
+  storage: chrome.storage.local,
+  getTab: (id) => chrome.tabs.get(id),
+  queryTabs: (q) => chrome.tabs.query(q),
+};
+
 // chrome.* dependency bundle handed to the pure dispatcher.
 const chromeDeps = {
+  // queryActiveTab kept for back-compat with tests; the dispatcher
+  // prefers resolveTargetTab when present.
   queryActiveTab: (opts) => chrome.tabs.query(opts),
+  resolveTargetTab: () => resolveTargetTabPure(tabTargetDeps),
   updateTab: (opts) => chrome.tabs.update(opts.tabId, { url: opts.url }),
   executeScript: (opts) => chrome.scripting.executeScript(opts),
   captureVisibleTab: captureVisibleTabDep,
@@ -1678,13 +1754,20 @@ async function browserPollLoop() {
   browserPollLoopActive = true;
   try {
     while (true) {
-      const cmd = await pollOnceForCommand();
-      if (!cmd) {
-        // Either the server idled out (200 with null) or the request
-        // errored. Loop again � pollOnceForCommand has its own timeout
-        // so we don't tight-loop on a wedged connection.
+      const r = await pollOnceForCommand();
+      if (r?.error) {
+        // Back off exponentially on consecutive errors (server down,
+        // network blip) so we don't tight-loop hammering /poll. Capped
+        // at 30s — the 1-min poll-alarm will revive us regardless.
+        browserPollConsecutiveErrors += 1;
+        const wait = Math.min(1000 * Math.pow(2, browserPollConsecutiveErrors - 1), 30_000);
+        await new Promise((res) => setTimeout(res, wait));
         continue;
       }
+      // A successful response (command or idle) resets the backoff.
+      browserPollConsecutiveErrors = 0;
+      const cmd = r?.command;
+      if (!cmd) continue;
       let outcome;
       try {
         outcome = await gateAndDispatch(cmd);
@@ -1796,8 +1879,14 @@ function deriveCommandHost(tab, command) {
 }
 
 async function gateAndDispatch(cmd) {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return { ok: false, error: "no active tab" };
+  // Resolve the same way the dispatcher will, so the approval prompt
+  // appears on the right tab (and references the right hostname) even
+  // when the popup is focused or the user has pinned a tab.
+  const resolved = await resolveTargetTabPure(tabTargetDeps);
+  const tab = resolved?.tab;
+  if (!tab?.id) {
+    return { ok: false, error: resolved?.reason ?? "no active tab" };
+  }
   const host = deriveCommandHost(tab, cmd);
   if (!host) {
     return {

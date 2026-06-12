@@ -200,6 +200,53 @@
     }
     .status.ok { color: var(--success); border-color: rgba(95, 225, 181, 0.35); background: rgba(95, 225, 181, 0.08); }
     .status.err { color: var(--danger); border-color: rgba(255, 139, 139, 0.35); background: rgba(255, 139, 139, 0.08); }
+
+    .target-card {
+      padding: 10px 12px;
+    }
+    .target-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .target-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex: 0 0 auto;
+      box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.04);
+    }
+    .target-dot.ok { background: var(--success); box-shadow: 0 0 0 2px rgba(95, 225, 181, 0.18); }
+    .target-dot.err { background: var(--danger); box-shadow: 0 0 0 2px rgba(255, 139, 139, 0.18); }
+    .target-text {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .target-host {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .target-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .target-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .target-actions button {
+      padding: 6px 10px;
+      font-size: 11.5px;
+    }
   </style>
 </head>
 <body>
@@ -229,6 +276,21 @@
         </svg>
         Open Jarela
       </button>
+    </section>
+
+    <section class="card target-card" id="target-card">
+      <span class="field-label">Agent target tab</span>
+      <div class="target-row">
+        <span class="target-dot" id="target-dot" aria-hidden="true"></span>
+        <div class="target-text">
+          <div class="target-host" id="target-host">No tab pinned</div>
+          <div class="target-sub" id="target-sub">Falling back to last-focused window</div>
+        </div>
+      </div>
+      <div class="target-actions">
+        <button id="pin-tab" type="button">Pin this tab</button>
+        <button id="unpin-tab" type="button" hidden>Unpin</button>
+      </div>
     </section>
 
     <div class="status-wrap">
