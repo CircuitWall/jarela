@@ -44,6 +44,8 @@ const ALARM_NAME = "jarela-health";
 const BROWSER_POLL_ALARM_NAME = "jarela-browser-poll";
 const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
+const KEEPALIVE_PORT_NAME = "jarela-keepalive";
+const OFFSCREEN_URL = "offscreen.html";
 const STORAGE_SELECTED_AGENT_ID = "jarelaSelectedAgentId";
 const MENU_OPEN = "jarela-open";
 const REWRITE_DIRECTIONS = {
@@ -300,15 +302,66 @@ if (chrome.cookies?.onChanged) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Keep-alive — offscreen document holds a long-lived port to the SW so the
+// long-poll loop survives MV3's idle-termination between iterations.
+// ---------------------------------------------------------------------------
+//
+// chrome.alarms already revives us within 30s of a kill, but that gap is
+// long enough for the server to time out our long-poll and for the user
+// to perceive a stall. The offscreen doc keeps the port open, which keeps
+// the SW alive until Chrome's hard 5-minute cap forces a recycle. When
+// that happens the offscreen doc detects the disconnect and reconnects,
+// respawning the SW within milliseconds.
+
+async function ensureKeepAliveOffscreen() {
+  if (!chrome.offscreen?.createDocument) return;
+  try {
+    if (typeof chrome.offscreen.hasDocument === "function") {
+      const exists = await chrome.offscreen.hasDocument();
+      if (exists) return;
+    }
+  } catch {
+    // Fall through and let createDocument's own dedupe error guard us.
+  }
+  try {
+    await chrome.offscreen.createDocument({
+      url: OFFSCREEN_URL,
+      reasons: ["BLOBS"],
+      justification:
+        "Hold a long-lived port to the service worker so the browser-control long-poll loop survives MV3 SW idle termination.",
+    });
+  } catch (err) {
+    // "Only a single offscreen document may be created" — benign race
+    // when both onInstalled and onStartup fire on a fresh install.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/single offscreen document/i.test(msg)) {
+      console.warn("[jarela] failed to create keep-alive offscreen doc:", err);
+    }
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== KEEPALIVE_PORT_NAME) return;
+  // The mere existence of the port is what keeps the SW alive; we
+  // don't need to send anything on it. On disconnect (SW recycle or
+  // offscreen-doc reload) the offscreen page reconnects on its own.
+  port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError; // swallow benign disconnect errors
+  });
+});
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: HEALTH_INTERVAL_MIN });
   void ensureContextMenus();
+  void ensureKeepAliveOffscreen();
   void tickHealth();
   void seedForegroundTab(foregroundTrackerDeps);
 });
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(ALARM_NAME, { periodInMinutes: HEALTH_INTERVAL_MIN });
   void ensureContextMenus();
+  void ensureKeepAliveOffscreen();
   void tickHealth();
   void seedForegroundTab(foregroundTrackerDeps);
 });
