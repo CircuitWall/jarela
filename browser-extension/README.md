@@ -42,17 +42,39 @@ observer turn that fires immediately after the capture.
 
 Press **ESC** during the picker to cancel without sending.
 
+## Agent-driven browser control
+
+When this extension is loaded, the agent can also drive your active tab
+through six tools registered in the Jarela toolbelt:
+
+| Tool                | Action                                                            |
+| ------------------- | ----------------------------------------------------------------- |
+| `browser_navigate`  | Open a URL (and optionally wait for a selector before resolving). |
+| `browser_click`     | Click a CSS selector.                                             |
+| `browser_fill`      | Type into an input / textarea / contenteditable, optionally submit. |
+| `browser_scroll`    | Scroll to `top`, `bottom`, or into-view of a selector.            |
+| `browser_screenshot`| Capture the viewport (or a selector); stored under `~/.jarela/files/`. |
+| `browser_extract`   | Return `text` / `html` / `outerHTML` of a selector (default: `<body>`). |
+
+The service worker long-polls `/api/v1/extension/browser/poll` whenever
+the local Jarela server is reachable. Commands are scoped to the active
+tab of the focused window. There is no headless browser process — your
+tab IS the browser. If the extension is not loaded the agent's tool call
+times out with a clear error and no command is ever executed.
+
 ## Files
 
 | Path                       | Role                                            |
 | -------------------------- | ----------------------------------------------- |
 | `manifest.json`            | MV3 manifest                                    |
-| `background.js`            | Service worker: health heartbeat, click router  |
+| `background.js`            | Service worker: health heartbeat, click router, browser-control long-poll |
 | `popup.html` / `popup.js`  | Quick actions: pick, refine, fill               |
 | `content.js`               | Picker overlay + send animation                 |
 | `content.css`              | Picker styles + keyframes                       |
 | `lib/helpers.mjs`          | Pure helpers (also unit-tested via vitest)      |
 | `lib/helpers.test.mjs`     | Vitest suite for the pure helpers               |
+| `lib/browser-control.mjs`  | Dispatcher for agent-driven navigate/click/fill/scroll/screenshot/extract |
+| `lib/browser-control.test.mjs` | Vitest suite for the dispatcher             |
 | `scripts/generate-icons.mjs` | Generates the placeholder solid-color PNGs    |
 | `icons/*.png`              | Toolbar / store icons (placeholders today)      |
 

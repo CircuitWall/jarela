@@ -34,3 +34,4 @@ import "./providers-info";
 import "./mcp-servers-info";
 import "./extension-surfaces";
 import "./async-results-tool";
+import "./browser-control";
