@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Agent overlay no longer crashes on re-injection after an extension
+  reload.** The overlay's IIFE used `window.__jarelaAgentOverlayInstalled`
+  to guard against double-injection, but that flag lives in the
+  isolated-world JS context — which is destroyed whenever the extension
+  is reloaded or updated. The next injection found a fresh JS context
+  but a leftover host element in the page DOM carrying a `mode:"closed"`
+  shadow root that the new context couldn't read back, so the fallback
+  `hostEl.shadowRoot || hostEl.attachShadow(...)` threw
+  `NotSupportedError: Shadow root cannot be created on a host which
+  already hosts a shadow tree`. The overlay now tears down any orphan
+  host element on first run and rebuilds from scratch.
 - **Pin auto-release now notifies the user.** When the pinned tab is
   closed, or when the user manually navigates it to a page the agent
   can't drive (`chrome://`, `about:blank`, an extension page, etc.),
