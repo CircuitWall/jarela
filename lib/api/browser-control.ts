@@ -41,6 +41,19 @@ export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 // (the SW gets killed at ~30s) does not abort an active poll.
 export const POLL_WAIT_MS = 25_000;
 
+// Grace window for "is the extension currently connected". A healthy
+// extension long-polls every ~25s; if more than this has elapsed since
+// the last poll AND no poller is currently parked, the SW is almost
+// certainly dead (MV3 killed it, browser quit, network blip) and any
+// command we enqueue will just sit there until it times out. The fast
+// path in `enqueueCommand` rejects immediately instead — the agent gets
+// a clean "extension not connected" error in <1s rather than waiting
+// the full per-command timeout (30s default).
+//
+// Slightly larger than POLL_WAIT_MS so a healthy extension that's mid
+// long-poll-recycle doesn't get flagged as offline.
+export const EXTENSION_LIVENESS_WINDOW_MS = 35_000;
+
 // --------------------------------------------------------------------- //
 // Command / result type contracts (shared with the extension via JSON)  //
 // --------------------------------------------------------------------- //
@@ -144,6 +157,47 @@ const byId = new Map<string, PendingEntry>();
 // (`enqueueInternal`) or when the long-poll wait timer fires.
 const pollWaiters: Array<(c: BrowserCommand | null) => void> = [];
 
+// --------------------------------------------------------------------- //
+// Extension connectivity tracking                                       //
+// --------------------------------------------------------------------- //
+// Updated every time the extension hits `/poll`; the enqueue path and
+// the `/status` endpoint read it to fast-fail commands when the
+// extension is offline instead of waiting for the per-command timeout.
+
+let lastPollAt = 0;
+let pollerWaiting = 0;
+
+export interface ExtensionStatus {
+  connected: boolean;
+  pollerWaiting: number;
+  lastSeenMs: number;            // ms since the last `/poll` hit, or -1 if never
+  pendingCommands: number;
+  liveness_window_ms: number;
+}
+
+export function getExtensionStatus(): ExtensionStatus {
+  const sinceLast = lastPollAt === 0 ? -1 : Date.now() - lastPollAt;
+  const connected = pollerWaiting > 0 || (sinceLast >= 0 && sinceLast < EXTENSION_LIVENESS_WINDOW_MS);
+  return {
+    connected,
+    pollerWaiting,
+    lastSeenMs: sinceLast,
+    pendingCommands: queue.length,
+    liveness_window_ms: EXTENSION_LIVENESS_WINDOW_MS,
+  };
+}
+
+/** @internal — test-only: reset the connectivity tracker. */
+export function _resetExtensionStatus(): void {
+  lastPollAt = 0;
+  pollerWaiting = 0;
+}
+
+/** @internal — test-only: simulate that the extension just polled. */
+export function _markExtensionSeen(at: number = Date.now()): void {
+  lastPollAt = at;
+}
+
 function findUnpicked(): PendingEntry | null {
   for (const e of queue) if (!e.picked) return e;
   return null;
@@ -180,6 +234,30 @@ export function enqueueCommand(
         cmd_id: "",
         ok: false,
         error: `browser command queue full (>${MAX_QUEUE_DEPTH} pending). Wait for prior commands to finish, or check that the Jarela browser extension is connected.`,
+      }),
+    };
+  }
+  // Fast-fail when the extension is offline so the agent gets a clear
+  // error in <1s instead of waiting the full per-command timeout. A
+  // healthy extension long-polls every ~25s; if we haven't seen it in
+  // the liveness window AND no poller is parked right now, treat it as
+  // disconnected.
+  const status = getExtensionStatus();
+  if (!status.connected) {
+    const cmd_id = randomUUID();
+    const seenHint =
+      status.lastSeenMs < 0
+        ? "no poll has ever arrived on this server"
+        : `last poll was ${Math.round(status.lastSeenMs / 1000)}s ago`;
+    return {
+      cmd_id,
+      promise: Promise.resolve({
+        cmd_id,
+        ok: false,
+        error:
+          `Jarela browser extension is not connected (${seenHint}). ` +
+          `Open Chrome, click the Jarela toolbar icon to wake the extension, ` +
+          `then retry the command.`,
       }),
     };
   }
@@ -224,9 +302,11 @@ export function pollNextCommand(waitMs: number = POLL_WAIT_MS): Promise<BrowserC
   }
   return new Promise((resolve) => {
     let settled = false;
+    pollerWaiting += 1;
     const settle = (v: BrowserCommand | null) => {
       if (settled) return;
       settled = true;
+      pollerWaiting = Math.max(0, pollerWaiting - 1);
       const idx = pollWaiters.indexOf(wrapped);
       if (idx >= 0) pollWaiters.splice(idx, 1);
       resolve(v);
@@ -290,6 +370,10 @@ function badRequest(msg: string): Response {
 
 export async function handleBrowserPoll(req: Request): Promise<Response> {
   if (!isLoopbackRequest(req)) return loopbackForbidden();
+  // Mark the extension as seen on every poll, regardless of whether a
+  // command is delivered or the wait times out — both prove the SW is
+  // alive right now.
+  lastPollAt = Date.now();
   // Honor the client's wait_ms but cap at POLL_WAIT_MS so a misbehaving
   // caller can't pin a Next.js worker indefinitely.
   let waitMs = POLL_WAIT_MS;
@@ -335,6 +419,14 @@ export async function handleBrowserResult(req: Request): Promise<Response> {
     : { cmd_id: body.cmd_id, ok: false, error: body.error ?? "unspecified extension error" };
   const { matched } = submitResult(result);
   return new Response(JSON.stringify({ ok: true, matched }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+export async function handleBrowserStatus(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  return new Response(JSON.stringify(getExtensionStatus()), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
