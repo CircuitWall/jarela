@@ -5,6 +5,7 @@ const now = () => new Date().toISOString();
 const NS = "app-settings";
 const EMBEDDING_MODEL_KEY = "embedding_model_config";
 const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
+const REDACTION_ENABLED_KEY = "redaction_enabled";
 
 export function getEmbeddingModelConfigName(): string | null {
   const row = getDb()
@@ -65,5 +66,34 @@ export function setScreenLockIdleTimeoutMs(ms: number): void {
       "INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,NULL)",
     )
     .run(NS, IDLE_TIMEOUT_KEY, JSON.stringify(ms), created, t);
+}
+
+// Outbound-redaction toggle (ADR-0064). Default ON: every read returns
+// true unless the user has explicitly persisted false. The setting is
+// global because the trust boundary it guards (what crosses to the LLM
+// provider) is uniform across agents.
+export function isRedactionEnabled(): boolean {
+  const row = getDb()
+    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, REDACTION_ENABLED_KEY) as { value?: string } | undefined;
+  if (!row?.value) return true;
+  try {
+    return JSON.parse(row.value) !== false;
+  } catch {
+    return true;
+  }
+}
+
+export function setRedactionEnabled(enabled: boolean): void {
+  const existing = getDb()
+    .prepare("SELECT created_at FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, REDACTION_ENABLED_KEY) as { created_at?: string } | undefined;
+  const t = now();
+  const created = existing?.created_at ?? t;
+  getDb()
+    .prepare(
+      "INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,NULL)",
+    )
+    .run(NS, REDACTION_ENABLED_KEY, JSON.stringify(Boolean(enabled)), created, t);
 }
 
