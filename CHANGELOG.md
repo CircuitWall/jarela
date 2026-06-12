@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-06-13
+
+### Fixed
+
+- **Browser-control loop no longer stalls between long-poll iterations.**
+  MV3 terminates idle service workers after ~30s, and the existing
+  `chrome.alarms` revival ticks (every 30s) could only restart the SW
+  *after* it had already been killed — long enough for the server to
+  time out the parked `/poll` request and for the user to perceive a
+  hang on the next agent action. The extension now spawns a minimal
+  offscreen document (`offscreen.html`) on install/startup that holds
+  an open `chrome.runtime.Port` (`jarela-keepalive`) to the SW. As long
+  as that port is connected the SW is kept alive; when Chrome hits its
+  hard ~5 min SW lifetime and recycles the worker, the offscreen page
+  detects the disconnect and reconnects within 500 ms, respawning the
+  SW immediately. The `chrome.alarms` revival cadence stays in place
+  as a fallback for the case where the offscreen doc itself is evicted.
+  Adds the `offscreen` manifest permission.
+
 ## [1.8.0] - 2026-06-12
 
 ### Fixed
