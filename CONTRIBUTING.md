@@ -14,6 +14,7 @@ it; the rest is on the honour system, audited at PR review.
 - [Release notes](#release-notes)
 - [Branch protection](#branch-protection)
 - [Public API surface](#public-api-surface)
+- [Workspace packages](#workspace-packages)
 - [Local development quick reference](#local-development-quick-reference)
 
 ---
@@ -218,6 +219,28 @@ Two sources, with clear ownership:
 The tag-push trigger for `release.yml` is unaffected: branch protection
 applies to branches, not tags. Tags pushed by a maintainer (or by a future
 automation) flow through to the release workflow normally.
+
+## Workspace packages
+
+The repo is an npm workspaces monorepo. The Jarela app lives at the root
+(unchanged); standalone `@circuitwall/*` packages extracted from `lib/`
+live under `packages/`. See [packages/README.md](./packages/README.md) for
+the layout and the rationale.
+
+A single `npm install` at the root installs everything for the Jarela app
+plus every workspace package. During development, workspace packages
+reference each other with `"workspace:^"` ranges, which npm rewrites to the
+published version at publish time — Jarela exercises every package change
+immediately via symlink, without a publish cycle.
+
+The Conventional Commits rules and semver rules in this document apply
+unchanged to workspace packages. Each package tracks its own version in
+its own `package.json` and CHANGELOG. The release-tag convention is
+`<package-short-name>-vX.Y.Z` for workspace packages (e.g.
+`jira-client-v0.2.0`) so the existing `vX.Y.Z` tag stays unambiguously
+the Jarela app's release. Before the first publish of a new package
+name, register it with the `@circuitwall` org's OIDC Trusted Publishing
+config on npmjs.com (one-time manual step per name).
 
 ## Local development quick reference
 

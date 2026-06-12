@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Repo is now an npm workspaces monorepo.** Added `"workspaces":
+  ["packages/*"]` to the root `package.json` to host standalone
+  `@circuitwall/*` packages extracted from `lib/` alongside the Jarela
+  app itself. No code moved in this change; `packages/` is empty
+  scaffolding. The Jarela package (`@circuitwall/jarela`) builds,
+  publishes, and runs unchanged. See `packages/README.md` for layout and
+  conventions, and `CONTRIBUTING.md` for the release rules that apply to
+  workspace packages.
+
 ## [1.8.1] - 2026-06-13
 
 ### Fixed
