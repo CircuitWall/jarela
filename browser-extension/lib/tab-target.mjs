@@ -133,7 +133,15 @@ export async function findFallbackTab(deps) {
 /**
  * Resolve the tab the agent should target.
  *
- * @returns {Promise<{tab: object, source: "pinned" | "active" | "fallback"} | {tab: null, source: "none", reason: string}>}
+ * Priority:
+ *   1. Pinned tab (if the user explicitly pinned one).
+ *   2. Last-known foreground tab from the tracker (`deps.getForegroundTab`,
+ *      optional). This is what we actually want most of the time — it
+ *      survives the popup / side panel / devtools stealing focus.
+ *   3. Live `findFallbackTab` query (last-focused window's active
+ *      http(s) tab, then any usable tab).
+ *
+ * @returns {Promise<{tab: object, source: "pinned" | "foreground" | "active" | "fallback"} | {tab: null, source: "none", reason: string}>}
  */
 export async function resolveTargetTab(deps) {
   // 1) Pinned tab takes priority, but only if it still exists. We
@@ -158,9 +166,28 @@ export async function resolveTargetTab(deps) {
     await clearPinnedTab(deps.storage);
   }
 
-  // 2) Last-focused window's active http(s) tab is the next-best guess.
-  // This is the part v1 got wrong: it asked for the "current window",
-  // which when the popup is focused becomes the popup's window.
+  // 2) Last-known foreground tab. The tracker module records every
+  // tab activation + window focus change, so this is "the tab the
+  // user was actually looking at before they clicked on Jarela".
+  // Verify it still exists and is still on a usable URL before
+  // trusting the cached id.
+  if (typeof deps.getForegroundTab === "function") {
+    try {
+      const fg = await deps.getForegroundTab();
+      if (fg && fg.tabId) {
+        const tab = await deps.getTab(fg.tabId);
+        if (tab && isUsableUrl(tab.url)) {
+          return { tab, source: "foreground" };
+        }
+      }
+    } catch {
+      // Tab gone — fall through to live query.
+    }
+  }
+
+  // 3) Live last-focused-window query. This is the v1 path; we keep
+  // it as a safety net for the first run (before any tab event has
+  // fired) and for the rare case where the tracker missed an event.
   const fallback = await findFallbackTab(deps);
   if (fallback) {
     const source = fallback.active ? "active" : "fallback";

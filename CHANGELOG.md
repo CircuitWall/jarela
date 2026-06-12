@@ -21,6 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The `browser_navigate` tool now points the agent at `browser_snapshot`
   by default; `browser_screenshot` stays for cases where the visual
   layout itself matters (charts, captchas, layout choices).
+- **Foreground-tab auto-detection for the browser-control agent.**
+  The extension now tracks the last content tab the user actively
+  focused (via `chrome.tabs.onActivated`, `chrome.tabs.onUpdated`,
+  and `chrome.windows.onFocusChanged`) and stores it under
+  `jarelaForegroundTab`. The dispatcher's tab resolver prefers this
+  record over the live `chrome.tabs.query` — which was unreliable
+  because the moment the user clicked the Jarela popup, side panel,
+  or another window, the "current window" flipped and the agent
+  silently retargeted the wrong tab. Pinning still works for the
+  case where the user wants to lock to a specific non-foreground
+  tab, but no pinning is required for the common case: the popup
+  now shows "👁 <host>" so the user can see at a glance which tab
+  the agent will drive. Only http(s) tabs are tracked; chrome://,
+  about:blank, and extension pages are skipped.
 - **Tab pinning for the browser-control agent.** The popup now has a
   **Pin this tab** button that locks the agent onto a specific browser
   tab by ID. Once pinned, every browser-control command runs against
