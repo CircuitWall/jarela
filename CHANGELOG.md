@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-12
+
+A feature drop on top of 1.6.0. Headline: outbound mask-and-rehydrate
+redaction. API keys, personnummer, IBANs, and high-entropy secrets in
+your messages and tool outputs are swapped for stable
+`«SECRET:<id> type=<hint>»` placeholders before they cross the
+provider boundary, then rehydrated to their real values before tool
+execution and before the UI renders. The model can compose with
+secrets it never sees ("put this key in the email body") while the
+provider only ever receives the placeholder. Disabled with one toggle;
+patterns are user-editable on disk.
+
+### Added
+
+- **Outbound mask-and-rehydrate redaction with UI transparency**
+  ([#244](https://github.com/CircuitWall/jarela/pull/244), ADR-0064).
+  Implements the trust boundary described in
+  [docs/adr/0064-outbound-redaction-mask-and-rehydrate.md](./docs/adr/0064-outbound-redaction-mask-and-rehydrate.md).
+  Mechanics:
+  - **Outbound:** every message and tool-event payload is scanned just
+    before `JarelaChatModel.toInvokeMessages`. Each match becomes
+    `«SECRET:<id> type=<hint>»` with a coarse type bucket
+    (`anthropic_api_key`, `personnummer`, `iban`,
+    `unknown_long_string`, …) so the model has enough context to
+    decide what to do with the value without seeing it. Same source
+    value gets the same id within a thread so the model can refer
+    back to "the key from earlier."
+  - **Inbound — UI:** streamed assistant deltas pass through a
+    rehydrator that holds back partial placeholders across chunks, so
+    the user sees the real values they already own and never a
+    half-token.
+  - **Inbound — tool calls:** every tool argument is rehydrated
+    *before* the tool executes via a Proxy wrapper that preserves
+    LangChain's prototype dispatch. The "use this secret in a tool
+    call without seeing it" flow is the load-bearing piece.
+  - **Per-turn summary on every assistant row:** `redaction_summary`
+    metadata records coarse type counts (never the values). The chat
+    bubble renders a green ShieldCheck affordance — *"3 values held
+    back from LLM"* — that expands to per-type counts. Without the
+    surface the feature would be invisible.
+  - **Settings panel under Profile → Security.** Toggle (default on),
+    pattern-file path with *"Create default file"* / *"user-edited"*
+    affordance, collapsible list of active patterns
+    (name, type_hint, validator), allowlisted JSON field names, and
+    inline copy explaining the trust boundary.
+  - **User-editable patterns** at `~/.jarela/redaction-patterns.json`,
+    hot-reloadable on file change. Defaults cover Anthropic / OpenAI /
+    Cohere / Google API keys, Swedish personnummer, IBAN, and a
+    high-entropy heuristic for unknown long strings. Allowlisted JSON
+    field names (`prompt`, `query`, `text`, …) prevent the masker from
+    eating tool inputs that legitimately look secret-shaped.
+  - **Persistence is unchanged:** checkpoints continue to store the
+    *unmasked* content, encrypted at rest by ADR-0005. Masking at
+    rest would break thread resumption across processes (the
+    rehydrate map is in memory) and gain little on top of existing
+    encryption.
+  - No behavior change when redaction is disabled — the chain reduces
+    to a no-op `MaskContext`. All 1706 prior tests pass.
+
+### Fixed
+
+- **PIN keypad backspace renders the ← glyph**
+  ([#243](https://github.com/CircuitWall/jarela/pull/243)). The
+  setup-wizard PIN keypad was rendering the bare codepoint instead of
+  the arrow on certain font stacks; switched to the explicit
+  `←` literal so the glyph is consistent across platforms.
+
 ## [1.6.0] - 2026-06-12
 
 A small feature drop on top of 1.5.0. Headline: agents can now use the
