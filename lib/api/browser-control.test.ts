@@ -5,12 +5,18 @@ import {
   submitResult,
   handleBrowserPoll,
   handleBrowserResult,
+  handleBrowserStatus,
+  getExtensionStatus,
   _resetQueue,
+  _resetExtensionStatus,
+  _markExtensionSeen,
   _queueDepth,
   MAX_QUEUE_DEPTH,
   DEFAULT_COMMAND_TIMEOUT_MS,
   MAX_COMMAND_TIMEOUT_MS,
+  EXTENSION_LIVENESS_WINDOW_MS,
   type BrowserCommand,
+  type ExtensionStatus,
 } from "./browser-control";
 
 function loopbackReq(path: string, body: unknown, method: "GET" | "POST" = "POST"): Request {
@@ -31,10 +37,15 @@ function externalReq(path: string, body: unknown): Request {
 
 beforeEach(() => {
   _resetQueue();
+  // The fast-fail in enqueueCommand requires a recent poll. Seed the
+  // tracker so existing tests (which exercise the happy queueing path,
+  // not the disconnect path) behave as if the extension just polled.
+  _markExtensionSeen();
 });
 
 afterEach(() => {
   _resetQueue();
+  _resetExtensionStatus();
 });
 
 describe("enqueueCommand / pollNextCommand", () => {
@@ -220,5 +231,105 @@ describe("snapshot command", () => {
     if (picked?.type !== "snapshot") throw new Error("expected snapshot");
     expect(picked.max_items).toBe(25);
     expect(picked.include_hidden).toBe(true);
+  });
+});
+
+describe("extension connectivity tracking", () => {
+  it("reports disconnected when no poll has ever arrived", () => {
+    _resetExtensionStatus();
+    const status = getExtensionStatus();
+    expect(status.connected).toBe(false);
+    expect(status.lastSeenMs).toBe(-1);
+    expect(status.pollerWaiting).toBe(0);
+  });
+
+  it("reports connected after a recent poll", () => {
+    _resetExtensionStatus();
+    _markExtensionSeen();
+    const status = getExtensionStatus();
+    expect(status.connected).toBe(true);
+    expect(status.lastSeenMs).toBeGreaterThanOrEqual(0);
+    expect(status.lastSeenMs).toBeLessThan(1_000);
+  });
+
+  it("reports disconnected when the last poll is older than the liveness window", () => {
+    _resetExtensionStatus();
+    _markExtensionSeen(Date.now() - EXTENSION_LIVENESS_WINDOW_MS - 1_000);
+    const status = getExtensionStatus();
+    expect(status.connected).toBe(false);
+  });
+
+  it("counts an in-flight poller as connected even with no recent poll record", async () => {
+    _resetExtensionStatus();
+    const pollP = pollNextCommand(500);
+    // While the long-poll is parked, the extension is provably alive.
+    const status = getExtensionStatus();
+    expect(status.connected).toBe(true);
+    expect(status.pollerWaiting).toBeGreaterThanOrEqual(1);
+    await pollP;
+    expect(getExtensionStatus().pollerWaiting).toBe(0);
+  });
+
+  it("fast-fails enqueueCommand when the extension is offline", async () => {
+    _resetExtensionStatus(); // no poller, no recent poll
+    const start = Date.now();
+    const { promise } = enqueueCommand(
+      { type: "navigate", url: "https://example.com" },
+      { timeout_ms: 30_000 },
+    );
+    const result = await promise;
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(500); // not 30s
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/not connected/i);
+      expect(result.error).toMatch(/toolbar icon/i);
+    }
+    // Nothing should have been queued.
+    expect(_queueDepth()).toBe(0);
+  });
+
+  it("does NOT fast-fail when the extension just polled", async () => {
+    _resetExtensionStatus();
+    _markExtensionSeen();
+    const { cmd_id } = enqueueCommand({ type: "click", selector: "#go" });
+    expect(_queueDepth()).toBe(1);
+    expect(cmd_id).toBeTruthy();
+  });
+
+  it("handleBrowserPoll updates lastSeenMs even when no command is delivered", async () => {
+    _resetExtensionStatus();
+    const before = getExtensionStatus();
+    expect(before.connected).toBe(false);
+    await handleBrowserPoll(loopbackReq("/api/v1/extension/browser/poll", { wait_ms: 50 }));
+    const after = getExtensionStatus();
+    expect(after.connected).toBe(true);
+  });
+});
+
+describe("handleBrowserStatus HTTP handler", () => {
+  it("rejects non-loopback callers with 403", async () => {
+    const res = await handleBrowserStatus(externalReq("/api/v1/extension/browser/status", {}));
+    expect(res.status).toBe(403);
+  });
+
+  it("returns the current ExtensionStatus on loopback", async () => {
+    _resetExtensionStatus();
+    _markExtensionSeen();
+    const res = await handleBrowserStatus(loopbackReq("/api/v1/extension/browser/status", {}, "GET"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as ExtensionStatus;
+    expect(body.connected).toBe(true);
+    expect(body.pollerWaiting).toBe(0);
+    expect(body.pendingCommands).toBe(0);
+    expect(body.liveness_window_ms).toBe(EXTENSION_LIVENESS_WINDOW_MS);
+  });
+
+  it("reports disconnected before any poll has arrived", async () => {
+    _resetExtensionStatus();
+    const res = await handleBrowserStatus(loopbackReq("/api/v1/extension/browser/status", {}, "GET"));
+    const body = (await res.json()) as ExtensionStatus;
+    expect(body.connected).toBe(false);
+    expect(body.lastSeenMs).toBe(-1);
   });
 });
