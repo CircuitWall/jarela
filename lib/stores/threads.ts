@@ -193,6 +193,34 @@ export function setMessageMetadata(msg_id: string, metadata: Record<string, unkn
   getDb().prepare("UPDATE messages SET metadata=? WHERE msg_id=?").run(json, msg_id);
 }
 
+// Shallow-merge `partial` into a message's existing metadata. Use this
+// when multiple subsystems own different fields on the same row
+// (e.g. citations and redaction_summary) — each can write independently
+// without clobbering the other. Existing keys in `partial` overwrite
+// the same keys in stored metadata; null clears the field.
+export function mergeMessageMetadata(
+  msg_id: string,
+  partial: Record<string, unknown>,
+): void {
+  const row = getDb()
+    .prepare("SELECT metadata FROM messages WHERE msg_id=?")
+    .get(msg_id) as { metadata?: string | null } | undefined;
+  let existing: Record<string, unknown> = {};
+  if (row?.metadata) {
+    try {
+      const parsed = JSON.parse(row.metadata);
+      if (parsed && typeof parsed === "object") existing = parsed as Record<string, unknown>;
+    } catch { /* fall through with empty object */ }
+  }
+  const merged: Record<string, unknown> = { ...existing };
+  for (const [k, v] of Object.entries(partial)) {
+    if (v === null || v === undefined) delete merged[k];
+    else merged[k] = v;
+  }
+  const json = Object.keys(merged).length > 0 ? JSON.stringify(merged) : null;
+  getDb().prepare("UPDATE messages SET metadata=? WHERE msg_id=?").run(json, msg_id);
+}
+
 export function getOrCreateAgentThread(agentId: string): ThreadRow {
   return createThread(agentId);
 }

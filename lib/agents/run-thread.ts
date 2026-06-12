@@ -2,7 +2,8 @@ import { streamWithConfig } from "@/lib/agents/llm";
 import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
-import { addMessage, getThread, setMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
@@ -657,6 +658,14 @@ export function persistAssistantMessage(
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
     }
+    // Per ADR-0064 transparency requirement: surface what was held back
+    // from the LLM during this turn on the assistant message's metadata.
+    // The shield indicator in the chat UI reads this to render
+    // "Held back from LLM: 1 anthropic_api_key, 1 personnummer" tooltips.
+    const redactionSummary = getMaskRunContext()?.totalSummary() ?? [];
+    if (redactionSummary.length > 0) {
+      mergeMessageMetadata(row.msg_id, { redaction_summary: redactionSummary });
+    }
     // Persist the source manifest for THIS reply into the message's
     // metadata. The chat UI uses it to resolve inline `[N]` markers →
     // clickable links and to populate the References panel.
@@ -697,7 +706,8 @@ export function persistAssistantMessage(
       }
     }
     if (manifest.length > 0) {
-      setMessageMetadata(row.msg_id, {
+      // Merge so a redaction_summary written above survives.
+      mergeMessageMetadata(row.msg_id, {
         citations: {
           checker_model: "",
           claims: [],
@@ -808,7 +818,9 @@ async function runCitationCheckerForRow(
     if (strictness !== "strict" && extractCitedMarkers(persistedText).length === 0) return;
     const verdict = await classifyCitations(persistedText, sourceManifest, checkerModel);
     if (!verdict) return;
-    setMessageMetadata(msg_id, {
+    // Use merge so we don't clobber redaction_summary written by the
+    // run loop earlier (ADR-0064 transparency).
+    mergeMessageMetadata(msg_id, {
       citations: {
         ...verdict,
         sources: sourceManifest.map((e) => ({ n: e.n, label: e.label, href: e.href })),

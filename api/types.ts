@@ -185,6 +185,18 @@ export interface SourceManifestEntry {
   href: string;
 }
 
+/** Per-message tally of values the redaction layer held back from the
+ *  LLM. Each entry is a coarse type bucket plus a count; original values
+ *  are NEVER stored here — they live in the local checkpoint and never
+ *  cross the trust boundary. The chat UI surfaces this as a shield
+ *  indicator under the assistant bubble. ADR-0064. */
+export interface RedactionSummaryEntry {
+  /** Coarse type bucket: `anthropic_api_key`, `swedish_personnummer`,
+   *  `iban`, `unknown_long_string`, etc. */
+  type_hint: string;
+  count: number;
+}
+
 export interface MessageMetadata {
   citations?: {
     /** Model config name used as the checker. */
@@ -197,6 +209,9 @@ export interface MessageMetadata {
      *  uses it to render inline `[N]` markers as clickable links. */
     sources?: SourceManifestEntry[];
   };
+  /** Total values held back from the LLM during this turn (ADR-0064).
+   *  Absent on legacy rows and on turns where nothing matched. */
+  redaction_summary?: RedactionSummaryEntry[];
 }
 
 export interface MessageUsage {
