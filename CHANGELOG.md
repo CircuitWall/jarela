@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tab pinning for the browser-control agent.** The popup now has a
+  **Pin this tab** button that locks the agent onto a specific browser
+  tab by ID. Once pinned, every browser-control command runs against
+  that tab regardless of which window has focus — fixes the failure
+  mode where opening the popup or side panel made
+  `chrome.tabs.query({ active: true })` return the wrong (or no) tab
+  mid-task. A pinned tab is auto-cleared when it's closed or navigated
+  to a non-scriptable URL (chrome://, blank, extension page). When no
+  pin is set the resolver falls back to the active http(s) tab in the
+  last-focused window, skipping chrome:// / blank pages instead of
+  silently failing.
+- **Connection status indicator in the popup.** A coloured dot on the
+  target-tab card shows whether the SW is currently connected to the
+  Jarela server (green = healthy, red = unreachable), so the user can
+  tell at a glance whether the extension can deliver agent commands.
 - **Agent-driven browser navigation via the extension.** Six new tools
   register under the **Web** category and let an agent drive the user's
   active browser tab through the Jarela browser extension:
@@ -28,6 +43,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and a "Jarela agent is controlling this tab" banner with a Stop
   button stays mounted while a command is executing so the user is
   always aware when the agent has control.
+
+### Changed
+
+- **Long-poll loop now backs off on consecutive errors.** Previously the
+  extension service worker tight-looped on `/browser/poll` when the
+  Jarela server was unreachable. It now waits `min(1s × 2^n, 30s)`
+  between retries, resetting on any successful response. The 1-minute
+  poll-revival alarm still covers full SW death; this just makes
+  network-blip behaviour graceful.
 
 ## [1.7.0] - 2026-06-12
 
