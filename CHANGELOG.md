@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-12
+
+A small feature drop on top of 1.5.0. Headline: agents can now use the
+sites you're logged into in your browser — approve a host once in
+Settings, and the Jarela browser extension transparently keeps the
+server-side cookie store fresh as cookies change so `web_fetch` can
+reach SSO-only intranets and personal-session endpoints without you
+ever pasting a token.
+
+### Added
+
+- **Allowed-sites list with cookie passthrough for `web_fetch`**
+  ([#241](https://github.com/CircuitWall/jarela/pull/241)). New Settings
+  section *Sites the agent can use as you* — adding a host approves
+  cookie passthrough for that host (and, in a follow-up, browser-RPC
+  navigation). The browser extension watches `chrome.cookies.onChanged`
+  for approved hosts and pushes the latest cookie set to Jarela
+  automatically; `web_fetch` then attaches them on outbound requests
+  with per-redirect re-resolution so off-list redirects strip
+  credentials. Cookies are envelope-encrypted at rest (same scheme as
+  proxy passwords) and never appear in the UI. Per-host *intranet*
+  toggle opts the host past the SSRF guard so an internal Confluence /
+  Jira / dashboard behind the corporate VPN is reachable without
+  flipping the global `JARELA_ALLOW_PRIVATE_FETCH` escape hatch. RFC
+  6265 path / Secure / expiry filtering happens server-side per
+  request; suffix matching means approving `example.com` covers
+  `*.example.com` automatically.
+
 ## [1.5.0] - 2026-06-11
 
 A feature drop on top of 1.4.1. Headlines: WhatsApp bridges no longer
