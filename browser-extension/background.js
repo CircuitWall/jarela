@@ -23,6 +23,7 @@ import {
   buildBase,
 } from "./lib/config.mjs";
 import { dispatchCommand } from "./lib/browser-control.mjs";
+import { gateCommand, setApproval } from "./lib/approvals.mjs";
 
 const ALARM_NAME = "jarela-health";
 const BROWSER_POLL_ALARM_NAME = "jarela-browser-poll";
@@ -1686,7 +1687,7 @@ async function browserPollLoop() {
       }
       let outcome;
       try {
-        outcome = await dispatchCommand(chromeDeps, cmd);
+        outcome = await gateAndDispatch(cmd);
       } catch (err) {
         outcome = { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
@@ -1716,4 +1717,139 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 1 });
   resumeBrowserPollLoop();
+});
+
+// ====================================================================== //
+// Approval gate + content-script overlay coordination
+// ====================================================================== //
+
+// Browser-control commands originate from the agent, not the user, so we
+// MUST get an explicit per-origin opt-in before driving the page. The
+// gate also injects a status banner content script for the duration of
+// each command so the user can never be unsure who is in control.
+
+const APPROVAL_TIMEOUT_MS = 60_000;
+const pendingApprovals = new Map(); // requestId -> { resolve, reject, timer }
+
+function newRequestId() {
+  return `appr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+async function ensureOverlayInjected(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["agent-overlay.js"],
+    });
+  } catch (err) {
+    // chrome:// pages, the Web Store, PDF viewer, etc. block scripting.
+    // We let dispatchCommand fail with its own error in that case.
+    console.warn("[jarela] could not inject overlay:", err);
+  }
+}
+
+async function sendOverlay(tabId, msg) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { __jarela: true, ...msg });
+  } catch {
+    // The tab may have been closed / navigated. Ignore.
+  }
+}
+
+function requestUserApproval(tabId, host, action) {
+  const requestId = newRequestId();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (pendingApprovals.has(requestId)) {
+        pendingApprovals.delete(requestId);
+        void sendOverlay(tabId, { type: "agent-overlay:cancel-approval" });
+        resolve(undefined); // soft-dismiss → gate rejects without persisting
+      }
+    }, APPROVAL_TIMEOUT_MS);
+    pendingApprovals.set(requestId, { resolve, reject, timer, tabId });
+    void chrome.tabs
+      .sendMessage(tabId, {
+        __jarela: true,
+        type: "agent-overlay:request-approval",
+        requestId,
+        host,
+        action,
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        pendingApprovals.delete(requestId);
+        reject(err);
+      });
+  });
+}
+
+function deriveCommandHost(tab, command) {
+  // For navigate commands the user's decision is about the *destination*,
+  // not the page they happen to be on right now (often blank / new tab).
+  if (command?.type === "navigate" && typeof command.url === "string") {
+    try { return new URL(command.url).hostname; } catch { /* fall through */ }
+  }
+  if (typeof tab?.url === "string") {
+    try { return new URL(tab.url).hostname; } catch { /* fall through */ }
+  }
+  return "";
+}
+
+async function gateAndDispatch(cmd) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return { ok: false, error: "no active tab" };
+  const host = deriveCommandHost(tab, cmd);
+  if (!host) {
+    return {
+      ok: false,
+      error: "cannot determine target origin for approval (chrome:// or empty tab)",
+    };
+  }
+
+  await ensureOverlayInjected(tab.id);
+
+  const gate = await gateCommand({
+    storage: chrome.storage.local,
+    host,
+    action: cmd.type,
+    prompt: ({ host: h, action }) => requestUserApproval(tab.id, h, action),
+  });
+  if (!gate.allow) return { ok: false, error: gate.reason };
+
+  await sendOverlay(tab.id, { type: "agent-overlay:show", action: cmd.type });
+  try {
+    return await dispatchCommand(chromeDeps, cmd);
+  } finally {
+    await sendOverlay(tab.id, { type: "agent-overlay:hide" });
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (!msg || msg.__jarela !== true) return undefined;
+  if (msg.type === "agent-overlay:approval-response") {
+    const entry = pendingApprovals.get(msg.requestId);
+    if (entry) {
+      pendingApprovals.delete(msg.requestId);
+      clearTimeout(entry.timer);
+      entry.resolve(msg.choice);
+    }
+    return undefined;
+  }
+  if (msg.type === "agent-overlay:stop-requested") {
+    // Best-effort kill switch: remember the active host as denied so any
+    // follow-up commands in the queue bounce without prompting again.
+    void (async () => {
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (!tab?.url) return;
+        const host = new URL(tab.url).hostname;
+        if (!host) return;
+        await setApproval(chrome.storage.local, host, "denied");
+      } catch (err) {
+        console.warn("[jarela] stop-requested handler failed:", err);
+      }
+    })();
+    return undefined;
+  }
+  return undefined;
 });
