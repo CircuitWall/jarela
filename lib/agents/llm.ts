@@ -17,6 +17,9 @@ import type { ContentPart } from "@/lib/tools/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
+import { withMaskRun, getMaskRunContext } from "@/lib/redaction/context";
+import { StreamRehydrator } from "@/lib/redaction/stream-rehydrate";
+import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
 
 function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
@@ -68,12 +71,26 @@ function toBaseMessages(
   ];
 }
 
-export async function* streamWithConfig(
+export function streamWithConfig(
   threadId: string,
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
   options?: StreamOptions,
   signal?: AbortSignal,
 ): AsyncIterable<StreamChunk> {
+  // Wrap the entire run in a MaskRunContext (AsyncLocalStorage). The
+  // async generator created here, plus all downstream awaits / nested
+  // async calls (chat-model invocation, tool execution), inherit the
+  // store from the async-resource context active at construction time.
+  // No-op when redaction is disabled (per ADR-0064).
+  return withMaskRun(() => streamWithConfigImpl(threadId, messages, options, signal));
+}
+
+async function* streamWithConfigImpl(
+  threadId: string,
+  messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
+  options?: StreamOptions,
+  signal?: AbortSignal,
+): AsyncGenerator<StreamChunk> {
   const runCfg = options?.agent_run_config;
 
   const cfgName = runCfg?.model_config_name ?? null;
@@ -91,7 +108,10 @@ export async function* streamWithConfig(
   const toolPolicy = runCfg?.allowed_tools?.length
     ? { allow: runCfg.allowed_tools }
     : options?.tool_policy;
-  const tools = await getAllToolsAsync(toolPolicy);
+  // Wrap tools so any «SECRET:...» placeholders the model emits in their
+  // arguments are rehydrated to original values before the tool runs.
+  // No-op when there is no active MaskRunContext.
+  const tools = wrapToolsForRehydrate(await getAllToolsAsync(toolPolicy));
 
   const model = new JarelaChatModel({ provider, modelId: cfg.model_id, params });
   const store = new SqliteMemoryStore();
@@ -151,6 +171,12 @@ export async function* streamWithConfig(
   // pre-tool plan acknowledgment and the post-tool reply don't visually merge.
   let needsParagraphBreak = false;
   let textEmittedSinceLastBreak = false;
+  // Stream-aware rehydrator: replaces «SECRET:<id> type=<hint>»
+  // placeholders the model echoes back with the original values. Holds
+  // partial placeholders across deltas to avoid leaking a half-token to
+  // the UI. Bound to the current MaskRunContext; no-op outside one.
+  const maskRun = getMaskRunContext();
+  const textRehydrator = maskRun ? new StreamRehydrator(maskRun.ctx) : null;
 
   const flushPendingToolCalls = function* (): Iterable<StreamChunk> {
     if (!pendingAIChunk) return;
@@ -208,15 +234,22 @@ export async function* streamWithConfig(
             // After a tool result, the next AI text starts a new conceptual
             // turn. Insert a paragraph break so the pre-tool plan and the
             // post-tool reply don't visually merge into one run-on sentence.
-            let delta = chunk.content;
-            if (needsParagraphBreak && textEmittedSinceLastBreak) {
-              delta = "\n\n" + delta;
+            let delta = textRehydrator ? textRehydrator.push(chunk.content) : chunk.content;
+            if (delta) {
+              if (needsParagraphBreak && textEmittedSinceLastBreak) {
+                delta = "\n\n" + delta;
+              }
+              needsParagraphBreak = false;
+              textEmittedSinceLastBreak = true;
+              totalOutputTokens += 1;
+              yield { type: "text_delta", data: { delta } };
+              emittedVisibleChunk = true;
+            } else if (textRehydrator) {
+              // Held back as part of an unfinished placeholder — keep the
+              // run alive so the watchdog doesn't fire while we wait for
+              // the close character.
+              emittedVisibleChunk = false;
             }
-            needsParagraphBreak = false;
-            textEmittedSinceLastBreak = true;
-            totalOutputTokens += 1;
-            yield { type: "text_delta", data: { delta } };
-            emittedVisibleChunk = true;
           }
           const reasoning = chunk.additional_kwargs?.reasoning_content;
           if (typeof reasoning === "string" && reasoning) {
@@ -260,6 +293,14 @@ export async function* streamWithConfig(
 
     // Final flush in case stream ended without an "updates" tick.
     yield* flushPendingToolCalls();
+    // Flush any text the rehydrator was still holding (an unclosed
+    // placeholder — emitted as-is rather than silently dropped).
+    if (textRehydrator) {
+      const trailing = textRehydrator.flush();
+      if (trailing) {
+        yield { type: "text_delta", data: { delta: trailing } };
+      }
+    }
   } catch (err) {
     const name = err instanceof Error ? err.name : "";
     const baseMsg = err instanceof Error ? err.message : String(err);
