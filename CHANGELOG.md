@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pin auto-release now notifies the user.** When the pinned tab is
+  closed, or when the user manually navigates it to a page the agent
+  can't drive (`chrome://`, `about:blank`, an extension page, etc.),
+  the pin is cleared from storage and a system notification tells the
+  user which tab was released and why. Previously the pin was cleared
+  silently, so the popup card would update to "No active tab" with no
+  explanation and the user could keep asking the agent to drive "this
+  tab" without understanding why nothing was happening.
+- **Browser-control commands fail fast when the extension is offline.**
+  Previously every command waited the full per-command timeout (30s
+  default) before reporting failure, so the user saw a generic "the
+  extension is timing out" message even when the SW had been killed
+  for less than a second. The server now tracks the extension's last
+  poll-arrival time and the count of currently parked long-pollers; if
+  neither indicates the extension is alive within a 35s liveness window,
+  `enqueueCommand` rejects immediately with a clear "extension is not
+  connected — open Chrome and click the Jarela toolbar icon" message
+  including how long ago the extension was last seen. A new loopback
+  endpoint `GET /api/v1/extension/browser/status` returns the same
+  state (`connected`, `lastSeenMs`, `pendingCommands`, `pollerWaiting`)
+  for UI / diagnostics use. Extension-side: the SW revival alarm now
+  fires every 30s (the MV3 minimum) instead of every 60s, and tab /
+  window-focus events also resume the long-poll loop so the gap
+  between SW wake and the next `/poll` request is seconds rather than
+  up to a minute.
+
 ### Added
 
 - **`browser_snapshot` tool — structured page reads, no vision needed.**

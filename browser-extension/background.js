@@ -321,6 +321,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.tabs.onActivated.addListener((info) => {
   void applyHealthState(lastHealthy);
   void handleTabActivatedFg(foregroundTrackerDeps, info);
+  // The SW just woke for this event anyway; piggyback to resume the
+  // long-poll loop so the server sees us within seconds, not whenever
+  // the next revival alarm fires.
+  resumeBrowserPollLoop();
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
@@ -335,17 +339,26 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // newly focused window so the resolver has a stable target.
 chrome.windows.onFocusChanged.addListener((windowId) => {
   void handleWindowFocusedFg(foregroundTrackerDeps, windowId);
+  resumeBrowserPollLoop();
 });
 
 // Auto-invalidate a pinned tab when it's closed. Without this the next
 // dispatch would just see the resolver fall back, which is fine — but
 // the popup card would still show a stale pin until the next storage
-// write. Clearing here keeps the UI honest.
+// write. Clearing here keeps the UI honest. We also fire a notification
+// so the user knows the pin is gone — otherwise they'd ask the agent
+// to drive "this tab" and silently get the foreground tab (or worse,
+// the popup tab) instead of what they thought they pinned.
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   try {
     const pin = await getPinnedTab(chrome.storage.local);
     if (pin && pin.tabId === tabId) {
       await clearPinnedTab(chrome.storage.local);
+      const label = pin.title || pin.url || "the pinned tab";
+      void notify(
+        "Jarela pin released",
+        `${label} was closed, so the agent is no longer locked to that tab. Pin a new one from the popup if you need it.`,
+      );
     }
   } catch (err) {
     console.warn("[jarela] failed to auto-clear pinned tab on close:", err);
@@ -354,6 +367,28 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     await handleTabRemovedFg(foregroundTrackerDeps, tabId);
   } catch (err) {
     console.warn("[jarela] failed to clear foreground tab on close:", err);
+  }
+});
+
+// Auto-invalidate a pinned tab when it navigates to an unscriptable
+// URL (chrome://, about:blank, extension pages, etc). The resolver
+// already refuses to use such a pin, but without clearing the storage
+// the popup card keeps showing a stale "Pinned: <old host>" indicator
+// and the user has no way to know why their agent commands keep failing.
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (!changeInfo.url) return;
+  try {
+    const pin = await getPinnedTab(chrome.storage.local);
+    if (!pin || pin.tabId !== tabId) return;
+    if (isUsableUrl(changeInfo.url)) return;
+    await clearPinnedTab(chrome.storage.local);
+    const label = pin.title || pin.url || "the pinned tab";
+    void notify(
+      "Jarela pin released",
+      `${label} navigated to a page the agent can't drive (${changeInfo.url}). Pin a different tab if you want the agent to continue.`,
+    );
+  } catch (err) {
+    console.warn("[jarela] failed to auto-clear pinned tab on nav:", err);
   }
 });
 
@@ -1835,14 +1870,17 @@ function resumeBrowserPollLoop() {
 // (Hook lives inside applyHealthState; this comment kept as a marker so
 // future readers don't add a duplicate.)
 
-// 1-minute revival alarm � MV3 kills idle SWs at ~30s, so we ensure the
-// loop is back up on the next alarm tick after any kill.
+// 30-second revival alarm — MV3 kills idle SWs at ~30s, so we ensure the
+// loop is back up on the next alarm tick after any kill. 0.5 minutes is
+// the MV3-imposed minimum; any value below is silently clamped. The
+// server-side liveness window is 35s, so a healthy extension that's
+// been killed will reconnect within that grace period.
 chrome.runtime.onInstalled.addListener(() => {
-  chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 1 });
+  chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 0.5 });
   resumeBrowserPollLoop();
 });
 chrome.runtime.onStartup.addListener(() => {
-  chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 1 });
+  chrome.alarms.create(BROWSER_POLL_ALARM_NAME, { periodInMinutes: 0.5 });
   resumeBrowserPollLoop();
 });
 
