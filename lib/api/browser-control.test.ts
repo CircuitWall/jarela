@@ -204,3 +204,21 @@ describe("constants surface", () => {
     expect(DEFAULT_COMMAND_TIMEOUT_MS).toBeLessThanOrEqual(MAX_COMMAND_TIMEOUT_MS);
   });
 });
+
+describe("snapshot command", () => {
+  it("enqueues a snapshot command with no required fields", async () => {
+    const { cmd_id } = enqueueCommand({ type: "snapshot" });
+    const picked = await pollNextCommand(500);
+    expect(picked?.cmd_id).toBe(cmd_id);
+    expect(picked?.type).toBe("snapshot");
+  });
+
+  it("preserves optional max_items / include_hidden through the queue", async () => {
+    const { cmd_id } = enqueueCommand({ type: "snapshot", max_items: 25, include_hidden: true });
+    const picked = await pollNextCommand(500);
+    expect(picked?.cmd_id).toBe(cmd_id);
+    if (picked?.type !== "snapshot") throw new Error("expected snapshot");
+    expect(picked.max_items).toBe(25);
+    expect(picked.include_hidden).toBe(true);
+  });
+});
