@@ -62,6 +62,31 @@ tab of the focused window. There is no headless browser process — your
 tab IS the browser. If the extension is not loaded the agent's tool call
 times out with a clear error and no command is ever executed.
 
+### Per-site approval and on-tab overlay
+
+The agent never drives a page without an explicit opt-in. The first time
+a command targets a host you'll see a modal in the tab itself with three
+buttons:
+
+- **Approve once** — runs this single command.
+- **Always allow on this site** — remembers the decision and skips
+  future prompts for the same hostname.
+- **Deny** — runs nothing now and remembers a deny so future commands
+  for this host bounce silently.
+
+Decisions are persisted in `chrome.storage.local` under the
+`jarelaBrowserApprovals` key as a flat `{ hostname: "always" | "denied" }`
+map; clear them by clearing the extension's storage or via the
+*Sites the agent can use as you* settings page in Jarela (uses the same
+store).
+
+While a command is executing, a blue **"Jarela agent is controlling this
+tab"** banner is mounted at the top of the page with a pulsing indicator
+and a **Stop** button. Pressing Stop persists a deny for the current host
+and bounces any follow-up commands already queued. A subtle blue frame
+outlines the viewport for the duration of the command. Both UI pieces
+live inside a closed Shadow DOM so page CSS can't restyle or hide them.
+
 ## Files
 
 | Path                       | Role                                            |
@@ -75,6 +100,9 @@ times out with a clear error and no command is ever executed.
 | `lib/helpers.test.mjs`     | Vitest suite for the pure helpers               |
 | `lib/browser-control.mjs`  | Dispatcher for agent-driven navigate/click/fill/scroll/screenshot/extract |
 | `lib/browser-control.test.mjs` | Vitest suite for the dispatcher             |
+| `lib/approvals.mjs`        | Per-host approval gate (always / denied / ask)  |
+| `lib/approvals.test.mjs`   | Vitest suite for the approval gate              |
+| `agent-overlay.js`         | Content-script overlay: approval modal + in-control banner |
 | `scripts/generate-icons.mjs` | Generates the placeholder solid-color PNGs    |
 | `icons/*.png`              | Toolbar / store icons (placeholders today)      |
 

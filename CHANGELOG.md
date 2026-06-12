@@ -23,7 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rect via `OffscreenCanvas` and persisted under `~/.jarela/files/`.
   Commands time out cleanly when the extension is not loaded — no
   headless browser process is spawned, preserving the single-process
-  invariant.
+  invariant. Every command runs behind a per-host approval prompt
+  rendered inside the target tab (Approve once / Always allow / Deny),
+  and a "Jarela agent is controlling this tab" banner with a Stop
+  button stays mounted while a command is executing so the user is
+  always aware when the agent has control.
 
 ## [1.7.0] - 2026-06-12
 
