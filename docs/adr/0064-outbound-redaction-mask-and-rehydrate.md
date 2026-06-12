@@ -123,6 +123,23 @@ Raw-text tool output (CLI stdout, file reads, prose) keeps the regex+entropy pat
 
 A single global setting (`redaction.enabled`, default `true`) in the existing settings store, exposed in the settings UI. When off, no scanning, no masking, no rehydrate. Not per-agent — keeps the mental model simple and the trust boundary uniform across the app.
 
+### Transparency in the UI
+
+A core trust requirement: the user must be able to see, per message, **what was held back from the LLM**. Without this, the feature is a black box and users have no way to confirm it's working.
+
+Concretely:
+
+* The masker returns a structured summary alongside the masked text: `Array<{ type_hint: string, count: number }>` per outbound payload (one for the user message, one per tool event).
+* The summary is persisted on the message / tool-event record (small, type-only — it does **not** store the redacted values; those already live unmasked in the checkpoint).
+* The chat UI renders a shield indicator on any message that had redactions, with a tooltip listing the type counts:
+
+  > 🛡 Held back from the LLM: 1 anthropic_api_key, 1 swedish_personnummer
+
+* The user sees their actual values in chat (rehydrate-at-render handles this); the shield is the only visible affordance that something was masked on the wire.
+* Tool-event panels get the same indicator on the tool's input and output sides.
+
+This gives users a continuous, in-conversation signal that the feature is active, without requiring them to inspect logs or open a settings page.
+
 ### Effect on tool usage
 
 Most tool ID flows still work because rehydrate-on-tool-args handles passthrough. If `list_runs` returns `run_id: "01HQX7K3J9V8N2M5P6R4T1Y3W8"` and the model emits `get_run(run_id: "«SECRET:a1b2»")`, rehydrate substitutes the real ID before the tool executes — the chain works, the model just never sees the bytes. Same-token-per-source-value within a thread lets the model refer back to "the same run" consistently.
