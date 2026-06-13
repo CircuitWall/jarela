@@ -28,6 +28,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   User Profile is now a section inside Settings → Networking, alongside
   the proxy, allowed-sites, and env-alias controls.
 
+### Added
+
+- **Auto-categorize tools by verb.** Hot-loaded LangChain manifests no
+  longer have to declare `capability` per tool. When omitted, the
+  loader derives `read` / `write` / `execute` from the tool's verb
+  using a Jira-style mental model (`get_*`/`list_*`/`search_*` →
+  read, `create_*`/`edit_*`/`delete_*` → write,
+  `transition_*`/`exec_*`/`generate_*` → execute). Operators can still
+  pin a value when the verb is ambiguous. Helper:
+  `lib/tools/categorize-by-verb.ts`.
+
 ### Removed
 
 - Top-level **Extensions** menu entry. Drop-in tools moved to Tools →
