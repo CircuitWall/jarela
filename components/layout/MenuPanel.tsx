@@ -1,11 +1,10 @@
 "use client";
-import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, Monitor, Moon, ScrollText, ServerCog, Shapes, Smartphone, Sun, User, Wrench } from "lucide-react";
+import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, MessageSquare, ScrollText, ServerCog, Settings, Shapes, Smartphone, User, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
-import { useTheme, type Theme } from "@/contexts/ThemeContext";
 
 interface Props {
   activeTab: Tab;
@@ -32,6 +31,7 @@ const TAB_ICONS: Record<Tab, React.ReactNode> = {
   harness: <Shapes size={13} />,
   logs: <ScrollText size={13} />,
   env: <ServerCog size={13} />,
+  settings: <Settings size={13} />,
 };
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -51,6 +51,7 @@ const TAB_TITLES: Record<Tab, string> = {
   harness: "Harness",
   logs: "Logs",
   env: "Defaults",
+  settings: "Settings",
 };
 
 const TAB_SHORT: Record<Tab, string> = {
@@ -70,11 +71,14 @@ const TAB_SHORT: Record<Tab, string> = {
   harness: "Test",
   logs: "Logs",
   env: "Defaults",
+  settings: "Setup",
 };
 
-// Two-tier menu. "Common" surfaces the day-to-day verbs plus the most
-// relevant configuration touchpoints. "Advanced" hides the less-frequently
-// used engine-room surfaces behind a collapsible header.
+// Two-tier menu. "Common" surfaces the day-to-day verbs. Settings is
+// the single home for previously top-level chrome (credentials, models,
+// harness, logs, defaults, appearance, networking) — those legacy Tab
+// values still exist for deep-link compat but no longer appear in this
+// menu grid.
 //
 // Capability-presence surfaces (documents, memory, MCP, extensions,
 // bridges, built-in tool categories) all live under the "Tools" tab now —
@@ -82,15 +86,8 @@ const TAB_SHORT: Record<Tab, string> = {
 // answering the same question: "what can the agent see / do?". The legacy
 // top-level Tab entries remain wired so deep-links (?tab=documents&item=…)
 // still resolve, but they're hidden from the menu grid.
-//
-// "credentials" is the single home for every auth surface — saved API
-// keys + built-in integrations (Gmail, GitHub, Atlassian…) live there as
-// sub-tabs.
-//
-// "models" lives in Advanced — most users let the default model do its
-// job; switching providers is power-user territory.
-const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "credentials", "tools", "tasks", "profile"];
-const ADVANCED_TABS: Tab[] = ["models", "harness", "logs", "env"];
+const COMMON_TABS: Tab[] = ["chat", "dashboard", "agents", "tools", "tasks", "profile", "settings"];
+const ADVANCED_TABS: Tab[] = [];
 
 const ADVANCED_KEY = "jarela.menu.advanced";
 
@@ -118,6 +115,7 @@ const TAB_ACCENT: Partial<Record<Tab, string>> = {
   harness: "from-orange-500/20 to-amber-500/5",
   logs: "from-slate-500/20 to-zinc-500/5",
   env: "from-teal-500/20 to-cyan-500/5",
+  settings: "from-slate-500/20 to-zinc-500/5",
 };
 
 function avatarGradient(id: string): string {
@@ -231,12 +229,8 @@ export function MenuPanel({
   onAgentChange,
   onSetTab,
 }: Props) {
-  const { state, dispatch } = useAppContext();
+  const { state } = useAppContext();
   const isFullMode = state.experienceMode === "full";
-  const setMode = (mode: "essential" | "full") => {
-    if ((mode === "full") === isFullMode) return;
-    dispatch({ type: "SET_EXPERIENCE_MODE", mode });
-  };
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
   // boot so the engine room is visible to power users out of the box.
@@ -295,42 +289,11 @@ export function MenuPanel({
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
       {/* Common navigation — the day-to-day surface. */}
-      <div className="px-3 pt-2 pb-1 border-b border-border/60 bg-gradient-to-r from-surface-2/50 to-transparent">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] uppercase tracking-wide text-fg-faint">Workspace mode</span>
-          <div
-            role="radiogroup"
-            aria-label="Workspace mode"
-            className="inline-flex items-center rounded-full border border-border bg-surface-3 p-0.5"
-          >
-            {(["essential", "full"] as const).map((mode) => {
-              const active = (mode === "full") === isFullMode;
-              return (
-                <button
-                  key={mode}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => setMode(mode)}
-                  title={active ? `${mode} mode (current)` : `Switch to ${mode} mode`}
-                  className={`control-tap text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full transition-colors ${
-                    active
-                      ? "bg-accent/15 text-fg-subtle"
-                      : "text-fg-faint hover:text-fg-muted"
-                  }`}
-                >
-                  {mode}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0">
+      <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5 px-2 py-2 border-b border-border shrink-0 bg-gradient-to-r from-surface-2/50 to-transparent">
         {COMMON_TABS.map(renderTabButton)}
       </div>
 
-      {isFullMode && (
+      {isFullMode && ADVANCED_TABS.length > 0 && (
         <div className="border-b border-border shrink-0">
           <button
             type="button"
@@ -358,45 +321,6 @@ export function MenuPanel({
           activeAgentId={agentId}
           onSelect={(id) => { onAgentChange(id); onSetTab("chat"); onClose(); }}
         />
-      </div>
-
-      {/* Display toggles */}
-      <div className="border-t border-border px-3 py-3 shrink-0 bg-surface-1/30">
-        <p className="text-[11px] text-fg-faint mb-1.5 font-medium uppercase tracking-wide">Display</p>
-        <div className="flex flex-col gap-1.5">
-          <ThemePicker />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ThemePicker() {
-  const { theme, setTheme } = useTheme();
-  const options: { value: Theme; label: string; icon: React.ReactNode }[] = [
-    { value: "light",  label: "Light",  icon: <Sun size={12} /> },
-    { value: "dark",   label: "Dark",   icon: <Moon size={12} /> },
-    { value: "system", label: "System", icon: <Monitor size={12} /> },
-  ];
-  return (
-    <div className="flex items-center gap-2 text-xs text-fg-muted rounded-lg border border-border bg-surface-3/70 px-2.5 py-2">
-      <span className="shrink-0">Theme</span>
-      <div className="flex flex-1 rounded-lg border border-border overflow-hidden bg-surface">
-        {options.map((o) => (
-          <button
-            key={o.value}
-            onClick={() => setTheme(o.value)}
-            title={o.label}
-            className={`control-tap flex-1 inline-flex items-center justify-center gap-1 py-1 text-[11px] transition-colors ${
-              theme === o.value
-                ? "bg-surface-3 text-fg shadow-sm"
-                : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50"
-            }`}
-          >
-            {o.icon}
-            <span>{o.label}</span>
-          </button>
-        ))}
       </div>
     </div>
   );
