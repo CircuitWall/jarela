@@ -15,17 +15,6 @@ export function parseHexColor(value: string): [number, number, number] | null {
   return [r, g, b];
 }
 
-export function shiftHex(value: string, amount: number): string {
-  const rgb = parseHexColor(value);
-  if (!rgb) return value;
-  const t = Math.max(-1, Math.min(1, amount));
-  const shiftChannel = (channel: number): number => {
-    if (t >= 0) return Math.round(channel + ((255 - channel) * t));
-    return Math.round(channel * (1 + t));
-  };
-  return `rgb(${shiftChannel(rgb[0])}, ${shiftChannel(rgb[1])}, ${shiftChannel(rgb[2])})`;
-}
-
 export function withAlpha(value: string, alpha: number): string {
   const rgb = parseHexColor(value);
   const a = Math.max(0, Math.min(1, alpha));

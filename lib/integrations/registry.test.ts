@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { listManifests, getManifest, manifestIds } from "./registry";
+import { listManifests, getManifest } from "./registry";
 
 describe("integration registry", () => {
   it("loads + validates every shipped manifest", () => {
@@ -10,15 +10,8 @@ describe("integration registry", () => {
     }
   });
 
-  it("manifestIds returns sorted unique ids", () => {
-    const ids = manifestIds();
-    const sorted = [...ids].sort();
-    expect(ids).toEqual(sorted);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
   it("getManifest looks up by id", () => {
-    const id = manifestIds()[0];
+    const id = listManifests()[0].id;
     expect(getManifest(id)?.id).toBe(id);
   });
 

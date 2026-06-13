@@ -87,10 +87,3 @@ export function maskInvokeMessages(messages: InvokeMessage[]): InvokeMessage[] {
     return masked;
   });
 }
-
-// Tool definitions passed to the provider include schema descriptions
-// the model reads — those don't contain secrets. We don't mask
-// OpenAITool[]; pass through as-is.
-export function passthroughTools(tools: OpenAITool[]): OpenAITool[] {
-  return tools;
-}

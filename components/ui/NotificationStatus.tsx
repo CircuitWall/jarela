@@ -107,47 +107,4 @@ export function NotificationStatus() {
   );
 }
 
-// Test affordance — always visible, regardless of permission state.
-// Fires both layers so the user can verify each independently:
-//   - In-app toast: always works (no permission needed)
-//   - OS Web Notification: only fires if permission is granted
-export function NotificationTestButton() {
-  const [status, setStatus] = useState<Status>("default");
-  useEffect(() => { setStatus(readStatus()); }, []);
 
-  function fire() {
-    // 1. In-app toast — should appear bottom-right immediately.
-    pushToast({
-      kind: "info",
-      source: "system",
-      sourceLabel: "Test",
-      title: "Test notification",
-      body: "If you see this card slide in, in-app pop-ups are working.",
-      agent_id: null,
-      thread_id: null,
-      ttl: 6000,
-    });
-    // 2. OS Web Notification — only works if permission granted.
-    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-      try {
-        new Notification("Jarela test", {
-          body: "If you see this, OS notifications are wired correctly.",
-          icon: "/icon-192.png",
-          tag: "jarela-test",
-        });
-      } catch { /* OS rejected, ignore */ }
-    }
-  }
-
-  return (
-    <button
-      onClick={fire}
-      title={status === "granted"
-        ? "Fires both an in-app toast and an OS notification"
-        : "Fires an in-app toast (OS notifications require permission)"}
-      className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-fg hover:bg-surface-3"
-    >
-      <Bell size={11} /> Test notification
-    </button>
-  );
-}

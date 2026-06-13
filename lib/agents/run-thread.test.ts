@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   toolCallSignature,
-  detectToolLoop,
   looksLikeStall,
   isWriteLikeToolName,
   withInterruptMarker,
@@ -27,72 +26,6 @@ describe("toolCallSignature", () => {
   it("treats different tool names as distinct", () => {
     expect(toolCallSignature("file_read", { path: "/x" }))
       .not.toBe(toolCallSignature("file_write", { path: "/x" }));
-  });
-});
-
-describe("detectToolLoop", () => {
-  it("returns null when no signature recurs threshold times", () => {
-    const events = [
-      { name: "file_read", args: { path: "/a" } },
-      { name: "file_read", args: { path: "/b" } },
-      { name: "file_write", args: { path: "/a" } },
-    ];
-    expect(detectToolLoop(events, 3)).toBeNull();
-  });
-
-  it("flags the looped tool when the same call recurs threshold times", () => {
-    const events = Array.from({ length: 14 }, () => ({
-      name: "file_read",
-      args: { path: "/some/doc.md" },
-    }));
-    expect(detectToolLoop(events, 3)).toBe("file_read");
-  });
-
-  it("does not flag distinct args even if the tool name repeats", () => {
-    const events = [
-      { name: "file_read", args: { path: "/a" } },
-      { name: "file_read", args: { path: "/b" } },
-      { name: "file_read", args: { path: "/c" } },
-    ];
-    expect(detectToolLoop(events, 3)).toBeNull();
-  });
-
-  it("returns the FIRST looped tool when multiple loops are present", () => {
-    const events = [
-      { name: "file_read", args: { path: "/a" } },
-      { name: "file_read", args: { path: "/a" } },
-      { name: "file_read", args: { path: "/a" } },
-      { name: "web_fetch", args: { url: "https://x" } },
-    ];
-    expect(detectToolLoop(events, 3)).toBe("file_read");
-  });
-
-  it("ignores empty tool names", () => {
-    const events = [
-      { name: "", args: { path: "/a" } },
-      { name: "", args: { path: "/a" } },
-      { name: "", args: { path: "/a" } },
-    ];
-    expect(detectToolLoop(events, 3)).toBeNull();
-  });
-
-  it("returns null for threshold <= 0 (disabled)", () => {
-    const events = [
-      { name: "file_read", args: { path: "/a" } },
-      { name: "file_read", args: { path: "/a" } },
-      { name: "file_read", args: { path: "/a" } },
-    ];
-    expect(detectToolLoop(events, 0)).toBeNull();
-    expect(detectToolLoop(events, -1)).toBeNull();
-  });
-
-  it("trips at exactly the threshold count", () => {
-    const events = [
-      { name: "x", args: {} },
-      { name: "x", args: {} },
-    ];
-    expect(detectToolLoop(events, 2)).toBe("x");
-    expect(detectToolLoop(events.slice(0, 1), 2)).toBeNull();
   });
 });
 

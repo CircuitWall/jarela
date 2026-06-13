@@ -6,7 +6,8 @@ import { tmpdir } from "node:os";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-message-usage-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { recordMessageUsage, getMessageUsage, getMessageUsageByIds, computeCostUsd } = await import("./message-usage");
+const { recordMessageUsage, getMessageUsageByIds } = await import("./message-usage");
+const getMessageUsage = (id: string) => getMessageUsageByIds([id]).get(id) ?? null;
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -55,20 +56,6 @@ describe("message_usage snapshot store (ADR-0041)", () => {
     const row = getMessageUsage("m2");
     expect(row?.input_tokens).toBe(10);
     expect(row?.output_tokens).toBe(20);
-  });
-
-  it("computeCostUsd applies per-MTok rates correctly", () => {
-    expect(computeCostUsd(1_000_000, 0, 3, 15)).toBeCloseTo(3, 6);
-    expect(computeCostUsd(0, 1_000_000, 3, 15)).toBeCloseTo(15, 6);
-    expect(computeCostUsd(500_000, 500_000, 3, 15)).toBeCloseTo(9, 6);
-    expect(computeCostUsd(100, 100, null, null)).toBe(0);
-  });
-
-  it("computeCostUsd treats undefined rates and zero tokens as $0", () => {
-    expect(computeCostUsd(0, 0, 3, 15)).toBe(0);
-    expect(computeCostUsd(100, 100, undefined, undefined)).toBe(0);
-    expect(computeCostUsd(100, 0, 3, null)).toBeCloseTo(0.0003, 8);
-    expect(computeCostUsd(0, 100, null, 15)).toBeCloseTo(0.0015, 8);
   });
 
   it("persists snapshot-only rows where the provider didn't report usage (cost=0)", () => {

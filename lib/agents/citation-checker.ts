@@ -34,7 +34,6 @@
 //     user only configures one cheap classifier model per agent.
 
 import type { PersistedToolEvent } from "@/lib/stores/threads";
-import { getMessages } from "@/lib/stores/threads";
 import { listMemory } from "@/lib/stores/memory";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
 import { getProvider } from "@/lib/providers";
@@ -130,46 +129,6 @@ export function extractSourcesFromEvents(events: readonly PersistedToolEvent[]):
 }
 
 /**
- * Build the per-thread visited-source set: every file path / URL the
- * agent has touched via tool calls across the full thread history,
- * unioned with the just-produced events.
- */
-export function extractVisitedSources(
-  thread_id: string,
-  freshEvents: readonly PersistedToolEvent[],
-): Set<string> {
-  const out = extractSourcesFromEvents(freshEvents);
-  for (const m of getMessages(thread_id)) {
-    if (!m.tool_events) continue;
-    let parsed: unknown;
-    try { parsed = JSON.parse(m.tool_events); } catch { continue; }
-    if (!Array.isArray(parsed)) continue;
-    const events = parsed.filter((e): e is PersistedToolEvent =>
-      !!e && typeof e === "object" && typeof (e as { name?: unknown }).name === "string",
-    );
-    for (const s of extractSourcesFromEvents(events)) out.add(s);
-  }
-  return out;
-}
-
-/**
- * Pull every markdown link target out of the assistant text. Kept for
- * back-compat and as a useful primitive; the new marker-based flow uses
- * extractCitedMarkers instead.
- */
-export function extractCitedLinks(text: string): string[] {
-  if (!text) return [];
-  const out = new Set<string>();
-  const re = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const href = m[1].trim();
-    if (href) out.add(href);
-  }
-  return Array.from(out);
-}
-
-/**
  * Pull every numeric marker (`[1]`, `[12]`) out of the assistant text.
  * Skips reference-link tails like `[label][1]` via the lookbehind so the
  * checker doesn't misread accidental markdown reference-link syntax as a
@@ -221,50 +180,6 @@ function labelForSource(href: string): string {
   return href;
 }
 
-/** Public re-export so callers building a manifest outside this module
- *  (e.g. run-thread's post-turn refresh) use the same labeling rules. */
-export const labelForCitedSource = labelForSource;
-
-/**
- * Pull prior assistant turns in this thread into citable manifest entries.
- * Used at all strictness levels (when citations are enabled). Each entry's
- * `href` is a `#msg-<id>` anchor the UI can scroll to; the label is a short
- * timestamp ("12m ago") so the agent has something readable to reference.
- *
- * Returns the most-recent `max` assistant turns, oldest-first so a later
- * `buildSourceManifest` call's "tail = recent" semantics keeps stable
- * numbering even as new turns land.
- */
-export function extractPriorDialogSources(
-  thread_id: string,
-  max: number,
-): SourceManifestEntry[] {
-  if (max <= 0) return [];
-  const all = getMessages(thread_id);
-  const assistant = all.filter((m) => m.role === "assistant" && (m.content ?? "").trim().length > 0);
-  const tail = assistant.slice(-max);
-  const nowMs = Date.now();
-  return tail.map((m, i) => {
-    const ts = Date.parse(m.created_at);
-    const ageMs = Number.isFinite(ts) ? Math.max(0, nowMs - ts) : 0;
-    return {
-      n: i + 1,
-      label: `Earlier in thread (${formatAge(ageMs)})`,
-      href: `#msg-${m.msg_id}`,
-    };
-  });
-}
-
-function formatAge(ms: number): string {
-  if (ms < 60_000) return "just now";
-  const min = Math.round(ms / 60_000);
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.round(hr / 24);
-  return `${day}d ago`;
-}
-
 /**
  * Pull memory items into citable manifest entries. Memory is durable user
  * context (preferences, learned facts, scheduled-task state), so making
@@ -286,61 +201,6 @@ export function extractMemorySources(max: number): SourceManifestEntry[] {
       label: `Memory: ${m.namespace}/${m.key}`,
       href: `memory://${m.namespace}/${m.key}`,
     }));
-}
-
-/**
- * Pull every `delegate_to_agent` tool result in the thread into citable
- * manifest entries. The parent agent's reply often paraphrases the
- * delegate's answer ("Postman says today's agenda is …") — without this
- * bucket those claims have no matching source and the agent has nothing
- * legal to cite, so it just omits the marker entirely.
- *
- * Each entry's label is `{delegate_name} replied ({age})`; the href
- * points to the persisted-event anchor inside the parent message so the
- * UI can scroll to the delegate tool card and the user can expand it.
- */
-export function extractDelegateSources(
-  thread_id: string,
-  max: number,
-): SourceManifestEntry[] {
-  if (max <= 0) return [];
-  type DelegateHit = { agent: string; createdAt: string; msgId: string; eventId: string };
-  const hits: DelegateHit[] = [];
-  for (const m of getMessages(thread_id)) {
-    if (!m.tool_events) continue;
-    let parsed: unknown;
-    try { parsed = JSON.parse(m.tool_events); } catch { continue; }
-    if (!Array.isArray(parsed)) continue;
-    for (const ev of parsed) {
-      if (!ev || typeof ev !== "object") continue;
-      const e = ev as { id?: unknown; name?: unknown; phase?: unknown; payload?: unknown };
-      if (e.name !== "delegate_to_agent" || e.phase !== "result") continue;
-      let payload: unknown = e.payload;
-      if (typeof payload === "string") {
-        try { payload = JSON.parse(payload); } catch { /* keep raw */ }
-      }
-      const p = (payload && typeof payload === "object") ? payload as Record<string, unknown> : null;
-      if (!p || p.ok === false) continue;
-      const agent = typeof p.agent_name === "string" ? p.agent_name : "delegate";
-      hits.push({
-        agent,
-        createdAt: m.created_at,
-        msgId: m.msg_id,
-        eventId: typeof e.id === "string" ? e.id : "",
-      });
-    }
-  }
-  const tail = hits.slice(-max);
-  const nowMs = Date.now();
-  return tail.map((h, i) => {
-    const ts = Date.parse(h.createdAt);
-    const ageMs = Number.isFinite(ts) ? Math.max(0, nowMs - ts) : 0;
-    return {
-      n: i + 1,
-      label: `${h.agent} replied (${formatAge(ageMs)})`,
-      href: `#msg-${h.msgId}`,
-    };
-  });
 }
 
 /**
@@ -444,22 +304,6 @@ export function extractDeclaredReferences(
   }
   const body = text.slice(0, m.index).trimEnd();
   return { body, refs };
-}
-
-/**
- * Strip an in-progress `jarela-references` fence during streaming so the
- * user never sees raw JSON flash on screen between the opening fence and
- * the closing one. If the closing fence has arrived, defer to the full
- * parser via {@link extractDeclaredReferences}; otherwise cut everything
- * from the opening fence onward.
- */
-export function stripStreamingDeclaredReferences(text: string): string {
-  if (/```jarela-references[\s\S]*?\n```/.test(text)) {
-    return extractDeclaredReferences(text).body;
-  }
-  const idx = text.indexOf("```jarela-references");
-  if (idx < 0) return text;
-  return text.slice(0, idx).trimEnd();
 }
 
 /**
