@@ -29,8 +29,11 @@ vi.mock("@/lib/agents/stream-collector", () => ({
   collectStream: (...args: unknown[]) => collectStreamMock(...args),
 }));
 
-vi.mock("./registry", () => ({
-  registerTools: () => undefined,
+vi.mock("./langchain-package", () => ({
+  registerLangChainPackage: () => ({
+    resolveAuth: () => ({ error: "stub" }),
+    unregister: () => undefined,
+  }),
 }));
 
 const { delegateToAgentTool } = await import("./delegate");
