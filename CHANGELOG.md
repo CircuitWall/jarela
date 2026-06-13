@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reusable `usePackages()` hook + `api.packages.*` namespace covering
   list / install / pending approval / manifest CRUD / reload.
 
+### Fixed
+
+- **Docker image build for 1.9.0 release.** The 1.9.0 tag's `npm ci`
+  inside the Dockerfile failed because the root lockfile now resolves
+  the `@circuitwall/*-langchain` entries through the `workspace:`
+  protocol, but only `package.json` + `package-lock.json` were copied
+  into the build context. The Dockerfile now copies each workspace
+  package's `package.json` before `npm ci` so npm can materialize
+  the symlinks. npm publish + GitHub Release for 1.9.0 were
+  unaffected (those ran on the host directly).
+
 ## [1.9.0] - 2026-06-13
 
 ### Added
