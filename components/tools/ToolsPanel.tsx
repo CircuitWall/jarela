@@ -6,10 +6,12 @@ import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
+import { LangChainPackagesPanel } from "./LangChainPackagesPanel";
 
 // "Tools" is about *capability presence* — every surface that determines
 // what an agent can sense or act on lives here:
 //   - "Built-in"   — categories of tools that ship with Jarela.
+//   - "Packages"   — vanilla LangChain tool packages hot-loaded from npm.
 //   - "Documents"  — indexed knowledge sources the agent can search.
 //   - "Memory"     — long-lived facts persisted across conversations.
 //   - "MCP"        — external Model Context Protocol servers.
@@ -18,12 +20,28 @@ import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
 // Credentials still flow through the Credentials tab; this surface owns
 // the capability roster.
 
-type Sub = "builtin" | "documents" | "memory" | "mcp" | "extensions" | "bridges";
+type Sub =
+  | "builtin"
+  | "packages"
+  | "documents"
+  | "memory"
+  | "mcp"
+  | "extensions"
+  | "bridges";
 
-const SUBS: Sub[] = ["builtin", "documents", "memory", "mcp", "extensions", "bridges"];
+const SUBS: Sub[] = [
+  "builtin",
+  "packages",
+  "documents",
+  "memory",
+  "mcp",
+  "extensions",
+  "bridges",
+];
 
 const SUB_TITLES: Record<Sub, string> = {
   builtin: "Built-in",
+  packages: "LangChain packages",
   documents: "Documents",
   memory: "Memory",
   mcp: "MCP servers",
@@ -70,6 +88,7 @@ export function ToolsPanel() {
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
         {active === "builtin" && <BuiltinToolsPanel />}
+        {active === "packages" && <LangChainPackagesPanel />}
         {active === "documents" && <DocumentsPanel />}
         {active === "memory" && <MemoryPanel />}
         {active === "mcp" && <MCPPanel />}

@@ -49,6 +49,12 @@ import type {
   HarnessIn,
   HarnessListResponse,
   HarnessPatch,
+  LangChainPackageInstallResponse,
+  LangChainPackageListResponse,
+  LangChainPackageManifestCreateResult,
+  LangChainPackageManifestInput,
+  LangChainPackageManifestRecord,
+  LangChainPackagePendingInstall,
 } from "./types";
 import { runtimeConfig } from "./runtime-config";
 
@@ -262,6 +268,57 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify({ category, enabled }),
       }),
+  },
+
+  packages: {
+    list: () => request<LangChainPackageListResponse>("/packages"),
+    reload: () =>
+      request<LangChainPackageListResponse>("/packages/reload", { method: "POST" }),
+    install: (spec: string, version?: string) =>
+      request<LangChainPackageInstallResponse>("/packages/install", {
+        method: "POST",
+        body: JSON.stringify(version ? { spec, version } : { spec }),
+      }),
+    listPending: () =>
+      request<LangChainPackagePendingInstall[]>("/packages/install"),
+    approveInstall: (id: string) =>
+      request<LangChainPackageInstallResponse>(
+        `/packages/install/${encodeURIComponent(id)}`,
+        { method: "POST" },
+      ),
+    denyInstall: (id: string) =>
+      request<{ status: "denied"; id: string }>(
+        `/packages/install/${encodeURIComponent(id)}`,
+        { method: "DELETE" },
+      ),
+    listManifests: () =>
+      request<LangChainPackageManifestRecord[]>("/packages/manifests"),
+    getManifest: (name: string) =>
+      request<LangChainPackageManifestRecord>(
+        `/packages/manifests/${encodeURIComponent(name)}`,
+      ),
+    createManifest: (data: LangChainPackageManifestInput) =>
+      request<LangChainPackageManifestCreateResult>("/packages/manifests", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    updateManifest: (
+      name: string,
+      data: Omit<LangChainPackageManifestInput, "name">,
+    ) =>
+      request<LangChainPackageManifestCreateResult>(
+        `/packages/manifests/${encodeURIComponent(name)}`,
+        { method: "PUT", body: JSON.stringify(data) },
+      ),
+    deleteManifest: (name: string) =>
+      request<{
+        name: string;
+        removed: boolean;
+        load: import("./types").LangChainPackageLoadResult;
+      }>(
+        `/packages/manifests/${encodeURIComponent(name)}`,
+        { method: "DELETE" },
+      ),
   },
 
   extensions: {
