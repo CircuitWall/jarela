@@ -24,6 +24,7 @@
   <a href="#providers">Providers</a> &middot;
   <a href="#connections">Connections</a> &middot;
   <a href="./docs/EXTENDING.md">Extending</a> &middot;
+  <a href="#reusable-packages">Packages</a> &middot;
   <a href="./docs/ARCHITECTURE.md">Architecture</a> &middot;
   <a href="./CONTRIBUTING.md">Contributing</a> &middot;
   <a href="#documentation">Docs</a>
@@ -295,6 +296,22 @@ Seven extension surfaces, each documented in
 The package's public type surface is locked via
 [`package.json#exports`](./package.json) and the deprecation policy in
 [CONTRIBUTING.md → Public API surface](./CONTRIBUTING.md#public-api-surface).
+
+## Reusable packages
+
+Some of Jarela's internals are also published as standalone npm packages so
+you can reuse them in your own LangChain / LangGraph projects without
+running the Jarela app. They live under
+[`packages/`](./packages) in this repo as npm workspaces.
+
+| Package | Description | Install |
+|---|---|---|
+| [`@circuitwall/atlassian-langchain`](./packages/atlassian-langchain) | 64 LangChain `tool()` definitions for Atlassian Jira and Confluence Cloud (direct REST, no MCP, proxy-aware). | `npm install @circuitwall/atlassian-langchain @langchain/core zod` |
+
+The Atlassian package exposes 42 Jira tools (search, issues, sprints,
+attachments, transitions, …) and 22 Confluence tools (pages, spaces,
+labels, search, …). Pass your own credential resolver via
+`setAuthResolver()` — see the package README for the full quick start.
 
 ## Installation and runtime details
 

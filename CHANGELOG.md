@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`@circuitwall/atlassian-langchain` v0.1.0 published to npm.**
+  First standalone release of the Atlassian (Jira + Confluence) toolbelt
+  extracted from `lib/tools/atlassian.ts`. External LangChain.js /
+  LangGraph projects can now `npm install @circuitwall/atlassian-langchain`
+  to consume the 64 tools (42 Jira + 22 Confluence) without running
+  Jarela. README now advertises the package under a new "Reusable
+  packages" section.
+
 ### Changed
 
 - **Atlassian (Jira + Confluence) tools are now an extractable npm
