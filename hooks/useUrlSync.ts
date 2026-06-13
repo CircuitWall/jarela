@@ -15,7 +15,7 @@ import { useEffect, useRef } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
 import { buildHref, parseHref } from "@/lib/ui/navigate";
 
-const TABS: Tab[] = ["chat", "dashboard", "agents", "memory", "documents", "models", "credentials", "mcp", "extensions", "tools", "tasks", "bridges", "profile", "harness"];
+const TABS: Tab[] = ["chat", "dashboard", "agents", "memory", "documents", "models", "credentials", "mcp", "extensions", "tools", "tasks", "bridges", "profile", "harness", "settings"];
 
 export function useUrlSync() {
   const { state, dispatch } = useAppContext();

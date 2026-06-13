@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-06-13
+
+### Added
+
+- **Settings tab.** New top-level menu entry that consolidates
+  Appearance, Networking, Credentials, Models, Harness, Logs, and
+  Defaults as sub-tabs. The day-to-day menu grid is now just Chat,
+  Dashboard, Agents, Tools, Tasks, Profile, Settings — every other
+  configuration surface lives behind that single Settings entry.
+- `Settings → Appearance` hosts the theme picker (Light / Dark /
+  System) that used to live in the MenuPanel footer, plus the
+  Workspace mode toggle (Essential / Full) that used to sit above the
+  menu grid.
+
+### Changed
+
+- MenuPanel slimmed: dropped the always-on theme picker from the
+  footer and the workspace-mode toggle from the header — both moved
+  into Settings → Appearance, so the menu surface is now just
+  navigation.
+- Existing top-level Tab values (`credentials`, `models`, `harness`,
+  `logs`, `env`) remain wired for backward compat — deep links and
+  programmatic `SET_TAB` dispatches keep working — but they no longer
+  appear as their own menu cards.
+
 ## [1.9.2] - 2026-06-13
 
 ### Changed

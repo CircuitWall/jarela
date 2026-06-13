@@ -13,7 +13,7 @@ function parseStoredMode(raw: string | null): ExperienceMode | null {
   return null;
 }
 
-export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "credentials" | "mcp" | "extensions" | "tools" | "tasks" | "bridges" | "profile" | "harness" | "logs" | "env";
+export type Tab = "chat" | "dashboard" | "agents" | "memory" | "documents" | "models" | "credentials" | "mcp" | "extensions" | "tools" | "tasks" | "bridges" | "profile" | "harness" | "logs" | "env" | "settings";
 
 interface AppState {
   activeThreadId: string | null;

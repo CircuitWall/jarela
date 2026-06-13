@@ -22,6 +22,7 @@ import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { HarnessPanel } from "@/components/harness/HarnessPanel";
 import { LogsPanel } from "@/components/logs/LogsPanel";
 import { EnvVarsPanel } from "@/components/env/EnvVarsPanel";
+import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { HeaderActivity } from "@/components/ui/HeaderActivity";
 import { NotificationStatus } from "@/components/ui/NotificationStatus";
 import { CryptoFallbackBanner } from "@/components/ui/CryptoFallbackBanner";
@@ -546,6 +547,11 @@ export function AppShell() {
         {isFullMode && mountedTabs.has("env") && (
           <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
             <EnvVarsPanel />
+          </Activity>
+        )}
+        {mountedTabs.has("settings") && (
+          <Activity mode={state.activeTab === "settings" ? "visible" : "hidden"}>
+            <SettingsPanel />
           </Activity>
         )}
 
