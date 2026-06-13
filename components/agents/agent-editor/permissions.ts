@@ -1,5 +1,3 @@
-import type { ToolInfo } from "@/api/types";
-
 export type ToolPermissionKind = "read" | "write" | "execute";
 
 const READ_PREFIXES = ["get_", "list_", "search_", "read_", "fetch_", "check_", "status_"];
@@ -27,5 +25,3 @@ export function toolScoreClass(score: number): string {
   }
   return "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300";
 }
-
-export type ToolInfoLike = ToolInfo;

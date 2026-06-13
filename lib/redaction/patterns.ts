@@ -8,7 +8,6 @@ import { z } from "zod";
 import { getDataDir } from "@/lib/db/data-dir";
 
 export const VALIDATOR_NAMES = ["luhn", "mod97", "personnummer_check"] as const;
-export type ValidatorName = typeof VALIDATOR_NAMES[number];
 
 const PatternSchema = z.object({
   name: z.string().min(1),
@@ -44,8 +43,6 @@ const RedactionConfigSchema = z.object({
   field_name_allowlist: z.array(z.string()).default([]),
 });
 
-export type PatternConfig = z.infer<typeof PatternSchema>;
-export type EntropyHeuristicConfig = z.infer<typeof EntropyHeuristicSchema>;
 export type RedactionConfig = z.infer<typeof RedactionConfigSchema>;
 
 export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {

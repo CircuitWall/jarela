@@ -25,18 +25,6 @@ export function startLoading(): () => void {
   };
 }
 
-// Subscribe to the aggregate count. Re-renders the caller when it changes.
-export function useLoadingCount(): number {
-  const [n, setN] = useState(activeCount);
-  useEffect(() => {
-    const fn = (v: number) => setN(v);
-    listeners.add(fn);
-    setN(activeCount);
-    return () => { listeners.delete(fn); };
-  }, []);
-  return n;
-}
-
 // Convenience: tracks `active` automatically. When `active` flips true, register;
 // when it flips false (or component unmounts), unregister.
 export function useTrackLoading(active: boolean): void {

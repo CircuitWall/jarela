@@ -8,5 +8,4 @@
 export {
   getCookieHeaderForUrl,
   isHostAllowed,
-  type HostMatch,
 } from "@/lib/stores/allowed-sites";
