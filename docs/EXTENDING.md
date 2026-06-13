@@ -170,6 +170,21 @@ manifests (with reasons, e.g. `requiredEnv` unset), and per-manifest
 errors. Both endpoints are thin wrappers around
 [`lib/tools/langchain-packages.ts`](../lib/tools/langchain-packages.ts).
 
+**Installing a package via API.** `POST /api/v1/packages/install`
+with `{ "spec": "<npm-spec>", "version": "<optional>" }` runs
+`npm install` inside `$JARELA_PACKAGES_DIR` and returns the
+introspected `StructuredTool` exports it found. Packages from a
+publisher in `PACKAGE_PUBLISHER_ALLOWLIST` (default `@langchain/*`,
+`@circuitwall/*`, `langchain`; extend via the
+`JARELA_PACKAGE_ALLOWLIST` env var, same pattern as
+`ENV_ALLOWLIST` in [`lib/env/allowlist.ts`](../lib/env/allowlist.ts))
+install immediately. Anything else returns `202` with a pending
+approval id; `GET /api/v1/packages/install` lists pending approvals,
+`POST /api/v1/packages/install/:id` approves and runs, and
+`DELETE /api/v1/packages/install/:id` denies. After install you still
+need to drop a manifest under `manifests/` (or call the
+forthcoming manifest-CRUD endpoint) to actually register the tool.
+
 **Trust model.** A loaded package runs with full Node privilege in the
 Jarela process, same as `JARELA_TOOLS_DIR` extensions. Only install
 packages you would `npm install` into any of your own projects.
