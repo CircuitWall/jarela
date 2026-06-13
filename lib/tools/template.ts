@@ -4,7 +4,8 @@
  * To add a new tool:
  *   1. Copy this file to lib/tools/your-tool.ts
  *   2. Rename `myTool`, update name/description/schema, implement the function
- *   3. Call `registerTools("<Category>", "<read|write|execute>", [myTool])` at the bottom (see below)
+ *   3. Call `registerLangChainPackage({ category, tools: { read|write|execute: [myTool] } })`
+ *      at the bottom (see below)
  *   4. Add `import "./your-tool";` to lib/tools/builtins.ts
  *
  * Tools follow the LangChain StructuredTool convention:
@@ -16,7 +17,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 export const myTool = tool(
   async (
@@ -51,4 +52,7 @@ export const myTool = tool(
 // Pick the category (topical group) and capability (read/write/execute,
 // safety class — see ADR-0038) your tool belongs to. The full list lives in
 // lib/tools/registry.ts.
-// registerTools("Web", "read", [myTool]);
+// registerLangChainPackage({
+//   category: "Web",
+//   tools: { read: [myTool] },
+// });

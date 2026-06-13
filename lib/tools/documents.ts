@@ -7,7 +7,7 @@ import { tool } from "@langchain/core/tools";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { searchDocuments } from "@/lib/documents/search";
 import {
   createDocumentSource,
@@ -115,8 +115,9 @@ export const documentsAddLocalSource = tool(
   },
 );
 
-registerTools("Documents", "read", [documentsSearch, documentsListSources]);
-registerTools("Documents", "write", [documentsAddLocalSource]);
+// Registration is consolidated at the end of the file (after the remote
+// document-source tools are defined) so the standardized
+// registerLangChainPackage spec covers both local and remote tools.
 
 // ── Remote document sources (ADR-0026) ──────────────────────────────────────
 //
@@ -262,9 +263,16 @@ export const documentsIndexUrl = tool(
   },
 );
 
-registerTools("Documents", "write", [
-  documentsAddRemoteSource,
-  documentsRemoveSource,
-  documentsReindexSource,
-  documentsIndexUrl,
-]);
+registerLangChainPackage({
+  category: "Documents",
+  tools: {
+    read: [documentsSearch, documentsListSources],
+    write: [
+      documentsAddLocalSource,
+      documentsAddRemoteSource,
+      documentsRemoveSource,
+      documentsReindexSource,
+      documentsIndexUrl,
+    ],
+  },
+});

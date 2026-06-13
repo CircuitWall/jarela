@@ -15,7 +15,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { pathResolverFor, assertSafePath, withFsDeadline } from "./files";
 import { getConfig } from "@/lib/env/config";
@@ -454,5 +454,10 @@ export const fileMultiEditTool = tool(
 // direct reference helps the typecheck if those signatures ever change.
 void getConfig;
 
-registerTools("Files", "read", [fileGlobTool, fileGrepTool]);
-registerTools("Files", "write", [fileMultiEditTool]);
+registerLangChainPackage({
+  category: "Files",
+  tools: {
+    read: [fileGlobTool, fileGrepTool],
+    write: [fileMultiEditTool],
+  },
+});

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { getCookieHeaderForUrl, isHostAllowed } from "@/lib/cookies/jar";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { getConfig } from "@/lib/env/config";
 
 // Whether the SSRF refusal for a private/loopback host should be
@@ -250,4 +250,7 @@ export const webFetchTool = tool(
   },
 );
 
-registerTools("Web", "read", [webFetchTool]);
+registerLangChainPackage({
+  category: "Web",
+  tools: { read: [webFetchTool] },
+});

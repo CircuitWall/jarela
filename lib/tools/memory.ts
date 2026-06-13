@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 export const memoryReadTool = tool(
   async ({ namespace, key }) => {
@@ -80,5 +80,10 @@ export const memoryDeleteTool = tool(
   },
 );
 
-registerTools("Memory", "read", [memoryReadTool, memoryListTool]);
-registerTools("Memory", "write", [memoryWriteTool, memoryDeleteTool]);
+registerLangChainPackage({
+  category: "Memory",
+  tools: {
+    read: [memoryReadTool, memoryListTool],
+    write: [memoryWriteTool, memoryDeleteTool],
+  },
+});

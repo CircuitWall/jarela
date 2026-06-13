@@ -22,7 +22,7 @@ import {
   type BrowserResult,
 } from "@/lib/api/browser-control";
 import { writeBinaryFile } from "@/lib/files";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 const TimeoutMs = z
   .number()
@@ -276,10 +276,10 @@ export const browserSnapshotTool = tool(
   },
 );
 
-registerTools("Web", "read", [browserScreenshotTool, browserExtractTool, browserSnapshotTool]);
-registerTools("Web", "write", [
-  browserNavigateTool,
-  browserClickTool,
-  browserFillTool,
-  browserScrollTool,
-]);
+registerLangChainPackage({
+  category: "Web",
+  tools: {
+    read: [browserScreenshotTool, browserExtractTool, browserSnapshotTool],
+    write: [browserNavigateTool, browserClickTool, browserFillTool, browserScrollTool],
+  },
+});

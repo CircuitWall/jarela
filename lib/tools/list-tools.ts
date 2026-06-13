@@ -14,7 +14,7 @@ import {
   type ToolSource,
 } from "./index";
 import type { Capability, ToolCategory } from "./registry";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 interface ToolSummary {
   name: string;
@@ -81,4 +81,7 @@ export const listToolsTool = tool(
   },
 );
 
-registerTools("Config", "read", [listToolsTool]);
+registerLangChainPackage({
+  category: "Config",
+  tools: { read: [listToolsTool] },
+});

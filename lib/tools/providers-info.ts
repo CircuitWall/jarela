@@ -12,7 +12,7 @@ import {
   BUILTIN_PROVIDER_NAMES,
 } from "@/lib/providers";
 import { listKnownModels } from "@/lib/providers/known-context-windows";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 type ProviderSource = "builtin" | "external";
 
@@ -103,4 +103,7 @@ export const describeProviderTool = tool(
   },
 );
 
-registerTools("Config", "read", [listProvidersTool, describeProviderTool]);
+registerLangChainPackage({
+  category: "Config",
+  tools: { read: [listProvidersTool, describeProviderTool] },
+});
