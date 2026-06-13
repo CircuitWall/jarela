@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-06-13
+
+### Added
+
+- **Settings → Tools → LangChain packages** UI panel wrapping the
+  `/api/v1/packages/*` endpoints. Operators can install vanilla
+  LangChain tool packages from npm, approve/deny pending installs that
+  fall outside the publisher allowlist, add/remove tool manifests, and
+  trigger a hot-reload — all without leaving the browser. Mirrors the
+  capability surface previously only reachable via curl.
+- Reusable `usePackages()` hook + `api.packages.*` namespace covering
+  list / install / pending approval / manifest CRUD / reload.
+
 ## [1.9.0] - 2026-06-13
 
 ### Added

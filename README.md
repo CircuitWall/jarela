@@ -763,6 +763,12 @@ Any npm package that exports a `StructuredTool` (the standard
 `@langchain/core/tools` shape) can be loaded into a running Jarela
 without touching the source tree.
 
+**Easiest path — UI** (since `1.9.1`): open **Tools → LangChain
+packages**. The panel covers the whole flow — install from npm,
+approve pending publishers, add / remove manifests, and reload — all
+without leaving the browser. Everything below is the equivalent HTTP
+surface for scripted or remote setups.
+
 1. Pick a package — anything under `@langchain/community/tools/*`,
    `@circuitwall/*`, or `langchain` is allow-listed out of the box.
    Other publishers require an explicit approval (see below) or an

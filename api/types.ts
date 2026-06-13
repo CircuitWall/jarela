@@ -1160,3 +1160,83 @@ export interface ExtensionsListResponse {
   tools: ExternalToolInfo[];
   errors: ExtensionLoadError[];
 }
+
+/**
+ * Hot-loaded vanilla LangChain tool packages. Surface for the
+ * Tools → LangChain packages UI panel.
+ */
+export interface LangChainPackageManifest {
+  package: string;
+  export: string;
+  category: string;
+  capability: "read" | "write" | "execute";
+  args?: Record<string, unknown>;
+  requiredEnv?: string[];
+}
+
+export interface LangChainPackageManifestRecord {
+  name: string;
+  manifest: LangChainPackageManifest;
+}
+
+export interface LangChainPackageLoadResult {
+  registered: string[];
+  skipped: { manifest: string; reason: string }[];
+  errors: { manifest: string; error: string }[];
+}
+
+export interface LangChainPackageListResponse extends LangChainPackageLoadResult {
+  packagesDir: string;
+}
+
+export interface LangChainPackageManifestInput {
+  name: string;
+  package: string;
+  export?: string;
+  category: string;
+  capability?: "read" | "write" | "execute";
+  args?: Record<string, unknown>;
+  requiredEnv?: string[];
+}
+
+export interface LangChainPackagePendingInstall {
+  id: string;
+  spec: string;
+  version: string | null;
+  publisher: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface LangChainPackageIntrospectedTool {
+  export: string;
+  name: string;
+  description: string;
+  requiredEnv: string[];
+}
+
+export interface LangChainPackageInstallResult {
+  status: "installed";
+  spec: string;
+  publisher: string;
+  resolvedPackage: string;
+  installedVersion: string | null;
+  tools: LangChainPackageIntrospectedTool[];
+}
+
+export interface LangChainPackagePendingResponse {
+  status: "pending";
+  approvalId: string;
+  publisher: string;
+  spec: string;
+  reason: string;
+}
+
+export type LangChainPackageInstallResponse =
+  | LangChainPackageInstallResult
+  | LangChainPackagePendingResponse;
+
+export interface LangChainPackageManifestCreateResult {
+  record: LangChainPackageManifestRecord;
+  load: LangChainPackageLoadResult;
+}
