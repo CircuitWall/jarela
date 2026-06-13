@@ -114,6 +114,9 @@ jobs:
       - name: Verify npm tarball contains runnable standalone bundle
         run: npm run test:package
 
+      - name: Test workspaces (per-package vitest suites)
+        run: npm run packages:test
+
       - name: Upload runnable standalone bundle
         # Downstream jobs (integration, e2e) reuse this instead of re-running
         # `next build`. `npm start` reads from .next/standalone/, which

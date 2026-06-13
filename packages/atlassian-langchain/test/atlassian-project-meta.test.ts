@@ -1,13 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { setupIsolatedToolTest } from "./test-helpers";
-
-const t = setupIsolatedToolTest("jarela-test-project-meta-", {
-  ATLASSIAN_URL: "https://test.atlassian.net",
-  ATLASSIAN_EMAIL: "tester@example.com",
-  ATLASSIAN_API_TOKEN: "test-token",
-});
-
-const {
+import { setupFetchHarness } from "./harness";
+import {
+  setAuthResolver,
   jiraListProjectsTool,
   jiraGetProjectTool,
   jiraListVersionsTool,
@@ -16,9 +10,18 @@ const {
   jiraListComponentsTool,
   jiraCreateComponentTool,
   jiraListMetaTool,
-} = await import("./atlassian");
+} from "../src/index";
 
-beforeEach(() => { t.reset(); });
+const t = setupFetchHarness();
+
+beforeEach(() => {
+  setAuthResolver(() => ({
+    url: "https://test.atlassian.net",
+    email: "tester@example.com",
+    apiToken: "test-token",
+  }));
+  t.reset();
+});
 afterEach(() => { t.cleanup(); });
 
 describe("jira_list_projects", () => {
