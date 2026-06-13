@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { llmExtractModelRates, type LlmModelRate } from "./llm-extract";
+import { getConfig } from "@/lib/env/config";
 
 const SNAPSHOT_PATH = resolve("docs", "journal", "pricing-snapshot.json");
 const DEFAULT_TTL_DAYS = 3;
@@ -382,7 +383,7 @@ async function safeLlmExtract(
   resolvedUrl: string,
   html: string,
 ): Promise<LlmModelRate[] | null> {
-  if (process.env.JARELA_PRICING_LLM_EXTRACT === "0") return null;
+  if (!getConfig().pricingLlmExtract) return null;
   try {
     return await llmExtractModelRates({
       sourceId: source.id,

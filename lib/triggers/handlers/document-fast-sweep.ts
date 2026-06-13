@@ -13,6 +13,7 @@ import {
 } from "@/lib/stores/document-sources";
 import { isRemoteKind, runRemoteSource } from "@/lib/documents/remote";
 import { getOrCreateGlobal } from "@/lib/utils/global-state";
+import { getConfig } from "@/lib/env/config";
 import { registerScript } from "../scripts";
 import type {
   ScriptFiring,
@@ -22,13 +23,8 @@ import type {
 
 export const DOCUMENT_FAST_SWEEP_KIND = "doc_fast_sweep";
 
-const DEFAULT_INTERVAL_MS = 60_000;
-
 function intervalMs(): number {
-  const raw = process.env.JARELA_FAST_REMOTE_SWEEP_MS;
-  if (!raw) return DEFAULT_INTERVAL_MS;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n >= 1000 ? n : DEFAULT_INTERVAL_MS;
+  return getConfig().fastRemoteSweepMs;
 }
 
 interface SweepState {
