@@ -1,18 +1,15 @@
 // Jira remote indexer (ADR-0026).
 //
 // Source kinds handled:
-//   - jira_project  → JQL `project = "<key>"`
-//   - jira_jql      → user-supplied JQL
+//   - jira_project  â†’ JQL `project = "<key>"`
+//   - jira_jql      â†’ user-supplied JQL
 //
 // Each indexed "document" is one issue, with its summary, description and
 // comments flattened into one text body. Comments live on the same chunk
 // graph as the issue body so the same retrieval query can surface either.
 
-import {
-  _atlassianFetch,
-  _resolveAtlassianAuth,
-  type AtlassianAuth,
-} from "@/lib/tools/atlassian";
+import { atlassianFetch, type AtlassianAuth } from "@circuitwall/atlassian-langchain";
+import { resolvePackageAuth } from "@/lib/tools/auth-registry";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,
@@ -63,7 +60,7 @@ function buildJql(source: DocumentSourceRow, since: string | null): string {
 }
 
 function formatJqlDate(iso: string): string {
-  // JQL `updated > "yyyy/MM/dd HH:mm"` — minute resolution is enough.
+  // JQL `updated > "yyyy/MM/dd HH:mm"` â€” minute resolution is enough.
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -74,7 +71,7 @@ function formatJqlDate(iso: string): string {
 function flattenIssue(issue: JiraIssue, baseUrl: string): { text: string; updatedAt: string } {
   const f = issue.fields ?? {};
   const parts: string[] = [];
-  parts.push(`${issue.key} — ${f.summary ?? ""}`.trim());
+  parts.push(`${issue.key} â€” ${f.summary ?? ""}`.trim());
   parts.push(`${baseUrl}/browse/${issue.key}`);
   const desc = adfToText(f.description);
   if (desc) parts.push(desc);
@@ -92,7 +89,7 @@ function flattenIssue(issue: JiraIssue, baseUrl: string): { text: string; update
 }
 
 async function fetchIssue(auth: AtlassianAuth, key: string): Promise<JiraIssue | null> {
-  const data = await _atlassianFetch(
+  const data = await atlassianFetch(
     auth,
     `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary,description,updated,comment`,
   ) as JiraIssue & { error?: string };
@@ -117,7 +114,7 @@ export async function runJiraIndexer(source: DocumentSourceRow): Promise<JiraInd
     cursor: source.last_cursor,
     embedFailed: 0, embedError: null,
   };
-  const auth = _resolveAtlassianAuth();
+  const auth = resolvePackageAuth<AtlassianAuth>("atlassian");
   if ("error" in auth) throw new Error(auth.error);
 
   const jql = buildJql(source, source.last_cursor);
@@ -125,7 +122,7 @@ export async function runJiraIndexer(source: DocumentSourceRow): Promise<JiraInd
   let highWater = source.last_cursor;
 
   while (stats.scanned < MAX_ISSUES_PER_RUN) {
-    const data = await _atlassianFetch(auth, "/rest/api/3/search/jql", {
+    const data = await atlassianFetch(auth, "/rest/api/3/search/jql", {
       method: "POST",
       body: JSON.stringify({
         jql,
@@ -175,7 +172,7 @@ export async function indexJiraIssueByKey(
   sourceId: string,
   key: string,
 ): Promise<UpsertResult> {
-  const auth = _resolveAtlassianAuth();
+  const auth = resolvePackageAuth<AtlassianAuth>("atlassian");
   if ("error" in auth) throw new Error(auth.error);
   const issue = await fetchIssue(auth, key);
   if (!issue) throw new Error(`jira issue ${key} not found`);
