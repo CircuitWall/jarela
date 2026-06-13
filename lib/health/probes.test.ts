@@ -10,9 +10,11 @@ process.on("exit", () => {
 });
 
 const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
+const { storeOAuthToken, clearStoredOAuthToken } = await import("@/lib/providers/github-copilot-auth");
 const {
   probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
   probeOutlook, probeAnthropic, probeOpenAI, probeDeepseek,
+  probeCohere, probeGithubCopilot,
   listProbes, probeLabel, probeCategory, isIntegrationProbe, runProbe,
 } = await import("./probes");
 
@@ -27,11 +29,13 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function wipe(): void {
-  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "anthropic"]) {
+  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "anthropic", "openai", "deepseek", "cohere", "github-copilot"]) {
     deleteIntegration(k);
   }
+  clearStoredOAuthToken();
   delete process.env.OPENAI_API_KEY;
   delete process.env.DEEPSEEK_API_KEY;
+  delete process.env.COHERE_API_KEY;
   delete process.env.ATLASSIAN_URL;
   delete process.env.ATLASSIAN_EMAIL;
   delete process.env.ATLASSIAN_API_TOKEN;
@@ -358,6 +362,16 @@ describe("health probes", () => {
     it("unconfigured", async () => {
       expect((await probeOpenAI()).status).toBe("unconfigured");
     });
+    it("reads from the integration store first", async () => {
+      saveIntegration("openai", { api_key: "sk-store" });
+      mockFetch(() => jsonResponse({ data: [{ id: "gpt-4o" }] }));
+      expect((await probeOpenAI()).status).toBe("ok");
+    });
+    it("falls back to OPENAI_API_KEY env var", async () => {
+      process.env.OPENAI_API_KEY = "sk-env";
+      mockFetch(() => jsonResponse({ data: [{ id: "gpt-4o" }] }));
+      expect((await probeOpenAI()).status).toBe("ok");
+    });
     it("401 auth_failed", async () => {
       process.env.OPENAI_API_KEY = "sk-x";
       mockFetch(() => new Response("", { status: 401 }));
@@ -391,6 +405,16 @@ describe("health probes", () => {
     it("unconfigured", async () => {
       expect((await probeDeepseek()).status).toBe("unconfigured");
     });
+    it("reads from the integration store first", async () => {
+      saveIntegration("deepseek", { api_key: "sk-store" });
+      mockFetch(() => jsonResponse({ data: [{ id: "deepseek-chat" }] }));
+      expect((await probeDeepseek()).status).toBe("ok");
+    });
+    it("falls back to DEEPSEEK_API_KEY env var", async () => {
+      process.env.DEEPSEEK_API_KEY = "sk-env";
+      mockFetch(() => jsonResponse({ data: [{ id: "deepseek-chat" }] }));
+      expect((await probeDeepseek()).status).toBe("ok");
+    });
     it("401 auth_failed", async () => {
       process.env.DEEPSEEK_API_KEY = "ds";
       mockFetch(() => new Response("", { status: 401 }));
@@ -418,10 +442,96 @@ describe("health probes", () => {
     });
   });
 
+  describe("cohere", () => {
+    it("unconfigured", async () => {
+      expect((await probeCohere()).status).toBe("unconfigured");
+    });
+    it("reads from the integration store first", async () => {
+      saveIntegration("cohere", { api_key: "co-store" });
+      mockFetch(() => jsonResponse({ models: [{ name: "command-r" }] }));
+      const r = await probeCohere();
+      expect(r.status).toBe("ok");
+      expect(r.detail?.models).toBe(1);
+    });
+    it("falls back to COHERE_API_KEY env var", async () => {
+      process.env.COHERE_API_KEY = "co-env";
+      mockFetch(() => jsonResponse({ models: [] }));
+      expect((await probeCohere()).status).toBe("ok");
+    });
+    it("401 auth_failed", async () => {
+      process.env.COHERE_API_KEY = "co";
+      mockFetch(() => new Response("", { status: 401 }));
+      expect((await probeCohere()).status).toBe("auth_failed");
+    });
+    it("429 transient", async () => {
+      process.env.COHERE_API_KEY = "co";
+      mockFetch(() => new Response("", { status: 429 }));
+      expect((await probeCohere()).status).toBe("transient");
+    });
+    it("network throw transient", async () => {
+      process.env.COHERE_API_KEY = "co";
+      mockFetch(() => { throw new Error("ECONNRESET"); });
+      expect((await probeCohere()).status).toBe("transient");
+    });
+  });
+
+  describe("github-copilot", () => {
+    it("unconfigured when no oauth token and no PAT", async () => {
+      expect((await probeGithubCopilot()).status).toBe("unconfigured");
+    });
+    it("oauth token: ok exchanges for session token", async () => {
+      storeOAuthToken("gho_xxx");
+      mockFetch(() => jsonResponse({ token: "tok-abc", expires_at: "2030-01-01T00:00:00Z" }));
+      const r = await probeGithubCopilot();
+      expect(r.status).toBe("ok");
+      expect(r.detail?.auth).toBe("oauth");
+    });
+    it("oauth token: 401 auth_failed", async () => {
+      storeOAuthToken("gho_bad");
+      mockFetch(() => new Response("", { status: 401 }));
+      expect((await probeGithubCopilot()).status).toBe("auth_failed");
+    });
+    it("oauth token: 404 surfaces missing subscription", async () => {
+      storeOAuthToken("gho_xxx");
+      mockFetch(() => new Response("", { status: 404 }));
+      const r = await probeGithubCopilot();
+      expect(r.status).toBe("auth_failed");
+      expect(String(r.error)).toMatch(/subscription/i);
+    });
+    it("PAT fallback: ok against the Models API", async () => {
+      saveIntegration("github-copilot", { api_key: "ghp_xxx" });
+      mockFetch(() => jsonResponse({ models: [] }));
+      const r = await probeGithubCopilot();
+      expect(r.status).toBe("ok");
+      expect(r.detail?.auth).toBe("pat");
+    });
+    it("PAT fallback: 401 auth_failed", async () => {
+      saveIntegration("github-copilot", { api_key: "ghp_bad" });
+      mockFetch(() => new Response("", { status: 401 }));
+      expect((await probeGithubCopilot()).status).toBe("auth_failed");
+    });
+    it("prefers OAuth token over PAT when both are present", async () => {
+      storeOAuthToken("gho_xxx");
+      saveIntegration("github-copilot", { api_key: "ghp_xxx" });
+      let firstUrl: string | null = null;
+      mockFetch((input) => {
+        firstUrl = typeof input === "string" ? input : input.toString();
+        return jsonResponse({ token: "sess", expires_at: "2030-01-01T00:00:00Z" });
+      });
+      await probeGithubCopilot();
+      expect(firstUrl).toContain("/copilot_internal/v2/token");
+    });
+    it("network throw transient", async () => {
+      storeOAuthToken("gho_xxx");
+      mockFetch(() => { throw new Error("ECONNRESET"); });
+      expect((await probeGithubCopilot()).status).toBe("transient");
+    });
+  });
+
   describe("registry helpers", () => {
-    it("lists all 9 probes with labels and categories", () => {
+    it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(9);
+      expect(names.length).toBe(11);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));
@@ -430,6 +540,8 @@ describe("health probes", () => {
     it("isIntegrationProbe is true for known integration names", () => {
       expect(isIntegrationProbe("github")).toBe(true);
       expect(isIntegrationProbe("atlassian")).toBe(true);
+      expect(isIntegrationProbe("cohere")).toBe(true);
+      expect(isIntegrationProbe("github-copilot")).toBe(true);
       expect(isIntegrationProbe("nonsense")).toBe(false);
     });
     it("runProbe dispatches by name", async () => {
