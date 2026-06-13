@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { knownRateFor, knownRateModelIds } from "./known-rates";
+import { knownRateFor } from "./known-rates";
 
 describe("knownRateFor", () => {
   it("returns null for unknown ids", () => {
@@ -39,15 +39,5 @@ describe("knownRateFor", () => {
     // strips the post-`/` suffix. The bare table here is intentionally
     // strict — passing the prefixed id should miss.
     expect(knownRateFor("openrouter/openai/gpt-4o")).toBeNull();
-  });
-
-  it("includes the canonical Anthropic and OpenAI ids the snapshot extractor most often loses", () => {
-    // Regression guard: deleting these from the table silently re-introduces
-    // the user-reported issue where claude-opus-4-7 fell through to a null
-    // rate when anthropic.com layout broke the regex extractor.
-    const ids = knownRateModelIds();
-    for (const must of ["claude-opus-4-7", "claude-sonnet-4-6", "gpt-4o", "gpt-4o-mini"]) {
-      expect(ids).toContain(must);
-    }
   });
 });

@@ -53,9 +53,3 @@ export function decrypt(envelope: string): string {
 export function decryptIfNeeded(value: string): string {
   return isEncrypted(value) ? decrypt(value) : value;
 }
-
-// Idempotent write-side helper. An already-encrypted value passes
-// through unchanged, which keeps the eager migration safe to re-run.
-export function encryptIfNeeded(value: string): string {
-  return isEncrypted(value) ? value : encrypt(value);
-}

@@ -8,15 +8,12 @@ process.env.JARELA_DB_DIR = tmpRoot;
 
 const {
   buildSourceManifest,
-  extractCitedLinks,
   extractCitedMarkers,
   extractDeclaredReferences,
   extractSourcesFromEvents,
-  extractVisitedSources,
   mergeDeclaredReferences,
   normalizeSource,
   parseCitationVerdict,
-  stripStreamingDeclaredReferences,
 } = await import("./citation-checker");
 const {
   createThread,
@@ -43,26 +40,6 @@ describe("normalizeSource", () => {
   it("returns empty string for blank input", () => {
     expect(normalizeSource("")).toBe("");
     expect(normalizeSource("   ")).toBe("");
-  });
-});
-
-describe("extractCitedLinks", () => {
-  it("returns [] for empty input", () => {
-    expect(extractCitedLinks("")).toEqual([]);
-  });
-
-  it("pulls every markdown link target", () => {
-    const text = "See [a](https://x.io/a) and [b](docs/b.md) plus [c](https://x.io/c).";
-    expect(extractCitedLinks(text)).toEqual(["https://x.io/a", "docs/b.md", "https://x.io/c"]);
-  });
-
-  it("dedupes duplicates", () => {
-    expect(extractCitedLinks("[x](u) again [x](u)")).toEqual(["u"]);
-  });
-
-  it("ignores reference-style and bare URLs (only honors inline [..](..) links)", () => {
-    const text = "Bare https://x.io/raw and reference [x][1].";
-    expect(extractCitedLinks(text)).toEqual([]);
   });
 });
 
@@ -119,34 +96,6 @@ describe("extractSourcesFromEvents", () => {
     const got = extractSourcesFromEvents(events);
     expect(got.has(blob.toLowerCase())).toBe(false);
     expect(got.size).toBe(0);
-  });
-});
-
-describe("extractVisitedSources", () => {
-  beforeEach(() => {
-    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
-  });
-
-  it("unions tool events across every assistant turn in the thread with fresh events", () => {
-    const t = createThread("agent-c");
-    const db = getDb();
-    db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events) VALUES (?,?,?,?,?,?)")
-      .run("m1", t.thread_id, "assistant", "older", "2026-06-01T00:00:00Z",
-        JSON.stringify([{ id: "a", phase: "call", name: "file_read", payload: { path: "docs/old.md" } }]));
-    db.prepare("UPDATE threads SET message_count=1 WHERE thread_id=?").run(t.thread_id);
-    const fresh = [{ id: "b", phase: "call" as const, name: "web_search", payload: { query: "x", results: [{ url: "https://new.io/p" }] } }];
-    const got = extractVisitedSources(t.thread_id, fresh);
-    expect(got.has("docs/old.md")).toBe(true);
-    expect(got.has("https://new.io/p")).toBe(true);
-  });
-
-  it("tolerates malformed historical tool_events JSON", () => {
-    const t = createThread("agent-c");
-    const db = getDb();
-    db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events) VALUES (?,?,?,?,?,?)")
-      .run("m1", t.thread_id, "assistant", "older", "2026-06-01T00:00:00Z", "{not json");
-    expect(() => extractVisitedSources(t.thread_id, [])).not.toThrow();
-    expect(extractVisitedSources(t.thread_id, []).size).toBe(0);
   });
 });
 
@@ -318,22 +267,6 @@ describe("extractDeclaredReferences", () => {
     // Anchored to end-of-string, so a fence followed by more prose is not stripped.
     expect(out.refs).toEqual([]);
     expect(out.body).toBe(text);
-  });
-});
-
-describe("stripStreamingDeclaredReferences", () => {
-  it("returns the input unchanged when there is no fence", () => {
-    expect(stripStreamingDeclaredReferences("hello")).toBe("hello");
-  });
-
-  it("cuts from the opening fence onward while the block is still streaming", () => {
-    const partial = "Body so far.\n```jarela-references\n[{\"label\":\"x\",";
-    expect(stripStreamingDeclaredReferences(partial)).toBe("Body so far.");
-  });
-
-  it("cuts a completed fence cleanly", () => {
-    const done = "Body.\n```jarela-references\n[{\"label\":\"x\",\"href\":\"y\"}]\n```";
-    expect(stripStreamingDeclaredReferences(done)).toBe("Body.");
   });
 });
 

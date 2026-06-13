@@ -358,10 +358,4 @@ function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
   };
 }
 
-export async function ensureNotificationPermission(): Promise<NotificationPermission> {
-  if (typeof Notification === "undefined") return "denied";
-  if (Notification.permission !== "default") return Notification.permission;
-  try { return await Notification.requestPermission(); } catch { return "denied"; }
-}
-
 export type { NotifEvent, AgentSummary };

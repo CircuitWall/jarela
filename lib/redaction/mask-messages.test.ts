@@ -6,7 +6,7 @@ vi.mock("@/lib/stores/app-settings", () => ({
 }));
 
 import { withMaskRun, getMaskRunContext } from "./context";
-import { maskInvokeMessages, passthroughTools } from "./mask-messages";
+import { maskInvokeMessages } from "./mask-messages";
 import type { InvokeMessage } from "@/lib/tools/types";
 
 const FAKE_ANT = "sk-ant-abc123def456ghi789jkl000"; // jarela-secret-ok
@@ -106,17 +106,5 @@ describe("maskInvokeMessages", () => {
       const out = maskInvokeMessages(messages);
       expect(out[0].content).toBe(`key ${FAKE_ANT}`);
     });
-  });
-});
-
-describe("passthroughTools", () => {
-  it("returns the input array unchanged (tool defs hold no user secrets)", () => {
-    const tools = [
-      {
-        type: "function" as const,
-        function: { name: "x", description: "", parameters: { type: "object" as const, properties: {}, required: [] } },
-      },
-    ];
-    expect(passthroughTools(tools)).toBe(tools);
   });
 });

@@ -353,16 +353,3 @@ function toAnthropicTools(tools: OpenAITool[]): Anthropic.Tool[] {
     return [{ name: t.function.name, description: t.function.description, input_schema: t.function.parameters as Anthropic.Tool.InputSchema }];
   });
 }
-
-// ── Plain-text helper for streaming path (no tool calls) ────────────────────
-
-export function providerMessagesFromHistory(
-  messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
-): ProviderMessage[] {
-  return messages.map((m) => ({
-    role: m.role,
-    content: typeof m.content === "string"
-      ? m.content
-      : m.content.filter((p): p is ContentPart & { type: "text" } => p.type === "text").map((p) => p.text).join("\n"),
-  }));
-}

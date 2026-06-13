@@ -78,18 +78,3 @@ export function describeToolSecrets(
     is_set: getToolSecret(toolName, s.key) !== null,
   }));
 }
-
-// Delete every persisted secret for a tool — used when an external tool
-// file is removed and the operator wants to clear stale credentials.
-export function purgeToolSecrets(toolName: string): number {
-  if (!validName(toolName)) return 0;
-  const prefix = `${toolName}:`;
-  const rows = listMemory(NAMESPACE, undefined, 1000).filter((r) =>
-    r.key.startsWith(prefix),
-  );
-  let n = 0;
-  for (const r of rows) {
-    if (deleteMemory(NAMESPACE, r.key)) n++;
-  }
-  return n;
-}

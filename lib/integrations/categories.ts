@@ -24,15 +24,3 @@ export const PRESET_CATEGORIES: Record<UserPreset, ReadonlySet<IntegrationCatego
   dev: null,    // null = show all
   custom: null, // null = show all
 };
-
-/** Returns true when the given integration category should be visible for the given preset. */
-export function isCategoryVisible(
-  preset: UserPreset | null | undefined,
-  category: IntegrationCategory | undefined,
-): boolean {
-  if (!preset) return true;            // unset → show all
-  const allowed = PRESET_CATEGORIES[preset];
-  if (allowed === null) return true;   // dev / custom → show all
-  if (!category) return true;          // legacy entries without category → show
-  return allowed.has(category);
-}

@@ -97,18 +97,6 @@ export function recordMessageUsage(input: MessageUsageInput): void {
   );
 }
 
-export function getMessageUsage(messageId: string): MessageUsageRow | null {
-  return (getDb()
-    .prepare("SELECT * FROM message_usage WHERE message_id=?")
-    .get(messageId) as MessageUsageRow | undefined) ?? null;
-}
-
-/**
- * Batch lookup keyed by message_id. Returns a Map missing any ids that
- * have no usage row (user turns, legacy rows). Used by the threads GET
- * route to attach per-turn token counts to a page of messages without
- * issuing one SELECT per row.
- */
 export function getMessageUsageByIds(messageIds: readonly string[]): Map<string, MessageUsageRow> {
   const out = new Map<string, MessageUsageRow>();
   if (messageIds.length === 0) return out;
@@ -118,19 +106,4 @@ export function getMessageUsageByIds(messageIds: readonly string[]): Map<string,
     .all(...messageIds) as unknown as MessageUsageRow[];
   for (const row of rows) out.set(row.message_id, row);
   return out;
-}
-
-export function computeCostUsd(
-  inputTokens: number,
-  outputTokens: number,
-  inputRatePerMTok: number | null | undefined,
-  outputRatePerMTok: number | null | undefined,
-): number {
-  const inCost = inputRatePerMTok && inputTokens > 0
-    ? (inputTokens / 1_000_000) * inputRatePerMTok
-    : 0;
-  const outCost = outputRatePerMTok && outputTokens > 0
-    ? (outputTokens / 1_000_000) * outputRatePerMTok
-    : 0;
-  return inCost + outCost;
 }

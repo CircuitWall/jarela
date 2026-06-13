@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseHexColor, shiftHex, withAlpha } from "./color";
+import { parseHexColor, withAlpha } from "./color";
 
 describe("parseHexColor", () => {
   it("parses 6-digit hex", () => {
@@ -23,27 +23,6 @@ describe("parseHexColor", () => {
   it("rejects 4 or 5 digit hex", () => {
     expect(parseHexColor("#1234")).toBeNull();
     expect(parseHexColor("#12345")).toBeNull();
-  });
-});
-
-describe("shiftHex", () => {
-  it("returns the input unchanged when hex is invalid", () => {
-    expect(shiftHex("not-a-color", 0.5)).toBe("not-a-color");
-  });
-  it("identity when amount is 0", () => {
-    expect(shiftHex("#22c55e", 0)).toBe("rgb(34, 197, 94)");
-  });
-  it("lightens toward white when amount > 0", () => {
-    expect(shiftHex("#000000", 0.5)).toBe("rgb(128, 128, 128)");
-    expect(shiftHex("#000000", 1)).toBe("rgb(255, 255, 255)");
-  });
-  it("darkens toward black when amount < 0", () => {
-    expect(shiftHex("#ffffff", -0.5)).toBe("rgb(128, 128, 128)");
-    expect(shiftHex("#ffffff", -1)).toBe("rgb(0, 0, 0)");
-  });
-  it("clamps amount outside [-1, 1]", () => {
-    expect(shiftHex("#000000", 5)).toBe("rgb(255, 255, 255)");
-    expect(shiftHex("#ffffff", -5)).toBe("rgb(0, 0, 0)");
   });
 });
 
