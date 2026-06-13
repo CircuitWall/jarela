@@ -9,9 +9,9 @@
  *   2. Drop a manifest file in `$JARELA_PACKAGES_DIR/manifests/*.json`
  *      describing which package + named export to load, what category and
  *      capability to file it under, and any constructor args.
- *   3. Restart the server. Manifests are loaded once on first agent call;
- *      hot-reload without restart is wired in via `unregisterTools` but
- *      not yet exposed as an endpoint.
+ *   3. Either restart the server, or hit `POST /api/v1/packages/reload`
+ *      to re-scan without restart. `GET /api/v1/packages` returns the
+ *      loader's current state for introspection.
  *
  * What this loader does NOT do (deliberate, deferred to follow-up PRs):
  *
@@ -271,9 +271,9 @@ function isStructuredTool(v: unknown): v is StructuredToolInterface {
   );
 }
 
-/** @internal — test-only: drop cache + handles. Does NOT unregister tools. */
+/** @internal — test-only: unregister every loaded tool and drop cache. */
 export function _resetLangChainPackages(): void {
+  for (const handle of handles.splice(0)) handle.unregister();
   cached = null;
   inflight = null;
-  handles.splice(0);
 }

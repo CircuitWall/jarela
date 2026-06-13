@@ -161,11 +161,14 @@ returned tool under a Jarela category + capability.
    - `args` — constructor arguments, passed as a single object.
    - `requiredEnv` — optional. If any listed env var is unset, the
      manifest is skipped (with a `skipped` reason) instead of erroring.
-4. Restart the server. The agent sees the tool on its next turn.
+4. Either restart the server (the agent sees the tool on its next turn)
+   or hit `POST /api/v1/packages/reload` to re-scan without restart.
 
-The manifest is reloadable via `reloadLangChainPackages()` in
-[`lib/tools/langchain-packages.ts`](../lib/tools/langchain-packages.ts)
-(no HTTP / UI surface in this release — restart for now).
+Inspect the loader state any time with `GET /api/v1/packages`, which
+returns the resolved `packagesDir`, registered tool names, skipped
+manifests (with reasons, e.g. `requiredEnv` unset), and per-manifest
+errors. Both endpoints are thin wrappers around
+[`lib/tools/langchain-packages.ts`](../lib/tools/langchain-packages.ts).
 
 **Trust model.** A loaded package runs with full Node privilege in the
 Jarela process, same as `JARELA_TOOLS_DIR` extensions. Only install
