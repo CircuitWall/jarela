@@ -81,8 +81,10 @@
   ],
   "scripts": {
     "setup:hooks": "node scripts/setup-git-hooks.mjs",
+    "packages:build": "npm run build --workspaces --if-present",
+    "prepare": "npm run packages:build --silent",
     "dev": "next dev --webpack -p 4312",
-    "build": "next build --webpack && node scripts/postbuild.mjs",
+    "build": "npm run packages:build && next build --webpack && node scripts/postbuild.mjs",
     "start": "node scripts/start-prod.mjs",
     "lint": "eslint . && node scripts/check-integration-manifests.mjs",
     "security:audit": "npm audit --omit=dev --audit-level=high",
@@ -109,6 +111,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
+    "@circuitwall/atlassian-langchain": "workspace:^",
     "@langchain/cohere": "^1.0.5",
     "@langchain/core": "^1.1.46",
     "@langchain/deepseek": "^1.0.25",
