@@ -277,8 +277,8 @@ Seven extension surfaces, each documented in
 - **LLM providers** — built-in (`lib/providers/<name>.ts`) or external
   (`~/.jarela/providers/*.cjs`).
 - **Tools** — drop a file under `lib/tools/<name>.ts`, register with
-  `registerTools(category, capability, [...])`. External `.cjs` plugins
-  also live under `~/.jarela/tools/`.
+  `registerLangChainPackage({ category, tools: { read|write|execute: [...] } })`.
+  External `.cjs` plugins also live under `~/.jarela/tools/`.
 - **MCP servers** — stdio or http, configured via UI or programmatic
   `upsertMcpServer`. Tools auto-merge into the agent's pool.
 - **Agent harnesses** — built-in presets in
@@ -745,7 +745,7 @@ Names that collide with built-in tools are rejected (built-in wins). Throw an
 
 1. Copy [lib/tools/template.ts](./lib/tools/template.ts) to `lib/tools/<name>.ts`.
 2. Implement with `tool(...)` from `@langchain/core/tools` + a Zod schema.
-3. Call `registerTools("<Category>", "<read|write|execute>", [yourTool, ...])` at the bottom of the file. Files with mixed capabilities make multiple calls (see [ADR-0038](./docs/adr/0038-tool-capability-axis.md)).
+3. Call `registerLangChainPackage({ category: "<Category>", tools: { read | write | execute: [yourTool, ...] } })` at the bottom of the file. The `tools` object accepts any combination of capability buckets, so a single call covers mixed-capability files (see [ADR-0038](./docs/adr/0038-tool-capability-axis.md)).
 4. Add `import "./<name>";` to [lib/tools/builtins.ts](./lib/tools/builtins.ts).
 5. If it calls a network or external resource, document the env vars and gate
    it behind a category the user can toggle off.

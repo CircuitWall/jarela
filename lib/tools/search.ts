@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 interface SearchResult {
   title: string;
@@ -157,4 +157,7 @@ export const webSearchTool = tool(
   },
 );
 
-registerTools("Web", "read", [webSearchTool]);
+registerLangChainPackage({
+  category: "Web",
+  tools: { read: [webSearchTool] },
+});

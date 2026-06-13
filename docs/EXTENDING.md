@@ -84,7 +84,7 @@ files:
    ```ts
    import { tool } from "@langchain/core/tools";
    import { z } from "zod";
-   import { registerTools } from "./registry";
+   import { registerLangChainPackage } from "./langchain-package";
 
    export const myTool = tool(
      async ({ foo }) => JSON.stringify({ result: foo.toUpperCase() }),
@@ -95,7 +95,10 @@ files:
      },
    );
 
-   registerTools("Files", "read", [myTool]);
+   registerLangChainPackage({
+     category: "Files",
+     tools: { read: [myTool] },
+   });
    ```
 2. Add `import "./<name>";` to `lib/tools/builtins.ts`.
 
@@ -103,7 +106,7 @@ That's it — no central array, no parallel category map. The new tool is
 visible in `GET /api/v1/tools`, callable by every agent (subject to its
 tool policy), and surfaced through the `list_tools` agent tool.
 
-**Capability gating** (`registerTools(category, capability, [...])`):
+**Capability gating** (`registerLangChainPackage({ category, tools: { read | write | execute: [...] } })`):
 
 - `read` — pure read of local or remote state. No side effects.
 - `write` — mutates local or remote state.

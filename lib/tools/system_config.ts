@@ -16,7 +16,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { envSchemaByName } from "@/lib/env/schema";
 import { patchOverride, validateForSchema } from "@/lib/env/overrides";
 import { resetConfigCache } from "@/lib/env/config";
@@ -128,4 +128,7 @@ const restartServer = tool(
   },
 );
 
-registerTools("Config", "execute", [setEnvVar, restartServer]);
+registerLangChainPackage({
+  category: "Config",
+  tools: { execute: [setEnvVar, restartServer] },
+});

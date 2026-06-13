@@ -6,7 +6,7 @@
 //
 // To add a new built-in tool:
 //   1. Copy lib/tools/template.ts to lib/tools/<name>.ts and implement it.
-//   2. Call `registerTools("<Category>", "<read|write|execute>", [yourTool, ...])` at the bottom.
+//   2. Call `registerLangChainPackage({ category, tools: { read|write|execute: [yourTool, ...] } })` at the bottom.
 //   3. Add `import "./<name>";` to lib/tools/builtins.ts.
 //
 // That's it — no central array to update, no parallel category map.
@@ -15,7 +15,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { RunnableConfig } from "@langchain/core/runnables";
 
-// Side-effect import: triggers registerTools() in every built-in module.
+// Side-effect import: triggers registerLangChainPackage() in every built-in module.
 import "./builtins";
 
 import {
@@ -49,11 +49,11 @@ export {
 
 // Live accessors — DO NOT snapshot at module-load time. Some tool modules
 // import back from this file (for `getAllToolsAsync` etc.) and would create
-// a circular import cycle: their `registerTools(...)` call runs AFTER this
-// module finishes evaluating, so any captured snapshot here would miss them
-// and they'd silently disappear from the agent's tool pool. Live calls dodge
-// the problem — by the time anyone INVOKES `getAllTools()` / etc., every
-// builtin has registered.
+// a circular import cycle: their `registerLangChainPackage(...)` call runs
+// AFTER this module finishes evaluating, so any captured snapshot here would
+// miss them and they'd silently disappear from the agent's tool pool. Live
+// calls dodge the problem — by the time anyone INVOKES `getAllTools()` /
+// etc., every builtin has registered.
 function allBuiltins(): StructuredToolInterface[] {
   return registeredTools();
 }

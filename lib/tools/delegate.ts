@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import {
   getAgentConfig,
   parseDelegateTargets,
@@ -177,4 +177,7 @@ export const delegateToAgentTool = tool(
   },
 );
 
-registerTools("Agent", "execute", [delegateToAgentTool]);
+registerLangChainPackage({
+  category: "Agent",
+  tools: { execute: [delegateToAgentTool] },
+});

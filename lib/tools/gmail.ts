@@ -22,7 +22,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { truncateBytes } from "@/lib/utils/text";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import {
   googleFetch,
   resolveGoogleAuth,
@@ -356,9 +356,10 @@ export const gmailTrashMessageTool = tool(
   },
 );
 
-registerTools("Mail", "read", [
-  gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool,
-]);
-registerTools("Mail", "write", [
-  gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool,
-]);
+registerLangChainPackage({
+  category: "Mail",
+  tools: {
+    read: [gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool],
+    write: [gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool],
+  },
+});

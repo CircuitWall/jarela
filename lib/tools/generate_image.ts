@@ -15,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { writeBinaryFile } from "@/lib/files";
 import { getConfig } from "@/lib/env/config";
 import { resolveGoogleApiKey, timeoutSignal } from "@/lib/utils/google-api";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -187,4 +187,7 @@ export const generateImageTool = tool(
   },
 );
 
-registerTools("Images", "execute", [generateImageTool]);
+registerLangChainPackage({
+  category: "Images",
+  tools: { execute: [generateImageTool] },
+});

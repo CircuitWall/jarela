@@ -5,7 +5,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import {
   consumeAsyncResult,
   getAsyncResult,
@@ -111,4 +111,7 @@ export const toolResultListTool = tool(
   },
 );
 
-registerTools("Agent", "read", [toolResultGetTool, toolResultListTool]);
+registerLangChainPackage({
+  category: "Agent",
+  tools: { read: [toolResultGetTool, toolResultListTool] },
+});

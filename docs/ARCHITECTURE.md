@@ -261,8 +261,9 @@ on two orthogonal axes ([ADR-0038](./adr/0038-tool-capability-axis.md)):
     `gmail_create_draft`).
 
 Files with mixed capabilities (memory, files, schedule, atlassian, github,
-gmail, outlook, calendar) call `registerTools` once per capability bucket.
-External (`JARELA_TOOLS_DIR`) and MCP tools default to `execute` until a
+gmail, outlook, calendar) declare every capability bucket in a single
+`registerLangChainPackage({ category, tools: { read?, write?, execute? } })`
+call. External (`JARELA_TOOLS_DIR`) and MCP tools default to `execute` until a
 manifest field overrides it. Consumers — a planned per-capability approval
 gate, UI badges, the ADR-0037 validator's citation rules — switch on the
 three values exhaustively. The `capability-coverage.test.ts` runtime check

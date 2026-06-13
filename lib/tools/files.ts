@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { checkFsAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
@@ -760,7 +760,10 @@ export const fileStatTool = tool(
   },
 );
 
-registerTools("Files", "read", [fileReadTool, fileListTool, fileStatTool]);
-registerTools("Files", "write", [
-  fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool, fileDeleteTool, fileMkdirTool,
-]);
+registerLangChainPackage({
+  category: "Files",
+  tools: {
+    read: [fileReadTool, fileListTool, fileStatTool],
+    write: [fileWriteTool, fileEditTool, fileMoveTool, fileCopyTool, fileDeleteTool, fileMkdirTool],
+  },
+});

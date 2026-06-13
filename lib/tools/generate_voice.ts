@@ -11,7 +11,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { writeBinaryFile } from "@/lib/files";
 import { geminiTts, resolveGoogleApiKey } from "@/lib/voice/gemini";
 import { getThread } from "@/lib/stores/threads";
@@ -117,4 +117,7 @@ export const generateVoiceTool = tool(
   },
 );
 
-registerTools("Voice", "execute", [generateVoiceTool]);
+registerLangChainPackage({
+  category: "Voice",
+  tools: { execute: [generateVoiceTool] },
+});

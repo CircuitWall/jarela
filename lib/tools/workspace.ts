@@ -19,7 +19,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import {
   currentWorkspace,
   setWorkspace,
@@ -619,4 +619,7 @@ export const workspaceCloseTool = tool(
   },
 );
 
-registerTools("Files", "read", [workspaceInitTool, workspaceStatusTool, workspaceCloseTool]);
+registerLangChainPackage({
+  category: "Files",
+  tools: { read: [workspaceInitTool, workspaceStatusTool, workspaceCloseTool] },
+});

@@ -6,7 +6,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getManifest, listManifests } from "@/lib/integrations/registry";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { getIntegrationStatus, isKnownIntegration } from "@/lib/stores/integrations";
 
 function manifestStatus(id: string): "configured" | "not_configured" | "no_credentials_schema" {
@@ -72,4 +72,7 @@ export const getIntegrationSetupTool = tool(
   },
 );
 
-registerTools("Config", "read", [listIntegrationsTool, getIntegrationSetupTool]);
+registerLangChainPackage({
+  category: "Config",
+  tools: { read: [listIntegrationsTool, getIntegrationSetupTool] },
+});

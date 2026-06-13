@@ -5,7 +5,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { registerTools, registeredTools } from "./registry";
+import { registeredTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import {
   createWatcher,
   listWatchers,
@@ -217,5 +218,10 @@ function safeParse(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
 }
 
-registerTools("Schedule", "read", [listWatchersTool, listReactionScriptsTool]);
-registerTools("Schedule", "write", [scheduleWatcherTool, cancelWatcherTool]);
+registerLangChainPackage({
+  category: "Schedule",
+  tools: {
+    read: [listWatchersTool, listReactionScriptsTool],
+    write: [scheduleWatcherTool, cancelWatcherTool],
+  },
+});
