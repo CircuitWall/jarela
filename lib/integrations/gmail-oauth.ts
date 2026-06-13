@@ -20,7 +20,6 @@ const flowStore = createOAuthFlowStore({ globalKey: "__ggOauthFlows" });
 export const createFlow = flowStore.create;
 export const getFlow = flowStore.get;
 export const updateFlow = flowStore.update;
-export const deleteFlow = flowStore.delete;
 
 export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",

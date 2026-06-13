@@ -192,9 +192,3 @@ export function StatusPill({ status }: { status: Bridge["status"] }) {
     </span>
   );
 }
-
-// Exported for BridgeEditor's status polling.
-export async function fetchStatus(bridge_id: string): Promise<BridgeLiveStatus | null> {
-  try { return await api.bridges.status(bridge_id); }
-  catch { return null; }
-}

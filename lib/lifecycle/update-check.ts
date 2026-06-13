@@ -8,7 +8,7 @@
 //   JARELA_UPDATE_CHANNEL=main      track the GitHub main branch instead
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { readFileSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { getDataDir } from "@/lib/db/data-dir";
@@ -63,18 +63,6 @@ function cachePath(channel: UpdateChannel): string {
 export function resolveChannel(env: NodeJS.ProcessEnv = process.env): UpdateChannel {
   const raw = (env.JARELA_UPDATE_CHANNEL ?? "").trim().toLowerCase();
   return raw === "main" ? "main" : "stable";
-}
-
-/** Read current version from the shipped package.json. Sync because it's
- *  called once at module load on the CLI path. */
-export function readCurrentVersion(packageRoot: string): string {
-  try {
-    const raw = readFileSync(join(packageRoot, "package.json"), "utf8");
-    const pkg = JSON.parse(raw) as { version?: string };
-    return pkg.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
 }
 
 /** Strict-ish semver compare. Returns negative if a < b, 0 if equal, positive
