@@ -8,10 +8,16 @@
 // All gated by the same loopback / auth rules as the rest of /api/v1.
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { envSchemaList, envSchemaByName } from "@/lib/env/schema";
 import { readOverrides, patchOverride, validateForSchema } from "@/lib/env/overrides";
 import { resetConfigCache } from "@/lib/env/config";
-import { errorResponse } from "@/lib/api/responses";
+import { errorResponse, validateBody } from "@/lib/api/responses";
+
+const PatchBody = z.object({
+  name: z.string().min(1, "name required"),
+  value: z.union([z.string(), z.null()]),
+});
 
 interface EnvRowDTO {
   name: string;
@@ -55,15 +61,9 @@ export async function GET(): Promise<Response> {
 }
 
 export async function PATCH(req: NextRequest): Promise<Response> {
-  let body: { name?: string; value?: string | null };
-  try {
-    body = (await req.json()) as { name?: string; value?: string | null };
-  } catch {
-    return errorResponse("invalid JSON body");
-  }
+  const body = await validateBody(req, PatchBody);
+  if (body instanceof NextResponse) return body;
   const { name, value } = body;
-  if (!name || typeof name !== "string") return errorResponse("name required");
-  if (value !== null && typeof value !== "string") return errorResponse("value must be string or null");
   const def = envSchemaByName().get(name);
   if (!def) return errorResponse(`unknown env var: ${name}`, 400);
   if (value !== null) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   deleteMcpServer,
   getMcpServer,
@@ -7,10 +8,16 @@ import {
 } from "@/lib/stores/mcp-servers";
 import { invalidateMcpTools } from "@/lib/mcp/client";
 import { mcpServerToResponse } from "@/lib/api/serializers";
-import { notFoundResponse } from "@/lib/api/responses";
+import { notFoundResponse, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 
 type Params = { params: Promise<{ name: string }> };
+
+const PutBody = z.object({
+  transport: z.enum(["stdio", "http"]).optional(),
+  spec: z.record(z.string(), z.unknown()).optional(),
+  enabled: z.boolean().optional(),
+});
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { name } = await params;
@@ -23,11 +30,13 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const { name } = await params;
   const existing = getMcpServer(name);
   if (!existing) return notFoundResponse("MCP server not found");
-  const body = (await req.json()) as Partial<McpServerInput>;
+  const body = await validateBody(req, PutBody);
+  if (body instanceof NextResponse) return body;
   const row = upsertMcpServer({
     name,
     transport: body.transport ?? (existing.transport as "stdio" | "http"),
-    spec: body.spec ?? parseJsonSafe<McpServerInput["spec"]>(existing.spec, {} as McpServerInput["spec"]),
+    spec: (body.spec as McpServerInput["spec"] | undefined)
+      ?? parseJsonSafe<McpServerInput["spec"]>(existing.spec, {} as McpServerInput["spec"]),
     enabled: body.enabled ?? (existing.enabled === 1),
   });
   invalidateMcpTools();
