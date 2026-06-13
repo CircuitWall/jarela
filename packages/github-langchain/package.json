@@ -52,6 +52,7 @@
   "scripts": {
     "build": "tsup",
     "clean": "rimraf dist",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {

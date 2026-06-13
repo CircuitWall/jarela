@@ -45,32 +45,6 @@ export function _resolveGithubAuth(): GitHubAuth | { error: string } {
 export { githubFetch as _ghFetch };
 export type { GitHubAuth };
 
-// Re-export the tools + pure helpers so the existing test file
-// (`lib/tools/github.test.ts`) and other internal consumers keep working.
-export {
-  truncate,
-  decodeContentsBlob,
-  githubSearchIssuesTool,
-  githubGetIssueTool,
-  githubListIssueCommentsTool,
-  githubCreateIssueTool,
-  githubUpdateIssueTool,
-  githubAddCommentTool,
-  githubListPullsTool,
-  githubGetPullTool,
-  githubListPullFilesTool,
-  githubListPullReviewsTool,
-  githubCreatePullTool,
-  githubUpdatePullTool,
-  githubMergePullTool,
-  githubRequestReviewersTool,
-  githubCreateReviewTool,
-  githubGetRepoTool,
-  githubListBranchesTool,
-  githubGetFileTool,
-  githubSearchCodeTool,
-} from "@circuitwall/github-langchain";
-
 registerTools("GitHub", "read", [...githubReadTools]);
 registerTools("GitHub", "write", [...githubWriteTools]);
 // merge_pull is execute: it triggers CI, deploys, and downstream automation.

@@ -1,18 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-issue-extras-"));
-process.env.JARELA_DB_DIR = tmpRoot;
-process.env.ATLASSIAN_URL = "https://test.atlassian.net";
-process.env.ATLASSIAN_EMAIL = "tester@example.com";
-process.env.ATLASSIAN_API_TOKEN = "test-token";
-process.on("exit", () => {
-  try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
-});
-
-const {
+import {
+  setAuthResolver,
   jiraGetCommentsTool,
   jiraUpdateCommentTool,
   jiraDeleteCommentTool,
@@ -21,7 +9,13 @@ const {
   jiraAddWorklogTool,
   jiraListWorklogsTool,
   jiraGetChangelogTool,
-} = await import("./atlassian");
+} from "../src/index";
+
+setAuthResolver(() => ({
+  url: "https://test.atlassian.net",
+  email: "tester@example.com",
+  apiToken: "test-token",
+}));
 
 type FetchCall = { url: string; init: RequestInit };
 type QueuedResponse = { status?: number; body: unknown; headers?: Record<string, string> };
