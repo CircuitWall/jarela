@@ -1,8 +1,11 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { getDb } from "@/lib/db";
 import { listToolStats, toStats } from "@/lib/stores/tool-stats";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
+import {
+  getPricingTables,
+  modelRatesFor,
+  estimateCostUsd,
+} from "./pricing";
 
 const CHARS_PER_TOKEN = 4;
 const DEFAULT_WINDOW_DAYS = 30;
@@ -222,39 +225,6 @@ type ModelBucket = {
   estimated_cost_usd: number;
 };
 
-type ProviderRates = {
-  inputPer1M: number | null;
-  outputPer1M: number | null;
-  source: string;
-  inferred: boolean;
-  confidence: "high" | "medium" | "low";
-  ok: boolean;
-  status: number | null;
-  error: string | null;
-};
-
-type PricingSnapshotSource = {
-  id: string;
-  pricing_url: string;
-  resolved_url?: string | null;
-  ok?: boolean;
-  status?: number | null;
-  error?: string | null;
-  price_signals?: string[];
-  model_rates?: Array<{
-    model_id: string;
-    input_per_1m_usd: number | null;
-    output_per_1m_usd: number | null;
-    inferred?: boolean;
-    confidence?: "high" | "medium" | "low";
-  }>;
-};
-
-type PricingSnapshot = {
-  generated_at?: string;
-  sources?: PricingSnapshotSource[];
-};
-
 export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<DashboardMetrics> {
   const now = new Date();
   const boundedDays = Number.isFinite(days) ? Math.min(120, Math.max(7, Math.floor(days))) : DEFAULT_WINDOW_DAYS;
@@ -314,7 +284,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
     }
   }
 
-  const { byProvider, byProviderModel, byModel, generatedAt } = await loadProviderRates();
+  const tables = getPricingTables();
+  const { byProvider, byProviderModel, generatedAt } = tables;
   const dayMap = seedDayBuckets(now, boundedDays);
   const agentMap = new Map<string, AgentBucket>();
   const providerMap = new Map<string, ProviderBucket>();
@@ -404,7 +375,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       const isInput = row.role === "user";
       inputTokens = isInput ? tokenEstimate : 0;
       outputTokens = isInput ? 0 : tokenEstimate;
-      const rates = modelRatesFor(byProvider, byProviderModel, byModel, row.provider, row.model_id);
+      const rates = modelRatesFor(tables, row.provider, row.model_id);
       estCost = estimateCostUsd(inputTokens, outputTokens, rates);
       if (row.role === "assistant") estimatedAssistantMessages += 1;
     }
@@ -744,103 +715,6 @@ function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(trimmed.length / CHARS_PER_TOKEN));
 }
 
-function estimateCostUsd(inputTokens: number, outputTokens: number, rates: ProviderRates): number {
-  const inputRate = rates.inputPer1M;
-  const outputRate = rates.outputPer1M;
-  if (inputRate == null && outputRate == null) return 0;
-  const inCost = inputRate == null ? 0 : (inputTokens / 1_000_000) * inputRate;
-  const outCost = outputRate == null ? 0 : (outputTokens / 1_000_000) * outputRate;
-  return inCost + outCost;
-}
-
-function providerRatesFor(byProvider: Map<string, ProviderRates>, provider: string | null): ProviderRates {
-  if (!provider) return { inputPer1M: null, outputPer1M: null, source: "unknown", inferred: true, confidence: "low", ok: false, status: null, error: "no provider assigned" };
-  return byProvider.get(provider.toLowerCase())
-    ?? { inputPer1M: null, outputPer1M: null, source: "unknown", inferred: true, confidence: "low", ok: false, status: null, error: "provider missing in pricing snapshot" };
-}
-
-function modelRatesFor(
-  byProvider: Map<string, ProviderRates>,
-  byProviderModel: Map<string, ProviderRates>,
-  byModel: Map<string, ProviderRates>,
-  provider: string | null,
-  modelId: string | null,
-): ProviderRates {
-  if (!modelId) {
-    return providerRatesFor(byProvider, provider);
-  }
-  const modelKey = modelId.trim().toLowerCase();
-  if (!modelKey) return providerRatesFor(byProvider, provider);
-
-  // 1. Prefer (provider, model_id) when both are present.
-  if (provider) {
-    const providerKey = normalizeProvider(provider);
-    if (providerKey) {
-      const candidates = modelAliasCandidates(providerKey, modelKey);
-      for (const candidate of candidates) {
-        const exact = byProviderModel.get(`${providerKey}::${candidate}`);
-        if (exact) return exact;
-      }
-      // GitHub Copilot model configs proxy multiple upstream providers.
-      // If no direct copilot model rate exists, fall back to the upstream
-      // provider/model inferred from the model id.
-      if (providerKey === "github-copilot") {
-        const upstream = inferProviderFromModelId(modelKey);
-        if (upstream) {
-          const upstreamCandidates = modelAliasCandidates(upstream, modelKey);
-          for (const candidate of upstreamCandidates) {
-            const viaUpstreamModel = byProviderModel.get(`${upstream}::${candidate}`);
-            if (viaUpstreamModel) return viaUpstreamModel;
-          }
-          const upstreamProviderRate = byProvider.get(upstream);
-          if (upstreamProviderRate && upstreamProviderRate.ok) return upstreamProviderRate;
-        }
-      }
-    }
-  }
-
-  // 2. Aggregator-agnostic fallback: lookup by model_id alone. Covers
-  //    cases where the configured provider doesn't publish per-model
-  //    pricing but the same model id is rated by its upstream vendor.
-  for (const candidate of modelAliasCandidates(provider ? (normalizeProvider(provider) ?? "") : "", modelKey)) {
-    const viaModel = byModel.get(candidate);
-    if (viaModel) return viaModel;
-  }
-  const directModel = byModel.get(modelKey);
-  if (directModel) return directModel;
-
-  return providerRatesFor(byProvider, provider);
-}
-
-function modelAliasCandidates(provider: string, modelId: string): string[] {
-  const out = new Set<string>();
-  const id = modelId.trim().toLowerCase();
-  if (!id) return [];
-  out.add(id);
-
-  if (provider === "deepseek") {
-    if (/reasoner/.test(id) || /r1/.test(id)) {
-      out.add("deepseek-reasoner");
-    }
-    if (/chat/.test(id) || /v[0-9]/.test(id) || /coder/.test(id)) {
-      out.add("deepseek-chat");
-    }
-  }
-
-  return [...out];
-}
-
-function inferProviderFromModelId(modelId: string): string | null {
-  const id = modelId.trim().toLowerCase();
-  if (!id) return null;
-  if (id.startsWith("gpt-") || /^o[1-4](?:-|$)/.test(id)) return "openai";
-  if (id.startsWith("claude-")) return "anthropic";
-  if (id.startsWith("gemini-")) return "google";
-  if (id.startsWith("deepseek-")) return "deepseek";
-  if (id.startsWith("command-") || id.startsWith("embed-")) return "cohere";
-  return null;
-}
-
 function summarizeEvents(raw: string): { calls: number; successes: number; errors: number } {
   let events: PersistedToolEvent[] = [];
   try {
@@ -879,151 +753,6 @@ function isErrorPayload(payload: unknown): boolean {
   if ("error" in payload || "errors" in payload) return true;
   const status = "status" in payload ? (payload as { status?: unknown }).status : undefined;
   return typeof status === "string" && /error|failed/i.test(status);
-}
-
-async function loadProviderRates(): Promise<{
-  byProvider: Map<string, ProviderRates>;
-  byProviderModel: Map<string, ProviderRates>;
-  byModel: Map<string, ProviderRates>;
-  generatedAt: string | null;
-}> {
-  const snapshot = await readPricingSnapshot();
-  const out = new Map<string, ProviderRates>();
-  const byProviderModel = new Map<string, ProviderRates>();
-  const byModel = new Map<string, ProviderRates>();
-  const expectedProviders = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot"];
-
-  for (const provider of expectedProviders) {
-    out.set(provider, {
-      inputPer1M: null,
-      outputPer1M: null,
-      source: "snapshot-missing",
-      inferred: true,
-      confidence: "low",
-      ok: false,
-      status: null,
-      error: "provider missing in pricing snapshot",
-    });
-  }
-
-  if (!snapshot?.sources) {
-    return { byProvider: out, byProviderModel, byModel, generatedAt: null };
-  }
-
-  for (const source of snapshot.sources) {
-    const key = normalizeProvider(source.id);
-    if (!key) continue;
-    const parsed = inferRatesFromSignals(source.price_signals ?? []);
-    const modelInputRates = (source.model_rates ?? [])
-      .map((m) => m.input_per_1m_usd)
-      .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
-      .sort((a, b) => a - b);
-    const modelOutputRates = (source.model_rates ?? [])
-      .map((m) => m.output_per_1m_usd)
-      .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
-      .sort((a, b) => a - b);
-
-    const providerInput = parsed.inputPer1M ?? (modelInputRates[0] ?? null);
-    const providerOutput = parsed.outputPer1M ?? (modelOutputRates[0] ?? null);
-    const providerDerivedFromModels = parsed.inputPer1M == null && parsed.outputPer1M == null
-      && (providerInput != null || providerOutput != null);
-
-    out.set(key, {
-      inputPer1M: providerInput,
-      outputPer1M: providerOutput,
-      source: source.resolved_url ?? source.pricing_url,
-      inferred: providerDerivedFromModels ? true : parsed.inferred,
-      confidence: providerDerivedFromModels ? "medium" : parsed.confidence,
-      ok: source.ok !== false || providerDerivedFromModels,
-      status: source.status ?? null,
-      error: source.error ?? null,
-    });
-
-    for (const modelRate of source.model_rates ?? []) {
-      const normalizedModel = modelRate.model_id?.trim().toLowerCase();
-      if (!normalizedModel) continue;
-      const entry: ProviderRates = {
-        inputPer1M: modelRate.input_per_1m_usd,
-        outputPer1M: modelRate.output_per_1m_usd,
-        source: source.resolved_url ?? source.pricing_url,
-        inferred: modelRate.inferred !== false,
-        confidence: modelRate.confidence ?? "low",
-        ok: source.ok !== false,
-        status: source.status ?? null,
-        error: source.error ?? null,
-      };
-      byProviderModel.set(`${key}::${normalizedModel}`, entry);
-      const existing = byModel.get(normalizedModel);
-      if (!existing || isBetterRate(entry, existing)) {
-        byModel.set(normalizedModel, entry);
-      }
-    }
-  }
-
-  return { byProvider: out, byProviderModel, byModel, generatedAt: snapshot.generated_at ?? null };
-}
-
-function isBetterRate(next: ProviderRates, prev: ProviderRates): boolean {
-  const nextHas = next.inputPer1M != null || next.outputPer1M != null;
-  const prevHas = prev.inputPer1M != null || prev.outputPer1M != null;
-  if (nextHas && !prevHas) return true;
-  if (!nextHas && prevHas) return false;
-  const rank = { high: 2, medium: 1, low: 0 } as const;
-  return rank[next.confidence] > rank[prev.confidence];
-}
-
-async function readPricingSnapshot(): Promise<PricingSnapshot | null> {
-  try {
-    const filePath = join(process.cwd(), "docs", "journal", "pricing-snapshot.json");
-    const raw = await readFile(filePath, "utf8");
-    return JSON.parse(raw) as PricingSnapshot;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeProvider(id: string): string | null {
-  const lower = id.toLowerCase();
-  if (lower.includes("github") || lower.includes("copilot")) return "github-copilot";
-  if (lower.includes("google") || lower.includes("gemini")) return "google";
-  if (lower.includes("openai")) return "openai";
-  if (lower.includes("anthropic")) return "anthropic";
-  if (lower.includes("cohere")) return "cohere";
-  if (lower.includes("deepseek")) return "deepseek";
-  return lower || null;
-}
-
-function inferRatesFromSignals(signals: string[]): {
-  inputPer1M: number | null;
-  outputPer1M: number | null;
-  inferred: boolean;
-  confidence: "high" | "medium" | "low";
-} {
-  const tokenRates = signals
-    .map((s) => {
-      const m = /\$\s*([0-9]+(?:\.[0-9]+)?)\s*\/?\s*(?:1M\s*tokens|M\s*Tok|MTok)/i.exec(s);
-      if (!m) return null;
-      return Number(m[1]);
-    })
-    .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0)
-    .sort((a, b) => a - b);
-
-  if (tokenRates.length === 0) return { inputPer1M: null, outputPer1M: null, inferred: true, confidence: "low" };
-  if (tokenRates.length === 1) {
-    return {
-      inputPer1M: tokenRates[0],
-      outputPer1M: tokenRates[0],
-      inferred: true,
-      confidence: "low",
-    };
-  }
-
-  return {
-    inputPer1M: tokenRates[0],
-    outputPer1M: tokenRates[tokenRates.length - 1],
-    inferred: true,
-    confidence: "medium",
-  };
 }
 
 function round4(value: number): number {
