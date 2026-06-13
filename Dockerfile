@@ -44,8 +44,14 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false
 
-# Install deps first for better layer caching.
+# Install deps first for better layer caching. We also need every workspace's
+# package.json on disk before `npm ci` because the root lockfile resolves the
+# @circuitwall/*-langchain entries via the `workspace:` protocol — npm reads
+# each sub-package's manifest to materialize the symlinks under node_modules.
 COPY package.json package-lock.json* ./
+COPY packages/atlassian-langchain/package.json   ./packages/atlassian-langchain/
+COPY packages/github-langchain/package.json      ./packages/github-langchain/
+COPY packages/jira-align-langchain/package.json  ./packages/jira-align-langchain/
 RUN npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
 # Copy the rest of the sources and build the standalone bundle.
