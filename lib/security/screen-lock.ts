@@ -118,7 +118,3 @@ export function setIdleTimeoutMs(ms: number): void {
     console.warn("[screen-lock] could not persist idle timeout:", err);
   }
 }
-
-export function getLastActivityAt(): number {
-  return _g.lastActivity;
-}

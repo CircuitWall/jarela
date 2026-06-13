@@ -16,7 +16,6 @@ import {
   decrypt,
   isEncrypted,
   decryptIfNeeded,
-  encryptIfNeeded,
 } from "./envelope";
 
 describe("isEncrypted", () => {
@@ -80,16 +79,5 @@ describe("decryptIfNeeded", () => {
   });
   it("decrypts an encrypted value", () => {
     expect(decryptIfNeeded(encrypt("v"))).toBe("v");
-  });
-});
-
-describe("encryptIfNeeded", () => {
-  it("encrypts plaintext", () => {
-    const out = encryptIfNeeded("v");
-    expect(isEncrypted(out)).toBe(true);
-  });
-  it("passes already-encrypted values through unchanged (idempotent)", () => {
-    const ct = encrypt("v");
-    expect(encryptIfNeeded(ct)).toBe(ct);
   });
 });

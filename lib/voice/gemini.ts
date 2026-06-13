@@ -173,7 +173,3 @@ function pcmToWav(pcm: Buffer, sampleRate: number, channels: number, bitsPerSamp
   header.writeUInt32LE(dataSize, 40);
   return Buffer.concat([header, pcm]);
 }
-
-// Re-export the client-safe constants for callers that already import from
-// this module on the server side.
-export { GEMINI_VOICES, GEMINI_TTS_MODELS, GEMINI_STT_MODELS } from "./constants";

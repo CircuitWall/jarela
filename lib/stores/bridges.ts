@@ -156,12 +156,6 @@ export function listRoutes(bridgeId: string): BridgeRouteRow[] {
     .all(bridgeId) as unknown as BridgeRouteRow[];
 }
 
-export function listAllRoutes(): BridgeRouteRow[] {
-  return getDb()
-    .prepare("SELECT * FROM bridge_routes ORDER BY created_at ASC")
-    .all() as unknown as BridgeRouteRow[];
-}
-
 export function getRoute(id: string): BridgeRouteRow | null {
   return (getDb().prepare("SELECT * FROM bridge_routes WHERE id=?").get(id) as BridgeRouteRow | undefined) ?? null;
 }

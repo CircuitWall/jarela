@@ -93,7 +93,3 @@ export function knownRateFor(modelId: string): ProviderRates | null {
     error: null,
   };
 }
-
-export function knownRateModelIds(): string[] {
-  return Object.keys(KNOWN_MODEL_RATES);
-}

@@ -898,25 +898,6 @@ export function toolCallSignature(name: string, args: Record<string, unknown>): 
   }
 }
 
-// Returns the FIRST tool name whose `(name, args)` signature appears
-// `threshold` or more times in `events`. Empty names and threshold <= 0
-// disable the check.
-export function detectToolLoop(
-  events: ReadonlyArray<{ name: string; args: Record<string, unknown> }>,
-  threshold: number,
-): string | null {
-  if (threshold <= 0) return null;
-  const counts = new Map<string, number>();
-  for (const ev of events) {
-    if (!ev.name) continue;
-    const sig = toolCallSignature(ev.name, ev.args);
-    const c = (counts.get(sig) ?? 0) + 1;
-    counts.set(sig, c);
-    if (c >= threshold) return ev.name;
-  }
-  return null;
-}
-
 const STALL_PATTERNS: RegExp[] = [
   /\bone (moment|sec(?:ond)?)\b/i,
   /\bgive me (a|just a) (moment|sec(?:ond)?|minute)\b/i,

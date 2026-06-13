@@ -36,7 +36,3 @@ export function listManifests(): IntegrationManifest[] {
 export function getManifest(id: string): IntegrationManifest | null {
   return MANIFESTS.find((m) => m.id === id) ?? null;
 }
-
-export function manifestIds(): string[] {
-  return MANIFESTS.map((m) => m.id).sort();
-}

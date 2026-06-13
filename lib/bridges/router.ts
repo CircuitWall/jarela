@@ -12,8 +12,3 @@ import { findRoute, type BridgeRouteRow } from "@/lib/stores/bridges";
 export function resolveRoute(bridge_id: string, remote_jid: string): BridgeRouteRow | null {
   return findRoute(bridge_id, remote_jid) ?? findRoute(bridge_id, "*");
 }
-
-/** Back-compat shim — prefer `resolveRoute` so callers can read silent_mode. */
-export function resolveAgent(bridge_id: string, remote_jid: string): string | null {
-  return resolveRoute(bridge_id, remote_jid)?.agent_id ?? null;
-}

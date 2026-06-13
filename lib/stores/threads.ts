@@ -184,15 +184,6 @@ export function addMessage(
   return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
 }
 
-// Replace a single message's metadata blob. Used by the citation checker
-// to write its verdict back after the assistant turn has already been
-// persisted (the checker runs async post-insert so the chat UI sees the
-// content immediately and picks up the metadata on the next refresh).
-export function setMessageMetadata(msg_id: string, metadata: Record<string, unknown> | null): void {
-  const json = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
-  getDb().prepare("UPDATE messages SET metadata=? WHERE msg_id=?").run(json, msg_id);
-}
-
 // Shallow-merge `partial` into a message's existing metadata. Use this
 // when multiple subsystems own different fields on the same row
 // (e.g. citations and redaction_summary) — each can write independently
@@ -223,13 +214,6 @@ export function mergeMessageMetadata(
 
 export function getOrCreateAgentThread(agentId: string): ThreadRow {
   return createThread(agentId);
-}
-
-export function clearThreadMessages(threadId: string): void {
-  const db = getDb();
-  db.prepare("DELETE FROM messages WHERE thread_id=?").run(threadId);
-  db.prepare("UPDATE threads SET message_count=0, updated_at=? WHERE thread_id=?")
-    .run(new Date().toISOString(), threadId);
 }
 
 // Retention guardrail: keep at most `keepLast` most-recent messages on a

@@ -6,7 +6,7 @@ vi.mock("@/lib/stores/bridges", () => ({
   findRoute: (...args: unknown[]) => findRouteMock(...args),
 }));
 
-import { resolveRoute, resolveAgent } from "./router";
+import { resolveRoute } from "./router";
 
 beforeEach(() => {
   findRouteMock.mockReset();
@@ -43,17 +43,5 @@ describe("resolveRoute", () => {
     const star = route({ remote_jid: "*", agent_id: "fallback" });
     findRouteMock.mockImplementation((_b: string, j: string) => (j === "x" ? exact : j === "*" ? star : null));
     expect(resolveRoute("b", "x")?.agent_id).toBe("exact");
-  });
-});
-
-describe("resolveAgent (back-compat shim)", () => {
-  it("returns the agent_id when a route resolves", () => {
-    findRouteMock.mockImplementation(() => route({ agent_id: "alice" }));
-    expect(resolveAgent("b", "j")).toBe("alice");
-  });
-
-  it("returns null when no route resolves", () => {
-    findRouteMock.mockReturnValue(null);
-    expect(resolveAgent("b", "j")).toBeNull();
   });
 });
