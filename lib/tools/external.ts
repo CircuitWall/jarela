@@ -1,10 +1,12 @@
-import { join } from "node:path";
-import { existsSync, readdirSync, statSync } from "node:fs";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { getConfig } from "@/lib/env/config";
 import { getToolSecret, type ToolSecretSlot } from "@/lib/stores/tool-secrets";
+import {
+  scanCjsPlugins,
+  type PluginLoadError,
+} from "@/lib/utils/cjs-plugin-loader";
 import type { ToolCategory } from "./registry";
 
 /**
@@ -21,8 +23,8 @@ export interface ExternalToolDef {
   description: string;
   schema: object;
   category?: ToolCategory;
-  // Optional per-tool secret slots. Surfaced in the Extensions panel as
-  // editable form fields; persisted (encrypted at rest) in the
+  // Optional per-tool secret slots. Surfaced in the Tools → Packages
+  // panel as editable form fields; persisted (encrypted at rest) in the
   // `tool-secrets` memory namespace. Read at run time via `ctx.getSecret`.
   // See ADR-0023.
   secrets?: ToolSecretSlot[];
@@ -38,17 +40,15 @@ export interface ExternalToolDef {
   ) => unknown | Promise<unknown>;
 }
 
-export interface ExtensionLoadError {
-  file: string;
-  error: string;
-}
+// Legacy alias — see lib/providers/external.ts.
+export type ExtensionLoadError = PluginLoadError;
 
 export interface ExternalToolsResult {
   tools: StructuredToolInterface[];
   categories: Map<string, ToolCategory>;
   files: Map<string, string>;
   // Declared secret slots per tool name (empty array if the tool did not
-  // declare any). Used by the Extensions panel to render input fields.
+  // declare any). Used by the Tools → Packages panel to render input fields.
   secrets: Map<string, ToolSecretSlot[]>;
   errors: ExtensionLoadError[];
 }
@@ -81,32 +81,6 @@ function isValid(p: unknown): p is ExternalToolDef {
   return true;
 }
 
-// Loads one source file and returns the validated ExternalToolDef, or an
-// error string for the loader to record + skip. Uses the bypassed
-// createRequire so the dynamic require survives the Next build.
-function loadOneExternalTool(
-  req: NodeJS.Require,
-  fullPath: string,
-  entry: string,
-): { def: ExternalToolDef } | { error: string } {
-  let mod: unknown;
-  try {
-    delete req.cache[req.resolve(fullPath)];
-    mod = req(fullPath);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`[tools] failed to load ${entry}:`, err);
-    return { error: message };
-  }
-  const candidate = (mod as { default?: unknown })?.default ?? (mod as unknown);
-  if (!isValid(candidate)) {
-    const msg = "does not export a valid ExternalToolDef (need { name, description, schema, run })";
-    console.error(`[tools] ${entry} ${msg}`);
-    return { error: msg };
-  }
-  return { def: candidate };
-}
-
 function wrapExternalTool(def: ExternalToolDef): StructuredToolInterface {
   return tool(
     async (args: unknown, _runManager?: unknown, config?: RunnableConfig) => {
@@ -132,58 +106,19 @@ export function loadExternalTools(
   const categories = new Map<string, ToolCategory>();
   const files = new Map<string, string>();
   const secrets = new Map<string, ToolSecretSlot[]>();
-  const errors: ExtensionLoadError[] = [];
 
-  const toolsDir = getToolsDir();
-  if (!existsSync(toolsDir)) {
-    return { tools, categories, files, secrets, errors };
-  }
+  const { defs, errors } = scanCjsPlugins<ExternalToolDef>({
+    dir: getToolsDir(),
+    builtins: builtinNames,
+    validate: (mod) => (isValid(mod) ? mod : null),
+    getName: (def) => def.name,
+    kindLabel: "ExternalToolDef (need { name, description, schema, run })",
+    logScope: "tools",
+  });
 
-  // Same trick as lib/providers/external.ts: bypass webpack's static analysis
-  // so the dynamic require survives the Next build.
-  const { createRequire } = (
-    process as unknown as { getBuiltinModule: (id: string) => typeof import("node:module") }
-  ).getBuiltinModule("node:module");
-  const req = createRequire(join(toolsDir, "_anchor"));
-
-  let entries: string[];
-  try {
-    entries = readdirSync(toolsDir);
-  } catch {
-    return { tools, categories, files, secrets, errors };
-  }
-
-  const seen = new Set<string>();
-
-  for (const entry of entries) {
-    if (!/\.(c?js|ts)$/i.test(entry)) continue;
-    const path = join(toolsDir, entry);
-    try {
-      if (!statSync(path).isFile()) continue;
-    } catch {
-      continue;
-    }
-
-    const loaded = loadOneExternalTool(req, path, entry);
-    if ("error" in loaded) { errors.push({ file: entry, error: loaded.error }); continue; }
-    const def = loaded.def;
-
-    if (builtinNames.has(def.name)) {
-      const msg = `name "${def.name}" collides with a built-in tool — built-in takes precedence`;
-      errors.push({ file: entry, error: msg });
-      console.warn(`[tools] external ${entry}: ${msg}`);
-      continue;
-    }
-    if (seen.has(def.name)) {
-      const msg = `duplicate external tool "${def.name}"`;
-      errors.push({ file: entry, error: msg });
-      console.warn(`[tools] ${entry}: ${msg}`);
-      continue;
-    }
-    seen.add(def.name);
-
+  for (const { def, file } of defs) {
     tools.push(wrapExternalTool(def));
-    files.set(def.name, entry);
+    files.set(def.name, file);
     if (def.category) categories.set(def.name, def.category);
     secrets.set(def.name, def.secrets ?? []);
   }
