@@ -307,11 +307,13 @@ running the Jarela app. They live under
 | Package | Description | Install |
 |---|---|---|
 | [`@circuitwall/atlassian-langchain`](./packages/atlassian-langchain) | 64 LangChain `tool()` definitions for Atlassian Jira and Confluence Cloud (direct REST, no MCP, proxy-aware). | `npm install @circuitwall/atlassian-langchain @langchain/core zod` |
+| [`@circuitwall/jira-align-langchain`](./packages/jira-align-langchain) | 22 LangChain `tool()` definitions for Atlassian Jira Align (portfolio / SAFe). | `npm install @circuitwall/jira-align-langchain @langchain/core zod` |
+| [`@circuitwall/github-langchain`](./packages/github-langchain) | 22 LangChain `tool()` definitions for the GitHub REST API (issues, PRs, repo content, code search). | `npm install @circuitwall/github-langchain @langchain/core zod` |
 
-The Atlassian package exposes 42 Jira tools (search, issues, sprints,
-attachments, transitions, …) and 22 Confluence tools (pages, spaces,
-labels, search, …). Pass your own credential resolver via
-`setAuthResolver()` — see the package README for the full quick start.
+Each package exposes a `setAuthResolver()` API for pluggable credential
+resolution (env, vault, UI form, …) and a low-level `*Fetch()` escape
+hatch for endpoints not yet wrapped as tools. See each package's README
+for the full quick start.
 
 ## Installation and runtime details
 

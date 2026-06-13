@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`@circuitwall/jira-align-langchain` v0.1.0 published to npm.**
+  Standalone release of the Jira Align (portfolio / SAFe) toolbelt
+  extracted from `lib/tools/jira-align.ts`. 22 LangChain tools (work
+  items, comments, hierarchy entities, dependencies).
+- **`@circuitwall/github-langchain` v0.1.0 published to npm.**
+  Standalone release of the GitHub REST toolbelt extracted from
+  `lib/tools/github.ts`. 22 LangChain tools (issues, PRs, repo content,
+  code search) plus the pure helpers `truncate` and
+  `decodeContentsBlob`.
 - **`@circuitwall/atlassian-langchain` v0.1.0 published to npm.**
   First standalone release of the Atlassian (Jira + Confluence) toolbelt
   extracted from `lib/tools/atlassian.ts`. External LangChain.js /
@@ -19,6 +28,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Jira Align tools are now an extractable npm package.**
+  `lib/tools/jira-align.ts` was split into:
+  - `@circuitwall/jira-align-langchain`
+    (`packages/jira-align-langchain/`, v0.1.0) — the 22 LangChain
+    tools, plus the low-level `jiraAlignFetch` escape hatch.
+    Pluggable auth via `setAuthResolver()` with a default env-var
+    resolver. Zero Jarela-specific code.
+  - `lib/tools/jira-align.ts` (Jarela) — now a thin adapter that plugs
+    Jarela's encrypted integrations store into the package via
+    `setAuthResolver()` and re-exports every tool so existing internal
+    callers (`lib/health/probes.ts`, `lib/tools/jira-align.test.ts`)
+    keep working unchanged.
+- **GitHub tools are now an extractable npm package.**
+  `lib/tools/github.ts` was split into:
+  - `@circuitwall/github-langchain` (`packages/github-langchain/`,
+    v0.1.0) — the 22 LangChain tools, the pure helpers (`truncate`,
+    `decodeContentsBlob`), and the low-level `githubFetch` escape
+    hatch (re-exported as `_ghFetch` for back-compat with the Jarela
+    internal name).
+  - `lib/tools/github.ts` (Jarela) — thin adapter mirroring the JA /
+    Atlassian pattern; existing callers
+    (`lib/documents/remote/github.ts`, `lib/health/probes.ts`,
+    `lib/tools/github.test.ts`) keep working unchanged.
+- **Release workflow now publishes all three packages by tag prefix.**
+  `.github/workflows/release.yml` switches on the pushed tag:
+  - `v*` → publish `@circuitwall/jarela` (Jarela app) from the repo
+    root.
+  - `atlassian-langchain-v*` → publish from `packages/atlassian-langchain`.
+  - `jira-align-langchain-v*` → publish from `packages/jira-align-langchain`.
+  - `github-langchain-v*` → publish from `packages/github-langchain`.
+
+  No behavior change for Jarela users. All existing tests still pass.
 - **Atlassian (Jira + Confluence) tools are now an extractable npm
   package.** `lib/tools/atlassian.ts` was split into:
   - `@circuitwall/atlassian-langchain` (`packages/atlassian-langchain/`,

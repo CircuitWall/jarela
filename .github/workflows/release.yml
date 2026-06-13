@@ -7,7 +7,12 @@ name: Release
 on:
   push:
     tags:
+      # Jarela app release (root package.json -> @circuitwall/jarela).
       - "v*"
+      # Standalone workspace packages â€” each tag prefix maps to one job below.
+      - "atlassian-langchain-v*"
+      - "jira-align-langchain-v*"
+      - "github-langchain-v*"
 
 permissions:
   contents: write   # softprops/action-gh-release attaches archives to the Release
@@ -18,6 +23,10 @@ jobs:
   bundle:
     name: Bundle (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Only the Jarela app release fans out to the multi-OS bundle / GitHub
+    # Release / npm-publish / docker pipeline. Standalone workspace packages
+    # are published by the per-package jobs at the bottom of this file.
+    if: startsWith(github.ref_name, 'v')
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -43,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Build (next build → standalone)
+      - name: Build (next build â†’ standalone)
         run: npm run build
         # The Windows GitHub runner image ships legacy junctions
         # (C:\Users\runneradmin\Application Data, AppData\Local\Application
@@ -59,8 +68,8 @@ jobs:
         id: meta
         shell: bash
         run: |
-          # Strip leading "v" from the tag → version. Falls back to package.json
-          # if for some reason the tag does not match (shouldn't happen — the
+          # Strip leading "v" from the tag â†’ version. Falls back to package.json
+          # if for some reason the tag does not match (shouldn't happen â€” the
           # workflow trigger is `v*`).
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
@@ -167,7 +176,7 @@ jobs:
     needs: bundle
     # Gated by JARELA_NPM_PUBLISH so a fork (or this repo before npm Trusted
     # Publishing is configured) doesn't try and fail. Auth uses npm's
-    # Trusted Publisher / OIDC flow — no NPM_TOKEN required. See the npm
+    # Trusted Publisher / OIDC flow â€” no NPM_TOKEN required. See the npm
     # org's Trusted Publishers settings:
     # https://www.npmjs.com/settings/circuitwall/trusted-publishers
     # Configuration there must list:
@@ -192,7 +201,7 @@ jobs:
         # Node 22 ships npm 10.x, which doesn't speak the OIDC `npm publish`
         # flow npm rolled out for Trusted Publishers in 2025. Without an
         # auth header the PUT goes out unauthenticated and the registry
-        # masks the 401 as `404 'is not in this registry'` — that's why
+        # masks the 401 as `404 'is not in this registry'` â€” that's why
         # every tagged release before this fix failed at the publish step.
         run: npm install -g npm@latest
 
@@ -224,7 +233,7 @@ jobs:
         run: npm publish --provenance --access public
 
   # Per-arch native build. The previous single-job approach used QEMU to
-  # cross-compile linux/arm64 on an x86_64 runner — `npm ci` + `next build`
+  # cross-compile linux/arm64 on an x86_64 runner â€” `npm ci` + `next build`
   # under user-mode emulation took ~25 min on its own. We now fan out to
   # one native runner per arch and merge the resulting digests into a
   # single multi-arch manifest in `docker-manifest`.
@@ -285,7 +294,7 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
-          # Push by digest only — no tag is set here. The manifest job
+          # Push by digest only â€” no tag is set here. The manifest job
           # below assembles the human-readable tags after both arches
           # have published their digests.
           outputs: type=image,name=${{ steps.meta.outputs.repo }},push-by-digest=true,name-canonical=true,push=true
@@ -426,3 +435,118 @@ jobs:
           set -euo pipefail
           docker buildx imagetools inspect \
             "${{ steps.meta.outputs.ghcr_repo }}:${{ steps.meta.outputs.version }}"
+
+
+  # ── Standalone workspace package publishing ──────────────────────────────
+  # Each package has its own tag prefix (see on.push.tags at top of file).
+  # The job that matches the tag runs `npm publish` from inside that
+  # package directory. All three rely on npm Trusted Publishers / OIDC —
+  # no NPM_TOKEN. Register each package on npmjs.com with:
+  #   publisher    = GitHub Actions
+  #   organization = CircuitWall
+  #   repository   = jarela
+  #   workflow     = release.yml
+  # Different `environment` is not required; the workflow-name+repo match
+  # is enough for npm to mint a publish token for any of the three.
+
+  publish-atlassian-langchain:
+    name: Publish @circuitwall/atlassian-langchain
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref_name, 'atlassian-langchain-v')
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Upgrade npm (Trusted Publishers needs >= 11.5)
+        run: npm install -g npm@latest
+      - name: Install dependencies (workspaces)
+        run: npm install --no-audit --no-fund
+      - name: Build package
+        run: npm run build -w @circuitwall/atlassian-langchain
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#atlassian-langchain-v}"
+          pkg="$(node -p "require('./packages/atlassian-langchain/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match package version $pkg" >&2
+            exit 1
+          fi
+      - name: Publish (with provenance)
+        working-directory: packages/atlassian-langchain
+        run: npm publish --provenance --access public
+
+  publish-jira-align-langchain:
+    name: Publish @circuitwall/jira-align-langchain
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref_name, 'jira-align-langchain-v')
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Upgrade npm (Trusted Publishers needs >= 11.5)
+        run: npm install -g npm@latest
+      - name: Install dependencies (workspaces)
+        run: npm install --no-audit --no-fund
+      - name: Build package
+        run: npm run build -w @circuitwall/jira-align-langchain
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#jira-align-langchain-v}"
+          pkg="$(node -p "require('./packages/jira-align-langchain/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match package version $pkg" >&2
+            exit 1
+          fi
+      - name: Publish (with provenance)
+        working-directory: packages/jira-align-langchain
+        run: npm publish --provenance --access public
+
+  publish-github-langchain:
+    name: Publish @circuitwall/github-langchain
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref_name, 'github-langchain-v')
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Upgrade npm (Trusted Publishers needs >= 11.5)
+        run: npm install -g npm@latest
+      - name: Install dependencies (workspaces)
+        run: npm install --no-audit --no-fund
+      - name: Build package
+        run: npm run build -w @circuitwall/github-langchain
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#github-langchain-v}"
+          pkg="$(node -p "require('./packages/github-langchain/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match package version $pkg" >&2
+            exit 1
+          fi
+      - name: Publish (with provenance)
+        working-directory: packages/github-langchain
+        run: npm publish --provenance --access public
