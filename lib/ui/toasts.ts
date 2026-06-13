@@ -79,12 +79,6 @@ export function dismissToast(id: string): void {
   if (toasts.length !== before) notify();
 }
 
-export function clearUnread(): void {
-  if (unreadByAgent.size === 0) return;
-  unreadByAgent.clear();
-  notifyUnread();
-}
-
 export function clearUnreadForAgent(agentId: string | null): void {
   if (!unreadByAgent.has(agentId)) return;
   unreadByAgent.delete(agentId);
@@ -136,7 +130,3 @@ export function useUnreadByAgent(): Map<string | null, number> {
   return m;
 }
 
-export function useUnreadForAgent(agentId: string | null): number {
-  const m = useUnreadByAgent();
-  return m.get(agentId) ?? 0;
-}

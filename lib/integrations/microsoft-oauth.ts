@@ -24,7 +24,6 @@ const flowStore = createOAuthFlowStore({ globalKey: "__msOauthFlows" });
 export const createFlow = flowStore.create;
 export const getFlow = flowStore.get;
 export const updateFlow = flowStore.update;
-export const deleteFlow = flowStore.delete;
 
 // Tenant selector. `common` accepts both personal Microsoft accounts
 // (@outlook.com, @hotmail.com, @live.com) and work/school M365 accounts.
