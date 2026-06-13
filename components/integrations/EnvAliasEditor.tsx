@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { Loader2, Save, X } from "lucide-react";
 import { api } from "@/api/client";
 import type { EnvAllowlistConfig, EnvAllowlistMapping } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 const ROW_KEY = (integration: string, field: string) => `${integration}:${field}`;
 
@@ -29,7 +30,7 @@ export function EnvAliasEditor({ onClose, onSaved }: { onClose: () => void; onSa
         initial[ROW_KEY(m.integration, m.field)] = (c.overrides[ROW_KEY(m.integration, m.field)] ?? []).join(", ");
       }
       setDrafts(initial);
-    }).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    }).catch((e) => setError(errorMessage(e)));
   }, []);
 
   async function saveRow(m: EnvAllowlistMapping) {
@@ -46,7 +47,7 @@ export function EnvAliasEditor({ onClose, onSaved }: { onClose: () => void; onSa
       setDrafts((d) => ({ ...d, [key]: (next.overrides[key] ?? []).join(", ") }));
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setSavingKey(null);
     }

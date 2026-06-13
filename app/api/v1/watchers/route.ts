@@ -4,6 +4,7 @@ import { createWatcher, listWatchers, type WatcherRow } from "@/lib/stores/watch
 import { registeredTools } from "@/lib/tools/registry";
 import { startScheduler } from "@/lib/scheduler";
 import { createdResponse, errorResponse, validateBody } from "@/lib/api/responses";
+import { errorMessage } from "@/lib/utils/error";
 
 function rowResponse(r: WatcherRow) {
   let args: unknown;
@@ -92,6 +93,6 @@ export async function POST(req: NextRequest) {
     startScheduler();
     return createdResponse(rowResponse(row));
   } catch (e) {
-    return errorResponse(e instanceof Error ? e.message : String(e));
+    return errorResponse(errorMessage(e));
   }
 }

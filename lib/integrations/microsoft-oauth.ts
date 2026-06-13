@@ -16,6 +16,7 @@
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-store";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { errorMessage } from "@/lib/utils/error";
 
 export type { OAuthFlow };
 
@@ -169,7 +170,7 @@ export async function getMicrosoftAccessToken(
     accessTokenCache.set(key, { token: parsed.access_token, expires_at });
     return parsed.access_token;
   } catch (err) {
-    return { error: `Microsoft OAuth refresh threw: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `Microsoft OAuth refresh threw: ${errorMessage(err)}` };
   }
 }
 
@@ -202,6 +203,6 @@ export async function graphFetch(
     }
     try { return JSON.parse(text); } catch { return text; }
   } catch (err) {
-    return { error: `Graph fetch threw: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `Graph fetch threw: ${errorMessage(err)}` };
   }
 }

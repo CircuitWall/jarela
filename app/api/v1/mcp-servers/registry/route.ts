@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { homedir } from "node:os";
 import { searchUpstream } from "@/lib/mcp/upstream-registry";
 import type { RegistryEntry } from "@/lib/mcp/registry";
+import { errorMessage } from "@/lib/utils/error";
 
 // Proxies the official MCP registry (registry.modelcontextprotocol.io). The
 // picker UI calls this with `?q=...&cursor=...` and gets back already-translated
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ entries: entries.map(expandHome), nextCursor });
   } catch (err) {
     return NextResponse.json(
-      { error: "registry-unreachable", detail: err instanceof Error ? err.message : String(err) },
+      { error: "registry-unreachable", detail: errorMessage(err) },
       { status: 503 },
     );
   }

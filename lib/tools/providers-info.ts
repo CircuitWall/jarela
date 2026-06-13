@@ -13,6 +13,7 @@ import {
 } from "@/lib/providers";
 import { listKnownModels } from "@/lib/providers/known-context-windows";
 import { registerLangChainPackage } from "./langchain-package";
+import { errorMessage } from "@/lib/utils/error";
 
 type ProviderSource = "builtin" | "external";
 
@@ -53,7 +54,7 @@ export const describeProviderTool = tool(
       provider = getProvider(name);
     } catch (err) {
       return JSON.stringify({
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
         hint: "Call list_providers to see registered names.",
       });
     }

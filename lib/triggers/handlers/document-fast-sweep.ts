@@ -20,6 +20,7 @@ import type {
   TriggerFiring,
   TriggerHandler,
 } from "../types";
+import { errorMessage } from "@/lib/utils/error";
 
 export const DOCUMENT_FAST_SWEEP_KIND = "doc_fast_sweep";
 
@@ -62,7 +63,7 @@ function registerSweepScript(): void {
           `+${stats.added} ~${stats.updated} =${stats.unchanged} !${stats.errors}`,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       // The runRemoteSource path normally swallows its own errors; if
       // something escaped, mark the source so the panel surfaces it.
       try { markSourceScanned(source.id, msg); } catch { /* noop */ }

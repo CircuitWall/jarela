@@ -2,6 +2,7 @@
 import { Mic, Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { ContentPart } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Props {
   attachments: ContentPart[];
@@ -138,7 +139,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
           const trimmed = text.trim();
           if (trimmed) onVoiceTranscript?.(trimmed);
         } catch (err) {
-          setVoiceError(err instanceof Error ? err.message : String(err));
+          setVoiceError(errorMessage(err));
         } finally {
           setTranscribing(false);
         }
@@ -147,7 +148,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
       recorderRef.current = rec;
       setRecording(true);
     } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : String(err));
+      setVoiceError(errorMessage(err));
       setRecording(false);
     }
   }

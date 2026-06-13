@@ -34,6 +34,7 @@ import {
 import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/types";
 import { saveBridgeAttachment, shouldInline } from "./attachment-store";
+import { errorMessage } from "@/lib/utils/error";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
 // types directly — both modules are loaded via dynamic `import()` inside
@@ -144,7 +145,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       }
       qrcode = await import("qrcode");
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
+      const m = errorMessage(err);
       this.pushStatus({
         status: "error",
         error: `Baileys not installed. Install @whiskeysockets/baileys and qrcode. (${m})`,
@@ -655,7 +656,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       } catch (err) {
         // Media decryption / network errors are non-fatal — fall through
         // so the caption (if any) and other parts still reach the agent.
-        const m = err instanceof Error ? err.message : String(err);
+        const m = errorMessage(err);
         console.warn(`[bridge ${this.bridge_id}] ${label} download failed for ${remote_jid}: ${m}`);
         return null;
       }
@@ -685,7 +686,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           + `[Attached ${label}: ${filename} (${mime}, ${sizeKb} KB) saved locally at ${saved.abs_path}. `
           + `Use file_read on that path to inspect the contents.]`;
       } catch (err) {
-        const m = err instanceof Error ? err.message : String(err);
+        const m = errorMessage(err);
         console.warn(`[bridge ${this.bridge_id}] failed to spill ${label} from ${remote_jid}: ${m}`);
       }
     };

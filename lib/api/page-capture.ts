@@ -14,6 +14,7 @@ import {
 import { publish } from "@/lib/notifications/bus";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import type { ContentPart } from "@/lib/tools/types";
+import { errorMessage } from "@/lib/utils/error";
 
 // 100KB UTF-8 cap on captured text. The LLM context window is the real
 // constraint; this cap exists to keep a runaway "<body>" pick from
@@ -205,7 +206,7 @@ export async function handlePageCapture(req: Request): Promise<Response> {
     silent: true,
     skip_persist_user_message: true,
   }).catch((err: unknown) => {
-    const m = err instanceof Error ? err.message : String(err);
+    const m = errorMessage(err);
     console.warn("[page-capture] silent observer run failed:", m);
   });
 

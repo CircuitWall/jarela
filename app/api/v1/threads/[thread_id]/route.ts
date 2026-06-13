@@ -19,6 +19,7 @@ import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
+import { errorMessage } from "@/lib/utils/error";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -93,7 +94,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   try {
     await getCheckpointer().deleteThread(thread_id);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (!/no such table:\s*checkpoints/i.test(msg)) {
       console.error("[threads] checkpoint cleanup failed for thread", thread_id, err);
     }

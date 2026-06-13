@@ -20,6 +20,7 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { handleInboundMessage } from "./dispatcher";
 import { WhatsAppBridgeAdapter } from "./whatsapp";
 import type { BridgeAdapter, StatusUpdate } from "./types";
+import { errorMessage } from "@/lib/utils/error";
 
 interface RuntimeState {
   adapters: Map<string, BridgeAdapter>;
@@ -75,7 +76,7 @@ export async function startBridge(bridge_id: string): Promise<void> {
     await adapter.start();
   } catch (err) {
     state.adapters.delete(bridge_id);
-    const m = err instanceof Error ? err.message : String(err);
+    const m = errorMessage(err);
     updateBridge(bridge_id, { status: "error", last_error: m });
     throw err;
   }
@@ -163,7 +164,7 @@ export async function startAllBridges(): Promise<void> {
     try {
       await startBridge(row.id);
     } catch (err) {
-      const m = err instanceof Error ? err.message : String(err);
+      const m = errorMessage(err);
       console.error(`[bridge ${row.id}] failed to start at boot:`, m);
       // updateBridge already happened inside startBridge's catch.
     }

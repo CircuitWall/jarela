@@ -3,6 +3,7 @@ import { Globe, Loader2, RefreshCw, Save, ShieldCheck, Trash2 } from "lucide-rea
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ProxyApplyResult, ProxyConfigEnvelope, ProxyMode, ProxyScheme } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 const SECRET_MASK = "********";
 
@@ -51,7 +52,7 @@ export function NetworkSection() {
       setEnv(r);
       seed(r);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -77,7 +78,7 @@ export function NetworkSection() {
       seed(r);
       setResult(r.applied ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -92,7 +93,7 @@ export function NetworkSection() {
       seed(r);
       setResult(r.applied ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -109,7 +110,7 @@ export function NetworkSection() {
       setCaLabel(`Loaded: ${file.name}`);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       // Reset the input so the same file can be picked again after removal.
       if (fileInputRef.current) fileInputRef.current.value = "";

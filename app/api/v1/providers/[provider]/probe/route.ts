@@ -15,6 +15,7 @@ import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 import { validateBody } from "@/lib/api/responses";
 import type { ProviderParams } from "@/lib/providers/types";
+import { errorMessage } from "@/lib/utils/error";
 
 type Params = { params: Promise<{ provider: string }> };
 
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     ]);
     return NextResponse.json({ ok: true });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     return NextResponse.json({ ok: false, error: msg });
   } finally {
     // Without this, the 15s timer keeps firing after probe() wins the

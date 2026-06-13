@@ -26,6 +26,7 @@ import { listThreadsByAgent, getMessages, setThreadWarmSummary } from "@/lib/sto
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
+import { errorMessage } from "@/lib/utils/error";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           skipped += 1;
         }
       } catch (e) {
-        errors.push({ thread_id: t.thread_id, error: e instanceof Error ? e.message : String(e) });
+        errors.push({ thread_id: t.thread_id, error: errorMessage(e) });
       }
     }
   }

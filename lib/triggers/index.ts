@@ -16,6 +16,7 @@ import { documentFastSweepHandler } from "./handlers/document-fast-sweep";
 // in the registry before the first watcher firing dispatches.
 import "./reactions/notify";
 import type { TriggerFiring } from "./types";
+import { errorMessage } from "@/lib/utils/error";
 
 // Single registration site for built-in handlers. Importing this file
 // from the scheduler ensures every handler is wired before the first
@@ -41,7 +42,7 @@ export async function startAllTriggerHandlers(): Promise<void> {
     try {
       await handler.start();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       console.error(`[triggers] handler "${handler.kind}" start failed:`, msg);
     }
   }
@@ -54,7 +55,7 @@ export async function stopAllTriggerHandlers(): Promise<void> {
     try {
       await handler.stop();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       console.error(`[triggers] handler "${handler.kind}" stop failed:`, msg);
     }
   }
@@ -71,7 +72,7 @@ export async function notifyTriggerHandlers(_reason: string): Promise<void> {
     try {
       await handler.sync();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       console.error(`[triggers] handler "${handler.kind}" sync failed:`, msg);
     }
   }
@@ -84,7 +85,7 @@ export async function runTriggerTick(asOf: Date = new Date()): Promise<void> {
     try {
       firings = await handler.getDueFirings(asOf);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       console.error(`[triggers] handler "${handler.kind}" getDueFirings failed:`, msg);
       continue;
     }
@@ -93,7 +94,7 @@ export async function runTriggerTick(asOf: Date = new Date()): Promise<void> {
         const outcome = await runTriggerFiring(firing);
         await handler.markFired(firing, outcome);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         console.error(`[triggers] firing ${handler.kind}/${firing.id} failed:`, msg);
         try {
           await handler.markFired(firing, {

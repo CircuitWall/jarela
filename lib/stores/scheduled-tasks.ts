@@ -8,6 +8,7 @@ import {
   type ReactionKind,
   type ResolvedReaction,
 } from "./reaction-shared";
+import { errorMessage } from "@/lib/utils/error";
 
 export type ScheduleKind = "once" | "cron";
 
@@ -252,7 +253,7 @@ export function markTaskRan(id: string, kind: ScheduleKind, schedule: string, er
     // Invalid cron — disable the task to avoid a tight error loop.
     getDb()
       .prepare("UPDATE scheduled_tasks SET enabled=0, last_run_at=?, last_error=?, updated_at=? WHERE id=?")
-      .run(t, `Cron parse failed: ${e instanceof Error ? e.message : String(e)}`, t, id);
+      .run(t, `Cron parse failed: ${errorMessage(e)}`, t, id);
     return;
   }
   getDb()

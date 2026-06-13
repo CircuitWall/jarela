@@ -3,6 +3,7 @@ import { z } from "zod";
 import { deleteWatcher, updateWatcher } from "@/lib/stores/watchers";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
+import { errorMessage } from "@/lib/utils/error";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -34,7 +35,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!row) return notFoundResponse();
     return NextResponse.json(row);
   } catch (e) {
-    return errorResponse(e instanceof Error ? e.message : String(e));
+    return errorResponse(errorMessage(e));
   }
 }
 

@@ -7,6 +7,7 @@ import {
   MANIFEST_INPUT_SCHEMA,
 } from "@/lib/tools/package-manifests";
 import { z } from "zod";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Ctx {
   params: Promise<{ name: string }>;
@@ -33,7 +34,7 @@ export async function PUT(req: NextRequest, ctx: Ctx) {
     );
     return NextResponse.json(result);
   } catch (err) {
-    return errorResponse(err instanceof Error ? err.message : String(err), 400);
+    return errorResponse(errorMessage(err), 400);
   }
 }
 

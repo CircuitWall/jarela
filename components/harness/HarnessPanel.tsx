@@ -10,6 +10,7 @@ import {
   isBuiltinHarnessId,
 } from "@/api/types";
 import { HarnessEditor } from "./HarnessEditor";
+import { errorMessage } from "@/lib/utils/error";
 
 export function HarnessPanel() {
   const [harnesses, setHarnesses] = useState<Harness[]>([]);
@@ -26,7 +27,7 @@ export function HarnessPanel() {
       setHarnesses(res.harnesses);
       setDefaultId(res.default_harness_id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -41,7 +42,7 @@ export function HarnessPanel() {
       await api.harnesses.setDefault(id);
       setDefaultId(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -51,7 +52,7 @@ export function HarnessPanel() {
       await api.harnesses.delete(id);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -68,7 +69,7 @@ export function HarnessPanel() {
       await load();
       setEditing(created);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 

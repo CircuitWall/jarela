@@ -4,6 +4,7 @@ import { getEmbeddingModelConfigName, setEmbeddingModelConfigName } from "@/lib/
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
+import { errorMessage } from "@/lib/utils/error";
 
 const PutSchema = z.object({
   embedding_model_config: z.string().min(1).nullable(),
@@ -61,7 +62,7 @@ async function probeEmbeddingModelConfig(name: string | null) {
       ok: false,
       provider: cfg.provider,
       model_id: modelId,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

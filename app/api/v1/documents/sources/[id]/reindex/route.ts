@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDocumentSource } from "@/lib/stores/document-sources";
 import { indexSource } from "@/lib/documents/indexer";
 import { isRemoteKind, runRemoteSource } from "@/lib/documents/remote";
+import { errorMessage } from "@/lib/utils/error";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -21,7 +22,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ source_id: id, stats });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
+      { error: errorMessage(err) },
       { status: 500 },
     );
   }

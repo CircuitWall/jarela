@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createRoute, getBridge, listRoutes, type BridgeRouteRow } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     });
     return NextResponse.json(toResponse(row), { status: 201 });
   } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
+    const m = errorMessage(err);
     // UNIQUE violations: either (bridge_id, remote_jid) already routed, or
     // the agent is already the target of another route. The error message
     // from SQLite tells us which.

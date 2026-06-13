@@ -9,6 +9,7 @@ import type {
   TriggerFiring,
   TriggerOutcome,
 } from "./types";
+import { errorMessage } from "@/lib/utils/error";
 
 /**
  * Invoke an agent for one prompt firing. Extracted from the original
@@ -90,7 +91,7 @@ export async function runTriggerScript(firing: ScriptFiring): Promise<TriggerOut
       threadId: "",
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return {
       status: "error",
       preview: "",

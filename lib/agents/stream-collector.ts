@@ -12,6 +12,7 @@
 import type { StreamChunk } from "@/lib/agents/base";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
+import { errorMessage } from "@/lib/utils/error";
 
 export interface CollectedRun {
   assistantContent: string;
@@ -119,7 +120,7 @@ export async function collectStream(
   } catch (err) {
     result.terminal = "error";
     const name = err instanceof Error ? err.name : "";
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     result.errorMessage = msg;
     if (name === "AbortError" || /aborted/i.test(msg)) result.aborted = true;
   }

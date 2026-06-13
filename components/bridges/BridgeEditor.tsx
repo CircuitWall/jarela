@@ -9,6 +9,7 @@ import { resolveAgentModel } from "@/lib/agents/effective-model";
 import { formatRelativeOrDate } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { StatusPill } from "./BridgesPanel";
+import { errorMessage } from "@/lib/utils/error";
 
 /**
  * Single-bridge editor: shows live status (QR while pairing, paired ID once
@@ -290,7 +291,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
       }));
       setSearchQuery("");
     } catch (e) {
-      setSearchMsg(e instanceof Error ? e.message : String(e));
+      setSearchMsg(errorMessage(e));
     } finally {
       setSearching(false);
     }
@@ -307,7 +308,7 @@ function RouteTable({ bridge_id }: { bridge_id: string }) {
       setManualMode(false);
       setDraft({ remote_jid: "", agent_id: "", label: "" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
