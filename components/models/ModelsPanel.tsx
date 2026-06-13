@@ -6,6 +6,7 @@ import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { ModelEditor } from "./ModelEditor";
 import { CapBadges } from "./CapBadges";
+import { CustomProvidersSection } from "./CustomProvidersSection";
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-700",
@@ -96,6 +97,8 @@ export function ModelsPanel() {
             );
           })}
         </div>
+
+        <CustomProvidersSection />
 
       </div>
 

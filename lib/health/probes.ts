@@ -13,10 +13,11 @@ import { resolvePackageAuth } from "@/lib/tools/auth-registry";
 import type { AtlassianAuth } from "@circuitwall/atlassian-langchain";
 import type { GitHubAuth } from "@circuitwall/github-langchain";
 import type { JiraAlignAuth } from "@circuitwall/jira-align-langchain";
-// Trigger registration of the @circuitwall/* package auth resolvers
+// Trigger registration of the default LangChain package auth resolvers
 // before the first probe runs. Health probes can be invoked from the
 // scheduler before any agent tool call has caused builtins.ts to load.
-import "@/lib/tools/builtin-langchain-packages";
+import { registerDefaultPackages } from "@/lib/tools/default-packages";
+registerDefaultPackages();
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";

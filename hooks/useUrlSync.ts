@@ -29,10 +29,16 @@ export function useUrlSync() {
       if (typeof window === "undefined") return;
       const href = `${window.location.search}${window.location.hash}`;
       const parsed = parseHref(href);
-      const tab = parsed.tab ?? "chat";
+      let tab = parsed.tab ?? "chat";
+      let item = parsed.item ?? null;
+      // Legacy: ?tab=extensions now lives at Tools → Packages.
+      if (tab === "extensions") {
+        tab = "tools";
+        item = "packages";
+      }
       if (TABS.includes(tab)) {
         dispatch({ type: "SET_TAB", tab });
-        dispatch({ type: "SET_SELECTION", tab, itemId: parsed.item ?? null });
+        dispatch({ type: "SET_SELECTION", tab, itemId: item });
       }
     }
     applyFromUrl();
