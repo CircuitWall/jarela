@@ -1,6 +1,7 @@
 // Barrel of built-in tool modules. Each side-effect import triggers the
-// module's `registerTools(...)` call (see ./registry.ts). Adding a new
-// built-in tool: add the file under lib/tools/ and append a line here.
+// module's `registerLangChainPackage(...)` call (see ./langchain-package.ts).
+// Adding a new built-in tool: add the file under lib/tools/ and append a
+// line here.
 //
 // Order matters only for deterministic logging / UI ordering — registry
 // preserves insertion order.

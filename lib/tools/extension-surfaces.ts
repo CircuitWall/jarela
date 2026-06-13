@@ -11,7 +11,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 interface ExtensionSurface {
   id: string;
@@ -55,10 +55,10 @@ const SURFACES: readonly ExtensionSurface[] = [
     name: "Built-in tool",
     summary:
       "Add a tool callable by the agent. Implement with @langchain/core/tools, " +
-      "register with `registerTools(category, capability, [tool])`, and add a " +
-      "side-effect import in lib/tools/builtins.ts. Capability gating is " +
+      "register with `registerLangChainPackage({ category, tools: { read|write|execute: [tool] } })`, " +
+      "and add a side-effect import in lib/tools/builtins.ts. Capability gating is " +
       "read | write | execute.",
-    registration_entrypoint: "lib/tools/<name>.ts (registerTools call) + lib/tools/builtins.ts",
+    registration_entrypoint: "lib/tools/<name>.ts (registerLangChainPackage call) + lib/tools/builtins.ts",
     doc_section: "docs/EXTENDING.md#adding-a-built-in-tool",
     example_path: "lib/tools/template.ts",
     introspection_tool: "list_tools",
@@ -124,6 +124,7 @@ export const describeExtensionSurfacesTool = tool(
         "lib/providers/types.ts (ModelProvider interface)",
         "lib/tools/types.ts (OpenAITool, ToolContext, InvokeMessage)",
         "lib/tools/registry.ts (registerTools, ToolCategory, Capability)",
+        "lib/tools/langchain-package.ts (registerLangChainPackage)",
         "lib/mcp/registry.ts (RegistryEntry, applyVariables)",
       ],
       notes: [
@@ -150,4 +151,7 @@ export const describeExtensionSurfacesTool = tool(
   },
 );
 
-registerTools("Config", "read", [describeExtensionSurfacesTool]);
+registerLangChainPackage({
+  category: "Config",
+  tools: { read: [describeExtensionSurfacesTool] },
+});

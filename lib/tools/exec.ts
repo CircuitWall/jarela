@@ -1,7 +1,7 @@
 import { execSync } from "node:child_process";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { checkExecAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
@@ -163,4 +163,7 @@ export const shellExecTool = tool(
   },
 );
 
-registerTools("Shell", "execute", [localExecTool, shellExecTool]);
+registerLangChainPackage({
+  category: "Shell",
+  tools: { execute: [localExecTool, shellExecTool] },
+});

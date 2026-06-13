@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getUserProfile } from "@/lib/stores/user-profile";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 // Returns the user's last reported browser geolocation, if they've opted in
 // from the UI. The agent should call this whenever a request is location-
@@ -49,4 +49,7 @@ export const getUserLocationTool = tool(
   },
 );
 
-registerTools("Web", "read", [getUserLocationTool]);
+registerLangChainPackage({
+  category: "Web",
+  tools: { read: [getUserLocationTool] },
+});

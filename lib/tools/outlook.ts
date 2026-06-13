@@ -15,7 +15,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { stripHtml } from "@/lib/utils/html";
 import { truncateBytes } from "@/lib/utils/text";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 import {
   graphFetch,
   resolveMicrosoftAuth,
@@ -308,9 +308,10 @@ export const outlookTrashMessageTool = tool(
   },
 );
 
-registerTools("Mail", "read", [
-  outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool,
-]);
-registerTools("Mail", "write", [
-  outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool,
-]);
+registerLangChainPackage({
+  category: "Mail",
+  tools: {
+    read: [outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool],
+    write: [outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool],
+  },
+});

@@ -8,7 +8,7 @@ import { z } from "zod";
 import { listMcpServers } from "@/lib/stores/mcp-servers";
 import { getAllToolsAsync } from "./index";
 import { getToolSource } from "./index";
-import { registerTools } from "./registry";
+import { registerLangChainPackage } from "./langchain-package";
 
 interface McpServerSummary {
   name: string;
@@ -68,4 +68,7 @@ export const listMcpServersTool = tool(
   },
 );
 
-registerTools("Config", "read", [listMcpServersTool]);
+registerLangChainPackage({
+  category: "Config",
+  tools: { read: [listMcpServersTool] },
+});
