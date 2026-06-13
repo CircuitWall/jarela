@@ -444,6 +444,8 @@ them in your shell / service unit:
 | `JARELA_HOSTNAME` / `HOSTNAME` | `127.0.0.1`       | Bind address                                      |
 | `JARELA_DB_DIR`           | `~/.jarela` (Win: `%LOCALAPPDATA%\Jarela`) | SQLite + generated files dir |
 | `JARELA_TOOLS_DIR`        | `$JARELA_DB_DIR/tools` | External tool plugins (CJS/TS) loaded at startup  |
+| `JARELA_PACKAGES_DIR`     | `$JARELA_DB_DIR/packages` | npm install root for hot-loaded vanilla LangChain tool packages (`POST /api/v1/packages/install`). Manifests live under `$JARELA_PACKAGES_DIR/manifests/`. |
+| `JARELA_PACKAGE_ALLOWLIST` | _(unset)_             | `+`-separated list of publisher prefixes (`@my-org/`, `my-tool`) allowed to install without an approval step. Defaults (`@langchain/`, `@circuitwall/`, `langchain`) are always allowed; this list extends them. Same naming/semantics as `ENV_ALLOWLIST`. |
 | `JARELA_RECURSION_LIMIT`  | `200`                  | Max LangGraph steps per agent run                 |
 | `JARELA_VOICE_TIMEOUT_MS` | `60000`                | Gemini voice (TTS/STT) request timeout            |
 | `JARELA_IMAGE_TIMEOUT_MS` | `60000`                | Gemini image-generation request timeout           |
@@ -755,6 +757,35 @@ Names that collide with built-in tools are rejected (built-in wins). Throw an
 5. If it calls a network or external resource, document the env vars and gate
    it behind a category the user can toggle off.
 
+### Add a vanilla LangChain tool package (hot-load, no rebuild)
+
+Any npm package that exports a `StructuredTool` (the standard
+`@langchain/core/tools` shape) can be loaded into a running Jarela
+without touching the source tree.
+
+1. Pick a package — anything under `@langchain/community/tools/*`,
+   `@circuitwall/*`, or `langchain` is allow-listed out of the box.
+   Other publishers require an explicit approval (see below) or an
+   addition to `JARELA_PACKAGE_ALLOWLIST` (`+` separated list, same
+   pattern as `ENV_ALLOWLIST`).
+2. `POST /api/v1/packages/install { "spec": "<npm-spec>" }` — Jarela
+   runs `npm install` inside `$JARELA_PACKAGES_DIR` (default
+   `~/.jarela/packages/`), then introspects every
+   `StructuredToolInterface` export it finds and returns them. For an
+   untrusted publisher this returns 202 + a pending approval id; call
+   `POST /api/v1/packages/install/:id` to approve or `DELETE` to deny.
+3. `POST /api/v1/packages/manifests { name, package, export?,
+   category, capability?, args?, requiredEnv? }` — register the tool.
+   The manifest is written to
+   `$JARELA_PACKAGES_DIR/manifests/<name>.json` and the loader
+   reloads in-place. The agent picks the tool up on its next turn —
+   no restart.
+4. `GET /api/v1/packages` shows what's currently loaded; `DELETE
+   /api/v1/packages/manifests/:name` removes a manifest and reloads.
+
+See [docs/EXTENDING.md → Hot-loading a vanilla LangChain tool package](./docs/EXTENDING.md#hot-loading-a-vanilla-langchain-tool-package)
+for the full endpoint reference and trust model.
+
 ### Add an MCP server
 
 Use **Connections → MCP servers** in the UI. The picker searches the official
@@ -788,6 +819,7 @@ Only drop in code you wrote or trust. There is no sandbox.
 | `~/.jarela/baileys/` | WhatsApp Baileys auth state |
 | `~/.jarela/providers/` | External provider plugins, hot-loaded (optional) |
 | `~/.jarela/tools/` | External tool plugins, hot-loaded (optional) |
+| `~/.jarela/packages/` | npm install root for vanilla LangChain packages (`POST /api/v1/packages/install`); manifests under `packages/manifests/` |
 | `%LOCALAPPDATA%\Jarela\logs\app.log` | Installed-task stdout/stderr |
 
 Override the location with `JARELA_DB_DIR=/path/to/dir`. On first launch
@@ -849,7 +881,7 @@ C4Context
     System_Ext(github, "GitHub API", "Repo / PR integrations")
     System_Ext(atlassian, "Atlassian Cloud", "Jira + Confluence — tools + document-RAG ingest (ADR-0024, ADR-0026)")
     SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings, document chunks")
-    SystemDb_Ext(extdir, "~/.jarela/{providers,tools}/", "Drop-in .cjs extension files (hot-loaded)")
+    SystemDb_Ext(extdir, "~/.jarela/{providers,tools,packages}/", "Drop-in .cjs extension files + hot-loaded LangChain npm packages")
     System_Ext(browserext, "Jarela Browser Extension", "MV3 — element picker → loopback POST (ADR-0018)")
 
     Rel(user, jarela, "HTTPS / SSE")
