@@ -45,13 +45,13 @@ import {
   type RegisteredPackage,
 } from "./langchain-package";
 
-const BUILTIN_CATEGORIES = [
+export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
   "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
   "Config", "Agent",
 ] as const;
 
-const MANIFEST_SCHEMA = z.object({
+export const MANIFEST_SCHEMA = z.object({
   package: z.string().min(1),
   export: z.string().min(1).default("default"),
   category: z.enum(BUILTIN_CATEGORIES),
@@ -81,7 +81,7 @@ export function getPackagesDir(): string {
   return join(homedir(), ".jarela", "packages");
 }
 
-function getManifestsDir(): string {
+export function getManifestsDir(): string {
   return join(getPackagesDir(), "manifests");
 }
 

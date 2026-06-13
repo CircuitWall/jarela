@@ -181,9 +181,20 @@ publisher in `PACKAGE_PUBLISHER_ALLOWLIST` (default `@langchain/*`,
 install immediately. Anything else returns `202` with a pending
 approval id; `GET /api/v1/packages/install` lists pending approvals,
 `POST /api/v1/packages/install/:id` approves and runs, and
-`DELETE /api/v1/packages/install/:id` denies. After install you still
-need to drop a manifest under `manifests/` (or call the
-forthcoming manifest-CRUD endpoint) to actually register the tool.
+`DELETE /api/v1/packages/install/:id` denies.
+
+**Registering an installed package.** Once the package is on disk,
+the manifest-CRUD endpoints create the file that the loader picks up:
+
+- `GET /api/v1/packages/manifests` — list current manifests.
+- `POST /api/v1/packages/manifests` with `{ name, package, export?,
+  category, capability?, args?, requiredEnv? }` — write a new
+  manifest and trigger a reload. 409 on duplicate name.
+- `GET|PUT|DELETE /api/v1/packages/manifests/:name` — fetch, upsert
+  (replace), or remove a single manifest.
+
+Each mutating call triggers `reloadLangChainPackages()` so the tool
+becomes live (or disappears) on the agent's next turn.
 
 **Trust model.** A loaded package runs with full Node privilege in the
 Jarela process, same as `JARELA_TOOLS_DIR` extensions. Only install
