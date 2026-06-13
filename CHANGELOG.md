@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Atlassian (Jira + Confluence) tools are now an extractable npm
+  package.** `lib/tools/atlassian.ts` was split into:
+  - `@circuitwall/atlassian-langchain` (`packages/atlassian-langchain/`,
+    v0.1.0) — the 64 LangChain tools, 5 pure helpers, and the low-level
+    `atlassianFetch` escape hatch. Pluggable auth via `setAuthResolver()`
+    with a default env-var resolver. Zero Jarela-specific code.
+  - `lib/tools/atlassian.ts` (Jarela) — now a ~125 LOC adapter that
+    plugs Jarela's encrypted integrations store into the package via
+    `setAuthResolver()` and re-exports every tool / helper / type so
+    existing internal callers (`lib/documents/remote/{jira,confluence}.ts`,
+    `lib/health/probes.ts`, `lib/tools/atlassian*.test.ts`) keep working
+    unchanged.
+
+  No behavior change for Jarela users. External LangChain.js / LangGraph
+  agents can now `npm i @circuitwall/atlassian-langchain` and get the
+  same toolbelt without running Jarela. All 1,855 existing tests still
+  pass.
 - **Repo is now an npm workspaces monorepo.** Added `"workspaces":
   ["packages/*"]` to the root `package.json` to host standalone
   `@circuitwall/*` packages extracted from `lib/` alongside the Jarela
@@ -17,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   publishes, and runs unchanged. See `packages/README.md` for layout and
   conventions, and `CONTRIBUTING.md` for the release rules that apply to
   workspace packages.
+- **Build now compiles workspace packages first.** `npm run build` now
+  runs `npm run packages:build` (a thin wrapper over
+  `npm run build --workspaces --if-present`) before `next build`, and a
+  root `prepare` script does the same after `npm install` so fresh
+  clones don't need an extra step before `npm run dev` / `npm test`.
 
 ## [1.8.1] - 2026-06-13
 
