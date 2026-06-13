@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { z } from "zod";
 import {
   startDeviceFlow,
   pollDeviceFlow,
   getAuthStatus,
   clearStoredOAuthToken,
 } from "@/lib/providers/github-copilot-auth";
+import { validateBody } from "@/lib/api/responses";
+
+const PutBody = z.object({
+  device_code: z.string().min(1, "device_code required"),
+});
 
 // GET → auth status. POST → start device flow. DELETE → sign out.
 export async function GET() {
@@ -25,11 +32,11 @@ export async function DELETE() {
   return NextResponse.json({ deleted });
 }
 
-export async function PUT(req: Request) {
+export async function PUT(req: NextRequest) {
   // Poll endpoint: caller posts { device_code } repeatedly until completion.
+  const body = await validateBody(req, PutBody);
+  if (body instanceof NextResponse) return body;
   try {
-    const body = await req.json() as { device_code?: string };
-    if (!body.device_code) return NextResponse.json({ error: "device_code required" }, { status: 400 });
     const result = await pollDeviceFlow(body.device_code);
     return NextResponse.json(result);
   } catch (e) {

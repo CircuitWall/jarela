@@ -1,26 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { deleteTaskAssignment, upsertTaskAssignment } from "@/lib/stores/task-assignments";
+import { validateBody } from "@/lib/api/responses";
 import type { ToolPolicy } from "@/api/types";
 
 type Params = { params: Promise<{ agent_id: string }> };
 
+const PutBody = z.object({
+  model_config_name: z.string().min(1, "model_config_name required"),
+  tool_policy: z
+    .object({
+      allow: z.array(z.unknown()).optional(),
+      deny: z.array(z.unknown()).optional(),
+    })
+    .optional(),
+});
+
 export async function PUT(req: NextRequest, { params }: Params) {
   const { agent_id } = await params;
-  const { model_config_name, tool_policy } = await req.json() as { model_config_name: string; tool_policy?: ToolPolicy };
-  if (!model_config_name) return NextResponse.json({ error: "model_config_name required" }, { status: 400 });
+  const body = await validateBody(req, PutBody);
+  if (body instanceof NextResponse) return body;
 
-  const normalized: ToolPolicy | undefined = tool_policy
+  const normalized: ToolPolicy | undefined = body.tool_policy
     ? {
-        ...(Array.isArray(tool_policy.allow)
-          ? { allow: tool_policy.allow.map((v) => String(v).trim()).filter(Boolean) }
+        ...(Array.isArray(body.tool_policy.allow)
+          ? { allow: body.tool_policy.allow.map((v) => String(v).trim()).filter(Boolean) }
           : {}),
-        ...(Array.isArray(tool_policy.deny)
-          ? { deny: tool_policy.deny.map((v) => String(v).trim()).filter(Boolean) }
+        ...(Array.isArray(body.tool_policy.deny)
+          ? { deny: body.tool_policy.deny.map((v) => String(v).trim()).filter(Boolean) }
           : {}),
       }
     : undefined;
 
-  return NextResponse.json(upsertTaskAssignment(agent_id, model_config_name, normalized));
+  return NextResponse.json(upsertTaskAssignment(agent_id, body.model_config_name, normalized));
 }
 
 export async function DELETE(_req: NextRequest, { params }: Params) {

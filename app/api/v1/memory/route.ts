@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { listMemory, putMemory } from "@/lib/stores/memory";
-import { errorResponse, createdResponse } from "@/lib/api/responses";
+import { createdResponse, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
+
+const PutBody = z.object({
+  namespace: z.string().min(1, "namespace required"),
+  key: z.string().min(1, "key required"),
+  value: z.unknown(),
+});
 
 export function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams;
@@ -10,8 +17,8 @@ export function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { namespace, key, value } = await req.json() as { namespace: string; key: string; value: unknown };
-  if (!namespace || !key) return errorResponse("namespace and key required");
-  const r = putMemory(namespace, key, value);
-  return createdResponse({ ...r, value });
+  const body = await validateBody(req, PutBody);
+  if (body instanceof NextResponse) return body;
+  const r = putMemory(body.namespace, body.key, body.value);
+  return createdResponse({ ...r, value: body.value });
 }

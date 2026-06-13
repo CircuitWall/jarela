@@ -7,7 +7,8 @@
  * pick up an in-flight stream. See `docs/api.md`.
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import type { StreamOptions, StreamChunk } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import {
@@ -24,12 +25,25 @@ import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
+import { validateBody } from "@/lib/api/responses";
 import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
+
+// `attachments` and `stream_options` are passed through to prepareThreadRun
+// which does its own structural handling — keep loose at this boundary.
+const RunBody = z.object({
+  message: z.string(),
+  attachments: z.array(z.unknown()).optional(),
+  stream_options: z.unknown().optional(),
+  // ADR-0042 — explicit context boundary the chat picked. ISO timestamp,
+  // null to clear the pin, omitted to leave whatever's already persisted
+  // on the thread.
+  hot_since: z.string().nullable().optional(),
+});
 
 // POST is the *command* half of the run lifecycle (ADR-0008). It accepts the
 // new user message, registers a run in the in-memory registry, kicks the
@@ -44,15 +58,12 @@ const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify
 // SSE-GET-reattach trio into one transport.
 export async function POST(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
-  const { message, attachments, stream_options, hot_since } = (await req.json()) as {
-    message: string;
-    attachments?: ContentPart[];
-    stream_options?: StreamOptions;
-    // ADR-0042 — explicit context boundary the chat picked. ISO timestamp,
-    // null to clear the pin, omitted to leave whatever's already persisted
-    // on the thread.
-    hot_since?: string | null;
-  };
+  const parsed = await validateBody(req, RunBody);
+  if (parsed instanceof NextResponse) return parsed;
+  const message = parsed.message;
+  const attachments = parsed.attachments as ContentPart[] | undefined;
+  const stream_options = parsed.stream_options as StreamOptions | undefined;
+  const hot_since = parsed.hot_since;
 
   // Per-thread FIFO queue (lib/agents/run-queue.ts). Every entry point
   // that drives an agent on a thread goes through this — HTTP POST,

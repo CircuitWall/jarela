@@ -5,10 +5,20 @@
  * by name (`model_config_name`). See `docs/api.md`.
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
-import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";
+import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
+
+const CreateBody = z.object({
+  name: z.string().min(1, "name required"),
+  provider: z.string().min(1, "provider required"),
+  model_id: z.string().min(1, "model_id required"),
+  params: z.record(z.string(), z.unknown()).optional(),
+  is_default: z.boolean().optional(),
+  credential_id: z.string().nullable().optional(),
+});
 
 // Fields that must never leave the server in plaintext. Inline values
 // (e.g. lingering on rows that haven't been migrated to credentials yet)
@@ -36,12 +46,16 @@ export function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { name, provider, model_id, params = {}, is_default = false, credential_id = null } = await req.json() as {
-    name: string; provider: string; model_id: string; params?: Record<string, unknown>;
-    is_default?: boolean; credential_id?: string | null;
-  };
-  if (!name || !provider || !model_id) return errorResponse("name, provider, model_id required");
-  const r = upsertModelConfig(name, provider, model_id, params, is_default, credential_id);
+  const body = await validateBody(req, CreateBody);
+  if (body instanceof NextResponse) return body;
+  const r = upsertModelConfig(
+    body.name,
+    body.provider,
+    body.model_id,
+    body.params ?? {},
+    body.is_default ?? false,
+    body.credential_id ?? null,
+  );
   return createdResponse({
     ...r,
     params: redactInlineParams(r.params),
