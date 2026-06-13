@@ -1,6 +1,7 @@
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
+import { getConfig } from "@/lib/env/config";
 
 export type LlmModelRate = {
   model_id: string;
@@ -96,7 +97,7 @@ function normalizeRow(raw: LlmExtractRowRaw | null | undefined): LlmModelRate | 
 
 function pickExtractorConfig() {
   try {
-    const explicit = process.env.JARELA_PRICING_EXTRACTOR_MODEL?.trim();
+    const explicit = getConfig().pricingExtractorModel;
     if (explicit) {
       const cfg = getModelConfig(explicit);
       if (cfg) return cfg;

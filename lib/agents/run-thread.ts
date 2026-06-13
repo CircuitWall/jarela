@@ -48,7 +48,9 @@ export class RunThreadError extends Error {
 // than occasionally missing a memory hit. 400ms was too tight: warm OpenAI
 // text-embedding-3-small calls land in 200–800ms, cold ones longer, so the
 // race silently lost on most turns and recall effectively never fired.
-const RECALL_BUDGET_MS = Number(process.env.JARELA_RECALL_BUDGET_MS) || 1500;
+function recallBudgetMs(): number {
+  return getConfig().recallBudgetMs;
+}
 
 function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return new Promise<T>((resolve) => {
@@ -202,7 +204,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const allowedTools = getAgentTools(agentCfg);
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
 
-  // Recall is best-effort: cap on RECALL_BUDGET_MS so a cold embeddings
+  // Recall is best-effort: cap on the recall budget so a cold embeddings
   // round-trip doesn't block the LLM stream from starting.
   const oldestInWindow = historyWindow.history.length > 0
     ? contentText(historyWindow.history[0].content)
@@ -211,7 +213,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     ? ""
     : await raceWithBudget(
       buildRecallContext(req.thread_id, trimmed, oldestInWindow),
-      RECALL_BUDGET_MS,
+      recallBudgetMs(),
       "",
     );
 

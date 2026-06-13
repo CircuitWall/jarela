@@ -28,6 +28,7 @@ export interface JarelaConfig {
   readonly sseConnectTimeoutMs: number;
   readonly healthCheckTimeoutMs: number;
   readonly httpMaxAttempts: number;
+  readonly allowPrivateFetch: boolean;
 
   // agent
   readonly recursionLimit: number;
@@ -40,6 +41,9 @@ export interface JarelaConfig {
   readonly maxTransientRetries: number;
   readonly maxDelegationDepth: number;
   readonly streamParseTripwire: number;
+  readonly recallBudgetMs: number;
+  readonly maxThreadMessages: number;
+  readonly maxSessionArchives: number;
 
   // tools
   readonly voiceTimeoutMs: number;
@@ -70,6 +74,11 @@ export interface JarelaConfig {
   // documents
   readonly docMaxFileBytes: number;
   readonly docMaxFilesPerSource: number;
+  readonly pricingLlmExtract: boolean;
+  readonly pricingExtractorModel: string;
+
+  // providers
+  readonly enableMockProvider: boolean;
 
   // anti-hallucination detector
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
@@ -147,6 +156,7 @@ export function getConfig(): JarelaConfig {
     sseConnectTimeoutMs: parsePositiveInt(env.JARELA_SSE_CONNECT_TIMEOUT_MS, ENV_DEFAULTS.sseConnectTimeoutMs),
     healthCheckTimeoutMs: parsePositiveInt(env.JARELA_HEALTH_CHECK_TIMEOUT_MS, ENV_DEFAULTS.healthCheckTimeoutMs),
     httpMaxAttempts: parsePositiveInt(env.JARELA_HTTP_MAX_ATTEMPTS, ENV_DEFAULTS.httpMaxAttempts),
+    allowPrivateFetch: parseBool(env.JARELA_ALLOW_PRIVATE_FETCH, ENV_DEFAULTS.allowPrivateFetch),
 
     // agent
     recursionLimit: parsePositiveInt(env.JARELA_RECURSION_LIMIT, ENV_DEFAULTS.recursionLimit),
@@ -159,6 +169,9 @@ export function getConfig(): JarelaConfig {
     maxTransientRetries: parseNonNegativeInt(env.JARELA_MAX_TRANSIENT_RETRIES, ENV_DEFAULTS.maxTransientRetries),
     maxDelegationDepth: parseNonNegativeInt(env.JARELA_MAX_DELEGATION_DEPTH, ENV_DEFAULTS.maxDelegationDepth),
     streamParseTripwire: parsePositiveInt(env.JARELA_STREAM_PARSE_TRIPWIRE, ENV_DEFAULTS.streamParseTripwire),
+    recallBudgetMs: parseNonNegativeInt(env.JARELA_RECALL_BUDGET_MS, ENV_DEFAULTS.recallBudgetMs),
+    maxThreadMessages: parsePositiveInt(env.JARELA_MAX_THREAD_MESSAGES, ENV_DEFAULTS.maxThreadMessages),
+    maxSessionArchives: parsePositiveInt(env.JARELA_MAX_SESSION_ARCHIVES, ENV_DEFAULTS.maxSessionArchives),
 
     // tools
     voiceTimeoutMs: parsePositiveInt(env.JARELA_VOICE_TIMEOUT_MS, ENV_DEFAULTS.voiceTimeoutMs),
@@ -189,6 +202,11 @@ export function getConfig(): JarelaConfig {
     // documents
     docMaxFileBytes: parsePositiveInt(env.JARELA_DOC_MAX_FILE_BYTES, ENV_DEFAULTS.docMaxFileBytes),
     docMaxFilesPerSource: parsePositiveInt(env.JARELA_DOC_MAX_FILES_PER_SOURCE, ENV_DEFAULTS.docMaxFilesPerSource),
+    pricingLlmExtract: parseBool(env.JARELA_PRICING_LLM_EXTRACT, ENV_DEFAULTS.pricingLlmExtract),
+    pricingExtractorModel: (env.JARELA_PRICING_EXTRACTOR_MODEL ?? ENV_DEFAULTS.pricingExtractorModel).trim(),
+
+    // providers
+    enableMockProvider: parseBool(env.JARELA_ENABLE_MOCK_PROVIDER, ENV_DEFAULTS.enableMockProvider),
 
     // anti-hallucination classifier
     hallucinationDetectorMode: parseHallucinationMode(

@@ -7,6 +7,7 @@ import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
 import { isMasterKeyLocked, onMasterKeyUnlocked } from "@/lib/crypto/master-key";
+import { getConfig } from "@/lib/env/config";
 import {
   getDueTasks,
   markTasksDeferred,
@@ -16,12 +17,7 @@ import {
 // Env-tunable so e2e tests can ride a tighter loop without waiting 30 s
 // per fs-watch firing. Production / dev use the 30 s default; tests
 // should set JARELA_SCHEDULER_TICK_MS=200 (or similar).
-const POLL_INTERVAL_MS = (() => {
-  const raw = process.env.JARELA_SCHEDULER_TICK_MS;
-  if (!raw) return 30_000;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n >= 50 ? n : 30_000;
-})();
+const POLL_INTERVAL_MS = getConfig().schedulerTickMs;
 // Sweep document sources every Nth tick. 20 ticks × 30s = 10 min, which
 // matches typical "I edited a file, ask Jarela about it" patience. PR-D
 // upgrades this to event-driven fs watching.
