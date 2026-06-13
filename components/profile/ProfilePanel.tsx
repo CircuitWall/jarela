@@ -7,7 +7,6 @@ import { OnboardingWizard } from "@/components/setup/OnboardingWizard";
 import { ProfileEditor } from "./ProfileEditor";
 import { SecurityPanel } from "./SecurityPanel";
 import { RedactionPanel } from "./RedactionPanel";
-import { NetworkPanel } from "./NetworkPanel";
 
 export function ProfilePanel() {
   const { state } = useAppContext();
@@ -65,7 +64,6 @@ export function ProfilePanel() {
         <div className="px-4 pb-6">
           <SecurityPanel />
           <RedactionPanel />
-          <NetworkPanel />
         </div>
       </div>
     </div>

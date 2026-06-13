@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Custom provider plugins moved to Models.** `~/.jarela/providers/*.cjs`
   files now appear under the Models tab next to other provider listings
   instead of in the now-removed Browser-extension surface.
+- **Network env vars moved to Settings → Networking.** The bind host /
+  port / HTTP timeout / retry editor that used to live at the bottom of
+  User Profile is now a section inside Settings → Networking, alongside
+  the proxy, allowed-sites, and env-alias controls.
 
 ### Removed
 
