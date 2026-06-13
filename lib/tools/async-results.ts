@@ -21,6 +21,7 @@
 //     pending entry is dropped (with a console warn).
 
 import crypto from "node:crypto";
+import { errorMessage } from "@/lib/utils/error";
 
 export type AsyncStatus = "pending" | "done" | "error";
 
@@ -102,7 +103,7 @@ export function failAsyncCall(key: string, err: unknown): void {
   const rec = STORE.get(key);
   if (!rec) return;
   rec.status = "error";
-  rec.error = err instanceof Error ? err.message : String(err);
+  rec.error = errorMessage(err);
   rec.finished_at = Date.now();
 }
 

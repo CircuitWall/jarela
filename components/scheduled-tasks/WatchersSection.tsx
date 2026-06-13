@@ -11,6 +11,7 @@ import { AgentModelBadge } from "./AgentModelBadge";
 import { KindPill, ReactionScriptEditor } from "@/components/triggers/ReactionEditor";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Select } from "@/components/ui/Select";
+import { errorMessage } from "@/lib/utils/error";
 
 // Event-driven tasks (ADR-0027). Sibling to ScheduledTasksPanel — same
 // card aesthetic, but rows describe a tool poll + diff detector, not a
@@ -34,7 +35,7 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
         source: "system",
         sourceLabel: "Watchers",
         title: "Couldn't load watchers",
-        body: e instanceof Error ? e.message : String(e),
+        body: errorMessage(e),
         agent_id: null,
         thread_id: null,
         ttl: 6000,

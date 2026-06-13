@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, PendingAction } from "@/api/types";
 import { pushToast } from "@/lib/ui/toasts";
+import { errorMessage } from "@/lib/utils/error";
 
 // Compute the deep-link URL + label for a successfully-approved action so
 // the resulting toast lets the user jump to the row that just changed.
@@ -237,7 +238,7 @@ export function ApprovalsBanner({
       setSecretForm({
         ...secretForm,
         submitting: false,
-        error: e instanceof Error ? e.message : String(e),
+        error: errorMessage(e),
       });
     }
   }

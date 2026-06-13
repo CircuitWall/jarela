@@ -15,6 +15,7 @@ import {
 import { getThread } from "@/lib/stores/threads";
 import { startScheduler } from "@/lib/scheduler";
 import { listReactionScripts } from "@/lib/triggers/scripts";
+import { errorMessage } from "@/lib/utils/error";
 
 function agentIdFromConfig(config?: RunnableConfig): string | null {
   const threadId = config?.configurable?.thread_id as string | undefined;
@@ -74,7 +75,7 @@ export const scheduleWatcherTool = tool(
         reaction_script: row.reaction_script,
       });
     } catch (err) {
-      return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
+      return JSON.stringify({ error: errorMessage(err) });
     }
   },
   {

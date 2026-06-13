@@ -5,6 +5,7 @@ import {
   listManifests,
   MANIFEST_INPUT_SCHEMA,
 } from "@/lib/tools/package-manifests";
+import { errorMessage } from "@/lib/utils/error";
 
 export function GET() {
   return NextResponse.json(listManifests());
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
     const result = await createManifest(parsed);
     return NextResponse.json(result, { status: 201 });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     const status = msg.includes("already exists") ? 409 : 400;
     return errorResponse(msg, status);
   }

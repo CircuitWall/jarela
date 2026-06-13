@@ -4,6 +4,7 @@ import {
   approvePackageInstall,
   denyPackageInstall,
 } from "@/lib/tools/package-install";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -15,7 +16,7 @@ export async function POST(_req: NextRequest, ctx: Ctx) {
     const result = await approvePackageInstall(id);
     return NextResponse.json({ status: "installed", ...result });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     const status = msg.startsWith("unknown approval id") ? 404 : 500;
     return errorResponse(msg, status);
   }

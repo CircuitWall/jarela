@@ -13,6 +13,7 @@ import {
   markTasksDeferred,
   type ScheduledTaskRow,
 } from "@/lib/stores/scheduled-tasks";
+import { errorMessage } from "@/lib/utils/error";
 
 // Env-tunable so e2e tests can ride a tighter loop without waiting 30 s
 // per fs-watch firing. Production / dev use the 30 s default; tests
@@ -66,7 +67,7 @@ export function startScheduler(): void {
     runAllHealthProbes().catch((err) => {
       console.error(
         "[scheduler] initial health probe failed:",
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
     });
   }
@@ -114,7 +115,7 @@ async function tick(): Promise<void> {
     } catch (err) {
       console.error(
         "[scheduler] locked-tick deferral bookkeeping failed:",
-        err instanceof Error ? err.message : String(err),
+        errorMessage(err),
       );
     }
     return;
@@ -133,7 +134,7 @@ async function tick(): Promise<void> {
       } catch (err) {
         console.error(
           "[scheduler] document index sweep failed:",
-          err instanceof Error ? err.message : String(err),
+          errorMessage(err),
         );
       }
     }
@@ -146,7 +147,7 @@ async function tick(): Promise<void> {
       runAllHealthProbes().catch((err) => {
         console.error(
           "[scheduler] health probe sweep failed:",
-          err instanceof Error ? err.message : String(err),
+          errorMessage(err),
         );
       });
     }

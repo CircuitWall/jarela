@@ -20,6 +20,7 @@ import { getConfig } from "@/lib/env/config";
 import { withMaskRun, getMaskRunContext } from "@/lib/redaction/context";
 import { StreamRehydrator } from "@/lib/redaction/stream-rehydrate";
 import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
+import { errorMessage } from "@/lib/utils/error";
 
 function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
@@ -134,7 +135,7 @@ async function* streamWithConfigImpl(
     // DB, first turn of the process), deleteThread raises
     // `SQLITE_ERROR: no such table: checkpoints` — which is a no-op for us,
     // not an error. Swallow it; surface anything else.
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (!/no such table:\s*checkpoints/i.test(msg)) {
       console.error("[llm] checkpoint reset failed for thread", threadId, err);
     }
@@ -303,7 +304,7 @@ async function* streamWithConfigImpl(
     }
   } catch (err) {
     const name = err instanceof Error ? err.name : "";
-    const baseMsg = err instanceof Error ? err.message : String(err);
+    const baseMsg = errorMessage(err);
     const stack = err instanceof Error && err.stack ? err.stack : "";
     // undici surfaces network failures as a bare "fetch failed" with the
     // real reason (ECONNREFUSED, EAI_AGAIN, UND_ERR_SOCKET, cert issues,

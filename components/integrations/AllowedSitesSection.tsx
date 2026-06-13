@@ -3,6 +3,7 @@ import { Globe, Loader2, Plus, ShieldAlert, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { AllowedSiteStatus } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 // Settings card for the allowed-sites list. A host on this list grants
 // the agent two paired capabilities: (1) the browser extension may drive
@@ -30,7 +31,7 @@ export function AllowedSitesSection() {
       const r = await api.allowedSites.list();
       setSites(r.sites);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export function AllowedSitesSection() {
       setNewBypass(false);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setAdding(false);
     }
@@ -61,7 +62,7 @@ export function AllowedSitesSection() {
       await api.allowedSites.setSsrfBypass(s.hostname, !s.ssrf_bypass);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -72,7 +73,7 @@ export function AllowedSitesSection() {
       await api.allowedSites.remove(s.hostname);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 

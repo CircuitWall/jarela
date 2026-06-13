@@ -22,6 +22,7 @@ import type {
   ExternalToolInfo,
   LangChainPackageManifestRecord,
 } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 // One unified row covering every "package-like" surface: built-in
 // category, bundled @circuitwall LangChain package, npm-installed
@@ -583,7 +584,7 @@ function DropInSecretsEditor({
       await api.extensions.saveToolSecrets(tool.name, payload);
       await onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(errorMessage(e));
     } finally {
       setSaving(false);
     }

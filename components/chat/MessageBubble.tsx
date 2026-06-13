@@ -18,6 +18,7 @@ import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
 import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
+import { errorMessage } from "@/lib/utils/error";
 
 interface ExtractedRef {
   title: string;
@@ -898,7 +899,7 @@ function MapEmbed({ payload }: { payload: string }) {
     if ([...sp.keys()].length === 0) parseError = "no recognized fields (q / center / origin+destination / search)";
     else params = sp;
   } catch (e) {
-    parseError = e instanceof Error ? e.message : String(e);
+    parseError = errorMessage(e);
   }
 
   if (!params) {
@@ -1598,7 +1599,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         setAudioState("paused");
       } else {
         try { await audioRef.current.play(); setAudioState("playing"); }
-        catch (err) { setAudioError(err instanceof Error ? err.message : String(err)); setAudioState("error"); }
+        catch (err) { setAudioError(errorMessage(err)); setAudioState("error"); }
       }
       return;
     }
@@ -1625,7 +1626,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
       await audio.play();
       setAudioState("playing");
     } catch (err) {
-      setAudioError(err instanceof Error ? err.message : String(err));
+      setAudioError(errorMessage(err));
       setAudioState("error");
     }
   }, [voiceEnabled, agentConfig, streaming, ttsAbleText, audioState]);

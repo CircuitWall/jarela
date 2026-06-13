@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getConfig } from "@/lib/env/config";
+import { errorMessage } from "@/lib/utils/error";
 
 // Surface Tailscale serve status so the Profile panel can show whether the
 // installed Jarela is reachable on the tailnet. The endpoint is loopback-only
@@ -44,7 +45,7 @@ function runTailscale(bin: string, args: string[], timeoutMs = 3000): Promise<{ 
     try {
       child = spawn(bin, args, { windowsHide: true });
     } catch (e) {
-      resolve({ code: -1, stdout: "", stderr: e instanceof Error ? e.message : String(e) });
+      resolve({ code: -1, stdout: "", stderr: errorMessage(e) });
       return;
     }
     const finish = (code: number) => {

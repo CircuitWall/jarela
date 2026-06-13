@@ -13,6 +13,7 @@ import {
   type HarnessSection,
   type HarnessSectionKey,
 } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Props {
   /** Undefined when creating a new custom harness. */
@@ -81,7 +82,7 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
       await onSave(payload, harness?.id);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }

@@ -7,6 +7,7 @@ import {
   type McpStdioSpec,
 } from "@/lib/stores/mcp-servers";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
+import { errorMessage } from "@/lib/utils/error";
 
 // Singleton MCP client manager. Connects to enabled servers on first access,
 // caches the resulting StructuredTools, and invalidates on configuration
@@ -84,7 +85,7 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
           };
         }
       } catch (err) {
-        setMcpServerError(row.name, `bad spec: ${err instanceof Error ? err.message : String(err)}`);
+        setMcpServerError(row.name, `bad spec: ${errorMessage(err)}`);
         continue;
       }
 
@@ -98,7 +99,7 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
         subClients.push(client as unknown as { close: () => Promise<void> });
         setMcpServerError(row.name, null);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         console.error(`[mcp] server "${row.name}" failed:`, msg);
         setMcpServerError(row.name, msg);
       }

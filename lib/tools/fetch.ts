@@ -5,6 +5,7 @@ import { checkPublicUrl } from "@/lib/utils/private-ip";
 import { getCookieHeaderForUrl, isHostAllowed } from "@/lib/cookies/jar";
 import { registerLangChainPackage } from "./langchain-package";
 import { getConfig } from "@/lib/env/config";
+import { errorMessage } from "@/lib/utils/error";
 
 // Whether the SSRF refusal for a private/loopback host should be
 // overridden because the user explicitly approved this host (with
@@ -164,7 +165,7 @@ function formatFetchError(
   ctrl: AbortController,
   timeoutMs: number,
 ): string {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   const aborted = ctrl.signal.aborted
     || (err instanceof Error && (err.name === "AbortError" || /abort/i.test(msg)));
   if (aborted) {

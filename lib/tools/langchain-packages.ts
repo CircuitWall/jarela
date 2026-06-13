@@ -45,6 +45,7 @@ import {
   type RegisteredPackage,
 } from "./langchain-package";
 import { categorizeByVerb } from "./categorize-by-verb";
+import { errorMessage } from "@/lib/utils/error";
 
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
@@ -184,14 +185,14 @@ async function loadOneManifest(
   try {
     raw = readFileSync(manifestPath, "utf8");
   } catch (err) {
-    return { error: `unreadable manifest: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `unreadable manifest: ${errorMessage(err)}` };
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
-    return { error: `invalid JSON: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `invalid JSON: ${errorMessage(err)}` };
   }
 
   const validated = MANIFEST_SCHEMA.safeParse(parsed);
@@ -211,14 +212,14 @@ async function loadOneManifest(
   try {
     resolved = req.resolve(manifest.package);
   } catch (err) {
-    return { error: `cannot resolve package "${manifest.package}": ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `cannot resolve package "${manifest.package}": ${errorMessage(err)}` };
   }
 
   let mod: Record<string, unknown>;
   try {
     mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
   } catch (err) {
-    return { error: `dynamic import failed: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `dynamic import failed: ${errorMessage(err)}` };
   }
 
   const exportName = manifest.export;
@@ -231,7 +232,7 @@ async function loadOneManifest(
   try {
     instance = new (Ctor as new (args?: Record<string, unknown>) => unknown)(manifest.args);
   } catch (err) {
-    return { error: `constructor threw: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `constructor threw: ${errorMessage(err)}` };
   }
 
   if (!isStructuredTool(instance)) {
@@ -259,7 +260,7 @@ async function loadOneManifest(
       },
     });
   } catch (err) {
-    return { error: `registration failed: ${err instanceof Error ? err.message : String(err)}` };
+    return { error: `registration failed: ${errorMessage(err)}` };
   }
 
   void entry;

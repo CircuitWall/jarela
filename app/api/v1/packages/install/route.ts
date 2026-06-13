@@ -5,6 +5,7 @@ import {
   beginInstall,
   listPendingInstalls,
 } from "@/lib/tools/package-install";
+import { errorMessage } from "@/lib/utils/error";
 
 const InstallSchema = z.object({
   spec: z.string().min(1, "spec is required"),
@@ -34,6 +35,6 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ status: "installed", ...outcome.result });
   } catch (err) {
-    return errorResponse(err instanceof Error ? err.message : String(err), 500);
+    return errorResponse(errorMessage(err), 500);
   }
 }

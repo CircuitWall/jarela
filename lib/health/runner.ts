@@ -26,6 +26,7 @@ import {
   type HealthResult,
   type ProbeName,
 } from "./probes";
+import { errorMessage } from "@/lib/utils/error";
 
 const RE_ALERT_MS = 30 * 60 * 1000; // re-fire after 30 min of continuous failure
 
@@ -190,7 +191,7 @@ export async function runAllHealthProbes(now: number = Date.now()): Promise<Heal
       const r = results[i];
       const next: HealthResult = r.status === "fulfilled"
         ? r.value
-        : { ok: false, status: "error", error: r.reason instanceof Error ? r.reason.message : String(r.reason) };
+        : { ok: false, status: "error", error: errorMessage(r.reason) };
       const prev = s.lastResult;
       s.lastResult = next;
       s.lastCheckedAt = now;

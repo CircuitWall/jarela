@@ -10,6 +10,7 @@ import {
 } from "@/lib/stores/scheduled-tasks";
 import { getThread } from "@/lib/stores/threads";
 import { startScheduler } from "@/lib/scheduler";
+import { errorMessage } from "@/lib/utils/error";
 
 function safeJson(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
@@ -73,7 +74,7 @@ export const scheduleTaskTool = tool(
         reaction_script: row.reaction_script,
       });
     } catch (err) {
-      return JSON.stringify({ error: err instanceof Error ? err.message : String(err) });
+      return JSON.stringify({ error: errorMessage(err) });
     }
   },
   {

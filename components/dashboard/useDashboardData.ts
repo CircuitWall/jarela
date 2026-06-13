@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { DashboardMetrics } from "@/api/types";
 import type { WindowDays } from "./dashboard-constants";
+import { errorMessage } from "@/lib/utils/error";
 
 export interface UseDashboardDataResult {
   days: WindowDays;
@@ -29,7 +30,7 @@ export function useDashboardData(initialDays: WindowDays = 30): UseDashboardData
     setError(null);
     api.dashboard.metrics(days)
       .then((res) => { if (!cancelled) setData(res); })
-      .catch((err: unknown) => { if (!cancelled) setError(err instanceof Error ? err.message : String(err)); })
+      .catch((err: unknown) => { if (!cancelled) setError(errorMessage(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [days]);

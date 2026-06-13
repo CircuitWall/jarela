@@ -20,6 +20,7 @@
  */
 import { join } from "node:path";
 import { existsSync, readdirSync, statSync } from "node:fs";
+import { errorMessage } from "@/lib/utils/error";
 
 export interface PluginLoadError {
   file: string;
@@ -92,7 +93,7 @@ export function scanCjsPlugins<T>(opts: PluginScanOptions<T>): PluginScanResult<
       delete req.cache[req.resolve(path)];
       mod = req(path);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       errors.push({ file: entry, error: message });
       console.error(`[${logScope}] failed to load ${entry}:`, err);
       continue;
@@ -103,7 +104,7 @@ export function scanCjsPlugins<T>(opts: PluginScanOptions<T>): PluginScanResult<
     try {
       def = validate(candidate);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       errors.push({ file: entry, error: msg });
       console.error(`[${logScope}] ${entry}: ${msg}`);
       continue;

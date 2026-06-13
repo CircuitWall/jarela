@@ -3,6 +3,7 @@ import { ArrowUp, Check, Folder, FolderOpen, Home, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Props {
   initialPath?: string;
@@ -35,7 +36,7 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
       setEntries(res.entries);
       setPathInput(res.path);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }

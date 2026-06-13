@@ -7,6 +7,7 @@ import { NetworkSection } from "./NetworkSection";
 import { AllowedSitesSection } from "./AllowedSitesSection";
 import { EnvAliasEditor } from "./EnvAliasEditor";
 import { NetworkEnvEditor } from "./NetworkEnvEditor";
+import { errorMessage } from "@/lib/utils/error";
 
 // "Network & environment" hosts everything that's NOT a credential: HTTP
 // proxy, allowed sites, env-var aliases, and the env-sync button that
@@ -51,7 +52,7 @@ export function NetworkPanel() {
         window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       }
     } catch (e) {
-      setSyncMsg(e instanceof Error ? e.message : String(e));
+      setSyncMsg(errorMessage(e));
     } finally {
       setSyncing(false);
     }

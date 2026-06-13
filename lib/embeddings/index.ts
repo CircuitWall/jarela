@@ -4,6 +4,7 @@ import { getEmbeddingModelConfigName } from "@/lib/stores/app-settings";
 import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import type { ProviderParams } from "@/lib/providers/types";
+import { errorMessage } from "@/lib/utils/error";
 
 // Sensitive namespaces (ADR-0005) are never surfaced via recall: their
 // values are encrypted at rest, and credentials should not reach agent
@@ -84,7 +85,7 @@ export async function embed(texts: string[]): Promise<number[][] | null> {
   try {
     return await client.provider.embed!(client.modelId, texts, client.params);
   } catch (err) {
-    console.warn("[embeddings] failed:", err instanceof Error ? err.message : String(err));
+    console.warn("[embeddings] failed:", errorMessage(err));
     return null;
   }
 }
@@ -100,7 +101,7 @@ export async function embedOne(text: string): Promise<number[] | null> {
 // problem that retrying won't fix.
 const TRANSIENT_RE = /\b(429|5\d\d|ECONNRESET|ETIMEDOUT|EAI_AGAIN|UND_ERR_(SOCKET|CONNECT_TIMEOUT)|fetch failed)\b/;
 function isTransient(err: unknown): boolean {
-  return TRANSIENT_RE.test(err instanceof Error ? err.message : String(err));
+  return TRANSIENT_RE.test(errorMessage(err));
 }
 
 async function callEmbedWithRetry(
@@ -171,7 +172,7 @@ async function embedBestEffortInternal(
       failed,
     };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (texts.length === 1) {
       console.warn("[embeddings] failed:", msg);
       return { vectors: [null], error: msg, failed: 1 };

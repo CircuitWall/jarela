@@ -14,6 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { errorMessage } from "@/lib/utils/error";
 
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("path");
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: errorMessage(e) },
       { status: 400 },
     );
   }
