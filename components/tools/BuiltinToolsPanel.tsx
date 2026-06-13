@@ -92,9 +92,9 @@ export function BuiltinToolsPanel() {
   const issueHref = buildIssueHref(query);
 
   return (
-    <div className="p-4 space-y-3">
+    <section className="space-y-3">
       <header className="space-y-1">
-        <h2 className="text-sm font-semibold text-fg">Built-in tools</h2>
+        <h3 className="text-sm font-semibold text-fg">Built-in tools</h3>
         <p className="text-xs text-fg-faint">
           Turn whole categories of built-in tools on or off. Disabled categories
           disappear from the agent permission editor and cannot be invoked even
@@ -249,7 +249,7 @@ export function BuiltinToolsPanel() {
           })}
         </div>
       </section>
-    </div>
+    </section>
   );
 }
 

@@ -269,6 +269,14 @@ export function runMigrations(db: DatabaseSync): void {
       enabled    INTEGER NOT NULL DEFAULT 1,
       updated_at TEXT NOT NULL
     );
+    -- Default LangChain packages disabled by the operator.
+    -- Missing row = enabled (default-on). See lib/tools/default-packages.ts
+    -- for the in-tree set; lib/stores/disabled-packages.ts is the only
+    -- writer.
+    CREATE TABLE IF NOT EXISTS disabled_packages (
+      id         TEXT PRIMARY KEY,
+      updated_at TEXT NOT NULL
+    );
     -- Aggregated per-tool telemetry used to rank/filter tools in the UI.
     -- used_count is heuristic: a successful result whose payload appears to
     -- feed the assistant's final response for that turn.
