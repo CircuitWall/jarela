@@ -1,9 +1,9 @@
 // GitHub remote indexer (ADR-0029).
 //
 // Source kinds handled:
-//   - github_pulls → all PRs of one repo + their issue comments + review
+//   - github_pulls â†’ all PRs of one repo + their issue comments + review
 //                    bodies, flattened to one document per PR.
-//   - github_repo  → text files on one branch of one repo (default branch
+//   - github_repo  â†’ text files on one branch of one repo (default branch
 //                    by default), walked via the Git Trees API. Filtered
 //                    by the same extension allowlist + binary heuristic
 //                    as the local-folder walker so the two surfaces stay
@@ -13,11 +13,8 @@
 // indexOnDemand) cover one-shot indexing of a PR / issue / file URL
 // under the shared `on_demand_url` source row.
 
-import {
-  _ghFetch,
-  _resolveGithubAuth,
-  type GitHubAuth,
-} from "@/lib/tools/github";
+import { githubFetch, type GitHubAuth } from "@circuitwall/github-langchain";
+import { resolvePackageAuth } from "@/lib/tools/auth-registry";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,
@@ -103,7 +100,7 @@ function flattenPull(
   const parts: string[] = [];
   parts.push(`PR #${pr.number}: ${pr.title ?? ""}`.trim());
   if (pr.html_url) parts.push(pr.html_url);
-  parts.push(`State: ${pr.state ?? "unknown"}${pr.draft ? " (draft)" : ""} · author: ${liteAuthor(pr.user)}`);
+  parts.push(`State: ${pr.state ?? "unknown"}${pr.draft ? " (draft)" : ""} Â· author: ${liteAuthor(pr.user)}`);
   if (pr.body && pr.body.trim()) parts.push(pr.body.trim());
   for (const c of comments) {
     if (!c.body?.trim()) continue;
@@ -113,7 +110,7 @@ function flattenPull(
   for (const r of reviews) {
     if (!r.body?.trim()) continue;
     const ts = r.submitted_at ? ` (${r.submitted_at.slice(0, 10)})` : "";
-    parts.push(`Review by ${liteAuthor(r.user)} — ${r.state ?? ""}${ts}:\n${r.body.trim()}`);
+    parts.push(`Review by ${liteAuthor(r.user)} â€” ${r.state ?? ""}${ts}:\n${r.body.trim()}`);
   }
   return parts.join("\n\n");
 }
@@ -122,7 +119,7 @@ function flattenIssue(issue: GhIssue, comments: GhIssueComment[]): string {
   const parts: string[] = [];
   parts.push(`Issue #${issue.number}: ${issue.title ?? ""}`.trim());
   if (issue.html_url) parts.push(issue.html_url);
-  parts.push(`State: ${issue.state ?? "unknown"} · author: ${liteAuthor(issue.user)}`);
+  parts.push(`State: ${issue.state ?? "unknown"} Â· author: ${liteAuthor(issue.user)}`);
   if (issue.body && issue.body.trim()) parts.push(issue.body.trim());
   for (const c of comments) {
     if (!c.body?.trim()) continue;
@@ -133,7 +130,7 @@ function flattenIssue(issue: GhIssue, comments: GhIssueComment[]): string {
 }
 
 async function listIssueComments(auth: GitHubAuth, owner: string, repo: string, n: number): Promise<GhIssueComment[]> {
-  const data = await _ghFetch(
+  const data = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${n}/comments?per_page=100`,
   );
@@ -141,7 +138,7 @@ async function listIssueComments(auth: GitHubAuth, owner: string, repo: string, 
 }
 
 async function listReviews(auth: GitHubAuth, owner: string, repo: string, n: number): Promise<GhReview[]> {
-  const data = await _ghFetch(
+  const data = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${n}/reviews?per_page=100`,
   );
@@ -171,7 +168,7 @@ function applyUpsert(stats: GithubIndexStats, res: UpsertResult): void {
   if (res.embedError && !stats.embedError) stats.embedError = res.embedError;
 }
 
-// ── github_pulls ──────────────────────────────────────────────────────────
+// â”€â”€ github_pulls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface PullsConfig {
   owner?: string;
@@ -184,7 +181,7 @@ async function runGithubPullsIndexer(source: DocumentSourceRow): Promise<GithubI
   const cfg = parseSourceConfig<PullsConfig>(source) ?? {};
   if (!cfg.owner || !cfg.repo) throw new Error("github_pulls requires config.owner and config.repo");
   const stats = emptyStats(source.last_cursor);
-  const auth = _resolveGithubAuth();
+  const auth = resolvePackageAuth<GitHubAuth>("github");
   if ("error" in auth) throw new Error(auth.error);
 
   const cutoffMs = cfg.recency_days && cfg.recency_days > 0
@@ -198,7 +195,7 @@ async function runGithubPullsIndexer(source: DocumentSourceRow): Promise<GithubI
   // below the watermark or the recency cutoff.
   let page = 1;
   outer: while (stats.scanned < MAX_PRS_PER_RUN) {
-    const data = await _ghFetch(
+    const data = await githubFetch(
       auth,
       `/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/pulls` +
         `?state=${state}&sort=updated&direction=desc&per_page=${PR_PAGE_LIMIT}&page=${page}`,
@@ -258,7 +255,7 @@ async function runGithubPullsIndexer(source: DocumentSourceRow): Promise<GithubI
   return stats;
 }
 
-// ── github_repo ───────────────────────────────────────────────────────────
+// â”€â”€ github_repo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface RepoConfig {
   owner?: string;
@@ -268,7 +265,7 @@ interface RepoConfig {
 }
 
 async function resolveDefaultBranch(auth: GitHubAuth, owner: string, repo: string): Promise<string> {
-  const data = await _ghFetch(
+  const data = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
   ) as GhRepo & { error?: string };
@@ -281,11 +278,11 @@ async function runGithubRepoIndexer(source: DocumentSourceRow): Promise<GithubIn
   const cfg = parseSourceConfig<RepoConfig>(source) ?? {};
   if (!cfg.owner || !cfg.repo) throw new Error("github_repo requires config.owner and config.repo");
   const stats = emptyStats(source.last_cursor);
-  const auth = _resolveGithubAuth();
+  const auth = resolvePackageAuth<GitHubAuth>("github");
   if ("error" in auth) throw new Error(auth.error);
 
   const ref = cfg.ref ?? await resolveDefaultBranch(auth, cfg.owner, cfg.repo);
-  const tree = await _ghFetch(
+  const tree = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
   ) as GhTreeResp & { error?: string };
@@ -312,7 +309,7 @@ async function runGithubRepoIndexer(source: DocumentSourceRow): Promise<GithubIn
     if (stats.scanned >= MAX_FILES_PER_RUN) break;
     stats.scanned++;
     try {
-      const contents = await _ghFetch(
+      const contents = await githubFetch(
         auth,
         `/repos/${encodeURIComponent(cfg.owner)}/${encodeURIComponent(cfg.repo)}/contents/${entry.path
           .split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`,
@@ -341,7 +338,7 @@ async function runGithubRepoIndexer(source: DocumentSourceRow): Promise<GithubIn
   return stats;
 }
 
-// ── Dispatcher entry-point used by lib/documents/remote/index.ts ──────────
+// â”€â”€ Dispatcher entry-point used by lib/documents/remote/index.ts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function runGithubIndexer(source: DocumentSourceRow): Promise<GithubIndexStats> {
   if (source.kind === "github_pulls") return runGithubPullsIndexer(source);
@@ -349,7 +346,7 @@ export async function runGithubIndexer(source: DocumentSourceRow): Promise<Githu
   throw new Error(`runGithubIndexer called with unsupported kind: ${source.kind}`);
 }
 
-// ── On-demand helpers (called from indexOnDemand) ─────────────────────────
+// â”€â”€ On-demand helpers (called from indexOnDemand) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function indexGithubPullByUrl(
   sourceId: string,
@@ -357,9 +354,9 @@ export async function indexGithubPullByUrl(
   repo: string,
   number: number,
 ): Promise<UpsertResult> {
-  const auth = _resolveGithubAuth();
+  const auth = resolvePackageAuth<GitHubAuth>("github");
   if ("error" in auth) throw new Error(auth.error);
-  const pr = await _ghFetch(
+  const pr = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`,
   ) as GhPull & { error?: string };
@@ -383,9 +380,9 @@ export async function indexGithubIssueByUrl(
   repo: string,
   number: number,
 ): Promise<UpsertResult> {
-  const auth = _resolveGithubAuth();
+  const auth = resolvePackageAuth<GitHubAuth>("github");
   if ("error" in auth) throw new Error(auth.error);
-  const issue = await _ghFetch(
+  const issue = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${number}`,
   ) as GhIssue & { error?: string };
@@ -407,9 +404,9 @@ export async function indexGithubFileByUrl(
   ref: string,
   path: string,
 ): Promise<UpsertResult> {
-  const auth = _resolveGithubAuth();
+  const auth = resolvePackageAuth<GitHubAuth>("github");
   if ("error" in auth) throw new Error(auth.error);
-  const contents = await _ghFetch(
+  const contents = await githubFetch(
     auth,
     `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path
       .split("/").map(encodeURIComponent).join("/")}?ref=${encodeURIComponent(ref)}`,
