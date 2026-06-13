@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { deleteModelConfig, upsertModelConfig } from "@/lib/stores/model-config";
+import { validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 
 type Params = { params: Promise<{ name: string }> };
+
+const PutBody = z.object({
+  provider: z.string().min(1, "provider required"),
+  model_id: z.string().min(1, "model_id required"),
+  params: z.record(z.string(), z.unknown()).optional(),
+  is_default: z.boolean().optional(),
+  credential_id: z.string().nullable().optional(),
+});
 
 // Mirror /api/v1/models GET: never echo plaintext secrets back to the
 // client. Authoritative storage lives in `credentials`; per-model rows
@@ -20,11 +30,16 @@ function redactInlineParams(raw: string): Record<string, unknown> {
 
 export async function PUT(req: NextRequest, { params }: Params) {
   const { name } = await params;
-  const { provider, model_id, params: p = {}, is_default = false, credential_id = null } = await req.json() as {
-    provider: string; model_id: string; params?: Record<string, unknown>;
-    is_default?: boolean; credential_id?: string | null;
-  };
-  const r = upsertModelConfig(name, provider, model_id, p, is_default, credential_id);
+  const body = await validateBody(req, PutBody);
+  if (body instanceof NextResponse) return body;
+  const r = upsertModelConfig(
+    name,
+    body.provider,
+    body.model_id,
+    body.params ?? {},
+    body.is_default ?? false,
+    body.credential_id ?? null,
+  );
   return NextResponse.json({ ...r, params: redactInlineParams(r.params), is_default: Boolean(r.is_default) });
 }
 

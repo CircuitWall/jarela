@@ -19,20 +19,24 @@
 // tool (gated separately).
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 
-interface RestartBody {
+const RestartBody = z.object({
   /** Optional reason logged before exit so postmortems can correlate. */
-  reason?: string;
-}
+  reason: z.string().optional(),
+});
 
 export async function POST(req: NextRequest): Promise<Response> {
-  let body: RestartBody = {};
+  // Body is optional; ignore parse failures and treat as empty.
+  let parsed: { reason?: string } = {};
   try {
-    body = (await req.json()) as RestartBody;
+    const raw: unknown = await req.json();
+    const ok = RestartBody.safeParse(raw);
+    if (ok.success) parsed = ok.data;
   } catch {
     /* body is optional */
   }
-  const reason = (body.reason ?? "").toString().slice(0, 500);
+  const reason = (parsed.reason ?? "").toString().slice(0, 500);
 
   // Schedule the exit AFTER returning the response so the client gets a
   // 202 confirmation. 250ms is generous enough for the response body to

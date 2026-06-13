@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { z } from "zod";
 import { getPendingAction, setActionStatus } from "@/lib/stores/pending-actions";
 import { applyAction } from "@/lib/agents/proposals";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+
+const ApproveBody = z.object({
+  extras: z.record(z.string(), z.unknown()).optional(),
+});
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -18,8 +23,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   let extras: Record<string, unknown> | undefined;
   if (req.headers.get("content-length") && req.headers.get("content-length") !== "0") {
     try {
-      const body = (await req.json()) as { extras?: Record<string, unknown> } | null;
-      if (body && body.extras && typeof body.extras === "object") extras = body.extras;
+      const raw: unknown = await req.json();
+      const parsed = ApproveBody.safeParse(raw);
+      if (parsed.success && parsed.data.extras) extras = parsed.data.extras;
     } catch {
       // Empty / non-JSON body is fine — fall back to extras=undefined.
     }

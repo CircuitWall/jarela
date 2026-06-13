@@ -9,26 +9,28 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getProvider } from "@/lib/providers";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
+import { validateBody } from "@/lib/api/responses";
 import type { ProviderParams } from "@/lib/providers/types";
 
 type Params = { params: Promise<{ provider: string }> };
 
 const PROBE_TIMEOUT_MS = 15_000;
 
+const ProbeBody = z.object({
+  model_id: z.string().min(1, "model_id required"),
+  params: z.record(z.string(), z.unknown()).optional(),
+  name: z.string().optional(), // optional: hydrate params from saved model_config
+  credential_id: z.string().optional(), // optional: hydrate api_key from saved credential
+});
+
 export async function POST(req: NextRequest, { params }: Params) {
   const { provider: providerName } = await params;
-  const body = await req.json().catch(() => ({})) as {
-    model_id?: string;
-    params?: ProviderParams;
-    name?: string; // optional: hydrate params from saved model_config
-    credential_id?: string; // optional: hydrate api_key from saved credential
-  };
-  if (!body.model_id) {
-    return NextResponse.json({ ok: false, error: "model_id required" }, { status: 400 });
-  }
+  const body = await validateBody(req, ProbeBody);
+  if (body instanceof NextResponse) return body;
 
   // Layer params in lowest-to-highest precedence:
   //   1. saved credential (api_key / base_url / extra_headers / OAuth)
@@ -56,7 +58,7 @@ export async function POST(req: NextRequest, { params }: Params) {
 
   const probe = async () => {
     const { stream } = await provider.chat(
-      body.model_id!,
+      body.model_id,
       [{ role: "user", content: "ping" }],
       { ...providerParams, max_tokens: 1 },
     );

@@ -5,27 +5,33 @@
  * See `docs/api.md`.
  */
 
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import {
   listAgentConfigs,
   upsertAgentConfig,
   generateAgentId,
 } from "@/lib/stores/agent-configs";
 import { agentToResponse } from "@/lib/api/serializers";
-import { errorResponse, createdResponse, cachedJson } from "@/lib/api/responses";
+import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import type { AgentConfigIn } from "@/api/types";
 import { toCreateAgentInput } from "./payload";
+
+// Permissive schema: only enforce that `name` is a non-empty string at the
+// boundary. The payload handler does field-by-field coercion for the rest,
+// so additional unknown fields pass through unchanged via `.loose()`.
+const CreateBody = z.looseObject({
+  name: z.string().trim().min(1, "name is required"),
+});
 
 export function GET() {
   return cachedJson(listAgentConfigs().map(agentToResponse), 15);
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as AgentConfigIn;
-
-  if (!body.name?.trim()) {
-    return errorResponse("name is required");
-  }
+  const parsed = await validateBody(req, CreateBody);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed as AgentConfigIn;
 
   const row = upsertAgentConfig(toCreateAgentInput(generateAgentId(body.name), body));
 

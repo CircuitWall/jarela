@@ -6,9 +6,15 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { createThread, listThreads } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
-import { errorResponse, notFoundResponse, createdResponse } from "@/lib/api/responses";
+import { notFoundResponse, createdResponse, validateBody } from "@/lib/api/responses";
+
+const CreateBody = z.object({
+  agent_id: z.string().min(1, "agent_id required"),
+  title: z.string().optional(),
+});
 
 export function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
@@ -18,9 +24,9 @@ export function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { agent_id, title } = await req.json() as { agent_id: string; title?: string };
-  if (!agent_id) return errorResponse("agent_id required");
-  if (!getAgentConfig(agent_id)) return notFoundResponse(`Agent "${agent_id}" not found`);
-  const thread = createThread(agent_id, title);
+  const body = await validateBody(req, CreateBody);
+  if (body instanceof NextResponse) return body;
+  if (!getAgentConfig(body.agent_id)) return notFoundResponse(`Agent "${body.agent_id}" not found`);
+  const thread = createThread(body.agent_id, body.title);
   return createdResponse(thread);
 }

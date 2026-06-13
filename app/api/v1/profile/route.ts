@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { getUserProfile, upsertUserProfile, setUserPreset, isUserPreset } from "@/lib/stores/user-profile";
+import { validateBody } from "@/lib/api/responses";
+
+const PutBody = z.object({
+  name: z.string().optional(),
+  icon: z.string().nullable().optional(),
+  about: z.string().optional(),
+  preset: z.string().nullable().optional(),
+});
 
 export function GET() {
   const profile = getUserProfile();
@@ -10,12 +19,8 @@ export function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const body = await req.json() as {
-    name?: string;
-    icon?: string | null;
-    about?: string;
-    preset?: string | null;
-  };
+  const body = await validateBody(req, PutBody);
+  if (body instanceof NextResponse) return body;
   const existing = getUserProfile();
   const row = upsertUserProfile(
     body.name ?? existing?.name ?? "",
