@@ -49,30 +49,6 @@ export function _resolveJiraAlignAuth(): JiraAlignAuth | { error: string } {
 export { jiraAlignFetch as _jiraAlignFetch };
 export type { JiraAlignAuth };
 
-// Re-export the tools so existing test files (`lib/tools/jira-align.test.ts`)
-// and any other internal consumers can keep importing from `./jira-align`.
-export {
-  jiraAlignGetItemTool,
-  jiraAlignSearchItemsTool,
-  jiraAlignListChildrenTool,
-  jiraAlignCreateItemTool,
-  jiraAlignUpdateItemTool,
-  jiraAlignDeleteItemTool,
-  jiraAlignTransitionItemTool,
-  jiraAlignListCommentsTool,
-  jiraAlignAddCommentTool,
-  jiraAlignUpdateCommentTool,
-  jiraAlignDeleteCommentTool,
-  jiraAlignListEntitiesTool,
-  jiraAlignGetEntityTool,
-  jiraAlignCreateEntityTool,
-  jiraAlignUpdateEntityTool,
-  jiraAlignDeleteEntityTool,
-  jiraAlignListDependenciesTool,
-  jiraAlignCreateDependencyTool,
-  jiraAlignDeleteDependencyTool,
-} from "@circuitwall/jira-align-langchain";
-
 registerTools("JiraAlign", "read", [...jiraAlignReadTools]);
 registerTools("JiraAlign", "write", [...jiraAlignWriteTools]);
 registerTools("JiraAlign", "execute", [...jiraAlignExecuteTools]);

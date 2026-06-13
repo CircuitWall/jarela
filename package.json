@@ -82,6 +82,7 @@
   "scripts": {
     "setup:hooks": "node scripts/setup-git-hooks.mjs",
     "packages:build": "npm run build --workspaces --if-present",
+    "packages:test": "npm run test --workspaces --if-present",
     "prepare": "npm run packages:build --silent 1>&2",
     "dev": "next dev --webpack -p 4312",
     "build": "npm run packages:build && next build --webpack && node scripts/postbuild.mjs",
