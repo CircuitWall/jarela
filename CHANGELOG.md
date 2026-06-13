@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-06-13
+
+### Changed
+
+- **Credentials panel: one home for all auth.** OAuth flows (Gmail,
+  Outlook), API-key integrations (GitHub, Atlassian, Jira Align), and
+  legacy model API keys now share a single grouped list under
+  `Credentials`. Each known integration renders inline with Save / Test
+  / Connect buttons and the same setup guides that previously only
+  lived under "Built-in integrations" — no more flipping sub-tabs or
+  clicking "Advanced" to reach the OAuth Connect button.
+- **`Credentials → Built-in integrations` sub-tab renamed to
+  `Network & environment`.** The sub-tab now hosts only what isn't an
+  auth surface: HTTP proxy, allowed sites, env-var aliases, and the
+  "Sync from environment" button that pulls credential env vars into
+  the unified Credentials list. Existing deep links
+  (`?tab=credentials&item=integrations`) still resolve to this sub-tab
+  for backward compat.
+- "Add credential" dialog now opens the same rich `IntegrationCard`
+  editor used in the list, with inline OAuth Connect + Test instead of
+  the old strip-down form that bounced to a sibling sub-tab.
+
 ## [1.9.1] - 2026-06-13
 
 ### Added

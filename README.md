@@ -262,7 +262,7 @@ create an Outlook Calendar invite in the same turn.
 - Respects standard proxy env vars (`HTTP_PROXY` / `HTTPS_PROXY` /
   `NO_PROXY`) through `undici`'s `EnvHttpProxyAgent`, so it works inside
   corporate networks. **On macOS**, set proxy mode to **System** in
-  Settings → Connections → Built-in integrations → Network and Jarela
+  Settings → Credentials → Network & environment
   auto-discovers the proxy (via `scutil --proxy`) and trust store (via `security
   find-certificate` against System + login keychains, written to
   `~/.jarela/system-ca.pem`) — zero shell-config or manual CA paste
@@ -628,7 +628,7 @@ that whitelists which categories are usable.
 | **Schedule** | `schedule_task`, `list_scheduled_tasks`, `cancel_scheduled_task`, `schedule_watcher`, `list_watchers`, `cancel_watcher` | Cron + ISO scheduling, event-driven watchers (ADR-0027) |
 | **Work › Atlassian** | **Jira issues**: search, get, create (incl. bulk), update, transition, link, comments CRUD, worklogs, attachments (upload/download/delete), changelog, delete.<br/>**Jira agile**: list/get boards, list/get/create/update/delete sprints (with state-machine validation), move issues to sprint or backlog, rank.<br/>**Jira project metadata**: list projects, get project (with versions/components/issue-types expand), CRUD versions, CRUD components, list issue-types/priorities/statuses/resolutions.<br/>**Confluence**: search, page CRUD + delete + move, comments (list/add/update/delete, footer + inline), attachments (upload/list/download/delete), labels (add/remove), spaces. | Direct REST; works through corporate proxies. Sprint operations cover the full ceremony (create → start → complete). Destructive ops (delete sprint, purge page, purge attachment) require a `confirm` arg matching the id. `jira_get_issue`/`jira_update_issue` accept `custom_fields` by display name or `customfield_*` id. See [ADR-0035](docs/adr/0035-comprehensive-atlassian-coverage.md) for the full inventory and rationale. |
 | **Work › Jira Align** | **Work items**: get, search, list children, create, update, transition, delete (per-type routing for epic/capability/feature/story/theme/task/defect/objective).<br/>**Hierarchy**: list / get programs, teams, releases, sprints (PIs), portfolios, value streams. | Direct REST against `*.jiraalign.com`. Bearer-token auth. Hierarchy tools resolve human names → ids without leaving the agent. See [ADR-0019](docs/adr/0019-jira-align-tool.md), [ADR-0021](docs/adr/0021-jira-align-type-aware-routing.md), [ADR-0035](docs/adr/0035-comprehensive-atlassian-coverage.md). |
-| **Work › GitHub** | `github_search_issues`, `github_get_issue`, `github_create_issue`, `github_add_comment`, `github_list_pulls`, `github_get_pull`, `github_get_repo` | Direct REST against `api.github.com`; PAT auth via env or Connections → Built-in integrations ([ADR-0015](docs/adr/0015-native-github-tools.md)). |
+| **Work › GitHub** | `github_search_issues`, `github_get_issue`, `github_create_issue`, `github_add_comment`, `github_list_pulls`, `github_get_pull`, `github_get_repo` | Direct REST against `api.github.com`; PAT auth via env or Credentials ([ADR-0015](docs/adr/0015-native-github-tools.md)). |
 | **Mail** | **Google:** `gmail_search`, `gmail_get_message`, `gmail_list_labels`, `gmail_modify_message`, `gmail_create_draft`, `gmail_trash_message`<br/>**Microsoft:** `outlook_search`, `outlook_get_message`, `outlook_list_folders`, `outlook_modify_message`, `outlook_create_draft`, `outlook_trash_message` | Read/search/draft only on both providers — no auto-send. Gmail via Google OAuth, Outlook via Microsoft Graph. |
 | **Calendar** | **Google:** `calendar_list_calendars`, `calendar_list_events`, `calendar_get_event`, `calendar_create_event`, `calendar_update_event`, `calendar_delete_event`<br/>**Microsoft:** `outlook_calendar_list_calendars`, `outlook_calendar_list_events`, `outlook_calendar_get_event`, `outlook_calendar_create_event`, `outlook_calendar_update_event`, `outlook_calendar_delete_event` | Full read/write on both. Outlook variant can provision Teams meetings; Google variant can provision Google Meet. |
 | **Location** | `get_user_location` | Browser geolocation forwarded by the PWA |
@@ -660,10 +660,10 @@ the same in-UI OAuth flow:
 | --- | --- | --- |
 | **MCP servers** | `Connections → MCP servers` | stdio / SSE via `@langchain/mcp-adapters`. Search the official [MCP Registry](https://registry.modelcontextprotocol.io/) or paste a custom command. |
 | **GitHub Copilot** (model provider) | `Profile` panel | OAuth device flow |
-| **GitHub** (issues + PRs) | `Connections → Built-in integrations` | Personal Access Token (`repo` + optional `read:org`); used by `github_*` tools ([ADR-0015](docs/adr/0015-native-github-tools.md)) |
-| **Atlassian** (Jira + Confluence) | `Connections → Built-in integrations` | API token + email |
-| **Google** (Gmail + Calendar) | `Connections → Built-in integrations` | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
-| **Microsoft** (Outlook + Calendar) | `Connections → Built-in integrations` | In-app Microsoft OAuth via Azure app registration — click **Connect Outlook**, approve, done. Scopes: `Mail.ReadWrite` + `Calendars.ReadWrite` + `offline_access`. Works with personal (`@outlook.com`) and work/school accounts. |
+| **GitHub** (issues + PRs) | `Credentials` | Personal Access Token (`repo` + optional `read:org`); used by `github_*` tools ([ADR-0015](docs/adr/0015-native-github-tools.md)) |
+| **Atlassian** (Jira + Confluence) | `Credentials` | API token + email |
+| **Google** (Gmail + Calendar) | `Credentials` | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
+| **Microsoft** (Outlook + Calendar) | `Credentials` | In-app Microsoft OAuth via Azure app registration — click **Connect Outlook**, approve, done. Scopes: `Mail.ReadWrite` + `Calendars.ReadWrite` + `offline_access`. Works with personal (`@outlook.com`) and work/school accounts. |
 | **WhatsApp** | `Bridges` panel | Baileys; pairs a phone, routes JIDs to agents |
 
 Each first-class integration ships a machine-readable manifest at

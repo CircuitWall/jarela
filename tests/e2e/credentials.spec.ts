@@ -37,33 +37,41 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("Credentials tab exposes API keys + Built-in integrations sub-tabs", async ({ page }) => {
+test("Credentials tab exposes Credentials + Network sub-tabs", async ({ page }) => {
   await openMenu(page);
   await page.getByRole("button", { name: "Credentials", exact: true }).click();
 
-  const listTab = page.getByRole("tab", { name: "API keys & secrets" });
-  const integrationsTab = page.getByRole("tab", { name: "Built-in integrations" });
+  const listTab = page.getByRole("tab", { name: "Credentials" });
+  const networkTab = page.getByRole("tab", { name: "Network & environment" });
 
   await expect(listTab).toBeVisible();
-  await expect(integrationsTab).toBeVisible();
+  await expect(networkTab).toBeVisible();
   await expect(listTab).toHaveAttribute("aria-selected", "true");
 
   // Default sub-tab is the credentials list, which renders its known heading.
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
 
-  // Switch to Built-in integrations — that panel mounts with its own heading.
-  await integrationsTab.click();
-  await expect(integrationsTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Built-in integrations" })).toBeVisible();
+  // Switch to Network & environment — that panel mounts with its own heading.
+  await networkTab.click();
+  await expect(networkTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Network & environment" })).toBeVisible();
 });
 
-test("deep link ?tab=credentials&item=integrations lands directly on Built-in integrations sub-tab", async ({ page }) => {
-  await page.goto("/?tab=credentials&item=integrations");
-  await expect(page.getByRole("tab", { name: "Built-in integrations" })).toHaveAttribute(
+test("deep link ?tab=credentials&item=network lands directly on Network & environment sub-tab", async ({ page }) => {
+  await page.goto("/?tab=credentials&item=network");
+  await expect(page.getByRole("tab", { name: "Network & environment" })).toHaveAttribute(
     "aria-selected",
     "true",
   );
-  await expect(page.getByRole("heading", { name: "Built-in integrations" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Network & environment" })).toBeVisible();
+});
+
+test("deep link ?tab=credentials&item=integrations (legacy) still lands on Network sub-tab", async ({ page }) => {
+  await page.goto("/?tab=credentials&item=integrations");
+  await expect(page.getByRole("tab", { name: "Network & environment" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });
 
 test("Built-in tools panel lists categories and toggles persist", async ({ page, request }) => {

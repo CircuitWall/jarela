@@ -31,7 +31,7 @@ export function DocumentsPanel() {
         <p className="text-xs text-fg-faint leading-relaxed">
           Sources listed here are indexed in the background. Text files in folders are chunked, embedded, and
           made available to agents via the <code className="font-mono text-fg-muted">documents_search</code> tool.
-          Remote sources reuse credentials configured in <em>Credentials → Built-in integrations</em>:
+          Remote sources reuse credentials configured in <em>Credentials</em>:
           {" "}Jira/Confluence under <em>Atlassian</em>, GitHub PRs/repos under <em>GitHub</em>, and mail under <em>Gmail</em>/<em>Outlook</em>.
           Embedding uses your default model provider; without one, search falls back to substring match.
         </p>
