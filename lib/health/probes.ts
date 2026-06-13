@@ -22,6 +22,7 @@ import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
+import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
 
 const DEFAULT_PROBE_TIMEOUT_MS = 15_000;
 
@@ -265,12 +266,10 @@ export async function probeAnthropic(): Promise<HealthResult> {
 }
 
 export async function probeOpenAI(): Promise<HealthResult> {
-  // OpenAI isn't a first-class integration entry; users wire it via the
-  // setup wizard then store the key under the conventional environment
-  // variable. Read it from `process.env.OPENAI_API_KEY` (set by the env
-  // sync layer) so we don't have to know about a separate store.
-  const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) return unconfigured("OPENAI_API_KEY not configured");
+  // Prefer the integration store (set via the Integrations panel) and
+  // fall back to OPENAI_API_KEY for setups that only export the env var.
+  const key = getIntegrationRaw("openai")?.api_key?.trim() || process.env.OPENAI_API_KEY?.trim();
+  if (!key) return unconfigured("API key not configured");
   try {
     const res = await fetch("https://api.openai.com/v1/models", {
       headers: { Authorization: `Bearer ${key}` },
@@ -289,8 +288,8 @@ export async function probeOpenAI(): Promise<HealthResult> {
 }
 
 export async function probeDeepseek(): Promise<HealthResult> {
-  const key = process.env.DEEPSEEK_API_KEY?.trim();
-  if (!key) return unconfigured("DEEPSEEK_API_KEY not configured");
+  const key = getIntegrationRaw("deepseek")?.api_key?.trim() || process.env.DEEPSEEK_API_KEY?.trim();
+  if (!key) return unconfigured("API key not configured");
   try {
     const res = await fetch("https://api.deepseek.com/v1/models", {
       headers: { Authorization: `Bearer ${key}` },
@@ -308,13 +307,91 @@ export async function probeDeepseek(): Promise<HealthResult> {
   }
 }
 
+export async function probeCohere(): Promise<HealthResult> {
+  const key = getIntegrationRaw("cohere")?.api_key?.trim() || process.env.COHERE_API_KEY?.trim();
+  if (!key) return unconfigured("API key not configured");
+  try {
+    const res = await fetch("https://api.cohere.com/v1/models", {
+      headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
+      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
+    });
+    if (res.status === 401 || res.status === 403) {
+      return authFailed("Cohere rejected the API key (401). Regenerate at dashboard.cohere.com → API keys.");
+    }
+    if (res.status === 429) return transient("Cohere rate-limited the probe (429).");
+    if (!res.ok) return probeError(`Cohere returned ${res.status}`);
+    const data = (await res.json()) as { models?: Array<{ name: string }> };
+    return ok({ models: (data.models ?? []).length });
+  } catch (err) {
+    return transient(describeError(err));
+  }
+}
+
+export async function probeGithubCopilot(): Promise<HealthResult> {
+  // Two credential paths share this probe:
+  //   1. Device-flow OAuth token (stored under memory_store namespace
+  //      "github-copilot-auth" by the in-app sign-in). Verified by
+  //      exchanging it for a Copilot session token.
+  //   2. Personal Access Token saved via the Integrations panel.
+  //      PATs cannot be exchanged, so we check them against the GitHub
+  //      Models REST surface which Copilot PATs are routed to.
+  const oauth = getStoredCopilotOAuthToken();
+  if (oauth) {
+    try {
+      const res = await fetch("https://api.github.com/copilot_internal/v2/token", {
+        headers: { Authorization: `token ${oauth}`, "User-Agent": "Jarela" },
+        signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
+      });
+      if (res.status === 401 || res.status === 403) {
+        return authFailed(`GitHub rejected the Copilot OAuth token (${res.status}). Sign in again from the Models panel.`);
+      }
+      if (res.status === 404) {
+        return authFailed("GitHub Copilot subscription not found for this account.");
+      }
+      if (res.status === 429) return transient("GitHub Copilot rate-limited the probe (429).");
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        return probeError(`GitHub Copilot ${res.status}: ${body.slice(0, 200)}`);
+      }
+      const json = (await res.json()) as { expires_at?: string };
+      return ok({ auth: "oauth", session_expires_at: json.expires_at ?? null });
+    } catch (err) {
+      return transient(describeError(err));
+    }
+  }
+  const pat = getIntegrationRaw("github-copilot")?.api_key?.trim();
+  if (!pat) return unconfigured("Not signed in and no PAT configured");
+  try {
+    const res = await fetch("https://models.github.ai/catalog/models", {
+      headers: {
+        Authorization: `Bearer ${pat}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+        "User-Agent": "Jarela",
+      },
+      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
+    });
+    if (res.status === 401 || res.status === 403) {
+      return authFailed(`GitHub rejected the PAT (${res.status}). Confirm the token has the "copilot" scope and your subscription is active.`);
+    }
+    if (res.status === 429) return transient("GitHub rate-limited the probe (429).");
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return probeError(`GitHub Models ${res.status}: ${body.slice(0, 200)}`);
+    }
+    return ok({ auth: "pat" });
+  } catch (err) {
+    return transient(describeError(err));
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Routing helpers
 // ────────────────────────────────────────────────────────────────────
 
 export type ProbeName =
   | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook"
-  | "anthropic" | "openai" | "deepseek";
+  | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot";
 
 const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   atlassian: probeAtlassian,
@@ -326,6 +403,8 @@ const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   anthropic: probeAnthropic,
   openai: probeOpenAI,
   deepseek: probeDeepseek,
+  cohere: probeCohere,
+  "github-copilot": probeGithubCopilot,
 };
 
 const PROBE_LABELS: Record<ProbeName, string> = {
@@ -338,6 +417,8 @@ const PROBE_LABELS: Record<ProbeName, string> = {
   anthropic: "Anthropic (Claude)",
   openai: "OpenAI",
   deepseek: "DeepSeek",
+  cohere: "Cohere",
+  "github-copilot": "GitHub Copilot",
 };
 
 const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
@@ -350,6 +431,8 @@ const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
   anthropic: "llm",
   openai: "llm",
   deepseek: "llm",
+  cohere: "llm",
+  "github-copilot": "llm",
 };
 
 export function listProbes(): ProbeName[] {
