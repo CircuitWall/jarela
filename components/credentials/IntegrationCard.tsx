@@ -1,177 +1,18 @@
 "use client";
-import { CheckCircle2, ExternalLink, Filter, Key, Link as LinkIcon, Loader2, RefreshCw, Settings2, Terminal, Trash2, XCircle } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { CheckCircle2, ExternalLink, Link as LinkIcon, Loader2, Terminal, Trash2, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
-import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
-import { useAppContext } from "@/contexts/AppContext";
-import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
-import { NetworkSection } from "./NetworkSection";
-import { AllowedSitesSection } from "./AllowedSitesSection";
-import { EnvAliasEditor } from "./EnvAliasEditor";
+import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
 
 const SECRET_MASK = "********";
 
-// Human label for the preset chip in the panel header. Keep terse —
-// the chip is informational, not the primary picker (that lives in the
-// Profile editor).
-const PRESET_LABELS: Record<NonNullable<UserProfile["preset"]>, string> = {
-  home: "Home",
-  work: "Work",
-  dev: "Developer",
-  custom: "Everything",
-};
+// Per-integration editor with inline OAuth Connect, Save, Test, Clear, and
+// (for Gmail/Outlook) a collapsible setup guide. Extracted from the old
+// `components/integrations/IntegrationsPanel.tsx` so the unified credentials
+// panel can render one card per known integration — keeping OAuth and key
+// editing in the same surface that handles model API keys.
 
-export function IntegrationsPanel() {
-  const { dispatch } = useAppContext();
-  const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
-  const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [aliasEditorOpen, setAliasEditorOpen] = useState(false);
-  const [preset, setPreset] = useState<UserProfile["preset"]>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  useDeepLinkScroll("credentials", "integration", containerRef);
-
-  async function load() {
-    setLoading(true);
-    try {
-      const [res, profile] = await Promise.all([
-        api.integrations.list(),
-        api.profile.get().catch(() => null),
-      ]);
-      setDefs(res.definitions);
-      setStatuses(Object.fromEntries(res.statuses.map((s) => [s.name, s])));
-      setPreset(profile?.preset ?? null);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, []);
-
-  // Persona filter: if the user has chosen a preset, hide integrations
-  // outside that bucket. "custom" or unset → show everything (legacy
-  // behaviour). Configured-but-out-of-bucket entries are kept visible
-  // so a previously-saved credential is never silently hidden.
-  const visibleDefs = useMemo(() => {
-    if (!preset) return defs;
-    const allowed = PRESET_CATEGORIES[preset];
-    if (allowed === null) return defs;
-    return defs.filter((def) => {
-      if (!def.category) return true;
-      if (allowed.has(def.category)) return true;
-      // Don't hide something the user has already configured — bail out
-      // gracefully so credentials never appear to vanish.
-      return statuses[def.name]?.configured === true;
-    });
-  }, [defs, preset, statuses]);
-
-  const hiddenCount = defs.length - visibleDefs.length;
-
-  async function syncFromEnv() {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const r = await api.envSync.apply();
-      const sourceLabel = r.discovered.source === "shell-rc"
-        ? `your ${r.discovered.shell ?? "shell"} rc`
-        : r.discovered.source === "windows-registry"
-          ? "your Windows User env"
-          : "the process env";
-      if (r.applied_count > 0) {
-        setSyncMsg(`Synced ${r.applied_count} field(s) from ${sourceLabel}.`);
-      } else {
-        const userSkipped = r.candidates.filter((c) => c.action === "skipped-user").length;
-        const equal = r.candidates.filter((c) => c.action === "skipped-equal").length;
-        const absent = r.candidates.filter((c) => c.action === "absent").length;
-        if (userSkipped > 0) {
-          setSyncMsg(`Nothing to write — ${userSkipped} field(s) were edited here and won't be overwritten.`);
-        } else if (equal > 0 && absent === r.candidates.length - equal) {
-          setSyncMsg(`Already up to date with ${sourceLabel}.`);
-        } else {
-          setSyncMsg(`No matching env vars set in ${sourceLabel}.`);
-        }
-      }
-      await load();
-    } catch (e) {
-      setSyncMsg(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSyncing(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      <div className="border-b border-border px-4 py-3 flex items-center gap-2">
-        <Key size={14} className="text-fg-subtle" />
-        <h2 className="text-sm font-semibold text-fg mr-auto">Built-in integrations</h2>
-        {preset && preset !== "custom" && (
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_TAB", tab: "profile" })}
-            title={`Filtered to "${PRESET_LABELS[preset]}" preset. Click to change in Profile.`}
-            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded-full border border-border bg-surface-2 text-fg-muted hover:bg-surface-3"
-          >
-            <Filter size={11} />
-            <span>{PRESET_LABELS[preset]}</span>
-            {hiddenCount > 0 && (
-              <span className="text-fg-faint">· {hiddenCount} hidden</span>
-            )}
-          </button>
-        )}
-        <button
-          onClick={() => setAliasEditorOpen((v) => !v)}
-          title="Add additional env-var name aliases that env-sync should look for, per integration field."
-          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3"
-        >
-          <Settings2 size={11} />
-          Aliases
-        </button>
-        <button
-          onClick={syncFromEnv}
-          disabled={syncing}
-          title="Pull standard credential env vars (GITHUB_TOKEN, ATLASSIAN_API_TOKEN, …) from your shell rc / Windows User env. Fields you've edited here are never overwritten."
-          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-50"
-        >
-          {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-          Sync from environment
-        </button>
-      </div>
-
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3">
-        {syncMsg && (
-          <div className="mb-3 px-3 py-2 rounded border border-border bg-surface-2 text-[11px] text-fg-muted flex items-start gap-2">
-            <Terminal size={12} className="mt-0.5 text-fg-subtle shrink-0" />
-            <span className="flex-1">{syncMsg}</span>
-            <button onClick={() => setSyncMsg(null)} className="text-fg-faint hover:text-fg">
-              <XCircle size={12} />
-            </button>
-          </div>
-        )}
-        {aliasEditorOpen && (
-          <EnvAliasEditor
-            onClose={() => setAliasEditorOpen(false)}
-            onSaved={() => { /* re-sync happens on next click of Sync button; nothing to refresh here */ }}
-          />
-        )}
-        <NetworkSection />
-        <AllowedSitesSection />
-        {loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
-        {!loading && defs.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">No integrations available.</p>}
-        {visibleDefs.map((def) => (
-          <IntegrationCard
-            key={def.name}
-            definition={def}
-            status={statuses[def.name]}
-            onChanged={load}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function IntegrationCard({
+export function IntegrationCard({
   definition: def,
   status,
   onChanged,

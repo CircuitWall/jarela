@@ -112,7 +112,7 @@ test("Profile preset picker round-trips through the API", async ({ page, request
   await page.getByRole("button", { name: "Profile", exact: true }).click();
 
   // Persona section heading.
-  await expect(page.getByText(/Filters the Built-in integrations panel/i)).toBeVisible();
+  await expect(page.getByText(/Filters the Credentials list/i)).toBeVisible();
 
   // Pick the "Work" preset.
   const workBtn = page.getByRole("button", { name: /^Work\b/ });
@@ -129,14 +129,14 @@ test("Profile preset picker round-trips through the API", async ({ page, request
   expect(body.preset).toBe("work");
 });
 
-test("Built-in integrations panel filter chip reflects the active preset", async ({ page, request }) => {
+test("Credentials list filter chip reflects the active preset", async ({ page, request }) => {
   // Pre-set the preset via the API so the panel renders with it on first paint.
   const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
   expect(put.ok()).toBeTruthy();
 
   await openMenu(page);
   await page.getByRole("button", { name: "Credentials", exact: true }).click();
-  await page.getByRole("tab", { name: "Built-in integrations" }).click();
+  // The unified Credentials list is the default sub-tab — no click needed.
 
   // Header chip shows the human label and is clickable.
   const chip = page.getByRole("button", { name: /^Home/ });
@@ -151,7 +151,7 @@ test("Built-in integrations panel filter chip reflects the active preset", async
 
   // Click chip → navigates to Profile.
   await chip.click();
-  await expect(page.getByText(/Filters the Built-in integrations panel/i)).toBeVisible();
+  await expect(page.getByText(/Filters the Credentials list/i)).toBeVisible();
 });
 
 test("memory panel renders structured values and masks secret-shaped keys", async ({ page, request }) => {
