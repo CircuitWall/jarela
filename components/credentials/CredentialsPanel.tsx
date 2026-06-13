@@ -114,7 +114,7 @@ export function CredentialsPanel() {
   );
 }
 
-function CredentialsListPanel() {
+export function CredentialsListPanel() {
   const { dispatch } = useAppContext();
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
