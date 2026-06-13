@@ -6,6 +6,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { NetworkSection } from "./NetworkSection";
 import { AllowedSitesSection } from "./AllowedSitesSection";
 import { EnvAliasEditor } from "./EnvAliasEditor";
+import { NetworkEnvEditor } from "./NetworkEnvEditor";
 
 // "Network & environment" hosts everything that's NOT a credential: HTTP
 // proxy, allowed sites, env-var aliases, and the env-sync button that
@@ -98,6 +99,7 @@ export function NetworkPanel() {
         )}
         <NetworkSection />
         <AllowedSitesSection />
+        <NetworkEnvEditor />
       </div>
     </div>
   );
