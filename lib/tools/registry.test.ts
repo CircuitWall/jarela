@@ -8,6 +8,7 @@ import {
   registeredCategory,
   registeredCapability,
   registeredGroup,
+  unregisterTools,
   _resetRegistry,
 } from "./registry";
 
@@ -83,5 +84,25 @@ describe("tool registry", () => {
     expect(registeredCategory("memory_write")).toBe("Memory");
     expect(registeredCapability("memory_read")).toBe("read");
     expect(registeredCapability("memory_write")).toBe("write");
+  });
+
+  it("unregisterTools removes named entries and reports the count", () => {
+    registerTools("Files", "read", [mkTool("u1"), mkTool("u2")]);
+    registerTools("Files", "write", [mkTool("u3")]);
+
+    expect(registeredNames().has("u1")).toBe(true);
+    expect(unregisterTools(["u1", "u3", "missing"])).toBe(2);
+    expect(registeredNames().has("u1")).toBe(false);
+    expect(registeredNames().has("u2")).toBe(true);
+    expect(registeredNames().has("u3")).toBe(false);
+    expect(registeredCategory("u1")).toBeUndefined();
+  });
+
+  it("unregisterTools makes the name available for a fresh registration", () => {
+    registerTools("Files", "read", [mkTool("recycle")]);
+    expect(() => registerTools("Web", "read", [mkTool("recycle")])).toThrow(/duplicate/i);
+    unregisterTools(["recycle"]);
+    expect(() => registerTools("Web", "read", [mkTool("recycle")])).not.toThrow();
+    expect(registeredCategory("recycle")).toBe("Web");
   });
 });

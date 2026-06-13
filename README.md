@@ -279,6 +279,11 @@ Seven extension surfaces, each documented in
 - **Tools** — drop a file under `lib/tools/<name>.ts`, register with
   `registerLangChainPackage({ category, tools: { read|write|execute: [...] } })`.
   External `.cjs` plugins also live under `~/.jarela/tools/`.
+- **LangChain tool packages** — drop a JSON manifest under
+  `~/.jarela/packages/manifests/` pointing at any npm package that
+  exports a `StructuredTool`-shaped class. The operator manages
+  `npm install` inside `~/.jarela/packages/`; Jarela dynamic-imports,
+  constructs, and registers the tool on first agent call.
 - **MCP servers** — stdio or http, configured via UI or programmatic
   `upsertMcpServer`. Tools auto-merge into the agent's pool.
 - **Agent harnesses** — built-in presets in
