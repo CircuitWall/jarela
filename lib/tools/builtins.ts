@@ -21,9 +21,10 @@ import "./schedule";
 import "./watcher";
 import "./propose";
 import "./integrations";
-// Consolidated wiring for @circuitwall/{atlassian,github,jira-align}-langchain.
-// Replaces the per-package adapter files (atlassian.ts, github.ts, jira-align.ts).
-import "./builtin-langchain-packages";
+// Default LangChain packages (Atlassian, GitHub, Jira Align) ship with
+// Jarela but are runtime-toggleable: see ./default-packages.ts.
+import { registerDefaultPackages } from "./default-packages";
+registerDefaultPackages();
 import "./gmail";
 import "./calendar";
 import "./outlook";

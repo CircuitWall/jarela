@@ -174,9 +174,9 @@ export function LangChainPackagesPanel() {
   }
 
   return (
-    <div className="p-4 space-y-5">
+    <section className="space-y-5">
       <header className="space-y-1">
-        <h2 className="text-sm font-semibold text-fg">LangChain packages</h2>
+        <h3 className="text-sm font-semibold text-fg">LangChain packages</h3>
         <p className="text-xs text-fg-faint">
           Hot-load vanilla LangChain tool packages from npm without a rebuild. Trusted
           publishers (<code className="font-mono text-[11px]">@langchain/</code>,{" "}
@@ -464,6 +464,6 @@ export function LangChainPackagesPanel() {
           )}
         </section>
       )}
-    </div>
+    </section>
   );
 }

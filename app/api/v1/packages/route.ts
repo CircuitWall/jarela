@@ -3,6 +3,7 @@ import {
   getPackagesDir,
   loadLangChainPackages,
 } from "@/lib/tools/langchain-packages";
+import { listDefaultPackages } from "@/lib/tools/default-packages";
 
 export async function GET() {
   const result = await loadLangChainPackages();
@@ -11,5 +12,6 @@ export async function GET() {
     registered: result.registered,
     skipped: result.skipped,
     errors: result.errors,
+    defaults: listDefaultPackages(),
   });
 }

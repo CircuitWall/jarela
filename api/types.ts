@@ -1187,6 +1187,18 @@ export interface LangChainPackageLoadResult {
 
 export interface LangChainPackageListResponse extends LangChainPackageLoadResult {
   packagesDir: string;
+  defaults: DefaultLangChainPackageInfo[];
+}
+
+export interface DefaultLangChainPackageInfo {
+  id: string;
+  label: string;
+  category: string;
+  integrationId: string;
+  npmPackage: string;
+  toolCounts: { read: number; write: number; execute: number };
+  description: string;
+  enabled: boolean;
 }
 
 export interface LangChainPackageManifestInput {

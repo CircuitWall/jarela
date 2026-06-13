@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.4] - 2026-06-13
+
+### Changed
+
+- **Tools tab consolidation.** Built-in tools, default LangChain
+  packages (Atlassian, GitHub, Jira Align), hot-loaded npm manifests,
+  and drop-in `.cjs` tools all live under a single Tools → Packages
+  sub-tab. MCP, Documents, Memory, and Bridges keep their own sub-tabs.
+- **Default LangChain packages are now toggleable.** Atlassian, GitHub,
+  and Jira Align ship enabled but can be disabled via the new
+  `POST /api/v1/packages/defaults/{id}` endpoint or directly from the
+  Packages panel. Disabled defaults are unregistered live (no restart);
+  state persists in the new `disabled_packages` SQLite table.
+- **Custom provider plugins moved to Models.** `~/.jarela/providers/*.cjs`
+  files now appear under the Models tab next to other provider listings
+  instead of in the now-removed Browser-extension surface.
+
+### Removed
+
+- Top-level **Extensions** menu entry. Drop-in tools moved to Tools →
+  Packages; drop-in providers moved to Models. Legacy `?tab=extensions`
+  deep links resolve to Tools → Packages.
+- `lib/tools/builtin-langchain-packages.ts` (replaced by
+  `lib/tools/default-packages.ts`).
+
 ## [1.9.3] - 2026-06-13
 
 ### Added

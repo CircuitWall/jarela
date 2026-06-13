@@ -319,6 +319,15 @@ export const api = {
         `/packages/manifests/${encodeURIComponent(name)}`,
         { method: "DELETE" },
       ),
+    setDefaultEnabled: (id: string, enabled: boolean) =>
+      request<{
+        id: string;
+        enabled: boolean;
+        package: import("./types").DefaultLangChainPackageInfo;
+      }>(`/packages/defaults/${encodeURIComponent(id)}`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      }),
   },
 
   extensions: {
