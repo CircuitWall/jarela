@@ -1,18 +1,26 @@
 "use client";
 
 import { Package } from "lucide-react";
-import { BuiltinToolsPanel } from "./BuiltinToolsPanel";
-import { LangChainPackagesPanel } from "./LangChainPackagesPanel";
-import { DefaultPackagesSection, DropInToolsSection } from "./PackageSections";
+import { InstallPanel } from "./InstallPanel";
+import { ToolCatalog } from "./ToolCatalog";
+import { UnifiedPackageList } from "./UnifiedPackageList";
 
-// Single home for everything that turns into a LangChain tool: bundled
-// defaults, hot-loaded npm manifests, drop-in `.cjs` files, and the
-// built-in tool catalogue. Sub-tabs above this panel still segregate
-// MCP / Documents / Memory / Bridges so each has its own focused UI;
-// this surface owns the pure tool-package experience.
+// Single home for everything that turns into a LangChain tool.
+//
+// Layout (top → bottom):
+//   1. "Install package" — collapsible action: npm install + pending
+//      approvals + manual manifest editor.
+//   2. UnifiedPackageList — every package surface in one list:
+//      built-in categories, bundled defaults, npm-installed manifests,
+//      drop-in `.cjs` files. Source filter + search.
+//   3. ToolCatalog — per-tool drill-down with rank stats and filters.
+//
+// Sub-tabs above this panel still segregate MCP / Documents / Memory /
+// Bridges so each gets its own focused UI; this surface owns the
+// LangChain-tool-package experience end to end.
 export function PackagesPanel() {
   return (
-    <div className="p-4 space-y-8">
+    <div className="p-4 space-y-6">
       <header className="space-y-1">
         <div className="flex items-center gap-2">
           <Package size={14} className="text-fg-subtle" />
@@ -25,13 +33,10 @@ export function PackagesPanel() {
         </p>
       </header>
 
-      <DefaultPackagesSection />
-      <div className="border-t border-border" />
-      <LangChainPackagesPanel />
-      <div className="border-t border-border" />
-      <DropInToolsSection />
-      <div className="border-t border-border" />
-      <BuiltinToolsPanel />
+      <InstallPanel />
+      <UnifiedPackageList />
+      <div className="border-t border-border pt-4" />
+      <ToolCatalog />
     </div>
   );
 }
