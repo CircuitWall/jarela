@@ -43,7 +43,7 @@ export function VoiceFields({ form, models, integrations, selectedModel, onClose
           onOpenCredentials={() => {
             onClose();
             dispatch({ type: "SET_TAB", tab: "credentials" });
-            dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: "integrations" });
+            dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: "list" });
           }}
         />
       )}

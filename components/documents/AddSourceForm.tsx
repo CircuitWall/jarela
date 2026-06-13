@@ -87,10 +87,10 @@ function buildPayload(s: FormState): CreatePayload | null {
 
 function kindHint(kind: DocumentSourceKind): string {
   if (kind === "local_folder") return "Pick a folder on this machine.";
-  if (kind === "gmail_mail") return "Requires Gmail credentials (Credentials → Built-in integrations → Gmail).";
-  if (kind === "outlook_mail") return "Requires Outlook credentials (Credentials → Built-in integrations → Outlook).";
-  if (isGithubKind(kind)) return "Requires GitHub credentials (Credentials → Built-in integrations → GitHub).";
-  return "Requires Atlassian credentials (Credentials → Built-in integrations → Atlassian).";
+  if (kind === "gmail_mail") return "Requires Gmail credentials (Credentials → Gmail).";
+  if (kind === "outlook_mail") return "Requires Outlook credentials (Credentials → Outlook).";
+  if (isGithubKind(kind)) return "Requires GitHub credentials (Credentials → GitHub).";
+  return "Requires Atlassian credentials (Credentials → Atlassian).";
 }
 
 export function AddSourceForm({ disabled, onSubmit }: Props) {

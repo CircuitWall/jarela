@@ -203,7 +203,7 @@ function PresetPicker({
     <div className="block">
       <span className="text-xs text-fg-subtle mb-1 block">Persona</span>
       <p className="text-[11px] text-fg-faint mb-2">
-        Filters the Built-in integrations panel so you only see integrations relevant
+        Filters the Credentials list so you only see integrations relevant
         to how you use Jarela. Pick &quot;Everything&quot; to see them all.
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
