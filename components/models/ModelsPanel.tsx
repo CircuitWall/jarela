@@ -7,6 +7,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { ModelEditor } from "./ModelEditor";
 import { CapBadges } from "./CapBadges";
 import { CustomProvidersSection } from "./CustomProvidersSection";
+import { errorMessage } from "@/lib/utils/error";
 
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "bg-orange-900/40 text-orange-700 dark:text-orange-300 border-orange-700",
@@ -36,7 +37,7 @@ export function ModelsPanel() {
     try {
       await remove(name);
     } catch (e) {
-      setDeleteError(`Could not delete "${name}": ${e instanceof Error ? e.message : String(e)}`);
+      setDeleteError(`Could not delete "${name}": ${errorMessage(e)}`);
     }
   }
 

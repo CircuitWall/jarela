@@ -5,6 +5,7 @@ import { publish as publishNotification } from "@/lib/notifications/bus";
 import { resolveRoute } from "./router";
 import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
+import { errorMessage } from "@/lib/utils/error";
 
 /**
  * Handle one inbound message from a bridge adapter:
@@ -108,7 +109,7 @@ export async function handleInboundMessage(
       try {
         await adapter.sendText(msg.remote_jid, reply);
       } catch (sendErr) {
-        const m = sendErr instanceof Error ? sendErr.message : String(sendErr);
+        const m = errorMessage(sendErr);
         console.error(`[bridge ${adapter.bridge_id}] sendText failed:`, m);
       }
     }
@@ -127,7 +128,7 @@ export async function handleInboundMessage(
       });
     }
   } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
+    const m = errorMessage(err);
     console.error(`[bridge ${adapter.bridge_id}] dispatcher error on ${msg.remote_jid}:`, m);
   }
 }

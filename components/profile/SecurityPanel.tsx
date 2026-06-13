@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Lock, Shield } from "lucide-react";
+import { errorMessage } from "@/lib/utils/error";
 
 // SecurityPanel — UI for enabling, changing, or disabling the at-rest
 // PIN (ADR-0063). Talks to /api/v1/security/{state,pin}. The unlock
@@ -91,7 +92,7 @@ export function SecurityPanel() {
         else setError(data.error ?? `Error (${res.status})`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setSubmitting(false);
     }

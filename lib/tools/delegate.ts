@@ -15,6 +15,7 @@ import {
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
 import { resolveTurnProfile } from "@/lib/agents/turn-profile";
+import { errorMessage } from "@/lib/utils/error";
 
 interface DelegateContext {
   parentAgentId: string;
@@ -148,7 +149,7 @@ export const delegateToAgentTool = tool(
         cite_as: `[${child.name}'s reply](?thread=${childThread.thread_id}&agent=${child.id})`,
       });
     } catch (err) {
-      return fail("child_error", err instanceof Error ? err.message : String(err), {
+      return fail("child_error", errorMessage(err), {
         agent_id,
         agent_name: child.name,
         thread_id: childThread.thread_id,

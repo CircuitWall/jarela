@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { pushErrorToast } from "@/lib/ui/error-report";
+import { errorMessage } from "@/lib/utils/error";
 
 // `editing` value when the user clicked New: starts on the picker step;
 // once they pick a registry entry (or click "custom") it transitions to a form.
@@ -175,7 +176,7 @@ function MCPEditor({
     if (!name.trim()) { setError("name is required"); return; }
     let spec: Record<string, unknown>;
     try { spec = JSON.parse(specJSON); }
-    catch (e) { setError(`spec is not valid JSON: ${e instanceof Error ? e.message : String(e)}`); return; }
+    catch (e) { setError(`spec is not valid JSON: ${errorMessage(e)}`); return; }
     // Apply registry variable substitutions if any are declared.
     if (registryEntry?.variables?.length) {
       const missing = registryEntry.variables.filter((v) => !varValues[v.key]?.trim());
@@ -374,7 +375,7 @@ function RegistryPicker({
       setEntries([]); setNextCursor(undefined);
       // Inline error preserves the Retry button at the picker; the toast
       // gives the user a one-click path to report the failure.
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       pushErrorToast({
         title: "Couldn't search MCP registry",
         error: e,
@@ -395,7 +396,7 @@ function RegistryPicker({
       setEntries((prev) => [...prev, ...res.entries]);
       setNextCursor(res.nextCursor);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       pushErrorToast({
         title: "Couldn't load more registry entries",
         error: e,

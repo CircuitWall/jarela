@@ -7,6 +7,7 @@ import { useLocationSharing } from "@/hooks/useLocationSharing";
 import { useAppContext } from "@/contexts/AppContext";
 import { formatRelative } from "@/lib/utils/time";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { errorMessage } from "@/lib/utils/error";
 
 export function ProfileEditor() {
   const { state, dispatch } = useAppContext();
@@ -271,7 +272,7 @@ function LocationSharing({
       const updated = await api.profile.setLocationConsent(!consent);
       onChange(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -341,7 +342,7 @@ function AccessWhitelist() {
 
   async function refresh() {
     try { setEntries(await api.access.list()); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(errorMessage(e)); }
   }
   useEffect(() => { void refresh(); }, []);
 
@@ -353,7 +354,7 @@ function AccessWhitelist() {
       await api.access.add(identity.trim(), displayName.trim() || null);
       setIdentity(""); setDisplayName("");
       await refresh();
-    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setError(errorMessage(e)); }
     finally { setBusy(false); }
   }
 
@@ -361,7 +362,7 @@ function AccessWhitelist() {
     setError(null);
     setBusy(true);
     try { await api.access.remove(id); await refresh(); }
-    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    catch (e) { setError(errorMessage(e)); }
     finally { setBusy(false); }
   }
 
@@ -454,7 +455,7 @@ function TailscaleServe() {
   useEffect(() => {
     api.tailscale.status()
       .then(setStatus)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .catch((e) => setError(errorMessage(e)));
   }, []);
 
   async function copyRecipe() {

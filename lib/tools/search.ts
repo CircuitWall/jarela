@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
+import { errorMessage } from "@/lib/utils/error";
 
 interface SearchResult {
   title: string;
@@ -140,7 +141,7 @@ export const webSearchTool = tool(
     } catch (err) {
       return JSON.stringify({
         query,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   },

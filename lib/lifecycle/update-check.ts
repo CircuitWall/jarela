@@ -13,6 +13,7 @@ import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { getDataDir } from "@/lib/db/data-dir";
 import { getConfig } from "@/lib/env/config";
+import { errorMessage } from "@/lib/utils/error";
 
 const PACKAGE_NAME = "@circuitwall/jarela";
 const REPO = "CircuitWall/jarela";
@@ -216,7 +217,7 @@ export async function checkForUpdate(
       behind: false,
       cached: false,
       checkedAt: null,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     };
   }
 }

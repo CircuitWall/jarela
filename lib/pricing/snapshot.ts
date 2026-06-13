@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { llmExtractModelRates, type LlmModelRate } from "./llm-extract";
 import { getConfig } from "@/lib/env/config";
+import { errorMessage } from "@/lib/utils/error";
 
 const SNAPSHOT_PATH = resolve("docs", "journal", "pricing-snapshot.json");
 const DEFAULT_TTL_DAYS = 3;
@@ -373,7 +374,7 @@ async function fetchHtml(url: string): Promise<FetchAttempt> {
       body: "",
       etag: null,
       last_modified: null,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
     };
   }
 }

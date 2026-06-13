@@ -27,6 +27,7 @@ import { registeredTools } from "@/lib/tools/registry";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { truncateBytes } from "@/lib/utils/text";
 import type { TriggerFiring, TriggerHandler, TriggerOutcome } from "../types";
+import { errorMessage } from "@/lib/utils/error";
 
 export const WATCHER_KIND = "watcher";
 
@@ -201,7 +202,7 @@ async function invokeWatcherTool(watcher: WatcherRow): Promise<string> {
   if (!entry) throw new Error(`tool "${watcher.tool_name}" is not registered`);
   let args: unknown;
   try { args = JSON.parse(watcher.tool_args); }
-  catch (e) { throw new Error(`tool_args is not valid JSON: ${e instanceof Error ? e.message : String(e)}`); }
+  catch (e) { throw new Error(`tool_args is not valid JSON: ${errorMessage(e)}`); }
   // LangChain tools accept the args object directly via .invoke().
   // Watcher tools must be context-free (no thread_id / agent_id).
   const result = await entry.invoke(args as Record<string, unknown>);
@@ -232,7 +233,7 @@ async function pollDueWatchers(asOf: Date): Promise<TriggerFiring[]> {
         firings.push(buildFiring(watcher, watcher.last_result, result));
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       recordWatcherPollError(watcher.id, msg);
       // A polling error doesn't fire the agent; it's surfaced via
       // last_error on the row + UI. Logging only.
@@ -311,7 +312,7 @@ export async function firingForWatcherIdNow(id: string): Promise<TriggerFiring |
     if (!changed) return null;
     return buildFiring(watcher, watcher.last_result, result);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     recordWatcherPollError(watcher.id, msg);
     throw err;
   }

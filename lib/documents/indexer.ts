@@ -20,6 +20,7 @@ import {
 } from "@/lib/stores/document-sources";
 import { chunkText } from "./chunker";
 import { isRemoteKind, runRemoteSource, type RemoteIndexStats } from "./remote";
+import { errorMessage } from "@/lib/utils/error";
 
 // Conservative defaults; v1 is not configurable per source. ADR-0024
 // documents the rationale and the path to opening these up.
@@ -243,7 +244,7 @@ export async function indexSource(
           processed++;
         }
       } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
+        lastError = errorMessage(err);
         stats.errors++;
       }
       stats.unchanged++;
@@ -270,7 +271,7 @@ export async function indexSource(
           processed++;
         }
       } catch (err) {
-        lastError = err instanceof Error ? err.message : String(err);
+        lastError = errorMessage(err);
         stats.errors++;
       }
       stats.unchanged++;
@@ -285,7 +286,7 @@ export async function indexSource(
       if (existing) stats.updated++;
       else stats.added++;
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      lastError = errorMessage(err);
       stats.errors++;
     }
   }
@@ -436,7 +437,7 @@ export async function indexAllSources(opts?: { maxFilesPerSource?: number }): Pr
       const stats = await indexSource(s, { maxFiles: opts?.maxFilesPerSource });
       out.push({ source_id: s.id, path: s.path, stats });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       markSourceScanned(s.id, msg);
       console.error("[documents] index failed for", s.path, msg);
     }

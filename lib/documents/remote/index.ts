@@ -20,6 +20,7 @@ import {
   indexGithubFileByUrl,
 } from "./github";
 import type { UpsertResult } from "./upsert";
+import { errorMessage } from "@/lib/utils/error";
 
 export interface RemoteIndexStats {
   scanned: number;
@@ -76,7 +77,7 @@ export async function runRemoteSource(source: DocumentSourceRow): Promise<Remote
         throw new Error(`unsupported remote source kind: ${source.kind}`);
     }
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
     stats.errors++;
   }
   // Mirror the local indexer's surfacing rule: a fetch error wins; otherwise

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteRoute, getRoute, updateRoute, type BridgeRouteRow } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Params { params: Promise<{ id: string; route_id: string }> }
 
@@ -47,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!updated) return NextResponse.json({ error: "update failed" }, { status: 500 });
     return NextResponse.json(toResponse(updated));
   } catch (err) {
-    const m = err instanceof Error ? err.message : String(err);
+    const m = errorMessage(err);
     if (/UNIQUE/.test(m)) {
       const reason = /agent_id/.test(m)
         ? "That agent is already the target of another route."

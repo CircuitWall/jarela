@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { exchangeCode, getFlow, updateFlow } from "@/lib/integrations/microsoft-oauth";
 import { saveIntegration } from "@/lib/stores/integrations";
 import { escapeHtml, oauthHtmlResponse } from "@/app/api/v1/integrations/oauth-callback";
+import { errorMessage } from "@/lib/utils/error";
 
 // GET /api/v1/integrations/outlook/oauth/callback?code=…&state=…
 //
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     updateFlow(state, { status: "done" });
     return oauthHtmlResponse("Outlook connected. You can close this tab and return to Jarela.", false);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = errorMessage(e);
     updateFlow(state, { status: "error", error: msg });
     return oauthHtmlResponse(`Token exchange failed: ${escapeHtml(msg)}`, true);
   }

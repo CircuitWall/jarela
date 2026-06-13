@@ -7,6 +7,7 @@ import {
   setDefaultPackageEnabled,
 } from "@/lib/tools/default-packages";
 import { setPackageDisabled } from "@/lib/stores/disabled-packages";
+import { errorMessage } from "@/lib/utils/error";
 
 const ToggleSchema = z.object({ enabled: z.boolean() });
 
@@ -26,7 +27,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     setPackageDisabled(id, !parsed.enabled);
     setDefaultPackageEnabled(id, parsed.enabled);
   } catch (err) {
-    return errorResponse(err instanceof Error ? err.message : String(err), 500);
+    return errorResponse(errorMessage(err), 500);
   }
 
   const updated = listDefaultPackages().find((p) => p.id === id);

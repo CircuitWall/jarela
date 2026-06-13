@@ -4,6 +4,7 @@ import { api } from "@/api/client";
 import type { DocumentHit, DocumentSource, DocumentSourceKind, ModelConfig } from "@/api/types";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import { isMailKind, summarizeRemote } from "./helpers";
+import { errorMessage } from "@/lib/utils/error";
 
 export interface EmbeddingProbe {
   ok: boolean;
@@ -57,7 +58,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       setEmbeddingModel(settings.embedding_model_config ?? "__auto__");
       setEmbeddingProbe(settings.embedding_probe ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -75,7 +76,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       setEmbeddingModel(updated.embedding_model_config ?? "__auto__");
       setEmbeddingProbe(updated.embedding_probe ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setSavingEmbeddingModel(false);
     }
@@ -87,7 +88,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       await api.documents.createSource(payload);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       throw e;
     }
   }
@@ -104,7 +105,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       }
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy((b) => ({ ...b, [id]: false }));
     }
@@ -121,7 +122,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       await api.documents.deleteSource(id);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -130,7 +131,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       await api.documents.updateSource(s.id, { enabled: !s.enabled });
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -139,7 +140,7 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
       const res = await api.documents.search(q, { limit: 8 });
       return res.hits;
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
       return [];
     }
   }

@@ -9,6 +9,7 @@ import { NetworkPanel } from "@/components/integrations/NetworkPanel";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
 import { IntegrationCard } from "./IntegrationCard";
+import { errorMessage } from "@/lib/utils/error";
 
 // "Credentials" is the single home for every auth surface. The default
 // sub-tab is the unified list: model API keys, integration keys, and
@@ -171,7 +172,7 @@ export function CredentialsListPanel() {
       }
       refresh();
     } catch (e) {
-      setDeleteError(`Could not delete "${c.id}": ${e instanceof Error ? e.message : String(e)}`);
+      setDeleteError(`Could not delete "${c.id}": ${errorMessage(e)}`);
     }
   }
 

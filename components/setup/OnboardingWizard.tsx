@@ -20,6 +20,7 @@ import { StepModel } from "./wizard/StepModel";
 import { StepProfile } from "./wizard/StepProfile";
 import { StepReview } from "./wizard/StepReview";
 import { WizardStepper, type StepInfo } from "./wizard/WizardStepper";
+import { errorMessage } from "@/lib/utils/error";
 
 interface Props {
   context: "setup" | "profile";
@@ -144,7 +145,7 @@ export function OnboardingWizard({ context }: Props) {
         setModelId(data.models[0]);
       }
     } catch (err) {
-      setTest({ ok: false, error: `network error: ${err instanceof Error ? err.message : String(err)}` });
+      setTest({ ok: false, error: `network error: ${errorMessage(err)}` });
     } finally {
       setTesting(false);
     }
@@ -199,7 +200,7 @@ export function OnboardingWizard({ context }: Props) {
       dispatch({ type: "SET_AGENT", agentId: savedAgent.id });
       dispatch({ type: "SET_TAB", tab: "chat" });
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : String(err));
+      setSaveError(errorMessage(err));
     } finally {
       setSaving(false);
     }

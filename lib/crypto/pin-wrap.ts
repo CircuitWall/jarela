@@ -29,6 +29,7 @@ import {
   randomBytes,
   scryptSync,
 } from "node:crypto";
+import { errorMessage } from "@/lib/utils/error";
 
 const VERSION_V1 = 0x01;
 const KDF_SCRYPT = 0x01;
@@ -136,7 +137,7 @@ export function unwrapMasterKey(buf: Buffer, pin: string): Buffer {
     // to authenticate data" error. Normalize to a typed error the
     // unlock route can map to HTTP 401 (wrong PIN) vs HTTP 500 (broken
     // blob, file corruption, etc.).
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     if (/authenticate|state|tag/i.test(msg)) {
       throw new InvalidPinError();
     }

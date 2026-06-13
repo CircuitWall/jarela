@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Logo } from "@/components/ui/Logo";
+import { errorMessage } from "@/lib/utils/error";
 
 // Shared 6-digit PIN keypad used by both the decrypt splash (master key
 // locked at boot) and the screen-lock overlay (idle timer fired). The
@@ -95,7 +96,7 @@ export function PinKeypad({ mode, onSuccess }: PinKeypadProps) {
         }
         setDigits("");
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errorMessage(err));
         setDigits("");
       } finally {
         submittingRef.current = false;

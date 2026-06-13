@@ -3,6 +3,7 @@ import { CheckCircle2, ExternalLink, Link as LinkIcon, Loader2, Terminal, Trash2
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import { errorMessage } from "@/lib/utils/error";
 
 const SECRET_MASK = "********";
 
@@ -91,12 +92,12 @@ export function IntegrationCard({
         } catch (e) {
           if (pollRef.current) clearInterval(pollRef.current);
           setConnecting(false);
-          setError(e instanceof Error ? e.message : String(e));
+          setError(errorMessage(e));
         }
       }, 1500);
     } catch (e) {
       setConnecting(false);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -116,7 +117,7 @@ export function IntegrationCard({
       setValues({ ...result.values });
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -137,7 +138,7 @@ export function IntegrationCard({
         setTestResult({ ok: false, message: r.error ?? "Test failed" });
       }
     } catch (e) {
-      setTestResult({ ok: false, message: e instanceof Error ? e.message : String(e) });
+      setTestResult({ ok: false, message: errorMessage(e) });
     } finally {
       setTesting(false);
     }

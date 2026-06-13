@@ -11,6 +11,7 @@ import type {
   InvokeResult,
   OpenAITool,
 } from "./types";
+import { errorMessage } from "@/lib/utils/error";
 
 function pickOpenAICompatOptions(params: ProviderParams): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -242,7 +243,7 @@ async function tryPullOllamaModel(model_id: string, params: ProviderParams): Pro
 }
 
 function isModelNotFoundError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   return /\b404\b|model.*not found|unsupported.*embed/i.test(msg);
 }
 

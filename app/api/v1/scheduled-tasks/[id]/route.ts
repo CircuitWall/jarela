@@ -4,6 +4,7 @@ import { deleteScheduledTask, updateScheduledTask } from "@/lib/stores/scheduled
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { rowResponse } from "../_response";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
+import { errorMessage } from "@/lib/utils/error";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -33,7 +34,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     if (!updated) return notFoundResponse();
     return NextResponse.json(rowResponse(updated));
   } catch (e) {
-    return errorResponse(e instanceof Error ? e.message : String(e));
+    return errorResponse(errorMessage(e));
   }
 }
 

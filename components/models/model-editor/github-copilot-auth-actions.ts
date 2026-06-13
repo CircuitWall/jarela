@@ -1,5 +1,6 @@
 import { api } from "@/api/client";
 import type { DeviceFlow, GhCopilotState } from "./useGitHubCopilotAuth";
+import { errorMessage } from "@/lib/utils/error";
 
 export type PollResult = "continue" | "slow_down" | "done";
 
@@ -20,7 +21,7 @@ export function makeStartSignIn(setters: AuthSetters) {
       setters.setFlow({ user_code: f.user_code, verification_uri: f.verification_uri, device_code: f.device_code, interval });
       setters.setPolling(true);
       void pollLoop(setters, f.device_code, interval, f.expires_in || 900);
-    } catch (e) { setters.setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setters.setError(errorMessage(e)); }
   };
 }
 
@@ -31,7 +32,7 @@ export function makeSignOut(setters: AuthSetters) {
       await api.githubCopilotAuth.signOut();
       setters.setStatus(await api.githubCopilotAuth.status());
       setters.setMessage("Signed out.");
-    } catch (e) { setters.setError(e instanceof Error ? e.message : String(e)); }
+    } catch (e) { setters.setError(errorMessage(e)); }
   };
 }
 
@@ -64,7 +65,7 @@ async function pollOnce(setters: AuthSetters, deviceCode: string): Promise<PollR
     setters.setFlow(null); setters.setPolling(false);
     return "done";
   } catch (e) {
-    setters.setError(e instanceof Error ? e.message : String(e));
+    setters.setError(errorMessage(e));
     setters.setPolling(false);
     return "done";
   }

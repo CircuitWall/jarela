@@ -19,6 +19,7 @@ import {
 } from "@/lib/stores/document-sources";
 import { indexOnDemand, runRemoteSource } from "@/lib/documents/remote";
 import { notifyTriggerHandlers } from "@/lib/triggers";
+import { errorMessage } from "@/lib/utils/error";
 
 export const documentsSearch = tool(
   async ({ query, limit, source_id }) => {
@@ -100,7 +101,7 @@ export const documentsAddLocalSource = tool(
         note: "Local folders auto-reindex on file changes (fs-watch on macOS/Windows; periodic sweep fallback on Linux).",
       });
     } catch (e) {
-      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+      return JSON.stringify({ error: errorMessage(e) });
     }
   },
   {
@@ -171,7 +172,7 @@ export const documentsAddRemoteSource = tool(
         note: "Remote sources index on the scheduler sweep (~10 min). Call documents_reindex_source with this id to force an immediate sync. Local folders auto-reindex on file changes.",
       });
     } catch (e) {
-      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+      return JSON.stringify({ error: errorMessage(e) });
     }
   },
   {
@@ -230,7 +231,7 @@ export const documentsReindexSource = tool(
       const stats = await runRemoteSource(row);
       return JSON.stringify({ ok: true, id: source_id, stats });
     } catch (e) {
-      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+      return JSON.stringify({ error: errorMessage(e) });
     }
   },
   {
@@ -247,7 +248,7 @@ export const documentsIndexUrl = tool(
       const res = await indexOnDemand(input);
       return JSON.stringify({ ok: true, ...res });
     } catch (e) {
-      return JSON.stringify({ error: e instanceof Error ? e.message : String(e) });
+      return JSON.stringify({ error: errorMessage(e) });
     }
   },
   {
