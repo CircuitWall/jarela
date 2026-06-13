@@ -10,9 +10,11 @@ process.env.JARELA_DB_DIR = tmpRoot;
 // REST wrapper. We don't care which integration row is configured; we
 // only want to verify the indexer dispatches correctly to the right
 // endpoints with the right shapes.
-vi.mock("@/lib/tools/github", () => ({
-  _resolveGithubAuth: vi.fn(() => ({ token: "stub" })),
-  _ghFetch: vi.fn(),
+vi.mock("@/lib/tools/auth-registry", () => ({
+  resolvePackageAuth: vi.fn(() => ({ token: "stub" })),
+}));
+vi.mock("@circuitwall/github-langchain", () => ({
+  githubFetch: vi.fn(),
 }));
 vi.mock("./upsert", () => ({
   upsertRemoteDocument: vi.fn(async () => ({
@@ -23,7 +25,7 @@ vi.mock("./upsert", () => ({
   })),
 }));
 
-const { _ghFetch } = await import("@/lib/tools/github");
+const { githubFetch } = await import("@circuitwall/github-langchain");
 const { upsertRemoteDocument } = await import("./upsert");
 const {
   runGithubIndexer,
@@ -33,7 +35,7 @@ const {
 const { createDocumentSource, listDocumentSources, deleteDocumentSource, getDocumentSource } =
   await import("@/lib/stores/document-sources");
 
-const ghMock = _ghFetch as unknown as ReturnType<typeof vi.fn>;
+const ghMock = githubFetch as unknown as ReturnType<typeof vi.fn>;
 const upsertMock = upsertRemoteDocument as unknown as ReturnType<typeof vi.fn>;
 
 afterAll(() => {

@@ -1,17 +1,14 @@
 // Confluence remote indexer (ADR-0026).
 //
 // Source kinds handled:
-//   - confluence_space  → CQL `space = "<key>" AND type = page`
-//   - confluence_cql    → user-supplied CQL (still scoped to `type = page`)
+//   - confluence_space  â†’ CQL `space = "<key>" AND type = page`
+//   - confluence_cql    â†’ user-supplied CQL (still scoped to `type = page`)
 //
 // Incremental: uses `last_cursor` to avoid re-fetching pages whose
 // `lastmodified` is older than the previous run's high-water mark.
 
-import {
-  _atlassianFetch,
-  _resolveAtlassianAuth,
-  type AtlassianAuth,
-} from "@/lib/tools/atlassian";
+import { atlassianFetch, type AtlassianAuth } from "@circuitwall/atlassian-langchain";
+import { resolvePackageAuth } from "@/lib/tools/auth-registry";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,
@@ -65,7 +62,7 @@ function pageUpdatedAt(p: ConfluencePage): string {
 }
 
 async function fetchPage(auth: AtlassianAuth, pageId: string): Promise<ConfluencePage | null> {
-  const data = await _atlassianFetch(
+  const data = await atlassianFetch(
     auth,
     `/wiki/rest/api/content/${encodeURIComponent(pageId)}?expand=body.storage,version,history.lastUpdated`,
   ) as ConfluencePage & { error?: string };
@@ -90,7 +87,7 @@ export async function runConfluenceIndexer(source: DocumentSourceRow): Promise<C
     cursor: source.last_cursor,
     embedFailed: 0, embedError: null,
   };
-  const auth = _resolveAtlassianAuth();
+  const auth = resolvePackageAuth<AtlassianAuth>("atlassian");
   if ("error" in auth) throw new Error(auth.error);
 
   const cql = buildCql(source, source.last_cursor);
@@ -100,7 +97,7 @@ export async function runConfluenceIndexer(source: DocumentSourceRow): Promise<C
   while (stats.scanned < MAX_PAGES_PER_RUN) {
     const url = `/wiki/rest/api/content/search?cql=${encodeURIComponent(cql)}` +
       `&expand=body.storage,version,history.lastUpdated&limit=${PAGE_LIMIT}&start=${start}`;
-    const data = await _atlassianFetch(auth, url) as ConfluenceSearchResp & { error?: string };
+    const data = await atlassianFetch(auth, url) as ConfluenceSearchResp & { error?: string };
     if ((data as { error?: string }).error) throw new Error((data as { error?: string }).error);
     const results = data.results ?? [];
     if (results.length === 0) break;
@@ -146,7 +143,7 @@ export async function indexConfluencePageById(
   sourceId: string,
   pageId: string,
 ): Promise<UpsertResult> {
-  const auth = _resolveAtlassianAuth();
+  const auth = resolvePackageAuth<AtlassianAuth>("atlassian");
   if ("error" in auth) throw new Error(auth.error);
   const page = await fetchPage(auth, pageId);
   if (!page) throw new Error(`confluence page ${pageId} not found`);

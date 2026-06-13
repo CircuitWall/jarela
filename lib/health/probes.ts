@@ -9,9 +9,14 @@
 // (myself / labels.list / models?pageSize=1 / etc) so it can be polled
 // every few minutes without burning quota.
 
-import { _resolveAtlassianAuth } from "@/lib/tools/atlassian";
-import { _resolveJiraAlignAuth } from "@/lib/tools/jira-align";
-import { _resolveGithubAuth } from "@/lib/tools/github";
+import { resolvePackageAuth } from "@/lib/tools/auth-registry";
+import type { AtlassianAuth } from "@circuitwall/atlassian-langchain";
+import type { GitHubAuth } from "@circuitwall/github-langchain";
+import type { JiraAlignAuth } from "@circuitwall/jira-align-langchain";
+// Trigger registration of the @circuitwall/* package auth resolvers
+// before the first probe runs. Health probes can be invoked from the
+// scheduler before any agent tool call has caused builtins.ts to load.
+import "@/lib/tools/builtin-langchain-packages";
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
@@ -66,7 +71,7 @@ function probeSignal(timeoutMs: number): AbortSignal {
 // ────────────────────────────────────────────────────────────────────
 
 export async function probeAtlassian(): Promise<HealthResult> {
-  const auth = _resolveAtlassianAuth();
+  const auth = resolvePackageAuth<AtlassianAuth>("atlassian");
   if ("error" in auth) return unconfigured(auth.error);
   try {
     const res = await fetch(`${auth.url}/rest/api/3/myself`, {
@@ -92,7 +97,7 @@ export async function probeAtlassian(): Promise<HealthResult> {
 }
 
 export async function probeJiraAlign(): Promise<HealthResult> {
-  const auth = _resolveJiraAlignAuth();
+  const auth = resolvePackageAuth<JiraAlignAuth>("jira_align");
   if ("error" in auth) return unconfigured(auth.error);
   try {
     const res = await fetch(`${auth.url}/rest/align/api/2/programs?limit=1`, {
@@ -117,7 +122,7 @@ export async function probeJiraAlign(): Promise<HealthResult> {
 }
 
 export async function probeGithub(): Promise<HealthResult> {
-  const auth = _resolveGithubAuth();
+  const auth = resolvePackageAuth<GitHubAuth>("github");
   if ("error" in auth) return unconfigured(auth.error);
   try {
     const res = await fetch("https://api.github.com/user", {

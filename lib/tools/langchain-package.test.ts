@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
@@ -8,6 +8,16 @@ import {
   registeredCapability,
   _resetRegistry,
 } from "./registry";
+
+vi.mock("@/lib/stores/integrations", () => {
+  const raw: Record<string, Record<string, string> | undefined> = {};
+  return {
+    getIntegrationRaw: (name: string) => raw[name] ?? null,
+    __setIntegrationRawForTest: (name: string, value: Record<string, string> | undefined) => {
+      raw[name] = value;
+    },
+  };
+});
 
 function mkTool(name: string) {
   return tool(async () => "ok", { name, description: name, schema: z.object({}) });
@@ -98,5 +108,43 @@ describe("registerLangChainPackage", () => {
     expect(captured).toBeTypeOf("function");
     expect(handle.resolveAuth()).toEqual({ token: "env-token" });
     expect((captured as unknown as () => unknown)()).toEqual({ token: "env-token" });
+  });
+
+  it("falls back to mapStoreFields when env resolver returns an error and store is non-empty", async () => {
+    const integrations = (await import("@/lib/stores/integrations")) as unknown as {
+      __setIntegrationRawForTest: (n: string, v: Record<string, string> | undefined) => void;
+    };
+    integrations.__setIntegrationRawForTest("github", { token: "ghp_from_db" });
+    try {
+      const handle = registerLangChainPackage<{ token: string }>({
+        category: "Web",
+        tools: { read: [mkTool("dbfallback")] },
+        auth: {
+          integrationId: "github",
+          setAuthResolver: () => {},
+          resolveAuthFromEnv: () => ({ error: "env empty" }),
+          mapStoreFields: (raw) => (raw.token ? { token: raw.token } : null),
+          notConfiguredError: "should not be returned",
+        },
+      });
+      expect(handle.resolveAuth()).toEqual({ token: "ghp_from_db" });
+    } finally {
+      integrations.__setIntegrationRawForTest("github", undefined);
+    }
+  });
+
+  it("returns notConfiguredError when both env and DB are empty", () => {
+    const handle = registerLangChainPackage<{ token: string }>({
+      category: "Web",
+      tools: { read: [mkTool("unconfigured")] },
+      auth: {
+        integrationId: "github",
+        setAuthResolver: () => {},
+        resolveAuthFromEnv: () => ({ error: "env empty" }),
+        mapStoreFields: () => null,
+        notConfiguredError: "must configure github",
+      },
+    });
+    expect(handle.resolveAuth()).toEqual({ error: "must configure github" });
   });
 });
