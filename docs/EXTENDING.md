@@ -125,6 +125,60 @@ Worked example: [`lib/tools/template.ts`](../lib/tools/template.ts).
 
 ---
 
+## Hot-loading a vanilla LangChain tool package
+
+Any npm package that exports a class implementing
+`StructuredToolInterface` (the LangChain.js convention used by
+`@langchain/community`, `@langchain/google-community`, third-party
+packages, …) can be loaded into Jarela without writing code. The
+operator manages the install themselves; Jarela reads a JSON manifest,
+dynamic-imports the package, calls the constructor, and registers the
+returned tool under a Jarela category + capability.
+
+1. Pick a directory for installed packages. Default is
+   `~/.jarela/packages/`; override with `JARELA_PACKAGES_DIR`.
+2. Inside that directory, run `npm init -y` once, then `npm install`
+   each package you want (e.g. `npm install @langchain/community`).
+3. Create `<packages-dir>/manifests/<name>.json` per tool:
+   ```json
+   {
+     "package": "@langchain/community/tools/tavily_search",
+     "export": "TavilySearchResults",
+     "category": "Web",
+     "capability": "read",
+     "args": { "maxResults": 5 },
+     "requiredEnv": ["TAVILY_API_KEY"]
+   }
+   ```
+   Fields:
+   - `package` — npm module specifier (resolved from your packages dir's
+     `node_modules`).
+   - `export` — named export. Default `"default"`.
+   - `category` — Jarela category (`"Web"`, `"Mail"`, … — same vocabulary
+     as built-in tools, see [`registry.ts`](../lib/tools/registry.ts)).
+   - `capability` — `"read"` / `"write"` / `"execute"`. Default
+     `"execute"` (conservative).
+   - `args` — constructor arguments, passed as a single object.
+   - `requiredEnv` — optional. If any listed env var is unset, the
+     manifest is skipped (with a `skipped` reason) instead of erroring.
+4. Restart the server. The agent sees the tool on its next turn.
+
+The manifest is reloadable via `reloadLangChainPackages()` in
+[`lib/tools/langchain-packages.ts`](../lib/tools/langchain-packages.ts)
+(no HTTP / UI surface in this release — restart for now).
+
+**Trust model.** A loaded package runs with full Node privilege in the
+Jarela process, same as `JARELA_TOOLS_DIR` extensions. Only install
+packages you would `npm install` into any of your own projects.
+
+**Auth.** The constructor's `args` are the auth surface for this
+release — for packages whose env vars do the work (Tavily, SerpAPI,
+many community tools) just set the env var and add it to `requiredEnv`.
+A future PR will add an Integrations-panel form for packages that need
+operator-managed credentials.
+
+---
+
 ## Adding an MCP server
 
 Jarela's tool pool merges MCP-server tools with built-ins. To register a

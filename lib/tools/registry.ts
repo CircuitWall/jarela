@@ -94,6 +94,20 @@ export function registeredTools(): StructuredToolInterface[] {
   return Array.from(REGISTRY.values(), (e) => e.tool);
 }
 
+/**
+ * Remove previously-registered tools by name. Returns the number of entries
+ * actually removed. Used by the hot-load path
+ * (`lib/tools/langchain-packages.ts`) when a package is reloaded or removed
+ * — the in-tree side-effect-imported tools never call this.
+ */
+export function unregisterTools(names: Iterable<string>): number {
+  let removed = 0;
+  for (const name of names) {
+    if (REGISTRY.delete(name)) removed += 1;
+  }
+  return removed;
+}
+
 /** @internal — names of all registered built-in tools, used for collision checks. */
 export function registeredNames(): ReadonlySet<string> {
   return new Set(REGISTRY.keys());

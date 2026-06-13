@@ -34,12 +34,21 @@ import {
   getToolsDir,
   type ExtensionLoadError,
 } from "./external";
+import { loadLangChainPackages } from "./langchain-packages";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
+export {
+  loadLangChainPackages,
+  reloadLangChainPackages,
+  getPackagesDir,
+  type LangChainPackageManifest,
+  type LangChainPackageLoadResult,
+  type LangChainPackageLoadError,
+} from "./langchain-packages";
 export {
   registerTools,
   type Capability,
@@ -148,7 +157,15 @@ export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
 // Use this anywhere the agent might invoke tools (createReactAgent input).
 // External tools are loaded per-call (hot-reload). MCP tools are cached by
 // lib/mcp/client.ts and only re-resolved when the mcp_servers table changes.
+// LangChain packages (lib/tools/langchain-packages.ts) are loaded once on
+// first call and then live in the same registry as built-ins, so they flow
+// through `allBuiltins()` automatically on subsequent calls.
 export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredToolInterface[]> {
+  try {
+    await loadLangChainPackages();
+  } catch (err) {
+    console.error("[tools] LangChain package load failed, continuing without them:", err);
+  }
   let mcpTools: StructuredToolInterface[] = [];
   try {
     mcpTools = await getMcpTools();

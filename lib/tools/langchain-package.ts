@@ -22,7 +22,7 @@
  */
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
-import { registerTools, type BuiltinCategory } from "./registry";
+import { registerTools, unregisterTools, type BuiltinCategory } from "./registry";
 
 /**
  * Bridge between a package's `setAuthResolver()` hook and Jarela's
@@ -71,20 +71,36 @@ export interface RegisteredPackage<TAuth> {
    * after the user saves credentials.
    */
   resolveAuth: () => TAuth | { error: string };
+  /**
+   * Removes every tool this package added from the registry. Used by the
+   * hot-load path when an operator changes or removes a package without
+   * restarting the server. In-tree side-effect-imported tools never call
+   * this — once registered they live for the process lifetime.
+   *
+   * Note: the package's own `setAuthResolver` slot is NOT cleared. The
+   * package is expected to be unreachable (no tool surface) after
+   * unregister, so nothing should be calling its resolver.
+   */
+  unregister: () => void;
 }
 
 export function registerLangChainPackage<TAuth>(
   spec: LangChainPackageSpec<TAuth>,
 ): RegisteredPackage<TAuth> {
+  const registered: string[] = [];
   if (spec.tools.read && spec.tools.read.length > 0) {
-    registerTools(spec.category, "read", spec.tools.read);
+    for (const t of registerTools(spec.category, "read", spec.tools.read)) registered.push(t.name);
   }
   if (spec.tools.write && spec.tools.write.length > 0) {
-    registerTools(spec.category, "write", spec.tools.write);
+    for (const t of registerTools(spec.category, "write", spec.tools.write)) registered.push(t.name);
   }
   if (spec.tools.execute && spec.tools.execute.length > 0) {
-    registerTools(spec.category, "execute", spec.tools.execute);
+    for (const t of registerTools(spec.category, "execute", spec.tools.execute)) registered.push(t.name);
   }
+
+  const unregister = (): void => {
+    unregisterTools(registered);
+  };
 
   if (!spec.auth) {
     // No credential bridge — the package either needs no auth or reads
@@ -94,7 +110,7 @@ export function registerLangChainPackage<TAuth>(
     const noop = (): TAuth | { error: string } => ({
       error: `package "${spec.category}" has no auth bridge configured`,
     });
-    return { resolveAuth: noop };
+    return { resolveAuth: noop, unregister };
   }
 
   const { integrationId, setAuthResolver, resolveAuthFromEnv, mapStoreFields, notConfiguredError } = spec.auth;
@@ -112,7 +128,7 @@ export function registerLangChainPackage<TAuth>(
   };
 
   setAuthResolver(resolveAuth);
-  return { resolveAuth };
+  return { resolveAuth, unregister };
 }
 
 function isErr<T>(v: T | { error: string }): v is { error: string } {
