@@ -44,6 +44,7 @@ import {
   registerLangChainPackage,
   type RegisteredPackage,
 } from "./langchain-package";
+import { categorizeByVerb } from "./categorize-by-verb";
 
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
@@ -55,7 +56,10 @@ export const MANIFEST_SCHEMA = z.object({
   package: z.string().min(1),
   export: z.string().min(1).default("default"),
   category: z.enum(BUILTIN_CATEGORIES),
-  capability: z.enum(["read", "write", "execute"]).default("execute"),
+  // Optional: when omitted, the loader derives the capability from the
+  // tool's verb (see lib/tools/categorize-by-verb.ts). Operators can
+  // pin a value here when the verb is genuinely ambiguous.
+  capability: z.enum(["read", "write", "execute"]).optional(),
   args: z.record(z.string(), z.unknown()).optional(),
   requiredEnv: z.array(z.string().min(1)).optional(),
 });
@@ -239,7 +243,10 @@ async function loadOneManifest(
     write: [],
     execute: [],
   };
-  bucket[manifest.capability].push(instance);
+  // Manifest may pin the capability; otherwise auto-derive from the
+  // tool's verb so operators don't have to classify every entry.
+  const capability = manifest.capability ?? categorizeByVerb(instance.name);
+  bucket[capability].push(instance);
 
   let handle: RegisteredPackage<unknown>;
   try {
