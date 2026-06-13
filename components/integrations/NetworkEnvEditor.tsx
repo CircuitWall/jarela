@@ -20,12 +20,12 @@ interface EnvRow {
   max?: number;
 }
 
-// Embedded network/proxy settings for the Profile page. Shows the
-// `category === "network"` slice of /api/v1/env (bind host, port,
-// HTTP/SSE timeouts, retry count) inline so the user doesn't need to
-// open the full Environment panel to tune them. The same vars no
-// longer appear in EnvVarsPanel.
-export function NetworkPanel() {
+// Inline editor for the `category === "network"` slice of /api/v1/env
+// (bind host, port, HTTP/SSE timeouts, retry count). Rendered as a
+// section inside Settings → Networking so all networking knobs live
+// next to one another instead of being scattered across User Profile.
+// The same vars no longer appear in EnvVarsPanel.
+export function NetworkEnvEditor() {
   const [rows, setRows] = useState<EnvRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
