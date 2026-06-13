@@ -7,8 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-06-13
+
 ### Added
 
+- **Hot-load vanilla LangChain tool packages from disk.** Operators can
+  drop a manifest under `$JARELA_PACKAGES_DIR/manifests/*.json` pointing
+  at any installed npm package's `StructuredToolInterface` export, and
+  the agent picks the tool up on the next turn — no rebuild, no
+  restart. Manifests are zod-validated (`package`, `export`, `category`,
+  `capability`, optional `args` + `requiredEnv`); missing required env
+  vars cause the manifest to be skipped, not the loader to crash.
+  Loaded packages live in the same registry as built-ins, so category
+  toggles, deny-lists, and the `/api/v1/tools` endpoint all work
+  transparently.
+- **`GET /api/v1/packages` + `POST /api/v1/packages/reload`** for
+  introspection and hot-reload. The reload endpoint unregisters every
+  currently-loaded package and rescans the manifests dir so a UI (or
+  a curl from the operator) can pick up new packages or manifest
+  edits without bouncing the process.
+- **`POST /api/v1/packages/install` with publisher allowlist gate.**
+  Installs a package by npm spec into `$JARELA_PACKAGES_DIR`,
+  introspects every `StructuredToolInterface` export it finds, and
+  returns the result for the manifest-builder to pick from. Packages
+  from a publisher in `PACKAGE_PUBLISHER_ALLOWLIST` (default
+  `@langchain/*`, `@circuitwall/*`, `langchain`; extend via
+  `JARELA_PACKAGE_ALLOWLIST`, same naming pattern as `ENV_ALLOWLIST`
+  in `lib/env/allowlist.ts`) install immediately. Anything else
+  returns 202 with a pending approval id; `POST
+  /api/v1/packages/install/:id` approves, `DELETE
+  /api/v1/packages/install/:id` denies, `GET
+  /api/v1/packages/install` lists.
+- **Manifest CRUD endpoints.** `GET|POST /api/v1/packages/manifests` +
+  `GET|PUT|DELETE /api/v1/packages/manifests/:name` let the operator
+  (or a future UI) create, update, and remove manifests via HTTP. Every
+  mutation triggers `reloadLangChainPackages()` so the tool becomes
+  live (or disappears) on the agent's next turn — no hand-editing
+  JSON, no restart. Names are slug-normalized for safe filesystem
+  storage; duplicates return 409.
 - **`@circuitwall/jira-align-langchain` v0.1.0 published to npm.**
   Standalone release of the Jira Align (portfolio / SAFe) toolbelt
   extracted from `lib/tools/jira-align.ts`. 22 LangChain tools (work
@@ -28,6 +64,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`@circuitwall/{atlassian,github,jira-align}-langchain` promoted to
+  v1.0.0.** The public surface of all three packages has been stable
+  since the initial 0.1.0 release and is now consumed directly by
+  Jarela's bootstrap path. The major bump signals API stability with
+  no behaviour change.
+- **In-tree adapters for the three `@circuitwall/*-langchain` packages
+  removed.** `lib/tools/atlassian.ts`, `lib/tools/github.ts`, and
+  `lib/tools/jira-align.ts` (the thin wrappers that plugged the npm
+  packages into the integrations store) have been deleted. Their
+  wiring is now declared once in
+  `lib/tools/builtin-langchain-packages.ts`, and cross-module callers
+  (`lib/health/probes.ts`, `lib/documents/remote/{github,jira,confluence}.ts`)
+  resolve auth via the new `resolvePackageAuth<T>(integrationId)`
+  helper instead of importing per-adapter `_resolveXxxAuth`
+  re-exports. Net -211 LOC. Integration ids (`atlassian`, `github`,
+  `jira_align`) and stored field names (`url`, `email`, `api_token`,
+  `token`) are unchanged, so existing credentials rows in the
+  encrypted store resolve through the new path without any data
+  migration.
+- **All built-in tool registrations now go through
+  `registerLangChainPackage`.** The previous mix of direct
+  `registerTools(category, capability, [...])` and hand-rolled
+  per-bucket loops collapses into one declarative form, matching
+  what the hot-load path produces. No behaviour change for users.
 - **Jira Align tools are now an extractable npm package.**
   `lib/tools/jira-align.ts` was split into:
   - `@circuitwall/jira-align-langchain`
@@ -39,7 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Jarela's encrypted integrations store into the package via
     `setAuthResolver()` and re-exports every tool so existing internal
     callers (`lib/health/probes.ts`, `lib/tools/jira-align.test.ts`)
-    keep working unchanged.
+    keep working unchanged. (Subsequently deleted later in 1.9.0;
+    see "In-tree adapters … removed" above.)
 - **GitHub tools are now an extractable npm package.**
   `lib/tools/github.ts` was split into:
   - `@circuitwall/github-langchain` (`packages/github-langchain/`,
@@ -50,7 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `lib/tools/github.ts` (Jarela) — thin adapter mirroring the JA /
     Atlassian pattern; existing callers
     (`lib/documents/remote/github.ts`, `lib/health/probes.ts`,
-    `lib/tools/github.test.ts`) keep working unchanged.
+    `lib/tools/github.test.ts`) keep working unchanged. (Subsequently
+    deleted later in 1.9.0; see "In-tree adapters … removed" above.)
 - **Release workflow now publishes all three packages by tag prefix.**
   `.github/workflows/release.yml` switches on the pushed tag:
   - `v*` → publish `@circuitwall/jarela` (Jarela app) from the repo
@@ -66,22 +128,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     v0.1.0) — the 64 LangChain tools, 5 pure helpers, and the low-level
     `atlassianFetch` escape hatch. Pluggable auth via `setAuthResolver()`
     with a default env-var resolver. Zero Jarela-specific code.
-  - `lib/tools/atlassian.ts` (Jarela) — now a ~125 LOC adapter that
-    plugs Jarela's encrypted integrations store into the package via
-    `setAuthResolver()` and re-exports every tool / helper / type so
-    existing internal callers (`lib/documents/remote/{jira,confluence}.ts`,
-    `lib/health/probes.ts`, `lib/tools/atlassian*.test.ts`) keep working
-    unchanged.
-
-  No behavior change for Jarela users. External LangChain.js / LangGraph
-  agents can now `npm i @circuitwall/atlassian-langchain` and get the
-  same toolbelt without running Jarela. All 1,855 existing tests still
-  pass.
+  - `lib/tools/atlassian.ts` (Jarela) — initially a thin adapter
+    (later deleted in 1.9.0; see "In-tree adapters … removed" above).
 - **Repo is now an npm workspaces monorepo.** Added `"workspaces":
   ["packages/*"]` to the root `package.json` to host standalone
   `@circuitwall/*` packages extracted from `lib/` alongside the Jarela
-  app itself. No code moved in this change; `packages/` is empty
-  scaffolding. The Jarela package (`@circuitwall/jarela`) builds,
+  app itself. The Jarela package (`@circuitwall/jarela`) builds,
   publishes, and runs unchanged. See `packages/README.md` for layout and
   conventions, and `CONTRIBUTING.md` for the release rules that apply to
   workspace packages.

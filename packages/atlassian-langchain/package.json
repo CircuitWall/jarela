@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/atlassian-langchain",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "LangChain tools for Atlassian Jira and Confluence Cloud — direct REST calls, no MCP, proxy-aware. Extracted from Jarela.",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
