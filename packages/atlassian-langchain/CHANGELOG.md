@@ -4,6 +4,17 @@ All notable changes to `@circuitwall/atlassian-langchain` are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.0] — 2026-06-13
+
+### Changed
+
+- **Promoted to 1.0.0.** The public surface (tool list, `setAuthResolver`
+  hook, `atlassianFetch` escape hatch, capability arrays, pure helpers)
+  has been stable since `0.1.0` and is now consumed directly by Jarela
+  itself (the wrapper file in `lib/tools/atlassian.ts` was removed in
+  Jarela 1.9.0). Bumping the major signals API stability — no source
+  changes, no breaking changes, semver-major bump only.
+
 ## [0.1.0] — 2026-06-13
 
 ### Added
@@ -31,3 +42,4 @@ and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   for agents that want to gate by capability.
 
 [0.1.0]: https://github.com/CircuitWall/jarela/releases/tag/atlassian-langchain-v0.1.0
+[1.0.0]: https://github.com/CircuitWall/jarela/releases/tag/atlassian-langchain-v1.0.0
