@@ -169,7 +169,7 @@ export async function checkForUpdate(
   const channel = opts.channel ?? resolveChannel();
   const force = opts.force === true;
 
-  if (process.env.JARELA_DISABLE_UPDATE_CHECK === "1") {
+  if (getConfig().disableUpdateCheck) {
     return { channel, current, latest: null, behind: false, cached: false, checkedAt: null, error: "disabled" };
   }
 

@@ -7,6 +7,7 @@ import { geminiProvider } from "./gemini";
 import { langchainProvider } from "./langchain";
 import { mockProvider } from "./mock";
 import { loadExternalProviders } from "./external";
+import { getConfig } from "@/lib/env/config";
 
 const BUILTINS: Record<string, ModelProvider> = {
   openai: openaiProvider,
@@ -20,7 +21,7 @@ const BUILTINS: Record<string, ModelProvider> = {
 // The mock provider is opt-in via env so production deployments never
 // expose it as a selectable backend. Tests / offline dev set the flag.
 function isMockEnabled(): boolean {
-  return process.env.JARELA_ENABLE_MOCK_PROVIDER === "1";
+  return getConfig().enableMockProvider;
 }
 
 export const BUILTIN_PROVIDER_NAMES: ReadonlySet<string> = new Set([

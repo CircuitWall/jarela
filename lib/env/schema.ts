@@ -21,6 +21,7 @@ export type EnvCategory =
   | "logging"      // log level, sink size
   | "scheduler"    // cron tick, sweeps
   | "documents"    // doc indexer + remote sync
+  | "providers"    // LLM provider selection / overrides
   | "ui";
 
 export type EnvTier = "A" | "B" | "C";
@@ -71,6 +72,7 @@ export const ENV_DEFAULTS = {
   sseConnectTimeoutMs: 45_000,
   healthCheckTimeoutMs: 8_000,
   httpMaxAttempts: 3,
+  allowPrivateFetch: false,
   // agent
   recursionLimit: 200,
   llmStreamMaxMs: 10 * 60_000,
@@ -82,6 +84,9 @@ export const ENV_DEFAULTS = {
   maxTransientRetries: 1,
   maxDelegationDepth: 2,
   streamParseTripwire: 6,
+  recallBudgetMs: 1500,
+  maxThreadMessages: 1000,
+  maxSessionArchives: 50,
   // tools
   voiceTimeoutMs: 60_000,
   imageTimeoutMs: 60_000,
@@ -105,6 +110,10 @@ export const ENV_DEFAULTS = {
   // documents
   docMaxFileBytes: 2 * 1024 * 1024,
   docMaxFilesPerSource: 5_000,
+  pricingLlmExtract: true,
+  pricingExtractorModel: "",
+  // providers
+  enableMockProvider: false,
   // tool safety / policy (already in lib/env/allowlist; kept for schema completeness)
   toolSafety: "mostly_safe" as const,
   // anti-hallucination classifier
@@ -189,6 +198,16 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     agentWritable: false,
     min: 1,
     max: 10,
+  },
+  {
+    name: "JARELA_ALLOW_PRIVATE_FETCH",
+    type: "bool",
+    default: ENV_DEFAULTS.allowPrivateFetch,
+    description: "Allow agent-driven fetches to private/loopback/link-local IPs (SSRF escape hatch). Off by default; set to 1 only when running against a local mock server.",
+    category: "network",
+    tier: "A",
+    requiresRestart: false,
+    agentWritable: false,
   },
 
   // ─── agent ─────────────────────────────────────────────────────────
@@ -301,6 +320,39 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     description: "Consecutive malformed-stream-chunk threshold before the stream is failed.",
     category: "agent",
     tier: "C",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 1,
+  },
+  {
+    name: "JARELA_RECALL_BUDGET_MS",
+    type: "int",
+    default: ENV_DEFAULTS.recallBudgetMs,
+    description: "Wall-clock budget for the embedding-based recall pass before the LLM stream starts without it. Higher = more memory hits but slower first-token; lower = faster but recall silently loses on cold embedding calls.",
+    category: "agent",
+    tier: "C",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 0,
+  },
+  {
+    name: "JARELA_MAX_THREAD_MESSAGES",
+    type: "int",
+    default: ENV_DEFAULTS.maxThreadMessages,
+    description: "Upper bound on retained messages per thread. /compact prunes the oldest rows past this cap so long-lived threads don't grow without limit.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 1,
+  },
+  {
+    name: "JARELA_MAX_SESSION_ARCHIVES",
+    type: "int",
+    default: ENV_DEFAULTS.maxSessionArchives,
+    description: "Upper bound on archived session summaries per agent. /compact drops oldest sessions/<agent>/* memory rows past this cap.",
+    category: "agent",
+    tier: "B",
     requiresRestart: false,
     agentWritable: false,
     min: 1,
@@ -527,6 +579,36 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
     min: 10,
+  },
+  {
+    name: "JARELA_PRICING_LLM_EXTRACT",
+    type: "bool",
+    default: ENV_DEFAULTS.pricingLlmExtract,
+    description: "Use an LLM to extract per-model rates from vendor pricing HTML when scraping. Set to 0 to disable LLM extraction (pricing falls back to known-rates only).",
+    category: "documents",
+    tier: "C",
+    requiresRestart: false,
+    agentWritable: false,
+  },
+  {
+    name: "JARELA_PRICING_EXTRACTOR_MODEL",
+    type: "string",
+    default: ENV_DEFAULTS.pricingExtractorModel,
+    description: "Model config name to use as the pricing-page extractor. Empty = the default model config. Pick a fast/cheap model with good HTML → JSON ability.",
+    category: "documents",
+    tier: "C",
+    requiresRestart: false,
+    agentWritable: false,
+  },
+  {
+    name: "JARELA_ENABLE_MOCK_PROVIDER",
+    type: "bool",
+    default: ENV_DEFAULTS.enableMockProvider,
+    description: "Register the in-process mock LLM provider as a selectable backend. Off by default so production deployments never expose it. Tests / offline dev set this.",
+    category: "providers",
+    tier: "C",
+    requiresRestart: false,
+    agentWritable: false,
   },
   {
     name: "JARELA_HALLUCINATION_DETECTOR_MODE",

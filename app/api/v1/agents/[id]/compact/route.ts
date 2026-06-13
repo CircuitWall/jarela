@@ -13,28 +13,22 @@ import { getProvider } from "@/lib/providers";
 import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
 import type { ProviderParams } from "@/lib/providers/types";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { getConfig } from "@/lib/env/config";
 
 type Params = { params: Promise<{ id: string }> };
 
 // Upper bound on retained messages per thread. After /compact persists the
 // summary we trim the oldest rows so a long-lived thread doesn't grow
-// without limit. Override via JARELA_MAX_THREAD_MESSAGES.
+// without limit.
 function maxThreadMessages(): number {
-  const raw = process.env.JARELA_MAX_THREAD_MESSAGES;
-  if (!raw) return 1000;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 1000;
+  return getConfig().maxThreadMessages;
 }
 
 // Upper bound on archived session summaries per agent. Each /compact writes a
 // row to memory namespace `sessions` keyed `${agentId}/${ts}`; without a cap
-// these grow unbounded (~summary text + embedding per row). Override via
-// JARELA_MAX_SESSION_ARCHIVES.
+// these grow unbounded (~summary text + embedding per row).
 function maxSessionArchives(): number {
-  const raw = process.env.JARELA_MAX_SESSION_ARCHIVES;
-  if (!raw) return 50;
-  const n = Number.parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : 50;
+  return getConfig().maxSessionArchives;
 }
 
 // Drop oldest `sessions/${agentId}/*` entries past the retention cap.

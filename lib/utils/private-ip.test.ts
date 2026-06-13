@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { classifyAddress, isPrivateAddress, checkPublicUrl } from "./private-ip";
+import { resetConfigCache } from "@/lib/env/config";
 
 describe("classifyAddress (IPv4)", () => {
   it("flags loopback", () => {
@@ -95,12 +96,14 @@ describe("checkPublicUrl", () => {
   it("honours the JARELA_ALLOW_PRIVATE_FETCH escape hatch", async () => {
     const prev = process.env.JARELA_ALLOW_PRIVATE_FETCH;
     process.env.JARELA_ALLOW_PRIVATE_FETCH = "1";
+    resetConfigCache();
     try {
       const r = await checkPublicUrl("http://127.0.0.1:4312/");
       expect(r.allowed).toBe(true);
     } finally {
       if (prev === undefined) delete process.env.JARELA_ALLOW_PRIVATE_FETCH;
       else process.env.JARELA_ALLOW_PRIVATE_FETCH = prev;
+      resetConfigCache();
     }
   });
 });

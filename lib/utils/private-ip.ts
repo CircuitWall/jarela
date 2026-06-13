@@ -16,6 +16,7 @@
 // server) can opt back in with `JARELA_ALLOW_PRIVATE_FETCH=1`.
 
 import { promises as dns } from "node:dns";
+import { getConfig } from "@/lib/env/config";
 import net from "node:net";
 
 export type PrivateClassification =
@@ -116,7 +117,7 @@ export interface UrlCheckResult {
  * connect time, when we have no way to inspect the answer.
  */
 export async function checkPublicUrl(rawUrl: string): Promise<UrlCheckResult> {
-  if (process.env.JARELA_ALLOW_PRIVATE_FETCH === "1") {
+  if (getConfig().allowPrivateFetch) {
     return { allowed: true };
   }
   let url: URL;
