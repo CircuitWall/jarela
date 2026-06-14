@@ -1177,6 +1177,7 @@ export interface LangChainPackageManifest {
 export interface LangChainPackageManifestRecord {
   name: string;
   manifest: LangChainPackageManifest;
+  enabled: boolean;
 }
 
 export interface LangChainPackageLoadResult {

@@ -28,6 +28,23 @@ import {
   type LangChainPackageLoadResult,
   type LangChainPackageManifest,
 } from "./langchain-packages";
+import {
+  isPackageDisabled,
+  setPackageDisabled,
+} from "@/lib/stores/disabled-packages";
+
+// Key under which a manifest's disabled state is recorded in the
+// shared `disabled_packages` table. The `npm:` prefix keeps this
+// namespace separate from default-package ids (`atlassian`, `github`,
+// `jira_align`) so the two surfaces can't collide.
+export function manifestDisableKey(name: string): string {
+  return `npm:${name}`;
+}
+
+/** Is the given manifest currently disabled? */
+export function isManifestDisabled(name: string): boolean {
+  return isPackageDisabled(manifestDisableKey(name));
+}
 
 /**
  * The on-wire shape for `POST /api/v1/packages/manifests`. Strict
@@ -49,6 +66,7 @@ export type ManifestInput = z.infer<typeof MANIFEST_INPUT_SCHEMA>;
 export interface ManifestRecord {
   name: string;
   manifest: LangChainPackageManifest;
+  enabled: boolean;
 }
 
 /**
@@ -87,7 +105,9 @@ export function listManifests(): ManifestRecord[] {
     try {
       const raw = readFileSync(join(dir, entry), "utf8");
       const parsed = MANIFEST_SCHEMA.safeParse(JSON.parse(raw));
-      if (parsed.success) rows.push({ name, manifest: parsed.data });
+      if (parsed.success) {
+        rows.push({ name, manifest: parsed.data, enabled: !isManifestDisabled(name) });
+      }
     } catch {
       // skip malformed file — the loader will surface it as an error
     }
@@ -103,7 +123,7 @@ export function getManifest(name: string): ManifestRecord | null {
   try {
     const parsed = MANIFEST_SCHEMA.safeParse(JSON.parse(readFileSync(path, "utf8")));
     if (!parsed.success) return null;
-    return { name: normalized, manifest: parsed.data };
+    return { name: normalized, manifest: parsed.data, enabled: !isManifestDisabled(normalized) };
   } catch {
     return null;
   }
@@ -142,7 +162,38 @@ export async function createManifest(
   });
   writeFileSync(path, JSON.stringify(onDisk, null, 2));
   const load = await reloadLangChainPackages();
-  return { record: { name, manifest: onDisk }, load };
+  return {
+    record: { name, manifest: onDisk, enabled: !isManifestDisabled(name) },
+    load,
+  };
+}
+
+export interface SetManifestEnabledResult {
+  record: ManifestRecord;
+  load: LangChainPackageLoadResult;
+}
+
+/**
+ * Toggle whether a manifest is wired into the live registry. Persists
+ * the flag in `disabled_packages` (namespaced via `manifestDisableKey`)
+ * and reloads so the change takes effect without a restart.
+ */
+export async function setManifestEnabled(
+  name: string,
+  enabled: boolean,
+): Promise<SetManifestEnabledResult> {
+  const normalized = normalizeManifestName(name);
+  const path = manifestPath(normalized);
+  if (!existsSync(path)) {
+    throw new Error(`manifest "${normalized}" not found`);
+  }
+  setPackageDisabled(manifestDisableKey(normalized), !enabled);
+  const load = await reloadLangChainPackages();
+  const record = getManifest(normalized);
+  if (!record) {
+    throw new Error(`manifest "${normalized}" disappeared during reload`);
+  }
+  return { record, load };
 }
 
 export async function deleteManifest(
@@ -154,6 +205,9 @@ export async function deleteManifest(
     return { removed: false, load: await reloadLangChainPackages() };
   }
   rmSync(path, { force: true });
+  // Clean the disabled flag too so a future re-install with the same
+  // name starts enabled by default.
+  setPackageDisabled(manifestDisableKey(normalized), false);
   const load = await reloadLangChainPackages();
   return { removed: true, load };
 }
