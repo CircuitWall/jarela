@@ -1252,3 +1252,20 @@ export interface LangChainPackageManifestCreateResult {
   record: LangChainPackageManifestRecord;
   load: LangChainPackageLoadResult;
 }
+
+export interface LangChainCatalogEntry {
+  id: string;
+  label: string;
+  npmPackage: string;
+  manifestPackage?: string;
+  exportName: string;
+  description: string;
+  category: string;
+  capability?: "read" | "write" | "execute";
+  requiredEnv?: string[];
+  docsUrl?: string;
+}
+
+export interface LangChainCatalogResponse {
+  entries: LangChainCatalogEntry[];
+}

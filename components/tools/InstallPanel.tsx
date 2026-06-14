@@ -1,10 +1,14 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Check, RefreshCw, X } from "lucide-react";
 import { usePackages } from "@/hooks/usePackages";
 import { pushErrorToast } from "@/lib/ui/error-report";
-import type { LangChainPackageInstallResponse } from "@/api/types";
+import { api } from "@/api/client";
+import type {
+  LangChainCatalogEntry,
+  LangChainPackageInstallResponse,
+} from "@/api/types";
 
 const CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
@@ -54,6 +58,43 @@ export function InstallPanel() {
   const [installNotice, setInstallNotice] = useState<string | null>(null);
   const [form, setForm] = useState<ManifestFormState>(EMPTY_FORM);
   const [savingManifest, setSavingManifest] = useState(false);
+  const [catalog, setCatalog] = useState<LangChainCatalogEntry[]>([]);
+  const [catalogSelection, setCatalogSelection] = useState<string>("");
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.packages
+      .catalog()
+      .then((res) => {
+        if (!cancelled) setCatalog(res.entries ?? []);
+      })
+      .catch(() => {
+        // Catalog is a convenience; failing to load shouldn't break the panel.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function applyCatalogEntry(id: string) {
+    setCatalogSelection(id);
+    if (!id) return;
+    const entry = catalog.find((e) => e.id === id);
+    if (!entry) return;
+    setInstallSpec(entry.npmPackage);
+    setInstallVersion("");
+    setInstallNotice(null);
+    setForm({
+      name: entry.id.replace(/[^a-z0-9_-]+/g, "_"),
+      package: entry.manifestPackage ?? entry.npmPackage,
+      exportName: entry.exportName,
+      category: (CATEGORIES as readonly string[]).includes(entry.category)
+        ? (entry.category as (typeof CATEGORIES)[number])
+        : "Web",
+      capability: entry.capability ?? "execute",
+      requiredEnv: (entry.requiredEnv ?? []).join(", "),
+    });
+  }
 
   const headerCount = useMemo(() => {
     const n = pending.length;
@@ -206,6 +247,62 @@ export function InstallPanel() {
                 <RefreshCw className="w-3.5 h-3.5" /> Reload
               </button>
             </div>
+            {catalog.length > 0 && (
+              <div className="space-y-1">
+                <label
+                  htmlFor="catalog-picker"
+                  className="block text-[11px] text-fg-faint"
+                >
+                  Pick from curated LangChain tools (auto-fills the form below):
+                </label>
+                <select
+                  id="catalog-picker"
+                  value={catalogSelection}
+                  onChange={(e) => applyCatalogEntry(e.target.value)}
+                  className="w-full rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
+                  aria-label="Curated LangChain tool catalog"
+                >
+                  <option value="">— Choose a tool —</option>
+                  {catalog.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.label} ({entry.npmPackage}) — {entry.description}
+                    </option>
+                  ))}
+                </select>
+                {catalogSelection && (() => {
+                  const entry = catalog.find((e) => e.id === catalogSelection);
+                  if (!entry) return null;
+                  return (
+                    <p className="text-[11px] text-fg-faint">
+                      Export: <code className="font-mono">{entry.exportName}</code>
+                      {entry.requiredEnv && entry.requiredEnv.length > 0 && (
+                        <>
+                          {" "}
+                          · Requires:{" "}
+                          <code className="font-mono">
+                            {entry.requiredEnv.join(", ")}
+                          </code>
+                        </>
+                      )}
+                      {entry.docsUrl && (
+                        <>
+                          {" "}
+                          ·{" "}
+                          <a
+                            href={entry.docsUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline hover:text-fg"
+                          >
+                            Docs
+                          </a>
+                        </>
+                      )}
+                    </p>
+                  );
+                })()}
+              </div>
+            )}
             <form
               onSubmit={handleInstall}
               className="grid gap-2 md:grid-cols-[minmax(0,1fr)_140px_auto]"

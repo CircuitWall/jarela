@@ -49,6 +49,7 @@ import type {
   HarnessIn,
   HarnessListResponse,
   HarnessPatch,
+  LangChainCatalogResponse,
   LangChainPackageInstallResponse,
   LangChainPackageListResponse,
   LangChainPackageManifestCreateResult,
@@ -272,6 +273,7 @@ export const api = {
 
   packages: {
     list: () => request<LangChainPackageListResponse>("/packages"),
+    catalog: () => request<LangChainCatalogResponse>("/packages/catalog"),
     reload: () =>
       request<LangChainPackageListResponse>("/packages/reload", { method: "POST" }),
     install: (spec: string, version?: string) =>
