@@ -24,7 +24,12 @@ import "./integrations";
 // Default LangChain packages (Atlassian, GitHub, Jira Align) ship with
 // Jarela but are runtime-toggleable: see ./default-packages.ts.
 import { registerDefaultPackages } from "./default-packages";
-registerDefaultPackages();
+// Skip during `next build` page-data collection: parallel workers would
+// race on the SQLite migration lock when isPackageDisabled() opens the DB.
+// The real server boot path still imports this barrel and runs the call.
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  registerDefaultPackages();
+}
 import "./gmail";
 import "./calendar";
 import "./outlook";
