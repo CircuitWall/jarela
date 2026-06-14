@@ -37,23 +37,27 @@ async function openMenu(page: import("@playwright/test").Page) {
   await expect(page.locator(".glass-elevated.fixed").first()).toBeVisible();
 }
 
-test("Credentials tab exposes Credentials + Network sub-tabs", async ({ page }) => {
+test("Settings tab exposes Credentials + Networking sub-tabs", async ({ page }) => {
+  // Credentials + Networking now live as sub-tabs of the consolidated
+  // Settings surface (v1.9.3). The old top-level "Credentials" menu
+  // button is gone; everything routes through Settings.
   await openMenu(page);
-  await page.getByRole("button", { name: "Credentials", exact: true }).click();
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
 
-  const listTab = page.getByRole("tab", { name: "Credentials" });
-  const networkTab = page.getByRole("tab", { name: "Network & environment" });
+  const credentialsTab = page.getByRole("tab", { name: "Credentials", exact: true });
+  const networkingTab = page.getByRole("tab", { name: "Networking", exact: true });
 
-  await expect(listTab).toBeVisible();
-  await expect(networkTab).toBeVisible();
-  await expect(listTab).toHaveAttribute("aria-selected", "true");
+  await expect(credentialsTab).toBeVisible();
+  await expect(networkingTab).toBeVisible();
 
-  // Default sub-tab is the credentials list, which renders its known heading.
+  // Open the Credentials sub-tab → CredentialsListPanel renders with its heading.
+  await credentialsTab.click();
+  await expect(credentialsTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
 
-  // Switch to Network & environment — that panel mounts with its own heading.
-  await networkTab.click();
-  await expect(networkTab).toHaveAttribute("aria-selected", "true");
+  // Switch to Networking → NetworkPanel mounts with the "Network & environment" heading.
+  await networkingTab.click();
+  await expect(networkingTab).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Network & environment" })).toBeVisible();
 });
 
@@ -77,8 +81,8 @@ test("deep link ?tab=credentials&item=integrations (legacy) still lands on Netwo
 test("Built-in tools panel lists categories and toggles persist", async ({ page, request }) => {
   await openMenu(page);
   await page.getByRole("button", { name: "Tools", exact: true }).click();
-  // Built-in is the default sub-tab.
-  await expect(page.getByRole("heading", { name: "Built-in tools" })).toBeVisible();
+  // Packages is the default sub-tab and lists every built-in category.
+  await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 
   // At least the Memory category card should render.
   const memoryRow = page.locator("li", { hasText: /^Memory/ }).first();
