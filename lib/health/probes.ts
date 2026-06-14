@@ -16,8 +16,12 @@ import type { JiraAlignAuth } from "@circuitwall/jira-align-langchain";
 // Trigger registration of the default LangChain package auth resolvers
 // before the first probe runs. Health probes can be invoked from the
 // scheduler before any agent tool call has caused builtins.ts to load.
+// Skip during `next build` page-data collection: parallel workers would
+// race on the SQLite migration lock when isPackageDisabled() opens the DB.
 import { registerDefaultPackages } from "@/lib/tools/default-packages";
-registerDefaultPackages();
+if (process.env.NEXT_PHASE !== "phase-production-build") {
+  registerDefaultPackages();
+}
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
