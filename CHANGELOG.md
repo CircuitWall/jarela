@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-06-14
+
+### Fixed
+
+- **Manifest loader silently kept stale `cannot resolve package "…"`
+  errors after a successful install.** When the operator saved a
+  manifest from the curated catalog before the underlying npm package
+  was installed (the natural "Save manifest" → "Install" UX flow),
+  the loader cached the resolve failure. `runInstall` never
+  invalidated that cache, so the InstallPanel kept surfacing the
+  error as a "Load errors" entry even though the package was now on
+  disk and `require.resolve` succeeded. The install pipeline now
+  calls `reloadLangChainPackages()` after npm + introspection finish.
+- **`Cannot find module 'file:///…/wikipedia_query_run.cjs'` when
+  loading manifests under Next.js.** Next.js's server bundler
+  intercepts dynamic `import()` calls and cannot resolve `file://`
+  URLs to on-disk modules at runtime, so manifests targeting a
+  package subpath (e.g. `@langchain/community/tools/wikipedia_query_run`)
+  failed to load even though the file existed and `require()` against
+  the same path worked. Both the manifest loader and the install-time
+  introspector now load resolved modules via the anchor-scoped
+  `createRequire` instance instead of `import(pathToFileURL(…).href)`.
+
+### Tests
+
+- Added regression coverage for the v1.10.x install pipeline: assert
+  `runInstall` invokes npm via `cross-spawn` with `--legacy-peer-deps`
+  (Windows EINVAL + LangChain ERESOLVE), assert the post-install
+  reload re-registers a pre-saved manifest, and assert
+  `searchUpstream` clamps the caller `limit` to the upstream max of
+  100 (registry 422 fix). New tests in `lib/tools/package-install.test.ts`,
+  `lib/tools/langchain-packages.test.ts`, and the new
+  `lib/mcp/upstream-registry.test.ts`.
+
 ## [1.10.0] - 2026-06-14
 
 ### Added
