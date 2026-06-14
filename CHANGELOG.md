@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.2] - 2026-06-14
+
+### Fixed
+
+- **Release workflow had been silently broken since v1.9.5.** Every
+  Bundle matrix job (Windows / Ubuntu / macOS) failed during
+  `next build` page-data collection with `ERR_SQLITE_ERROR: database
+  is locked`, so `npm-publish` was skipped for v1.9.5, v1.10.0, and
+  v1.10.1 — the npm registry stayed pinned at v1.9.3 while three
+  tags were promoted on GitHub. Root cause: both `lib/tools/builtins.ts`
+  and `lib/health/probes.ts` call `registerDefaultPackages()` at
+  module load, which transitively reaches `getDb()` + `runMigrations()`.
+  Next 16 spawns three parallel page-data workers, all racing to open
+  the same `~/.jarela/jarela.db`; the second/third lose the
+  migration lock. Both call sites are now gated behind a
+  `NEXT_PHASE !== "phase-production-build"` check so registration is
+  skipped during static analysis and still runs normally at runtime
+  startup.
+
 ## [1.10.1] - 2026-06-14
 
 ### Fixed
