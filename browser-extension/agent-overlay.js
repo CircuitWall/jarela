@@ -177,7 +177,25 @@
   });
 
   let activeCount = 0;
+  let pendingHideTimer = null;
+  // How long the banner lingers after the last action's `hide` arrives.
+  // Agent runs are usually a chain of commands (navigate → click → fill
+  // → extract …) and we briefly drop to 0 between each one. Without a
+  // linger the banner flickers in/out the whole run, even though the
+  // agent is still actively controlling the tab. Five seconds is enough
+  // to bridge typical inter-command gaps without keeping the chrome
+  // around long after the agent has actually stopped.
+  const HIDE_LINGER_MS = 5000;
+
+  function cancelPendingHide() {
+    if (pendingHideTimer !== null) {
+      clearTimeout(pendingHideTimer);
+      pendingHideTimer = null;
+    }
+  }
+
   function showBanner(action) {
+    cancelPendingHide();
     activeCount += 1;
     if (typeof action === "string" && action) {
       actionLabel.textContent = humanizeAction(action);
@@ -187,10 +205,15 @@
   }
   function hideBanner() {
     activeCount = Math.max(0, activeCount - 1);
-    if (activeCount === 0) {
-      banner.classList.remove("show");
-      frame.classList.remove("show");
-    }
+    if (activeCount !== 0) return;
+    cancelPendingHide();
+    pendingHideTimer = setTimeout(() => {
+      pendingHideTimer = null;
+      if (activeCount === 0) {
+        banner.classList.remove("show");
+        frame.classList.remove("show");
+      }
+    }, HIDE_LINGER_MS);
   }
 
   function humanizeAction(action) {
