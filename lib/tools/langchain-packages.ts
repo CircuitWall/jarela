@@ -36,7 +36,6 @@
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { z } from "zod";
 import type { StructuredToolInterface } from "@langchain/core/tools";
@@ -217,7 +216,7 @@ async function loadOneManifest(
 
   let mod: Record<string, unknown>;
   try {
-    mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
+    mod = loadResolvedModule(req, resolved);
   } catch (err) {
     return { error: `dynamic import failed: ${errorMessage(err)}` };
   }
@@ -277,6 +276,29 @@ function isStructuredTool(v: unknown): v is StructuredToolInterface {
     "schema" in o &&
     typeof o.invoke === "function"
   );
+}
+
+/**
+ * Load a resolved-on-disk module into the loader's address space.
+ *
+ * Uses the manifest-anchored `createRequire` rather than `await
+ * import(file://…)` because Next.js's server bundler intercepts dynamic
+ * `import()` calls and cannot resolve a `file://` URL to an installed
+ * module at runtime — the operator hits "Cannot find module
+ * 'file:///…/wikipedia_query_run.cjs'" even when the file exists. On
+ * Node 22.12+ / 24+ (Jarela targets Node 25) `require()` transparently
+ * handles ESM modules too, so this single code path covers both .cjs
+ * and "type": "module" packages.
+ */
+function loadResolvedModule(req: NodeJS.Require, resolved: string): Record<string, unknown> {
+  const loaded = req(resolved) as Record<string, unknown> | { default?: Record<string, unknown> };
+  // ESM modules required from CJS expose their named exports on the
+  // returned namespace object directly, but some bundles only set
+  // `default`. Merge so callers can read either shape.
+  if (loaded && typeof loaded === "object" && "default" in loaded && loaded.default && typeof loaded.default === "object") {
+    return { ...(loaded.default as Record<string, unknown>), ...loaded };
+  }
+  return loaded as Record<string, unknown>;
 }
 
 /** @internal — test-only: unregister every loaded tool and drop cache. */

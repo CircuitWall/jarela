@@ -238,4 +238,60 @@ describe("loadLangChainPackages", () => {
     expect(second.registered).toEqual(["fake_r"]);
     expect(registeredNames().has("fake_r")).toBe(true);
   });
+
+  // Regression: v1.10.1 user hit "Cannot find module 'file:///…/wikipedia_
+  // query_run.cjs'" because Next.js's server bundler intercepts dynamic
+  // `import()` of `file://` URLs and can't resolve the on-disk module
+  // even when it exists. The loader switched to `createRequire` to
+  // bypass the bundler; this test covers both a subpath manifest and
+  // a `.cjs` extension to guard against a regression to `import()`.
+  it("loads a manifest that targets a package subpath with a .cjs extension", async () => {
+    const dir = setupPackagesDir("subpath-cjs");
+    process.env.JARELA_PACKAGES_DIR = dir;
+    const modDir = join(dir, "node_modules", "fake-subpath", "dist", "tools");
+    mkdirSync(modDir, { recursive: true });
+    writeFileSync(
+      join(dir, "node_modules", "fake-subpath", "package.json"),
+      JSON.stringify({
+        name: "fake-subpath",
+        version: "1.0.0",
+        exports: {
+          ".": "./index.cjs",
+          "./tools/wiki": {
+            require: "./dist/tools/wiki.cjs",
+          },
+        },
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      join(dir, "node_modules", "fake-subpath", "index.cjs"),
+      "module.exports = {};",
+      "utf8",
+    );
+    writeFileSync(
+      join(modDir, "wiki.cjs"),
+      `class FakeWikiTool {
+        constructor() {
+          this.name = "fake_wiki";
+          this.description = "subpath cjs tool";
+          this.schema = { type: "object", properties: {}, additionalProperties: true };
+        }
+        async invoke() { return "ok"; }
+      }
+      exports.FakeWikiTool = FakeWikiTool;`,
+      "utf8",
+    );
+    writeManifest(dir, "wiki.json", {
+      package: "fake-subpath/tools/wiki",
+      export: "FakeWikiTool",
+      category: "Web",
+      capability: "read",
+    });
+
+    const result = await loadLangChainPackages();
+    expect(result.errors).toEqual([]);
+    expect(result.registered).toEqual(["fake_wiki"]);
+    expect(registeredNames().has("fake_wiki")).toBe(true);
+  });
 });

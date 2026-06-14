@@ -41,7 +41,6 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { getPackagesDir, reloadLangChainPackages } from "./langchain-packages";
 import { isPackageAllowed, type PackageAllowDecision } from "./package-allowlist";
@@ -317,7 +316,15 @@ export async function introspectPackage(
 
     let mod: Record<string, unknown>;
     try {
-      mod = (await import(pathToFileURL(resolved).href)) as Record<string, unknown>;
+      // Use createRequire (not dynamic import) so Next.js's server
+      // bundler doesn't intercept the load — see loadResolvedModule
+      // in langchain-packages.ts for the same workaround.
+      const loaded = req(resolved) as Record<string, unknown> | { default?: Record<string, unknown> };
+      if (loaded && typeof loaded === "object" && "default" in loaded && loaded.default && typeof loaded.default === "object") {
+        mod = { ...(loaded.default as Record<string, unknown>), ...loaded };
+      } else {
+        mod = loaded as Record<string, unknown>;
+      }
     } catch {
       continue;
     }
