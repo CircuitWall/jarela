@@ -166,10 +166,13 @@ export function InstallPanel() {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
+      const exportName = form.exportName.trim();
       await createManifest({
         name: form.name.trim(),
         package: form.package.trim(),
-        export: form.exportName.trim() || undefined,
+        // Blank Export = wildcard: register every StructuredTool-shaped
+        // export of the package, not just `default`.
+        export: exportName.length > 0 ? exportName : "*",
         category: form.category,
         capability: form.capability,
         requiredEnv: requiredEnv.length > 0 ? requiredEnv : undefined,
@@ -414,7 +417,7 @@ export function InstallPanel() {
                   type="text"
                   value={form.exportName}
                   onChange={(e) => setForm({ ...form, exportName: e.target.value })}
-                  placeholder="export (default: default)"
+                  placeholder="export (blank = all tools in package)"
                   className="rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-fg outline-none focus:border-fg-faint"
                   aria-label="Export name"
                 />
