@@ -30,7 +30,29 @@ writeFileSync(
     }
     async invoke() { return "ok"; }
   }
-  module.exports = { FakeManifestTool, default: FakeManifestTool };`,
+  class AnotherFakeTool {
+    constructor() {
+      this.name = "another_fake_tool";
+      this.description = "Second tool, used for wildcard discovery tests";
+      this.schema = { _def: { typeName: "ZodObject" } };
+    }
+    async invoke() { return "ok"; }
+  }
+  // Helper export that is NOT a StructuredTool — wildcard discovery
+  // must construct it without throwing and then skip it silently.
+  class NotATool {
+    constructor() { this.name = "not_a_tool"; }
+  }
+  // Plain helper function — wildcard discovery must skip without
+  // calling it as a constructor (it would throw).
+  function helperFn() { return 1; }
+  module.exports = {
+    FakeManifestTool,
+    AnotherFakeTool,
+    NotATool,
+    helperFn,
+    default: FakeManifestTool,
+  };`,
 );
 
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -293,3 +315,47 @@ describe("setManifestEnabled", () => {
     expect(manifestDisableKey("key-check")).toBe("npm:key-check");
   });
 });
+
+describe("wildcard export discovery", () => {
+  it("registers every StructuredTool-shaped export when export is '*'", async () => {
+    const { load } = await createManifest({
+      name: "wild",
+      package: "fake-manifest-pkg",
+      export: "*",
+      category: "Web",
+    });
+
+    expect(load.errors).toEqual([]);
+    expect(load.registered).toEqual(
+      expect.arrayContaining(["fake_manifest_tool", "another_fake_tool"]),
+    );
+  });
+
+  it("dedupes by tool name when the same class is exported twice", async () => {
+    // fixture exports `FakeManifestTool` AND `default: FakeManifestTool`,
+    // both producing instances with `name = "fake_manifest_tool"`.
+    const { load } = await createManifest({
+      name: "wild-dedupe",
+      package: "fake-manifest-pkg",
+      export: "*",
+      category: "Web",
+    });
+
+    const hits = load.registered.filter((n) => n === "fake_manifest_tool");
+    expect(hits.length).toBe(1);
+  });
+
+  it("skips non-StructuredTool exports without erroring", async () => {
+    const { load } = await createManifest({
+      name: "wild-skip",
+      package: "fake-manifest-pkg",
+      export: "*",
+      category: "Web",
+    });
+
+    expect(load.errors).toEqual([]);
+    expect(load.registered).not.toContain("not_a_tool");
+    expect(load.registered).not.toContain("helperFn");
+  });
+});
+

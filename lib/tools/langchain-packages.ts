@@ -55,6 +55,10 @@ export const BUILTIN_CATEGORIES = [
 
 export const MANIFEST_SCHEMA = z.object({
   package: z.string().min(1),
+  // `"*"` triggers wildcard discovery: every function-valued export of
+  // the package is constructed (with and without `args`) and registered
+  // if the resulting instance shapes up as a StructuredTool. Anything
+  // else is treated as a named export.
   export: z.string().min(1).default("default"),
   category: z.enum(BUILTIN_CATEGORIES),
   // Optional: when omitted, the loader derives the capability from the
@@ -175,7 +179,7 @@ async function doLoad(): Promise<LangChainPackageLoadResult> {
       continue;
     }
     handles.push(loaded.handle as RegisteredPackage<unknown>);
-    result.registered.push(loaded.toolName);
+    for (const toolName of loaded.toolNames) result.registered.push(toolName);
   }
 
   return result;
@@ -184,7 +188,7 @@ async function doLoad(): Promise<LangChainPackageLoadResult> {
 type ManifestOutcome =
   | { error: string }
   | { skip: string }
-  | { handle: RegisteredPackage<unknown>; toolName: string };
+  | { handle: RegisteredPackage<unknown>; toolNames: string[] };
 
 async function loadOneManifest(
   req: NodeJS.Require,
@@ -232,6 +236,15 @@ async function loadOneManifest(
     return { error: `dynamic import failed: ${errorMessage(err)}` };
   }
 
+  // Wildcard discovery: walk every function-valued export, try to
+  // construct it, keep the ones that look like a StructuredTool. Lets
+  // operators install a package like `@langchain/community/tools/tavily_search`
+  // and pick up `TavilySearchResults` + `TavilyExtract` + ... without
+  // authoring one manifest per export.
+  if (manifest.export === "*") {
+    return loadWildcardManifest(manifest, mod);
+  }
+
   const exportName = manifest.export;
   const Ctor = mod[exportName];
   if (typeof Ctor !== "function") {
@@ -274,7 +287,65 @@ async function loadOneManifest(
   }
 
   void entry;
-  return { handle, toolName: instance.name };
+  return { handle, toolNames: [instance.name] };
+}
+
+function loadWildcardManifest(
+  manifest: LangChainPackageManifest,
+  mod: Record<string, unknown>,
+): ManifestOutcome {
+  const bucket: Record<"read" | "write" | "execute", StructuredToolInterface[]> = {
+    read: [],
+    write: [],
+    execute: [],
+  };
+  const seen = new Set<string>();
+  const toolNames: string[] = [];
+
+  for (const [exportName, value] of Object.entries(mod)) {
+    if (typeof value !== "function") continue;
+    let instance: unknown;
+    // Try with args first (covers tools that need configuration), then
+    // fall back to no-args (covers tools where args would throw).
+    try {
+      instance = new (value as new (a?: Record<string, unknown>) => unknown)(manifest.args);
+    } catch {
+      try {
+        instance = new (value as new () => unknown)();
+      } catch {
+        continue;
+      }
+    }
+    if (!isStructuredTool(instance)) continue;
+    if (seen.has(instance.name)) continue;
+    seen.add(instance.name);
+    const capability = manifest.capability ?? categorizeByVerb(instance.name);
+    bucket[capability].push(instance);
+    toolNames.push(instance.name);
+    void exportName;
+  }
+
+  if (toolNames.length === 0) {
+    return {
+      error: `wildcard import: no exports in "${manifest.package}" produced a StructuredTool`,
+    };
+  }
+
+  let handle: RegisteredPackage<unknown>;
+  try {
+    handle = registerLangChainPackage({
+      category: manifest.category,
+      tools: {
+        read: bucket.read.length ? bucket.read : undefined,
+        write: bucket.write.length ? bucket.write : undefined,
+        execute: bucket.execute.length ? bucket.execute : undefined,
+      },
+    });
+  } catch (err) {
+    return { error: `registration failed: ${errorMessage(err)}` };
+  }
+
+  return { handle, toolNames };
 }
 
 function isStructuredTool(v: unknown): v is StructuredToolInterface {
