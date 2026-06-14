@@ -6,6 +6,10 @@ import {
   browserScrollTool,
   browserScreenshotTool,
   browserExtractTool,
+  browserSnapshotTool,
+  resolveLocator,
+  diffInteractive,
+  _resetSnapshotCache,
 } from "./browser-control";
 import {
   pollNextCommand,
@@ -22,12 +26,14 @@ vi.mock("@/lib/files", () => ({
 
 beforeEach(() => {
   _resetQueue();
+  _resetSnapshotCache();
   writeBinaryFileMock.mockReset();
   writeBinaryFileMock.mockImplementation((name) => `/tmp/${name}`);
 });
 
 afterEach(() => {
   _resetQueue();
+  _resetSnapshotCache();
 });
 
 // Helper: drive a tool invocation by simulating the extension picking up
@@ -172,5 +178,246 @@ describe("browser_extract", () => {
     });
     expect(parsed.ok).toBe(true);
     expect(parsed.data).toEqual({ content: "Hello world." });
+  });
+});
+
+// --------------------------------------------------------------------- //
+// Locator resolution, snapshot cache, diff                              //
+// --------------------------------------------------------------------- //
+
+const fakeSnapshot = {
+  url: "https://example.com/login",
+  title: "Login",
+  tab_id: 7,
+  interactive: [
+    { idx: 0, role: "textbox", name: "Email", selector: "input[name=email]" },
+    { idx: 1, role: "textbox", name: "Password", selector: "input[name=password]" },
+    { idx: 2, role: "button", name: "Sign in", selector: "button[type=submit]" },
+    { idx: 3, role: "link", name: "Forgot?", selector: "a.forgot" },
+  ],
+};
+
+async function seedSnapshotCache() {
+  const p = browserSnapshotTool.invoke({});
+  const { parsed } = await driveTool(p, () => ({ ok: true, data: fakeSnapshot }));
+  expect(parsed.ok).toBe(true);
+}
+
+describe("resolveLocator", () => {
+  it("returns the selector verbatim when provided", () => {
+    const r = resolveLocator({ selector: "#go" });
+    expect(r).toEqual({ ok: true, selector: "#go" });
+  });
+
+  it("errors with a clear message when nothing is provided", () => {
+    const r = resolveLocator({});
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/selector.*handle.*role/);
+  });
+
+  it("rejects handle when no snapshot has been taken", () => {
+    const r = resolveLocator({ handle: 2 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/no recent snapshot/);
+  });
+
+  it("rejects role alone (must pair with name)", () => {
+    const r = resolveLocator({ role: "button" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/role.*name.*together/);
+  });
+
+  it("resolves handle against the seeded snapshot", async () => {
+    await seedSnapshotCache();
+    const r = resolveLocator({ handle: 2 });
+    expect(r).toEqual({ ok: true, selector: "button[type=submit]" });
+  });
+
+  it("reports an out-of-range handle with the snapshot size", async () => {
+    await seedSnapshotCache();
+    const r = resolveLocator({ handle: 99 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/handle 99 is not in the last snapshot \(4 items\)/);
+  });
+
+  it("resolves role + name (case-insensitive exact match)", async () => {
+    await seedSnapshotCache();
+    const r = resolveLocator({ role: "button", name: "sign in" });
+    expect(r).toEqual({ ok: true, selector: "button[type=submit]" });
+  });
+
+  it("falls back to substring matching when no exact match", async () => {
+    await seedSnapshotCache();
+    const r = resolveLocator({ role: "textbox", name: "pass" });
+    expect(r).toEqual({ ok: true, selector: "input[name=password]" });
+  });
+
+  it("flags ambiguous role+name matches with candidate handles", async () => {
+    const p = browserSnapshotTool.invoke({});
+    await driveTool(p, () => ({
+      ok: true,
+      data: {
+        url: "https://example.com",
+        interactive: [
+          { idx: 0, role: "button", name: "Edit", selector: "#a" },
+          { idx: 1, role: "button", name: "Edit", selector: "#b" },
+        ],
+      },
+    }));
+    const r = resolveLocator({ role: "button", name: "Edit" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toMatch(/2 buttons match/);
+      expect(r.error).toMatch(/handle 0/);
+      expect(r.error).toMatch(/handle 1/);
+    }
+  });
+});
+
+describe("diffInteractive", () => {
+  it("marks the first observation as baseline=first", () => {
+    const next = {
+      at: Date.now(),
+      url: "https://x",
+      items: fakeSnapshot.interactive.slice(0, 2),
+    };
+    const d = diffInteractive(null, next);
+    expect(d.baseline).toBe("first");
+    expect(d.added).toHaveLength(2);
+    expect(d.removed).toHaveLength(0);
+  });
+
+  it("returns only the elements that changed when URL is stable", () => {
+    const prev = {
+      at: Date.now(),
+      url: "https://x",
+      items: [
+        { idx: 0, role: "button", name: "Old", selector: "#old" },
+        { idx: 1, role: "button", name: "Keep", selector: "#keep" },
+      ],
+    };
+    const next = {
+      at: Date.now(),
+      url: "https://x",
+      items: [
+        { idx: 0, role: "button", name: "Keep", selector: "#keep" },
+        { idx: 1, role: "button", name: "New", selector: "#new" },
+      ],
+    };
+    const d = diffInteractive(prev, next);
+    expect(d.baseline).toBe("diff");
+    expect(d.added.map((i) => i.name)).toEqual(["New"]);
+    expect(d.removed.map((i) => i.name)).toEqual(["Old"]);
+    expect(d.unchanged).toBe(1);
+  });
+
+  it("treats URL change as a full reset (baseline=first)", () => {
+    const prev = {
+      at: Date.now(),
+      url: "https://x",
+      items: [{ idx: 0, role: "button", name: "A", selector: "#a" }],
+    };
+    const next = {
+      at: Date.now(),
+      url: "https://y",
+      items: [{ idx: 0, role: "button", name: "A", selector: "#a" }],
+    };
+    const d = diffInteractive(prev, next);
+    expect(d.baseline).toBe("first");
+    expect(d.added).toHaveLength(1);
+  });
+});
+
+describe("browser_snapshot", () => {
+  it("populates the cache so subsequent locator lookups succeed", async () => {
+    await seedSnapshotCache();
+    const r = resolveLocator({ handle: 0 });
+    expect(r).toEqual({ ok: true, selector: "input[name=email]" });
+  });
+});
+
+describe("browser_click with handle / role+name", () => {
+  it("translates a numeric handle into the cached selector before enqueueing", async () => {
+    await seedSnapshotCache();
+    const p = browserClickTool.invoke({ handle: 2 });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("click");
+      if (cmd.type === "click") {
+        expect(cmd.selector).toBe("button[type=submit]");
+        expect(cmd.auto_snapshot).toBe(true);
+      }
+      return { ok: true, data: { matched: true } };
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("translates role+name into the cached selector", async () => {
+    await seedSnapshotCache();
+    const p = browserClickTool.invoke({ role: "link", name: "Forgot?" });
+    const { parsed } = await driveTool(p, (cmd) => {
+      if (cmd.type === "click") expect(cmd.selector).toBe("a.forgot");
+      return { ok: true, data: { matched: true } };
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("errors without dispatching when no locator is supplied", async () => {
+    const out = await browserClickTool.invoke({});
+    const parsed = JSON.parse(out);
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/selector.*handle.*role/);
+  });
+});
+
+describe("auto_snapshot piggyback", () => {
+  it("updates the cache from a click result and emits a diff", async () => {
+    await seedSnapshotCache();
+    const p = browserClickTool.invoke({ handle: 2 });
+    const { parsed } = await driveTool(p, () => ({
+      ok: true,
+      data: {
+        matched: true,
+        tag: "BUTTON",
+        snapshot: {
+          url: "https://example.com/login",
+          title: "Login",
+          tab_id: 7,
+          interactive: [
+            ...fakeSnapshot.interactive,
+            { idx: 4, role: "button", name: "Try again", selector: "button.retry" },
+          ],
+        },
+      },
+    }));
+    expect(parsed.ok).toBe(true);
+    const body = parsed as unknown as {
+      data: Record<string, unknown>;
+      page: { url: string; total_interactive: number };
+      diff: { baseline: string; added: Array<{ name: string }> };
+      hint: string;
+    };
+    expect(body.data.snapshot).toBeUndefined();
+    expect(body.page.url).toBe("https://example.com/login");
+    expect(body.page.total_interactive).toBe(5);
+    expect(body.diff.baseline).toBe("diff");
+    expect(body.diff.added.map((i) => i.name)).toEqual(["Try again"]);
+    expect(body.hint).toMatch(/diff\.added/);
+    // The cache was refreshed \u2014 next handle lookup should resolve the
+    // new entry.
+    const r = resolveLocator({ handle: 4 });
+    expect(r).toEqual({ ok: true, selector: "button.retry" });
+  });
+
+  it("falls through unchanged when the extension returns no snapshot", async () => {
+    const p = browserClickTool.invoke({ selector: "#x" });
+    const { parsed } = await driveTool(p, () => ({
+      ok: true,
+      data: { matched: true, tag: "DIV" },
+    }));
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data).toEqual({ matched: true, tag: "DIV" });
+    // No "page"/"diff" keys when no snapshot was attached.
+    expect((parsed as Record<string, unknown>).page).toBeUndefined();
+    expect((parsed as Record<string, unknown>).diff).toBeUndefined();
   });
 });
