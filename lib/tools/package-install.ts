@@ -194,7 +194,15 @@ async function runInstall(spec: string, version: string | null): Promise<Package
   ensurePackagesPackageJson(packagesDir);
 
   const npmSpec = version ? `${spec}@${version}` : spec;
-  await runNpm(["install", "--no-fund", "--no-audit", "--save", npmSpec], packagesDir);
+  // `--legacy-peer-deps` is required for the LangChain ecosystem: packages
+  // like `@langchain/community` pull in optional integrations
+  // (`@getzep/zep-cloud`, etc.) that pin `@langchain/core <0.4.0`, while
+  // current `@langchain/core` is 1.x. Without this flag npm 7+ aborts with
+  // ERESOLVE on a normal install of `@langchain/community`.
+  await runNpm(
+    ["install", "--no-fund", "--no-audit", "--legacy-peer-deps", "--save", npmSpec],
+    packagesDir,
+  );
 
   // The npm spec may include a version range. The *package name* we
   // resolve and import is the spec minus the version portion.
