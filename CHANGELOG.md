@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.5] - 2026-06-14
+
+### Fixed
+
+- **Picker ignored the popup's selected agent.** Clicking "Pick
+  element" with a non-default agent selected in the browser
+  extension popup used to drop the captured element into the
+  default agent's last-active thread. The picker's
+  `jarela-capture` payload now goes through `withSelectedAgent`,
+  and the `/api/v1/page-capture` endpoint accepts an optional
+  `agent_id` and honours it (falling back to the default agent if
+  the requested id is unknown).
+- **Open Jarela ignored the popup's selected agent.** The popup's
+  side-panel opener, the options-page button, and the panel
+  iframe all now forward the selected agent id via `?agent=<id>`;
+  `useUrlSync` consumes it on initial mount and on popstate so
+  the app lands directly on the picked agent's chat.
+- **Agent-control banner flickered between commands.** During a
+  multi-step agent run the overlay used to fade out at the end of
+  every single command and back in at the start of the next,
+  making it look like the agent kept losing control. The hide
+  is now debounced by 5s — a new command in the chain cancels
+  the pending hide so the banner stays put while the agent is
+  actively driving the tab.
+- **Pinning a tab while another was pinned required three
+  clicks** (Unpin → switch → Pin). The "Pin this tab" button now
+  stays visible when the foreground differs from the pinned tab
+  (labelled "Pin this tab instead") and atomically replaces the
+  existing pin in one click.
+
 ## [1.10.4] - 2026-06-14
 
 ### Added
