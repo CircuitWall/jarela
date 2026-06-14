@@ -228,12 +228,18 @@ async function renderTargetCard() {
   if (pin) {
     TARGET_CARD.host().textContent = `🎯 ${pin.host || "(unknown host)"}`;
     TARGET_CARD.sub().textContent = pin.title || shortenUrl(pin.url) || "Pinned tab";
-    TARGET_CARD.pin().hidden = true;
     TARGET_CARD.unpin().hidden = false;
+    // Let the user swap the pin in one click instead of unpin → switch → pin.
+    // If the active foreground tab is a different scriptable tab, expose
+    // "Pin this tab instead"; the backend just overwrites the stored pin.
+    const canSwap = fg && fg.tabId && fg.tabId !== pin.tabId;
+    TARGET_CARD.pin().hidden = !canSwap;
+    TARGET_CARD.pin().textContent = canSwap ? "Pin this tab instead" : "Pin this tab";
   } else if (fg) {
     TARGET_CARD.host().textContent = `👁️ ${fg.host || "(unknown host)"}`;
     TARGET_CARD.sub().textContent = fg.title || shortenUrl(fg.url) || "Foreground tab";
     TARGET_CARD.pin().hidden = false;
+    TARGET_CARD.pin().textContent = "Pin this tab";
     TARGET_CARD.unpin().hidden = true;
   } else {
     TARGET_CARD.host().textContent = "No active tab";
@@ -241,15 +247,19 @@ async function renderTargetCard() {
       ? "Open an http/https page to start"
       : "Jarela server not reachable";
     TARGET_CARD.pin().hidden = false;
+    TARGET_CARD.pin().textContent = "Pin this tab";
     TARGET_CARD.unpin().hidden = true;
   }
 }
 
 document.getElementById("pin-tab").addEventListener("click", async () => {
   setStatus("Pinning current tab…");
+  const prev = await callBackground("jarela-get-pinned-tab");
+  const hadPin = !!prev?.body?.pin;
   const res = await callBackground("jarela-pin-current-tab");
   if (res?.ok) {
-    setStatus(`Pinned ${res.body?.pin?.host ?? "tab"}.`, "ok");
+    const host = res.body?.pin?.host ?? "tab";
+    setStatus(hadPin ? `Pinned ${host}. Previous pin released.` : `Pinned ${host}.`, "ok");
     await renderTargetCard();
   } else {
     setStatus(`Could not pin tab: ${res?.body?.error ?? "unknown error"}`, "err");
