@@ -27,6 +27,7 @@ export interface UsePackagesResult {
   deleteManifest: (name: string) => Promise<void>;
   reload: () => Promise<void>;
   setDefaultEnabled: (id: string, enabled: boolean) => Promise<void>;
+  setManifestEnabled: (name: string, enabled: boolean) => Promise<void>;
 }
 
 export function usePackages(): UsePackagesResult {
@@ -100,6 +101,11 @@ export function usePackages(): UsePackagesResult {
     await refresh();
   }, [refresh]);
 
+  const setManifestEnabled = useCallback(async (name: string, enabled: boolean) => {
+    await api.packages.setManifestEnabled(name, enabled);
+    await refresh();
+  }, [refresh]);
+
   return {
     loadResult,
     manifests,
@@ -114,5 +120,6 @@ export function usePackages(): UsePackagesResult {
     deleteManifest,
     reload,
     setDefaultEnabled,
+    setManifestEnabled,
   };
 }
