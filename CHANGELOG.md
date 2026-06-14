@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.3] - 2026-06-14
+
+### Fixed
+
+- **Docker image build failed on every release.** The root
+  `prepare` script runs `npm run packages:build` (which calls
+  `tsup` in each workspace), but the Dockerfile only copies each
+  workspace's `package.json` before `npm ci`, not its `src/`
+  directory. `tsup` exits "No input files", taking the install
+  step down with it. `npm ci` now runs with `--ignore-scripts` so
+  the prepare hook is skipped; the actual workspace build still
+  runs in the subsequent `npm run build` step, producing an
+  identical image.
+
 ## [1.10.2] - 2026-06-14
 
 ### Fixed
