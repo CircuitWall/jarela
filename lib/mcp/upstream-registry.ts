@@ -144,7 +144,10 @@ export interface SearchResult {
 // Default page size when caller doesn't specify. The upstream registry's own
 // default is small (~30); we bump it so that after filtering out community
 // entries and sorting by popularity, the first page still feels populated.
+// Upstream enforces a hard cap of 100 — values above that return HTTP 422
+// (`/v0.1/servers` validates `limit` against the OpenAPI spec).
 const DEFAULT_LIMIT = 100;
+const UPSTREAM_MAX_LIMIT = 100;
 
 export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchResult> {
   const includeCommunity = opts.includeCommunity === true;
@@ -159,8 +162,10 @@ export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchRe
   if (opts.q) url.searchParams.set("search", opts.q);
   if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
   // When the curated allowlist is active we filter aggressively after the
-  // fetch — ask for more rows so the first page still feels populated.
-  const effectiveLimit = opts.limit ?? (curatedOnly ? 200 : DEFAULT_LIMIT);
+  // fetch — ask for as many rows as upstream allows so the first page still
+  // feels populated. Anything above UPSTREAM_MAX_LIMIT is rejected with 422.
+  const requestedLimit = opts.limit ?? DEFAULT_LIMIT;
+  const effectiveLimit = Math.min(requestedLimit, UPSTREAM_MAX_LIMIT);
   url.searchParams.set("limit", String(effectiveLimit));
 
   const raw = await fetchJson(url);
