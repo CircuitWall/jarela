@@ -7,9 +7,30 @@ import {
 } from "@/lib/tools/package-install";
 import { errorMessage } from "@/lib/utils/error";
 
+// Strict character sets so a malicious request can never reach
+// `child_process.spawn` with shell metacharacters. The publisher
+// allowlist in `lib/tools/package-allowlist.ts` is the trust check;
+// these regexes are the syntactic guard that any reachable string is a
+// real npm package spec / version, not a shell injection vector.
+//
+// `spec`    : npm package name with optional @scope/ and subpath.
+// `version` : exact version, prerelease tag, or dist-tag (no `>=<` ranges,
+//             which would be ambiguous under any shell anyway).
+const NPM_SPEC = /^@?[A-Za-z0-9._~/-]+$/;
+const NPM_VERSION = /^[A-Za-z0-9._~-]+$/;
+
 const InstallSchema = z.object({
-  spec: z.string().min(1, "spec is required"),
-  version: z.string().min(1).optional(),
+  spec: z
+    .string()
+    .min(1, "spec is required")
+    .max(214, "spec too long")
+    .regex(NPM_SPEC, "spec must be a valid npm package name"),
+  version: z
+    .string()
+    .min(1)
+    .max(64, "version too long")
+    .regex(NPM_VERSION, "version must be a plain semver, prerelease, or dist-tag")
+    .optional(),
 });
 
 export function GET() {
