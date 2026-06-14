@@ -554,11 +554,17 @@ export const api = {
       request<McpServer>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
     delete: (name: string) =>
       request<{ deleted: boolean }>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "DELETE" }),
-    registry: (params?: { q?: string; cursor?: string; fresh?: boolean }) => {
+    registry: (params?: {
+      q?: string;
+      cursor?: string;
+      fresh?: boolean;
+      curated?: boolean;
+    }) => {
       const qs = new URLSearchParams();
       if (params?.q) qs.set("q", params.q);
       if (params?.cursor) qs.set("cursor", params.cursor);
       if (params?.fresh) qs.set("fresh", "1");
+      if (params?.curated === false) qs.set("curated", "0");
       const suffix = qs.toString() ? `?${qs}` : "";
       return request<{ entries: McpRegistryEntry[]; nextCursor?: string }>(`/mcp-servers/registry${suffix}`);
     },
