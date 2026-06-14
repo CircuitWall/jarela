@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.5] - 2026-06-14
+
+### Fixed
+
+- **Health probes for additional LLM providers.** `/api/v1/health`
+  now consolidates the LLM provider probes and covers Cohere and
+  GitHub Copilot in addition to the existing OpenAI / Anthropic /
+  Google providers.
+
+### Changed
+
+- Internal refactors with no user-visible behaviour change: API route
+  body validation standardized on zod, remaining `process.env` reads
+  centralized through `lib/env`, the `errorMessage` helper restored
+  and migrated to inline call sites, duplicate pricing helpers removed
+  from `lib/stores/dashboard-metrics`, and additional unused exports
+  pruned.
+
 ## [1.9.4] - 2026-06-13
 
 ### Changed
