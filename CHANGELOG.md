@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.4] - 2026-06-14
+
+### Added
+
+- **npm-installed manifests can be toggled enabled/disabled** from
+  the Tools → Packages list without uninstalling the package. The
+  toggle persists in the new `disabled_packages` SQLite table; a
+  missing row means enabled, so existing installs default to on.
+  New `POST /api/v1/packages/manifests/[name]/enabled` endpoint and
+  `packages.setManifestEnabled()` client method back the UI control.
+- **Manifests can auto-discover every tool in a package** by
+  setting `export: "*"` (or leaving the Export field blank in
+  the Install panel). The loader walks the module's exports,
+  instantiates anything that looks like a LangChain
+  `StructuredTool`, dedupes by tool name, and registers them all
+  under one manifest handle. Removes the need to add one manifest
+  per tool for multi-tool packages.
+
+### Fixed
+
+- **Playwright `chromium-desktop` tests timed out clicking Settings
+  sub-tabs.** The `NotificationStatus` banner (`absolute top-9
+  z-30`) intercepted clicks on the tab strip underneath whenever
+  headless Chromium reported `Notification.permission === "denied"`.
+  A new `dismissOverlayBanners()` helper pre-seeds both the
+  crypto-fallback and notification dismiss flags in `localStorage`
+  via `addInitScript`; every affected spec now uses it. Full
+  `chromium-desktop` suite goes green in ~30 s instead of timing
+  out at 30 s on the credentials/setup-reorg specs.
+
 ## [1.10.3] - 2026-06-14
 
 ### Fixed
