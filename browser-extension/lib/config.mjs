@@ -6,6 +6,7 @@
 // and URL building stay in one place. Vitest exercises the pure logic.
 
 export const STORAGE_KEY = "jarelaConfig";
+export const SELECTED_AGENT_STORAGE_KEY = "jarelaSelectedAgentId";
 
 export const DEFAULT_CONFIG = Object.freeze({
   scheme: "http",
@@ -87,7 +88,12 @@ export function allowedSiteHostUrl(cfg, hostname) {
 }
 export function browserPollUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/poll`; }
 export function browserResultUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/result`; }
-export function appUrl(cfg) { return `${buildBase(cfg)}/`; }
+export function appUrl(cfg, opts) {
+  const base = `${buildBase(cfg)}/`;
+  const agentRaw = typeof opts?.agentId === "string" ? opts.agentId.trim() : "";
+  if (!agentRaw) return base;
+  return `${base}?agent=${encodeURIComponent(agentRaw)}`;
+}
 
 // Origin match patterns to request via chrome.permissions.request(). We
 // always request both `127.0.0.1` and `localhost` when one of them is set

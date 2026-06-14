@@ -3,6 +3,7 @@
 
 import {
   STORAGE_KEY,
+  SELECTED_AGENT_STORAGE_KEY,
   DEFAULT_CONFIG,
   parseConfig,
   isValidHost,
@@ -112,10 +113,21 @@ async function runTest(cfg) {
   return result.ok;
 }
 
+async function getSelectedAgentId() {
+  try {
+    const stored = await chrome.storage.local.get(SELECTED_AGENT_STORAGE_KEY);
+    const v = stored?.[SELECTED_AGENT_STORAGE_KEY];
+    return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 // Open Jarela in the installed PWA window when possible, falling back to a
 // regular tab. The PWA path needs `chrome.management` which is broad — we
 // only request it the first time the user opts in to PWA mode.
 async function openJarela(cfg) {
+  const agentId = await getSelectedAgentId();
   if (cfg.preferPwa) {
     try {
       let granted = await chrome.permissions.contains({ permissions: ["management"] });
@@ -139,7 +151,7 @@ async function openJarela(cfg) {
     }
   }
   try {
-    await chrome.tabs.create({ url: appUrl(cfg), active: true });
+    await chrome.tabs.create({ url: appUrl(cfg, { agentId }), active: true });
     return { launched: true, mode: "tab" };
   } catch (err) {
     console.warn("[jarela] tab open failed:", err);
