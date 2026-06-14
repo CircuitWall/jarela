@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-06-14
+
+### Added
+
+- **Curated LangChain tool catalog in the Install panel.** The Tools →
+  Packages "Install" picker now ships with a hand-vetted catalog of 19
+  well-maintained LangChain integrations grouped by publisher (`@langchain/*`,
+  `langchain`, plus selected community packages). One-click install no
+  longer requires the operator to research package safety from scratch.
+
+### Changed
+
+- **MCP picker defaults to a curated vendor allowlist.** The MCP registry
+  picker now defaults to the "Curated only (recommended)" view, restricting
+  results to ~35 namespace prefixes of actively-maintained, vendor-published
+  servers. Operators can still uncheck the toggle to browse the broader
+  Official + Vendor registry. The allowlist is extensible via the
+  `JARELA_MCP_CURATED_PREFIXES` env var.
+
+### Fixed
+
+- **`spawn EINVAL` on Windows when installing npm packages.** Node's
+  fix for CVE-2024-27980 blocks `child_process.spawn` of `.cmd` /
+  `.bat` shims without `shell: true`, which broke package installs on
+  Windows where `npm` resolves to `npm.cmd`. The install flow now uses
+  `cross-spawn`, which handles the Windows shim transparently. The
+  `InstallSchema` validation was also tightened to allow only npm-spec /
+  semver characters with explicit length caps.
+- **`ERESOLVE` when installing `@langchain/community` and friends.**
+  The LangChain community package pulls in optional integrations
+  (`@getzep/zep-cloud` and others) that pin `@langchain/core <0.4.0`,
+  while the current `@langchain/core` is on the 1.x line. npm 7+ aborts
+  the install rather than letting the operator decide. The install flow
+  now passes `--legacy-peer-deps` — the LangChain-documented workaround
+  — so community packages install cleanly. Scope is the
+  `~/.jarela/packages` sandbox only; the host Jarela process is
+  unaffected.
+- **MCP picker fails with HTTP 503 / upstream 422.** The curated-only
+  branch of the MCP registry search was sending `limit=200`, but the
+  upstream MCP registry validates `limit <= 100` and rejects larger
+  values with HTTP 422. The page size is now clamped at the upstream
+  maximum of 100; curated filtering and cursor-based pagination are
+  unchanged.
+
 ## [1.9.5] - 2026-06-14
 
 ### Fixed
