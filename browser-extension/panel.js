@@ -1,4 +1,4 @@
-import { STORAGE_KEY, DEFAULT_CONFIG, parseConfig, appUrl } from "./lib/config.mjs";
+import { STORAGE_KEY, SELECTED_AGENT_STORAGE_KEY, DEFAULT_CONFIG, parseConfig, appUrl } from "./lib/config.mjs";
 
 const frame = document.getElementById("frame");
 const fallback = document.getElementById("fallback");
@@ -6,9 +6,10 @@ const link = document.getElementById("open-link");
 
 async function currentAppUrl() {
   try {
-    const stored = await chrome.storage.local.get(STORAGE_KEY);
+    const stored = await chrome.storage.local.get([STORAGE_KEY, SELECTED_AGENT_STORAGE_KEY]);
     const cfg = parseConfig(stored?.[STORAGE_KEY] ?? DEFAULT_CONFIG);
-    return appUrl(cfg);
+    const agentId = stored?.[SELECTED_AGENT_STORAGE_KEY];
+    return appUrl(cfg, { agentId: typeof agentId === "string" ? agentId : null });
   } catch {
     return appUrl(DEFAULT_CONFIG);
   }
@@ -25,7 +26,8 @@ frame.addEventListener("error", () => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes[STORAGE_KEY]) return;
+  if (area !== "local") return;
+  if (!changes[STORAGE_KEY] && !changes[SELECTED_AGENT_STORAGE_KEY]) return;
   void render();
 });
 

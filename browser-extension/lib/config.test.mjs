@@ -217,6 +217,14 @@ describe("healthUrl / captureUrl / appUrl", () => {
     expect(extensionAgentsUrl(cfg)).toBe("http://127.0.0.1:4312/api/v1/extension/agents");
     expect(appUrl(cfg)).toBe("http://127.0.0.1:4312/");
   });
+
+  it("appUrl appends the selected agent id when provided", () => {
+    const cfg = { scheme: "http", host: "127.0.0.1", port: 4312 };
+    expect(appUrl(cfg, { agentId: "agent-42" })).toBe("http://127.0.0.1:4312/?agent=agent-42");
+    expect(appUrl(cfg, { agentId: "  " })).toBe("http://127.0.0.1:4312/");
+    expect(appUrl(cfg, { agentId: null })).toBe("http://127.0.0.1:4312/");
+    expect(appUrl(cfg, { agentId: "with space/&" })).toBe("http://127.0.0.1:4312/?agent=with%20space%2F%26");
+  });
 });
 
 describe("buildOriginPatterns", () => {

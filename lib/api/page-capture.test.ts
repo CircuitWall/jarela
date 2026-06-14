@@ -171,6 +171,31 @@ describe("handlePageCapture — thread targeting", () => {
     expect(res.status).toBe(503);
     expect(createThreadMock).not.toHaveBeenCalled();
   });
+
+  it("honors an explicit agent_id over the default", async () => {
+    getDefaultAgentConfigMock.mockReturnValue({ id: "default-agent", name: "Default" });
+    listAgentConfigsMock.mockReturnValue([
+      { id: "default-agent", name: "Default" },
+      { id: "picked-agent", name: "Picked" },
+    ]);
+    listThreadsByAgentMock.mockImplementation((agent_id: string) =>
+      agent_id === "picked-agent"
+        ? [{ thread_id: "picked-thread", title: "Picked recent" }]
+        : [{ thread_id: "default-thread", title: "Default recent" }]
+    );
+
+    const res = await handlePageCapture(makeReq({ ...validBody, agent_id: "picked-agent" }));
+    expect(res.status).toBe(200);
+    expect(listThreadsByAgentMock).toHaveBeenCalledWith("picked-agent", 1);
+    expect(addMessageMock).toHaveBeenCalledWith("picked-thread", "user", expect.any(String), undefined, "page_capture");
+  });
+
+  it("falls back to the default agent when the explicit agent_id is unknown", async () => {
+    listAgentConfigsMock.mockReturnValue([{ id: "default-agent", name: "Default" }]);
+    const res = await handlePageCapture(makeReq({ ...validBody, agent_id: "never-existed" }));
+    expect(res.status).toBe(200);
+    expect(listThreadsByAgentMock).toHaveBeenCalledWith("default-agent", 1);
+  });
 });
 
 describe("handlePageCapture — message body", () => {
