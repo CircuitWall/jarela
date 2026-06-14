@@ -116,6 +116,42 @@ export function pageWaitForSelectorFn(selector, timeoutMs) {
   });
 }
 
+// Resolve when the DOM has been quiet (no mutations) for `quietMs` or
+// when `maxMs` elapses, whichever comes first. Used by the auto-snapshot
+// hook so a snapshot taken right after a click/fill captures the
+// committed state of the page rather than mid-render.
+export function pageWaitForDomIdleFn(quietMs, maxMs) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    let observer = null;
+    let quietTimer = null;
+    let settled = false;
+    function finish(idle) {
+      if (settled) return;
+      settled = true;
+      try { if (observer) observer.disconnect(); } catch { /* noop */ }
+      if (quietTimer) clearTimeout(quietTimer);
+      resolve({ idle, waited_ms: Date.now() - start });
+    }
+    function armQuiet() {
+      if (quietTimer) clearTimeout(quietTimer);
+      quietTimer = setTimeout(() => finish(true), quietMs);
+    }
+    observer = new MutationObserver(() => {
+      if (Date.now() - start >= maxMs) finish(false);
+      else armQuiet();
+    });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
+    setTimeout(() => finish(false), maxMs);
+    armQuiet();
+  });
+}
+
 // --------------------------------------------------------------------- //
 // Element-bounds capture for screenshot cropping.                       //
 // chrome.tabs.captureVisibleTab can only grab the visible viewport, so  //
@@ -374,6 +410,28 @@ async function execInTabAsync(deps, tabId, func, args = []) {
   return out?.[0]?.result;
 }
 
+// Best-effort post-action snapshot. Used by navigate/click/fill when the
+// server flips `auto_snapshot: true` so the agent can chain the next
+// step without an explicit `browser_snapshot` round-trip. We wait for
+// the DOM to settle (300ms quiet window, 2s ceiling) before snapshotting
+// so dynamic UIs (modal that pops, validation errors that appear, list
+// that re-renders) are captured in their committed form. Failures are
+// swallowed — the action itself already succeeded and the agent will
+// fall back to calling `browser_snapshot` explicitly if needed.
+async function captureAutoSnapshot(deps, tabId, command) {
+  if (!command || !command.auto_snapshot) return undefined;
+  try {
+    await execInTabAsync(deps, tabId, pageWaitForDomIdleFn, [300, 2000]);
+    const snap = await execInTab(deps, tabId, pageSnapshotFn, [
+      { max_items: 80, include_hidden: false },
+    ]);
+    if (!snap) return undefined;
+    return { ...snap, tab_id: tabId };
+  } catch {
+    return undefined;
+  }
+}
+
 async function waitForTabComplete(deps, tabId, timeoutMs) {
   if (!deps.onTabComplete) return;
   await deps.onTabComplete({ tabId }, () => {});
@@ -427,14 +485,19 @@ export async function dispatchCommand(deps, command) {
             return { ok: false, error: `wait_for_selector \`${command.wait_for_selector}\` not found within ${timeout}ms` };
           }
         }
-        return { ok: true, data: { tab_id: tab.id, url: command.url } };
+        const snapshot = await captureAutoSnapshot(deps, tab.id, command);
+        return {
+          ok: true,
+          data: { tab_id: tab.id, url: command.url, ...(snapshot ? { snapshot } : {}) },
+        };
       }
       case "click": {
         const result = await execInTab(deps, tab.id, pageClickFn, [command.selector]);
         if (!result?.matched) {
           return { ok: false, error: `no element matched selector \`${command.selector}\`` };
         }
-        return { ok: true, data: result };
+        const snapshot = await captureAutoSnapshot(deps, tab.id, command);
+        return { ok: true, data: { ...result, ...(snapshot ? { snapshot } : {}) } };
       }
       case "fill": {
         const result = await execInTab(deps, tab.id, pageFillFn, [
@@ -445,7 +508,8 @@ export async function dispatchCommand(deps, command) {
         if (!result?.matched) {
           return { ok: false, error: `no fillable element matched selector \`${command.selector}\`` };
         }
-        return { ok: true, data: result };
+        const snapshot = await captureAutoSnapshot(deps, tab.id, command);
+        return { ok: true, data: { ...result, ...(snapshot ? { snapshot } : {}) } };
       }
       case "scroll": {
         const result = await execInTab(deps, tab.id, pageScrollFn, [command.selector ?? null, command.to]);

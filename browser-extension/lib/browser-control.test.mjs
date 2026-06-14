@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dispatchCommand, pageClickFn, pageFillFn, pageScrollFn, pageExtractFn, pageSnapshotFn } from "./browser-control.mjs";
+import { dispatchCommand, pageClickFn, pageFillFn, pageScrollFn, pageExtractFn, pageSnapshotFn, pageWaitForDomIdleFn } from "./browser-control.mjs";
 
 // Provide DOM globals the page-functions touch when invoked in Node.
 // They run inside the page (via chrome.scripting.executeScript) in
@@ -323,5 +323,111 @@ describe("pageExtractFn (pure)", () => {
   it("returns matched=false when selector matches nothing", () => {
     globalThis.document = { querySelector: () => null };
     expect(pageExtractFn("#missing", "text", 100)).toEqual({ matched: false });
+  });
+});
+
+// --------------------------------------------------------------------- //
+// auto_snapshot piggyback + DOM-idle waiter
+// --------------------------------------------------------------------- //
+
+describe("dispatchCommand auto_snapshot piggyback", () => {
+  it("attaches a snapshot to a click result when auto_snapshot=true", async () => {
+    let call = 0;
+    const fakeSnap = { url: "https://x", title: "x", interactive: [{ idx: 0, role: "button", name: "Go", selector: "#go" }] };
+    const deps = {
+      queryActiveTab: vi.fn().mockResolvedValue([{ id: 7, windowId: 1 }]),
+      updateTab: vi.fn(),
+      executeScript: vi.fn().mockImplementation((opts) => {
+        call += 1;
+        // 1) pageClickFn → matched=true. 2) pageWaitForDomIdleFn → idle. 3) pageSnapshotFn → fakeSnap.
+        if (opts.func === pageWaitForDomIdleFn) return Promise.resolve([{ result: { idle: true, waited_ms: 12 } }]);
+        if (opts.func === pageSnapshotFn) return Promise.resolve([{ result: fakeSnap }]);
+        return Promise.resolve([{ result: { matched: true, tag: "BUTTON" } }]);
+      }),
+      captureVisibleTab: vi.fn(),
+    };
+    const r = await dispatchCommand(deps, { type: "click", selector: "#go", auto_snapshot: true });
+    expect(r.ok).toBe(true);
+    expect(r.data.matched).toBe(true);
+    expect(r.data.snapshot).toBeDefined();
+    expect(r.data.snapshot.tab_id).toBe(7);
+    expect(r.data.snapshot.interactive[0].name).toBe("Go");
+    expect(call).toBe(3);
+  });
+
+  it("omits snapshot when auto_snapshot is not set", async () => {
+    const deps = {
+      queryActiveTab: vi.fn().mockResolvedValue([{ id: 7, windowId: 1 }]),
+      updateTab: vi.fn(),
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: true, tag: "BUTTON" } }]),
+      captureVisibleTab: vi.fn(),
+    };
+    const r = await dispatchCommand(deps, { type: "click", selector: "#go" });
+    expect(r.ok).toBe(true);
+    expect(r.data.snapshot).toBeUndefined();
+    expect(deps.executeScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fail the action when the snapshot step throws", async () => {
+    let call = 0;
+    const deps = {
+      queryActiveTab: vi.fn().mockResolvedValue([{ id: 7, windowId: 1 }]),
+      updateTab: vi.fn(),
+      executeScript: vi.fn().mockImplementation((opts) => {
+        call += 1;
+        if (opts.func === pageWaitForDomIdleFn) return Promise.reject(new Error("MAIN world unavailable"));
+        return Promise.resolve([{ result: { matched: true, tag: "BUTTON" } }]);
+      }),
+      captureVisibleTab: vi.fn(),
+    };
+    const r = await dispatchCommand(deps, { type: "fill", selector: "input", value: "hi", auto_snapshot: true });
+    expect(r.ok).toBe(true);
+    expect(r.data.matched).toBe(true);
+    expect(r.data.snapshot).toBeUndefined();
+    expect(call).toBe(2); // fill + (failing) idle wait
+  });
+});
+
+describe("pageWaitForDomIdleFn (pure)", () => {
+  // Vitest fake timers + a stub MutationObserver let us drive the
+  // observer callback deterministically.
+  it("resolves with idle=true once quietMs elapses without mutations", async () => {
+    vi.useFakeTimers();
+    let observerCb = null;
+    globalThis.document = { documentElement: {} };
+    class FakeObserver {
+      constructor(cb) { observerCb = cb; }
+      observe() {}
+      disconnect() {}
+    }
+    globalThis.MutationObserver = FakeObserver;
+    const promise = pageWaitForDomIdleFn(50, 1000);
+    // No mutations triggered — the initial armQuiet timer fires.
+    await vi.advanceTimersByTimeAsync(60);
+    const r = await promise;
+    expect(r.idle).toBe(true);
+    expect(observerCb).toBeTypeOf("function");
+    vi.useRealTimers();
+  });
+
+  it("resolves with idle=false once maxMs elapses while mutations keep firing", async () => {
+    vi.useFakeTimers();
+    let observerCb = null;
+    globalThis.document = { documentElement: {} };
+    class FakeObserver {
+      constructor(cb) { observerCb = cb; }
+      observe() {}
+      disconnect() {}
+    }
+    globalThis.MutationObserver = FakeObserver;
+    const promise = pageWaitForDomIdleFn(100, 200);
+    // Keep firing mutations every 30ms so the quiet window never closes.
+    for (let i = 0; i < 10; i++) {
+      await vi.advanceTimersByTimeAsync(30);
+      observerCb?.([]);
+    }
+    const r = await promise;
+    expect(r.idle).toBe(false);
+    vi.useRealTimers();
   });
 });

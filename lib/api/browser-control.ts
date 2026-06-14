@@ -62,20 +62,28 @@ export const ScrollTo = z.enum(["top", "bottom", "into-view"]);
 export const ScreenshotFormat = z.enum(["png", "jpeg"]);
 export const ExtractFormat = z.enum(["text", "html", "outerHTML"]);
 
+// `auto_snapshot` instructs the extension to take a page snapshot after
+// a successful state-changing action and ship it back in the result. The
+// agent-side tool wrapper uses that snapshot to update its locator cache
+// and emit a diff to the LLM, eliminating the explicit follow-up
+// `browser_snapshot` call on every step.
 const NavigateCommandShape = z.object({
   type: z.literal("navigate"),
   url: z.string().url(),
   wait_for_selector: z.string().min(1).max(2000).optional(),
+  auto_snapshot: z.boolean().optional(),
 });
 const ClickCommandShape = z.object({
   type: z.literal("click"),
   selector: z.string().min(1).max(2000),
+  auto_snapshot: z.boolean().optional(),
 });
 const FillCommandShape = z.object({
   type: z.literal("fill"),
   selector: z.string().min(1).max(2000),
   value: z.string().max(50_000),
   submit: z.boolean().optional(),
+  auto_snapshot: z.boolean().optional(),
 });
 const ScrollCommandShape = z.object({
   type: z.literal("scroll"),
