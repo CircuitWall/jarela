@@ -45,6 +45,7 @@ import {
 } from "./langchain-package";
 import { categorizeByVerb } from "./categorize-by-verb";
 import { errorMessage } from "@/lib/utils/error";
+import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
@@ -150,6 +151,16 @@ async function doLoad(): Promise<LangChainPackageLoadResult> {
     try {
       if (!statSync(manifestPath).isFile()) continue;
     } catch {
+      continue;
+    }
+
+    // Honor the operator's per-manifest disable flag (set via
+    // `setManifestEnabled` in lib/tools/package-manifests.ts). Skip
+    // here rather than after parsing so a malformed manifest the user
+    // already turned off doesn't get reported as a load error.
+    const manifestName = entry.slice(0, -".json".length);
+    if (isPackageDisabled(`npm:${manifestName}`)) {
+      result.skipped.push({ manifest: entry, reason: "disabled by operator" });
       continue;
     }
 

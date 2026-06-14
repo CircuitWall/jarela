@@ -137,6 +137,7 @@ function buildRows(
       capability: m.manifest.capability,
       packageImport: `${m.manifest.package}#${m.manifest.export}`,
       category: m.manifest.category,
+      enabled: m.enabled,
     });
   }
 
@@ -168,6 +169,7 @@ export function UnifiedPackageList() {
     manifests,
     refresh,
     setDefaultEnabled,
+    setManifestEnabled,
     deleteManifest,
   } = usePackages();
   const [builtins, setBuiltins] = useState<BuiltinToolCategoryInfo[]>([]);
@@ -247,6 +249,22 @@ export function UnifiedPackageList() {
         title: "Couldn't toggle package",
         error: e,
         context: { panel: "packages", action: "toggle-default", id, target_enabled: !row.enabled },
+      });
+    } finally {
+      setBusy((b) => ({ ...b, [row.id]: false }));
+    }
+  }
+
+  async function toggleNpm(row: UnifiedRow) {
+    const name = row.id.slice("npm:".length);
+    setBusy((b) => ({ ...b, [row.id]: true }));
+    try {
+      await setManifestEnabled(name, !row.enabled);
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't toggle package",
+        error: e,
+        context: { panel: "packages", action: "toggle-npm", name, target_enabled: !row.enabled },
       });
     } finally {
       setBusy((b) => ({ ...b, [row.id]: false }));
@@ -350,6 +368,7 @@ export function UnifiedPackageList() {
               onToggleEnabled={() => {
                 if (row.kind === "builtin") return toggleBuiltin(row);
                 if (row.kind === "default") return toggleDefault(row);
+                if (row.kind === "npm") return toggleNpm(row);
               }}
               onRemove={row.kind === "npm" ? () => removeManifest(row) : undefined}
               onConfigureCredentials={

@@ -321,6 +321,16 @@ export const api = {
         `/packages/manifests/${encodeURIComponent(name)}`,
         { method: "DELETE" },
       ),
+    setManifestEnabled: (name: string, enabled: boolean) =>
+      request<{
+        name: string;
+        enabled: boolean;
+        record: LangChainPackageManifestRecord;
+        load: import("./types").LangChainPackageLoadResult;
+      }>(`/packages/manifests/${encodeURIComponent(name)}/enabled`, {
+        method: "POST",
+        body: JSON.stringify({ enabled }),
+      }),
     setDefaultEnabled: (id: string, enabled: boolean) =>
       request<{
         id: string;

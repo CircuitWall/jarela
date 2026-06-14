@@ -42,12 +42,20 @@ const {
   deleteManifest,
   getManifest,
   listManifests,
+  setManifestEnabled,
+  isManifestDisabled,
+  manifestDisableKey,
   normalizeManifestName,
   _wipeManifests,
 } = await import("./package-manifests");
+const {
+  listDisabledPackages,
+  setPackageDisabled,
+} = await import("@/lib/stores/disabled-packages");
 
 beforeEach(() => {
   _wipeManifests();
+  for (const id of listDisabledPackages()) setPackageDisabled(id, false);
   _resetLangChainPackages();
 });
 
@@ -195,5 +203,93 @@ describe("deleteManifest", () => {
   it("returns removed=false for unknown name", async () => {
     const { removed } = await deleteManifest("nope");
     expect(removed).toBe(false);
+  });
+
+  it("clears the disabled flag so a re-install starts enabled", async () => {
+    await createManifest({
+      name: "toggle-then-delete",
+      package: "fake-manifest-pkg",
+      export: "FakeManifestTool",
+      category: "Web",
+    });
+    await setManifestEnabled("toggle-then-delete", false);
+    expect(isManifestDisabled("toggle-then-delete")).toBe(true);
+
+    await deleteManifest("toggle-then-delete");
+    expect(isManifestDisabled("toggle-then-delete")).toBe(false);
+  });
+});
+
+describe("setManifestEnabled", () => {
+  it("defaults manifests to enabled", async () => {
+    const { record } = await createManifest({
+      name: "default-on",
+      package: "fake-manifest-pkg",
+      export: "FakeManifestTool",
+      category: "Web",
+    });
+    expect(record.enabled).toBe(true);
+  });
+
+  it("disabling a manifest persists the flag and skips it on reload", async () => {
+    await createManifest({
+      name: "flippy",
+      package: "fake-manifest-pkg",
+      export: "FakeManifestTool",
+      category: "Web",
+    });
+
+    const off = await setManifestEnabled("flippy", false);
+    expect(off.record.enabled).toBe(false);
+    expect(off.load.registered).not.toContain("fake_manifest_tool");
+    expect(off.load.skipped.some((s) => s.manifest === "flippy.json")).toBe(true);
+    expect(isManifestDisabled("flippy")).toBe(true);
+
+    // listManifests reflects the flag too.
+    const row = listManifests().find((r) => r.name === "flippy");
+    expect(row?.enabled).toBe(false);
+  });
+
+  it("re-enabling a manifest registers the tool again", async () => {
+    await createManifest({
+      name: "flippy",
+      package: "fake-manifest-pkg",
+      export: "FakeManifestTool",
+      category: "Web",
+    });
+    await setManifestEnabled("flippy", false);
+
+    const on = await setManifestEnabled("flippy", true);
+    expect(on.record.enabled).toBe(true);
+    expect(on.load.registered).toContain("fake_manifest_tool");
+    expect(isManifestDisabled("flippy")).toBe(false);
+  });
+
+  it("throws when the manifest does not exist", async () => {
+    await expect(setManifestEnabled("ghost", false)).rejects.toThrow(/not found/);
+  });
+
+  it("normalizes the name before lookup", async () => {
+    await createManifest({
+      name: "Pretty Name",
+      package: "fake-manifest-pkg",
+      export: "FakeManifestTool",
+      category: "Web",
+    });
+    const out = await setManifestEnabled("Pretty Name", false);
+    expect(out.record.name).toBe("pretty-name");
+    expect(out.record.enabled).toBe(false);
+  });
+
+  it("namespaces its disable key under 'npm:'", async () => {
+    await createManifest({
+      name: "key-check",
+      package: "fake-manifest-pkg",
+      export: "FakeManifestTool",
+      category: "Web",
+    });
+    await setManifestEnabled("key-check", false);
+    expect(listDisabledPackages()).toContain(manifestDisableKey("key-check"));
+    expect(manifestDisableKey("key-check")).toBe("npm:key-check");
   });
 });
