@@ -44,6 +44,11 @@ const Body = z.object({
   tagName: z.string().max(64).optional(),
   text: z.string(),
   capturedAt: z.string().datetime(),
+  // Optional explicit agent target. When the browser extension has a
+  // "send to" agent picked in its popup, the SW forwards that id here so
+  // the capture lands in *that* agent's chat instead of silently routing
+  // to the system default.
+  agent_id: z.string().min(1).max(200).optional(),
   // Optional base64-encoded PNG of just the picked element (no data: URL
   // prefix). The content script crops `chrome.tabs.captureVisibleTab`
   // to the element bounding box before sending. When present, it is
@@ -84,9 +89,13 @@ interface PickResult {
   created: boolean;
 }
 
-function pickThread(): PickResult | { error: "no-agent" } {
+function pickThread(explicitAgentId?: string): PickResult | { error: "no-agent" } {
+  const requested = typeof explicitAgentId === "string" ? explicitAgentId.trim() : "";
+  const explicit: AgentConfigRow | null = requested
+    ? listAgentConfigs().find((a) => a.id === requested) ?? null
+    : null;
   const def: AgentConfigRow | null = getDefaultAgentConfig();
-  const agent: AgentConfigRow | null = def ?? listAgentConfigs()[0] ?? null;
+  const agent: AgentConfigRow | null = explicit ?? def ?? listAgentConfigs()[0] ?? null;
   if (!agent) return { error: "no-agent" };
 
   const recent: ThreadRow[] = listThreadsByAgent(agent.id, 1);
@@ -157,7 +166,7 @@ export async function handlePageCapture(req: Request): Promise<Response> {
   }
   const input = parsed.data;
 
-  const picked = pickThread();
+  const picked = pickThread(input.agent_id);
   if ("error" in picked) {
     return new Response(JSON.stringify({ error: "no agent configured" }), {
       status: 503,

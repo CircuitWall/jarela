@@ -8,6 +8,7 @@
 
 import {
   STORAGE_KEY,
+  SELECTED_AGENT_STORAGE_KEY,
   DEFAULT_CONFIG,
   parseConfig,
   healthUrl,
@@ -46,7 +47,7 @@ const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
 const KEEPALIVE_PORT_NAME = "jarela-keepalive";
 const OFFSCREEN_URL = "offscreen.html";
-const STORAGE_SELECTED_AGENT_ID = "jarelaSelectedAgentId";
+const STORAGE_SELECTED_AGENT_ID = SELECTED_AGENT_STORAGE_KEY;
 const MENU_OPEN = "jarela-open";
 const REWRITE_DIRECTIONS = {
   neutral: "Rewrite the selected text to improve clarity while preserving meaning.",
@@ -1626,7 +1627,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         return;
       }
       if (msg.type === "jarela-capture") {
-        const out = await postJson(captureUrl(currentConfig), msg.payload);
+        // Route the picker's capture through the selected agent — without
+        // this, every pick lands on the system default agent regardless
+        // of what the popup's agent dropdown shows.
+        const payload = await withSelectedAgent(msg.payload);
+        const out = await postJson(captureUrl(currentConfig), payload);
         await applyAgentIconHintFromBody(out?.body);
         sendResponse(out);
         return;

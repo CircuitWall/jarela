@@ -36,6 +36,18 @@ export function useUrlSync() {
         tab = "tools";
         item = "packages";
       }
+      // Browser-extension "Open Jarela" passes ?agent=<id> (and optionally
+      // ?thread=<id>) so the app lands on the user's currently-picked
+      // target agent instead of whichever chat was last open. The agent
+      // hint is one-shot — the SET_AGENT / SELECT_THREAD dispatch below
+      // triggers the second effect, which rewrites the URL via buildHref
+      // and drops the hint.
+      if (parsed.thread && parsed.agent) {
+        dispatch({ type: "SELECT_THREAD", threadId: parsed.thread, agentId: parsed.agent });
+      } else if (parsed.agent) {
+        dispatch({ type: "SET_AGENT", agentId: parsed.agent });
+        dispatch({ type: "SET_TAB", tab: "chat" });
+      }
       if (TABS.includes(tab)) {
         dispatch({ type: "SET_TAB", tab });
         dispatch({ type: "SET_SELECTION", tab, itemId: item });
