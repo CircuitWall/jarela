@@ -43,7 +43,7 @@ import {
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
-import { getPackagesDir } from "./langchain-packages";
+import { getPackagesDir, reloadLangChainPackages } from "./langchain-packages";
 import { isPackageAllowed, type PackageAllowDecision } from "./package-allowlist";
 
 export interface IntrospectedTool {
@@ -210,6 +210,11 @@ async function runInstall(spec: string, version: string | null): Promise<Package
   const installedVersion = readInstalledVersion(packagesDir, resolvedPackage);
   const tools = await introspectPackage(packagesDir, resolvedPackage);
   const decision = isPackageAllowed(spec);
+
+  // Re-run the manifest loader so any manifest that previously failed to
+  // resolve (e.g. saved by the UI before the package was installed) now
+  // registers successfully and the stale error clears from loadResult.
+  await reloadLangChainPackages();
 
   return {
     spec,
