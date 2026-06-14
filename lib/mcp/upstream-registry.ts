@@ -127,6 +127,13 @@ export interface SearchOptions {
   fresh?: boolean;
   /** When true, include Community-published entries (default: false — only Official + Vendor). */
   includeCommunity?: boolean;
+  /**
+   * When true (default), restrict results to the hand-picked curated
+   * allowlist (see `CURATED_MCP_PREFIXES`) of actively-maintained
+   * vendor-published servers. Toggle off for the broader Official +
+   * Vendor view.
+   */
+  curatedOnly?: boolean;
 }
 
 export interface SearchResult {
@@ -141,7 +148,8 @@ const DEFAULT_LIMIT = 100;
 
 export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchResult> {
   const includeCommunity = opts.includeCommunity === true;
-  const key = `${opts.q ?? ""}|${opts.cursor ?? ""}|${opts.limit ?? ""}|${includeCommunity ? "all" : "verified"}`;
+  const curatedOnly = opts.curatedOnly !== false;
+  const key = `${opts.q ?? ""}|${opts.cursor ?? ""}|${opts.limit ?? ""}|${includeCommunity ? "all" : "verified"}|${curatedOnly ? "curated" : "broad"}`;
   if (!opts.fresh) {
     const cached = getCached(listCache, key);
     if (cached) return cached;
@@ -150,7 +158,10 @@ export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchRe
   const url = new URL(`${REGISTRY_BASE}/servers`);
   if (opts.q) url.searchParams.set("search", opts.q);
   if (opts.cursor) url.searchParams.set("cursor", opts.cursor);
-  url.searchParams.set("limit", String(opts.limit ?? DEFAULT_LIMIT));
+  // When the curated allowlist is active we filter aggressively after the
+  // fetch — ask for more rows so the first page still feels populated.
+  const effectiveLimit = opts.limit ?? (curatedOnly ? 200 : DEFAULT_LIMIT);
+  url.searchParams.set("limit", String(effectiveLimit));
 
   const raw = await fetchJson(url);
   const parsed = ListResponseZ.safeParse(raw);
@@ -195,9 +206,18 @@ export async function searchUpstream(opts: SearchOptions = {}): Promise<SearchRe
   }
   const deduped = [...byInstallIdentity.values()];
 
-  const filtered = includeCommunity
+  const sourceFiltered = includeCommunity
     ? deduped
     : deduped.filter((x) => x.entry.source !== "Community");
+
+  // Curated allowlist: namespace prefixes for well-known, actively-maintained
+  // vendor MCP servers. Off by default would re-introduce the per-server
+  // unmaintained-package risk that ADR-0014 papers over with org-level
+  // labels only; on by default keeps the picker focused on servers the
+  // operator can reasonably trust without inspecting each repo first.
+  const filtered = curatedOnly
+    ? sourceFiltered.filter((x) => isCurated(x.qualifiedName))
+    : sourceFiltered;
 
   // Sort by popularity score (desc), then alphabetically. Stable within a
   // page; pagination still works because we don't drop the upstream cursor.
@@ -596,4 +616,72 @@ function popularityScore(entry: RegistryEntry, qualifiedName: string): number {
     /^com\.([a-z0-9-]+)\//.exec(qualifiedName);
   if (m) score += VENDOR_POPULARITY_BOOST.get(m[1]) ?? 0;
   return score;
+}
+
+// ── Curated allowlist ──────────────────────────────────────────────────────
+// Hand-picked namespace prefixes for actively-maintained, vendor-published
+// MCP servers. Tighter than `VENDOR_GITHUB_ORGS` (which classifies *any*
+// entry from those orgs as Vendor): this set is the default view of the
+// picker so users start with a vetted slice rather than the full ecosystem.
+//
+// Operators can extend with `JARELA_MCP_CURATED_PREFIXES` (comma-separated
+// namespace prefixes, e.g. `io.github.myco/,com.acme/`). Setting
+// `JARELA_MCP_CURATED_ONLY=0` makes the broader Official + Vendor list the
+// default instead.
+export const CURATED_MCP_PREFIXES: readonly string[] = [
+  // Anthropic / MCP team reference servers (filesystem, fetch, git, memory,
+  // time, sequentialthinking, everything, …).
+  "io.github.modelcontextprotocol/",
+  "io.modelcontextprotocol/",
+
+  // First-party vendor servers maintained by their upstream company.
+  "io.github.github/",         // GitHub
+  "io.github.microsoft/",      // Microsoft (Playwright MCP, Azure, …)
+  "io.github.azure/",
+  "io.github.googleapis/",     // Google (GenAI Toolbox, …)
+  "io.github.google/",
+  "io.github.deepmind/",
+  "io.github.cloudflare/",
+  "io.github.stripe/",         "com.stripe/",
+  "io.github.getsentry/",      "io.github.sentry-mcp/", "com.sentry/",
+  "io.github.notionhq/",       "com.notion/",
+  "io.github.linear/",         "com.linear/",
+  "io.github.atlassian/",      "com.atlassian/",
+  "io.github.shopify/",        "com.shopify/",
+  "io.github.elastic/",        "com.elastic/",
+  "io.github.mongodb/",        "com.mongodb/",
+  "io.github.supabase/",       "com.supabase/",
+  "io.github.neondatabase/",   "com.neon/",
+  "io.github.upstash/",
+  "io.github.exa-labs/",
+  "io.github.firecrawl/",      "io.github.mendableai/",
+  "io.github.brave/",
+  "io.github.huggingface/",
+  "io.github.docker/",         "com.docker/",
+  "io.github.hashicorp/",
+  "io.github.perplexityai/",
+  "io.github.qdrant/",
+  "io.github.pinecone-io/",
+  "io.github.chroma-core/",
+  "io.github.redis/",          "com.redis/",
+  "io.github.twilio/",         "com.twilio/",
+  "io.github.vercel/",         "com.vercel/",
+];
+
+function getCuratedPrefixes(): readonly string[] {
+  const extra = process.env.JARELA_MCP_CURATED_PREFIXES;
+  if (!extra) return CURATED_MCP_PREFIXES;
+  const extras = extra
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return [...CURATED_MCP_PREFIXES, ...extras];
+}
+
+function isCurated(qualifiedName: string): boolean {
+  const prefixes = getCuratedPrefixes();
+  for (const p of prefixes) {
+    if (qualifiedName.startsWith(p)) return true;
+  }
+  return false;
 }

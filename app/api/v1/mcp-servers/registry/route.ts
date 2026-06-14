@@ -17,9 +17,22 @@ export async function GET(req: NextRequest) {
   const limitParam = searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : undefined;
   const fresh = searchParams.get("fresh") === "1";
+  // `curated=0` opts the user out of the curated allowlist and falls back
+  // to the broader Official + Vendor view. Default behaviour (parameter
+  // absent OR `curated=1`) honours `JARELA_MCP_CURATED_ONLY` for operators.
+  const curatedParam = searchParams.get("curated");
+  const envCuratedDefault = process.env.JARELA_MCP_CURATED_ONLY !== "0";
+  const curatedOnly =
+    curatedParam === null ? envCuratedDefault : curatedParam !== "0";
 
   try {
-    const { entries, nextCursor } = await searchUpstream({ q, cursor, limit, fresh });
+    const { entries, nextCursor } = await searchUpstream({
+      q,
+      cursor,
+      limit,
+      fresh,
+      curatedOnly,
+    });
     return NextResponse.json({ entries: entries.map(expandHome), nextCursor });
   } catch (err) {
     return NextResponse.json(
