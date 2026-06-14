@@ -22,8 +22,8 @@ test.beforeEach(async ({ request, page }) => {
   // localStorage flag on the target origin before navigating.
   await page.addInitScript(() => {
     try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
-    // Seed advanced experience mode so the Advanced section renders in
-    // the menu panel (gated in AppShell.tsx + MenuPanel.tsx).
+    // Seed advanced experience mode so the Settings sub-tabs flagged
+    // advancedOnly (Harness / Logs / Defaults) render in tests.
     try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }
   });
   await page.goto("/");
@@ -44,67 +44,56 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
   await openMenu(page);
 
   // Common tabs visible up top (MenuPanel.COMMON_TABS). Capability surfaces
-  // (Documents, Memory, Bridges, MCP, Extensions) now live under Tools,
-  // Models moved to Advanced, and Connections is folded into Credentials.
-  for (const label of ["Chat", "Dashboard", "Agents", "Credentials", "Tools", "Tasks", "Profile"]) {
+  // (Documents, Memory, Bridges, MCP, Extensions) live under Tools, and the
+  // former Credentials/Models/Harness/Logs/Defaults entries are now sub-tabs
+  // of the consolidated Settings panel.
+  for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Tasks", "Profile", "Settings"]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
 
-  // Documents / Memory / Bridges / Connections are no longer top-level buttons in the menu.
-  await expect(page.getByRole("button", { name: "Documents", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Memory", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Bridges", exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Connections", exact: true })).toHaveCount(0);
-
-  // Advanced header is rendered with the canonical label.
-  const advancedHeader = page.getByRole("button", { name: /^Advanced$/i });
-  await expect(advancedHeader).toBeVisible();
-  await expect(advancedHeader).toHaveAttribute("aria-expanded", "true");
-
-  // Advanced tabs visible — Models, Harness, Logs, Defaults (MenuPanel.ADVANCED_TABS).
-  await expect(page.getByRole("button", { name: "Models", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Harness", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Defaults", exact: true })).toBeVisible();
+  // These are no longer top-level buttons in the menu.
+  for (const label of [
+    "Documents",
+    "Memory",
+    "Bridges",
+    "Connections",
+    "Credentials",
+    "Models",
+    "Harness",
+    "Logs",
+    "Defaults",
+  ]) {
+    await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(0);
+  }
 
   // Click Tools → ToolsPanel mounts with the full capability sub-tab strip.
   await page.getByRole("button", { name: "Tools", exact: true }).click();
-  const builtinTab = page.getByRole("tab", { name: "Built-in", exact: true });
-  await expect(builtinTab).toBeVisible();
+  const packagesTab = page.getByRole("tab", { name: "Packages", exact: true });
+  await expect(packagesTab).toBeVisible();
   await expect(page.getByRole("tab", { name: "Documents", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Memory", exact: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: "MCP servers" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Browser extension" })).toBeVisible();
   await expect(page.getByRole("tab", { name: "Bridges", exact: true })).toBeVisible();
-  await expect(builtinTab).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByRole("heading", { name: "Built-in tools" })).toBeVisible();
+  await expect(packagesTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Packages", exact: true })).toBeVisible();
 
   // Switch to Documents sub-tab → DocumentsPanel renders inside the Tools surface.
   await page.getByRole("tab", { name: "Documents", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Documents", exact: true })).toHaveAttribute("aria-selected", "true");
 });
 
-test("Advanced section collapses and remembers state via localStorage", async ({ page }) => {
+test("Settings panel exposes advanced sub-tabs when experience mode is full", async ({ page }) => {
   await openMenu(page);
-  const advancedHeader = page.getByRole("button", { name: /^Advanced$/i });
-  const modelsBtn = page.getByRole("button", { name: "Models", exact: true });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
 
-  // Initially expanded.
-  await expect(advancedHeader).toHaveAttribute("aria-expanded", "true");
-  await expect(modelsBtn).toBeVisible();
-
-  // Collapse → hides advanced tabs and persists "0".
-  await advancedHeader.click();
-  await expect(advancedHeader).toHaveAttribute("aria-expanded", "false");
-  await expect(modelsBtn).toBeHidden();
-  const persisted = await page.evaluate(() => window.localStorage.getItem("jarela.menu.advanced"));
-  expect(persisted).toBe("0");
-
-  // Reload → still collapsed.
-  await page.reload();
-  await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
-  await waitForAppReady(page);
-  await openMenu(page);
-  await expect(page.getByRole("button", { name: /^Advanced$/i })).toHaveAttribute("aria-expanded", "false");
+  // Always-visible sub-tabs.
+  for (const label of ["Appearance", "Networking", "Credentials", "Models"]) {
+    await expect(page.getByRole("tab", { name: label, exact: true })).toBeVisible();
+  }
+  // Full experience mode (seeded in beforeEach) reveals these advanced-only tabs.
+  for (const label of ["Harness", "Logs", "Defaults"]) {
+    await expect(page.getByRole("tab", { name: label, exact: true })).toBeVisible();
+  }
 });
 
 test("Profile preset picker round-trips through the API", async ({ page, request }) => {
@@ -134,9 +123,10 @@ test("Credentials list filter chip reflects the active preset", async ({ page, r
   const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
   expect(put.ok()).toBeTruthy();
 
+  // Credentials now lives as a sub-tab of the Settings surface.
   await openMenu(page);
-  await page.getByRole("button", { name: "Credentials", exact: true }).click();
-  // The unified Credentials list is the default sub-tab — no click needed.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("tab", { name: "Credentials", exact: true }).click();
 
   // Header chip shows the human label and is clickable.
   const chip = page.getByRole("button", { name: /^Home/ });
