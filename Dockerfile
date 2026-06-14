@@ -48,11 +48,15 @@ ENV NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
 # package.json on disk before `npm ci` because the root lockfile resolves the
 # @circuitwall/*-langchain entries via the `workspace:` protocol — npm reads
 # each sub-package's manifest to materialize the symlinks under node_modules.
+#
+# `--ignore-scripts` skips the root `prepare` hook (which would invoke `tsup`
+# inside each workspace before src/ is on disk). The actual workspace build
+# runs in the next `npm run build` step, which calls `packages:build` itself.
 COPY package.json package-lock.json* ./
 COPY packages/atlassian-langchain/package.json   ./packages/atlassian-langchain/
 COPY packages/github-langchain/package.json      ./packages/github-langchain/
 COPY packages/jira-align-langchain/package.json  ./packages/jira-align-langchain/
-RUN npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+RUN npm ci --no-audit --no-fund --ignore-scripts --registry=https://registry.npmjs.org/
 
 # Copy the rest of the sources and build the standalone bundle.
 COPY . .
