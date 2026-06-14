@@ -359,6 +359,11 @@ function RegistryPicker({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Default to the hand-picked allowlist of well-known vendor servers;
+  // toggle off to see the broader Official + Vendor list from the upstream
+  // registry. Hidden behind a small switch so the curated default is the
+  // obvious, recommended path.
+  const [curatedOnly, setCuratedOnly] = useState(true);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query.trim()), 250);
@@ -368,7 +373,7 @@ function RegistryPicker({
   const runSearch = useCallback(async (q: string, fresh = false) => {
     setLoading(true); setError(null);
     try {
-      const res = await api.mcp.registry({ q: q || undefined, fresh });
+      const res = await api.mcp.registry({ q: q || undefined, fresh, curated: curatedOnly });
       setEntries(res.entries);
       setNextCursor(res.nextCursor);
     } catch (e) {
@@ -384,7 +389,7 @@ function RegistryPicker({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [curatedOnly]);
 
   useEffect(() => { void runSearch(debouncedQuery); }, [debouncedQuery, runSearch]);
 
@@ -392,7 +397,7 @@ function RegistryPicker({
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const res = await api.mcp.registry({ q: debouncedQuery || undefined, cursor: nextCursor });
+      const res = await api.mcp.registry({ q: debouncedQuery || undefined, cursor: nextCursor, curated: curatedOnly });
       setEntries((prev) => [...prev, ...res.entries]);
       setNextCursor(res.nextCursor);
     } catch (e) {
@@ -421,7 +426,7 @@ function RegistryPicker({
           </button>
         </div>
 
-        <div className="px-4 py-2 border-b border-border">
+        <div className="px-4 py-2 border-b border-border space-y-2">
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -429,6 +434,20 @@ function RegistryPicker({
             className="w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
             autoFocus
           />
+          <label className="flex items-center gap-2 text-[11px] text-fg-subtle cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={curatedOnly}
+              onChange={(e) => setCuratedOnly(e.target.checked)}
+              className="accent-emerald-600"
+            />
+            <span>
+              Curated only{" "}
+              <span className="text-fg-faint">
+                (vetted vendor servers; uncheck to browse all Official + Vendor entries)
+              </span>
+            </span>
+          </label>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-2">
