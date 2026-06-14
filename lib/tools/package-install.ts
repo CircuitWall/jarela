@@ -26,7 +26,12 @@
  *   - Sandboxing — installed code still runs with full Node trust the
  *     moment it's first imported.
  */
-import { spawn } from "node:child_process";
+// `cross-spawn` shells out portably. Native node:child_process.spawn() on
+// Windows rejects spawning `npm.cmd` directly with EINVAL since the
+// CVE-2024-27980 mitigation landed (Node 18.20.2 / 20.12.2 / 22+), which
+// is what the operator hits in the install UI. cross-spawn handles the
+// `.cmd` shim and arg escaping safely without requiring `shell: true`.
+import spawn from "cross-spawn";
 import {
   existsSync,
   mkdirSync,
@@ -229,8 +234,10 @@ function readInstalledVersion(packagesDir: string, pkg: string): string | null {
 
 function runNpm(args: string[], cwd: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-    const child = spawn(npmCmd, args, {
+    // cross-spawn picks `npm` vs `npm.cmd` per platform internally; it
+    // also handles the EINVAL trap that node:child_process hits on
+    // Windows when spawning .cmd shims without `shell: true`.
+    const child = spawn("npm", args, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
