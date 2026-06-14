@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent, waitForAppReady } from "./helpers";
+import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the Credentials consolidation (Connections folded back in
 // as a sub-tab) + Built-in tool toggles. Tests run serially: they share
@@ -20,9 +20,7 @@ test.beforeEach(async ({ request, page }) => {
       }
     }
   }
-  await page.addInitScript(() => {
-    try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
-  });
+  await dismissOverlayBanners(page);
   await page.goto("/");
   await expect(page.getByPlaceholder("Message…")).toBeVisible({ timeout: 15_000 });
   await waitForAppReady(page);

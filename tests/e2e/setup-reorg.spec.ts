@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { seedMockAgent, waitForAppReady } from "./helpers";
+import { dismissOverlayBanners, seedMockAgent, waitForAppReady } from "./helpers";
 
 // Coverage for the menu reorganization (common vs. advanced tabs +
 // new "Tools" entry), the persona preset on the Profile editor, and
@@ -17,11 +17,12 @@ test.beforeEach(async ({ request, page }) => {
   await request.put("/api/v1/profile", { data: { preset: null } });
   // CI runs without an OS keychain, so the at-rest crypto bootstrap falls
   // back to a keyfile and surfaces a fixed banner that covers the menu
-  // panel and intercepts clicks on tabs underneath. Pre-dismiss it so
-  // tests can interact with the UI without flakiness. Must seed the
-  // localStorage flag on the target origin before navigating.
+  // panel and intercepts clicks on tabs underneath. The OS-notification
+  // banner sits in the same y-band on headless chromium (Notification
+  // permission == "denied"). Dismiss both before navigation so tests can
+  // interact with the UI without flakiness.
+  await dismissOverlayBanners(page);
   await page.addInitScript(() => {
-    try { localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1"); } catch { /* sandbox */ }
     // Seed advanced experience mode so the Settings sub-tabs flagged
     // advancedOnly (Harness / Logs / Defaults) render in tests.
     try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }

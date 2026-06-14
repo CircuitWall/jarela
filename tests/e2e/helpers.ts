@@ -63,3 +63,26 @@ export async function waitForAppReady(page: Page, timeout = 30_000): Promise<voi
   }
   await overlay.waitFor({ state: "detached", timeout });
 }
+
+// Dismiss the floating banners that overlay the top of the chat
+// surface. The crypto-fallback banner (`absolute` left/right, z-30,
+// `top: calc(3rem + safe-top)`) and the OS-notification banner
+// (`absolute top-9 z-30`) both sit right where the Settings/Tools
+// sub-tab strips render, so without dismissing them, clicks on tabs
+// like "Credentials" or "Packages" fail under headless chromium
+// (which reports Notification.permission === "denied"). Mobile-Safari
+// happens to pass because `Notification === undefined` in that
+// engine, which is why the failure is project-specific.
+//
+// Call this in test.beforeEach BEFORE `page.goto("/")` so the keys
+// are seeded on the target origin before React mounts.
+export async function dismissOverlayBanners(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("jarela:crypto-fallback-banner-dismissed", "1");
+      localStorage.setItem("jarela:notif-banner-dismissed", "1");
+    } catch {
+      /* sandboxed origin — banner stays, individual specs deal with it */
+    }
+  });
+}
