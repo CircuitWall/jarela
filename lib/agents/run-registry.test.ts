@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun, broadcast } from "./run-registry";
+import { startRun, finishRun, getRun, broadcast, waitForRun } from "./run-registry";
 import { resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
@@ -299,5 +299,48 @@ describe("run-registry watchdog", () => {
       if (prev === undefined) delete process.env.JARELA_RUN_IDLE_MS;
       else process.env.JARELA_RUN_IDLE_MS = prev;
     }
+  });
+});
+
+// Regression for the user-reported "fired a scheduled task, came back to
+// the agent, looked idle even though it was running" symptom. Triggers /
+// scheduler / watcher submit work through Next's `after()` + the per-
+// thread queue, so there's a real delay between the user clicking "Run
+// now" and `startRun` registering the entry. A GET subscriber that arrives
+// in that window used to immediately get a synthetic `done`; `waitForRun`
+// holds it open until the registry catches up.
+describe("waitForRun", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("resolves immediately when a run is already active", async () => {
+    const tid = `t-wait-existing-${Date.now()}`;
+    const run = startRun(tid, null);
+    await expect(waitForRun(tid, 5_000)).resolves.toBe(run);
+    finishRun(run, "done");
+  });
+
+  it("resolves with the new run when startRun fires inside the window", async () => {
+    const tid = `t-wait-resolve-${Date.now()}`;
+    const pending = waitForRun(tid, 5_000);
+    // Simulate the queue-then-startRun delay.
+    vi.advanceTimersByTime(100);
+    const run = startRun(tid, null);
+    await expect(pending).resolves.toBe(run);
+    finishRun(run, "done");
+  });
+
+  it("resolves to null after timeout and cleans up so a late startRun is a no-op", async () => {
+    const tid = `t-wait-timeout-${Date.now()}`;
+    const pending = waitForRun(tid, 1_000);
+    await vi.advanceTimersByTimeAsync(1_000 + 10);
+    await expect(pending).resolves.toBeNull();
+    // Late startRun must not flip the already-resolved promise; the
+    // cleanest signal is that a fresh waitForRun after startRun returns
+    // the new run synchronously (i.e. there was no stale waiter to
+    // resolve against).
+    const run = startRun(tid, null);
+    await expect(waitForRun(tid, 0)).resolves.toBe(run);
+    finishRun(run, "done");
   });
 });

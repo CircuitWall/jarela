@@ -63,6 +63,38 @@ export interface ActiveRun {
 
 const runs = new Map<string, ActiveRun>();
 
+// Cold-attach waiters: subscribers that opened a GET /run before the
+// server-side run actually called startRun (typical for triggers /
+// scheduler / watcher, which submit through `after()` + the per-thread
+// queue, so there's a real delay between the user clicking "Run now"
+// and the registry entry appearing). Resolved by `startRun` below.
+const waiters = new Map<string, Set<(run: ActiveRun) => void>>();
+
+/** Wait up to `timeoutMs` for a run to be registered on `thread_id`.
+ *  Resolves immediately with the current run if one is already active,
+ *  with the new run when `startRun` fires inside the window, or with
+ *  `null` on timeout. `timeoutMs <= 0` short-circuits to the current
+ *  state without waiting. Caller is responsible for closing the SSE
+ *  stream when this resolves null. */
+export function waitForRun(thread_id: string, timeoutMs: number): Promise<ActiveRun | null> {
+  const existing = runs.get(thread_id);
+  if (existing) return Promise.resolve(existing);
+  if (timeoutMs <= 0) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let set = waiters.get(thread_id);
+    if (!set) { set = new Set(); waiters.set(thread_id, set); }
+    const fn = (run: ActiveRun) => { clearTimeout(timer); resolve(run); };
+    set.add(fn);
+    const timer = setTimeout(() => {
+      const cur = waiters.get(thread_id);
+      cur?.delete(fn);
+      if (cur && cur.size === 0) waiters.delete(thread_id);
+      resolve(null);
+    }, timeoutMs);
+    timer.unref?.();
+  });
+}
+
 export function startRun(thread_id: string, agent_id: string | null): ActiveRun {
   // If a stale completed run exists, drop it before starting a new one.
   const existing = runs.get(thread_id);
@@ -86,6 +118,14 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     tool_time_ms_done: 0,
   };
   runs.set(thread_id, run);
+  // Wake any GET subscribers that attached before the run was registered.
+  const pending = waiters.get(thread_id);
+  if (pending) {
+    waiters.delete(thread_id);
+    for (const fn of pending) {
+      try { fn(run); } catch { /* waiter errored, ignore */ }
+    }
+  }
   scheduleIdleWatchdog(run);
   scheduleMaxWatchdog(run);
   return run;
