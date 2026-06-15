@@ -413,7 +413,6 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         return nodes;
       })()}
       {thinkingContent && filters.thinking && <ThinkingLine text={thinkingContent} />}
-      {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}
       {streamingContent && (
         <StreamingBubble
           content={streamingContent}
@@ -423,6 +422,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           inflightToolCount={inflightToolCount}
         />
       )}
+      {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}
       {queuedMessages && queuedMessages.length > 0 && (
         <div className="flex flex-col gap-1 mt-2 mb-1">
           {queuedMessages.map((q) => (
