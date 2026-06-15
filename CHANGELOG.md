@@ -7,7 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.10.5] - 2026-06-14
+## [1.10.6] - 2026-06-15
+
+### Fixed
+
+- **SSE stream closed before queued runs started.** Reattaching
+  to a thread whose run had been queued (but not yet dispatched)
+  used to synthesize an immediate `done` event and close the
+  stream before the agent produced any output. The run registry
+  now exposes `waitForRun(thread_id, timeoutMs)`, and the
+  `GET /api/v1/threads/[thread_id]/run` SSE handler awaits the
+  queued run for up to 5 s before falling back to `done`. Drains
+  waiters synchronously when `startRun` registers the run.
+- **Chat tool list rendered raw LangChain serialized payloads.**
+  Tool messages arrived wrapped in `{lc:1, type:"constructor",
+  id:[...], kwargs:{content|args|tool_input}}` envelopes and
+  showed up as unreadable JSON. `ToolList` now unwraps the
+  envelope (depth-6 cap), maps `status:"error"` to a structured
+  `{ok:false, error}` result, renders args value-first with
+  primary unkeyed and secondary fields as faint mono chips, and
+  pretty-prints URLs, search-result lists, primitive arrays, and
+  nested objects.
+
+### Security
+
+- **form-data 4.0.0-4.0.5** (GHSA-hmw2-7cc7-3qxx) patched
+  via transitive bump under `cohere-ai` / `@langchain/cohere`.
+- **protobufjs <= 7.6.2** (GHSA-f38q-mgvj-vph7) patched via
+  transitive bump.
+- **@anthropic-ai/sdk** bumped `^0.96.0` -> `^0.104.2`.
+
 
 ### Fixed
 
