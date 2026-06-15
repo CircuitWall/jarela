@@ -19,8 +19,8 @@ import {
   snapshotThreadModelConfigName,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, startRun, subscribe, abortRun, getRun } from "@/lib/agents/run-registry";
-import { enqueueThreadRun, QueueFullError } from "@/lib/agents/run-queue";
+import { broadcast, finishRun, startRun, subscribe, abortRun, getRun, waitForRun } from "@/lib/agents/run-registry";
+import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
@@ -215,13 +215,23 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const run = getRun(thread_id);
   if (!run) {
-    const stream = new ReadableStream({
-      start(controller) {
-        try { controller.enqueue(sse({ type: "done" })); } catch { /* */ }
-        try { controller.close(); } catch { /* */ }
-      },
-    });
-    return sseResponse(stream);
+    // Cold attach. If the per-thread queue already has work pending
+    // (typical when the chat is reopened just after firing a scheduled
+    // task / watcher / bridge turn — the request was enqueued via
+    // Next's `after()` and hasn't reached `startRun` yet), hold the SSE
+    // open briefly so we don't return a synthetic `done` for a run
+    // that's about to register. If nothing appears in time, fall
+    // through to the same `done`-and-close path as a truly idle thread.
+    const queued = getQueueDepth(thread_id) > 0 ? await waitForRun(thread_id, 5000) : null;
+    if (!queued) {
+      const stream = new ReadableStream({
+        start(controller) {
+          try { controller.enqueue(sse({ type: "done" })); } catch { /* */ }
+          try { controller.close(); } catch { /* */ }
+        },
+      });
+      return sseResponse(stream);
+    }
   }
 
   return attachStream(thread_id, stream_options);
