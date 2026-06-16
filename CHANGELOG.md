@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-06-16
+
+### Added
+
+- **Microsoft To Do tool category.** New
+  `@circuitwall/ms-todo-langchain` package ships 12 LangChain tools
+  covering task lists, tasks, and checklist items (read + write).
+  Wired into Jarela via the shared Microsoft OAuth client and
+  surfaced under a new `Tasks` category in the built-in tool
+  registry. Reuses the existing Outlook + Calendar connection
+  (now relabelled **Outlook + Calendar + To Do**) after a one-time
+  reconnect to grant `Tasks.ReadWrite`. `dueDateTime` /
+  `reminderDateTime` inputs are normalized to Graph's "naive ISO
+  + `timeZone`" envelope.
+
+### Security
+
+- **hono <=4.12.24** (GHSA-wwfh-h76j-fc44, GHSA-j6c9-x7qj-28xf,
+  GHSA-88fw-hqm2-52qc, GHSA-rv63-4mwf-qqc2, GHSA-wgpf-jwqj-8h8p)
+  patched via root override to `^4.12.25`. Pulled in transitively
+  through `@langchain/mcp-adapters` → `@modelcontextprotocol/sdk`.
+
 ## [1.10.6] - 2026-06-15
 
 ### Fixed
