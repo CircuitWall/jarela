@@ -4,7 +4,12 @@ export type WindowDays = 7 | 14 | 30 | 60;
 export type CurrencyMode = "auto" | "manual";
 
 export const WINDOWS: WindowDays[] = [7, 14, 30, 60];
-export const MANUAL_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CNY", "INR", "BRL", "MXN"] as const;
+export const MANUAL_CURRENCIES = [
+  "USD", "EUR", "GBP", "JPY", "CAD", "AUD", "CHF",
+  "SEK", "NOK", "DKK", "PLN", "CZK", "HUF",
+  "CNY", "INR", "BRL", "MXN", "NZD", "SGD", "HKD", "KRW",
+  "ZAR", "TRY", "AED", "ILS", "THB", "TWD",
+] as const;
 
 export const TOOL_SORT_OPTIONS = [
   { value: "best", label: "Sort: best first" },

@@ -546,11 +546,12 @@ export const api = {
         body: "{}",
       });
     },
-    currency: (opts?: { lat?: number | null; lng?: number | null; currency?: string | null }) => {
+    currency: (opts?: { lat?: number | null; lng?: number | null; currency?: string | null; country?: string | null }) => {
       const qs = new URLSearchParams();
       if (typeof opts?.lat === "number" && Number.isFinite(opts.lat)) qs.set("lat", String(opts.lat));
       if (typeof opts?.lng === "number" && Number.isFinite(opts.lng)) qs.set("lng", String(opts.lng));
       if (opts?.currency) qs.set("currency", opts.currency);
+      if (opts?.country) qs.set("country", opts.country);
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       return request<DashboardCurrencyInfo>(`/dashboard/currency${suffix}`);
     },
