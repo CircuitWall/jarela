@@ -158,7 +158,8 @@
     "p-timeout": "^4.1.0",
     "@serwist/build": {
       "source-map": "^0.7.6"
-    }
+    },
+    "hono": "^4.12.25"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
