@@ -1,0 +1,72 @@
+{
+  "name": "@circuitwall/ms-todo-langchain",
+  "version": "0.1.0",
+  "description": "LangChain tools for Microsoft To Do (Microsoft Graph /me/todo) — direct REST calls, no MCP. Extracted from Jarela.",
+  "license": "Apache-2.0",
+  "author": "Andrew Ge Wu",
+  "homepage": "https://github.com/CircuitWall/jarela/tree/main/packages/ms-todo-langchain#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CircuitWall/jarela.git",
+    "directory": "packages/ms-todo-langchain"
+  },
+  "bugs": {
+    "url": "https://github.com/CircuitWall/jarela/issues"
+  },
+  "keywords": [
+    "microsoft",
+    "ms-todo",
+    "todo",
+    "tasks",
+    "microsoft-graph",
+    "langchain",
+    "langgraph",
+    "tool",
+    "tools",
+    "agent",
+    "outlook"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "clean": "rimraf dist",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@langchain/core": ">=0.3.0",
+    "zod": ">=3.23.0 <5"
+  },
+  "devDependencies": {
+    "@langchain/core": "^1.1.46",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.7",
+    "zod": "^3.25.0"
+  }
+}

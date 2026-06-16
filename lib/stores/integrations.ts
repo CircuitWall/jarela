@@ -158,12 +158,13 @@ export const INTEGRATIONS = {
     ],
   },
   outlook: {
-    label: "Outlook + Calendar",
+    label: "Outlook + Calendar + To Do",
     category: "mail" as IntegrationCategory,
     description:
-      "Used by the outlook_* and outlook_calendar_* tools (search/read/draft/move/trash mail; " +
-      "list/create/update/delete calendar events). Drafts only — this integration intentionally " +
-      "cannot send mail. Requires an Azure app registration. See the Setup guide below.",
+      "Used by the outlook_*, outlook_calendar_*, and ms_todo_* tools (search/read/draft/move/trash mail; " +
+      "list/create/update/delete calendar events; manage Microsoft To Do task lists and tasks). " +
+      "Drafts only — this integration intentionally cannot send mail. Requires an Azure app " +
+      "registration. Existing connections must reconnect to grant the new Tasks scope. See the Setup guide below.",
     fields: [
       { key: "client_id", label: "Application (client) ID", placeholder: "00000000-0000-0000-0000-000000000000", secret: false, required: true },
       { key: "client_secret", label: "Client secret value", placeholder: "abc~…", secret: true, required: true },

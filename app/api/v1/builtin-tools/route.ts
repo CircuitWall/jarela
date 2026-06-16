@@ -13,7 +13,7 @@ import { errorResponse, validateBody } from "@/lib/api/responses";
 
 const ALL_VALID_CATEGORIES = new Set<string>([
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
-  "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar", "Config",
+  "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar", "Tasks", "Config",
 ]);
 
 interface CategoryRow {
