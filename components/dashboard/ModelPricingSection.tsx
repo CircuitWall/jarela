@@ -1,7 +1,7 @@
 "use client";
-import type { DashboardMetrics } from "@/api/types";
+import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { detectModelFunctionality } from "@/lib/dashboard/classify";
-import { safeHttpUrl } from "@/lib/dashboard/format";
+import { formatMoney, safeHttpUrl } from "@/lib/dashboard/format";
 import {
   filterModelRates,
   groupModelRatesByVendor,
@@ -20,6 +20,7 @@ interface ModelPricingSectionProps {
   onSearchChange: (v: string) => void;
   modelSort: ModelSort;
   onSortChange: (s: ModelSort) => void;
+  currencyInfo: DashboardCurrencyInfo;
 }
 
 export function ModelPricingSection({
@@ -32,6 +33,7 @@ export function ModelPricingSection({
   onSearchChange,
   modelSort,
   onSortChange,
+  currencyInfo,
 }: ModelPricingSectionProps) {
   const filtered = sortModelRates(
     filterModelRates(data.pricing.model_rates, {
@@ -112,7 +114,7 @@ export function ModelPricingSection({
             <p className="p-3 text-xs text-[var(--text-secondary)]">No model rates match the selected filters.</p>
           ) : (
             grouped.map(([provider, rows]) => (
-              <ModelPricingGroup key={provider} provider={provider} rows={rows} />
+              <ModelPricingGroup key={provider} provider={provider} rows={rows} currencyInfo={currencyInfo} />
             ))
           )}
         </div>
@@ -122,7 +124,7 @@ export function ModelPricingSection({
   );
 }
 
-function ModelPricingGroup({ provider, rows }: { provider: string; rows: DashboardMetrics["pricing"]["model_rates"] }) {
+function ModelPricingGroup({ provider, rows, currencyInfo }: { provider: string; rows: DashboardMetrics["pricing"]["model_rates"]; currencyInfo: DashboardCurrencyInfo }) {
   return (
     <div className="border-b border-[var(--border)]/60 last:border-b-0">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-l-2 border-l-[var(--accent)] bg-[var(--bg-secondary)]/95 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] backdrop-blur">
@@ -132,20 +134,27 @@ function ModelPricingGroup({ provider, rows }: { provider: string; rows: Dashboa
         </span>
       </div>
       {rows.map((row) => (
-        <ModelPricingRow key={`${row.provider}:${row.model_id}`} row={row} />
+        <ModelPricingRow key={`${row.provider}:${row.model_id}`} row={row} currencyInfo={currencyInfo} />
       ))}
     </div>
   );
 }
 
-function ModelPricingRow({ row }: { row: DashboardMetrics["pricing"]["model_rates"][number] }) {
+function ModelPricingRow({ row, currencyInfo }: { row: DashboardMetrics["pricing"]["model_rates"][number]; currencyInfo: DashboardCurrencyInfo }) {
+  const inputLabel = typeof row.input_per_1m_usd === "number" && Number.isFinite(row.input_per_1m_usd)
+    ? formatMoney(row.input_per_1m_usd, currencyInfo)
+    : "n/a";
+  const outputLabel = typeof row.output_per_1m_usd === "number" && Number.isFinite(row.output_per_1m_usd)
+    ? formatMoney(row.output_per_1m_usd, currencyInfo)
+    : "n/a";
   return (
     <div className="px-3 py-2 border-t border-[var(--border)]/40 hover:bg-[var(--bg-primary)]/35 transition-colors">
       <div className="flex items-center justify-between gap-2">
         <span className="text-sm text-[var(--text-primary)] truncate">{row.model_id}</span>
-        <span className="text-[11px] tabular-nums text-[var(--text-secondary)]">
-          in <span className="text-[var(--text-primary)]">${row.input_per_1m_usd?.toFixed(2) ?? "n/a"}</span>
-          {" · "}out <span className="text-[var(--text-primary)]">${row.output_per_1m_usd?.toFixed(2) ?? "n/a"}</span>
+        <span className="text-[11px] tabular-nums text-[var(--text-secondary)]" title="Per 1M tokens">
+          in <span className="text-[var(--text-primary)]">{inputLabel}</span>
+          {" · "}out <span className="text-[var(--text-primary)]">{outputLabel}</span>
+          <span className="ml-1 text-[var(--text-secondary)]">/ 1M</span>
         </span>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px]">

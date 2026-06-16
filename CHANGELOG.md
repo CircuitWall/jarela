@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `reminderDateTime` inputs are normalized to Graph's "naive ISO
   + `timeZone`" envelope.
 
+### Fixed
+
+- **Cost dashboard currency auto-detect ignored browser locale**
+  and **manual currency change did not update the model pricing
+  table.** When no profile location was saved, the dashboard hard-
+  defaulted to USD even on `sv-SE` / `de-DE` / etc. browsers; the
+  manual dropdown also lacked SEK, NOK, DKK, CHF, NZD, SGD, HKD,
+  KRW, ZAR, PLN, TRY and others. The auto path now derives an
+  ISO-3166 country from `navigator.language` as a fallback (the
+  `/api/v1/dashboard/currency` route grew a `country` query param
+  alongside the existing `lat`/`lng` path), and the manual list
+  was expanded to 27 common currencies. Separately,
+  `ModelPricingSection` was not receiving `currencyInfo` and rendered
+  `$X.XX` hardcoded — it now formats per-1M rates through
+  `formatMoney` so picker changes propagate everywhere.
+
 ### Security
 
 - **hono <=4.12.24** (GHSA-wwfh-h76j-fc44, GHSA-j6c9-x7qj-28xf,

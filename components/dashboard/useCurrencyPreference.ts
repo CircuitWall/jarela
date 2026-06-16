@@ -56,15 +56,35 @@ export function useCurrencyPreference(): UseCurrencyPreferenceResult {
         .catch(() => { if (!cancelled) setCurrencyInfo(USD_CURRENCY); });
       return () => { cancelled = true; };
     }
-    if (!Number.isFinite(profileLocation.lat) || !Number.isFinite(profileLocation.lng)) {
-      setCurrencyInfo(USD_CURRENCY);
-      return () => { cancelled = true; };
-    }
-    api.dashboard.currency({ lat: profileLocation.lat, lng: profileLocation.lng })
+    const hasLocation = Number.isFinite(profileLocation.lat) && Number.isFinite(profileLocation.lng);
+    const country = hasLocation ? null : detectBrowserCountry();
+    api.dashboard.currency(
+      hasLocation
+        ? { lat: profileLocation.lat, lng: profileLocation.lng }
+        : { country },
+    )
       .then((resolved) => { if (!cancelled) setCurrencyInfo(resolved); })
       .catch(() => { if (!cancelled) setCurrencyInfo(USD_CURRENCY); });
     return () => { cancelled = true; };
   }, [currencyMode, manualCurrency, profileLocation.lat, profileLocation.lng]);
 
   return { currencyInfo, currencyMode, setCurrencyMode, manualCurrency, setManualCurrency };
+}
+
+function detectBrowserCountry(): string | null {
+  if (typeof navigator === "undefined") return null;
+  const candidates = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+  ].filter((value): value is string => typeof value === "string" && value.length > 0);
+  for (const tag of candidates) {
+    try {
+      const region = new Intl.Locale(tag).maximize().region;
+      if (region && /^[A-Z]{2}$/.test(region)) return region;
+    } catch {
+      const match = /[-_]([A-Za-z]{2})\b/.exec(tag);
+      if (match) return match[1].toUpperCase();
+    }
+  }
+  return null;
 }
