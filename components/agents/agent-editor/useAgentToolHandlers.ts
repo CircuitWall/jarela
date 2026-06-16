@@ -63,7 +63,7 @@ function applyBulkSelection(
 
 const CATEGORY_ORDER = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
-  "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Config", "Other", "MCP",
+  "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Tasks", "Config", "Other", "MCP",
 ];
 
 function buildGroupedTools(tools: ToolInfo[]) {

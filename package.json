@@ -115,6 +115,7 @@
     "@circuitwall/atlassian-langchain": "workspace:^",
     "@circuitwall/github-langchain": "workspace:^",
     "@circuitwall/jira-align-langchain": "workspace:^",
+    "@circuitwall/ms-todo-langchain": "workspace:^",
     "@langchain/cohere": "^1.0.5",
     "@langchain/core": "^1.1.46",
     "@langchain/deepseek": "^1.0.25",
