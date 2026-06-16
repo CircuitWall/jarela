@@ -150,6 +150,8 @@ async function doLoad(): Promise<LangChainPackageLoadResult> {
   ).getBuiltinModule("node:module");
   const req = createRequire(join(packagesDir, "_anchor"));
 
+  dedupeSharedDeps(req);
+
   for (const entry of entries) {
     if (!entry.toLowerCase().endsWith(".json")) continue;
     const manifestPath = join(manifestsDir, entry);
@@ -406,4 +408,71 @@ export function _resetLangChainPackages(): void {
   for (const handle of handles.splice(0)) handle.unregister();
   cached = null;
   inflight = null;
+}
+
+/**
+ * Packages that BOTH Jarela and operator-loaded LangChain packages
+ * depend on. If Node's resolver lands on a different physical copy for
+ * the operator package than for Jarela itself, `instanceof` checks
+ * break across the boundary — e.g. a `ToolMessage` returned by an
+ * operator tool fails `chunk instanceof ToolMessage` in `lib/agents/
+ * llm.ts` because the two `ToolMessage` classes were evaluated from
+ * different files. The tool_result chunk is then silently dropped and
+ * the UI stalls on a "running" pill.
+ *
+ * Add packages here when they expose constructors that Jarela checks
+ * with `instanceof` across the operator/host boundary.
+ */
+const SHARED_DEPS_TO_DEDUPE = ["@langchain/core"] as const;
+
+/**
+ * For every subpath export of each shared dependency, force operator
+ * packages to use Jarela's physical copy instead of any stray copy
+ * Node's parent-directory walk happened to land on. We do this by
+ * pre-populating `require.cache` so the next `require("@langchain/
+ * core/tools")` from operator code returns Jarela's already-evaluated
+ * module object (same constructor identities).
+ *
+ * Idempotent: rerunning is a no-op once the aliases are in place.
+ */
+function dedupeSharedDeps(operatorReq: NodeJS.Require): void {
+  const cache = (operatorReq as unknown as { cache: NodeJS.Dict<NodeJS.Module> }).cache;
+  for (const pkg of SHARED_DEPS_TO_DEDUPE) {
+    let pkgJson: { exports?: Record<string, unknown> };
+    try {
+      // Jarela's own resolution — this is the copy we want to win.
+      pkgJson = require(`${pkg}/package.json`) as { exports?: Record<string, unknown> };
+    } catch {
+      continue;
+    }
+    const exportsField = pkgJson.exports;
+    if (!exportsField || typeof exportsField !== "object") continue;
+
+    for (const subpath of Object.keys(exportsField)) {
+      if (subpath === "./package.json") continue;
+      const modId = subpath === "." ? pkg : `${pkg}/${subpath.slice(2)}`;
+      let operatorPath: string;
+      let jarelaPath: string;
+      try {
+        operatorPath = operatorReq.resolve(modId);
+      } catch {
+        continue;
+      }
+      try {
+        jarelaPath = require.resolve(modId);
+      } catch {
+        continue;
+      }
+      if (operatorPath === jarelaPath) continue;
+      // Eagerly evaluate Jarela's copy so its module record sits in
+      // require.cache, then alias the operator-resolved path to it.
+      try {
+        require(modId);
+      } catch {
+        continue;
+      }
+      const jarelaModule = require.cache[jarelaPath];
+      if (jarelaModule) cache[operatorPath] = jarelaModule;
+    }
+  }
 }
