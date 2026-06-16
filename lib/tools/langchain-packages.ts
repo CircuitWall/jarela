@@ -46,6 +46,7 @@ import {
 import { categorizeByVerb } from "./categorize-by-verb";
 import { errorMessage } from "@/lib/utils/error";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
+import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
@@ -216,6 +217,23 @@ async function loadOneManifest(
   const manifest = validated.data;
 
   if (manifest.requiredEnv && manifest.requiredEnv.length > 0) {
+    // Treat values held in the encrypted integration store (via the
+    // env-sync allowlist) as satisfying the check, and surface them on
+    // process.env so the LangChain constructor — which reads env vars
+    // directly — picks them up. Mirrors how MCP children + local_exec
+    // already inherit `getInjectedSubprocessEnv()`. Swallow store
+    // errors (e.g. master key locked) so the loader still falls back
+    // to the plain process.env check.
+    let injected: Record<string, string> = {};
+    try {
+      injected = getInjectedSubprocessEnv();
+    } catch { /* keep injected empty */ }
+    for (const k of manifest.requiredEnv) {
+      const current = process.env[k];
+      if ((!current || current.trim() === "") && injected[k]) {
+        process.env[k] = injected[k];
+      }
+    }
     const missing = manifest.requiredEnv.filter((k) => !process.env[k] || process.env[k]!.trim() === "");
     if (missing.length > 0) {
       return { skip: `required env not set: ${missing.join(", ")}` };
