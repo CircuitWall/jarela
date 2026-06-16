@@ -147,6 +147,7 @@ export function DashboardPanel() {
               onSearchChange={setModelSearch}
               modelSort={modelSort}
               onSortChange={setModelSort}
+              currencyInfo={currencyInfo}
             />
           </>
         )}

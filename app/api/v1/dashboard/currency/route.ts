@@ -23,6 +23,11 @@ export async function GET(req: NextRequest) {
       : null;
   const lat = Number(req.nextUrl.searchParams.get("lat"));
   const lng = Number(req.nextUrl.searchParams.get("lng"));
+  const countryRaw = req.nextUrl.searchParams.get("country");
+  const country =
+    countryRaw && /^[A-Za-z]{2}$/.test(countryRaw)
+      ? countryRaw.toUpperCase()
+      : null;
 
   if (manualCurrency) {
     try {
@@ -66,6 +71,40 @@ export async function GET(req: NextRequest) {
   }
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (country) {
+      try {
+        const currency = await resolveCurrencyForCountry(country);
+        if (!currency || currency === "USD") {
+          return cachedJson<CurrencyResponse>({
+            currency: "USD",
+            rate_from_usd: 1,
+            country_code: country,
+            source: currency ? "location" : "default",
+            updated_at: new Date().toISOString(),
+          }, 3600);
+        }
+        const rates = await fetchFxRates();
+        const rate = rates[currency];
+        if (!rate || !Number.isFinite(rate) || rate <= 0) {
+          return cachedJson<CurrencyResponse>({
+            currency: "USD",
+            rate_from_usd: 1,
+            country_code: country,
+            source: "default",
+            updated_at: new Date().toISOString(),
+          }, 3600);
+        }
+        return cachedJson<CurrencyResponse>({
+          currency,
+          rate_from_usd: rate,
+          country_code: country,
+          source: "location",
+          updated_at: new Date().toISOString(),
+        }, 3600);
+      } catch (err) {
+        console.warn("[currency] country lookup failed, falling back to USD:", err);
+      }
+    }
     return cachedJson<CurrencyResponse>({
       currency: "USD",
       rate_from_usd: 1,
