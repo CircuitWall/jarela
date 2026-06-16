@@ -43,11 +43,14 @@ const TENANT = process.env.OUTLOOK_TENANT?.trim() || "common";
 //                       stance via gmail.compose.
 //   - Calendars.ReadWrite → list/get/create/update/delete events on the
 //                           user's existing calendars.
+//   - Tasks.ReadWrite → list/get/create/update/complete/delete Microsoft
+//                       To Do tasks and lists (ms_todo_* tools).
 export const MICROSOFT_SCOPES = [
   "offline_access",
   "User.Read",
   "Mail.ReadWrite",
   "Calendars.ReadWrite",
+  "Tasks.ReadWrite",
 ];
 
 export function buildAuthorizeUrl(opts: {

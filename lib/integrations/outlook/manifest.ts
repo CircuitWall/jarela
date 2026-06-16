@@ -2,19 +2,20 @@ import type { IntegrationManifest } from "@/lib/integrations/manifest";
 
 export const outlookManifest: IntegrationManifest = {
   id: "outlook",
-  name: "Outlook + Microsoft Calendar",
+  name: "Outlook + Microsoft Calendar + To Do",
   summary:
     "Lets the agent search/read mail, create drafts (never send), move messages between " +
-    "folders, and read or modify Microsoft 365 calendar events. Drafts-only by design — " +
-    "the integration intentionally cannot send mail on the user's behalf.",
+    "folders, read or modify Microsoft 365 calendar events, and manage Microsoft To Do " +
+    "task lists and tasks. Drafts-only by design — the integration intentionally cannot " +
+    "send mail on the user's behalf.",
   category: "mail",
   prerequisites: [
     {
       check: "oauth_app",
       detail:
         "An Azure app registration with delegated Mail.ReadWrite, Calendars.ReadWrite, " +
-        "User.Read, and offline_access permissions. Both personal Microsoft accounts and " +
-        "M365 work/school accounts are supported via the 'common' tenant.",
+        "Tasks.ReadWrite, User.Read, and offline_access permissions. Both personal Microsoft " +
+        "accounts and M365 work/school accounts are supported via the 'common' tenant.",
       docs_url: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
     },
     {
@@ -46,7 +47,7 @@ export const outlookManifest: IntegrationManifest = {
       title: "Grant the required Graph permissions",
       description:
         "API permissions → Add a permission → Microsoft Graph → Delegated permissions. " +
-        "Add Mail.ReadWrite, Calendars.ReadWrite, User.Read, offline_access. " +
+        "Add Mail.ReadWrite, Calendars.ReadWrite, Tasks.ReadWrite, User.Read, offline_access. " +
         "No admin consent required for personal accounts; M365 tenants may need an admin to consent.",
     },
     {

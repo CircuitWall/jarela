@@ -50,7 +50,7 @@ import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
   "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-  "Config", "Agent",
+  "Tasks", "Config", "Agent",
 ] as const;
 
 export const MANIFEST_SCHEMA = z.object({

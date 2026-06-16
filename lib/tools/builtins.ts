@@ -34,6 +34,7 @@ import "./gmail";
 import "./calendar";
 import "./outlook";
 import "./outlook-calendar";
+import "./ms-todo";
 import "./delegate";
 import "./system_config";
 import "./list-tools";
