@@ -18,6 +18,7 @@ import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { pathResolverFor, assertSafePath, withFsDeadline } from "./files";
+import { buildOutline, shouldOutline } from "./file-outline";
 import { getConfig } from "@/lib/env/config";
 
 // ---------------------------------------------------------------------------
@@ -236,6 +237,10 @@ interface GrepMatch {
   text: string;
   before?: string[];
   after?: string[];
+  // The enclosing function / class / heading / section the match
+  // falls inside, computed from file-outline. Lets the agent skip a
+  // follow-up file_read when the match's surrounding name is enough.
+  enclosing?: { kind: string; name: string; line: number };
 }
 
 // Reads one candidate file and pushes any line matches into `matches`.
@@ -263,6 +268,11 @@ async function scanFileForGrepMatches(
   }
 
   const lines = raw.split(/\r?\n/);
+  // Compute outline once per file we'll actually report matches in,
+  // not per match. The outline lets each match carry its enclosing
+  // function/heading so the agent often doesn't need a follow-up read.
+  let outline: ReturnType<typeof buildOutline> | null = null;
+  let outlineComputed = false;
   let fileHadMatch = false;
   for (let i = 0; i < lines.length; i++) {
     // Use test, then reset lastIndex defensively in case the user passed /g.
@@ -274,6 +284,20 @@ async function scanFileForGrepMatches(
       if (ctx > 0) {
         m.before = lines.slice(Math.max(0, i - ctx), i).map(clipLine);
         m.after = lines.slice(i + 1, Math.min(lines.length, i + 1 + ctx)).map(clipLine);
+      }
+      if (!outlineComputed) {
+        outlineComputed = true;
+        outline = shouldOutline(abs, raw) ? buildOutline(abs, raw) : null;
+      }
+      if (outline && outline.length > 0) {
+        // Find the outline entry with the largest line number that is
+        // still <= the match line. Linear scan is fine: outlines cap
+        // at 200 entries and match counts are bounded by `cap`.
+        let best: ReturnType<typeof buildOutline>[number] | null = null;
+        for (const e of outline) {
+          if (e.line <= m.line && (!best || e.line > best.line)) best = e;
+        }
+        if (best) m.enclosing = { kind: best.kind, name: best.name, line: best.line };
       }
       matches.push(m);
       if (matches.length >= cap) {
@@ -352,7 +376,7 @@ export const fileGrepTool = tool(
   {
     name: "file_grep",
     description:
-      "Search file contents under a directory by regex (or literal substring with literal=true). Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths and 1-based line numbers, with optional N-line context. Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
+      "Search file contents under a directory by regex (or literal substring with literal=true). Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
     schema: grepSchema,
   },
 );

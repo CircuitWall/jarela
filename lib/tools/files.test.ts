@@ -468,6 +468,45 @@ describe("file_list", () => {
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/ENOENT/);
   });
+
+  it("depth=2 walks one level of subdirectories in one call", async () => {
+    const d = join(scratch, "treedir");
+    mkdirSync(d);
+    mkdirSync(join(d, "src"));
+    writeFileSync(join(d, "src", "a.ts"), "x");
+    writeFileSync(join(d, "src", "b.ts"), "y");
+    mkdirSync(join(d, "tests"));
+    writeFileSync(join(d, "tests", "a.test.ts"), "z");
+    writeFileSync(join(d, "README.md"), "");
+    const out = parse(await fileListTool.invoke({ path: d, depth: 2 }));
+    const paths = (out.entries as Array<{ path: string; depth?: number }>).map((e) =>
+      e.path.replace(d + "\\", "").replace(d + "/", "").replace(/\\/g, "/")
+    );
+    expect(paths).toEqual(expect.arrayContaining([
+      "README.md", "src", "src/a.ts", "src/b.ts", "tests", "tests/a.test.ts",
+    ]));
+    // Each entry carries its depth (1 for the root level, 2 for children).
+    const entries = out.entries as Array<{ path: string; depth: number }>;
+    const readme = entries.find((e) => e.path.endsWith("README.md"));
+    const aTs = entries.find((e) => e.path.endsWith("a.ts"));
+    expect(readme?.depth).toBe(1);
+    expect(aTs?.depth).toBe(2);
+  });
+
+  it("depth>1 still skips node_modules / .git / dist / build", async () => {
+    const d = join(scratch, "noisy");
+    mkdirSync(d);
+    writeFileSync(join(d, "keep.txt"), "");
+    mkdirSync(join(d, "node_modules"));
+    writeFileSync(join(d, "node_modules", "pkg.json"), "{}");
+    mkdirSync(join(d, "dist"));
+    writeFileSync(join(d, "dist", "bundle.js"), "");
+    const out = parse(await fileListTool.invoke({ path: d, depth: 3 }));
+    const paths = (out.entries as Array<{ path: string }>).map((e) => e.path);
+    expect(paths.some((p) => p.includes("pkg.json"))).toBe(false);
+    expect(paths.some((p) => p.includes("bundle.js"))).toBe(false);
+    expect(paths.some((p) => p.endsWith("keep.txt"))).toBe(true);
+  });
 });
 
 // ── file_mkdir ──────────────────────────────────────────────────────────────
