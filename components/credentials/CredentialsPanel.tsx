@@ -108,7 +108,7 @@ export function CredentialsPanel() {
           );
         })}
       </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="panel-scrollbar flex-1 min-h-0 overflow-auto">
         {active === "list" ? <CredentialsListPanel /> : <NetworkPanel />}
       </div>
     </div>
@@ -249,7 +249,7 @@ export function CredentialsListPanel() {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="panel-scrollbar flex-1 overflow-y-auto">
         <div className="px-4 py-2 space-y-4">
           {loading && credentials.length === 0 && defs.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>

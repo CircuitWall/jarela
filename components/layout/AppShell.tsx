@@ -39,6 +39,17 @@ import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
 const ADVANCED_TABS = new Set(["memory", "bridges", "harness", "logs", "env"]);
 
+// Wraps every Activity-hosted panel so it fades + slides in whenever it
+// becomes the active tab. The CSS keyframe re-triggers because
+// `data-active` toggling from "false" to "true" reassigns the animation.
+function PanelHost({ active, children }: { active: boolean; children: React.ReactNode }) {
+  return (
+    <div className="jarela-panel-enter h-full" data-active={active ? "true" : "false"}>
+      {children}
+    </div>
+  );
+}
+
 export function AppShell() {
   const { state, dispatch } = useAppContext();
   const isFullMode = state.experienceMode === "full";
@@ -463,95 +474,97 @@ export function AppShell() {
         */}
         {mountedTabs.has("chat") && (
           <Activity mode={state.activeTab === "chat" ? "visible" : "hidden"}>
-            <ChatView
-              key={state.activeAgentId ?? "no-agent"}
-              threadId={threadId}
-              agentId={state.activeAgentId}
-              sessionLoading={sessionLoading}
-              sessionError={sessionError}
-              onMessageSent={onMessageSent}
-            />
+            <PanelHost active={state.activeTab === "chat"}>
+              <ChatView
+                key={state.activeAgentId ?? "no-agent"}
+                threadId={threadId}
+                agentId={state.activeAgentId}
+                sessionLoading={sessionLoading}
+                sessionError={sessionError}
+                onMessageSent={onMessageSent}
+              />
+            </PanelHost>
           </Activity>
         )}
         {mountedTabs.has("dashboard") && (
           <Activity mode={state.activeTab === "dashboard" ? "visible" : "hidden"}>
-            <DashboardPanel />
+            <PanelHost active={state.activeTab === "dashboard"}><DashboardPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("agents") && (
           <Activity mode={state.activeTab === "agents" ? "visible" : "hidden"}>
-            <AgentsPanel />
+            <PanelHost active={state.activeTab === "agents"}><AgentsPanel /></PanelHost>
           </Activity>
         )}
         {isFullMode && mountedTabs.has("memory") && (
           <Activity mode={state.activeTab === "memory" ? "visible" : "hidden"}>
-            <MemoryPanel />
+            <PanelHost active={state.activeTab === "memory"}><MemoryPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("documents") && (
           <Activity mode={state.activeTab === "documents" ? "visible" : "hidden"}>
-            <DocumentsPanel />
+            <PanelHost active={state.activeTab === "documents"}><DocumentsPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("models") && (
           <Activity mode={state.activeTab === "models" ? "visible" : "hidden"}>
-            <ModelsPanel />
+            <PanelHost active={state.activeTab === "models"}><ModelsPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("credentials") && (
           <Activity mode={state.activeTab === "credentials" ? "visible" : "hidden"}>
-            <CredentialsPanel />
+            <PanelHost active={state.activeTab === "credentials"}><CredentialsPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("mcp") && (
           <Activity mode={state.activeTab === "mcp" ? "visible" : "hidden"}>
-            <MCPPanel />
+            <PanelHost active={state.activeTab === "mcp"}><MCPPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("tools") && (
           <Activity mode={state.activeTab === "tools" ? "visible" : "hidden"}>
-            <ToolsPanel />
+            <PanelHost active={state.activeTab === "tools"}><ToolsPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("tasks") && (
           <Activity mode={state.activeTab === "tasks" ? "visible" : "hidden"}>
-            <ScheduledTasksPanel />
+            <PanelHost active={state.activeTab === "tasks"}><ScheduledTasksPanel /></PanelHost>
           </Activity>
         )}
         {isFullMode && mountedTabs.has("bridges") && (
           <Activity mode={state.activeTab === "bridges" ? "visible" : "hidden"}>
-            <BridgesPanel />
+            <PanelHost active={state.activeTab === "bridges"}><BridgesPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("profile") && (
           <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
-            <ProfilePanel />
+            <PanelHost active={state.activeTab === "profile"}><ProfilePanel /></PanelHost>
           </Activity>
         )}
         {isFullMode && mountedTabs.has("harness") && (
           <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
-            <HarnessPanel />
+            <PanelHost active={state.activeTab === "harness"}><HarnessPanel /></PanelHost>
           </Activity>
         )}
         {isFullMode && mountedTabs.has("logs") && (
           <Activity mode={state.activeTab === "logs" ? "visible" : "hidden"}>
-            <LogsPanel />
+            <PanelHost active={state.activeTab === "logs"}><LogsPanel /></PanelHost>
           </Activity>
         )}
         {isFullMode && mountedTabs.has("env") && (
           <Activity mode={state.activeTab === "env" ? "visible" : "hidden"}>
-            <EnvVarsPanel />
+            <PanelHost active={state.activeTab === "env"}><EnvVarsPanel /></PanelHost>
           </Activity>
         )}
         {mountedTabs.has("settings") && (
           <Activity mode={state.activeTab === "settings" ? "visible" : "hidden"}>
-            <SettingsPanel />
+            <PanelHost active={state.activeTab === "settings"}><SettingsPanel /></PanelHost>
           </Activity>
         )}
 
         {showMenu && (
           <div
-            className="fixed left-0 right-0 bottom-0 bg-black/30 backdrop-blur-sm z-30"
+            className="jarela-backdrop-enter fixed left-0 right-0 bottom-0 bg-black/30 backdrop-blur-sm z-30"
             style={{ top: "calc(3rem + var(--app-safe-top))" }}
             onClick={() => setShowMenu(false)}
           />

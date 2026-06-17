@@ -285,7 +285,7 @@ export function MenuPanel({
 
   return (
     <div
-      className="glass-elevated fixed right-0 bottom-0 w-full sm:w-[26rem] max-w-full border-l border-border/60 z-40 flex flex-col pb-safe"
+      className="jarela-drawer-enter glass-elevated fixed right-0 bottom-0 w-full sm:w-[26rem] max-w-full border-l border-border/60 z-40 flex flex-col pb-safe"
       style={{ top: "calc(3rem + var(--app-safe-top))" }}
     >
       {/* Common navigation — the day-to-day surface. */}

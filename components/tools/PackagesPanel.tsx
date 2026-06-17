@@ -20,7 +20,7 @@ import { UnifiedPackageList } from "./UnifiedPackageList";
 // LangChain-tool-package experience end to end.
 export function PackagesPanel() {
   return (
-    <div className="p-4 space-y-6">
+    <div className="mx-auto w-full max-w-5xl p-4 space-y-5">
       <header className="space-y-1">
         <div className="flex items-center gap-2">
           <Package size={14} className="text-fg-subtle" />
@@ -35,7 +35,6 @@ export function PackagesPanel() {
 
       <InstallPanel />
       <UnifiedPackageList />
-      <div className="border-t border-border pt-4" />
       <ToolCatalog />
     </div>
   );

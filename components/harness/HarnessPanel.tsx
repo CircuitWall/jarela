@@ -101,7 +101,7 @@ export function HarnessPanel() {
         clone one to customize.
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-2">
+      <div className="panel-scrollbar flex-1 overflow-y-auto px-4 py-2">
         {loading && harnesses.length === 0 && (
           <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
         )}

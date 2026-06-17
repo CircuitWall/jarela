@@ -55,7 +55,7 @@ export function ToolsPanel() {
       <div
         role="tablist"
         aria-label="Tools sub-section"
-        className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 overflow-x-auto"
+        className="flex gap-1 border-b border-border bg-surface-2/50 px-3 pt-2 overflow-x-auto"
       >
         {SUBS.map((s) => {
           const selected = s === active;
@@ -67,10 +67,10 @@ export function ToolsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s)}
               className={
-                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors whitespace-nowrap " +
+                "control-tap px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors whitespace-nowrap " +
                 (selected
-                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
-                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
+                  ? "border-accent text-fg bg-bg"
+                  : "border-transparent text-fg-muted hover:text-fg hover:bg-surface-3/40")
               }
             >
               {SUB_TITLES[s]}
@@ -78,7 +78,7 @@ export function ToolsPanel() {
           );
         })}
       </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div className="panel-scrollbar flex-1 min-h-0 overflow-auto">
         {active === "packages" && <PackagesPanel />}
         {active === "documents" && <DocumentsPanel />}
         {active === "memory" && <MemoryPanel />}

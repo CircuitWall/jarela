@@ -80,7 +80,7 @@ export function ScheduledTasksPanel() {
         )}
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={containerRef} className="panel-scrollbar flex-1 overflow-y-auto px-4 py-3">
         {loading && tasks.length === 0 && (
           <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
         )}

@@ -82,7 +82,7 @@ export function AgentsPanel() {
       </div>
 
       {/* List */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-2 pb-2">
+      <div ref={containerRef} className="panel-scrollbar flex-1 overflow-y-auto px-2 pb-2">
         {loading && (
           <p className="text-fg-faint text-xs text-center py-4">Loading…</p>
         )}

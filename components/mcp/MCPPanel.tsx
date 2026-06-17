@@ -53,7 +53,7 @@ export function MCPPanel() {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="panel-scrollbar flex-1 overflow-y-auto">
         <div className="px-4 py-2">
           {loading && servers.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
@@ -222,7 +222,7 @@ function MCPEditor({
           </button>
         </div>
 
-        <div className="p-4 space-y-3 overflow-y-auto">
+        <div className="panel-scrollbar p-4 space-y-3 overflow-y-auto">
           {registryEntry && (
             <div className="px-3 py-2 rounded bg-surface-3/40 border border-border text-[11px] text-fg-subtle">
               {registryEntry.description}

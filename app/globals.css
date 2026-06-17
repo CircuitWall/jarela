@@ -319,15 +319,27 @@ body {
   outline-offset: 2px;
 }
 
-/* Adaptive hit-target helper: compact on desktop, finger-friendly on touch. */
+/* Adaptive hit-target helper: compact on desktop, finger-friendly on touch.
+ * Also provides tactile press feedback — a subtle scale + tighten on
+ * pointer-down so every primary control feels responsive. */
 .control-tap {
   min-height: 2rem;
+  transition: transform 120ms ease-out;
+}
+
+.control-tap:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 @media (hover: none) and (pointer: coarse) {
   .control-tap {
     min-height: 2.5rem;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-tap { transition: none; }
+  .control-tap:active:not(:disabled) { transform: none; }
 }
 
 /* iOS auto-zooms when an input/textarea has font-size < 16px. Lift form fields
@@ -699,4 +711,56 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .jarela-countdown-spinner { animation: none; }
+}
+
+/* Panel / drawer entry transitions. Used by AppShell to fade & slide panels
+ * into view when the active tab changes, and to slide the menu drawer in
+ * from the right. The keyframes are reapplied whenever data-active flips
+ * to "true" because the animation-name resets — that gives us a one-shot
+ * entry without remounting the underlying <Activity> tree. */
+@keyframes jarela-panel-enter {
+  0%   { opacity: 0; transform: translateX(6px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.jarela-panel-enter[data-active="true"] {
+  animation: jarela-panel-enter 180ms ease-out both;
+  will-change: opacity, transform;
+}
+.jarela-panel-enter[data-active="false"] {
+  /* Activity hides via display, so the animation just needs to be primed
+   * to re-trigger on the next true. */
+  animation: none;
+}
+
+@keyframes jarela-drawer-slide-in {
+  0%   { opacity: 0; transform: translateX(12px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.jarela-drawer-enter {
+  animation: jarela-drawer-slide-in 200ms ease-out both;
+}
+
+@keyframes jarela-backdrop-fade-in {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+.jarela-backdrop-enter {
+  animation: jarela-backdrop-fade-in 160ms ease-out both;
+}
+
+/* Tactile press feedback for top-level tab / nav buttons. Pairs with
+ * existing transition-colors so the scale only applies on actual press. */
+.jarela-tactile {
+  transition: transform 120ms ease-out, background-color 150ms ease-out, color 150ms ease-out;
+}
+.jarela-tactile:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jarela-panel-enter[data-active="true"],
+  .jarela-drawer-enter,
+  .jarela-backdrop-enter { animation: none; }
+  .jarela-tactile { transition: none; }
+  .jarela-tactile:active:not(:disabled) { transform: none; }
 }
