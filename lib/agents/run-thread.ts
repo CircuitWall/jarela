@@ -268,6 +268,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
     sourceManifest,
+    deliveryChannel: req.delivery_channel ?? null,
   });
 
   const delegationDepth = req._delegation_depth ?? 0;

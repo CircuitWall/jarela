@@ -1,5 +1,6 @@
 import { getOrCreateAgentThread } from "@/lib/stores/threads";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
+import { getBridge } from "@/lib/stores/bridges";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { resolveRoute } from "./router";
@@ -81,6 +82,11 @@ export async function handleInboundMessage(
     let reply = "";
     let suppressAssistant = false;
     try {
+      // Surface the bridge kind+name in the system prompt so the agent
+      // knows it's answering on e.g. WhatsApp — fixes the "I don't have
+      // access to WhatsApp" reply on bridge-delivered turns. Falls back
+      // to bridge_id when the row was deleted between fetch and dispatch.
+      const bridge = getBridge(adapter.bridge_id);
       const result = await runAgentTurn({
         thread_id: thread.thread_id,
         queue_source: "bridge",
@@ -89,6 +95,10 @@ export async function handleInboundMessage(
         user_category: "bridge",
         assistant_category: "bridge",
         silent,
+        delivery_channel: {
+          kind: bridge?.kind ?? "bridge",
+          name: bridge?.name ?? null,
+        },
       });
       reply = result.assistantContent.trim();
       suppressAssistant = result.skippedAssistant;
