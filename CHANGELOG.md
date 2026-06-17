@@ -7,10 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.11.1] - 2026-06-17
+## [1.12.0] - 2026-06-18
+
+### Added
+
+- **Microsoft Graph core toolkit and search tools.** Three new tools
+  under the `Microsoft` category, all routed through the shared
+  `graphFetch` helper: `ms_graph_get` (escape hatch for any v1.0 path
+  with `@odata.nextLink` pagination), `ms_search` (cross-surface
+  POST `/search/query` over mail, events, drive items, list items,
+  people, Teams chats with slimmed hits), and `ms_people_resolve`
+  (fuzzy `/me/people` lookup keyed on `$search`). `graphFetch` itself
+  gained: 401 → access-token cache bust + one-shot retry,
+  429 / 503 honouring `Retry-After` (capped 30s) or exponential
+  backoff, 403 path-prefix → required-scope hints, and a new
+  `graphPaged()` helper that follows `@odata.nextLink`. Existing
+  Outlook / Calendar / To Do callers benefit transparently.
+  `People.Read` was added to `MICROSOFT_SCOPES` — operators who
+  already connected need to reconnect Outlook to grant it (the 403
+  hint will say so).
+- **Structural outline on `file_read` exploration calls.** When the
+  agent reads a file without `start_line` / `end_line` (i.e. it's
+  exploring), the response now carries an `outline` of top-level
+  functions / classes / consts / headings with their line numbers,
+  per-language (TS/JS/JSX/TSX, Python, Markdown/MDX, JSON, YAML,
+  TOML, Shell/PowerShell, Rust, Go, C/C++/Java/Kotlin/C#/Swift).
+  The agent feeds the returned line straight back into `start_line`
+  to zoom in deterministically — no follow-up `file_grep`, no
+  guessing end lines, no re-reads. Targeted reads skip the outline
+  entirely. Capped at 200 entries with `outline_truncated: true`.
+  Binary files short-circuit via a denylist + NUL-byte sniff.
+- **`file_list` depth and `file_grep` enclosing-symbol.** `file_list`
+  gained an optional `depth` parameter (default 1, max 4); `depth>=2`
+  walks the subtree in one call while skipping the standard noise
+  dirs (`node_modules`, `.git`, `dist`, `build`, `.next`, `out`,
+  `coverage`, `.turbo`, `.cache`, `.venv`, `__pycache__`,
+  `.idea`, `.vscode`, `target`, `vendor`, …). `file_grep` now
+  attaches `enclosing: { kind, name, line }` to each match, pointing
+  at the surrounding function / class / heading, so the agent often
+  skips the follow-up `file_read` entirely.
 
 ### Fixed
 
+- **Slow "Sending…" phase and stuck chat sessions on unpinned
+  threads.** `buildHistoryWindow` previously only checked the
+  persisted warm summary when an explicit `hot_since` pin was set,
+  and only persisted a freshly computed summary in that same case.
+  Unpinned threads (the common case) paid a full summariser LLM
+  round-trip on every turn. The cache is now keyed on a boundary
+  string that falls back to the timestamp of the first hot message
+  when no pin exists; subsequent turns whose hot/warm split is
+  unchanged short-circuit the LLM call. The summariser itself is
+  raced against `JARELA_WARM_SUMMARY_BUDGET_MS` (default 5000ms) so
+  a hung provider can no longer permanently stall the chat.
+- **Facts memory recall could indefinitely stall request
+  preparation.** `buildHistoryWindow` awaited `recall()` on every
+  turn with no wall-clock budget — a hung embedding provider would
+  block the whole turn. Bounded by the existing
+  `JARELA_RECALL_BUDGET_MS` (default 1500ms); on timeout the facts
+  tier falls through to the substring `LIKE` path on `listMemory`.
 - **Operator-loaded LangChain tools couldn't see credentials stored
   via the UI.** `requiredEnv` was checked against `process.env`
   only; secrets the user saved through the integrations store were
@@ -30,6 +85,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `require.cache` to Jarela's already-evaluated module records so
   there's exactly one constructor identity across host and
   operator code.
+
+### Documentation
+
+- README files-toolbelt row now lists `file_glob`, `file_grep`,
+  `file_multi_edit` alongside the new `file_list` depth,
+  `file_grep` enclosing-symbol, and `file_read` outline behaviour.
 
 ## [1.11.0] - 2026-06-16
 
