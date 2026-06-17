@@ -21,6 +21,7 @@ import {
 import { getAppName } from "@/lib/env/app-config";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
+import type { DeliveryChannel } from "@/lib/agents/prepare/request";
 
 const APP_NAME = getAppName();
 
@@ -38,10 +39,16 @@ export interface SystemPromptContext {
    *  turns when the agent's `citation_strictness` is not `'off'`. Empty
    *  array or undefined disables citation. */
   sourceManifest?: ReadonlyArray<SourceManifestEntry>;
+  /** Provenance of the current turn when delivered by a non-user runner
+   *  (bridge, trigger, watcher). When set, a "Delivery channel" block is
+   *  added near the top of the system prompt so the agent knows it's
+   *  answering on e.g. WhatsApp via a configured bridge — stops the
+   *  "I don't have access to WhatsApp" hallucination. */
+  deliveryChannel?: DeliveryChannel | null;
 }
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
-  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest } = ctx;
+  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel } = ctx;
 
   const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
@@ -54,6 +61,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const parts: (string | null | undefined)[] = [
     agentCfg.identity,
     agentCfg.instructions,
+    buildDeliveryChannelContext(deliveryChannel),
     adaptivePersonaCtx,
     buildUserContext(),
     buildIntegrationsContext(),
@@ -85,6 +93,33 @@ export function resolveExperienceMode(options?: StreamOptions): "essential" | "f
 }
 
 // ── Context block builders (file-private) ────────────────────────────────
+
+// Map a bridge / trigger / watcher kind tag to a user-facing platform
+// name. New bridge kinds added later just need an entry here.
+const DELIVERY_KIND_LABELS: Record<string, string> = {
+  whatsapp: "WhatsApp",
+  slack: "Slack",
+  telegram: "Telegram",
+  discord: "Discord",
+  sms: "SMS",
+  email: "email",
+  trigger: "scheduled trigger",
+  watcher: "page watcher",
+  scheduler: "scheduled task",
+};
+
+function buildDeliveryChannelContext(channel: DeliveryChannel | null | undefined): string {
+  if (!channel || !channel.kind) return "";
+  const platform = DELIVERY_KIND_LABELS[channel.kind] ?? channel.kind;
+  const named = channel.name && channel.name !== channel.kind
+    ? ` (configured as "${channel.name}")`
+    : "";
+  return [
+    "--- Delivery channel ---",
+    `This message reached you over ${platform}${named}, not the regular chat UI.`,
+    `You DO have access to ${platform} for this conversation: any reply you produce is sent back through that channel automatically. Do not tell the user the platform is unavailable; just answer the message.`,
+  ].join("\n");
+}
 
 function buildUserContext(): string {
   const userProfile = getUserProfile();

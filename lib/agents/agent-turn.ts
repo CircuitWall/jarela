@@ -6,6 +6,7 @@ import { enqueueThreadRun } from "@/lib/agents/run-queue";
 import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
+import type { DeliveryChannel } from "@/lib/agents/prepare/request";
 
 const NO_REPLY_RE = /^\s*NO[_ ]?REPLY\b/i;
 
@@ -26,6 +27,13 @@ export interface RunAgentTurnRequest {
   user_category?: string | null;
   assistant_category?: string | null;
   silent?: boolean;
+  /**
+   * Provenance of the inbound message when delivered through a non-user
+   * channel (bridge, trigger, watcher). Forwarded into the system prompt
+   * so the agent sees "Delivery channel: WhatsApp ..." and answers in the
+   * right register instead of claiming the platform is unavailable.
+   */
+  delivery_channel?: DeliveryChannel | null;
   /**
    * When true, `prepareThreadRun` will NOT add the message to the DB.
    * Use this when the caller has already persisted the user message and
@@ -83,6 +91,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         message: req.message,
         attachments: req.attachments,
         user_category: req.user_category ?? null,
+        delivery_channel: req.delivery_channel ?? null,
         context_profile: contextProfile,
         disable_quality_gates: req.disable_quality_gates,
         signal: active.abort.signal,
