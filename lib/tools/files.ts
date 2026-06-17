@@ -463,6 +463,16 @@ export const fileMoveTool = tool(
 
 // --- list ---------------------------------------------------------------
 
+// Directories that almost never contain anything the agent wants to
+// see in an exploration listing. Mirrors the file_grep / file_glob
+// skip set so depth-mode is consistent with search.
+const LIST_DEFAULT_EXCLUDE = new Set([
+  "node_modules", ".git", "dist", "build", ".next", "out",
+  "coverage", ".turbo", ".cache", ".venv", "venv", "__pycache__",
+  ".pytest_cache", ".mypy_cache", ".idea", ".vscode",
+  "target", "vendor",
+]);
+
 const listSchema = z.object({
   path: z.string().describe("Directory path. Absolute or ~/foo; bare relative paths resolve against HOME."),
   max_entries: z
@@ -471,7 +481,7 @@ const listSchema = z.object({
     .min(1)
     .max(500)
     .optional()
-    .describe("Cap on returned entries (default 200, max 500). Listings are non-recursive — to explore subtrees, call file_list once per directory."),
+    .describe("Cap on returned entries (default 200, max 500)."),
   include_hidden: z
     .boolean()
     .optional()
@@ -480,28 +490,43 @@ const listSchema = z.object({
     .string()
     .optional()
     .describe("Optional case-insensitive substring filter applied to the basename"),
+  depth: z
+    .number()
+    .int()
+    .min(1)
+    .max(4)
+    .optional()
+    .describe("Recursion depth (default 1 = current directory only, max 4). Use 2-3 for first-look repo exploration to avoid round-tripping for every subdirectory. Always skips node_modules/.git/dist/build/.next/coverage/.venv/__pycache__/target/vendor regardless."),
 });
 
-type ListEntry = { path: string; kind: "file" | "directory" | "other"; size?: number };
+type ListEntry = { path: string; kind: "file" | "directory" | "other"; size?: number; depth?: number };
 
 // Walks the readdir result applying include_hidden / pattern filters and
-// returns the kept entries plus whether we hit the cap.
+// returns the kept entries plus whether we hit the cap. When `maxDepth`
+// is > 1 it recurses into subdirectories (skipping the LIST_DEFAULT_EXCLUDE
+// noise dirs) so the agent can map a subtree in one call.
 async function buildListEntries(
   abs: string,
   items: import("node:fs").Dirent[],
   cap: number,
   includeHidden: boolean | undefined,
   filter: string | null,
+  maxDepth: number = 1,
+  currentDepth: number = 1,
 ): Promise<{ entries: ListEntry[]; truncated: boolean }> {
   const entries: ListEntry[] = [];
   let truncated = false;
   for (const it of items) {
     if (entries.length >= cap) { truncated = true; break; }
     if (!includeHidden && it.name.startsWith(".")) continue;
-    if (filter && !it.name.toLowerCase().includes(filter)) continue;
     const full = path.join(abs, it.name);
-    const kind: ListEntry["kind"] = it.isDirectory()
-      ? "directory" : it.isFile() ? "file" : "other";
+    const isDir = it.isDirectory();
+    const kind: ListEntry["kind"] = isDir ? "directory" : it.isFile() ? "file" : "other";
+    // Filter applies to leaves; directories are always kept when
+    // recursing so the agent can see the tree structure even if no
+    // child basename matches.
+    const passesFilter = !filter || it.name.toLowerCase().includes(filter);
+    if (!isDir && !passesFilter) continue;
     let size: number | undefined;
     if (kind === "file") {
       try {
@@ -509,7 +534,27 @@ async function buildListEntries(
         size = st.size;
       } catch { /* ignore stat failures */ }
     }
-    entries.push({ path: full, kind, size });
+    // Only emit the directory entry itself when it passes the filter
+    // or we're at depth 1 (matches the non-recursive shape).
+    if (!isDir || passesFilter || currentDepth === 1) {
+      entries.push({ path: full, kind, size, depth: maxDepth > 1 ? currentDepth : undefined });
+    }
+    if (isDir && currentDepth < maxDepth && !LIST_DEFAULT_EXCLUDE.has(it.name)) {
+      let childItems: import("node:fs").Dirent[];
+      try {
+        childItems = await withFsDeadline("file_list.recurse", full, () => fs.readdir(full, { withFileTypes: true }));
+      } catch {
+        continue;
+      }
+      childItems.sort((a, b) => a.name.localeCompare(b.name));
+      const remainingCap = cap - entries.length;
+      if (remainingCap <= 0) { truncated = true; break; }
+      const child = await buildListEntries(
+        full, childItems, remainingCap, includeHidden, filter, maxDepth, currentDepth + 1,
+      );
+      entries.push(...child.entries);
+      if (child.truncated) { truncated = true; break; }
+    }
   }
   return { entries, truncated };
 }
@@ -522,7 +567,7 @@ function buildListPayload(
   abs: string,
   entries: ListEntry[],
   truncated: boolean,
-  filters: { include_hidden: boolean; pattern: string | null; max_entries: number },
+  filters: { include_hidden: boolean; pattern: string | null; max_entries: number; depth: number },
 ): string {
   const build = (es: ListEntry[], droppedForSize: number) => JSON.stringify({
     ok: true,
@@ -550,7 +595,7 @@ function buildListPayload(
 }
 
 export const fileListTool = tool(
-  async ({ path: dirPath, max_entries, include_hidden, pattern }, config?: ToolConfig) => {
+  async ({ path: dirPath, max_entries, include_hidden, pattern, depth }, config?: ToolConfig) => {
     let abs = dirPath;
     try {
       abs = pathResolverFor(config).resolve(dirPath);
@@ -560,6 +605,7 @@ export const fileListTool = tool(
     }
     const cap = max_entries ?? 200;
     const filter = pattern?.toLowerCase() ?? null;
+    const maxDepth = depth ?? 1;
     try {
       let items: import("node:fs").Dirent[];
       try {
@@ -568,11 +614,12 @@ export const fileListTool = tool(
         return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
       }
       items.sort((a, b) => a.name.localeCompare(b.name));
-      const { entries, truncated } = await buildListEntries(abs, items, cap, include_hidden, filter);
+      const { entries, truncated } = await buildListEntries(abs, items, cap, include_hidden, filter, maxDepth);
       return buildListPayload(abs, entries, truncated, {
         include_hidden: !!include_hidden,
         pattern: pattern ?? null,
         max_entries: cap,
+        depth: maxDepth,
       });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
@@ -581,7 +628,7 @@ export const fileListTool = tool(
   {
     name: "file_list",
     description:
-      "List one directory's entries (NON-RECURSIVE). To explore a subtree, call file_list once per directory and decide what to descend into based on the result — do NOT try to list everything at once. Hidden (dot) entries are skipped unless include_hidden=true. Optional `pattern` substring filter on basenames. Default cap 200 entries (max 500); the JSON result is hard-capped at ~24 KB and excess entries are dropped with a hint.",
+      "List a directory's entries. Default depth=1 (non-recursive). Pass depth=2-4 to map a subtree in one call (skips node_modules/.git/dist/build/.next/coverage/.venv/__pycache__/target/vendor automatically). Hidden (dot) entries are skipped unless include_hidden=true. Optional `pattern` substring filter on basenames. Default cap 200 entries (max 500); the JSON result is hard-capped at ~24 KB and excess entries are dropped with a hint.",
     schema: listSchema,
   },
 );

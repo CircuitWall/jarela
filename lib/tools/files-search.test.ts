@@ -190,6 +190,57 @@ describe("file_grep", () => {
     const paths = (out.matches as Array<{ path: string }>).map((m) => m.path);
     expect(paths).toEqual(["src/index.ts"]);
   });
+
+  it("attaches enclosing symbol (function/heading) to each match", async () => {
+    writeFileSync(join(projectRoot, "mod.ts"), [
+      "export function alpha() {",
+      "  return 'TARGET';",  // line 2 → enclosing alpha @ line 1
+      "}",
+      "export function beta() {",
+      "  return 'TARGET';",  // line 5 → enclosing beta @ line 4
+      "}",
+    ].join("\n"));
+    const out = parse(await fileGrepTool.invoke({
+      pattern: "TARGET",
+      root: projectRoot,
+      glob: "mod.ts",
+      literal: true,
+    }));
+    const matches = out.matches as Array<{ line: number; enclosing?: { kind: string; name: string; line: number } }>;
+    expect(matches.length).toBe(2);
+    expect(matches[0].enclosing).toEqual({ kind: "function", name: "alpha", line: 1 });
+    expect(matches[1].enclosing).toEqual({ kind: "function", name: "beta", line: 4 });
+  });
+
+  it("attaches enclosing markdown heading to README matches", async () => {
+    writeFileSync(join(projectRoot, "doc.md"), [
+      "# Top",
+      "intro",
+      "## Section A",
+      "body with NEEDLE here",  // line 4 → ## Section A @ line 3
+      "## Section B",
+      "another NEEDLE",          // line 6 → ## Section B @ line 5
+    ].join("\n"));
+    const out = parse(await fileGrepTool.invoke({
+      pattern: "NEEDLE", root: projectRoot, glob: "doc.md", literal: true,
+    }));
+    const matches = out.matches as Array<{ line: number; enclosing?: { name: string; kind: string } }>;
+    expect(matches.length).toBe(2);
+    expect(matches[0].enclosing).toMatchObject({ kind: "heading", name: "Section A" });
+    expect(matches[1].enclosing).toMatchObject({ kind: "heading", name: "Section B" });
+  });
+
+  it("omits enclosing when no outline entry precedes the match", async () => {
+    writeFileSync(join(projectRoot, "plain.ts"), [
+      "// just a comment with NEEDLE",  // line 1, no preceding outline entry
+      "export function later() {}",
+    ].join("\n"));
+    const out = parse(await fileGrepTool.invoke({
+      pattern: "NEEDLE", root: projectRoot, glob: "plain.ts", literal: true,
+    }));
+    const matches = out.matches as Array<{ enclosing?: unknown }>;
+    expect(matches[0].enclosing).toBeUndefined();
+  });
 });
 
 // ── file_multi_edit ─────────────────────────────────────────────────────────
