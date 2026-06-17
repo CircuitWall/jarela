@@ -42,6 +42,7 @@ export interface JarelaConfig {
   readonly maxDelegationDepth: number;
   readonly streamParseTripwire: number;
   readonly recallBudgetMs: number;
+  readonly warmSummaryBudgetMs: number;
   readonly maxThreadMessages: number;
   readonly maxSessionArchives: number;
 
@@ -170,6 +171,7 @@ export function getConfig(): JarelaConfig {
     maxDelegationDepth: parseNonNegativeInt(env.JARELA_MAX_DELEGATION_DEPTH, ENV_DEFAULTS.maxDelegationDepth),
     streamParseTripwire: parsePositiveInt(env.JARELA_STREAM_PARSE_TRIPWIRE, ENV_DEFAULTS.streamParseTripwire),
     recallBudgetMs: parseNonNegativeInt(env.JARELA_RECALL_BUDGET_MS, ENV_DEFAULTS.recallBudgetMs),
+    warmSummaryBudgetMs: parseNonNegativeInt(env.JARELA_WARM_SUMMARY_BUDGET_MS, ENV_DEFAULTS.warmSummaryBudgetMs),
     maxThreadMessages: parsePositiveInt(env.JARELA_MAX_THREAD_MESSAGES, ENV_DEFAULTS.maxThreadMessages),
     maxSessionArchives: parsePositiveInt(env.JARELA_MAX_SESSION_ARCHIVES, ENV_DEFAULTS.maxSessionArchives),
 

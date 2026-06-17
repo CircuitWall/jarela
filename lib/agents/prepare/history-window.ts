@@ -11,6 +11,7 @@
 import { getRecentMessagesWindow, getThread, setThreadWarmSummary } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
+import { getConfig } from "@/lib/env/config";
 import {
   applyTierSpill,
   computeContextBudget,
@@ -79,11 +80,13 @@ export async function buildHistoryWindow(
   const allWindowMessages = getRecentMessagesWindow(thread_id, limit, sinceISO);
 
   // Reuse the persisted warm summary when the boundary it covers still
-  // matches the current pin — saves an LLM call on every turn that doesn't
-  // change the boundary.
-  const cached = hotSince ? getThread(thread_id) : null;
-  const cachedSummaryFresh =
-    !!cached?.warm_summary && cached.warm_summary_before === hotSince;
+  // matches the boundary we'd compute for this turn. The cache is keyed on a
+  // boundary string that is either the explicit `hot_since` pin OR — when
+  // unpinned — the timestamp of the first hot message, which is the natural
+  // cutoff between warm and hot. Without this fallback every unpinned turn
+  // paid a full LLM round-trip to re-summarise an unchanged transcript and
+  // the result was never persisted, so the summariser tax was permanent.
+  const cached = getThread(thread_id);
 
   const budget = computeContextBudget({
     context_window_tokens:
@@ -118,38 +121,51 @@ export async function buildHistoryWindow(
       ({ spill } = applyTierSpill(budget.tierBudgets.hot, spill, used));
     } else if (tier === "warm") {
       const warmCap = budget.tierBudgets.warm + spill;
+      // Boundary key the cached summary is stamped with. Prefer the explicit
+      // pin; fall back to the first hot message's timestamp so unpinned
+      // threads can also benefit from cache hits across turns that don't
+      // change the hot/warm split.
+      const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
+      const autoBoundary = hotForSlice[0]?.created_at ?? null;
+      const boundaryKey = hotSince ?? autoBoundary;
+      const cachedSummaryFresh =
+        !!cached?.warm_summary
+        && boundaryKey !== null
+        && cached.warm_summary_before === boundaryKey;
       if (cachedSummaryFresh && cached?.warm_summary) {
-        // Pin-stable turn: don't pay the summariser tax again.
+        // Boundary-stable turn: don't pay the summariser tax again.
         warmSummaryCtx = cached.warm_summary;
       } else {
-        // If priority evaluates warm before hot, do a provisional hot slice at
-        // hot's soft cap so we know which messages to summarise. Hot's later
-        // pass may then absorb more (its cap will include any warm spill back),
-        // and the warm summary will harmlessly cover a few messages hot also
-        // includes — better than not summarising at all.
-        const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
-        warmSummaryCtx = await buildWarmSummary(
-          allWindowMessages,
-          hotForSlice.length,
-          modelInfo.providerName,
-          modelInfo.modelId,
-          providerParams,
-          warmCap,
+        // Race the summariser against a wall-clock budget so a slow or hung
+        // provider call cannot permanently stall the chat session. On
+        // timeout we fall back to no warm summary — the hot-message truncate
+        // path below kicks in so older context isn't silently dropped.
+        warmSummaryCtx = await raceWithBudget(
+          buildWarmSummary(
+            allWindowMessages,
+            hotForSlice.length,
+            modelInfo.providerName,
+            modelInfo.modelId,
+            providerParams,
+            warmCap,
+          ),
+          getConfig().warmSummaryBudgetMs,
+          "",
         );
         // Persist the freshly-computed summary keyed on the boundary it
-        // covers, so the chat UI can render it on the next page load and
-        // subsequent same-pin turns can short-circuit the LLM call. Skipped
-        // when there's no explicit pin because the time-windowed boundary
-        // shifts every turn — caching it would never hit.
-        if (warmSummaryCtx && hotSince) {
+        // covers so the chat UI can render it on the next page load and
+        // subsequent same-boundary turns short-circuit the LLM call. We
+        // persist for both pinned and auto-boundary cases — without this,
+        // unpinned threads pay the summariser tax every turn.
+        if (warmSummaryCtx && boundaryKey) {
           // Compaction-stat columns: count of messages older than the hot
           // slice + their flattened transcript length. The chat UI shows
           // these on the boundary chip so the user can see the savings.
-          const warmMsgCount = Math.max(0, allWindowMessages.length - (hotMessages?.length ?? 0));
+          const warmMsgCount = Math.max(0, allWindowMessages.length - hotForSlice.length);
           const warmSourceChars = allWindowMessages
             .slice(0, warmMsgCount)
             .reduce((acc, m) => acc + transcriptText(m.content).length, 0);
-          setThreadWarmSummary(thread_id, warmSummaryCtx, hotSince, warmMsgCount, warmSourceChars);
+          setThreadWarmSummary(thread_id, warmSummaryCtx, boundaryKey, warmMsgCount, warmSourceChars);
         }
       }
       const used = estimateTokens(warmSummaryCtx);
@@ -234,6 +250,29 @@ function parseContent(raw: string): string | ContentPart[] {
     // not valid JSON — treat as plain text
   }
   return raw;
+}
+
+// Bounded race: resolve to `promise` when it settles within `ms`, otherwise
+// resolve to `fallback`. Mirrors the helper in `lib/agents/run-thread.ts` —
+// kept local to avoid widening that module's public surface for one call
+// site. A budget of 0 means "wait forever" (the timer fires immediately
+// but the promise wins via microtask ordering only if it's already
+// settled — in practice we configure non-zero budgets).
+function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  if (ms <= 0) return promise.catch(() => fallback);
+  return new Promise<T>((resolve) => {
+    let settled = false;
+    const t = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(fallback);
+      }
+    }, ms);
+    promise.then(
+      (v) => { if (!settled) { settled = true; clearTimeout(t); resolve(v); } },
+      () => { if (!settled) { settled = true; clearTimeout(t); resolve(fallback); } },
+    );
+  });
 }
 
 async function buildWarmSummary(
