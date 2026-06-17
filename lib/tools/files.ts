@@ -7,6 +7,7 @@ import { registerLangChainPackage } from "./langchain-package";
 import { checkFsAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
+import { buildOutline, capOutline, shouldOutline } from "./file-outline";
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `shell_exec`, which works for "create a new file with this
@@ -227,6 +228,17 @@ export const fileReadTool = tool(
         lineRange = { start: s, end: e };
       }
       const clipped = clip(content, maxReadBytes());
+      // Attach a structural outline on exploration reads only — when
+      // the agent already passed a line range it knows where it's
+      // going and the outline would just be noise. The outline lets
+      // the next call jump directly to a function / heading via
+      // start_line/end_line instead of grepping and guessing.
+      const exploring = !start_line && !end_line;
+      let outline: { entries: ReturnType<typeof buildOutline>; truncated: boolean } | null = null;
+      if (exploring && shouldOutline(abs, raw)) {
+        const built = buildOutline(abs, raw);
+        if (built.length > 0) outline = capOutline(built);
+      }
       return JSON.stringify({
         ok: true,
         path: abs,
@@ -234,6 +246,8 @@ export const fileReadTool = tool(
         truncated: clipped.truncated,
         line_range: lineRange,
         total_lines: raw.split(/\r?\n/).length,
+        outline: outline?.entries ?? null,
+        outline_truncated: outline?.truncated ?? false,
       });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
@@ -242,7 +256,7 @@ export const fileReadTool = tool(
   {
     name: "file_read",
     description:
-      "Read a UTF-8 text file. Optional 1-based start_line/end_line slice. Output clipped at 64 KB — for large files always pass a line range and walk in chunks.",
+      "Read a UTF-8 text file. Optional 1-based start_line/end_line slice. Output clipped at 64 KB — for large files always pass a line range and walk in chunks. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries (markdown headings, top-level functions/classes, config keys); feed those line numbers straight back into start_line/end_line on the next call to zoom in without grepping.",
     schema: readSchema,
   },
 );

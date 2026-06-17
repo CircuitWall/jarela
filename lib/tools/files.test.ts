@@ -173,6 +173,36 @@ describe("file_read", () => {
     expect(out.ok).toBe(false);
     expect(out.error).toMatch(/ENOENT/);
   });
+
+  it("attaches outline on exploration reads of recognised text files", async () => {
+    const f = join(scratch, "module.ts");
+    writeFileSync(f, [
+      "export function alpha() {}",
+      "export class Beta {}",
+      "export const gamma = 1;",
+    ].join("\n"));
+    const out = parse(await fileReadTool.invoke({ path: f }));
+    expect(out.ok).toBe(true);
+    expect(Array.isArray(out.outline)).toBe(true);
+    expect((out.outline as Array<Record<string, unknown>>).map((e) => e.name)).toEqual([
+      "alpha", "Beta", "gamma",
+    ]);
+    expect(out.outline_truncated).toBe(false);
+  });
+
+  it("omits outline when start_line or end_line is supplied (targeted read)", async () => {
+    const f = join(scratch, "module2.ts");
+    writeFileSync(f, "export function x(){}\nexport function y(){}\n");
+    const out = parse(await fileReadTool.invoke({ path: f, start_line: 1, end_line: 1 }));
+    expect(out.outline).toBeNull();
+  });
+
+  it("returns null outline for binary content", async () => {
+    const f = join(scratch, "blob.dat");
+    writeFileSync(f, "abc\u0000def");
+    const out = parse(await fileReadTool.invoke({ path: f }));
+    expect(out.outline).toBeNull();
+  });
 });
 
 // ── file_write ──────────────────────────────────────────────────────────────
