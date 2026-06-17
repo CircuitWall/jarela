@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-06-17
+
+### Fixed
+
+- **Operator-loaded LangChain tools couldn't see credentials stored
+  via the UI.** `requiredEnv` was checked against `process.env`
+  only; secrets the user saved through the integrations store were
+  invisible to the loader, so packages like Gemini failed to
+  initialize even when a key was configured. The loader now also
+  resolves `requiredEnv` entries from the integrations store and
+  injects them into the subprocess env at load time.
+- **`tool_result` events for operator-loaded tools were silently
+  dropped on Windows.** A stray `@langchain/core` install in the
+  user's home directory (e.g. `C:\Users\<u>\node_modules`) caused
+  operator packages to resolve a different module identity than
+  Jarela's host. `ToolMessage instanceof` checks then returned
+  `false`, the result chunk never reached the persistence layer,
+  and the agent's tool call appeared to vanish without a response.
+  The package loader now walks every subpath in Jarela's
+  `@langchain/core` `exports` field and aliases the operator-side
+  `require.cache` to Jarela's already-evaluated module records so
+  there's exactly one constructor identity across host and
+  operator code.
+
 ## [1.11.0] - 2026-06-16
 
 ### Added
