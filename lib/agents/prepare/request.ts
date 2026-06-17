@@ -3,6 +3,20 @@ import type { StreamOptions } from "@/lib/agents/base";
 import type { TurnContextProfile } from "@/lib/agents/turn-profile";
 
 /**
+ * Provenance of the inbound turn. When a non-user runner (bridge,
+ * trigger, watcher, ...) drives the agent on someone's behalf, this
+ * tells the model which external channel the message arrived on so it
+ * doesn't reply "I don't have access to WhatsApp" while in fact it's
+ * answering on a WhatsApp bridge. `kind` is the canonical short tag
+ * (`"whatsapp"`, `"slack"`, `"trigger"`, ...); `name` is the user-
+ * configured display name of the specific bridge / trigger.
+ */
+export interface DeliveryChannel {
+  kind: string;
+  name?: string | null;
+}
+
+/**
  * Single-shot request shape for `prepareThreadRun`. Replaces the
  * 7+-positional-arg signature this function used to carry. Public callers
  * only set the un-prefixed fields; `_`-prefix fields are internal control
@@ -21,6 +35,15 @@ export interface ThreadRunRequest {
    * chat. Values in the wild: `"scheduled_task"`, `"bridge"`, `"delegation"`.
    */
   user_category?: string | null;
+
+  /**
+   * Delivery provenance for non-user callers. When set, the system prompt
+   * tells the agent which external channel the message arrived on (e.g.
+   * a specific WhatsApp bridge) so it can answer accordingly instead of
+   * claiming it has no access to that platform. Public chat callers leave
+   * undefined — direct chat needs no provenance hint.
+   */
+  delivery_channel?: DeliveryChannel | null;
 
   /**
    * ADR-0042 — explicit context boundary chosen by the user. ISO timestamp.
