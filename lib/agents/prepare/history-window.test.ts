@@ -6,6 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-history-window-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 process.env.JARELA_WARM_SUMMARY_BUDGET_MS = "100";
+process.env.JARELA_RECALL_BUDGET_MS = "100";
 
 const chatSpy = vi.fn();
 vi.mock("@/lib/providers", () => ({
@@ -16,9 +17,11 @@ vi.mock("@/lib/providers", () => ({
 }));
 
 // Facts tier hits recall(); addMessage hits embedOne(). Stub both inert so
-// they don't introduce noise into the warm-tier assertions below.
+// they don't introduce noise into the warm-tier assertions below. recall is
+// a spy so individual tests can override it (e.g. to simulate a hang).
+const recallSpy = vi.fn<(query: string, k: number) => Promise<unknown[]>>(async () => []);
 vi.mock("@/lib/embeddings", () => ({
-  recall: vi.fn(async () => []),
+  recall: (query: string, k: number) => recallSpy(query, k),
   embed: vi.fn(async () => null),
   embedOne: vi.fn(async () => null),
   embedBestEffort: vi.fn(async () => ({ vectors: [], error: null, failed: 0 })),
@@ -116,6 +119,8 @@ function seedWarmThread(): string {
 describe("buildHistoryWindow warm-summary cache", () => {
   beforeEach(() => {
     chatSpy.mockReset();
+    recallSpy.mockReset();
+    recallSpy.mockImplementation(async () => []);
     for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
   });
 
@@ -174,5 +179,24 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(elapsed).toBeLessThan(2000);
     // Hung summariser must not poison the cache.
     expect(getThread(thread_id)?.warm_summary).toBeFalsy();
+  });
+
+  it("falls back to empty facts context when recall hangs past the budget", async () => {
+    const thread_id = seedWarmThread();
+    // Make the warm tier cheap so the warm budget isn't what we're timing.
+    chatReturns("RECAP");
+    // Recall never resolves — raceWithBudget(100ms) must unwedge it.
+    recallSpy.mockImplementation(
+      () => new Promise<unknown[]>(() => { /* pending forever */ }),
+    );
+
+    const start = Date.now();
+    const result = await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q", modelInfo);
+    const elapsed = Date.now() - start;
+
+    // No facts context surfaced when the embedding provider is unresponsive.
+    expect(result.factsCtx).toBe("");
+    // 100ms recall + 100ms warm summary budgets, with margin.
+    expect(elapsed).toBeLessThan(2000);
   });
 });

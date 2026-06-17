@@ -325,7 +325,10 @@ async function buildFactsContext(query: string, factsBudgetTokens: number): Prom
 
   let hits: Array<{ key: string; value: string }> = [];
   try {
-    const recalled = await recall(query, 30);
+    // Bound the embedding round-trip — a hung provider must not stall the
+    // turn. Timeout returns [] which falls through to the substring LIKE
+    // path below, same as a thrown error.
+    const recalled = await raceWithBudget(recall(query, 30), getConfig().recallBudgetMs, []);
     hits = recalled
       .filter((h) => h.source === "memory" && h.namespace === "facts" && !!h.key)
       .slice(0, 12)
