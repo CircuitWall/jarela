@@ -621,7 +621,7 @@ that whitelists which categories are usable.
 | --- | --- | --- |
 | **Memory** | `memory_read`, `memory_write`, `memory_list` | Namespaced KV in SQLite |
 | **Documents** | `documents_search`, `documents_list_sources` | Semantic recall over folders the user added under the Documents tab. Cosine over chunked text; substring fallback when no embedding provider is configured. See [ADR-0024](docs/adr/0024-document-rag.md). |
-| **Files** | `file_read`, `file_write`, `file_edit`, `file_move`, `file_copy`, `file_delete`, `file_list`, `file_mkdir`, `file_stat` | Workspace-relative paths under `~/.jarela/files/` |
+| **Files** | `file_read`, `file_write`, `file_edit`, `file_multi_edit`, `file_move`, `file_copy`, `file_delete`, `file_list`, `file_mkdir`, `file_stat`, `file_glob`, `file_grep` | Workspace-relative paths under `~/.jarela/files/`. `file_list` supports recursive listing via `depth`. `file_grep` matches carry an `enclosing` symbol pointer; `file_read` exploration calls return a structural outline. |
 | **Shell** | `local_exec`, `shell_exec` | Timeouts + deny-list of obviously-destructive patterns |
 | **Web** | `web_search` (Tavily), `web_fetch` | HTML-to-text extraction in `web_fetch` |
 | **Images** | `generate_image` | Routed through the configured image provider |
