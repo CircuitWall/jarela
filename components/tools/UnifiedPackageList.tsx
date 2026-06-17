@@ -83,6 +83,7 @@ const CATEGORY_BLURB: Record<string, string> = {
   GitHub: "Issues, pull requests, code search via the GitHub API.",
   Mail: "Read and send email via Gmail / Outlook.",
   Calendar: "Read and write calendar events.",
+  Microsoft: "Microsoft Graph escape hatch + unified search + People resolver.",
   Config: "Read/write Jarela's own settings.",
 };
 
