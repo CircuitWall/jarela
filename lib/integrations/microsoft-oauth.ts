@@ -45,12 +45,15 @@ const TENANT = process.env.OUTLOOK_TENANT?.trim() || "common";
 //                           user's existing calendars.
 //   - Tasks.ReadWrite → list/get/create/update/complete/delete Microsoft
 //                       To Do tasks and lists (ms_todo_* tools).
+//   - People.Read     → resolve "who is X" / frequent contacts via
+//                       /me/people (ms_people_resolve tool).
 export const MICROSOFT_SCOPES = [
   "offline_access",
   "User.Read",
   "Mail.ReadWrite",
   "Calendars.ReadWrite",
   "Tasks.ReadWrite",
+  "People.Read",
 ];
 
 export function buildAuthorizeUrl(opts: {
@@ -140,10 +143,20 @@ export function resolveMicrosoftAuth(): MicrosoftAuth | { error: string } {
 interface CachedAccessToken { token: string; expires_at: number }
 const accessTokenCache = new Map<string, CachedAccessToken>();
 
+function cacheKey(auth: MicrosoftAuth): string {
+  return auth.refresh_token.slice(0, 20);
+}
+
+// Force-evict a cached access token (e.g. after a 401). The next call to
+// getMicrosoftAccessToken will refresh against the v2 token endpoint.
+function bustAccessToken(auth: MicrosoftAuth): void {
+  accessTokenCache.delete(cacheKey(auth));
+}
+
 export async function getMicrosoftAccessToken(
   auth: MicrosoftAuth,
 ): Promise<string | { error: string }> {
-  const key = auth.refresh_token.slice(0, 20);
+  const key = cacheKey(auth);
   const cached = accessTokenCache.get(key);
   if (cached && cached.expires_at > Date.now() + 60_000) return cached.token;
 
@@ -177,35 +190,137 @@ export async function getMicrosoftAccessToken(
   }
 }
 
-// Shared Graph fetch helper. Used by both lib/tools/outlook.ts and
-// lib/tools/outlook-calendar.ts. Returns parsed JSON or { error: string, url? }.
-// 204 No Content (e.g. successful DELETE) returns { ok: true }.
+// Path-prefix → required Graph scope. Used to render helpful 403 messages
+// pointing the user at the exact scope they need to reconnect with.
+const SCOPE_HINTS: Array<{ prefix: string; scope: string }> = [
+  { prefix: "/me/messages", scope: "Mail.ReadWrite" },
+  { prefix: "/me/mailFolders", scope: "Mail.ReadWrite" },
+  { prefix: "/me/sendMail", scope: "Mail.Send" },
+  { prefix: "/me/events", scope: "Calendars.ReadWrite" },
+  { prefix: "/me/calendar", scope: "Calendars.ReadWrite" },
+  { prefix: "/me/calendars", scope: "Calendars.ReadWrite" },
+  { prefix: "/me/todo", scope: "Tasks.ReadWrite" },
+  { prefix: "/me/people", scope: "People.Read" },
+  { prefix: "/me/contacts", scope: "Contacts.Read" },
+  { prefix: "/me/drive", scope: "Files.Read" },
+  { prefix: "/me/insights", scope: "Sites.Read.All" },
+  { prefix: "/search/query", scope: "Mail.Read Files.Read.All" },
+  { prefix: "/me", scope: "User.Read" },
+];
+
+function scopeHintFor(path: string): string | null {
+  const p = path.startsWith("http") ? new URL(path).pathname.replace(/^\/v1\.0/, "") : path;
+  for (const { prefix, scope } of SCOPE_HINTS) {
+    if (p.startsWith(prefix)) return scope;
+  }
+  return null;
+}
+
+function parseRetryAfter(headerVal: string | null): number {
+  if (!headerVal) return 0;
+  const secs = Number.parseInt(headerVal, 10);
+  if (Number.isFinite(secs) && secs >= 0) return Math.min(secs, 30) * 1000;
+  const ts = Date.parse(headerVal);
+  if (!Number.isNaN(ts)) return Math.max(0, Math.min(ts - Date.now(), 30_000));
+  return 0;
+}
+
+function backoffFor(attempt: number): number {
+  return Math.min(500 * 2 ** attempt, 4000);
+}
+
+// Shared Graph fetch helper. Used by lib/tools/outlook.ts,
+// lib/tools/outlook-calendar.ts, lib/tools/ms-todo.ts, lib/tools/ms-graph.ts.
+// Returns parsed JSON or { error: string, url? }. 204 No Content returns
+// { ok: true }.
+//
+// Built-in resilience:
+//   - 401 Unauthorized → drop the cached access token and retry once with a
+//     freshly refreshed one (covers token-revoked-mid-cache edge cases).
+//   - 429 / 503 → honour the `Retry-After` header (capped at 30s) or fall
+//     back to exponential backoff. Retries up to 3 times.
+//   - 403 Forbidden → surface a scope hint ("reconnect with X") so the
+//     operator knows what to grant.
 export async function graphFetch(
   auth: MicrosoftAuth,
   path: string,
   init?: RequestInit,
 ): Promise<unknown> {
-  const token = await getMicrosoftAccessToken(auth);
-  if (typeof token !== "string") return token;
   const url = path.startsWith("http") ? path : `https://graph.microsoft.com/v1.0${path}`;
-  try {
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/json",
-        ...(init?.headers ?? {}),
-      },
-      signal: AbortSignal.timeout(30_000),
-    });
+  let attempt = 0;
+  let triedReauth = false;
+
+  while (true) {
+    const token = await getMicrosoftAccessToken(auth);
+    if (typeof token !== "string") return token;
+
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...(init?.headers ?? {}),
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (err) {
+      return { error: `Graph fetch threw: ${errorMessage(err)}`, url };
+    }
+
     if (res.status === 204) return { ok: true };
+
+    if (res.status === 401 && !triedReauth) {
+      triedReauth = true;
+      bustAccessToken(auth);
+      continue;
+    }
+
+    if ((res.status === 429 || res.status === 503) && attempt < 3) {
+      const waitMs = parseRetryAfter(res.headers.get("Retry-After")) || backoffFor(attempt);
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
+    }
+
     const text = await res.text();
     if (!res.ok) {
-      return { error: `Graph ${res.status}: ${text.slice(0, 500)}`, url };
+      let msg = `Graph ${res.status}: ${text.slice(0, 500)}`;
+      if (res.status === 403) {
+        const hint = scopeHintFor(path);
+        if (hint) {
+          msg += ` — reconnect the Microsoft integration with scope: ${hint}`;
+        }
+      }
+      return { error: msg, url };
     }
     try { return JSON.parse(text); } catch { return text; }
-  } catch (err) {
-    return { error: `Graph fetch threw: ${errorMessage(err)}` };
   }
+}
+
+// Follow @odata.nextLink across pages and concatenate `value` arrays.
+// Stops at `maxPages` (default 5) to bound context cost. Returns the same
+// shape as graphFetch (object with `.value`) but with the merged array, or
+// the original error shape if any page errored.
+export async function graphPaged(
+  auth: MicrosoftAuth,
+  path: string,
+  opts?: { maxPages?: number; init?: RequestInit },
+): Promise<unknown> {
+  const maxPages = opts?.maxPages ?? 5;
+  let current: string | null = path;
+  const merged: unknown[] = [];
+  let pages = 0;
+
+  while (current && pages < maxPages) {
+    const page = await graphFetch(auth, current, opts?.init);
+    if (page && typeof page === "object" && "error" in page) return page;
+    const body = page as { value?: unknown[]; "@odata.nextLink"?: string };
+    if (Array.isArray(body.value)) merged.push(...body.value);
+    current = typeof body["@odata.nextLink"] === "string" ? body["@odata.nextLink"] : null;
+    pages += 1;
+  }
+  return { value: merged, pages };
 }
