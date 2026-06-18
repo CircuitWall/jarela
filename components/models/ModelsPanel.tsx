@@ -51,7 +51,7 @@ export function ModelsPanel() {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         {/* Model list */}
         <div className="px-4 py-2">
           {loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}

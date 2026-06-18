@@ -36,7 +36,7 @@ export function AppearancePanel() {
         <h2 className="text-sm font-semibold text-fg mr-auto">Appearance</h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-4 space-y-6">
         <section>
           <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-2 px-1">Theme</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">

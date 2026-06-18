@@ -51,7 +51,7 @@ export function MemoryPanel() {
           </Select>
         </div>
       </div>
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">
+      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-2">
         {loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">Loading…</p>}
         {!loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">No memory items yet</p>}
         {items.map((item) => (
