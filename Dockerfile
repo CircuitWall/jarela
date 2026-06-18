@@ -56,6 +56,7 @@ COPY package.json package-lock.json* ./
 COPY packages/atlassian-langchain/package.json   ./packages/atlassian-langchain/
 COPY packages/github-langchain/package.json      ./packages/github-langchain/
 COPY packages/jira-align-langchain/package.json  ./packages/jira-align-langchain/
+COPY packages/ms-todo-langchain/package.json     ./packages/ms-todo-langchain/
 RUN npm ci --no-audit --no-fund --ignore-scripts --registry=https://registry.npmjs.org/
 
 # Copy the rest of the sources and build the standalone bundle.
