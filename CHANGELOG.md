@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-06-18
+
+### Fixed
+
+- **Docker release build for `ms-todo-langchain` workspace.** The
+  builder stage now COPYs `packages/ms-todo-langchain/package.json`
+  alongside the other three workspace manifests before `npm ci`, so
+  the `workspace:^` symlink can be materialised. Without it, `npm ci`
+  failed with `EUNSUPPORTEDPROTOCOL Unsupported URL Type "workspace:"`
+  on both `linux/amd64` and `linux/arm64`, which blocked the v1.13.0
+  release artifacts. No image or package was published for v1.13.0;
+  v1.13.1 is the first published build of the 1.13 series.
+
 ## [1.13.0] - 2026-06-18
 
 ### Added
