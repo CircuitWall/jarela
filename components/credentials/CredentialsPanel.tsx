@@ -84,7 +84,7 @@ export function CredentialsPanel() {
       <div
         role="tablist"
         aria-label="Credentials sub-section"
-        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar"
+        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar select-none touch-pan-y"
       >
         {(["list", "network"] as Sub[]).map((s) => {
           const selected = s === active;
