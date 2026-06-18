@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-06-18
+
+### Added
+
+- **Multi-instance named credentials.** A credential row now carries a
+  `label` and an `is_default` flag, so users can register more than one
+  credential per `(type, provider)` pair and bind each agent's tools to a
+  specific instance. Two Atlassian sites, two GitHub PATs, or two
+  OpenAI keys can coexist in the same workspace and be wired to
+  different tool instances. Agents gain a `tool_credentials` JSON
+  column mapping each tool name to a credential id; the active
+  credential is routed through an AsyncLocalStorage frame entered by a
+  `tool.invoke` Proxy, so existing tool implementations need no
+  changes. The first credential created for a pair is auto-labelled
+  "Default"; deleting the default promotes the next survivor.
+  `POST/PUT/DELETE /api/v1/credentials` accept `label` and
+  `is_default`. CredentialsPanel now lists only configured providers,
+  grouped by category, with per-row Add another / Edit / Delete
+  affordances and a "default" badge. AgentEditor exposes a per-tool
+  credential picker. 27 new unit/integration tests and a 9-test
+  Playwright suite cover the API, agent round-trip, panel grouping,
+  and empty state.
+
+### Changed
+
+- **Side-panel sub-tabs share one clean underline pattern.**
+  CredentialsPanel, ToolsPanel and SettingsPanel previously rendered
+  sub-tabs as a grid of bordered pills, which read as a card
+  collection and made the active tab hard to spot. They are now a
+  single horizontal row of plain labels with a 2px accent underline on
+  the active tab; the row's bottom border forms a continuous baseline.
+  Settings keeps its icons inline with the label. The strip is marked
+  `select-none touch-pan-y` so iOS Safari PWA no longer captures
+  horizontal drag on the tab row — touch only delegates vertical pan
+  to the page, while tap still selects a tab. Twelve side panels also
+  picked up `no-scrollbar` on their scrollable container for visual
+  consistency with the rest of the app shell.
+
 ## [1.12.0] - 2026-06-18
 
 ### Added
