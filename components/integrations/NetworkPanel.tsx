@@ -82,7 +82,7 @@ export function NetworkPanel() {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3">
+      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar px-4 py-3">
         {syncMsg && (
           <div className="mb-3 px-3 py-2 rounded border border-border bg-surface-2 text-[11px] text-fg-muted flex items-start gap-2">
             <Terminal size={12} className="mt-0.5 text-fg-subtle shrink-0" />

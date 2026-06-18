@@ -55,7 +55,7 @@ export function ToolsPanel() {
       <div
         role="tablist"
         aria-label="Tools sub-section"
-        className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 overflow-x-auto"
+        className="flex flex-wrap gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 max-h-28 overflow-y-auto no-scrollbar"
       >
         {SUBS.map((s) => {
           const selected = s === active;
