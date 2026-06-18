@@ -71,7 +71,7 @@ export function SettingsPanel() {
                 "inline-flex w-full items-center justify-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors whitespace-nowrap " +
                 (selected
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
-                  : "border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]")
+                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]")
               }
             >
               <span className="text-fg-subtle">{s.icon}</span>
