@@ -2,7 +2,7 @@
 import { ChevronLeft, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
-import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { IntegrationCard } from "./IntegrationCard";
@@ -41,6 +41,13 @@ interface Props {
   // pick a different bucket. Used when the host already constrained the
   // category (e.g. ModelEditor only wants LLM credentials).
   lockCategory?: boolean;
+  // When provided, the dialog edits THAT specific credential row instead
+  // of the provider's default. The dialog still skips the picker.
+  credential?: Credential | null;
+  // When true, the dialog creates a NEW credential row for the chosen
+  // provider instead of editing the default. Used for the "Add another
+  // credential" affordance in CredentialsPanel.
+  createNew?: boolean;
   onClose: () => void;
   // Called after a successful save with the integration name that was
   // configured. Hosts can use this to refresh their views.
@@ -51,13 +58,14 @@ interface Props {
 // providers grouped by category, then drops the user into the same
 // IntegrationCard editor the Credentials panel renders inline — so
 // OAuth Connect, Test, and the setup guides are all in one place.
-export function AddCredentialDialog({ initialCategory, directProviderName, lockCategory, onClose, onSaved }: Props) {
+export function AddCredentialDialog({ initialCategory, directProviderName, lockCategory, credential, createNew, onClose, onSaved }: Props) {
   const [defs, setDefs] = useState<IntegrationDefinition[]>([]);
   const [statuses, setStatuses] = useState<Record<string, IntegrationStatus>>({});
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState<"pick" | "form">(directProviderName ? "form" : "pick");
+  const initialProviderName = directProviderName ?? credential?.provider ?? null;
+  const [step, setStep] = useState<"pick" | "form">(initialProviderName ? "form" : "pick");
   const [category] = useState<Category | null>(initialCategory ?? null);
-  const [activeName, setActiveName] = useState<string | null>(directProviderName ?? null);
+  const [activeName, setActiveName] = useState<string | null>(initialProviderName);
 
   useEscapeKey(onClose);
 
@@ -123,14 +131,18 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
     <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-[70] p-2 sm:p-4 overflow-y-auto">
       <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          {step === "form" && !lockCategory && !directProviderName && (
+          {step === "form" && !lockCategory && !directProviderName && !credential && !createNew && (
             <button onClick={backToPicker} className="text-fg-subtle hover:text-fg" title="Back to picker">
               <ChevronLeft size={16} />
             </button>
           )}
           <h3 className="text-sm font-semibold text-fg flex-1 truncate">
             {step === "form" && activeDef
-              ? `${activeStatus?.configured ? "Edit" : "Connect"} ${activeDef.label}`
+              ? credential
+                ? `Edit ${credential.label ?? credential.id}`
+                : createNew
+                  ? `New ${activeDef.label} credential`
+                  : `${activeStatus?.configured ? "Edit" : "Connect"} ${activeDef.label}`
               : "Add credential"}
           </h3>
           <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors">
@@ -187,6 +199,8 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
             <IntegrationCard
               definition={activeDef}
               status={activeStatus ?? undefined}
+              credential={credential ?? undefined}
+              createNew={createNew}
               onChanged={() => {
                 if (typeof window !== "undefined") {
                   window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
@@ -194,6 +208,7 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
                 onSaved?.(activeDef.name);
                 void reload();
               }}
+              onDeleted={onClose}
             />
           </div>
         )}

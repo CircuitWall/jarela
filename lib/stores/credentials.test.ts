@@ -11,8 +11,10 @@ const {
   deleteCredential,
   getCredential,
   getCredentialParams,
+  getDefaultCredential,
   listCredentials,
   nextCredentialId,
+  setDefaultCredential,
   updateCredential,
 } = await import("./credentials");
 const { SECRET_PARAM_KEYS } = await import("./credentials");
@@ -106,5 +108,94 @@ describe("credentials store", () => {
       }
     }
     expect(missing, `Add these to SECRET_PARAM_KEYS in lib/stores/credentials.ts: ${JSON.stringify(missing)}`).toEqual([]);
+  });
+});
+
+describe("credentials store: multi-instance label + is_default", () => {
+  // First row of a (type, provider) pair must auto-label to "Default"
+  // so the panel — which renders only configured rows by their name —
+  // never shows a blank entry for the legacy single-credential install.
+  it("auto-labels the first row of a (type, provider) pair 'Default'", () => {
+    const a = createCredential({ type: "model", provider: "labels-first", params: { api_key: "k1" } });
+    expect(a.label).toBe("Default");
+    expect(a.is_default).toBe(1);
+  });
+
+  it("leaves label null on subsequent rows of the same pair when caller didn't supply one", () => {
+    createCredential({ type: "model", provider: "labels-second", params: { api_key: "k1" } });
+    const b = createCredential({ type: "model", provider: "labels-second", params: { api_key: "k2" } });
+    expect(b.label).toBeNull();
+    expect(b.is_default).toBe(0);
+  });
+
+  it("honours caller-supplied label on first row instead of overriding with 'Default'", () => {
+    const c = createCredential({
+      type: "model", provider: "labels-explicit",
+      label: "Work",
+      params: { api_key: "k1" },
+    });
+    expect(c.label).toBe("Work");
+    expect(c.is_default).toBe(1);
+  });
+
+  it("trims blank/whitespace labels to null", () => {
+    // Forcing label="" on a second row hits the normaliseLabel branch
+    // without colliding with the auto-Default for the first row.
+    createCredential({ type: "model", provider: "labels-blank", params: { api_key: "k1" } });
+    const b = createCredential({
+      type: "model", provider: "labels-blank",
+      label: "   ",
+      params: { api_key: "k2" },
+    });
+    expect(b.label).toBeNull();
+  });
+
+  it("setDefaultCredential promotes the target row and clears the previous default", () => {
+    const a = createCredential({ type: "model", provider: "default-promote", params: { api_key: "k1" } });
+    const b = createCredential({ type: "model", provider: "default-promote", label: "Other", params: { api_key: "k2" } });
+    expect(a.is_default).toBe(1);
+    expect(b.is_default).toBe(0);
+
+    const promoted = setDefaultCredential(b.id);
+    expect(promoted?.is_default).toBe(1);
+    expect(getCredential(a.id)?.is_default).toBe(0);
+  });
+
+  it("setDefaultCredential returns null for unknown ids and leaves siblings untouched", () => {
+    const a = createCredential({ type: "model", provider: "default-missing", params: { api_key: "k1" } });
+    expect(setDefaultCredential("nonexistent-id")).toBeNull();
+    expect(getCredential(a.id)?.is_default).toBe(1);
+  });
+
+  it("getDefaultCredential returns the row currently flagged is_default=1", () => {
+    const a = createCredential({ type: "model", provider: "default-resolve", params: { api_key: "k1" } });
+    const b = createCredential({ type: "model", provider: "default-resolve", label: "Two", params: { api_key: "k2" } });
+    expect(getDefaultCredential("model", "default-resolve")?.id).toBe(a.id);
+    setDefaultCredential(b.id);
+    expect(getDefaultCredential("model", "default-resolve")?.id).toBe(b.id);
+  });
+
+  it("getDefaultCredential returns null when no rows exist for the pair", () => {
+    expect(getDefaultCredential("model", "no-such-provider")).toBeNull();
+  });
+
+  it("deleting the default promotes the surviving sibling so callers without an id keep resolving", () => {
+    const a = createCredential({ type: "model", provider: "default-delete", params: { api_key: "k1" } });
+    const b = createCredential({ type: "model", provider: "default-delete", label: "Other", params: { api_key: "k2" } });
+    expect(a.is_default).toBe(1);
+    expect(b.is_default).toBe(0);
+
+    expect(deleteCredential(a.id)).toBe(true);
+    // The lone survivor should now resolve as the default.
+    expect(getDefaultCredential("model", "default-delete")?.id).toBe(b.id);
+    expect(getCredential(b.id)?.is_default).toBe(1);
+  });
+
+  it("listCredentials orders is_default rows first within a (type, provider) pair", () => {
+    const a = createCredential({ type: "model", provider: "list-order", params: { api_key: "k1" } });
+    const b = createCredential({ type: "model", provider: "list-order", label: "Promoted", params: { api_key: "k2" } });
+    setDefaultCredential(b.id);
+    const rows = listCredentials({ type: "model", provider: "list-order" });
+    expect(rows.map((r) => r.id)).toEqual([b.id, a.id]);
   });
 });

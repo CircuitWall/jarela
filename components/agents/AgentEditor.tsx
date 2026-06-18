@@ -7,6 +7,7 @@ import { useAgentSaveHandler } from "./agent-editor/useAgentSaveHandler";
 import { IdentitySection } from "./agent-editor/IdentitySection";
 import { ModelSection } from "./agent-editor/ModelSection";
 import { ToolsSection } from "./agent-editor/ToolsSection";
+import { ToolCredentialsSection } from "./agent-editor/ToolCredentialsSection";
 import { DelegatesSection } from "./agent-editor/DelegatesSection";
 import { AdvancedSection } from "./agent-editor/AdvancedSection";
 import { EditorChrome, EditorFooter } from "./agent-editor/EditorChrome";
@@ -37,6 +38,7 @@ export function AgentEditor({ agent, models, onSave, onClose }: Props) {
       <ModelSection form={form} models={models} integrations={form.integrations} onClose={onClose} />
       <hr className="border-border" />
       <ToolsSection form={form} advancedMode={isFullMode} />
+      <ToolCredentialsSection form={form} />
       <DelegatesSection form={form} />
       <hr className="border-border" />
       <AdvancedSection form={form} models={models} integrations={form.integrations} isFullMode={isFullMode} onClose={onClose} />

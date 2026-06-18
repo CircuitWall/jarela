@@ -14,6 +14,7 @@ const {
   getAgentDisplayFilters,
   updateAgentDisplayFilters,
   getAgentTools,
+  getAgentToolCredentials,
   getAgentTierProportions,
   DISPLAY_FILTER_DEFAULTS,
 } = await import("./agent-configs");
@@ -191,5 +192,84 @@ describe("agent context-tier proportions (ADR-0043)", () => {
     expect(
       getAgentTierProportions({ context_tier_proportions: null } as never),
     ).toBeNull();
+  });
+});
+
+describe("agent tool_credentials (per-tool credential overrides)", () => {
+  beforeEach(() => {
+    seedAgent("tc-test");
+  });
+
+  it("returns an empty record when the column is null", () => {
+    expect(getAgentToolCredentials(getAgentConfig("tc-test"))).toEqual({});
+  });
+
+  it("round-trips a { toolName: credentialId } map through upsert", () => {
+    upsertAgentConfig({
+      id: "tc-test",
+      name: "tc-test",
+      identity: "",
+      instructions: "",
+      tools: ["github_create_issue", "gmail_send"],
+      tool_credentials: {
+        github_create_issue: "integration-github-work",
+        gmail_send: "integration-gmail-personal",
+      },
+    });
+    expect(getAgentToolCredentials(getAgentConfig("tc-test")!)).toEqual({
+      github_create_issue: "integration-github-work",
+      gmail_send: "integration-gmail-personal",
+    });
+  });
+
+  it("`undefined` on subsequent upsert keeps the existing map (PATCH-style)", () => {
+    upsertAgentConfig({
+      id: "tc-test", name: "tc-test", identity: "", instructions: "", tools: [],
+      tool_credentials: { gmail_send: "integration-gmail-work" },
+    });
+    upsertAgentConfig({
+      id: "tc-test", name: "tc-test", identity: "", instructions: "", tools: [],
+      // tool_credentials omitted — must NOT clear the column.
+    });
+    expect(getAgentToolCredentials(getAgentConfig("tc-test")!)).toEqual({
+      gmail_send: "integration-gmail-work",
+    });
+  });
+
+  it("an empty input map clears the column (caller explicitly removed all overrides)", () => {
+    upsertAgentConfig({
+      id: "tc-test", name: "tc-test", identity: "", instructions: "", tools: [],
+      tool_credentials: { gmail_send: "integration-gmail-work" },
+    });
+    upsertAgentConfig({
+      id: "tc-test", name: "tc-test", identity: "", instructions: "", tools: [],
+      tool_credentials: {},
+    });
+    expect(getAgentConfig("tc-test")!.tool_credentials).toBeNull();
+    expect(getAgentToolCredentials(getAgentConfig("tc-test")!)).toEqual({});
+  });
+
+  it("filters non-string and blank entries from the input map", () => {
+    upsertAgentConfig({
+      id: "tc-test", name: "tc-test", identity: "", instructions: "", tools: [],
+      tool_credentials: {
+        gmail_send: "integration-gmail-work",
+        github_create_issue: "",
+        // @ts-expect-error — intentional bad input
+        bogus: 42,
+      },
+    });
+    expect(getAgentToolCredentials(getAgentConfig("tc-test")!)).toEqual({
+      gmail_send: "integration-gmail-work",
+    });
+  });
+
+  it("tolerates malformed JSON / non-object payloads in the column", () => {
+    expect(getAgentToolCredentials({ tool_credentials: "not json" } as never)).toEqual({});
+    expect(getAgentToolCredentials({ tool_credentials: "[]" } as never)).toEqual({});
+    expect(getAgentToolCredentials({ tool_credentials: "null" } as never)).toEqual({});
+    expect(getAgentToolCredentials({ tool_credentials: "" } as never)).toEqual({});
+    expect(getAgentToolCredentials(null)).toEqual({});
+    expect(getAgentToolCredentials(undefined)).toEqual({});
   });
 });

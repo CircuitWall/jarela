@@ -311,11 +311,57 @@ export function runMigrations(db: DatabaseSync): void {
   ensureThreadContextPinColumns(db);
   ensureThreadChannelSummariesTable(db);
   ensureCredentialsTable(db);
+  ensureCredentialsLabelAndDefaultColumns(db);
   ensureModelConfigCredentialIdColumn(db);
+  ensureAgentConfigsToolCredentialsColumn(db);
   seedModelConfigs(db);
   seedAgentConfigs(db);
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
+}
+
+// Multi-instance credentials per (type, provider). `label` is a
+// human-readable name shown in the UI ("Work", "Personal", …); `is_default`
+// picks one row per (type, provider) as the implicit pick for callers that
+// don't reference a specific id (back-compat with the old "first row wins"
+// behaviour). The first row created for a given (type, provider) is
+// promoted to default automatically by the store layer.
+function ensureCredentialsLabelAndDefaultColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(credentials)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("label")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN label TEXT");
+    // One-shot backfill of pre-existing rows so the panel — which now
+    // only renders configured rows by their name — never displays a
+    // blank entry for legacy single-credential installs. MUST stay
+    // gated on the ADD COLUMN above; running this on every boot would
+    // clobber second-of-pair rows that the store layer intentionally
+    // leaves NULL.
+    db.exec("UPDATE credentials SET label='Default' WHERE label IS NULL");
+  }
+  if (!names.has("is_default")) {
+    db.exec("ALTER TABLE credentials ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0");
+    // Promote the first-by-id row per (type, provider) to default so the
+    // "first wins" resolution that ran before this column existed keeps
+    // picking the same credential.
+    db.exec(`
+      UPDATE credentials SET is_default=1
+      WHERE id IN (
+        SELECT MIN(id) FROM credentials GROUP BY type, provider
+      )
+    `);
+  }
+}
+
+// Per-agent override of which credential each tool uses when more than
+// one is configured for the tool's integration. JSON object shaped like
+// `{ "<toolName>": "<credentialId>" }`. Missing tools / NULL column fall
+// back to the integration's default credential (see is_default above).
+function ensureAgentConfigsToolCredentialsColumn(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "tool_credentials")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN tool_credentials TEXT");
+  }
 }
 
 // ADR-0044. Per-channel warm summary so a thread shared across `chat`,

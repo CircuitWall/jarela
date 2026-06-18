@@ -29,6 +29,8 @@ type Params = { params: Promise<{ id: string }> };
 const UpdateBody = z.object({
   provider: z.string().min(1).optional(),
   auth_method: z.enum(["api_key", "oauth"]).optional(),
+  label: z.string().nullable().optional(),
+  is_default: z.boolean().optional(),
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -40,7 +42,11 @@ function publicView(row: ReturnType<typeof getCredential>) {
     if (SECRET_PARAM_KEYS.has(k)) safe[k] = typeof v === "string" && v.length > 0 ? "***" : v;
     else safe[k] = v;
   }
-  return { ...row, params: safe };
+  return {
+    ...row,
+    params: safe,
+    is_default: row.is_default === 1,
+  };
 }
 
 export async function PUT(req: NextRequest, { params }: Params) {
@@ -64,6 +70,8 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const next = updateCredential(id, {
     provider: parsed.data.provider,
     auth_method: parsed.data.auth_method,
+    label: parsed.data.label,
+    is_default: parsed.data.is_default,
     params: merged,
   });
   return NextResponse.json(publicView(next));

@@ -25,13 +25,13 @@ type Sub =
   | "defaults";
 
 const SUBS: ReadonlyArray<{ id: Sub; label: string; icon: React.ReactNode; advancedOnly?: boolean }> = [
-  { id: "appearance",  label: "Appearance",  icon: <Palette size={13} /> },
-  { id: "networking",  label: "Networking",  icon: <Globe size={13} /> },
+  { id: "appearance", label: "Appearance", icon: <Palette size={13} /> },
+  { id: "networking", label: "Networking", icon: <Globe size={13} /> },
   { id: "credentials", label: "Credentials", icon: <Key size={13} /> },
-  { id: "models",      label: "Models",      icon: <Cpu size={13} /> },
-  { id: "harness",     label: "Harness",     icon: <Shapes size={13} />,    advancedOnly: true },
-  { id: "logs",        label: "Logs",        icon: <ScrollText size={13} />, advancedOnly: true },
-  { id: "defaults",    label: "Defaults",    icon: <ServerCog size={13} />,  advancedOnly: true },
+  { id: "models", label: "Models", icon: <Cpu size={13} /> },
+  { id: "harness", label: "Harness", icon: <Shapes size={13} />, advancedOnly: true },
+  { id: "logs", label: "Logs", icon: <ScrollText size={13} />, advancedOnly: true },
+  { id: "defaults", label: "Defaults", icon: <ServerCog size={13} />, advancedOnly: true },
 ];
 
 const VALID = new Set<Sub>(SUBS.map((s) => s.id));
@@ -56,7 +56,7 @@ export function SettingsPanel() {
       <div
         role="tablist"
         aria-label="Settings sub-section"
-        className="flex flex-wrap gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 max-h-28 overflow-y-auto no-scrollbar"
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 pb-2 max-h-32 overflow-y-auto no-scrollbar"
       >
         {visibleSubs.map((s) => {
           const selected = s.id === active;
@@ -68,10 +68,10 @@ export function SettingsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s.id)}
               className={
-                "inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors whitespace-nowrap " +
+                "inline-flex w-full items-center justify-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors whitespace-nowrap " +
                 (selected
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
-                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
+                  : "border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]")
               }
             >
               <span className="text-fg-subtle">{s.icon}</span>
@@ -81,13 +81,13 @@ export function SettingsPanel() {
         })}
       </div>
       <div className="flex-1 min-h-0 overflow-hidden">
-        {active === "appearance"  && <AppearancePanel />}
-        {active === "networking"  && <NetworkPanel />}
+        {active === "appearance" && <AppearancePanel />}
+        {active === "networking" && <NetworkPanel />}
         {active === "credentials" && <CredentialsListPanel />}
-        {active === "models"      && <ModelsPanel />}
-        {active === "harness"     && <HarnessPanel />}
-        {active === "logs"        && <LogsPanel />}
-        {active === "defaults"    && <EnvVarsPanel />}
+        {active === "models" && <ModelsPanel />}
+        {active === "harness" && <HarnessPanel />}
+        {active === "logs" && <LogsPanel />}
+        {active === "defaults" && <EnvVarsPanel />}
       </div>
     </div>
   );
