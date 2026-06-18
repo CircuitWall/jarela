@@ -56,7 +56,7 @@ export function SettingsPanel() {
       <div
         role="tablist"
         aria-label="Settings sub-section"
-        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 pb-2 max-h-32 overflow-y-auto no-scrollbar"
+        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar"
       >
         {visibleSubs.map((s) => {
           const selected = s.id === active;
@@ -68,10 +68,10 @@ export function SettingsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s.id)}
               className={
-                "inline-flex w-full items-center justify-center gap-1.5 px-3 py-1.5 text-sm rounded-md border transition-colors whitespace-nowrap " +
+                "inline-flex items-center gap-1.5 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors " +
                 (selected
-                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
-                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-primary)]")
+                  ? "border-[var(--accent)] text-[var(--text-primary)] font-medium"
+                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
               }
             >
               <span className="text-fg-subtle">{s.icon}</span>
