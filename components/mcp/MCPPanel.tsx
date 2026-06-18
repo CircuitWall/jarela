@@ -53,7 +53,7 @@ export function MCPPanel() {
         </button>
       </div>
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto">
+      <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         <div className="px-4 py-2">
           {loading && servers.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
@@ -222,7 +222,7 @@ function MCPEditor({
           </button>
         </div>
 
-        <div className="p-4 space-y-3 overflow-y-auto">
+        <div className="p-4 space-y-3 overflow-y-auto no-scrollbar">
           {registryEntry && (
             <div className="px-3 py-2 rounded bg-surface-3/40 border border-border text-[11px] text-fg-subtle">
               {registryEntry.description}
@@ -450,7 +450,7 @@ function RegistryPicker({
           </label>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-2">
+        <div className="flex-1 overflow-y-auto no-scrollbar px-4 py-2">
           {loading && entries.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}
           {error && (
             <div className="my-3 px-3 py-2 rounded border border-rose-800 bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300">

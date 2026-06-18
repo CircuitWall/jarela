@@ -56,7 +56,7 @@ export function SettingsPanel() {
       <div
         role="tablist"
         aria-label="Settings sub-section"
-        className="flex gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 overflow-x-auto"
+        className="flex flex-wrap gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 max-h-28 overflow-y-auto no-scrollbar"
       >
         {visibleSubs.map((s) => {
           const selected = s.id === active;
