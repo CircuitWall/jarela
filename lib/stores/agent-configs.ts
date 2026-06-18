@@ -60,6 +60,12 @@ export interface AgentConfigRow {
   // Independent of `anti_hallucination_mode` for the stall axis; strict
   // mode does override the resolved stall classifier to 'model'.
   citation_strictness: string;
+  // Per-agent override of which credential each tool uses when more than one
+  // is configured for the tool's integration. JSON-encoded
+  // `{ [toolName]: credentialId }`. NULL/blank = no overrides (every tool
+  // resolves via the integration's default credential, preserving the
+  // legacy single-instance behaviour).
+  tool_credentials: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -149,6 +155,10 @@ export interface UpsertAgentInput {
   // Citation strictness ('off' | 'informational' | 'standard' | 'strict').
   // `undefined` = keep existing.
   citation_strictness?: CitationStrictness;
+  // Per-tool credential overrides (`{ toolName: credentialId }`). `undefined`
+  // = keep existing. An empty object clears every override; missing keys
+  // fall back to the integration's default credential at call time.
+  tool_credentials?: Record<string, string>;
 }
 
 /**
@@ -182,6 +192,29 @@ export function parseDelegateTargets(raw: string | null | undefined): string[] {
     return Array.from(new Set(ids));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Parse the per-agent `{ toolName: credentialId }` override map stored in
+ * the `tool_credentials` column. Returns an empty record on NULL / blank /
+ * malformed JSON / non-string entries so downstream code can treat the
+ * result as a plain lookup without further validation.
+ */
+export function getAgentToolCredentials(
+  cfg: Pick<AgentConfigRow, "tool_credentials"> | null | undefined,
+): Record<string, string> {
+  if (!cfg?.tool_credentials) return {};
+  try {
+    const parsed = JSON.parse(cfg.tool_credentials);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === "string" && v.length > 0) out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -242,6 +275,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
     input.citation_strictness === undefined
       ? (parseCitationStrictness(existing?.citation_strictness) ?? "off")
       : (parseCitationStrictness(input.citation_strictness) ?? "off");
+  const toolCredentials = serialiseToolCredentials(input.tool_credentials, existing?.tool_credentials ?? null);
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
@@ -250,8 +284,9 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
+         tool_credentials,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -294,6 +329,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       antiHallucMode,
       antiHallucModel,
       citationStrictness,
+      toolCredentials,
       created_at,
       t,
     );
@@ -303,6 +339,21 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
 function clampPercent(next: number | undefined, fallback: number): number {
   const n = Number.isFinite(next) ? Number(next) : fallback;
   return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function serialiseToolCredentials(
+  input: Record<string, string> | undefined,
+  existing: string | null,
+): string | null {
+  if (input === undefined) return existing;
+  const cleaned: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (typeof k === "string" && k.length > 0 && typeof v === "string" && v.length > 0) {
+      cleaned[k] = v;
+    }
+  }
+  if (Object.keys(cleaned).length === 0) return null;
+  return JSON.stringify(cleaned);
 }
 
 function toMbti(v: string | null | undefined): MbtiType | null {

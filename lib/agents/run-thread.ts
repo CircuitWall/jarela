@@ -5,7 +5,7 @@ import type { ContentPart } from "@/lib/tools/types";
 import { addMessage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
-import { getAgentConfig, getAgentTierProportions, getAgentTools, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
+import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
@@ -273,12 +273,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const delegationDepth = req._delegation_depth ?? 0;
   const delegationAncestors = req._delegation_ancestors ?? [];
+  const toolCredentialOverrides = getAgentToolCredentials(agentCfg);
   const streamOpts: StreamOptions = {
     ...req.options,
     agent_run_config: {
       system_prompt: systemPrompt,
       allowed_tools: allowedTools,
       model_config_name: modelConfigName,
+      tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }
         : undefined,

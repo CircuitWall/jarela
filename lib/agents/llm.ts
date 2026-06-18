@@ -20,6 +20,7 @@ import { getConfig } from "@/lib/env/config";
 import { withMaskRun, getMaskRunContext } from "@/lib/redaction/context";
 import { StreamRehydrator } from "@/lib/redaction/stream-rehydrate";
 import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
+import { wrapToolsForCredentialRouting } from "@/lib/tools/wrap-credentials";
 import { errorMessage } from "@/lib/utils/error";
 
 function toBaseMessages(
@@ -109,10 +110,14 @@ async function* streamWithConfigImpl(
   const toolPolicy = runCfg?.allowed_tools?.length
     ? { allow: runCfg.allowed_tools }
     : options?.tool_policy;
-  // Wrap tools so any «SECRET:...» placeholders the model emits in their
-  // arguments are rehydrated to original values before the tool runs.
-  // No-op when there is no active MaskRunContext.
-  const tools = wrapToolsForRehydrate(await getAllToolsAsync(toolPolicy));
+  // Two wrapping layers — order matters. Credential-routing must run on
+  // the OUTSIDE so it sees the original `invoke` and can establish the
+  // AsyncLocalStorage frame before the rehydrate proxy delegates. Both
+  // layers are no-ops when their respective context (mask run / override
+  // map) is empty.
+  const baseTools = await getAllToolsAsync(toolPolicy);
+  const rehydrated = wrapToolsForRehydrate(baseTools);
+  const tools = wrapToolsForCredentialRouting(rehydrated, runCfg?.tool_credentials ?? {});
 
   const model = new JarelaChatModel({ provider, modelId: cfg.model_id, params });
   const store = new SqliteMemoryStore();

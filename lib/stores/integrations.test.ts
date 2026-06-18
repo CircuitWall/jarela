@@ -13,11 +13,13 @@ const {
   saveIntegration,
   getIntegrationStatus,
   getIntegrationRaw,
+  getIntegrationRawById,
   listIntegrations,
   deleteIntegration,
   SECRET_MASK,
 } = await import("./integrations");
-const { createCredential, listCredentials } = await import("./credentials");
+const { createCredential, listCredentials, setDefaultCredential } = await import("./credentials");
+const { runWithToolCredentialContext } = await import("@/lib/tools/credential-context");
 
 function wipeAll(): void {
   const db = getDb();
@@ -147,5 +149,79 @@ describe("integrations store (credentials-backed)", () => {
     expect("error" in r).toBe(true);
     // And no credential was created as a side effect of the failed write.
     expect(listCredentials({ type: "integration", provider: "anthropic" }).length).toBe(0);
+  });
+});
+
+describe("integrations store: multi-instance + ALS routing", () => {
+  beforeEach(() => wipeAll());
+
+  it("getIntegrationRaw resolves the default credential when no ALS frame is active", () => {
+    // Two credentials for the same integration; promote the second as default.
+    createCredential({ id: "integration-github", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_default_was_first" } });
+    const second = createCredential({ id: "integration-github-work", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_now_default" } });
+    setDefaultCredential(second.id);
+    expect(getIntegrationRaw("github")?.token).toBe("ghp_now_default");
+  });
+
+  it("getIntegrationRawById loads a specific credential regardless of default flag", () => {
+    createCredential({ id: "integration-github", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_default" } });
+    createCredential({ id: "integration-github-personal", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_personal" } });
+    expect(getIntegrationRawById("integration-github-personal")?.token).toBe("ghp_personal");
+    expect(getIntegrationRawById("integration-github")?.token).toBe("ghp_default");
+  });
+
+  it("getIntegrationRawById returns null for unknown ids", () => {
+    expect(getIntegrationRawById("does-not-exist")).toBeNull();
+  });
+
+  it("ALS frame with matching provider routes getIntegrationRaw to the override credential", () => {
+    createCredential({ id: "integration-github", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_default" } });
+    createCredential({ id: "integration-github-work", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_work" } });
+
+    const out = runWithToolCredentialContext(
+      { toolName: "github_create_issue", toolCredentials: { github_create_issue: "integration-github-work" } },
+      () => getIntegrationRaw("github"),
+    );
+    expect(out?.token).toBe("ghp_work");
+  });
+
+  it("ALS override for a different tool name falls back to the default", () => {
+    createCredential({ id: "integration-github", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_default" } });
+    createCredential({ id: "integration-github-work", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_work" } });
+
+    const out = runWithToolCredentialContext(
+      // Override only applies to a different tool name — current resolver
+      // sees no entry for "github_list_repos" and uses the default.
+      { toolName: "github_list_repos", toolCredentials: { github_create_issue: "integration-github-work" } },
+      () => getIntegrationRaw("github"),
+    );
+    expect(out?.token).toBe("ghp_default");
+  });
+
+  it("ALS override pointing at the WRONG provider is ignored (security)", () => {
+    // gmail tool that mistakenly points at a github credential id must
+    // NOT leak the github token through getIntegrationRaw("gmail").
+    createCredential({ id: "integration-gmail", type: "integration", provider: "gmail", auth_method: "oauth", params: { client_id: "cid", client_secret: "sec", refresh_token: "rt" } });
+    createCredential({ id: "integration-github", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_should_not_leak" } });
+
+    const out = runWithToolCredentialContext(
+      { toolName: "gmail_send", toolCredentials: { gmail_send: "integration-github" } },
+      () => getIntegrationRaw("gmail"),
+    );
+    // Falls back to the gmail default credential, not the github one.
+    expect(out?.client_id).toBe("cid");
+    expect(out?.refresh_token).toBe("rt");
+    // And definitely no github fields bled into the response.
+    expect((out as Record<string, string>).token).toBeUndefined();
+  });
+
+  it("ALS override pointing at a stale/deleted id falls through to the default", () => {
+    createCredential({ id: "integration-github", type: "integration", provider: "github", auth_method: "api_key", params: { token: "ghp_default" } });
+
+    const out = runWithToolCredentialContext(
+      { toolName: "github_create_issue", toolCredentials: { github_create_issue: "integration-github-deleted" } },
+      () => getIntegrationRaw("github"),
+    );
+    expect(out?.token).toBe("ghp_default");
   });
 });

@@ -21,10 +21,12 @@ import {
   deleteCredential,
   getCredential,
   getCredentialParams,
+  getDefaultCredential,
   listCredentials,
   updateCredential,
 } from "@/lib/stores/credentials";
 import { getIntegrationMeta, markFieldsAsUserTouched } from "@/lib/stores/integration_meta";
+import { getCurrentToolCredentialContext } from "@/lib/tools/credential-context";
 
 export const SECRET_MASK = "********";
 const LEGACY_NAMESPACE = "integrations";
@@ -253,10 +255,48 @@ export function getIntegrationStatus(name: string): IntegrationStatus | null {
 
 // Internal: server-side resolution that returns RAW secrets. Only callable
 // from server code (the integration tools).
+//
+// Resolution order:
+//   1. If an active tool-credential context is bound (i.e. the call is
+//      coming from inside a wrapped tool invocation) and the agent has
+//      pinned a specific credential id for THIS tool name, load that id.
+//      The id must match the integration's provider — otherwise we ignore
+//      the override to avoid silently grabbing the wrong account's secrets.
+//   2. Otherwise fall back to the integration's default credential
+//      (`is_default = 1`), matching legacy single-instance behaviour.
 export function getIntegrationRaw(name: string): Record<string, string> | null {
-  const cred = firstCredentialFor(name);
+  const cred = resolveIntegrationCredential(name);
   if (!cred) return null;
   return paramsToStrings(getCredentialParams(cred));
+}
+
+// Resolve a specific credential by id (any provider). Returns null when the
+// id is unknown or carries no params. Used by callers that already know
+// which named credential to bind — e.g. a document-RAG indexer that was
+// configured with `credential_id="integration-gmail-personal"`.
+export function getIntegrationRawById(credentialId: string): Record<string, string> | null {
+  const cred = getCredential(credentialId);
+  if (!cred) return null;
+  return paramsToStrings(getCredentialParams(cred));
+}
+
+function resolveIntegrationCredential(name: string) {
+  if (!isKnownIntegration(name)) return null;
+  const ctx = getCurrentToolCredentialContext();
+  if (ctx) {
+    const overrideId = ctx.toolCredentials[ctx.toolName];
+    if (overrideId) {
+      const override = getCredential(overrideId);
+      if (override && override.type === "integration" && override.provider === name) {
+        return override;
+      }
+      // Mismatched override (wrong provider, deleted id, …) silently falls
+      // through to the default. The agent editor shouldn't allow saving
+      // these, but a stale row from before a credential was deleted is
+      // still possible.
+    }
+  }
+  return getDefaultCredential("integration", name);
 }
 
 // Save credentials. Any field whose value matches SECRET_MASK is preserved
@@ -324,8 +364,11 @@ export function deleteIntegration(name: string): boolean {
 }
 
 function firstCredentialFor(name: string) {
-  const creds = listCredentials({ type: "integration", provider: name });
-  return creds.length > 0 ? creds[0] : null;
+  // "First" historically meant lowest-id; today it means the row currently
+  // flagged as default for this provider. The two coincide for legacy
+  // single-instance installs because the migration promoted MIN(id) to
+  // default.
+  return getDefaultCredential("integration", name);
 }
 
 function deriveAuthMethod(name: string): "api_key" | "oauth" {

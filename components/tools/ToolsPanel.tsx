@@ -55,7 +55,7 @@ export function ToolsPanel() {
       <div
         role="tablist"
         aria-label="Tools sub-section"
-        className="flex flex-wrap gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 max-h-28 overflow-y-auto no-scrollbar"
+        className="grid grid-cols-2 sm:grid-cols-3 gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 pb-2 max-h-32 overflow-y-auto no-scrollbar"
       >
         {SUBS.map((s) => {
           const selected = s === active;
@@ -67,7 +67,7 @@ export function ToolsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s)}
               className={
-                "px-3 py-1.5 text-sm rounded-t-md border-b-2 -mb-px transition-colors whitespace-nowrap " +
+                "w-full px-3 py-1.5 text-sm rounded-md border transition-colors whitespace-nowrap " +
                 (selected
                   ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
                   : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
