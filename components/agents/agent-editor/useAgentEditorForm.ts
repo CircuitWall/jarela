@@ -23,6 +23,20 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [isDefault, setIsDefault] = useState<boolean>(agent?.is_default ?? false);
   const [modelConfigName, setModelConfigName] = useState<string>(agent?.model_config_name ?? "");
   const [selectedTools, setSelectedTools] = useState<string[]>(agent?.tools ?? []);
+  const [toolCredentials, setToolCredentials] = useState<Record<string, string>>(
+    agent?.tool_credentials ?? {},
+  );
+  // Imperative setter for the per-tool credential dropdown. Passing
+  // `null` clears the override so the resolver falls back to the
+  // integration's default credential.
+  const setToolCredentialFor = (toolName: string, credentialId: string | null) => {
+    setToolCredentials((prev) => {
+      const next = { ...prev };
+      if (credentialId) next[toolName] = credentialId;
+      else delete next[toolName];
+      return next;
+    });
+  };
   const [delegateTargets, setDelegateTargets] = useState<string[]>(agent?.delegate_targets ?? []);
   const [harnessId, setHarnessId] = useState<string>(agent?.harness_id ?? "");
   const [antiHallucMode, setAntiHallucMode] = useState<AntiHallucMode>(agent?.anti_hallucination_mode ?? "");
@@ -44,6 +58,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     name, setName, icon, setIcon, identity, setIdentity, instructions, setInstructions,
     isDefault, setIsDefault, iconInputRef, handleIconFile: handleIconFileFor(setIcon),
     modelConfigName, setModelConfigName, tools, selectedTools,
+    toolCredentials, setToolCredentialFor,
     delegateTargets, setDelegateTargets, harnessId, setHarnessId,
     antiHallucMode, setAntiHallucMode, antiHallucModel, setAntiHallucModel,
     citationStrictness, setCitationStrictness, tierOverride, setTierOverride,
@@ -73,6 +88,7 @@ function handleIconFileFor(setIcon: (v: string | null) => void) {
 interface PayloadFields {
   name: string; icon: string | null; identity: string; instructions: string;
   isDefault: boolean; modelConfigName: string; selectedTools: string[];
+  toolCredentials: Record<string, string>;
   delegateTargets: string[]; harnessId: string; tierOverride: TierOverride;
   antiHallucMode: AntiHallucMode; antiHallucModel: string;
   citationStrictness: CitationStrictness;
@@ -103,5 +119,18 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     anti_hallucination_mode: f.antiHallucMode === "" ? null : f.antiHallucMode,
     anti_hallucination_model_config: f.antiHallucModel.trim() === "" ? null : f.antiHallucModel.trim(),
     citation_strictness: f.citationStrictness,
+    // Drop overrides for tools the user has since disabled — the dead
+    // entries would never be read but would clutter the persisted JSON.
+    tool_credentials: pruneToolCredentials(f.toolCredentials, f.selectedTools),
   };
+}
+
+function pruneToolCredentials(
+  map: Record<string, string>,
+  selected: string[],
+): Record<string, string> {
+  const allowed = new Set(selected);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(map)) if (allowed.has(k)) out[k] = v;
+  return out;
 }

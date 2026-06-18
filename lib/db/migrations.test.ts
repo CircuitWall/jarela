@@ -261,3 +261,40 @@ describe("migrateIntegrationsToCredentials", () => {
     expect(getCredentialParams(cred).api_key).toBe(SECRET);
   });
 });
+
+describe("ensureCredentialsLabelAndDefaultColumns", () => {
+  // Regression: the NULL-label backfill MUST run only once (when the
+  // `label` column is first added), not on every boot. Otherwise
+  // second-of-pair credentials — which the store layer intentionally
+  // creates with label=NULL — would be silently relabelled "Default"
+  // on the next server restart, polluting the panel.
+  it("does not relabel second-of-pair rows on a subsequent migration pass", async () => {
+    const db = getDb();
+    const { createCredential, getCredential } = await import("@/lib/stores/credentials");
+
+    // First-of-pair gets label="Default" automatically.
+    const a = createCredential({
+      type: "model",
+      provider: "label-stability-test",
+      params: { api_key: "k1" },
+    });
+    expect(a.label).toBe("Default");
+
+    // Second-of-pair MUST stay NULL — that's the contract that the
+    // panel reads to decide whether to render the id as a fallback.
+    const b = createCredential({
+      type: "model",
+      provider: "label-stability-test",
+      params: { api_key: "k2" },
+    });
+    expect(b.label).toBeNull();
+
+    // Boot the migration pass again. The label column already exists,
+    // so the one-shot backfill must NOT fire — `b` keeps its NULL label.
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    expect(getCredential(a.id)?.label).toBe("Default");
+    expect(getCredential(b.id)?.label).toBeNull();
+  });
+});

@@ -8,7 +8,6 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
-import { IntegrationCard } from "./IntegrationCard";
 import { errorMessage } from "@/lib/utils/error";
 
 // "Credentials" is the single home for every auth surface. The default
@@ -123,8 +122,8 @@ export function CredentialsListPanel() {
   const [preset, setPreset] = useState<UserProfile["preset"]>(null);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
-  const [editingProvider, setEditingProvider] = useState<string | null>(null);
-  const [expandedProvider, setExpandedProvider] = useState<string | null>(null);
+  const [addAnotherProvider, setAddAnotherProvider] = useState<string | null>(null);
+  const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("credentials", "credential", containerRef);
@@ -176,9 +175,9 @@ export function CredentialsListPanel() {
     }
   }
 
-  // Persona filter: if the user has chosen a preset, hide unconfigured
-  // integrations outside that bucket. Configured-but-out-of-bucket
-  // entries stay visible so a saved credential never silently vanishes.
+  // Persona filter: hide unconfigured definitions outside the chosen
+  // bucket. Used only to count how many integrations the picker hides
+  // — the list itself only renders providers with saved credentials.
   const visibleDefs = useMemo(() => {
     if (!preset) return defs;
     const allowed = PRESET_CATEGORIES[preset];
@@ -192,34 +191,40 @@ export function CredentialsListPanel() {
 
   const hiddenCount = defs.length - visibleDefs.length;
 
-  // Group: every visible definition belongs in its category bucket
-  // (renders as IntegrationCard); credentials WITHOUT a matching
-  // definition (legacy model rows etc.) also fall into the right
-  // bucket so the user sees a single grouped list.
+  // Group only providers the user has actually saved credentials for.
+  // Each group renders the default credential first, then any additional
+  // rows, and an "Add another" button for that provider. Unconfigured
+  // providers are reachable only through the top-level "+ Add credential"
+  // picker — the panel no longer lists every possible integration.
   const grouped = useMemo(() => {
-    type Row =
-      | { kind: "def"; def: IntegrationDefinition }
-      | { kind: "credential"; credential: Credential };
-    const byCat = new Map<Category, Row[]>();
-    const defNames = new Set(visibleDefs.map((d) => d.name));
-
-    for (const def of visibleDefs) {
-      const cat = (def.category ?? "other") as Category;
-      const arr = byCat.get(cat) ?? [];
-      arr.push({ kind: "def", def });
-      byCat.set(cat, arr);
-    }
+    type ProviderGroup = {
+      provider: string;
+      def: IntegrationDefinition | undefined;
+      credentials: Credential[];
+    };
+    const byCat = new Map<Category, ProviderGroup[]>();
+    const byProvider = new Map<string, Credential[]>();
     for (const c of credentials) {
-      if (defNames.has(c.provider)) continue; // covered by the integration card
-      const cat = (defByName.get(c.provider)?.category ?? "other") as Category;
+      const arr = byProvider.get(c.provider) ?? [];
+      arr.push(c);
+      byProvider.set(c.provider, arr);
+    }
+    for (const [provider, rows] of byProvider) {
+      // Stable ordering: default first, then by id.
+      rows.sort((a, b) => {
+        if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+        return a.id.localeCompare(b.id);
+      });
+      const def = defByName.get(provider);
+      const cat = (def?.category ?? "other") as Category;
       const arr = byCat.get(cat) ?? [];
-      arr.push({ kind: "credential", credential: c });
+      arr.push({ provider, def, credentials: rows });
       byCat.set(cat, arr);
     }
     return CATEGORY_ORDER
       .filter((c) => byCat.has(c))
       .map((c) => [c, byCat.get(c)!] as const);
-  }, [visibleDefs, credentials, defByName]);
+  }, [credentials, defByName]);
 
   return (
     <div className="flex flex-col h-full">
@@ -251,7 +256,7 @@ export function CredentialsListPanel() {
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         <div className="px-4 py-2 space-y-4">
-          {loading && credentials.length === 0 && defs.length === 0 && (
+          {loading && credentials.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
           )}
           {!loading && grouped.length === 0 && (
@@ -262,81 +267,21 @@ export function CredentialsListPanel() {
           {deleteError && (
             <p className="text-red-700 dark:text-red-400 text-xs mb-2 px-1">{deleteError}</p>
           )}
-          {grouped.map(([cat, rows]) => (
+          {grouped.map(([cat, groups]) => (
             <section key={cat}>
               <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1 px-1">{CATEGORY_LABELS[cat]}</h3>
-              <div className="space-y-2">
-                {rows.map((row) => {
-                  if (row.kind === "def") {
-                    const def = row.def;
-                    const status = statuses[def.name];
-                    const isOpen = expandedProvider === def.name || !!status?.configured;
-                    if (!isOpen) {
-                      // Collapse unconfigured integrations into a compact row.
-                      return (
-                        <div
-                          key={def.name}
-                          data-deep-link-id={def.name}
-                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border/60 bg-surface-2/40"
-                        >
-                          <div className="w-1.5 h-1.5 rounded-full bg-fg-faint" />
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <span className="text-sm font-medium text-fg truncate">{def.label}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border font-mono">{def.name}</span>
-                            </div>
-                            <p className="text-[11px] text-fg-subtle truncate">{def.description}</p>
-                          </div>
-                          <button
-                            onClick={() => setExpandedProvider(def.name)}
-                            className="text-[11px] text-accent hover:text-accent-hover shrink-0"
-                            title="Open editor"
-                          >
-                            Connect
-                          </button>
-                        </div>
-                      );
-                    }
-                    return (
-                      <IntegrationCard
-                        key={def.name}
-                        definition={def}
-                        status={status}
-                        onChanged={refresh}
-                      />
-                    );
-                  }
-                  // Legacy credential row (no matching integration definition).
-                  const c = row.credential;
-                  return (
-                    <div key={c.id} data-deep-link-id={c.id} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border/60 bg-surface-2/40 group">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-sm font-medium text-fg truncate">{c.provider}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border font-mono">{c.provider}</span>
-                          <span className="text-[10px] text-fg-faint">{c.auth_method}</span>
-                        </div>
-                        <p className="text-[11px] text-fg-subtle">{describeCredential(c)}</p>
-                      </div>
-                      <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-                        <button
-                          onClick={() => setEditingProvider(c.provider)}
-                          className="p-1 text-fg-subtle hover:text-fg transition-colors"
-                          title="Edit credential"
-                        >
-                          <Pencil size={13} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(c)}
-                          className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="space-y-3">
+                {groups.map(({ provider, def, credentials: rows }) => (
+                  <ProviderGroup
+                    key={provider}
+                    provider={provider}
+                    def={def}
+                    rows={rows}
+                    onEdit={(c) => setEditingCredential(c)}
+                    onAddAnother={() => setAddAnotherProvider(provider)}
+                    onDelete={handleDelete}
+                  />
+                ))}
               </div>
             </section>
           ))}
@@ -349,13 +294,90 @@ export function CredentialsListPanel() {
           onSaved={() => refresh()}
         />
       )}
-      {editingProvider && (
+      {addAnotherProvider && (
         <AddCredentialDialog
-          directProviderName={editingProvider}
-          onClose={() => { setEditingProvider(null); refresh(); }}
+          directProviderName={addAnotherProvider}
+          createNew
+          onClose={() => { setAddAnotherProvider(null); refresh(); }}
           onSaved={() => refresh()}
         />
       )}
+      {editingCredential && (
+        <AddCredentialDialog
+          directProviderName={editingCredential.provider}
+          credential={editingCredential}
+          onClose={() => { setEditingCredential(null); refresh(); }}
+          onSaved={() => refresh()}
+        />
+      )}
+    </div>
+  );
+}
+
+function ProviderGroup({
+  provider,
+  def,
+  rows,
+  onEdit,
+  onAddAnother,
+  onDelete,
+}: {
+  provider: string;
+  def: IntegrationDefinition | undefined;
+  rows: Credential[];
+  onEdit: (c: Credential) => void;
+  onAddAnother: () => void;
+  onDelete: (c: Credential) => void;
+}) {
+  const title = def?.label ?? provider;
+  return (
+    <div data-deep-link-id={provider} className="rounded-lg border border-border/60 bg-surface-2/40">
+      <div className="px-3 py-2 border-b border-border/60 flex items-center gap-2">
+        <span className="text-xs font-medium text-fg truncate">{title}</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border font-mono">{provider}</span>
+        <button
+          onClick={onAddAnother}
+          className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover"
+          title={`Add another credential for ${title}`}
+        >
+          <Plus size={11} /> Add another
+        </button>
+      </div>
+      <ul className="divide-y divide-border/60">
+        {rows.map((c) => (
+          <li key={c.id} data-deep-link-id={c.id} className="flex items-center gap-3 px-3 py-2 group">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-sm font-medium text-fg truncate">{c.label ?? c.id}</span>
+                {c.is_default && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
+                    default
+                  </span>
+                )}
+                <span className="text-[10px] text-fg-faint">{c.auth_method}</span>
+              </div>
+              <p className="text-[11px] text-fg-subtle truncate">{describeCredential(c)}</p>
+            </div>
+            <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+              <button
+                onClick={() => onEdit(c)}
+                className="p-1 text-fg-subtle hover:text-fg transition-colors"
+                title="Edit credential"
+              >
+                <Pencil size={13} />
+              </button>
+              <button
+                onClick={() => onDelete(c)}
+                className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

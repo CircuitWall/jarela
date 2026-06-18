@@ -76,6 +76,13 @@ export interface AgentConfig {
    * The checker reuses `anti_hallucination_model_config` as the LLM judge.
    */
   citation_strictness: CitationStrictness;
+  /**
+   * Per-tool credential overrides (`{ toolName: credentialId }`). When a
+   * tool's integration has multiple credentials configured, the resolver
+   * picks the credential id pinned here for THIS tool. Missing keys fall
+   * back to the integration's default credential.
+   */
+  tool_credentials: Record<string, string>;
   created_at: string;
   updated_at: string;
 }
@@ -116,6 +123,9 @@ export interface AgentConfigIn {
   // Independent citation strictness ('off' | 'informational' | 'standard' |
   // 'strict'). undefined = leave as-is.
   citation_strictness?: CitationStrictness;
+  // Per-tool credential overrides. `undefined` = keep existing. An empty
+  // object clears every override.
+  tool_credentials?: Record<string, string>;
 }
 
 export interface ThreadSummary {
@@ -321,6 +331,18 @@ export interface Credential {
   type: CredentialType;
   provider: string;
   auth_method: CredentialAuthMethod;
+  /**
+   * Human-readable name shown in the UI ("Work", "Personal", …). `null`
+   * = the renderer falls back to the `id`. Multiple credentials may share
+   * a label — uniqueness is on `id` only.
+   */
+  label: string | null;
+  /**
+   * `true` = the implicit pick for callers that don't reference a specific
+   * credential id (back-compat with the legacy single-instance flows).
+   * Exactly one credential per (type, provider) carries `true`.
+   */
+  is_default: boolean;
   // Server returns this with secret fields redacted to "***" when
   // present. Clients never see plaintext for `api_key`/`client_secret`/
   // `refresh_token`/`access_token` — only their existence.
@@ -344,6 +366,10 @@ export interface CredentialIn {
   type: CredentialType;
   provider: string;
   auth_method?: CredentialAuthMethod;
+  label?: string | null;
+  // Server promotes this row to default for its (type, provider) pair.
+  // The first row of a pair is always promoted regardless of this value.
+  is_default?: boolean;
   params?: Credential["params"];
 }
 

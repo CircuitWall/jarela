@@ -1,8 +1,8 @@
 "use client";
-import { CheckCircle2, ExternalLink, Link as LinkIcon, Loader2, Terminal, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ExternalLink, Link as LinkIcon, Loader2, Star, Terminal, Trash2, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 
 const SECRET_MASK = "********";
@@ -12,19 +12,43 @@ const SECRET_MASK = "********";
 // `components/integrations/IntegrationsPanel.tsx` so the unified credentials
 // panel can render one card per known integration — keeping OAuth and key
 // editing in the same surface that handles model API keys.
+//
+// Three modes:
+//   * Default mode (no `credential`, no `createNew`): edits the provider's
+//     default credential via the legacy `saveIntegration` path. OAuth +
+//     Test work as before.
+//   * Edit-credential mode (`credential` provided): edits THAT credential
+//     id directly via `api.credentials.update`. Label is editable. Can be
+//     promoted to default. Can be deleted unless it's the only row.
+//   * Create-new mode (`createNew=true`): creates an additional credential
+//     for this provider via `api.credentials.create`. The new row is NOT
+//     promoted to default — the user can promote it explicitly afterwards.
 
 export function IntegrationCard({
   definition: def,
   status,
+  credential,
+  createNew,
   onChanged,
+  onDeleted,
 }: {
   definition: IntegrationDefinition;
   status?: IntegrationStatus;
+  credential?: Credential | null;
+  createNew?: boolean;
   onChanged: () => void;
+  onDeleted?: () => void;
 }) {
-  // Form values are seeded from status (with secrets masked) so the user sees
-  // their saved config and can edit only what they want.
-  const [values, setValues] = useState<Record<string, string>>(() => ({ ...(status?.values ?? {}) }));
+  const editingId = credential?.id ?? null;
+  // Pre-fill from the bound credential first, falling back to the
+  // integration status (default credential) so the legacy mode still
+  // sees its saved values.
+  const seedValues = () => {
+    if (credential) return paramsToValues(credential, def);
+    return { ...(status?.values ?? {}) };
+  };
+  const [values, setValues] = useState<Record<string, string>>(seedValues);
+  const [label, setLabel] = useState<string>(credential?.label ?? "");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -103,19 +127,56 @@ export function IntegrationCard({
 
   // Re-seed when the status changes (e.g. after save returns updated mask).
   useEffect(() => {
-    setValues({ ...(status?.values ?? {}) });
+    if (credential) {
+      setValues(paramsToValues(credential, def));
+      setLabel(credential.label ?? "");
+    } else {
+      setValues({ ...(status?.values ?? {}) });
+    }
     // status?.values intentionally omitted — only re-seed on a real save
     // (signalled by updated_at). Including .values would clobber user edits.
-  }, [status?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [status?.updated_at, credential?.id, credential?.updated_at]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function save() {
     setError(null);
     setSaving(true);
     try {
-      const result = await api.integrations.save(def.name, values);
-      setTestResult(null);
-      setValues({ ...result.values });
-      onChanged();
+      if (editingId) {
+        // Editing a specific credential row — update label + params via
+        // the credentials API, then reuse the secret-mask handling on
+        // re-fetch.
+        await api.credentials.update(editingId, {
+          label: label.trim() === "" ? null : label.trim(),
+          params: stripMaskedSecrets(values),
+        });
+        setTestResult(null);
+        onChanged();
+      } else if (createNew) {
+        await api.credentials.create({
+          type: "integration",
+          provider: def.name,
+          auth_method: deriveAuthMethod(def),
+          label: label.trim() === "" ? null : label.trim(),
+          params: stripMaskedSecrets(values),
+        });
+        setTestResult(null);
+        onChanged();
+      } else {
+        const result = await api.integrations.save(def.name, values);
+        setTestResult(null);
+        setValues({ ...result.values });
+        // When the user named the default credential while in legacy
+        // mode, propagate the label by id.
+        if (label.trim() !== "") {
+          const defaultCred = await api.credentials.list({ type: "integration", provider: def.name })
+            .then((rows) => rows.find((r) => r.is_default))
+            .catch(() => undefined);
+          if (defaultCred) {
+            await api.credentials.update(defaultCred.id, { label: label.trim() }).catch(() => undefined);
+          }
+        }
+        onChanged();
+      }
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -152,14 +213,49 @@ export function IntegrationCard({
     onChanged();
   }
 
-  const configured = status?.configured;
+  async function deleteThisCredential() {
+    if (!editingId) return;
+    if (!confirm(`Delete credential "${label || editingId}"?`)) return;
+    try {
+      await api.credentials.delete(editingId);
+      onChanged();
+      onDeleted?.();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function promoteToDefault() {
+    if (!editingId) return;
+    try {
+      await api.credentials.update(editingId, { is_default: true });
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  const configured = editingId || createNew ? true : status?.configured;
+  const isDefaultRow = credential?.is_default ?? !editingId;
 
   return (
     <div data-deep-link-id={def.name} className="mb-3 rounded-lg border border-border bg-surface-2 overflow-hidden">
       <div className="px-3 py-2.5 border-b border-border/60 flex items-start gap-2">
         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-medium text-fg">{def.label}</h3>
+          <h3 className="text-sm font-medium text-fg flex items-center gap-2">
+            <span className="truncate">{def.label}</span>
+            {credential?.is_default && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 inline-flex items-center gap-1">
+                <Star size={9} /> default
+              </span>
+            )}
+            {credential && !credential.is_default && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-surface-3 text-fg-muted">
+                additional
+              </span>
+            )}
+          </h3>
           <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">{def.description}</p>
         </div>
       </div>
@@ -167,6 +263,16 @@ export function IntegrationCard({
       <div className="px-3 py-3 space-y-2">
         {def.name === "gmail" && <GmailSetupGuide />}
         {def.name === "outlook" && <OutlookSetupGuide />}
+        <label className="block text-xs text-fg-subtle">
+          <span>Label <span className="text-fg-faint">(optional, e.g. &ldquo;Work&rdquo;, &ldquo;Personal&rdquo;)</span></span>
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder={isDefaultRow ? "Default credential" : "Untitled credential"}
+            className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
+          />
+        </label>
         {def.fields.map((f) => {
           const fieldSource = status?.source?.[f.key];
           return (
@@ -222,18 +328,18 @@ export function IntegrationCard({
             disabled={saving}
             className="px-3 py-1.5 text-xs rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : editingId ? "Save" : createNew ? "Create" : "Save"}
           </button>
           <button
             onClick={test}
-            disabled={testing || !configured}
-            title={!configured ? "Save credentials first" : "Test the connection"}
+            disabled={testing || !configured || !!editingId || !!createNew}
+            title={!configured ? "Save credentials first" : editingId || createNew ? "Test runs on the default credential" : "Test the connection"}
             className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {testing ? <Loader2 size={11} className="animate-spin" /> : <ExternalLink size={11} />}
             Test
           </button>
-          {def.name === "gmail" && (
+          {def.name === "gmail" && !editingId && !createNew && (
             <button
               onClick={() => connectOAuth("gmail")}
               disabled={connecting}
@@ -244,7 +350,7 @@ export function IntegrationCard({
               {connecting ? "Waiting…" : "Connect Gmail"}
             </button>
           )}
-          {def.name === "outlook" && (
+          {def.name === "outlook" && !editingId && !createNew && (
             <button
               onClick={() => connectOAuth("outlook")}
               disabled={connecting}
@@ -255,7 +361,24 @@ export function IntegrationCard({
               {connecting ? "Waiting…" : "Connect Outlook"}
             </button>
           )}
-          {configured && (
+          {editingId && !credential?.is_default && (
+            <button
+              onClick={promoteToDefault}
+              className="inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-muted hover:text-fg"
+              title="Promote this credential to be the default for this provider"
+            >
+              <Star size={11} /> Set default
+            </button>
+          )}
+          {editingId ? (
+            <button
+              onClick={deleteThisCredential}
+              className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-700 dark:hover:text-rose-400"
+              title="Delete this credential"
+            >
+              <Trash2 size={11} /> Delete
+            </button>
+          ) : configured && !createNew && (
             <button
               onClick={clear}
               className="ml-auto inline-flex items-center gap-1 px-2 py-1.5 text-xs text-fg-faint hover:text-rose-700 dark:hover:text-rose-400"
@@ -268,6 +391,30 @@ export function IntegrationCard({
       </div>
     </div>
   );
+}
+
+function paramsToValues(c: Credential, def: IntegrationDefinition): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const f of def.fields) {
+    const raw = (c.params as Record<string, unknown>)[f.key];
+    if (typeof raw === "string") out[f.key] = raw;
+    else if (raw != null) out[f.key] = String(raw);
+  }
+  return out;
+}
+
+function stripMaskedSecrets(values: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(values)) {
+    if (v === SECRET_MASK) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function deriveAuthMethod(def: IntegrationDefinition): "api_key" | "oauth" {
+  const keys = new Set(def.fields.map((f) => f.key));
+  return keys.has("client_id") && keys.has("client_secret") ? "oauth" : "api_key";
 }
 
 // Inline walkthrough rendered inside the Gmail integration card. Google's GCP

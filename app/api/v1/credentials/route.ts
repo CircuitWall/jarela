@@ -34,7 +34,11 @@ function publicView(row: CredentialRow) {
       safe[k] = v;
     }
   }
-  return { ...row, params: safe };
+  return {
+    ...row,
+    params: safe,
+    is_default: row.is_default === 1,
+  };
 }
 
 export function GET(req: NextRequest) {
@@ -54,14 +58,16 @@ const CreateBody = z.object({
   type: z.enum(["model", "tts", "integration", "bridge"]),
   provider: z.string().min(1),
   auth_method: z.enum(["api_key", "oauth"]).optional(),
+  label: z.string().nullable().optional(),
+  is_default: z.boolean().optional(),
   params: z.record(z.string(), z.unknown()).optional(),
 });
 
 export async function POST(req: NextRequest) {
   const parsed = CreateBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return errorResponse(parsed.error.message);
-  const { id, type, provider, auth_method, params } = parsed.data;
+  const { id, type, provider, auth_method, label, is_default, params } = parsed.data;
   if (auth_method && !VALID_AUTH.has(auth_method)) return errorResponse("invalid auth_method");
-  const row = createCredential({ id, type, provider, auth_method, params });
+  const row = createCredential({ id, type, provider, auth_method, label, is_default, params });
   return createdResponse(publicView(row));
 }

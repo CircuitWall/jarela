@@ -13,6 +13,13 @@ export interface AgentRunConfig {
   allowed_tools: string[];   // empty = all tools
   model_config_name: string | null;
   /**
+   * Per-tool credential overrides (`{ toolName: credentialId }`). Forwarded
+   * to the tool wrapper so the integrations store can pick the right
+   * credential when more than one is configured for a given provider.
+   * Empty/undefined = every tool resolves via the integration's default.
+   */
+  tool_credentials?: Record<string, string>;
+  /**
    * Set when this run is the body of a `delegate_to_agent` tool call.
    * Read by the delegate tool itself to enforce depth + cycle limits when
    * a delegated child agent tries to delegate further. Public callers leave
