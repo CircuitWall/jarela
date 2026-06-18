@@ -12,7 +12,8 @@ on:
       # Standalone workspace packages â€” each tag prefix maps to one job below.
       - "atlassian-langchain-v*"
       - "jira-align-langchain-v*"
-      - "github-langchain-v*"      - "ms-todo-langchain-v*"
+      - "github-langchain-v*"
+      - "ms-todo-langchain-v*"
 permissions:
   contents: write   # softprops/action-gh-release attaches archives to the Release
   packages: write   # ghcr.io publication for GitHub Packages card
