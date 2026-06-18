@@ -84,7 +84,7 @@ export function CredentialsPanel() {
       <div
         role="tablist"
         aria-label="Credentials sub-section"
-        className="grid grid-cols-2 gap-1 border-b border-[var(--border)] bg-[var(--bg-secondary)] px-3 pt-2 pb-2"
+        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar"
       >
         {(["list", "network"] as Sub[]).map((s) => {
           const selected = s === active;
@@ -96,9 +96,9 @@ export function CredentialsPanel() {
               aria-selected={selected}
               onClick={() => setSub(s)}
               className={
-                "w-full px-3 py-1.5 text-sm rounded-md border transition-colors whitespace-nowrap " +
+                "py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors " +
                 (selected
-                  ? "border-[var(--accent)] text-[var(--text-primary)] bg-[var(--bg-primary)]"
+                  ? "border-[var(--accent)] text-[var(--text-primary)] font-medium"
                   : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
               }
             >
