@@ -65,8 +65,10 @@ export function IntegrationCard({
     setTestResult(null);
     const clientId = values.client_id?.trim();
     const clientSecret = values.client_secret?.trim();
-    // Allow empty when the user has already saved creds (backend falls back).
-    if (!status?.configured && (!clientId || !clientSecret)) {
+    // For a per-row credential we let the backend fall back to the row's
+    // saved values; otherwise we need explicit input or a saved default.
+    const hasSavedSource = !!editingId || !!status?.configured;
+    if (!hasSavedSource && (!clientId || !clientSecret)) {
       setError("Enter the OAuth client ID and client secret first.");
       return;
     }
@@ -80,7 +82,11 @@ export function IntegrationCard({
         : api.integrations.outlookOauthStatus;
       const label = provider === "gmail" ? "Gmail" : "Outlook";
 
-      const r = await startFn({ client_id: clientId, client_secret: clientSecret });
+      const r = await startFn({
+        client_id: clientId,
+        client_secret: clientSecret,
+        credential_id: editingId ?? undefined,
+      });
       popupRef.current = window.open(r.authorize_url, `jarela-${provider}-oauth`, "width=560,height=720");
       if (!popupRef.current) {
         setError("Browser blocked the OAuth popup. Allow popups for this site and retry.");
@@ -339,22 +345,30 @@ export function IntegrationCard({
             {testing ? <Loader2 size={11} className="animate-spin" /> : <ExternalLink size={11} />}
             Test
           </button>
-          {def.name === "gmail" && !editingId && !createNew && (
+          {def.name === "gmail" && (
             <button
               onClick={() => connectOAuth("gmail")}
-              disabled={connecting}
-              title="Authorize Gmail + Calendar via Google OAuth — opens a browser window"
+              disabled={connecting || (!!createNew && !editingId)}
+              title={
+                createNew && !editingId
+                  ? "Save this credential first, then connect Gmail"
+                  : "Authorize Gmail + Calendar via Google OAuth — opens a browser window"
+              }
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
               {connecting ? "Waiting…" : "Connect Gmail"}
             </button>
           )}
-          {def.name === "outlook" && !editingId && !createNew && (
+          {def.name === "outlook" && (
             <button
               onClick={() => connectOAuth("outlook")}
-              disabled={connecting}
-              title="Authorize Outlook + Calendar via Microsoft OAuth — opens a browser window"
+              disabled={connecting || (!!createNew && !editingId)}
+              title={
+                createNew && !editingId
+                  ? "Save this credential first, then connect Outlook"
+                  : "Authorize Outlook + Calendar via Microsoft OAuth — opens a browser window"
+              }
               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}

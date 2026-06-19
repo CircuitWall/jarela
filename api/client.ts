@@ -594,7 +594,7 @@ export const api = {
         `/integrations/${encodeURIComponent(name)}/test`,
         { method: "POST", body: JSON.stringify(credentialId ? { credentialId } : {}) },
       ),
-    gmailOauthStart: (creds: { client_id?: string; client_secret?: string }) =>
+    gmailOauthStart: (creds: { client_id?: string; client_secret?: string; credential_id?: string }) =>
       request<{ authorize_url: string; state: string; redirect_uri: string }>(
         `/integrations/gmail/oauth/start`,
         { method: "POST", body: JSON.stringify(creds) },
@@ -603,7 +603,7 @@ export const api = {
       request<{ status: "pending" | "done" | "error" | "unknown"; error?: string }>(
         `/integrations/gmail/oauth/status?state=${encodeURIComponent(state)}`,
       ),
-    outlookOauthStart: (creds: { client_id?: string; client_secret?: string }) =>
+    outlookOauthStart: (creds: { client_id?: string; client_secret?: string; credential_id?: string }) =>
       request<{ authorize_url: string; state: string; redirect_uri: string }>(
         `/integrations/outlook/oauth/start`,
         { method: "POST", body: JSON.stringify(creds) },

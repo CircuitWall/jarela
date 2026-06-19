@@ -1,6 +1,11 @@
 import { NextRequest } from "next/server";
 import { exchangeCode, getFlow, updateFlow } from "@/lib/integrations/microsoft-oauth";
 import { saveIntegration } from "@/lib/stores/integrations";
+import {
+  getCredential,
+  getCredentialParams,
+  updateCredential,
+} from "@/lib/stores/credentials";
 import { escapeHtml, oauthHtmlResponse } from "@/app/api/v1/integrations/oauth-callback";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -48,10 +53,11 @@ export async function GET(req: NextRequest) {
       updateFlow(state, { status: "error", error: msg });
       return oauthHtmlResponse(msg, true);
     }
-    const saved = saveIntegration("outlook", {
-      client_id: flow.clientId,
-      client_secret: flow.clientSecret,
-      refresh_token: tok.refresh_token,
+    const saved = persistRefreshToken({
+      credentialId: flow.credentialId,
+      clientId: flow.clientId,
+      clientSecret: flow.clientSecret,
+      refreshToken: tok.refresh_token,
     });
     if ("error" in saved) {
       updateFlow(state, { status: "error", error: saved.error });
@@ -64,4 +70,33 @@ export async function GET(req: NextRequest) {
     updateFlow(state, { status: "error", error: msg });
     return oauthHtmlResponse(`Token exchange failed: ${escapeHtml(msg)}`, true);
   }
+}
+
+function persistRefreshToken(input: {
+  credentialId?: string;
+  clientId: string;
+  clientSecret: string;
+  refreshToken: string;
+}): { error: string } | { ok: true } {
+  if (input.credentialId) {
+    const cred = getCredential(input.credentialId);
+    if (!cred || cred.provider !== "outlook") {
+      return { error: "credential not found" };
+    }
+    const merged = {
+      ...getCredentialParams(cred),
+      client_id: input.clientId,
+      client_secret: input.clientSecret,
+      refresh_token: input.refreshToken,
+    };
+    updateCredential(input.credentialId, { auth_method: "oauth", params: merged });
+    return { ok: true };
+  }
+  const saved = saveIntegration("outlook", {
+    client_id: input.clientId,
+    client_secret: input.clientSecret,
+    refresh_token: input.refreshToken,
+  });
+  if ("error" in saved) return saved;
+  return { ok: true };
 }
