@@ -1,5 +1,6 @@
 import { BookOpen } from "lucide-react";
 import type { CatalogModel } from "@/api/types";
+import { TextInput } from "@/components/ui/TextField";
 import { CapBadges } from "../CapBadges";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
@@ -12,8 +13,7 @@ export function ModelIdSection({ form, onLoadCatalog }: Props) {
   return (
     <div className="space-y-1.5">
       <ModelIdHeader form={form} onLoadCatalog={onLoadCatalog} />
-      <input
-        className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+      <TextInput
         value={form.modelId}
         onChange={(e) => {
           const next = e.target.value;

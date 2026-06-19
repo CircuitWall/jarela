@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { MemoryItem } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { Dialog } from "@/components/ui/Dialog";
+import { TextInput, TextArea } from "@/components/ui/TextField";
 
 interface Props {
   item?: MemoryItem;
@@ -54,8 +55,7 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
       {(["Namespace", "Key"] as const).map((label) => (
         <label key={label} className="block">
           <span className="text-xs text-fg-subtle mb-1 block">{label}</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-50"
+          <TextInput
             value={label === "Namespace" ? namespace : key}
             onChange={(e) => label === "Namespace" ? setNamespace(e.target.value) : setKey(e.target.value)}
             placeholder={label === "Namespace" ? "e.g. user/preferences" : "e.g. theme"}
@@ -65,8 +65,8 @@ export function MemoryEditor({ item, onSave, onClose }: Props) {
       ))}
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">Value (JSON)</span>
-        <textarea
-          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent font-mono h-28 resize-none"
+        <TextArea
+          className="font-mono h-28 resize-none"
           value={valueStr}
           onChange={(e) => setValueStr(e.target.value)}
           placeholder='{"key": "value"}'

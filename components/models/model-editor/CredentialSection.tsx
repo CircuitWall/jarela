@@ -1,4 +1,5 @@
 import { api } from "@/api/client";
+import { Select } from "@/components/ui/Select";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
 export function CredentialSection({ form }: { form: ModelEditorForm }) {
@@ -33,8 +34,7 @@ function CredentialDropdown({ form }: { form: ModelEditorForm }) {
     ? `— No credentials for ${form.provider} —`
     : "— Inline / env fallback —";
   return (
-    <select
-      className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+    <Select
       value={form.credentialId ?? ""}
       onChange={(e) => form.setCredentialId(e.target.value || null)}
     >
@@ -45,7 +45,7 @@ function CredentialDropdown({ form }: { form: ModelEditorForm }) {
       {form.credentialId && !form.providerCredentials.some((c) => c.id === form.credentialId) && (
         <option value={form.credentialId}>{form.credentialId} (other provider)</option>
       )}
-    </select>
+    </Select>
   );
 }
 

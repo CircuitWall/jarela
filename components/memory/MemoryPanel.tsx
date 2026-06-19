@@ -7,6 +7,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { MemoryEditor } from "./MemoryEditor";
 import { MemoryValuePreview } from "./MemoryValuePreview";
 import { Select } from "@/components/ui/Select";
+import { TextInput } from "@/components/ui/TextField";
 
 function useDebounce<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
@@ -42,7 +43,7 @@ export function MemoryPanel() {
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none" />
-            <input className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 pl-7 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            <TextInput className="pl-7"
               placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
           </div>
           <Select full={false} value={nsFilter} onChange={(e) => setNsFilter(e.target.value)}>
