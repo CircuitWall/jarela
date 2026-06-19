@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.14.2] - 2026-06-19
+## [1.15.0] - 2026-06-19
+
+### Added
+
+- **Numeric-secret detection in the redaction layer (`digit_run`
+  heuristic).** Pure-digit secrets — credit cards, phone numbers,
+  account numbers — have low Shannon entropy and were slipping past the
+  alphanumeric heuristic. A new `digit_run` heuristic runs in parallel
+  to `high_entropy`: it matches digit runs joined by space / hyphen /
+  dot, requires at least 8 digits, and rejects matches that sit inside
+  a recognised UUID / SHA / ULID / namespaced identifier by re-checking
+  the surrounding token against the alphanumeric heuristic's exclude
+  list. The first and last digit group must be ≥ 2 digits, so a stray
+  `4 1234567` in prose doesn't get glued into a fake 8-digit secret.
+  Slash is intentionally excluded from default separators so dates like
+  `2026/06/19` stay unmatched. The `high_entropy` heuristic is split
+  back out at `min_length: 16` (entropy math means a 10-char string
+  can't clear `min_entropy: 4.0` and the threshold was nominal).
+- **Secret-placeholder fingerprints.** Redaction placeholders carry a
+  short fingerprint so the agent can still reason about which secret it
+  saw without seeing the secret itself. Format upgraded from
+  `«SECRET:<id>»` to `«SECRET:<id> type=<hint> len=<n> head=<h>
+  tail=<t>»`, where `head` / `tail` expose `floor(len * 0.1)`
+  characters (min 2). The placeholder regex stays tolerant so older
+  bare placeholders still parse.
 
 ### Changed
 
@@ -51,6 +75,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so Next 16's strict origin check on `/_next/static/*` no longer 403s
   when contributors hit the dev server via one host while the listener
   is bound to the other. Dev-only; `next start` is unaffected.
+- **Gmail / Outlook OAuth tolerates pasted invisible characters.** The
+  start endpoints and the credentials UI now strip whitespace and
+  zero-width chars (`U+200B`…`U+200D`, `U+FEFF`) from `client_id` and
+  `client_secret` before use, so a value copy-pasted from Google Cloud
+  Console no longer fails with `invalid_client` because of a trailing
+  ZWSP. When the provider rejects the exchange, the server logs a
+  `len=… head=… tail=…` fingerprint of both fields (never the value)
+  to make the mismatch debuggable without spilling secrets.
+- **Model editor no longer crashes for providers without a credential
+  manifest.** Provider modules that don't declare a credential schema
+  are now treated as "no credentials needed" instead of throwing while
+  the dropdown renders, so DeepSeek-style providers load cleanly.
 
 ## [1.14.1] - 2026-06-19
 
