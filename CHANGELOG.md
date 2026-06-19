@@ -7,6 +7,99 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-06-19
+
+### Added
+
+- **One-click self-update with supervisor restart.** The update-available
+  banner now ships an "Update now" button alongside the dismiss `X`.
+  Clicking it `POST`s to `/api/v1/update/apply`, which spawns
+  `npm i -g @circuitwall/jarela@latest` (or `github:CircuitWall/jarela#main`
+  when `JARELA_UPDATE_CHANNEL=main`) in a detached child, streams its
+  output into a 200-line ring buffer, and on success schedules
+  `process.exit(0)` so the launcher (Task Scheduler / systemd / launchd
+  / `start-jarela.ps1`) relaunches with the new bundle. The banner
+  walks through `preview → installing → restarting → waiting-for-server`,
+  polling `/api/v1/health` until the new process answers, then
+  unregisters all service workers, clears every Cache Storage bucket,
+  and reloads with a cache-busting query string. Source checkouts
+  (`.git` present at `cwd`) refuse to self-update with a clear message.
+- **OAuth setup in the credentials panel.** The Gmail and Outlook
+  integration cards now show the Connect button in the add-new and
+  edit flows, not just on the default credential. The OAuth start /
+  callback routes accept an optional `credential_id` so the refresh
+  token is persisted onto the targeted credential row instead of the
+  legacy default-integration slot, letting users wire multiple
+  Google / Microsoft accounts to different agents.
+- **Sync-from-env button in the credentials panel.** Pulls
+  `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_API_KEY` etc. from
+  the running process environment into the credentials store on
+  demand, so operators who set keys in `~/.jarela/env` after first
+  launch don't have to retype them in the UI.
+- **Wizard credential safety.** Re-saving a credential through the
+  wizard now preserves any secrets the user didn't re-enter (masked
+  fields fall back to the existing value), and the connection-test row
+  fires automatically after a successful save so the user sees the
+  green check without having to click test.
+
+### Changed
+
+- **Shared UI primitives extracted.** Six new headless components
+  (`Button`, `Dialog`, `TextInput` / `TextArea`, `StatusDot`, `Badge`,
+  `CollapseChevron`, `SubTabBar`) replace ad-hoc Tailwind clusters
+  scattered across credentials, settings, models, agents, and chat
+  panels. The migration covered ten primary buttons, every modal
+  dialog site, all form text fields, and twelve side-panel sub-tab
+  bars. The sub-tab refactor also fixes a mobile-PWA horizontal
+  overflow on iOS Safari (the tab strip used to capture horizontal
+  pan; it now delegates vertical pan to the page).
+- **Settings sub-tabs reorganised.** The Settings panel's sub-tabs are
+  regrouped by domain (Profile, Models, Agents, Tools, Credentials,
+  Logs, Memory, Updates, …) and each tab now surfaces a small
+  attention badge when there's a configuration issue or unread item
+  on that tab.
+
+### Fixed
+
+- **Claude routed through GitHub Copilot now uses prompt caching.**
+  Copilot exposes a native Anthropic-style `/v1/messages` endpoint at
+  `api.githubcopilot.com` for Claude-family models. Until now we
+  routed every Copilot request through `chat.completions`, which
+  silently dropped the `cache_control: ephemeral` markers and forced
+  Claude-via-Copilot to pay full input-token rates on every turn.
+  Detect Claude-family model ids (canonical `claude-*` plus
+  `Github-Opus4.6` / `copilot-claude-*` aliases) and send them through
+  the Anthropic SDK pointed at the Copilot baseURL with `authToken`
+  Bearer auth. Non-Claude models keep the existing chat-completions
+  path. The cache-control body builder and stream-event translator
+  are now shared with the direct Anthropic adapter, so both paths
+  apply the exact same three breakpoints (system, last tool, last
+  tool_result) and emit the same `cache_creation` / `cache_read`
+  token counts.
+- **Boot failures now exit non-zero instead of half-starting.** A
+  thrown error during `instrumentation-node.bootNode()` used to
+  propagate into Next.js, which logged it and then quietly brought
+  the HTTP listener up anyway — leaving the server in a
+  half-initialized state that responded with 5xx forever. The
+  `instrumentation.ts` `register()` hook now wraps the boot chain in
+  try/catch, prints the full stack to stderr, and schedules
+  `process.exit(1)` after a 250 ms flush window so the launcher
+  supervisor restarts cleanly.
+- **Update install and Gemini fetches are bounded.** `npm i -g …`
+  spawned by the self-update endpoint is now killed after 15 minutes
+  (`SIGTERM` then `SIGKILL` 5 s later), so a stalled registry or hung
+  post-install script can't pin the update job in "running" forever.
+  Gemini's four bare-fetch native endpoints (`generateContent`,
+  `streamGenerateContent` for invoke + chat, `batchEmbedContents`)
+  now carry a 10-minute `AbortSignal.timeout()`, matching the
+  implicit ceilings the official OpenAI / Anthropic SDKs already
+  enforce.
+- **Credentials panel: Test button enabled for any saved credential.**
+  Previously the Test row only lit up for the default credential of
+  each `(type, provider)` pair, so users couldn't validate the second
+  GitHub PAT or the second Outlook account without first promoting
+  it to default.
+
 ## [1.13.2] - 2026-06-19
 
 ### Fixed
