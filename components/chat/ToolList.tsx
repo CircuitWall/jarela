@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronRight, X, Wrench } from "lucide-react";
+import { Badge } from "@/components/ui/Badge";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
 
 export interface ToolEvent {
   id: string;
@@ -264,10 +266,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
         className="w-full min-w-0 flex items-center gap-2 px-2 py-1 text-[11px] text-left hover:bg-surface-3/50 transition-colors"
         aria-expanded={open}
       >
-        <ChevronRight
-          size={10}
-          className={`shrink-0 text-fg-faint transition-transform ${open ? "rotate-90" : ""}`}
-        />
+        <CollapseChevron open={open} size={10} className="text-fg-faint" />
         <Wrench size={11} className="shrink-0 text-fg-faint" aria-hidden />
         <span className="font-medium text-fg-muted shrink-0">{group.name}</span>
         <span
@@ -286,20 +285,22 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           {summary}
         </span>
         {group.status === "async" && (
-          <span
-            className="shrink-0 h-4 px-1.5 inline-flex items-center rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400 text-[10px] font-medium uppercase tracking-wide"
+          <Badge
+            tone="info"
+            className="uppercase tracking-wide"
             title="running in the background"
           >
             bg
-          </span>
+          </Badge>
         )}
         {group.readByAgent && (
-          <span
-            className="shrink-0 h-4 px-1.5 inline-flex items-center rounded-full bg-surface-3 text-fg-muted text-[10px] font-medium uppercase tracking-wide"
+          <Badge
+            tone="neutral"
+            className="uppercase tracking-wide"
             title="agent read the background result"
           >
             read
-          </span>
+          </Badge>
         )}
         <StatusIndicator
           status={group.status}
