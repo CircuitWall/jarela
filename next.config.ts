@@ -9,6 +9,12 @@ const nextConfig: NextConfig = {
   // looking for a lockfile and trips over the parent ../package-lock.json,
   // emitting a "multiple lockfiles detected" warning every build.
   outputFileTracingRoot: __dirname,
+  // Next 16 returns 403 on /_next/static/* when the request's Origin header
+  // doesn't match the server's bound host. We bind to 0.0.0.0 by default
+  // and contributors hit the dev server via both http://localhost and
+  // http://127.0.0.1 — whitelist both so the wizard and other client
+  // chunks hydrate either way. Dev-only; prod (`next start`) is unaffected.
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   // Emit a self-contained .next/standalone/ tree (server.js + the minimum
   // node_modules subset Next traced as required). This is what we copy into
   // %LOCALAPPDATA%\Programs\Jarela for the installed app — no repo or

@@ -2,6 +2,7 @@
 import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { detectModelFunctionality } from "@/lib/dashboard/classify";
 import { formatMoney, safeHttpUrl } from "@/lib/dashboard/format";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
 import {
   filterModelRates,
   groupModelRatesByVendor,
@@ -128,7 +129,10 @@ function ModelPricingGroup({ provider, rows, currencyInfo }: { provider: string;
   return (
     <div className="border-b border-[var(--border)]/60 last:border-b-0">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-l-2 border-l-[var(--accent)] bg-[var(--bg-secondary)]/95 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-[var(--text-primary)] backdrop-blur">
-        <span>{provider}</span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="text-[var(--text-secondary)]"><ProviderLogo name={provider} size={14} /></span>
+          {provider}
+        </span>
         <span className="rounded-full border border-[var(--border)] bg-[var(--bg-primary)]/60 px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal text-[var(--text-secondary)]">
           {rows.length} model{rows.length === 1 ? "" : "s"}
         </span>

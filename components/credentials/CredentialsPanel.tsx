@@ -9,6 +9,7 @@ import { useCredentialProbes, type CredentialProbeResult } from "@/hooks/useCred
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { errorMessage } from "@/lib/utils/error";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -380,6 +381,7 @@ function ProviderGroup({
   return (
     <div data-deep-link-id={provider} className="rounded-lg border border-border/60 bg-surface-2/40">
       <div className="px-3 py-2 border-b border-border/60 flex items-center gap-2">
+        <span className="shrink-0 text-fg-subtle"><ProviderLogo name={provider} size={16} /></span>
         <span className="text-xs font-medium text-fg truncate">{title}</span>
         <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border font-mono">{provider}</span>
         <button

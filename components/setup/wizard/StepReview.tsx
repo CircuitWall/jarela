@@ -1,92 +1,114 @@
 "use client";
-import { Sparkles } from "lucide-react";
-import type { IntegrationStatus, ModelConfig, UserProfile } from "@/api/types";
+import { Bot, Cpu, Sparkles, User } from "lucide-react";
+import type { AgentConfig, IntegrationStatus, ModelConfig, UserProfile } from "@/api/types";
 import { ModelFeatureGuide } from "@/components/models/ModelFeatureGuide";
-import { AGENT_STYLES, PROFILE_PRESETS, PROVIDER_INFO, type AgentStyle, type Provider } from "./constants";
+import { PROFILE_PRESETS } from "./constants";
 import { StepShell } from "./StepShell";
 
 interface StepReviewProps {
   name: string;
   about: string;
   preset: NonNullable<UserProfile["preset"]>;
-  provider: Provider;
-  modelId: string;
-  reuseGoogleKey: boolean;
-  useAsChatDefault: boolean;
-  useAsEmbeddingDefault: boolean;
-  useAsVoicePath: boolean;
-  agentName: string;
-  agentStyle: AgentStyle;
-  voiceEnabled: boolean;
   models: ModelConfig[];
+  agents: AgentConfig[];
   integrations: IntegrationStatus[];
 }
 
-export function StepReview(props: StepReviewProps) {
-  const {
-    name, about, preset, provider, modelId,
-    reuseGoogleKey, useAsChatDefault, useAsEmbeddingDefault, useAsVoicePath,
-    agentName, agentStyle, voiceEnabled, models, integrations,
-  } = props;
+export function StepReview({ name, about, preset, models, agents, integrations }: StepReviewProps) {
   const presetInfo = PROFILE_PRESETS.find((p) => p.value === preset);
-  const providerInfo = PROVIDER_INFO[provider];
-  const style = AGENT_STYLES[agentStyle];
+  const defaultModel = models.find((m) => m.is_default) ?? models[0] ?? null;
+  const defaultAgent = agents.find((a) => a.is_default) ?? agents[0] ?? null;
 
   return (
     <StepShell
       icon={<Sparkles size={18} />}
       eyebrow="Step 4 · Review"
-      title="Confirm and finish setup"
-      description="Here's what we'll save. You can revisit any of this later in Profile, Models, and Agents."
+      title="You're all set"
+      description="Quick recap of what we'll save. You can revisit any of this later from Profile, Models, and Agents."
     >
-      <ReviewRow label="Profile" lines={[
-        name || "(no name)",
-        presetInfo ? `${presetInfo.label} setup` : undefined,
-        about ? "About: " + truncate(about, 120) : "No about text",
-      ]} />
+      <ReviewSection
+        icon={<User size={14} />}
+        label="Profile"
+        primary={name || "(no name)"}
+        secondary={presetInfo ? `${presetInfo.label} setup` : undefined}
+        tertiary={about ? `About: ${truncate(about, 140)}` : "No about text"}
+      />
 
-      <ReviewRow label="Model" lines={[
-        `${providerInfo.label}`,
-        `Model: ${modelId}`,
-        [
-          useAsChatDefault && "default chat",
-          useAsEmbeddingDefault && "default embeddings",
-          useAsVoicePath && provider === "gemini" && "voice path",
-          provider === "gemini" && reuseGoogleKey && "google integration",
-        ].filter(Boolean).join(" · ") || "no defaults",
-      ]} />
+      <ReviewSection
+        icon={<Cpu size={14} />}
+        label={`Models · ${models.length}`}
+        primary={defaultModel ? defaultModel.name : "No models configured"}
+        secondary={defaultModel ? `${defaultModel.provider} · ${defaultModel.model_id}` : undefined}
+        tertiary={
+          models.length > 1
+            ? `+${models.length - 1} more model${models.length - 1 === 1 ? "" : "s"}`
+            : undefined
+        }
+      />
 
-      <ReviewRow label="Agent" lines={[
-        agentName || "(no name)",
-        style.label,
-        voiceEnabled && provider === "gemini" && reuseGoogleKey ? "voice enabled" : "voice disabled",
-      ]} />
+      <ReviewSection
+        icon={<Bot size={14} />}
+        label={`Agents · ${agents.length}`}
+        primary={defaultAgent ? defaultAgent.name : "No agents configured"}
+        secondary={
+          defaultAgent
+            ? [
+                defaultAgent.model_config_name ?? "no model assigned",
+                defaultAgent.voice_enabled ? "voice on" : undefined,
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            : undefined
+        }
+        tertiary={
+          agents.length > 1
+            ? `+${agents.length - 1} more agent${agents.length - 1 === 1 ? "" : "s"}`
+            : undefined
+        }
+      />
 
-      <details className="rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-fg-subtle">
-        <summary className="cursor-pointer font-medium text-fg">Feature signals for this model</summary>
-        <div className="mt-3">
-          <ModelFeatureGuide
-            provider={provider}
-            modelId={modelId}
-            models={models}
-            integrations={integrations}
-            title=""
-            description=""
-          />
-        </div>
-      </details>
+      {defaultModel && (
+        <details className="rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-fg-subtle">
+          <summary className="cursor-pointer font-medium text-fg">Feature signals for the default model</summary>
+          <div className="mt-3">
+            <ModelFeatureGuide
+              provider={defaultModel.provider}
+              modelId={defaultModel.model_id}
+              models={models}
+              integrations={integrations}
+              title=""
+              description=""
+            />
+          </div>
+        </details>
+      )}
     </StepShell>
   );
 }
 
-function ReviewRow({ label, lines }: { label: string; lines: Array<string | false | undefined> }) {
+function ReviewSection({
+  icon,
+  label,
+  primary,
+  secondary,
+  tertiary,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  primary: string;
+  secondary?: string;
+  tertiary?: string;
+}) {
   return (
     <div className="rounded-xl border border-border bg-surface-3 px-4 py-3">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-faint">{label}</div>
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-fg-faint">
+        <span className="text-fg-subtle">{icon}</span>
+        {label}
+      </div>
       <div className="mt-1 space-y-0.5">
-        {lines.filter(Boolean).map((line, i) => (
-          <div key={i} className="text-sm text-fg">{line}</div>
-        ))}
+        <div className="text-sm font-medium text-fg">{primary}</div>
+        {secondary && <div className="text-xs text-fg-subtle">{secondary}</div>}
+        {tertiary && <div className="text-[11px] text-fg-faint">{tertiary}</div>}
       </div>
     </div>
   );

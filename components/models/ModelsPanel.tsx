@@ -5,6 +5,7 @@ import type { ModelConfig } from "@/api/types";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { ModelEditor } from "./ModelEditor";
+import { ProviderLogo } from "./ProviderLogo";
 import { CapBadges } from "./CapBadges";
 import { CustomProvidersSection } from "./CustomProvidersSection";
 import { errorMessage } from "@/lib/utils/error";
@@ -63,6 +64,9 @@ export function ModelsPanel() {
             const inUse = assignments.some((a) => a.model_config_name === m.name);
             return (
             <div key={m.name} data-deep-link-id={m.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
+              <span className="shrink-0 text-fg-subtle">
+                <ProviderLogo name={m.provider} size={22} />
+              </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <span className="text-sm font-medium text-fg">{m.name}</span>
