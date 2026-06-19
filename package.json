@@ -94,6 +94,7 @@
     "security:routes": "node scripts/check-route-bundles.mjs",
     "security:ci": "npm run security:audit && npm run security:secrets && npm run security:link-preview",
     "pricing:snapshot": "node scripts/snapshot-pricing.mjs",
+    "prepublishOnly": "node scripts/rewrite-workspace-deps.mjs",
     "test:package": "node scripts/check-npm-package.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
