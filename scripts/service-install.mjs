@@ -436,3 +436,25 @@ export function uninstall() {
   if (p === "linux")  return uninstallLinux();
   throw new Error(`unsupported platform: ${p}`);
 }
+
+// Best-effort probe used by the first-run prompt to skip pestering users who
+// have already registered autostart. Never throws — any unexpected platform
+// or tooling failure returns false (worst case: we show the prompt once more).
+export function isInstalled() {
+  try {
+    const p = platform();
+    if (p === "darwin") {
+      return existsSync(join(homedir(), "Library", "LaunchAgents", `${PLIST_LABEL}.plist`));
+    }
+    if (p === "linux") {
+      return existsSync(join(homedir(), ".config", "systemd", "user", SYSTEMD_UNIT));
+    }
+    if (p === "win32") {
+      const r = spawnSync("schtasks.exe", ["/Query", "/TN", TASK_NAME], { stdio: "ignore" });
+      return r.status === 0;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}

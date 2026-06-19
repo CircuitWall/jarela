@@ -64,15 +64,30 @@ These warnings exist because we don't yet pay for an Apple Developer ID or an Au
 
 ---
 
-## Path 2 — npm
+## Path 2 — npm (recommended)
 
 ```sh
 npm install -g @circuitwall/jarela
 jarela
 ```
 
-The published npm package ships a prebuilt standalone bundle, so `jarela`
-starts immediately after install.
+The published npm package ships a **prebuilt standalone bundle**, so `jarela`
+starts immediately after install — no in-place webpack/build step.
+
+On the very first interactive `jarela` run, you'll be offered to register
+autostart for the current user:
+
+```
+Jarela isn't registered as an autostart service yet.
+Install autostart now so it runs at login? [Y/n]
+```
+
+Answer `Y` and Jarela installs the native autostart entry for your OS (see
+table below), starts it in the background, and exits the foreground. Answer
+`n` and `jarela` keeps running in the foreground; you can register later with
+`jarela install-service`. The prompt is silent in non-TTY shells (CI, pipes,
+Dockerfiles) and under `sudo`, and can be permanently disabled with
+`JARELA_NO_FIRST_RUN_PROMPT=1`.
 
 To run on a non-default port:
 
@@ -83,13 +98,13 @@ PORT=4400 jarela
 To upgrade:
 
 ```sh
-npm update -g @circuitwall/jarela
-jarela        # rebuilds on first run after upgrade
+npm update -g @circuitwall/jarela        # or: jarela update
+jarela                                    # uses the prebuilt bundle
 ```
 
-### Install as an autostart service (npm path)
+### Install as an autostart service (non-interactive)
 
-By default `jarela` runs in the foreground — Ctrl-C stops it, nothing restarts it. To register it as a per-user autostart service (no admin / sudo required):
+If you skipped the first-run prompt, or you're scripting the install:
 
 ```sh
 jarela install-service        # auto-detects Windows / macOS / Linux
@@ -102,6 +117,9 @@ This registers the native autostart mechanism for your OS, points it at the glob
 | Windows | Scheduled Task `Jarela` (AtLogOn, hidden VBS)    | `%LOCALAPPDATA%\Jarela\service\launcher.vbs`                    |
 | macOS   | LaunchAgent `com.jarela.app` (RunAtLoad+KeepAlive) | `~/Library/LaunchAgents/com.jarela.app.plist`                  |
 | Linux   | systemd `--user` unit `jarela.service`           | `~/.config/systemd/user/jarela.service`                         |
+
+> **Linux note:** the unit is installed in user scope. To keep Jarela running
+> after you log out, also run `loginctl enable-linger $(whoami)` once.
 
 To remove:
 

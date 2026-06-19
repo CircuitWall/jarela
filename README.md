@@ -66,26 +66,71 @@
 
 ## Quick start
 
-Get to a working local agent in under 10 minutes:
+Get to a working local agent in under 10 minutes.
 
-1. Install using one channel:
-  - npm: `npm install -g @circuitwall/jarela`
-  - Docker: `docker run -d -p 127.0.0.1:4312:4312 -v jarela-data:/data andrewgewu/jarela`
-  - portable archive: download from [Releases](https://github.com/CircuitWall/jarela/releases/latest)
-2. Start Jarela:
-  - npm install: run `jarela`
-  - source checkout: run `npm run dev` (dev) or `npm run build && npm start` (prod)
-3. Open the app:
-  - dev mode: `http://localhost:3000`
-  - installed/prod mode: `http://127.0.0.1:4312`
-4. Complete first-run setup:
-  - add one provider key (Models/setup screen), then create your first agent
-  - enable tool categories that match your workflow (Mail, Calendar, Files, Web, etc.)
-5. Optionally connect integrations from Connections:
-  - Gmail/Calendar, Outlook/Calendar, GitHub, Atlassian, MCP servers, WhatsApp bridge
+### Install (recommended — npm)
 
-For platform-specific install, service/autostart, and operations detail, jump to
-[Installation and runtime details](#installation-and-runtime-details).
+```sh
+npm install -g @circuitwall/jarela
+jarela
+```
+
+That's it. The npm package ships a prebuilt standalone bundle, so the
+first `jarela` invocation:
+
+1. Prints a brief `Jarela installed.` hint after `npm install -g` finishes.
+2. On the first interactive run, offers to register autostart for the current
+   user (Scheduled Task on Windows, LaunchAgent on macOS, `systemd --user` on
+   Linux) — answer `Y` and Jarela starts in the background.
+3. Opens on `http://127.0.0.1:4312`.
+
+The prompt is silent in CI / non-TTY / sudo, and can be permanently disabled
+with `JARELA_NO_FIRST_RUN_PROMPT=1`. If you skipped it, run it any time with
+`jarela install-service` (or undo with `jarela uninstall-service`).
+
+To upgrade later: `npm update -g @circuitwall/jarela` (or `jarela update`).
+
+### Other install channels
+
+- **Docker** — `docker run -d -p 127.0.0.1:4312:4312 -v jarela-data:/data andrewgewu/jarela:latest`
+- **Portable archive** — download from [Releases](https://github.com/CircuitWall/jarela/releases/latest)
+  (`jarela-<v>-darwin.tar.gz` / `-win.zip` / `-linux.tar.gz`) and run the
+  bundled `install-to-system.{sh,ps1}` script.
+- **Source checkout** — `git clone && npm install && npm run dev` (dev) or
+  `npm run build && npm start` (prod).
+
+### Pin to bleeding edge
+
+The published `latest` tag on npm follows the most recent stable `vX.Y.Z`
+git tag. To live on the trunk between releases:
+
+```sh
+# Specific commit (recommended — reproducible)
+npm install -g @circuitwall/jarela@github:CircuitWall/jarela#<sha>
+
+# Most recent commit on main (re-resolves on each install)
+npm install -g @circuitwall/jarela@github:CircuitWall/jarela
+
+# Pre-release tag (when one is published)
+npm install -g @circuitwall/jarela@next
+```
+
+Caveat: a git-installed copy has to build the standalone bundle on first
+`jarela` run (~30–60 s), because the prebuilt `.next/standalone/` only ships
+inside the npm tarball. Subsequent runs start instantly. For Docker bleeding
+edge, use `andrewgewu/jarela:main` (auto-built on every push to `main`).
+
+### First-run setup
+
+1. Add one provider key on the setup screen (Anthropic / OpenAI / Google /
+   Cohere / DeepSeek / GitHub Copilot).
+2. Create your first agent and enable the tool categories you need
+   (Mail, Calendar, Files, Web, …).
+3. Optionally connect integrations from **Connections**: Gmail/Calendar,
+   Outlook/Calendar, GitHub, Atlassian, MCP servers, WhatsApp bridge.
+
+For platform-specific install, service/autostart, and operations detail, see
+[docs/INSTALL.md](docs/INSTALL.md).
 
 ## Configuration guide (home + work)
 
@@ -359,9 +404,16 @@ the bundle ships a pre-built `.next/standalone/` tree.
 
 ```bash
 npm install -g @circuitwall/jarela
-jarela                # starts the bundled standalone server immediately
-jarela install-service   # optional: register OS-native autostart (per-user, no admin)
+jarela                # starts the bundled standalone server immediately;
+                      # first interactive run offers to register autostart
+jarela install-service   # non-interactive: register OS-native autostart (per-user, no admin)
 ```
+
+The first interactive `jarela` invocation asks `Install autostart now so it
+runs at login? [Y/n]`. Accept and Jarela installs a Windows Scheduled Task /
+macOS LaunchAgent / Linux `systemd --user` unit, starts it in the background,
+and exits the foreground. Silent in CI / non-TTY / sudo, opt-out with
+`JARELA_NO_FIRST_RUN_PROMPT=1`.
 
 Releases on npm are published from GitHub Actions via
 [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) and ship
