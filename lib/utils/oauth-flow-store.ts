@@ -19,12 +19,21 @@ export interface OAuthFlow {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  // When set, the callback writes the refresh token onto THIS specific
+  // credential row instead of the provider's default. Used by the
+  // credentials panel when re-authorizing a per-row credential.
+  credentialId?: string;
   status: "pending" | "done" | "error";
   error?: string;
 }
 
 export interface OAuthFlowStore {
-  create(input: { clientId: string; clientSecret: string; redirectUri: string }): {
+  create(input: {
+    clientId: string;
+    clientSecret: string;
+    redirectUri: string;
+    credentialId?: string;
+  }): {
     state: string;
     flow: OAuthFlow;
   };

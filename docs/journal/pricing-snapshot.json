@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-31T06:23:50.943Z",
+  "generated_at": "2026-06-19T15:47:19.999Z",
   "disclaimer": "No unified stable pricing API exists across providers. Verify final pricing manually on each official page.",
   "ttl_days": 3,
   "sources": [
@@ -434,16 +434,14 @@
       "pricing_url": "https://github.com/features/copilot/plans",
       "resolved_url": "https://github.com/features/copilot/plans",
       "notes": "GitHub Copilot plans page (HTML)",
-      "fetched_at": "2026-05-31T06:23:50.520Z",
-      "ok": true,
+      "fetched_at": "2026-06-19T15:47:14.037Z",
+      "ok": false,
       "status": 200,
-      "etag": "W/\"f6398975acf70bc9d6f26595f389d3b5\"",
+      "etag": null,
       "last_modified": null,
-      "content_hash": "69400776ff2b6633bc52d2f075f5bf34e0e36b669575bea10536b80e3012caba",
-      "content_length": 1144020,
-      "price_signals": [
-        "$0.04/request"
-      ],
+      "content_hash": "990bb2f41d00c6d6f980e12920732592613413a4e09a396d67fa3fcca0651996",
+      "content_length": 1240039,
+      "price_signals": [],
       "model_rates": [],
       "error": null
     }
