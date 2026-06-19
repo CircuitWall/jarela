@@ -38,12 +38,18 @@ export function SubTabBar<T extends string>({
     >
       {tabs.map((t) => {
         const selected = t.id === active;
+        // Pin the accessible name to the textual label so a transient
+        // badge (StatusDot with aria-label="Needs setup") can't append
+        // to the tab's accessible name and break `getByRole("tab",
+        // { name, exact: true })` once the attention hook resolves.
+        const ariaLabelText = typeof t.label === "string" ? t.label : undefined;
         return (
           <button
             key={t.id}
             role="tab"
             type="button"
             aria-selected={selected}
+            aria-label={ariaLabelText}
             onClick={() => onChange(t.id)}
             className={
               "shrink-0 inline-flex items-center gap-1.5 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors " +
