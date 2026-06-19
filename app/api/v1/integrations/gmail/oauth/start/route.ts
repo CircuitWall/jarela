@@ -4,6 +4,7 @@ import { buildAuthorizeUrl, createFlow } from "@/lib/integrations/gmail-oauth";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
+import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
 
 // POST /api/v1/integrations/gmail/oauth/start
 // Body: { client_id?, client_secret?, credential_id? }
@@ -17,9 +18,17 @@ import { isMaskedSecret } from "@/lib/utils/secret-mask";
 // token onto that specific credential row, and masked client_id/secret
 // fields fall back to that row's saved params instead of the default.
 
+// Strip all whitespace (incl. invisibles) before forwarding to Google —
+// paste from password managers can introduce zero-width chars that survive
+// a plain `.trim()` and make Google reject the secret as `invalid_client`.
+const sanitizedField = z
+  .string()
+  .optional()
+  .transform((v) => sanitizeOAuthInput(v));
+
 const BodySchema = z.object({
-  client_id: z.string().trim().min(1).optional(),
-  client_secret: z.string().trim().min(1).optional(),
+  client_id: sanitizedField,
+  client_secret: sanitizedField,
   credential_id: z.string().trim().min(1).optional(),
 });
 
