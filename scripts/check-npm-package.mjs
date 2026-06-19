@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 function quote(arg) {
   if (/^[A-Za-z0-9_./:-]+$/.test(arg)) return arg;
@@ -25,11 +27,21 @@ function run(command, args) {
   return result.stdout;
 }
 
-const packJson = run("npm", ["pack", "--json"]);
-const pack = JSON.parse(packJson)[0];
-const filename = pack.filename;
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, "..");
+const rootPkgPath = resolve(repoRoot, "package.json");
 
+// Mirror what `npm publish` does via the prepublishOnly hook so the packed
+// tarball reflects what end users will actually receive.
+const originalRootPkg = readFileSync(rootPkgPath, "utf8");
+let filename = null;
 try {
+  run("node", ["scripts/rewrite-workspace-deps.mjs"]);
+
+  const packJson = run("npm", ["pack", "--json"]);
+  const pack = JSON.parse(packJson)[0];
+  filename = pack.filename;
+
   const listing = run("tar", ["-tf", filename])
     .split(/\r?\n/)
     .filter(Boolean);
@@ -37,6 +49,7 @@ try {
   const required = [
     "package/.next/standalone/server.js",
     "package/.next/standalone/public/manifest.json",
+    "package/package.json",
   ];
 
   for (const entry of required) {
@@ -49,7 +62,15 @@ try {
     throw new Error("npm tarball is missing hydrated .next/static assets inside the standalone bundle");
   }
 
+  const packedManifest = run("tar", ["-xOf", filename, "package/package.json"]);
+  if (/"workspace:/i.test(packedManifest)) {
+    throw new Error(
+      "npm tarball contains literal `workspace:` dependency specs — end-user `npm install` would fail with EUNSUPPORTEDPROTOCOL",
+    );
+  }
+
   console.log(`[npm-package] ok: ${filename} contains runnable standalone bundle`);
 } finally {
-  rmSync(filename, { force: true });
+  writeFileSync(rootPkgPath, originalRootPkg);
+  if (filename) rmSync(filename, { force: true });
 }
