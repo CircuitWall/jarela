@@ -277,7 +277,10 @@ export function MenuPanel({
         key={tab}
         onClick={() => onSetTab(tab)}
         title={attentionTitle}
-        aria-label={attentionTitle}
+        // aria-label stays equal to the visible text (WCAG 2.5.3
+        // "Label in Name"). The attention reason lives on `title`
+        // for hover + the StatusDot below carries the visual cue.
+        aria-label={TAB_TITLES[tab]}
         aria-current={activeTab === tab ? "page" : undefined}
         className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
           activeTab === tab
