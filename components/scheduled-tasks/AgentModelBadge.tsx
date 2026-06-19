@@ -1,6 +1,7 @@
 "use client";
 import { AlertTriangle } from "lucide-react";
 import type { AgentModelStatus } from "@/lib/agents/effective-model";
+import { Badge } from "@/components/ui/Badge";
 
 // Inline warning badge for scheduled-task and watcher cards. Renders nothing
 // when the agent's model resolves cleanly so the row stays uncluttered; only
@@ -27,12 +28,8 @@ export function AgentModelBadge({ status }: { status: AgentModelStatus }) {
   }
 
   return (
-    <span
-      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
-      title={tooltip}
-    >
-      <AlertTriangle size={10} />
+    <Badge tone="warning" size="sm" bordered title={tooltip} icon={<AlertTriangle size={10} />}>
       {label}
-    </span>
+    </Badge>
   );
 }
