@@ -589,9 +589,10 @@ export const api = {
       }),
     delete: (name: string) =>
       request<{ deleted: boolean }>(`/integrations/${encodeURIComponent(name)}`, { method: "DELETE" }),
-    test: (name: string) =>
+    test: (name: string, credentialId?: string) =>
       request<{ ok: boolean; error?: string; detail?: Record<string, unknown> }>(
-        `/integrations/${encodeURIComponent(name)}/test`, { method: "POST", body: "{}" },
+        `/integrations/${encodeURIComponent(name)}/test`,
+        { method: "POST", body: JSON.stringify(credentialId ? { credentialId } : {}) },
       ),
     gmailOauthStart: (creds: { client_id?: string; client_secret?: string }) =>
       request<{ authorize_url: string; state: string; redirect_uri: string }>(
