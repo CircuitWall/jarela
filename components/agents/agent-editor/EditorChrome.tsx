@@ -1,5 +1,5 @@
-import { X } from "lucide-react";
 import type React from "react";
+import { Dialog } from "@/components/ui/Dialog";
 
 interface ChromeProps {
   title: string;
@@ -11,18 +11,17 @@ interface ChromeProps {
 
 export function EditorChrome({ title, variant, onClose, children, footer }: ChromeProps) {
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className={`bg-surface-2 border border-border rounded-2xl w-full shadow-xl my-2 sm:my-4 ${variant === "full" ? "max-w-2xl" : "max-w-xl"}`}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-semibold text-fg">{title}</h3>
-          <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="p-4 space-y-5">{children}</div>
-        {footer}
-      </div>
-    </div>
+    <Dialog
+      open
+      onClose={onClose}
+      title={title}
+      size={variant === "full" ? "xl" : "lg"}
+      align="top"
+      padded={false}
+      footer={footer}
+    >
+      <div className="p-4 space-y-5">{children}</div>
+    </Dialog>
   );
 }
 

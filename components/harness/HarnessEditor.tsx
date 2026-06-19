@@ -1,8 +1,8 @@
 "use client";
-import { ChevronDown, RotateCcw, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { ChevronDown, RotateCcw } from "lucide-react";
+import { useMemo, useState } from "react";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { Dialog } from "@/components/ui/Dialog";
 import {
   DEFAULT_HARNESS_ID,
   HARNESS_SECTION_KEYS,
@@ -58,8 +58,6 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
     [builtins],
   );
 
-  useEscapeKey(onClose);
-
   function patchSection(key: HarnessSectionKey, patch: Partial<HarnessSection>) {
     setSections((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
   }
@@ -89,102 +87,13 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-2xl shadow-xl my-2 sm:my-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-semibold text-fg">
-            {isEdit ? `Edit harness — ${harness?.name}` : "New harness"}
-          </h3>
-          <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div className="grid grid-cols-1 gap-3">
-            <label className="block">
-              <span className="text-xs text-fg-subtle mb-1 block">Name</span>
-              <input
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. strict-citation"
-                maxLength={120}
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs text-fg-subtle mb-1 block">Description</span>
-              <input
-                className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Shown in the picker"
-                maxLength={500}
-              />
-            </label>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-xs text-fg-subtle">Sections</p>
-            {HARNESS_SECTION_KEYS.map((key) => {
-              const section = sections[key];
-              const display = SECTION_DISPLAY[key];
-              const isOpen = openSection === key;
-              return (
-                <div key={key} className="border border-border rounded-lg bg-surface-3 overflow-hidden">
-                  <div className="flex items-center gap-2 px-3 py-2">
-                    <input
-                      type="checkbox"
-                      className="rounded border-border"
-                      checked={section.enabled}
-                      onChange={(e) => patchSection(key, { enabled: e.target.checked })}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setOpenSection(isOpen ? null : key)}
-                      className="flex-1 flex items-center gap-2 text-left min-w-0"
-                    >
-                      <ChevronDown
-                        size={12}
-                        className={`shrink-0 transition-transform ${isOpen ? "rotate-0" : "-rotate-90"}`}
-                      />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-fg truncate">{display.title}</p>
-                        <p className="text-[11px] text-fg-faint truncate">{display.hint}</p>
-                      </div>
-                    </button>
-                    {builtinDefault && (
-                      <button
-                        type="button"
-                        onClick={() => resetSection(key)}
-                        title="Reset to built-in default"
-                        className="p-1 text-fg-subtle hover:text-fg transition-colors shrink-0"
-                      >
-                        <RotateCcw size={11} />
-                      </button>
-                    )}
-                  </div>
-                  {isOpen && (
-                    <div className="px-3 pb-3">
-                      <MarkdownTextarea
-                        className="w-full bg-surface text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent resize-y"
-                        value={section.body}
-                        onChange={(body) => patchSection(key, { body })}
-                        rows={10}
-                        monospace
-                        placeholder="Section body…"
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
-        </div>
-
+    <Dialog
+      open
+      onClose={onClose}
+      title={isEdit ? `Edit harness — ${harness?.name}` : "New harness"}
+      size="xl"
+      align="top"
+      footer={
         <div className="flex justify-end gap-2 px-4 pb-4">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">
             Cancel
@@ -197,7 +106,90 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
             {saving ? "Saving…" : "Save"}
           </button>
         </div>
+      }
+    >
+      <div className="grid grid-cols-1 gap-3">
+        <label className="block">
+          <span className="text-xs text-fg-subtle mb-1 block">Name</span>
+          <input
+            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. strict-citation"
+            maxLength={120}
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-fg-subtle mb-1 block">Description</span>
+          <input
+            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Shown in the picker"
+            maxLength={500}
+          />
+        </label>
       </div>
-    </div>
+
+      <div className="space-y-2">
+        <p className="text-xs text-fg-subtle">Sections</p>
+        {HARNESS_SECTION_KEYS.map((key) => {
+          const section = sections[key];
+          const display = SECTION_DISPLAY[key];
+          const isOpen = openSection === key;
+          return (
+            <div key={key} className="border border-border rounded-lg bg-surface-3 overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <input
+                  type="checkbox"
+                  className="rounded border-border"
+                  checked={section.enabled}
+                  onChange={(e) => patchSection(key, { enabled: e.target.checked })}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                <button
+                  type="button"
+                  onClick={() => setOpenSection(isOpen ? null : key)}
+                  className="flex-1 flex items-center gap-2 text-left min-w-0"
+                >
+                  <ChevronDown
+                    size={12}
+                    className={`shrink-0 transition-transform ${isOpen ? "rotate-0" : "-rotate-90"}`}
+                  />
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-fg truncate">{display.title}</p>
+                    <p className="text-[11px] text-fg-faint truncate">{display.hint}</p>
+                  </div>
+                </button>
+                {builtinDefault && (
+                  <button
+                    type="button"
+                    onClick={() => resetSection(key)}
+                    title="Reset to built-in default"
+                    className="p-1 text-fg-subtle hover:text-fg transition-colors shrink-0"
+                  >
+                    <RotateCcw size={11} />
+                  </button>
+                )}
+              </div>
+              {isOpen && (
+                <div className="px-3 pb-3">
+                  <MarkdownTextarea
+                    className="w-full bg-surface text-fg text-xs rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent resize-y"
+                    value={section.body}
+                    onChange={(body) => patchSection(key, { body })}
+                    rows={10}
+                    monospace
+                    placeholder="Section body…"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}
+    </Dialog>
   );
 }
