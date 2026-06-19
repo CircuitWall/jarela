@@ -31,7 +31,7 @@ describe("maskInvokeMessages", () => {
         { role: "user", content: `here is the key ${FAKE_ANT} please` },
       ];
       const out = maskInvokeMessages(messages);
-      expect(out[0].content).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
+      expect(out[0].content).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
       expect(out[0].content).not.toContain(FAKE_ANT);
       const summary = getRun().summaries.get("msg:0:user");
       expect(summary?.find((e) => e.type_hint === "anthropic_api_key")?.count).toBe(1);
@@ -53,7 +53,7 @@ describe("maskInvokeMessages", () => {
       const out = maskInvokeMessages(messages);
       const parts = out[0].content as Array<{ type: string; text?: string }>;
       expect(parts[0].type).toBe("text");
-      expect(parts[0].text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
+      expect(parts[0].text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
       expect(parts[1].type).toBe("image");
     });
   });
@@ -85,9 +85,9 @@ describe("maskInvokeMessages", () => {
       ];
       const out = maskInvokeMessages(messages);
       const tcs = out[0].tool_calls!;
-      expect(tcs[0].function.arguments).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
+      expect(tcs[0].function.arguments).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
       expect(tcs[0].function.arguments).not.toContain(FAKE_ANT);
-      expect(tcs[1].function.arguments).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
+      expect(tcs[1].function.arguments).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
     });
   });
 

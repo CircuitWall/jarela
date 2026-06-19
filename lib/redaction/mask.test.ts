@@ -20,8 +20,8 @@ describe("createMaskContext.maskText", () => {
     const { text, summary } = ctx.maskText(
       `key ${FAKE_ANT} then 811218-9876 done`,
     );
-    expect(text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
-    expect(text).toMatch(/«SECRET:[a-z0-9]+ type=swedish_personnummer»/);
+    expect(text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
+    expect(text).toMatch(/«SECRET:[a-z0-9]+ type=swedish_personnummer[^»]*»/);
     expect(text).toContain("then");
     expect(summary.find((e) => e.type_hint === "anthropic_api_key")?.count).toBe(1);
     expect(summary.find((e) => e.type_hint === "swedish_personnummer")?.count).toBe(1);
@@ -37,7 +37,7 @@ describe("createMaskContext.maskText", () => {
   it("uses the same token id for repeated values within a context", () => {
     const ctx = createMaskContext(DEFAULT_REDACTION_CONFIG);
     const { text } = ctx.maskText(`first ${FAKE_ANT} and again ${FAKE_ANT}`);
-    const ids = [...text.matchAll(/«SECRET:([a-z0-9]+) type=anthropic_api_key»/g)].map(
+    const ids = [...text.matchAll(/«SECRET:([a-z0-9]+) type=anthropic_api_key[^»]*»/g)].map(
       (m) => m[1],
     );
     expect(ids).toHaveLength(2);
@@ -47,7 +47,7 @@ describe("createMaskContext.maskText", () => {
   it("uses different token ids for different values", () => {
     const ctx = createMaskContext(DEFAULT_REDACTION_CONFIG);
     const { text } = ctx.maskText(`a ${FAKE_ANT} b ${FAKE_ANT_2}`);
-    const ids = [...text.matchAll(/«SECRET:([a-z0-9]+) type=anthropic_api_key»/g)].map(
+    const ids = [...text.matchAll(/«SECRET:([a-z0-9]+) type=anthropic_api_key[^»]*»/g)].map(
       (m) => m[1],
     );
     expect(ids).toHaveLength(2);
@@ -69,7 +69,7 @@ describe("createMaskContext.rehydrate", () => {
     const { text } = ctx.maskText(`here is your key ${FAKE_ANT}`);
     // Simulate the model emitting a tool-call body that quotes the placeholder.
     const toolBody = `Subject: API key\nBody: ${
-      text.match(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/)![0]
+      text.match(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/)![0]
     }`;
     const rehydrated = ctx.rehydrate(toolBody);
     expect(rehydrated).toContain(FAKE_ANT);
@@ -78,8 +78,8 @@ describe("createMaskContext.rehydrate", () => {
 
   it("leaves unknown placeholder ids untouched", () => {
     const ctx = createMaskContext(DEFAULT_REDACTION_CONFIG);
-    const result = ctx.rehydrate("nothing here «SECRET:zzz type=anthropic_api_key» end");
-    expect(result).toContain("«SECRET:zzz type=anthropic_api_key»");
+    const result = ctx.rehydrate("nothing here «SECRET:zzz type=anthropic_api_key len=30 head=sk tail=00» end");
+    expect(result).toContain("«SECRET:zzz type=anthropic_api_key len=30 head=sk tail=00»");
   });
 
   it("is a no-op when nothing has been masked", () => {
@@ -97,7 +97,7 @@ describe("createMaskContext.maskJson", () => {
       body: `API_KEY=${FAKE_ANT}`,
     });
     expect(text).toContain("01HQX7K3J9V8N2M5P6R4T1Y3W8");
-    expect(text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
+    expect(text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
     expect(summary.find((e) => e.type_hint === "anthropic_api_key")?.count).toBe(1);
   });
 
@@ -106,6 +106,45 @@ describe("createMaskContext.maskJson", () => {
     const { text } = ctx.maskJson({ body: `key ${FAKE_ANT}` });
     const rehydrated = ctx.rehydrate(text);
     expect(rehydrated).toContain(FAKE_ANT);
+  });
+});
+
+describe("placeholder fingerprint", () => {
+  it("includes len, head, and tail so the agent can compare secrets across runs", () => {
+    const ctx = createMaskContext(DEFAULT_REDACTION_CONFIG);
+    const { text } = ctx.maskText(`key ${FAKE_ANT} end`);
+    const placeholder = text.match(/«SECRET:[^»]+»/)![0];
+    // Format: «SECRET:<id> type=<hint> len=<n> head=<h> tail=<t>»
+    expect(placeholder).toMatch(/ len=\d+ /);
+    expect(placeholder).toMatch(/ head=[^ »]+ /);
+    expect(placeholder).toMatch(/ tail=[^»]*»$/);
+    const len = Number(placeholder.match(/ len=(\d+) /)![1]);
+    expect(len).toBe(FAKE_ANT.length);
+    const head = placeholder.match(/ head=([^ ]+) /)![1];
+    const tail = placeholder.match(/ tail=([^»]*)»$/)![1];
+    expect(FAKE_ANT.startsWith(head)).toBe(true);
+    expect(FAKE_ANT.endsWith(tail)).toBe(true);
+    // Exposure must stay ≤ 10% rounded down, but at least 1+1 chars.
+    const exposed = head.length + tail.length;
+    expect(exposed).toBeGreaterThanOrEqual(2);
+    expect(exposed).toBeLessThanOrEqual(Math.max(2, Math.floor(len * 0.1)));
+  });
+
+  it("emits identical fingerprints for the same value (so the agent can match across placeholders)", () => {
+    const ctx = createMaskContext(DEFAULT_REDACTION_CONFIG);
+    const { text } = ctx.maskText(`a ${FAKE_ANT} b ${FAKE_ANT}`);
+    const placeholders = [...text.matchAll(/«SECRET:[^»]+»/g)].map((m) => m[0]);
+    expect(placeholders).toHaveLength(2);
+    expect(placeholders[0]).toBe(placeholders[1]);
+  });
+
+  it("emits different fingerprints for different values", () => {
+    const ctx = createMaskContext(DEFAULT_REDACTION_CONFIG);
+    const { text } = ctx.maskText(`a ${FAKE_ANT} b ${FAKE_ANT_2}`);
+    const placeholders = [...text.matchAll(/«SECRET:[^»]+»/g)].map((m) => m[0]);
+    expect(placeholders).toHaveLength(2);
+    // Same len + type but different head/tail → distinct fingerprints overall.
+    expect(placeholders[0]).not.toBe(placeholders[1]);
   });
 });
 
