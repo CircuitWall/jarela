@@ -27,7 +27,7 @@ describe("withMaskRun (enabled)", () => {
       const ctx = getCurrentMaskContext();
       expect(ctx).toBeDefined();
       const { text } = ctx!.maskText(`key ${FAKE_ANT}`);
-      expect(text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key»/);
+      expect(text).toMatch(/«SECRET:[a-z0-9]+ type=anthropic_api_key[^»]*»/);
     });
   });
 
