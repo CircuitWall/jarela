@@ -1,5 +1,5 @@
 "use client";
-import { Filter, Key, Pencil, Plus, Trash2 } from "lucide-react";
+import { Filter, Key, Loader2, Pencil, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
@@ -125,6 +125,8 @@ export function CredentialsListPanel() {
   const [addAnotherProvider, setAddAnotherProvider] = useState<string | null>(null);
   const [editingCredential, setEditingCredential] = useState<Credential | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("credentials", "credential", containerRef);
   useDeepLinkScroll("credentials", "integration", containerRef);
@@ -160,6 +162,38 @@ export function CredentialsListPanel() {
     for (const d of defs) m.set(d.name, d);
     return m;
   }, [defs]);
+
+  async function syncFromEnv() {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const r = await api.envSync.apply();
+      const sourceLabel = r.discovered.source === "shell-rc"
+        ? `your ${r.discovered.shell ?? "shell"} rc`
+        : r.discovered.source === "windows-registry"
+          ? "your Windows User env"
+          : "the process env";
+      if (r.applied_count > 0) {
+        setSyncMsg(`Synced ${r.applied_count} field(s) from ${sourceLabel}.`);
+      } else {
+        const userSkipped = r.candidates.filter((c) => c.action === "skipped-user").length;
+        const equal = r.candidates.filter((c) => c.action === "skipped-equal").length;
+        const absent = r.candidates.filter((c) => c.action === "absent").length;
+        if (userSkipped > 0) {
+          setSyncMsg(`Nothing to write \u2014 ${userSkipped} field(s) were edited here and won't be overwritten.`);
+        } else if (equal > 0 && absent === r.candidates.length - equal) {
+          setSyncMsg(`Already up to date with ${sourceLabel}.`);
+        } else {
+          setSyncMsg(`No matching env vars set in ${sourceLabel}.`);
+        }
+      }
+      await refresh();
+    } catch (e) {
+      setSyncMsg(errorMessage(e));
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function handleDelete(c: Credential) {
     setDeleteError(null);
@@ -246,6 +280,15 @@ export function CredentialsListPanel() {
           </button>
         )}
         <button
+          onClick={syncFromEnv}
+          disabled={syncing}
+          title="Pull standard credential env vars (GITHUB_TOKEN, ATLASSIAN_API_TOKEN, …) from your shell rc / Windows User env into the Credentials list. Fields you've edited here are never overwritten."
+          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-50"
+        >
+          {syncing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+          Sync from environment
+        </button>
+        <button
           onClick={() => setAddOpen(true)}
           className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
           title="Pick a provider and connect it. Same editors are available inline below."
@@ -256,6 +299,15 @@ export function CredentialsListPanel() {
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
         <div className="px-4 py-2 space-y-4">
+          {syncMsg && (
+            <div className="px-3 py-2 rounded border border-border bg-surface-2 text-[11px] text-fg-muted flex items-start gap-2">
+              <RefreshCw size={12} className="mt-0.5 text-fg-subtle shrink-0" />
+              <span className="flex-1">{syncMsg}</span>
+              <button onClick={() => setSyncMsg(null)} className="text-fg-faint hover:text-fg" aria-label="Dismiss">
+                <XCircle size={12} />
+              </button>
+            </div>
+          )}
           {loading && credentials.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
           )}
