@@ -6,6 +6,7 @@ import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
 
 interface SystemNotice {
   id: string;
@@ -554,7 +555,7 @@ function ThinkingLine({ text }: { text: string }) {
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-1.5 text-[11px] text-amber-700 dark:text-amber-400/70 hover:text-amber-700 dark:hover:text-amber-300 px-1 py-0.5"
       >
-        <ChevronRight size={10} className={`transition-transform shrink-0 ${open ? "rotate-90" : ""}`} />
+        <CollapseChevron open={open} size={10} />
         <span className="font-medium">thinking</span>
         {!open && <span className="truncate text-amber-700 dark:text-amber-300/40 italic font-normal flex-1 text-left">{tail}</span>}
       </button>

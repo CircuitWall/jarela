@@ -7,12 +7,13 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, ChevronRight, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
+import { Bot, Check, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
 import { CountdownRing } from "@/components/chat/CountdownRing";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { pushToast } from "@/lib/ui/toasts";
@@ -360,7 +361,7 @@ function CollapsibleSection({
         className={`flex items-center gap-1 text-left text-[10.5px] ${accent ? "text-white/75 hover:text-white/95" : "text-fg-muted hover:text-fg"}`}
         aria-expanded={open}
       >
-        <ChevronRight size={11} className={`shrink-0 transition-transform ${open ? "rotate-90" : ""}`} />
+        <CollapseChevron open={open} size={11} />
         <span className="uppercase tracking-wide">{label}</span>
         {hint && <span className={`ml-1 normal-case ${accent ? "text-white/55" : "text-fg-faint"}`}>{hint}</span>}
       </button>
@@ -504,7 +505,7 @@ function CollapsibleLong({
           }`}
           aria-expanded={open}
         >
-          <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+          <CollapseChevron open={open} size={10} />
           {open ? "Show less" : "Show more"}
         </button>
       )}
@@ -1110,7 +1111,7 @@ function ReferencesPanel({ sources }: { sources: ReadonlyArray<{ n: number; labe
         className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
         aria-expanded={open}
       >
-        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <CollapseChevron open={open} size={10} />
         <LinkIcon size={10} />
         <span>{sources.length} {sources.length === 1 ? "reference" : "references"}</span>
       </button>
@@ -1194,7 +1195,7 @@ function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ te
         title={checkerModel ? `Citations checked by ${checkerModel}` : undefined}
         aria-expanded={open}
       >
-        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <CollapseChevron open={open} size={10} />
         <span>{trigger}</span>
       </button>
       {open && (
@@ -1251,7 +1252,7 @@ function RedactionShield({
         title="Sensitive values were replaced with placeholders before being sent to the LLM. Real values stayed on this device."
         aria-expanded={open}
       >
-        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <CollapseChevron open={open} size={10} />
         <ShieldCheck size={11} />
         <span>{total} {total === 1 ? "value" : "values"} held back from LLM</span>
       </button>
@@ -1284,7 +1285,7 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
         onClick={() => setOpen((v) => !v)}
         className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
       >
-        <ChevronRight size={10} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+        <CollapseChevron open={open} size={10} />
         <LinkIcon size={10} />
         <span>{refs.length} {refs.length === 1 ? "reference" : "references"}</span>
       </button>
