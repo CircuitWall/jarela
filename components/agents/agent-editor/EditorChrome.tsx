@@ -1,5 +1,6 @@
 import type React from "react";
 import { Dialog } from "@/components/ui/Dialog";
+import { Button } from "@/components/ui/Button";
 
 interface ChromeProps {
   title: string;
@@ -49,13 +50,9 @@ export function EditorFooter({ isDefault, onIsDefaultChange, saving, onSave, onC
         <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">
           Cancel
         </button>
-        <button
-          onClick={onSave}
-          disabled={saving}
-          className="px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50"
-        >
+        <Button onClick={onSave} disabled={saving}>
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
     </div>
   );

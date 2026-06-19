@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { Dialog } from "@/components/ui/Dialog";
+import { Button } from "@/components/ui/Button";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
 interface Props {
@@ -52,14 +53,14 @@ function DialogActions({ form, onConfirm, onSkip }: Props) {
       >
         Skip &amp; save anyway
       </button>
-      <button
+      <Button
         onClick={onConfirm}
         disabled={form.compacting}
-        className="px-4 py-1.5 text-xs font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+        size="lg"
+        icon={form.compacting ? <Loader2 size={12} className="animate-spin" /> : undefined}
       >
-        {form.compacting && <Loader2 size={12} className="animate-spin" />}
         {form.compacting ? "Compacting…" : "Compact & save"}
-      </button>
+      </Button>
     </div>
   );
 }
