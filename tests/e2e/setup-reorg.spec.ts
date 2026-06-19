@@ -24,7 +24,7 @@ test.beforeEach(async ({ request, page }) => {
   await dismissOverlayBanners(page);
   await page.addInitScript(() => {
     // Seed advanced experience mode so the Settings sub-tabs flagged
-    // advancedOnly (Harness / Logs / Defaults) render in tests.
+    // advancedOnly (Test runs / Logs / Environment) render in tests.
     try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }
   });
   await page.goto("/");
@@ -46,7 +46,7 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
 
   // Common tabs visible up top (MenuPanel.COMMON_TABS). Capability surfaces
   // (Documents, Memory, Bridges, MCP, Extensions) live under Tools, and the
-  // former Credentials/Models/Harness/Logs/Defaults entries are now sub-tabs
+  // former Credentials/Models/Test-runs/Logs/Environment entries are now sub-tabs
   // of the consolidated Settings panel.
   for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Tasks", "Profile", "Settings"]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
@@ -60,9 +60,9 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
     "Connections",
     "Credentials",
     "Models",
-    "Harness",
+    "Test runs",
     "Logs",
-    "Defaults",
+    "Environment",
   ]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toHaveCount(0);
   }
@@ -88,11 +88,11 @@ test("Settings panel exposes advanced sub-tabs when experience mode is full", as
   await page.getByRole("button", { name: "Settings", exact: true }).click();
 
   // Always-visible sub-tabs.
-  for (const label of ["Appearance", "Networking", "Credentials", "Models"]) {
+  for (const label of ["Credentials", "Models", "Privacy & security", "Appearance", "Networking"]) {
     await expect(page.getByRole("tab", { name: label, exact: true })).toBeVisible();
   }
   // Full experience mode (seeded in beforeEach) reveals these advanced-only tabs.
-  for (const label of ["Harness", "Logs", "Defaults"]) {
+  for (const label of ["Test runs", "Logs", "Environment"]) {
     await expect(page.getByRole("tab", { name: label, exact: true })).toBeVisible();
   }
 });
