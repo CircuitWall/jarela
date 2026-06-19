@@ -26,6 +26,11 @@ const PACKAGE_NAME = "@circuitwall/jarela";
 const REPO = "CircuitWall/jarela";
 const MAX_LINES = 200;
 const RESTART_DELAY_MS = 1500;
+// Hard cap on a single `npm i -g` invocation. A stalled registry, dead
+// proxy, or hung install script must not leave the update job pinned in
+// "running" forever — otherwise the user sees a stuck banner with no
+// recourse and the supervisor never gets to restart us.
+const INSTALL_TIMEOUT_MS = 15 * 60 * 1000;
 
 type UpdateState =
   | { state: "idle" }
@@ -117,7 +122,28 @@ export function POST() {
   child.on("error", (err) => {
     appendLine(lines, Buffer.from(`spawn error: ${err.message}`));
   });
+
+  const killTimer = setTimeout(() => {
+    if (child.exitCode !== null) return;
+    appendLine(
+      lines,
+      Buffer.from(`update killed after ${INSTALL_TIMEOUT_MS / 1000}s (timeout)`),
+    );
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
+    setTimeout(() => {
+      if (child.exitCode === null) {
+        try { child.kill("SIGKILL"); } catch { /* gone */ }
+      }
+    }, 5000).unref?.();
+  }, INSTALL_TIMEOUT_MS);
+  killTimer.unref?.();
+
   child.on("exit", (code) => {
+    clearTimeout(killTimer);
     const finishedAt = Date.now();
     if (code === 0) {
       const willExitAt = finishedAt + RESTART_DELAY_MS;
