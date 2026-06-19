@@ -324,7 +324,7 @@ export function UnifiedPackageList() {
         <p className="text-xs text-fg-faint">
           Every LangChain-style tool surface in one place: built-in categories,
           bundled defaults, npm-installed packages, and drop-in <code className="font-mono text-[11px]">.cjs</code>{" "}
-          files{dropInDir ? <> from <span className="font-mono">{dropInDir}</span></> : null}.
+          files{dropInDir ? <> from <span className="font-mono break-all">{dropInDir}</span></> : null}.
         </p>
       </header>
 
@@ -390,13 +390,13 @@ export function UnifiedPackageList() {
           </div>
           <ul className="space-y-1 text-xs text-fg-muted">
             {manifestErrors.map((e) => (
-              <li key={`m-${e.manifest}`}>
-                <span className="font-mono">{e.manifest}</span>: {e.error}
+              <li key={`m-${e.manifest}`} className="break-words">
+                <span className="font-mono break-all">{e.manifest}</span>: {e.error}
               </li>
             ))}
             {extErrors.map((e, i) => (
-              <li key={`x-${e.file}-${i}`}>
-                <span className="font-mono">{e.file}</span>: {e.error}
+              <li key={`x-${e.file}-${i}`} className="break-words">
+                <span className="font-mono break-all">{e.file}</span>: {e.error}
               </li>
             ))}
           </ul>
@@ -458,7 +458,7 @@ function PackageListRow({
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-semibold text-fg">{row.title}</span>
+            <span className="text-sm font-semibold text-fg break-words">{row.title}</span>
             <span
               className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${SOURCE_BADGE_CLASS[row.kind]}`}
             >
@@ -489,16 +489,16 @@ function PackageListRow({
             )}
           </div>
           {row.description && (
-            <p className="text-xs text-fg-muted mt-0.5">{row.description}</p>
+            <p className="text-xs text-fg-muted mt-0.5 break-words">{row.description}</p>
           )}
-          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap min-w-0">
             {row.npmPackage && (
-              <code className="text-[10px] text-fg-faint font-mono">
+              <code className="text-[10px] text-fg-faint font-mono break-all">
                 {row.npmPackage}
               </code>
             )}
             {row.file && (
-              <code className="text-[10px] text-fg-faint font-mono truncate">
+              <code className="text-[10px] text-fg-faint font-mono break-all">
                 {row.file}
               </code>
             )}
