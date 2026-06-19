@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronRight, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
 
 // RedactionPanel — settings UI for ADR-0064 outbound redaction.
 // Surfaces the global on/off toggle, the path of the user's pattern
@@ -160,7 +161,7 @@ export function RedactionPanel() {
           className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
           aria-expanded={showPatterns}
         >
-          <ChevronRight size={11} className={`transition-transform ${showPatterns ? "rotate-90" : ""}`} />
+          <CollapseChevron open={showPatterns} size={11} />
           <span>{enabledPatterns.length} active patterns</span>
           {state.active.heuristics.high_entropy.enabled && (
             <span className="text-fg-faint">
@@ -192,7 +193,7 @@ export function RedactionPanel() {
           className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
           aria-expanded={showAllowlist}
         >
-          <ChevronRight size={11} className={`transition-transform ${showAllowlist ? "rotate-90" : ""}`} />
+          <CollapseChevron open={showAllowlist} size={11} />
           <span>{state.active.field_name_allowlist.length} allowlisted JSON field names</span>
         </button>
         {showAllowlist && (
