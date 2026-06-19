@@ -29,6 +29,16 @@ function nativeBaseUrl(params: ProviderParams): string {
   return "https://generativelanguage.googleapis.com/v1beta";
 }
 
+// Bare-fetch calls below have no SDK-level timeout, so a dropped connection
+// or a Google upstream hanging mid-stream would block the request forever
+// (and pin the agent run until its idle/max timeout aborts it). Cap each
+// fetch at 10 min by default, matching the implicit ceilings the official
+// OpenAI / Anthropic SDKs already enforce.
+const NATIVE_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
+function nativeFetchSignal(): AbortSignal {
+  return AbortSignal.timeout(NATIVE_FETCH_TIMEOUT_MS);
+}
+
 function geminiApiKey(params: ProviderParams): string {
   const key = resolveProviderApiKey("gemini", params);
   if (!key) throw new Error("Gemini: no api_key configured");
@@ -239,6 +249,7 @@ async function geminiNativeGenerate(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal: nativeFetchSignal(),
     },
   );
   if (!res.ok) {
@@ -307,6 +318,7 @@ async function* geminiNativeStreamInvoke(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal: nativeFetchSignal(),
     },
   );
   if (!res.ok || !res.body) {
@@ -395,6 +407,7 @@ async function geminiNativeChat(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal: nativeFetchSignal(),
     },
   );
   if (!res.ok || !res.body) {
@@ -453,6 +466,7 @@ async function geminiEmbed(model_id: string, inputs: string[], params: ProviderP
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal: nativeFetchSignal(),
     },
   );
   if (!res.ok) {
