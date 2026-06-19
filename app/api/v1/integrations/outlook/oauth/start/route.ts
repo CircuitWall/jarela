@@ -4,6 +4,7 @@ import { buildAuthorizeUrl, createFlow } from "@/lib/integrations/microsoft-oaut
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
+import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
 
 // POST /api/v1/integrations/outlook/oauth/start
 // Body: { client_id?, client_secret?, credential_id? }
@@ -17,9 +18,15 @@ import { isMaskedSecret } from "@/lib/utils/secret-mask";
 // token onto that specific credential row, and masked client_id/secret
 // fields fall back to that row's saved params instead of the default.
 
+// Match gmail/oauth/start — strip invisibles paste-managers inject.
+const sanitizedField = z
+  .string()
+  .optional()
+  .transform((v) => sanitizeOAuthInput(v));
+
 const BodySchema = z.object({
-  client_id: z.string().trim().min(1).optional(),
-  client_secret: z.string().trim().min(1).optional(),
+  client_id: sanitizedField,
+  client_secret: sanitizedField,
   credential_id: z.string().trim().min(1).optional(),
 });
 

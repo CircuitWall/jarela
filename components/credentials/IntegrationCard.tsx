@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
+import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
 
 // Per-integration editor with inline OAuth Connect, Save, Test, Clear, and
 // (for Gmail/Outlook) a collapsible setup guide. Extracted from the old
@@ -62,8 +63,11 @@ export function IntegrationCard({
   async function connectOAuth(provider: "gmail" | "outlook") {
     setError(null);
     setTestResult(null);
-    const clientId = values.client_id?.trim();
-    const clientSecret = values.client_secret?.trim();
+    // Strip ALL whitespace (incl. zero-width chars from password-manager
+    // paste) — `.trim()` alone leaves them and Google then rejects with
+    // `invalid_client`. Same sanitizer runs server-side as a backstop.
+    const clientId = sanitizeOAuthInput(values.client_id);
+    const clientSecret = sanitizeOAuthInput(values.client_secret);
     // For a per-row credential we let the backend fall back to the row's
     // saved values; otherwise we need explicit input or a saved default.
     const hasSavedSource = !!editingId || !!status?.configured;

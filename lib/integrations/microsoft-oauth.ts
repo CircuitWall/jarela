@@ -17,6 +17,7 @@ import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-store";
 import { parseJsonSafe } from "@/lib/utils/json";
 import { errorMessage } from "@/lib/utils/error";
+import { sanitizeOAuthInput, secretFingerprint } from "@/lib/utils/oauth-input";
 
 export type { OAuthFlow };
 
@@ -85,10 +86,12 @@ export async function exchangeCode(opts: {
   clientSecret: string;
   redirectUri: string;
 }): Promise<{ refresh_token?: string; access_token?: string; expires_in?: number; scope?: string }> {
+  const clientId = sanitizeOAuthInput(opts.clientId) ?? "";
+  const clientSecret = sanitizeOAuthInput(opts.clientSecret) ?? "";
   const body = new URLSearchParams({
     code: opts.code,
-    client_id: opts.clientId,
-    client_secret: opts.clientSecret,
+    client_id: clientId,
+    client_secret: clientSecret,
     redirect_uri: opts.redirectUri,
     grant_type: "authorization_code",
     scope: MICROSOFT_SCOPES.join(" "),
@@ -103,6 +106,9 @@ export async function exchangeCode(opts: {
   const parsed = parseJsonSafe<Record<string, unknown>>(text, {});
   if (!res.ok) {
     const err = (parsed["error_description"] || parsed["error"] || text || `HTTP ${res.status}`) as string;
+    console.error(
+      `[microsoft-oauth] token exchange rejected (${res.status}): ${err} | client_id ${secretFingerprint(clientId)} | client_secret ${secretFingerprint(clientSecret)}`,
+    );
     throw new Error(err);
   }
   return parsed as { refresh_token?: string; access_token?: string; expires_in?: number; scope?: string };
