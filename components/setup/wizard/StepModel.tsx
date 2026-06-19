@@ -10,6 +10,11 @@ interface StepModelProps {
   onProviderChange: (p: Provider) => void;
   apiKey: string;
   onApiKeyChange: (v: string) => void;
+  // True when the apiKey field still holds the masked sentinel that
+  // /api/v1/models returns for an existing stored key. Drives the
+  // "key already saved" badge + disables the Test connection button
+  // (which would fail trying to validate the sentinel literally).
+  apiKeyKept: boolean;
   modelId: string;
   onModelIdChange: (v: string) => void;
   availableModels: string[];
@@ -30,7 +35,7 @@ interface StepModelProps {
 
 export function StepModel(props: StepModelProps) {
   const {
-    provider, onProviderChange, apiKey, onApiKeyChange,
+    provider, onProviderChange, apiKey, onApiKeyChange, apiKeyKept,
     modelId, onModelIdChange, availableModels,
     test, testing, onRunTest,
     reuseGoogleKey, onReuseGoogleKeyChange,
@@ -99,20 +104,35 @@ export function StepModel(props: StepModelProps) {
               Get key <ExternalLink size={11} />
             </a>
           </div>
-          <input
-            type="password"
-            value={apiKey}
-            onChange={(e) => onApiKeyChange(e.target.value)}
-            placeholder={providerInfo.placeholder}
-            className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 font-mono text-sm focus:border-accent focus:outline-none"
-            autoComplete="off"
-            spellCheck={false}
-          />
+          {apiKeyKept ? (
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
+              <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+              <span className="text-sm text-fg-subtle flex-1">Key already saved — leave as-is to keep it.</span>
+              <button
+                type="button"
+                onClick={() => onApiKeyChange("")}
+                className="text-[11px] text-accent hover:text-accent-hover"
+              >
+                Replace key
+              </button>
+            </div>
+          ) : (
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => onApiKeyChange(e.target.value)}
+              placeholder={providerInfo.placeholder}
+              className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 font-mono text-sm focus:border-accent focus:outline-none"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          )}
         </label>
         <button
           type="button"
           onClick={onRunTest}
-          disabled={testing || !apiKey.trim()}
+          disabled={testing || !apiKey.trim() || apiKeyKept}
+          title={apiKeyKept ? "Existing key is preserved — click Replace key to test a new one." : undefined}
           className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm hover:border-fg-faint disabled:opacity-50"
         >
           {testing ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}

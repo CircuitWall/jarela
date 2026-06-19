@@ -33,6 +33,16 @@ const STEPS: StepInfo[] = [
   { id: "review", title: "Review", short: "Review" },
 ];
 
+// Sentinel the /api/v1/models GET endpoint emits in place of a stored
+// api_key. The wizard treats it as "user has not retyped the key, keep
+// whatever the server already has" — the server-side guards in
+// app/api/v1/models{,/[name]}/route.ts then preserve the existing
+// value when this sentinel is sent back on save. Without these checks
+// re-running the wizard against an already-configured model would
+// clobber the real api_key with the literal string "***" and also
+// blow away the linked Google integration credential.
+const API_KEY_SENTINEL = "***";
+
 function syntheticGoogleIntegration(): IntegrationStatus {
   return { name: "google", configured: true, values: {}, updated_at: null };
 }
@@ -108,13 +118,19 @@ export function OnboardingWizard({ context }: Props) {
 
   const activeModel = models.find((row) => row.is_default) ?? models[0] ?? null;
   const activeAgent = agents.find((row) => row.is_default) ?? agents[0] ?? null;
+  // True when the apiKey field still holds the masked sentinel the
+  // server returned for an existing model's secret. Drives the
+  // "key already saved" hint, skips the Test-connection round-trip
+  // (which would fail against the sentinel), and tells the save path
+  // not to re-write the linked Google integration credential.
+  const apiKeyIsSentinel = apiKey === API_KEY_SENTINEL;
   const effectiveIntegrations = useMemo(() => {
-    if (provider === "gemini" && reuseGoogleKey && apiKey.trim()) {
+    if (provider === "gemini" && reuseGoogleKey && apiKey.trim() && !apiKeyIsSentinel) {
       const hasGoogle = integrations.some((s) => s.name === "google" && s.configured);
       return hasGoogle ? integrations : [...integrations, syntheticGoogleIntegration()];
     }
     return integrations;
-  }, [apiKey, integrations, provider, reuseGoogleKey]);
+  }, [apiKey, apiKeyIsSentinel, integrations, provider, reuseGoogleKey]);
   const modelReady = !!modelId.trim() && (!!test?.ok || (activeModel != null && apiKey.trim().length > 0));
   const canSave = name.trim().length > 0 && agentName.trim().length > 0 && modelReady;
 
@@ -128,7 +144,7 @@ export function OnboardingWizard({ context }: Props) {
   }
 
   async function runTest() {
-    if (!apiKey.trim()) return;
+    if (!apiKey.trim() || apiKeyIsSentinel) return;
     setTesting(true);
     setTest(null);
     setSaveError(null);
@@ -172,7 +188,10 @@ export function OnboardingWizard({ context }: Props) {
       if (useAsEmbeddingDefault) {
         await api.documents.setSettings({ embedding_model_config: savedModel.name });
       }
-      if (provider === "gemini" && reuseGoogleKey && apiKey.trim()) {
+      // Only touch the Google integration credential when the user
+      // actually typed a new key. The sentinel would overwrite a real
+      // stored key with the literal "***" — see API_KEY_SENTINEL.
+      if (provider === "gemini" && reuseGoogleKey && apiKey.trim() && !apiKeyIsSentinel) {
         await api.integrations.save("google", { api_key: apiKey.trim() });
       }
 
@@ -265,6 +284,7 @@ export function OnboardingWizard({ context }: Props) {
             onProviderChange={chooseProvider}
             apiKey={apiKey}
             onApiKeyChange={(v) => { setApiKey(v); setTest(null); }}
+            apiKeyKept={apiKeyIsSentinel}
             modelId={modelId}
             onModelIdChange={setModelId}
             availableModels={availableModels}
