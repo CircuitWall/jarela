@@ -1,10 +1,11 @@
 "use client";
-import { Filter, Key, Loader2, Pencil, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Filter, Key, Loader2, Pencil, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { useCredentialProbes, type CredentialProbeResult } from "@/hooks/useCredentialProbes";
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
@@ -130,6 +131,10 @@ export function CredentialsListPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("credentials", "credential", containerRef);
   useDeepLinkScroll("credentials", "integration", containerRef);
+  // Auto-test every saved credential on mount + after edits so the UI
+  // shows a live ✓/✗ next to each row without the user having to click
+  // Test for each one. Results are cached in-module across re-renders.
+  const probes = useCredentialProbes(credentials);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -329,6 +334,7 @@ export function CredentialsListPanel() {
                     provider={provider}
                     def={def}
                     rows={rows}
+                    probes={probes}
                     onEdit={(c) => setEditingCredential(c)}
                     onAddAnother={() => setAddAnotherProvider(provider)}
                     onDelete={handleDelete}
@@ -370,6 +376,7 @@ function ProviderGroup({
   provider,
   def,
   rows,
+  probes,
   onEdit,
   onAddAnother,
   onDelete,
@@ -377,6 +384,7 @@ function ProviderGroup({
   provider: string;
   def: IntegrationDefinition | undefined;
   rows: Credential[];
+  probes: Map<string, CredentialProbeResult>;
   onEdit: (c: Credential) => void;
   onAddAnother: () => void;
   onDelete: (c: Credential) => void;
@@ -396,40 +404,83 @@ function ProviderGroup({
         </button>
       </div>
       <ul className="divide-y divide-border/60">
-        {rows.map((c) => (
-          <li key={c.id} data-deep-link-id={c.id} className="flex items-center gap-3 px-3 py-2 group">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-0.5">
-                <span className="text-sm font-medium text-fg truncate">{c.label ?? c.id}</span>
-                {c.is_default && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
-                    default
-                  </span>
-                )}
-                <span className="text-[10px] text-fg-faint">{c.auth_method}</span>
+        {rows.map((c) => {
+          const probe = probes.get(c.id) ?? { state: "idle" as const };
+          const broken = probe.state === "error";
+          return (
+            <li
+              key={c.id}
+              data-deep-link-id={c.id}
+              className={
+                "flex items-center gap-3 px-3 py-2 group " +
+                (broken ? "bg-red-500/5" : "")
+              }
+            >
+              <ProbeIndicator probe={probe} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-sm font-medium text-fg truncate">{c.label ?? c.id}</span>
+                  {c.is_default && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
+                      default
+                    </span>
+                  )}
+                  <span className="text-[10px] text-fg-faint">{c.auth_method}</span>
+                </div>
+                <p className={"text-[11px] truncate " + (broken ? "text-red-700 dark:text-red-400" : "text-fg-subtle")}>
+                  {broken ? (probe.message ?? "Probe failed") : describeCredential(c)}
+                </p>
               </div>
-              <p className="text-[11px] text-fg-subtle truncate">{describeCredential(c)}</p>
-            </div>
-            <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-              <button
-                onClick={() => onEdit(c)}
-                className="p-1 text-fg-subtle hover:text-fg transition-colors"
-                title="Edit credential"
-              >
-                <Pencil size={13} />
-              </button>
-              <button
-                onClick={() => onDelete(c)}
-                className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                title="Delete"
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          </li>
-        ))}
+              <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+                <button
+                  onClick={() => onEdit(c)}
+                  className="p-1 text-fg-subtle hover:text-fg transition-colors"
+                  title="Edit credential"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={() => onDelete(c)}
+                  className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                  title="Delete"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
+}
+
+// Status icon for the auto-probe sweep. Loading spinner while the probe
+// is in flight, green check on ok, red X on failure, neutral dot when
+// the provider doesn't expose a probe (e.g. credentials without an
+// integration definition).
+function ProbeIndicator({ probe }: { probe: CredentialProbeResult }) {
+  if (probe.state === "running" || probe.state === "idle") {
+    return (
+      <span title="Testing credential…" className="shrink-0 inline-flex">
+        <Loader2 size={13} className="text-fg-faint animate-spin" aria-label="Testing credential" />
+      </span>
+    );
+  }
+  if (probe.state === "ok") {
+    return (
+      <span title="Credential is reachable." className="shrink-0 inline-flex">
+        <CheckCircle2 size={13} className="text-emerald-500" aria-label="Credential reachable" />
+      </span>
+    );
+  }
+  if (probe.state === "error") {
+    return (
+      <span title={probe.message ?? "Probe failed"} className="shrink-0 inline-flex">
+        <XCircle size={13} className="text-red-500" aria-label="Credential probe failed" />
+      </span>
+    );
+  }
+  // unsupported — provider has no health probe registered.
+  return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />;
 }

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
+import { getModelConfig, listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
 
@@ -26,6 +26,12 @@ const CreateBody = z.object({
 // the secret. Authoritative secrets live in `credentials.params` and
 // are served exclusively via `/api/v1/credentials`.
 const SECRET_FIELDS = new Set(["api_key", "client_secret", "refresh_token", "access_token"]);
+// Sentinels the client may echo back when the user did not change a
+// previously-redacted secret field. The model PUT/POST routes preserve
+// the existing value for any field whose incoming value matches one of
+// these — without it, re-saving from the setup wizard would clobber a
+// real key with the literal "***" string.
+const SECRET_SENTINELS = new Set(["***", "********"]);
 
 function redactInlineParams(raw: string): Record<string, unknown> {
   const parsed = parseJsonSafe<Record<string, unknown>>(raw, {});
@@ -35,6 +41,22 @@ function redactInlineParams(raw: string): Record<string, unknown> {
     else safe[k] = v;
   }
   return safe;
+}
+
+function preserveSecrets(name: string, incoming: Record<string, unknown>): Record<string, unknown> {
+  const existing = getModelConfig(name);
+  if (!existing) return incoming;
+  const existingParams = parseJsonSafe<Record<string, unknown>>(existing.params, {});
+  const out: Record<string, unknown> = { ...incoming };
+  for (const field of SECRET_FIELDS) {
+    const v = out[field];
+    if (typeof v === "string" && SECRET_SENTINELS.has(v)) {
+      const prior = existingParams[field];
+      if (typeof prior === "string" && prior.length > 0) out[field] = prior;
+      else delete out[field];
+    }
+  }
+  return out;
 }
 
 export function GET() {
@@ -48,11 +70,12 @@ export function GET() {
 export async function POST(req: NextRequest) {
   const body = await validateBody(req, CreateBody);
   if (body instanceof NextResponse) return body;
+  const safeParams = preserveSecrets(body.name, body.params ?? {});
   const r = upsertModelConfig(
     body.name,
     body.provider,
     body.model_id,
-    body.params ?? {},
+    safeParams,
     body.is_default ?? false,
     body.credential_id ?? null,
   );
