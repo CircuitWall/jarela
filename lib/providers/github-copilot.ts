@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import type {
   ModelProvider,
   ProviderParams,
@@ -8,6 +9,20 @@ import type {
 } from "./types";
 import { getStoredOAuthToken } from "./github-copilot-auth";
 import { openaiTokenLimitParams, parseOpenAIInvokeChoice, streamOpenAIEvents, toOpenAIMessages } from "./openai";
+import {
+  buildAnthropicMessageBody,
+  translateAnthropicStreamEvents,
+} from "./anthropic";
+
+// Claude-family Copilot model ids include the upstream Anthropic names
+// (`claude-3.5-sonnet`, `claude-sonnet-4`, `claude-opus-4`, …) and a few
+// GitHub-rebranded aliases (`Github-Opus4.6`, `copilot-claude-3.5-sonnet`).
+// Same normalization rule as `resolveCopilot()` in known-context-windows.ts.
+export function isCopilotClaudeModel(model_id: string): boolean {
+  if (!model_id) return false;
+  const n = model_id.replace(/^(?:Github-|copilot-)/i, "").toLowerCase();
+  return n.startsWith("claude") || n.startsWith("opus") || n.startsWith("sonnet") || n.startsWith("haiku");
+}
 
 function pickGitHubCompatOptions(params: ProviderParams): Record<string, unknown> {
   const p = params as Record<string, unknown>;
@@ -93,57 +108,95 @@ const FIXED_HEADERS = {
 };
 
 async function resolvedClient(params: ProviderParams): Promise<OpenAI> {
+  const auth = await resolveCopilotAuth(params);
+  return new OpenAI({
+    apiKey: auth.apiKey,
+    baseURL: auth.baseURL,
+    defaultHeaders: { ...auth.headers, ...params.extra_headers },
+  });
+}
+
+// Returns the auth + transport details needed to talk to GitHub Copilot. The
+// session-token + native-Messages-API path is preferred because it preserves
+// Anthropic `cache_control` markers; the legacy PAT path falls back to
+// GitHub Models REST (OpenAI-shaped, no Claude Messages support, capped at
+// ~8K input tokens) and is incompatible with Anthropic routing.
+type CopilotAuth =
+  | { kind: "copilot-api"; baseURL: string; apiKey: string; headers: Record<string, string> }
+  | { kind: "models-rest"; baseURL: string; apiKey: string; headers: Record<string, string> };
+
+async function resolveCopilotAuth(params: ProviderParams): Promise<CopilotAuth> {
   const apiKey = (params.api_key as string | undefined) ?? "";
   const explicitSessionToken = (params.copilot_session_token as string | undefined)?.trim();
 
-  // Highest priority: an explicit pre-exchanged Copilot session token.
   if (explicitSessionToken && explicitSessionToken.length > 0) {
-    return new OpenAI({
-      apiKey: explicitSessionToken,
+    return {
+      kind: "copilot-api",
       baseURL: params.base_url ?? "https://api.githubcopilot.com",
-      defaultHeaders: { ...FIXED_HEADERS, ...params.extra_headers },
-    });
+      apiKey: explicitSessionToken,
+      headers: { ...FIXED_HEADERS },
+    };
   }
 
-  // Next: a device-flow OAuth token persisted by the in-app sign-in. This is
-  // exchangeable for a Copilot session token, so we get full model context.
   const oauthToken = getStoredOAuthToken();
   if (oauthToken) {
     const token = await getCopilotToken(oauthToken);
-    return new OpenAI({
-      apiKey: token,
+    return {
+      kind: "copilot-api",
       baseURL: params.base_url ?? "https://api.githubcopilot.com",
-      defaultHeaders: { ...FIXED_HEADERS, ...params.extra_headers },
-    });
+      apiKey: token,
+      headers: { ...FIXED_HEADERS },
+    };
   }
 
-  // Fallback: a raw PAT. PATs can't be exchanged for Copilot tokens, so they
-  // route to the GitHub Models REST API (which enforces tight per-request
-  // token caps, e.g. 8000 for gpt-4o). Users who want larger contexts should
-  // sign in via the device flow instead.
   if (apiKey && isLikelyGitHubPat(apiKey)) {
-    return new OpenAI({
-      apiKey,
+    return {
+      kind: "models-rest",
       baseURL: params.base_url ?? "https://models.github.ai/inference",
-      defaultHeaders: {
+      apiKey,
+      headers: {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2026-03-10",
-        ...params.extra_headers,
       },
-    });
+    };
   }
 
-  // Otherwise, treat the credential as an OAuth-capable token and exchange.
   if (!apiKey) {
     throw new Error(
       "GitHub Copilot: not signed in. Use the in-app device-flow login, or set api_key / copilot_session_token.",
     );
   }
   const token = await getCopilotToken(apiKey);
-  return new OpenAI({
-    apiKey: token,
+  return {
+    kind: "copilot-api",
     baseURL: params.base_url ?? "https://api.githubcopilot.com",
-    defaultHeaders: { ...FIXED_HEADERS, ...params.extra_headers },
+    apiKey: token,
+    headers: { ...FIXED_HEADERS },
+  };
+}
+
+// Anthropic SDK client pointed at Copilot's native `/v1/messages` endpoint.
+// Copilot accepts the Anthropic request shape (including `cache_control`
+// ephemeral breakpoints) for Claude-family models when called with a
+// session token. The PAT-only `models.github.ai` fallback does NOT expose
+// this endpoint, so we surface a clear error there instead of silently
+// downgrading to a path that strips the cache markers.
+async function resolvedAnthropicClient(params: ProviderParams): Promise<Anthropic> {
+  const auth = await resolveCopilotAuth(params);
+  if (auth.kind !== "copilot-api") {
+    throw new Error(
+      "GitHub Copilot: Claude models require a Copilot session token (OAuth or copilot_session_token). " +
+      "Personal Access Tokens route to GitHub Models REST, which does not expose the native Messages API.",
+    );
+  }
+  return new Anthropic({
+    // The SDK requires an apiKey field; we authenticate via authToken
+    // (Authorization: Bearer ...) per Copilot's contract. The empty
+    // x-api-key header the SDK still sends is ignored by Copilot.
+    apiKey: "",
+    authToken: auth.apiKey,
+    baseURL: auth.baseURL,
+    defaultHeaders: { ...auth.headers, ...params.extra_headers },
   });
 }
 
@@ -151,6 +204,20 @@ export const githubCopilotProvider: ModelProvider = {
   name: "github-copilot",
 
   async chat(model_id, messages, params): Promise<ProviderStreamResult> {
+    if (isCopilotClaudeModel(model_id)) {
+      const client = await resolvedAnthropicClient(params);
+      const body = buildAnthropicMessageBody(model_id, messages, params, []);
+      const stream = client.messages.stream(body);
+      return {
+        stream: (async function* () {
+          for await (const event of stream) {
+            if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+              yield event.delta.text;
+            }
+          }
+        })(),
+      };
+    }
     const client = await resolvedClient(params);
     const stream = await client.chat.completions.create({
       model: model_id,
@@ -171,6 +238,23 @@ export const githubCopilotProvider: ModelProvider = {
   },
 
   async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+    if (isCopilotClaudeModel(model_id)) {
+      const client = await resolvedAnthropicClient(params);
+      const body = buildAnthropicMessageBody(model_id, messages, params, tools);
+      const resp = await client.messages.create(body as Anthropic.Messages.MessageCreateParamsNonStreaming);
+      const textContent = resp.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      const toolCalls = resp.content
+        .filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use")
+        .map((b) => ({ id: b.id, name: b.name, arguments: b.input as Record<string, unknown> }));
+      return {
+        text: textContent || null,
+        tool_calls: toolCalls,
+        stop_reason: resp.stop_reason === "tool_use" ? "tool_use" : "stop",
+      };
+    }
     const client = await resolvedClient(params);
     const resp = await client.chat.completions.create({
       model: model_id,
@@ -186,6 +270,13 @@ export const githubCopilotProvider: ModelProvider = {
   },
 
   async *streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
+    if (isCopilotClaudeModel(model_id)) {
+      const client = await resolvedAnthropicClient(params);
+      const body = buildAnthropicMessageBody(model_id, messages, params, tools);
+      const stream = client.messages.stream(body);
+      yield* translateAnthropicStreamEvents(stream);
+      return;
+    }
     const client = await resolvedClient(params);
     const compat = pickGitHubCompatOptions(params) as Record<string, unknown>;
     const stream = await client.chat.completions.create({
