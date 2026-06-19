@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-06-19
+
+### Fixed
+
+- **`npm install @circuitwall/jarela` failed with `EUNSUPPORTEDPROTOCOL
+  Unsupported URL Type "workspace:"`.** The published 1.13.0 / 1.13.1
+  tarballs carried literal `workspace:^` references for the four
+  `@circuitwall/*-langchain` dependencies because npm only rewrites the
+  `workspace:` protocol when publishing from inside a workspace
+  sub-package, not when the root itself depends on workspaces. Added
+  `scripts/rewrite-workspace-deps.mjs` and wired it as `prepublishOnly`
+  so every `npm publish` resolves `workspace:^` -> `^<actual-version>`
+  from the matching `packages/*/package.json`. `scripts/check-npm-package.mjs`
+  now also asserts no `workspace:` strings remain in the packed manifest.
+
 ## [1.13.1] - 2026-06-18
 
 ### Fixed
