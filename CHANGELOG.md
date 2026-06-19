@@ -58,6 +58,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Logs, Memory, Updates, …) and each tab now surfaces a small
   attention badge when there's a configuration issue or unread item
   on that tab.
+- **Frictionless first-run on `npm install -g`.** Two small additions
+  remove the "what do I do now?" beat between `npm install -g` and a
+  running, autostarting service:
+  - `postinstall` prints a brief hint listing the three subcommands
+    most users want (`jarela`, `jarela install-service`, `jarela --help`)
+    plus a link to the README. Silent in source checkouts, CI, local
+    (non-global) installs, `sudo`, and when `JARELA_QUIET_POSTINSTALL=1`
+    is set. Wrapped in try/catch so it can never fail the install.
+  - The first interactive `jarela` run detects when no autostart is
+    registered for the current user and asks `Install autostart now so
+    it runs at login? [Y/n]`. Accepting installs the OS-native unit and
+    exits the foreground so the supervisor's instance takes the
+    service port. Inert in non-TTY contexts (CI, pipes, Dockerfiles)
+    and under `sudo`, opt-out with `JARELA_NO_FIRST_RUN_PROMPT=1`.
+- **README: bleeding-edge install path.** Documented how to pin to a
+  specific commit, the tip of `main`, the `next` pre-release tag, and
+  the `andrewgewu/jarela:main` Docker image for users who want to ride
+  the trunk between stable npm releases.
 
 ### Fixed
 

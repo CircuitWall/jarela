@@ -87,6 +87,16 @@ if (process.env.JARELA_DISABLE_UPDATE_CHECK !== "1") {
   } catch { /* never block boot on an update check */ }
 }
 
+// First-run convenience: if autostart isn't registered yet and the shell is
+// interactive, offer to register it now. Inert in CI / non-TTY / sudo / when
+// JARELA_NO_FIRST_RUN_PROMPT=1. If the user accepts, the autostart unit takes
+// over the service port and the foreground process exits to avoid a collision.
+try {
+  const { maybePromptServiceInstall } = await import("./first-run-prompt.mjs");
+  const installed = await maybePromptServiceInstall();
+  if (installed) process.exit(0);
+} catch { /* never block boot on the prompt */ }
+
 // Default: start the bundled standalone server. Source checkouts can still
 // build on demand; globally-installed npm packages must *not* try to run a
 // Next build from inside node_modules because webpack excludes that path.
