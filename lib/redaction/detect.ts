@@ -80,6 +80,83 @@ export function detectMatches(text: string, config: RedactionConfig): Match[] {
     }
   }
 
+  const digitRun = config.heuristics.digit_run;
+  if (digitRun?.enabled) {
+    // Build `[\d<separators>]+` from the configured separator chars,
+    // escaping each so a user-supplied `.` or `-` can't break the class.
+    const sepClass = digitRun.separators
+      .split("")
+      .map((c) => c.replace(/[\\\]\-^]/g, "\\$&"))
+      .join("");
+    let runRe: RegExp;
+    try {
+      // Word-boundary lookarounds keep us from matching digit substrings
+      // that are embedded in a larger alphanumeric token (UUIDs, SHAs,
+      // ULIDs, etc.) — those have their own pattern / exclude handling
+      // via the entropy heuristic, and double-flagging digits inside them
+      // creates spurious overlapping matches.
+      runRe = new RegExp(`(?<![A-Za-z0-9])[\\d${sepClass}]+(?![A-Za-z0-9])`, "g");
+    } catch {
+      runRe = /(?<![A-Za-z0-9])[\d\s\-.]+(?![A-Za-z0-9])/g;
+    }
+    const digitExcludes = digitRun.exclude_patterns
+      .map((p) => {
+        try { return new RegExp(p); } catch { return null; }
+      })
+      .filter((re): re is RegExp => re !== null);
+
+    // Reuse the alphanumeric heuristic's exclude patterns so a digit run
+    // that's actually a substring of a UUID / SHA / ULID / namespaced
+    // identifier (uuid=…) gets rejected the same way the alphanumeric
+    // heuristic rejects the whole token.
+    const broadCharRe = /[A-Za-z0-9_=+/.\-]/;
+    const broadExcludes = config.heuristics.high_entropy.exclude_patterns
+      .map((p) => {
+        try { return new RegExp(p); } catch { return null; }
+      })
+      .filter((re): re is RegExp => re !== null);
+
+    let m: RegExpExecArray | null;
+    while ((m = runRe.exec(text)) !== null) {
+      const raw0 = m[0];
+      // Trim leading/trailing separators so a phone number captured with a
+      // leading space doesn't include it in `value`. Digit count is what
+      // gates the match — separators are decoration.
+      const value = raw0.replace(/^[^\d]+|[^\d]+$/g, "");
+      if (value.length === 0) continue;
+      const digits = value.replace(/\D/g, "");
+      if (digits.length < digitRun.min_digits) continue;
+      // Require both the first AND last digit group to be at least 2
+      // digits long. Kills the "stray-digit-glued-via-space" false
+      // positive (e.g. `4 1234567` looks like 8 digits but is really a
+      // single digit beside an unrelated 7-digit number) while still
+      // accepting credit cards (4-4-4-4), phones (3-3-4), and bare runs
+      // (single group of 8+).
+      const groups = value.split(/\D+/).filter((g) => g.length > 0);
+      if (groups[0].length < 2 || groups[groups.length - 1].length < 2) continue;
+      if (digitExcludes.some((re) => re.test(value))) continue;
+      // Expand into the surrounding alphanumeric+symbol token; if that
+      // broader token is on the alphanumeric heuristic's exclude list
+      // (UUID, SHA, ULID, …), drop this digit run too.
+      let exStart = m.index;
+      let exEnd = m.index + raw0.length;
+      while (exStart > 0 && broadCharRe.test(text[exStart - 1])) exStart--;
+      while (exEnd < text.length && broadCharRe.test(text[exEnd])) exEnd++;
+      if (exStart !== m.index || exEnd !== m.index + raw0.length) {
+        const broadToken = text.slice(exStart, exEnd);
+        if (broadExcludes.some((re) => re.test(broadToken))) continue;
+      }
+      const offset = raw0.indexOf(value);
+      raw.push({
+        start: m.index + offset,
+        end: m.index + offset + value.length,
+        value,
+        type_hint: "unknown_digit_run",
+        source: "heuristic",
+      });
+    }
+  }
+
   return resolveOverlaps(raw);
 }
 

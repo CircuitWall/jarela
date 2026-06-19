@@ -28,7 +28,9 @@ describe("loadRedactionConfig", () => {
   it("returns the baked-in defaults when no file exists", () => {
     const cfg = loadRedactionConfig();
     expect(cfg.patterns.find((p) => p.name === "anthropic_api_key")).toBeDefined();
-    expect(cfg.heuristics.high_entropy.min_length).toBe(10);
+    expect(cfg.heuristics.high_entropy.min_length).toBe(16);
+    expect(cfg.heuristics.digit_run?.enabled).toBe(true);
+    expect(cfg.heuristics.digit_run?.min_digits).toBe(8);
   });
 
   it("reads a user-provided config file when present", () => {
