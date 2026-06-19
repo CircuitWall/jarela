@@ -5,6 +5,28 @@ import type { ModelEditorForm } from "./useModelEditorForm";
 
 export function CredentialSection({ form }: { form: ModelEditorForm }) {
   const noCredentials = form.providerCredentials.length === 0;
+  // Pass-through providers (langchain, mistral, ollama, perplexity, xai, …)
+  // have no INTEGRATIONS manifest, so the credential dialog has nothing to
+  // render. Wait until integrations have loaded before deciding — `[]`
+  // during the first render would otherwise flash the "no central
+  // credential" hint for every provider.
+  const hasManifest =
+    form.integrations.length === 0
+    || form.integrations.some((i) => i.name === form.integrationName);
+  if (!hasManifest) {
+    return (
+      <div className="space-y-1.5">
+        <span className="text-xs text-fg-subtle">Credential</span>
+        <p className="rounded border border-dashed border-border bg-surface-3/40 px-3 py-2 text-[11px] leading-snug text-fg-subtle">
+          <span className="font-medium text-fg-muted">{form.provider}</span>{" "}
+          is a pass-through provider with no shared credential form. Set the
+          API key, base URL, and any extra headers under{" "}
+          <span className="font-medium text-fg-muted">Show advanced fields</span>{" "}
+          below — they&apos;re stored per model row.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">

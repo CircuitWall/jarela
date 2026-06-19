@@ -216,7 +216,29 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
         </div>
       )}
       {step === "form" && !activeDef && (
-        <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
+        loading
+          ? <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
+          : (
+            <div className="p-4 space-y-3 text-center">
+              <p className="text-sm text-fg-muted">
+                No credential form is available for{" "}
+                <span className="font-medium text-fg">{activeName ?? "this provider"}</span>.
+              </p>
+              <p className="text-[11px] text-fg-faint leading-snug">
+                This usually means the provider is a pass-through (e.g. LangChain,
+                Ollama, Mistral) that doesn&apos;t use a shared credential. Configure
+                the API key, base URL, and any extra headers on the individual
+                model row instead.
+              </p>
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs text-accent hover:text-accent/80"
+              >
+                Close
+              </button>
+            </div>
+          )
       )}
     </Dialog>
   );
