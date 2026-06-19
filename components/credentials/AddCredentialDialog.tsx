@@ -1,10 +1,10 @@
 "use client";
-import { ChevronLeft, X } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
-import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { pushErrorToast } from "@/lib/ui/error-report";
+import { Dialog } from "@/components/ui/Dialog";
 import { IntegrationCard } from "./IntegrationCard";
 
 type Category = NonNullable<IntegrationDefinition["category"]>;
@@ -67,8 +67,6 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
   const [category] = useState<Category | null>(initialCategory ?? null);
   const [activeName, setActiveName] = useState<string | null>(initialProviderName);
 
-  useEscapeKey(onClose);
-
   const reload = useCallback(async () => {
     try {
       const res = await api.integrations.list();
@@ -127,95 +125,99 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
   const activeDef = activeName ? defs.find((d) => d.name === activeName) ?? null : null;
   const activeStatus = activeName ? statuses[activeName] ?? null : null;
 
+  const showBack = step === "form" && !lockCategory && !directProviderName && !credential && !createNew;
+
+  const titleNode =
+    step === "form" && activeDef
+      ? credential
+        ? `Edit ${credential.label ?? credential.id}`
+        : createNew
+          ? `New ${activeDef.label} credential`
+          : `${activeStatus?.configured ? "Edit" : "Connect"} ${activeDef.label}`
+      : "Add credential";
+
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-[70] p-2 sm:p-4 overflow-y-auto">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl my-2 sm:my-4">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          {step === "form" && !lockCategory && !directProviderName && !credential && !createNew && (
-            <button onClick={backToPicker} className="text-fg-subtle hover:text-fg" title="Back to picker">
-              <ChevronLeft size={16} />
-            </button>
-          )}
-          <h3 className="text-sm font-semibold text-fg flex-1 truncate">
-            {step === "form" && activeDef
-              ? credential
-                ? `Edit ${credential.label ?? credential.id}`
-                : createNew
-                  ? `New ${activeDef.label} credential`
-                  : `${activeStatus?.configured ? "Edit" : "Connect"} ${activeDef.label}`
-              : "Add credential"}
-          </h3>
-          <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors">
-            <X size={16} />
+    <Dialog
+      open
+      onClose={onClose}
+      title={titleNode}
+      size="md"
+      align="top"
+      level="topmost"
+      padded={false}
+      titlePrefix={
+        showBack ? (
+          <button onClick={backToPicker} className="text-fg-subtle hover:text-fg" title="Back to picker">
+            <ChevronLeft size={16} />
           </button>
-        </div>
-
-        {step === "pick" && (
-          <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
-            {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
-            {!loading && defs.length === 0 && (
-              <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
-            )}
-            {!loading && visibleCategories.map((cat) => {
-              const entries = grouped.get(cat) ?? [];
-              if (entries.length === 0) return null;
-              return (
-                <section key={cat}>
-                  <h4 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1.5 px-1">{CATEGORY_LABELS[cat]}</h4>
-                  <div className="divide-y divide-border/60 border border-border/60 rounded-xl overflow-hidden bg-surface-3/40">
-                    {entries.map((def) => {
-                      const configured = statuses[def.name]?.configured;
-                      return (
-                        <button
-                          key={def.name}
-                          type="button"
-                          onClick={() => openProvider(def.name)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-surface-2 transition-colors flex items-start gap-3"
-                        >
-                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm text-fg flex items-center gap-2">
-                              <span className="font-medium">{def.label}</span>
-                              {configured && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
-                                  configured
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">{def.description}</p>
+        ) : undefined
+      }
+    >
+      {step === "pick" && (
+        <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
+          {loading && <p className="text-fg-faint text-sm text-center py-6">Loading…</p>}
+          {!loading && defs.length === 0 && (
+            <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
+          )}
+          {!loading && visibleCategories.map((cat) => {
+            const entries = grouped.get(cat) ?? [];
+            if (entries.length === 0) return null;
+            return (
+              <section key={cat}>
+                <h4 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1.5 px-1">{CATEGORY_LABELS[cat]}</h4>
+                <div className="divide-y divide-border/60 border border-border/60 rounded-xl overflow-hidden bg-surface-3/40">
+                  {entries.map((def) => {
+                    const configured = statuses[def.name]?.configured;
+                    return (
+                      <button
+                        key={def.name}
+                        type="button"
+                        onClick={() => openProvider(def.name)}
+                        className="w-full text-left px-3 py-2.5 hover:bg-surface-2 transition-colors flex items-start gap-3"
+                      >
+                        <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-fg flex items-center gap-2">
+                            <span className="font-medium">{def.label}</span>
+                            {configured && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded border border-emerald-700 bg-emerald-900/20 text-emerald-700 dark:text-emerald-300">
+                                configured
+                              </span>
+                            )}
                           </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
-        )}
+                          <p className="text-[11px] text-fg-faint mt-0.5 leading-snug">{def.description}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
 
-        {step === "form" && activeDef && (
-          <div className="p-4 max-h-[70vh] overflow-y-auto">
-            <IntegrationCard
-              definition={activeDef}
-              status={activeStatus ?? undefined}
-              credential={credential ?? undefined}
-              createNew={createNew}
-              onChanged={() => {
-                if (typeof window !== "undefined") {
-                  window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
-                }
-                onSaved?.(activeDef.name);
-                void reload();
-              }}
-              onDeleted={onClose}
-            />
-          </div>
-        )}
-        {step === "form" && !activeDef && (
-          <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
-        )}
-      </div>
-    </div>
+      {step === "form" && activeDef && (
+        <div className="p-4 max-h-[70vh] overflow-y-auto">
+          <IntegrationCard
+            definition={activeDef}
+            status={activeStatus ?? undefined}
+            credential={credential ?? undefined}
+            createNew={createNew}
+            onChanged={() => {
+              if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
+              }
+              onSaved?.(activeDef.name);
+              void reload();
+            }}
+            onDeleted={onClose}
+          />
+        </div>
+      )}
+      {step === "form" && !activeDef && (
+        <p className="text-fg-faint text-sm text-center py-8">Loading…</p>
+      )}
+    </Dialog>
   );
 }

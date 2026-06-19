@@ -1,9 +1,9 @@
 "use client";
-import { ArrowUp, Check, Folder, FolderOpen, Home, X } from "lucide-react";
+import { ArrowUp, Check, Folder, FolderOpen, Home } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { api } from "@/api/client";
 import { errorMessage } from "@/lib/utils/error";
+import { Dialog } from "@/components/ui/Dialog";
 
 interface Props {
   initialPath?: string;
@@ -44,8 +44,6 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
 
   useEffect(() => { void navigate(initialPath); }, [initialPath, navigate]);
 
-  useEscapeKey(onClose);
-
   function jumpToPath(e: React.FormEvent) {
     e.preventDefault();
     if (!pathInput.trim()) return;
@@ -53,16 +51,34 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-surface-2 border border-border rounded-2xl w-full max-w-lg shadow-xl flex flex-col" style={{ maxHeight: "80vh" }}>
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-          <h3 className="text-sm font-semibold text-fg flex items-center gap-2">
-            <FolderOpen size={14} /> Pick a folder
-          </h3>
-          <button onClick={onClose} className="text-fg-subtle hover:text-fg transition-colors"><X size={16} /></button>
+    <Dialog
+      open
+      onClose={onClose}
+      title={<span className="flex items-center gap-2"><FolderOpen size={14} /> Pick a folder</span>}
+      size="md"
+      align="center"
+      padded={false}
+      footer={
+        <div className="flex justify-between items-center gap-2 px-4 py-3 border-t border-border">
+          <span className="text-[11px] text-fg-faint font-mono truncate flex-1" title={cwd}>{cwd}</span>
+          <button
+            onClick={onClose}
+            className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSelect(cwd)}
+            disabled={!cwd || loading}
+            className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Check size={13} /> Use this folder
+          </button>
         </div>
-
-        <div className="px-4 py-3 border-b border-border space-y-2">
+      }
+    >
+      <div className="flex flex-col h-full min-h-0">
+        <div className="px-4 py-3 border-b border-border space-y-2 shrink-0">
           <form onSubmit={jumpToPath} className="flex items-center gap-1.5">
             <button
               type="button"
@@ -90,7 +106,7 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
           </form>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 py-1.5">
+        <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5">
           {loading && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
           )}
@@ -114,24 +130,7 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
             </button>
           ))}
         </div>
-
-        <div className="flex justify-between items-center gap-2 px-4 py-3 border-t border-border">
-          <span className="text-[11px] text-fg-faint font-mono truncate flex-1" title={cwd}>{cwd}</span>
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onSelect(cwd)}
-            disabled={!cwd || loading}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50"
-          >
-            <Check size={13} /> Use this folder
-          </button>
-        </div>
       </div>
-    </div>
+    </Dialog>
   );
 }
