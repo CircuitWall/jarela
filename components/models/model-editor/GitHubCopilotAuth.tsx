@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/Button";
 import { useGitHubCopilotAuth, type DeviceFlow, type GhCopilotState } from "./useGitHubCopilotAuth";
 
 export function GitHubCopilotAuth() {
@@ -34,13 +35,14 @@ function AuthHeader({ status, polling, onSignIn, onSignOut }: HeaderProps) {
           Sign out
         </button>
       ) : (
-        <button
+        <Button
           onClick={onSignIn}
           disabled={polling}
-          className="px-2 py-1 text-[11px] bg-accent hover:bg-accent-hover text-white rounded whitespace-nowrap disabled:opacity-50"
+          size="sm"
+          className="whitespace-nowrap"
         >
           {polling ? "Waiting…" : "Sign in"}
-        </button>
+        </Button>
       )}
     </div>
   );

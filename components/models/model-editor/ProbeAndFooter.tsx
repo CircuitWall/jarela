@@ -1,4 +1,5 @@
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
+import { Button } from "@/components/ui/Button";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
 export function ProbeBanner({ result }: { result: ModelEditorForm["probeResult"] }) {
@@ -38,13 +39,13 @@ export function EditorFooter({ form, onTest, onSave, onClose }: FooterProps) {
       </button>
       <div className="flex-1" />
       <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">Cancel</button>
-      <button
+      <Button
         onClick={onSave}
         disabled={form.saving}
-        className="px-4 py-1.5 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-50"
+        size="lg"
       >
         {form.saving ? "Saving…" : form.allowSaveAnyway ? "Save anyway" : "Save"}
-      </button>
+      </Button>
     </div>
   );
 }
