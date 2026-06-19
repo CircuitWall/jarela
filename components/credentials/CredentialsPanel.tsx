@@ -10,6 +10,7 @@ import { NetworkPanel } from "@/components/integrations/NetworkPanel";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
 import { errorMessage } from "@/lib/utils/error";
+import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 
 // "Credentials" is the single home for every auth surface. The default
 // sub-tab is the unified list: model API keys, integration keys, and
@@ -80,35 +81,20 @@ export function CredentialsPanel() {
   const setSub = (s: Sub) =>
     dispatch({ type: "SET_SELECTION", tab: "credentials", itemId: s });
 
+  const tabItems: SubTabItem<Sub>[] = (["list", "network"] as Sub[]).map((s) => ({
+    id: s,
+    label: SUB_TITLES[s],
+  }));
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div
-        role="tablist"
-        aria-label="Credentials sub-section"
-        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar select-none touch-pan-y"
-      >
-        {(["list", "network"] as Sub[]).map((s) => {
-          const selected = s === active;
-          return (
-            <button
-              key={s}
-              role="tab"
-              type="button"
-              aria-selected={selected}
-              onClick={() => setSub(s)}
-              className={
-                "py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors " +
-                (selected
-                  ? "border-[var(--accent)] text-[var(--text-primary)] font-medium"
-                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
-              }
-            >
-              {SUB_TITLES[s]}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+      <SubTabBar
+        ariaLabel="Credentials sub-section"
+        tabs={tabItems}
+        active={active}
+        onChange={setSub}
+      />
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {active === "list" ? <CredentialsListPanel /> : <NetworkPanel />}
       </div>
     </div>

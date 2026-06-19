@@ -5,6 +5,7 @@ import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { PackagesPanel } from "./PackagesPanel";
+import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 
 // "Tools" segregates capability surfaces by ownership model:
 //   - "Packages"  — built-in tools, default LangChain packages, hot-loaded
@@ -50,35 +51,17 @@ export function ToolsPanel() {
 
   const setSub = (s: Sub) => dispatch({ type: "SET_SELECTION", tab: "tools", itemId: s });
 
+  const tabItems: SubTabItem<Sub>[] = SUBS.map((s) => ({ id: s, label: SUB_TITLES[s] }));
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div
-        role="tablist"
-        aria-label="Tools sub-section"
-        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar select-none touch-pan-y"
-      >
-        {SUBS.map((s) => {
-          const selected = s === active;
-          return (
-            <button
-              key={s}
-              role="tab"
-              type="button"
-              aria-selected={selected}
-              onClick={() => setSub(s)}
-              className={
-                "py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors " +
-                (selected
-                  ? "border-[var(--accent)] text-[var(--text-primary)] font-medium"
-                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
-              }
-            >
-              {SUB_TITLES[s]}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto">
+      <SubTabBar
+        ariaLabel="Tools sub-section"
+        tabs={tabItems}
+        active={active}
+        onChange={setSub}
+      />
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {active === "packages" && <PackagesPanel />}
         {active === "documents" && <DocumentsPanel />}
         {active === "memory" && <MemoryPanel />}

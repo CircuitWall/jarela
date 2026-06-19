@@ -11,6 +11,7 @@ import { AppearancePanel } from "./AppearancePanel";
 import { SecurityPanel } from "@/components/profile/SecurityPanel";
 import { RedactionPanel } from "@/components/profile/RedactionPanel";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
+import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 
 // Settings is the consolidated home for everything that used to live as
 // its own top-level tab (credentials, models, harness, logs, defaults)
@@ -73,43 +74,27 @@ export function SettingsPanel() {
     (id === "credentials" && attention.credentials) ||
     (id === "models" && attention.models);
 
+  const tabItems: SubTabItem<Sub>[] = visibleSubs.map((s) => ({
+    id: s.id,
+    label: s.label,
+    icon: s.icon,
+    badge: needsAttention(s.id) ? (
+      <span
+        aria-label="Needs setup"
+        title="Needs setup"
+        className="inline-block w-1.5 h-1.5 rounded-full bg-red-500"
+      />
+    ) : undefined,
+  }));
+
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div
-        role="tablist"
-        aria-label="Settings sub-section"
-        className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar select-none touch-pan-y"
-      >
-        {visibleSubs.map((s) => {
-          const selected = s.id === active;
-          const attentionFlag = needsAttention(s.id);
-          return (
-            <button
-              key={s.id}
-              role="tab"
-              type="button"
-              aria-selected={selected}
-              onClick={() => setSub(s.id)}
-              className={
-                "inline-flex items-center gap-1.5 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px transition-colors " +
-                (selected
-                  ? "border-[var(--accent)] text-[var(--text-primary)] font-medium"
-                  : "border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]")
-              }
-            >
-              <span className="text-fg-subtle">{s.icon}</span>
-              <span>{s.label}</span>
-              {attentionFlag && (
-                <span
-                  aria-label="Needs setup"
-                  title="Needs setup"
-                  className="inline-block w-1.5 h-1.5 rounded-full bg-red-500"
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <SubTabBar
+        ariaLabel="Settings sub-section"
+        tabs={tabItems}
+        active={active}
+        onChange={setSub}
+      />
       <div className="flex-1 min-h-0 overflow-hidden">
         {active === "credentials" && <CredentialsListPanel />}
         {active === "models" && <ModelsPanel />}
