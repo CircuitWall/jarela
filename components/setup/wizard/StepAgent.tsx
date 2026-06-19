@@ -1,84 +1,147 @@
 "use client";
-import { Bot } from "lucide-react";
-import { AGENT_STYLES, type AgentStyle, type Provider } from "./constants";
+import { Bot, Info, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { useState } from "react";
+import type { AgentConfig, AgentConfigIn, ModelConfig } from "@/api/types";
+import { api } from "@/api/client";
+import { AgentEditor } from "@/components/agents/AgentEditor";
+import { errorMessage } from "@/lib/utils/error";
 import { StepShell } from "./StepShell";
 
 interface StepAgentProps {
-  agentName: string;
-  onAgentNameChange: (v: string) => void;
-  agentStyle: AgentStyle;
-  onAgentStyleChange: (s: AgentStyle) => void;
-  voiceEnabled: boolean;
-  onVoiceEnabledChange: (v: boolean) => void;
-  provider: Provider;
-  reuseGoogleKey: boolean;
+  agents: AgentConfig[];
+  models: ModelConfig[];
+  onChanged: () => void;
 }
 
-export function StepAgent({
-  agentName, onAgentNameChange,
-  agentStyle, onAgentStyleChange,
-  voiceEnabled, onVoiceEnabledChange,
-  provider, reuseGoogleKey,
-}: StepAgentProps) {
-  const voiceAvailable = provider === "gemini" && reuseGoogleKey;
+export function StepAgent({ agents, models, onChanged }: StepAgentProps) {
+  const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave(data: AgentConfigIn) {
+    setError(null);
+    try {
+      if (editing === "new") await api.agents.create(data);
+      else if (editing) await api.agents.update(editing.id, data);
+    } catch (e) {
+      setError(errorMessage(e));
+      throw e;
+    }
+  }
+
+  async function handleRemove(agent: AgentConfig) {
+    if (!confirm(`Remove agent "${agent.name}"?`)) return;
+    setError(null);
+    try {
+      await api.agents.delete(agent.id);
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
   return (
     <StepShell
       icon={<Bot size={18} />}
-      eyebrow="Step 3 · Agent"
-      title="Create your first agent"
-      description="Pick a starting style — you can refine identity, instructions, and tools later in the Agents panel."
+      eyebrow="Step 3 · Create an agent"
+      title="Give your assistant a personality"
+      description="An agent ties a model to a name, instructions, tools, and (optionally) a voice. You can create as many as you like — start with one."
     >
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-fg-subtle">Agent name</span>
-        <input
-          className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm focus:border-accent focus:outline-none"
-          value={agentName}
-          onChange={(e) => onAgentNameChange(e.target.value)}
-          placeholder="My Assistant"
-        />
-      </label>
-
-      <div>
-        <span className="mb-2 block text-xs font-medium text-fg-subtle">Starting style</span>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {(Object.entries(AGENT_STYLES) as Array<[AgentStyle, typeof AGENT_STYLES[AgentStyle]]>).map(([key, option]) => {
-            const Icon = option.icon;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => onAgentStyleChange(key)}
-                className={`rounded-xl border px-3 py-3 text-left transition-colors ${
-                  agentStyle === key
-                    ? "border-accent/60 bg-accent/15 shadow-sm"
-                    : "border-border bg-surface-3 hover:border-fg-faint"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-border bg-surface text-fg-subtle">
-                    <Icon size={14} />
-                  </span>
-                  <span className="text-sm font-medium">{option.label}</span>
-                </div>
-                <div className="mt-2 text-[11px] leading-snug text-fg-faint">{option.hint}</div>
-              </button>
-            );
-          })}
+      <div className="flex items-start gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
+        <Info size={14} className="mt-0.5 shrink-0 text-accent" />
+        <div className="leading-relaxed">
+          <p className="font-medium">What goes into an agent?</p>
+          <ul className="mt-1 space-y-0.5 text-fg-subtle">
+            <li>• <strong>Name &amp; identity</strong> — how the assistant introduces itself.</li>
+            <li>• <strong>Instructions</strong> — its tone, role, and what it should focus on.</li>
+            <li>• <strong>Model</strong> — pick from the model(s) you connected in the previous step.</li>
+            <li>• <strong>Tools</strong> — optional. Web search, files, memory, integrations — wire them in as you go.</li>
+          </ul>
+          <p className="mt-1 text-fg-subtle">Defaults are sensible — you can change everything later from Settings → Agents.</p>
         </div>
       </div>
 
-      <label className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 ${voiceAvailable ? "border-border bg-surface-3" : "border-border/60 bg-surface-2 opacity-70"}`}>
-        <input
-          type="checkbox"
-          className="mt-0.5 rounded border-border"
-          checked={voiceEnabled}
-          onChange={(e) => onVoiceEnabledChange(e.target.checked)}
-          disabled={!voiceAvailable}
+      {agents.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => setEditing("new")}
+          className="flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border bg-surface-3/40 px-4 py-10 text-sm text-fg-subtle transition-colors hover:border-accent/60 hover:bg-accent/5 hover:text-fg"
+        >
+          <Plus size={20} />
+          <span className="font-medium">Create your first agent</span>
+          <span className="text-[11px] text-fg-faint">Opens the agent editor</span>
+        </button>
+      ) : (
+        <div className="space-y-2">
+          {agents.map((a) => (
+            <div
+              key={a.id}
+              className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5"
+            >
+              <Bot size={14} className="shrink-0 text-fg-subtle" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-fg">{a.name}</span>
+                  {a.is_default && (
+                    <Star
+                      size={11}
+                      className="shrink-0 fill-yellow-400 text-yellow-700 dark:text-yellow-400"
+                    />
+                  )}
+                  {a.voice_enabled && (
+                    <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-subtle">
+                      voice
+                    </span>
+                  )}
+                </div>
+                <p className="truncate text-[11px] text-fg-faint">
+                  {a.model_config_name ?? "no model assigned"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => setEditing(a)}
+                  className="p-1 text-fg-subtle transition-colors hover:text-fg"
+                  title="Edit"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(a)}
+                  className="p-1 text-fg-subtle transition-colors hover:text-red-600 dark:hover:text-red-400"
+                  title="Remove"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setEditing("new")}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-3/40 px-4 py-2.5 text-xs text-fg-subtle transition-colors hover:border-fg-faint hover:text-fg"
+          >
+            <Plus size={14} /> Add another agent
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>
+      )}
+
+      {editing !== null && (
+        <AgentEditor
+          agent={editing === "new" ? undefined : editing}
+          models={models}
+          onSave={handleSave}
+          onClose={() => {
+            setEditing(null);
+            onChanged();
+          }}
         />
-        <span className="text-[11px] leading-snug text-fg-subtle">
-          Enable voice for this agent. Available when your Gemini key can be reused for Google AI features.
-        </span>
-      </label>
+      )}
     </StepShell>
   );
 }

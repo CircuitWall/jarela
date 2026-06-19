@@ -314,7 +314,6 @@ export function runMigrations(db: DatabaseSync): void {
   ensureCredentialsLabelAndDefaultColumns(db);
   ensureModelConfigCredentialIdColumn(db);
   ensureAgentConfigsToolCredentialsColumn(db);
-  seedModelConfigs(db);
   seedAgentConfigs(db);
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
@@ -1056,26 +1055,6 @@ function reanchorOrphanThreads(db: DatabaseSync): void {
   db.exec(`
     DELETE FROM threads WHERE agent_id NOT IN (SELECT id FROM agent_configs)
   `);
-}
-
-function seedModelConfigs(db: DatabaseSync): void {
-  // Only seed on first run — if any row exists, the user has already managed
-  // their configs and we must not resurrect anything they deleted.
-  const count = (db.prepare("SELECT COUNT(*) as n FROM model_configs").get() as { n: number }).n;
-  if (count > 0) return;
-
-  const insert = db.prepare(
-    `INSERT OR IGNORE INTO model_configs (name, provider, model_id, params, is_default, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  );
-  const t = now();
-  const seeds: [string, string, string, string, number, string, string][] = [
-    ["claude-sonnet",  "anthropic", "claude-sonnet-4-6", "{}", 0, t, t],
-    ["gpt-4o",         "openai",    "gpt-4o",            "{}", 0, t, t],
-    ["github-copilot", "github-copilot", "gpt-4o",       "{}", 0, t, t],
-
-  ];
-  for (const s of seeds) insert.run(...s);
 }
 
 // First-class typed-credentials table. Replaces the per-row inline

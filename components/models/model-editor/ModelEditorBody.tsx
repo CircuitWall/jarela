@@ -1,8 +1,9 @@
 "use client";
 import { AddCredentialDialog } from "@/components/credentials/AddCredentialDialog";
 import { ModelFeatureGuide } from "../ModelFeatureGuide";
+import { ProviderLogo } from "../ProviderLogo";
 import type { ModelEditorForm } from "./useModelEditorForm";
-import { IdentitySection } from "./IdentitySection";
+import { ConfigNameField, ProviderField } from "./IdentitySection";
 import { ModelIdSection } from "./ModelIdSection";
 import { CredentialSection, rebindCredentialAfterCreate } from "./CredentialSection";
 import { ConnectionFields } from "./ConnectionFields";
@@ -20,18 +21,26 @@ interface BodyProps {
 export function ModelEditorBody({ form, expertVisible, onLoadCatalog }: BodyProps) {
   return (
     <>
-      <IdentitySection form={form} />
+      <div className="flex items-end gap-3">
+        <div className="shrink-0 pb-1 text-fg-subtle">
+          <ProviderLogo name={form.provider} size={28} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <ProviderField form={form} />
+        </div>
+      </div>
+      {form.provider === "github-copilot" && <GitHubCopilotAuth />}
+      <CredentialSection form={form} />
+      <ConnectionFields form={form} expertVisible={expertVisible} />
       <ModelIdSection form={form} onLoadCatalog={onLoadCatalog} />
+      <ConfigNameField form={form} />
       <ModelFeatureGuide
         provider={form.provider}
         modelId={form.modelId}
         models={form.model ? [form.model] : []}
         integrations={form.integrations}
       />
-      {form.provider === "github-copilot" && <GitHubCopilotAuth />}
-      <CredentialSection form={form} />
-      <ConnectionFields form={form} expertVisible={expertVisible} />
-      <TemperatureMaxTokensRow form={form} />
+      {expertVisible && <TemperatureMaxTokensRow form={form} />}
       {expertVisible && <ContextWindowField form={form} />}
       {expertVisible && <ExtraHeadersField form={form} />}
       <label className="flex items-center gap-2 cursor-pointer">
