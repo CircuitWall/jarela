@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
-
-const SECRET_MASK = "********";
+import { isMaskedSecret } from "@/lib/utils/secret-mask";
 
 // Per-integration editor with inline OAuth Connect, Save, Test, Clear, and
 // (for Gmail/Outlook) a collapsible setup guide. Extracted from the old
@@ -83,8 +82,8 @@ export function IntegrationCard({
       const label = provider === "gmail" ? "Gmail" : "Outlook";
 
       const r = await startFn({
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: clientId && !isMaskedSecret(clientId) ? clientId : undefined,
+        client_secret: clientSecret && !isMaskedSecret(clientSecret) ? clientSecret : undefined,
         credential_id: editingId ?? undefined,
       });
       popupRef.current = window.open(r.authorize_url, `jarela-${provider}-oauth`, "width=560,height=720");
@@ -300,8 +299,10 @@ export function IntegrationCard({
                 onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
                 onFocus={(e) => {
                   // Clicking a masked secret field clears it so the user can type a new value
-                  // without manually selecting and replacing the dots.
-                  if (f.secret && e.target.value === SECRET_MASK) {
+                  // without manually selecting and replacing the dots. Accept either sentinel
+                  // shape (`"***"` from the credentials API, `"********"` from the legacy
+                  // integrations status route).
+                  if (f.secret && isMaskedSecret(e.target.value)) {
                     setValues((p) => ({ ...p, [f.key]: "" }));
                   }
                 }}
@@ -420,7 +421,7 @@ function paramsToValues(c: Credential, def: IntegrationDefinition): Record<strin
 function stripMaskedSecrets(values: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(values)) {
-    if (v === SECRET_MASK) continue;
+    if (isMaskedSecret(v)) continue;
     out[k] = v;
   }
   return out;
