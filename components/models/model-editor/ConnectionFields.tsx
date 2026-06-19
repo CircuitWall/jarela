@@ -4,7 +4,7 @@ import type { ModelEditorForm } from "./useModelEditorForm";
 export function ConnectionFields({ form, expertVisible }: { form: ModelEditorForm; expertVisible: boolean }) {
   return (
     <>
-      {!form.credentialId && <InlineApiKeyField form={form} placeholder="••••••••" />}
+      {expertVisible && !form.credentialId && <InlineApiKeyField form={form} placeholder="••••••••" />}
       {expertVisible && form.credentialId && (
         <InlineApiKeyField
           form={form}

@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/jarela",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
@@ -145,6 +145,7 @@
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",
+    "simple-icons": "^16.23.0",
     "tailwindcss": "^4.3.0",
     "undici": "^8.3.0",
     "ws": "^8.20.1",

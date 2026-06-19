@@ -1,233 +1,169 @@
 "use client";
-import { CheckCircle2, Code2, Database, ExternalLink, Image as ImageIcon, Loader2, Mic, ShieldCheck, XCircle } from "lucide-react";
-import type { IntegrationStatus, ModelConfig } from "@/api/types";
-import { ModelFeatureGuide } from "@/components/models/ModelFeatureGuide";
-import { PROVIDER_INFO, PROVIDER_SIGNALS, signalTone, type Provider, type TestResult } from "./constants";
+import { Info, Pencil, Plus, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { useState } from "react";
+import type { ModelConfig } from "@/api/types";
+import { api } from "@/api/client";
+import { ModelEditor } from "@/components/models/ModelEditor";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
+import { errorMessage } from "@/lib/utils/error";
 import { StepShell } from "./StepShell";
 
 interface StepModelProps {
-  provider: Provider;
-  onProviderChange: (p: Provider) => void;
-  apiKey: string;
-  onApiKeyChange: (v: string) => void;
-  // True when the apiKey field still holds the masked sentinel that
-  // /api/v1/models returns for an existing stored key. Drives the
-  // "key already saved" badge + disables the Test connection button
-  // (which would fail trying to validate the sentinel literally).
-  apiKeyKept: boolean;
-  modelId: string;
-  onModelIdChange: (v: string) => void;
-  availableModels: string[];
-  test: TestResult | null;
-  testing: boolean;
-  onRunTest: () => void;
-  reuseGoogleKey: boolean;
-  onReuseGoogleKeyChange: (v: boolean) => void;
-  useAsChatDefault: boolean;
-  onUseAsChatDefaultChange: (v: boolean) => void;
-  useAsEmbeddingDefault: boolean;
-  onUseAsEmbeddingDefaultChange: (v: boolean) => void;
-  useAsVoicePath: boolean;
-  onUseAsVoicePathChange: (v: boolean) => void;
   models: ModelConfig[];
-  integrations: IntegrationStatus[];
+  onChanged: () => void;
 }
 
-export function StepModel(props: StepModelProps) {
-  const {
-    provider, onProviderChange, apiKey, onApiKeyChange, apiKeyKept,
-    modelId, onModelIdChange, availableModels,
-    test, testing, onRunTest,
-    reuseGoogleKey, onReuseGoogleKeyChange,
-    useAsChatDefault, onUseAsChatDefaultChange,
-    useAsEmbeddingDefault, onUseAsEmbeddingDefaultChange,
-    useAsVoicePath, onUseAsVoicePathChange,
-    models, integrations,
-  } = props;
-  const providerInfo = PROVIDER_INFO[provider];
-  const providerSignals = PROVIDER_SIGNALS[provider];
+export function StepModel({ models, onChanged }: StepModelProps) {
+  const [editing, setEditing] = useState<ModelConfig | null | "new">(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSave(
+    name: string,
+    data: Omit<ModelConfig, "name" | "created_at" | "updated_at">,
+  ) {
+    setError(null);
+    try {
+      if (editing === "new") await api.models.create(name, data);
+      else if (editing) await api.models.update(name, data);
+    } catch (e) {
+      setError(errorMessage(e));
+      throw e;
+    }
+  }
+
+  async function handleSetDefault(m: ModelConfig) {
+    try {
+      await api.models.update(m.name, {
+        provider: m.provider,
+        model_id: m.model_id,
+        params: m.params,
+        is_default: true,
+      });
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function handleRemove(name: string) {
+    if (!confirm(`Remove model "${name}"?`)) return;
+    setError(null);
+    try {
+      await api.models.delete(name);
+      onChanged();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
 
   return (
     <StepShell
       icon={<ShieldCheck size={18} />}
-      eyebrow="Step 2 · Model"
-      title="Connect a provider and pick a model"
-      description="Choose where the assistant gets its intelligence. The feature signals below update as you choose."
+      eyebrow="Step 2 · Connect a model"
+      title="Pick the brain that powers your agent"
+      description="A model config links Jarela to an LLM provider — Anthropic, OpenAI, Google Gemini, GitHub Copilot, and more. You need at least one before your first agent can think."
     >
-      <div>
-        <span className="mb-2 block text-xs font-medium text-fg-subtle">Provider</span>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {(Object.keys(PROVIDER_INFO) as Provider[]).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => onProviderChange(option)}
-              className={`rounded-xl border px-3 py-3 text-left transition-colors ${
-                provider === option
-                  ? "border-accent/60 bg-accent/15 shadow-sm"
-                  : "border-border bg-surface-3 hover:border-fg-faint"
-              }`}
-            >
-              <div className="text-sm font-medium">{PROVIDER_INFO[option].label}</div>
-              <div className="mt-1 text-[11px] leading-snug text-fg-faint">{PROVIDER_INFO[option].hint}</div>
-            </button>
-          ))}
+      <div className="flex items-start gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
+        <Info size={14} className="mt-0.5 shrink-0 text-accent" />
+        <div className="leading-relaxed">
+          <p className="font-medium">First time? Two friendly options:</p>
+          <ul className="mt-1 space-y-0.5 text-fg-subtle">
+            <li>• <strong>GitHub Copilot</strong> — sign in with your browser, no API key to copy.</li>
+            <li>• <strong>Anthropic / OpenAI / Gemini / DeepSeek / Cohere</strong> — paste an API key from the provider&apos;s console.</li>
+          </ul>
+          <p className="mt-1 text-fg-subtle">You can add more models or change defaults later from Settings → Models.</p>
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface-3/70 px-3 py-3 space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-xs font-semibold uppercase tracking-wide text-fg-muted">Capability preview</p>
-          <p className="text-[11px] text-fg-faint">{providerInfo.label}</p>
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <CapabilityTile level={providerSignals.image} icon={<ImageIcon size={12} />} label="Image" />
-          <CapabilityTile level={providerSignals.voice} icon={<Mic size={12} />} label="Voice" />
-          <CapabilityTile level={providerSignals.embeddings} icon={<Database size={12} />} label="Embeddings" />
-          <CapabilityTile level={providerSignals.coding} icon={<Code2 size={12} />} label="Coding" />
-        </div>
-        <p className="text-[11px] leading-snug text-fg-subtle">
-          <span className="font-medium text-fg">Recommendation:</span> {providerSignals.recommendation}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
-        <label className="block">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="text-xs font-medium text-fg-subtle">API key</span>
-            <a
-              href={providerInfo.signupUrl}
-              target="_blank"
-              rel="noreferrer noopener"
-              className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover"
-            >
-              Get key <ExternalLink size={11} />
-            </a>
-          </div>
-          {apiKeyKept ? (
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
-              <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
-              <span className="text-sm text-fg-subtle flex-1">Key already saved — leave as-is to keep it.</span>
-              <button
-                type="button"
-                onClick={() => onApiKeyChange("")}
-                className="text-[11px] text-accent hover:text-accent-hover"
-              >
-                Replace key
-              </button>
-            </div>
-          ) : (
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => onApiKeyChange(e.target.value)}
-              placeholder={providerInfo.placeholder}
-              className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 font-mono text-sm focus:border-accent focus:outline-none"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          )}
-        </label>
+      {models.length === 0 ? (
         <button
           type="button"
-          onClick={onRunTest}
-          disabled={testing || !apiKey.trim() || apiKeyKept}
-          title={apiKeyKept ? "Existing key is preserved — click Replace key to test a new one." : undefined}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm hover:border-fg-faint disabled:opacity-50"
+          onClick={() => setEditing("new")}
+          className="flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border bg-surface-3/40 px-4 py-10 text-sm text-fg-subtle transition-colors hover:border-accent/60 hover:bg-accent/5 hover:text-fg"
         >
-          {testing ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
-          {testing ? "Testing" : "Test connection"}
+          <Plus size={20} />
+          <span className="font-medium">Add your first model</span>
+          <span className="text-[11px] text-fg-faint">Opens the model editor</span>
         </button>
-      </div>
-
-      {provider === "gemini" && (
-        <label className="flex items-start gap-2 rounded-xl border border-border bg-surface-3 px-3 py-2.5">
-          <input
-            type="checkbox"
-            className="mt-0.5 rounded border-border"
-            checked={reuseGoogleKey}
-            onChange={(e) => onReuseGoogleKeyChange(e.target.checked)}
-          />
-          <span className="text-[11px] leading-snug text-fg-subtle">
-            Reuse this Gemini key for Google AI features like voice and image tools, so you don&apos;t have to configure a second credential.
-          </span>
-        </label>
-      )}
-
-      <label className="block">
-        <span className="mb-1 block text-xs font-medium text-fg-subtle">Model</span>
-        {availableModels.length > 0 ? (
-          <select
-            value={modelId}
-            onChange={(e) => onModelIdChange(e.target.value)}
-            className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 text-sm"
+      ) : (
+        <div className="space-y-2">
+          {models.map((m) => (
+            <div
+              key={m.name}
+              className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5"
+            >
+              <span className="shrink-0 text-fg-subtle">
+                <ProviderLogo name={m.provider} size={22} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-fg">{m.name}</span>
+                  {m.is_default && (
+                    <Star
+                      size={11}
+                      className="shrink-0 fill-yellow-400 text-yellow-700 dark:text-yellow-400"
+                    />
+                  )}
+                  <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-fg-subtle">
+                    {m.provider}
+                  </span>
+                </div>
+                <p className="truncate text-[11px] text-fg-faint">{m.model_id}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-0.5">
+                {!m.is_default && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetDefault(m)}
+                    className="p-1 text-fg-subtle transition-colors hover:text-yellow-700 dark:hover:text-yellow-400"
+                    title="Set as default chat model"
+                  >
+                    <Star size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setEditing(m)}
+                  className="p-1 text-fg-subtle transition-colors hover:text-fg"
+                  title="Edit"
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemove(m.name)}
+                  className="p-1 text-fg-subtle transition-colors hover:text-red-600 dark:hover:text-red-400"
+                  title="Remove"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setEditing("new")}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-surface-3/40 px-4 py-2.5 text-xs text-fg-subtle transition-colors hover:border-fg-faint hover:text-fg"
           >
-            {availableModels.map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
-        ) : (
-          <input
-            value={modelId}
-            onChange={(e) => onModelIdChange(e.target.value)}
-            className="w-full rounded-xl border border-border bg-surface-3 px-3 py-2.5 font-mono text-sm"
-          />
-        )}
-      </label>
-
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <DefaultsCheckbox label="Default chat model" checked={useAsChatDefault} onChange={onUseAsChatDefaultChange} />
-        <DefaultsCheckbox label="Default embeddings model" checked={useAsEmbeddingDefault} onChange={onUseAsEmbeddingDefaultChange} />
-        <DefaultsCheckbox label="Voice-capable path" checked={useAsVoicePath} onChange={onUseAsVoicePathChange} disabled={provider !== "gemini"} />
-      </div>
-
-      {test && (
-        <div className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 text-sm ${
-          test.ok
-            ? "border-emerald-700/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-            : "border-rose-700/40 bg-rose-500/10 text-rose-700 dark:text-rose-300"
-        }`}>
-          {test.ok ? <CheckCircle2 size={16} className="mt-0.5 shrink-0" /> : <XCircle size={16} className="mt-0.5 shrink-0" />}
-          <span>{test.ok ? `Connection validated. ${test.models?.length ?? 0} models available.` : test.error}</span>
+            <Plus size={14} /> Add another model
+          </button>
         </div>
       )}
 
-      <details className="rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-fg-subtle">
-        <summary className="cursor-pointer font-medium text-fg">Feature signals for this exact model</summary>
-        <div className="mt-3">
-          <ModelFeatureGuide
-            provider={provider}
-            modelId={modelId}
-            models={models}
-            integrations={integrations}
-            title=""
-            description="These icons update as you choose a provider and model, so you can see what ships with this setup before saving it."
-          />
-        </div>
-      </details>
+      {error && (
+        <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>
+      )}
+
+      {editing !== null && (
+        <ModelEditor
+          model={editing === "new" ? undefined : editing}
+          onSave={handleSave}
+          onClose={() => {
+            setEditing(null);
+            onChanged();
+          }}
+        />
+      )}
     </StepShell>
-  );
-}
-
-function CapabilityTile({ level, icon, label }: { level: "strong" | "partial" | "limited"; icon: React.ReactNode; label: string }) {
-  return (
-    <div className={`rounded-lg border px-2 py-1.5 text-[11px] ${signalTone(level)}`}>
-      <div className="inline-flex items-center gap-1">{icon} {label}</div>
-    </div>
-  );
-}
-
-function DefaultsCheckbox({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className={`flex items-start gap-2 rounded-xl border px-3 py-2.5 ${disabled ? "border-border/60 bg-surface-2 opacity-70" : "border-border bg-surface-3"}`}>
-      <input
-        type="checkbox"
-        className="mt-0.5 rounded border-border"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        disabled={disabled}
-      />
-      <span className="text-[11px] leading-snug text-fg-subtle">{label}</span>
-    </label>
   );
 }

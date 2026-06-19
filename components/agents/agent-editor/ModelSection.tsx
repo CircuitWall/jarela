@@ -1,6 +1,7 @@
 import type { ModelConfig } from "@/api/types";
 import { isProviderClassified, modelSupportsImages } from "@/lib/providers/capabilities";
 import { CapBadges } from "@/components/models/CapBadges";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { Select } from "@/components/ui/Select";
 import { useAppContext } from "@/contexts/AppContext";
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
@@ -80,7 +81,8 @@ function DocumentsReadinessNotice({ onOpenModels }: { onOpenModels: () => void }
 function SelectedModelDescription({ model }: { model: ModelConfig }) {
   return (
     <div className="space-y-1">
-      <p className="text-[11px] text-fg-faint">
+      <p className="inline-flex items-center gap-1.5 text-[11px] text-fg-faint">
+        <span className="text-fg-subtle"><ProviderLogo name={model.provider} size={12} /></span>
         Using <span className="text-fg-subtle">{model.provider}</span> / <span className="font-mono text-fg-muted">{model.model_id}</span>
         {!modelSupportsImages(model.provider, model.model_id) && (
           isProviderClassified(model.provider)

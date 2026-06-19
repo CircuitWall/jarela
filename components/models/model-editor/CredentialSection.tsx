@@ -1,21 +1,35 @@
 import { api } from "@/api/client";
+import { Plus } from "lucide-react";
 import { Select } from "@/components/ui/Select";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
 export function CredentialSection({ form }: { form: ModelEditorForm }) {
+  const noCredentials = form.providerCredentials.length === 0;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
         <span className="text-xs text-fg-subtle">Credential</span>
+        {!noCredentials && (
+          <button
+            type="button"
+            onClick={() => form.setCredentialDialogOpen(true)}
+            className="text-[11px] text-accent hover:text-accent/80 transition-colors inline-flex items-center gap-1"
+          >
+            + New credential
+          </button>
+        )}
+      </div>
+      {noCredentials ? (
         <button
           type="button"
           onClick={() => form.setCredentialDialogOpen(true)}
-          className="text-[11px] text-accent hover:text-accent/80 transition-colors inline-flex items-center gap-1"
+          className="flex w-full items-center justify-center gap-1.5 rounded border border-dashed border-border bg-surface-3/40 px-3 py-2 text-xs text-fg-subtle transition-colors hover:border-accent/60 hover:bg-accent/5 hover:text-fg"
         >
-          + New credential
+          <Plus size={12} /> Add {form.provider} credential
         </button>
-      </div>
-      <CredentialDropdown form={form} />
+      ) : (
+        <CredentialDropdown form={form} />
+      )}
       {form.credentialId && (
         <button
           type="button"
@@ -30,15 +44,12 @@ export function CredentialSection({ form }: { form: ModelEditorForm }) {
 }
 
 function CredentialDropdown({ form }: { form: ModelEditorForm }) {
-  const emptyLabel = form.providerCredentials.length === 0
-    ? `— No credentials for ${form.provider} —`
-    : "— Inline / env fallback —";
   return (
     <Select
       value={form.credentialId ?? ""}
       onChange={(e) => form.setCredentialId(e.target.value || null)}
     >
-      <option value="">{emptyLabel}</option>
+      <option value="">— Inline / env fallback —</option>
       {form.providerCredentials.map((c) => (
         <option key={c.id} value={c.id}>{c.id} ({c.auth_method})</option>
       ))}

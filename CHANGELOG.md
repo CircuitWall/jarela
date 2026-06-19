@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-06-19
+
+### Changed
+
+- **Onboarding wizard now reuses the production model and agent editors.**
+  Step 2 and Step 3 open the same `<ModelEditor>` / `<AgentEditor>` modals
+  used elsewhere in the app, so what a user learns during setup matches the
+  Settings panels they'll see later. The wizard becomes a checklist +
+  sequencer: each step shows what's been created so far with an "Add
+  another" button, and the final review screen reads back the actual
+  saved rows instead of the wizard's local form state. First-time helper
+  text on every step explains what a model / agent is and which fields
+  matter. Net `-123` LOC.
+- **Credential-first model setup.** In essential mode the model editor no
+  longer shows the inline API-key field next to the credential dropdown.
+  When no credential exists for the selected provider, an obvious
+  "+ Add <provider> credential" call-to-action opens the credential
+  dialog. The inline API-key field, base URL, temperature, max tokens,
+  context window and extra headers are all gated behind
+  **Show advanced fields** (or full-mode workspace).
+- **Model editor field order.** Reordered top-down to follow the way
+  users think: provider → credential → API key (expert) → model ID →
+  config name (auto-filled from model ID) → feature signals → advanced.
+- **Provider brand marks throughout.** Added a monochrome `<ProviderLogo>`
+  component backed by CC0 brand-mark SVGs from
+  [`simple-icons`](https://simpleicons.org/), rendered in model list rows,
+  the credential group header, dashboard pricing groups, and the agent
+  editor's "Using …" line. OpenAI and Cohere fall back to two-letter
+  monograms because simple-icons no longer ships those marks per brand
+  request.
+
+### Fixed
+
+- **Setup wizard now triggers on fresh installs.** Removed the
+  `seedModelConfigs` migration that inserted three placeholder model
+  rows on every boot — its presence made the `listModelConfigs().length
+  === 0` redirect guard in `app/page.tsx` always evaluate `false`, so
+  brand-new installs skipped onboarding entirely. Existing installs are
+  unaffected (the seed only ran when the table was empty).
+- **Dev server hydrates over both `localhost` and `127.0.0.1`.** Added
+  `allowedDevOrigins: ["localhost", "127.0.0.1"]` to `next.config.ts`
+  so Next 16's strict origin check on `/_next/static/*` no longer 403s
+  when contributors hit the dev server via one host while the listener
+  is bound to the other. Dev-only; `next start` is unaffected.
+
 ## [1.14.1] - 2026-06-19
 
 ### Added
