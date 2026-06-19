@@ -1,3 +1,4 @@
+import { TextInput } from "@/components/ui/TextField";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
 export function ConnectionFields({ form, expertVisible }: { form: ModelEditorForm; expertVisible: boolean }) {
@@ -14,8 +15,7 @@ export function ConnectionFields({ form, expertVisible }: { form: ModelEditorFor
       {expertVisible && (
         <label className="block">
           <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={form.baseUrl}
             onChange={(e) => form.setBaseUrl(e.target.value)}
             placeholder="https://custom-endpoint"
@@ -34,9 +34,8 @@ function InlineApiKeyField({
       <span className="text-xs text-fg-subtle mb-1 block">
         {label ?? <>API Key<span className="ml-1 text-fg-faint">(optional — env fallback used if blank)</span></>}
       </span>
-      <input
+      <TextInput
         type="password"
-        className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
         value={form.apiKey}
         onChange={(e) => form.setApiKey(e.target.value)}
         placeholder={placeholder}

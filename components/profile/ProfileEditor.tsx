@@ -7,6 +7,7 @@ import { useLocationSharing } from "@/hooks/useLocationSharing";
 import { useAppContext } from "@/contexts/AppContext";
 import { formatRelative } from "@/lib/utils/time";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { TextInput, FIELD_CLASS } from "@/components/ui/TextField";
 import { errorMessage } from "@/lib/utils/error";
 
 export function ProfileEditor() {
@@ -88,8 +89,7 @@ export function ProfileEditor() {
         </div>
         <label className="flex-1 block">
           <span className="text-xs text-fg-subtle mb-1 block">Name</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Your name"
@@ -101,7 +101,7 @@ export function ProfileEditor() {
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">About me</span>
         <MarkdownTextarea
-          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent min-h-[7rem] resize-y"
+          className={`${FIELD_CLASS} min-h-[7rem] resize-y`}
           value={about}
           onChange={setAbout}
           rows={5}
@@ -381,8 +381,7 @@ function AccessWhitelist() {
       <div className="flex gap-2 items-end">
         <label className="flex-1 block">
           <span className="text-[10px] text-fg-faint mb-0.5 block">Identity (email)</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={identity}
             onChange={(e) => setIdentity(e.target.value)}
             placeholder="you@example.com"
@@ -391,8 +390,7 @@ function AccessWhitelist() {
         </label>
         <label className="w-32 block">
           <span className="text-[10px] text-fg-faint mb-0.5 block">Label (optional)</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="iPhone"

@@ -3,6 +3,7 @@ import { ChevronDown, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Dialog } from "@/components/ui/Dialog";
+import { TextInput } from "@/components/ui/TextField";
 import {
   DEFAULT_HARNESS_ID,
   HARNESS_SECTION_KEYS,
@@ -111,8 +112,7 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
       <div className="grid grid-cols-1 gap-3">
         <label className="block">
           <span className="text-xs text-fg-subtle mb-1 block">Name</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. strict-citation"
@@ -121,8 +121,7 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
         </label>
         <label className="block">
           <span className="text-xs text-fg-subtle mb-1 block">Description</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Shown in the picker"

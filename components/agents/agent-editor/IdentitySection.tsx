@@ -1,5 +1,6 @@
 import { Upload } from "lucide-react";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
+import { TextInput, FIELD_CLASS } from "@/components/ui/TextField";
 import type { AgentEditorForm } from "./useAgentEditorForm";
 import { Section } from "./Section";
 
@@ -10,8 +11,7 @@ export function IdentitySection({ form }: { form: AgentEditorForm }) {
         <IconPicker form={form} />
         <label className="flex-1 block">
           <span className="text-xs text-fg-subtle mb-1 block">Name</span>
-          <input
-            className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent"
+          <TextInput
             value={form.name}
             onChange={(e) => form.setName(e.target.value)}
             placeholder="e.g. Code Reviewer"
@@ -22,7 +22,7 @@ export function IdentitySection({ form }: { form: AgentEditorForm }) {
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">Persona</span>
         <MarkdownTextarea
-          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent min-h-[4rem] resize-y"
+          className={`${FIELD_CLASS} min-h-[4rem] resize-y`}
           value={form.identity}
           onChange={form.setIdentity}
           rows={3}
@@ -32,7 +32,7 @@ export function IdentitySection({ form }: { form: AgentEditorForm }) {
       <label className="block">
         <span className="text-xs text-fg-subtle mb-1 block">Instructions</span>
         <MarkdownTextarea
-          className="w-full bg-surface-3 text-fg text-sm rounded px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-accent min-h-[4rem] resize-y"
+          className={`${FIELD_CLASS} min-h-[4rem] resize-y`}
           value={form.instructions}
           onChange={form.setInstructions}
           rows={3}
