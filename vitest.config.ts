@@ -10,10 +10,12 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: false,
+    setupFiles: ["./tests/setup-rtl.ts"],
     include: [
       "lib/**/*.test.ts",
       "api/**/*.test.ts",
       "browser-extension/lib/**/*.test.mjs",
+      "components/**/*.test.tsx",
     ],
     coverage: {
       provider: "v8",
