@@ -5,6 +5,7 @@ import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
+import { useSettingsAttention } from "@/hooks/useSettingsAttention";
 
 interface Props {
   activeTab: Tab;
@@ -54,24 +55,27 @@ const TAB_TITLES: Record<Tab, string> = {
   settings: "Settings",
 };
 
+// Tiny-screen labels (<=380px). Only abbreviate where the full name is
+// too wide to fit two-per-row — never use a cryptic stem ("AI", "Mem",
+// "Me", "Setup") that overloads or contradicts the real meaning.
 const TAB_SHORT: Record<Tab, string> = {
   chat: "Chat",
   dashboard: "Dash",
-  agents: "AI",
-  memory: "Mem",
+  agents: "Agents",
+  memory: "Memory",
   documents: "Docs",
-  models: "Model",
+  models: "Models",
   credentials: "Keys",
   mcp: "MCP",
   extensions: "Ext",
   tools: "Tools",
   tasks: "Tasks",
-  bridges: "Bridge",
-  profile: "Me",
-  harness: "Test",
+  bridges: "Bridges",
+  profile: "Profile",
+  harness: "Tests",
   logs: "Logs",
-  env: "Defaults",
-  settings: "Setup",
+  env: "Env",
+  settings: "Settings",
 };
 
 // Two-tier menu. "Common" surfaces the day-to-day verbs. Settings is
@@ -231,6 +235,7 @@ export function MenuPanel({
 }: Props) {
   const { state } = useAppContext();
   const isFullMode = state.experienceMode === "full";
+  const attention = useSettingsAttention();
   // Advanced section starts collapsed once the user has dismissed it
   // once (persisted to localStorage). Defaults to *expanded* on first
   // boot so the engine room is visible to power users out of the box.
@@ -261,27 +266,41 @@ export function MenuPanel({
     });
   };
 
-  const renderTabButton = (tab: Tab) => (
-    <button
-      key={tab}
-      onClick={() => onSetTab(tab)}
-      title={TAB_TITLES[tab]}
-      aria-label={TAB_TITLES[tab]}
-      aria-current={activeTab === tab ? "page" : undefined}
-      className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
-        activeTab === tab
-          ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
-          : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50 hover:-translate-y-px"
-      }`}
-    >
-      {activeTab === tab && (
-        <span className={`absolute inset-0 bg-gradient-to-br ${TAB_ACCENT[tab] ?? "from-accent/20 to-transparent"}`} />
-      )}
-      <span className="shrink-0">{TAB_ICONS[tab]}</span>
-      <span className="text-[10px] leading-none truncate max-w-full relative z-10 max-[380px]:hidden">{TAB_TITLES[tab]}</span>
-      <span className="text-[10px] leading-none truncate max-w-full relative z-10 min-[381px]:hidden">{TAB_SHORT[tab]}</span>
-    </button>
-  );
+  const renderTabButton = (tab: Tab) => {
+    const needsAttention = tab === "settings" && attention.any;
+    const attentionTitle = needsAttention
+      ? `${TAB_TITLES[tab]} \u2014 ${[attention.models ? "no model configured" : null, attention.credentials ? "no credentials saved" : null].filter(Boolean).join(", ")}`
+      : TAB_TITLES[tab];
+    return (
+      <button
+        key={tab}
+        onClick={() => onSetTab(tab)}
+        title={attentionTitle}
+        aria-label={attentionTitle}
+        aria-current={activeTab === tab ? "page" : undefined}
+        className={`control-tap min-w-0 relative overflow-hidden flex flex-col items-center justify-center gap-1 rounded-xl py-2 px-1 transition-all duration-200 ${
+          activeTab === tab
+            ? "bg-surface-3 text-fg ring-1 ring-border shadow-sm"
+            : "text-fg-faint hover:text-fg-muted hover:bg-surface-3/50 hover:-translate-y-px"
+        }`}
+      >
+        {activeTab === tab && (
+          <span className={`absolute inset-0 bg-gradient-to-br ${TAB_ACCENT[tab] ?? "from-accent/20 to-transparent"}`} />
+        )}
+        <span className="shrink-0 relative">
+          {TAB_ICONS[tab]}
+          {needsAttention && (
+            <span
+              aria-hidden="true"
+              className="absolute -top-1 -right-1 inline-block w-2 h-2 rounded-full bg-red-500 ring-2 ring-surface-2"
+            />
+          )}
+        </span>
+        <span className="text-[10px] leading-none truncate max-w-full relative z-10 max-[380px]:hidden">{TAB_TITLES[tab]}</span>
+        <span className="text-[10px] leading-none truncate max-w-full relative z-10 min-[381px]:hidden">{TAB_SHORT[tab]}</span>
+      </button>
+    );
+  };
 
   return (
     <div
