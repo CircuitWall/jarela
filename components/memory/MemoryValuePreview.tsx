@@ -1,6 +1,6 @@
 "use client";
-import { ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
 
 // Memory values are arbitrary JSON. The list rendering used to flatten
 // them with a single `JSON.stringify(item.value)`, which is unreadable
@@ -155,10 +155,7 @@ function ExpandableBlock({
         className="w-full text-left flex items-start gap-1 group/expand"
         title={expanded ? "Collapse" : "Show full value"}
       >
-        <ChevronRight
-          size={11}
-          className={`mt-0.5 shrink-0 text-fg-faint transition-transform ${expanded ? "rotate-90" : ""}`}
-        />
+        <CollapseChevron open={expanded} size={11} className="mt-0.5 text-fg-faint" />
         <span className="flex-1 min-w-0">{summary}</span>
       </button>
       {expanded && (
