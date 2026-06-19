@@ -188,7 +188,7 @@ export function IntegrationCard({
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await api.integrations.test(def.name);
+      const r = await api.integrations.test(def.name, editingId ?? undefined);
       if (r.ok) {
         const detail = r.detail as { displayName?: string; email?: string } | undefined;
         setTestResult({
@@ -332,8 +332,8 @@ export function IntegrationCard({
           </button>
           <button
             onClick={test}
-            disabled={testing || !configured || !!editingId || !!createNew}
-            title={!configured ? "Save credentials first" : editingId || createNew ? "Test runs on the default credential" : "Test the connection"}
+            disabled={testing || !configured || !!createNew}
+            title={!configured ? "Save credentials first" : createNew ? "Save before testing" : editingId ? "Test this credential" : "Test the connection"}
             className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {testing ? <Loader2 size={11} className="animate-spin" /> : <ExternalLink size={11} />}
