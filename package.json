@@ -165,6 +165,8 @@
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@serwist/next": "^9.5.11",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/cross-spawn": "^6.0.6",
     "@types/node": "^25.8.0",
     "@types/qrcode": "^1.5.6",
@@ -175,6 +177,7 @@
     "c8": "^11.0.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.6",
+    "jsdom": "^29.1.1",
     "serwist": "^9.5.11",
     "typescript": "^6.0.3",
     "vitest": "^4.1.7"
