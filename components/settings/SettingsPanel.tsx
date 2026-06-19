@@ -12,6 +12,7 @@ import { SecurityPanel } from "@/components/profile/SecurityPanel";
 import { RedactionPanel } from "@/components/profile/RedactionPanel";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 // Settings is the consolidated home for everything that used to live as
 // its own top-level tab (credentials, models, harness, logs, defaults)
@@ -79,11 +80,7 @@ export function SettingsPanel() {
     label: s.label,
     icon: s.icon,
     badge: needsAttention(s.id) ? (
-      <span
-        aria-label="Needs setup"
-        title="Needs setup"
-        className="inline-block w-1.5 h-1.5 rounded-full bg-red-500"
-      />
+      <StatusDot tone="danger" size="xs" label="Needs setup" title="Needs setup" />
     ) : undefined,
   }));
 
