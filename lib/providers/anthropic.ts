@@ -16,7 +16,7 @@ function resolveApiKey(params: ProviderParams): string | undefined {
   return resolveProviderApiKey("anthropic", params);
 }
 
-function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {
+export function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {
   const p = params as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   const keys = [
@@ -34,7 +34,7 @@ function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {
   return out;
 }
 
-function appendServerTools(
+export function appendServerTools(
   anthropicTools: Anthropic.Tool[],
   params: ProviderParams,
 ): Anthropic.Tool[] {
@@ -311,7 +311,7 @@ export function toAnthropicContent(
   });
 }
 
-function toAnthropicMessages(messages: InvokeMessage[]): Anthropic.MessageParam[] {
+export function toAnthropicMessages(messages: InvokeMessage[]): Anthropic.MessageParam[] {
   const result: Anthropic.MessageParam[] = [];
   for (const m of messages) {
     if (m.role === "tool") {
@@ -347,9 +347,80 @@ function toAnthropicMessages(messages: InvokeMessage[]): Anthropic.MessageParam[
   return result;
 }
 
-function toAnthropicTools(tools: OpenAITool[]): Anthropic.Tool[] {
+export function toAnthropicTools(tools: OpenAITool[]): Anthropic.Tool[] {
   return tools.flatMap((t) => {
     if (!t.function?.name) return [];
     return [{ name: t.function.name, description: t.function.description, input_schema: t.function.parameters as Anthropic.Tool.InputSchema }];
   });
+}
+
+// Reusable body builder + stream translator so a second host (e.g. GitHub
+// Copilot's native /v1/messages endpoint, exposed at api.githubcopilot.com
+// for Claude-family models) can ride the exact same cache_control breakpoints
+// and event shape as the direct Anthropic adapter.
+
+export function buildAnthropicMessageBody(
+  model_id: string,
+  messages: InvokeMessage[],
+  params: ProviderParams,
+  tools: OpenAITool[],
+): Anthropic.Messages.MessageCreateParams {
+  const systemMsg = messages.find((m) => m.role === "system");
+  const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
+  const msgList = withLastToolResultCacheControl(
+    toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+  );
+  const anthropicTools = withToolsCacheControl(
+    appendServerTools(toAnthropicTools(tools), params),
+  );
+  const body: Anthropic.Messages.MessageCreateParams = {
+    model: model_id,
+    max_tokens: params.max_tokens ?? 4096,
+    messages: msgList,
+    ...(pickAnthropicOptions(params) as Record<string, unknown>),
+  };
+  const systemParam = withSystemCacheControl(systemText);
+  if (systemParam) body.system = systemParam;
+  if (anthropicTools.length > 0) body.tools = anthropicTools;
+  if (params.thinking) {
+    (body as unknown as Record<string, unknown>).thinking = params.thinking;
+  }
+  if (params.temperature !== undefined) body.temperature = params.temperature;
+  return body;
+}
+
+export async function* translateAnthropicStreamEvents(
+  stream: AsyncIterable<Anthropic.Messages.MessageStreamEvent>,
+): AsyncIterable<ProviderStreamEvent> {
+  for await (const event of stream) {
+    if (event.type === "message_start") {
+      const ev = event as unknown as AnthropicMessageStartEvent;
+      const u = usageEventFromStart(ev.message?.usage);
+      if (u) yield u;
+      continue;
+    }
+    if (event.type === "content_block_start") {
+      const cb = event.content_block;
+      if (cb.type === "tool_use") {
+        yield { type: "tool_call_chunk", index: event.index, id: cb.id, name: cb.name };
+      }
+    } else if (event.type === "content_block_delta") {
+      const d = event.delta as { type: string; text?: string; thinking?: string; partial_json?: string };
+      if (d.type === "text_delta" && d.text) {
+        yield { type: "text", delta: d.text };
+      } else if (d.type === "thinking_delta" && d.thinking) {
+        yield { type: "thinking", delta: d.thinking };
+      } else if (d.type === "input_json_delta" && d.partial_json !== undefined) {
+        yield { type: "tool_call_chunk", index: event.index, args_delta: d.partial_json };
+      }
+    } else if (event.type === "message_delta") {
+      const delta = event as unknown as AnthropicMessageDeltaEvent;
+      const u = usageEventFromDelta(delta.usage);
+      if (u) yield u;
+      if (event.delta?.stop_reason) {
+        const reason = event.delta.stop_reason;
+        yield { type: "stop", reason: reason === "tool_use" ? "tool_use" : reason === "max_tokens" ? "length" : "stop" };
+      }
+    }
+  }
 }
