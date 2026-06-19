@@ -34,7 +34,7 @@ const RedactionConfigSchema = z.object({
     .default({
       high_entropy: {
         enabled: true,
-        min_length: 32,
+        min_length: 10,
         min_entropy: 4.0,
         char_class: "[A-Za-z0-9_=+/.-]",
         exclude_patterns: [],
@@ -127,14 +127,23 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
   heuristics: {
     high_entropy: {
       enabled: true,
-      min_length: 32,
+      // Floor at 10 chars: the entropy filter (4.0 bits/char) effectively
+      // gates this at ~16 chars in practice (max entropy of a 10-char
+      // string is log2(10) ≈ 3.32), but operators who want to catch
+      // shorter secrets can lower min_entropy via redaction-patterns.json
+      // without having to bump min_length too.
+      min_length: 10,
       min_entropy: 4.0,
       char_class: "[A-Za-z0-9_=+/.-]",
       exclude_patterns: [
-        "^[a-f0-9]{40}$",
-        "^[a-f0-9]{64}$",
-        "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
-        "^[0-9A-HJKMNP-TV-Z]{26}$",
+        // The entropy char class includes `=`, so `key=<id>` matches as
+        // one contiguous run. Anchor each exclude with an optional
+        // `<word>=` prefix so identifiers stay excluded whether they
+        // appear bare or as the right-hand side of a key=value pair.
+        "^(?:\\w+=)?[a-f0-9]{40}$",
+        "^(?:\\w+=)?[a-f0-9]{64}$",
+        "^(?:\\w+=)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "^(?:\\w+=)?[0-9A-HJKMNP-TV-Z]{26}$",
         "^[a-z]{2,8}_[A-Za-z0-9]{14,}$",
       ],
     },

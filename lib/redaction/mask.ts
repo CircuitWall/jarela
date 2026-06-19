@@ -34,7 +34,29 @@ export interface MaskContext {
   hasMaskedValues(): boolean;
 }
 
-const PLACEHOLDER_RE = /«SECRET:([a-z0-9]+) type=([a-z0-9_]+)»/g;
+// Matches `«SECRET:<id> ...»` with anything (or nothing) between the id and
+// the closing brace, so the rehydrator stays compatible with future metadata
+// additions and ignores model-emitted typos in the trailing fields.
+const PLACEHOLDER_RE = /«SECRET:([a-z0-9]+)[^»]*»/g;
+
+// Build a non-leaking content fingerprint so the agent can tell whether two
+// placeholders refer to the same underlying value across runs / threads (the
+// `id` only does that within one MaskContext). Exposes at most ~10% of the
+// chars (floor), always at least 1 from the head and 1 from the tail, and
+// never reveals enough to reconstruct the secret. Format is part of the
+// placeholder so models see e.g. `len=51 head=sk- tail=AB`.
+function fingerprint(value: string): { head: string; tail: string; len: number } {
+  const len = value.length;
+  const tenPct = Math.floor(len * 0.1);
+  const expose = Math.min(Math.max(2, tenPct), Math.max(0, len - 1));
+  const headLen = Math.ceil(expose / 2);
+  const tailLen = expose - headLen;
+  return {
+    head: value.slice(0, headLen),
+    tail: tailLen > 0 ? value.slice(-tailLen) : "",
+    len,
+  };
+}
 
 export function createMaskContext(config: RedactionConfig): MaskContext {
   // value → token id; same value gets same id within this context, so
@@ -57,7 +79,8 @@ export function createMaskContext(config: RedactionConfig): MaskContext {
       valueToId.set(value, id);
       idToValue.set(id, value);
     }
-    return `«SECRET:${id} type=${typeHint}»`;
+    const fp = fingerprint(value);
+    return `«SECRET:${id} type=${typeHint} len=${fp.len} head=${fp.head} tail=${fp.tail}»`;
   }
 
   function applyMatches(text: string, matches: Match[]): MaskResult {
