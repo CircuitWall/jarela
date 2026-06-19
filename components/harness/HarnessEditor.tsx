@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { Dialog } from "@/components/ui/Dialog";
 import { TextInput } from "@/components/ui/TextField";
+import { Button } from "@/components/ui/Button";
 import {
   DEFAULT_HARNESS_ID,
   HARNESS_SECTION_KEYS,
@@ -99,13 +100,9 @@ export function HarnessEditor({ harness, builtins, onSave, onClose }: Props) {
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-fg-subtle hover:text-fg transition-colors">
             Cancel
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50"
-          >
+          <Button onClick={handleSave} disabled={saving}>
             {saving ? "Saving…" : "Save"}
-          </button>
+          </Button>
         </div>
       }
     >

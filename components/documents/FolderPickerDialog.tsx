@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { errorMessage } from "@/lib/utils/error";
 import { Dialog } from "@/components/ui/Dialog";
+import { Button } from "@/components/ui/Button";
 
 interface Props {
   initialPath?: string;
@@ -67,13 +68,13 @@ export function FolderPickerDialog({ initialPath, onSelect, onClose }: Props) {
           >
             Cancel
           </button>
-          <button
+          <Button
             onClick={() => onSelect(cwd)}
             disabled={!cwd || loading}
-            className="flex items-center gap-1.5 px-4 py-1.5 text-sm bg-accent hover:bg-accent-hover text-white rounded-lg transition-colors disabled:opacity-50"
+            icon={<Check size={13} />}
           >
-            <Check size={13} /> Use this folder
-          </button>
+            Use this folder
+          </Button>
         </div>
       }
     >

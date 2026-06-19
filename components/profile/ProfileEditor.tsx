@@ -8,6 +8,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { formatRelative } from "@/lib/utils/time";
 import { MarkdownTextarea } from "@/components/ui/MarkdownTextarea";
 import { TextInput, FIELD_CLASS } from "@/components/ui/TextField";
+import { Button } from "@/components/ui/Button";
 import { errorMessage } from "@/lib/utils/error";
 
 export function ProfileEditor() {
@@ -158,13 +159,14 @@ export function ProfileEditor() {
         </div>
       </div>
 
-      <button
+      <Button
         onClick={handleSave}
         disabled={saving || !isDirty}
-        className="w-full py-2 text-sm font-medium bg-accent hover:bg-accent-hover text-white rounded-xl shadow-sm transition-colors disabled:opacity-40"
+        size="lg"
+        className="w-full"
       >
-        {saving ? "Savingâ€¦" : saved ? "Saved" : "Save profile"}
-      </button>
+        {saving ? "Saving…" : saved ? "Saved" : "Save profile"}
+      </Button>
 
       <LocationSharing profile={profile} onChange={setProfile} />
 
@@ -397,13 +399,14 @@ function AccessWhitelist() {
             onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
           />
         </label>
-        <button
+        <Button
           onClick={add}
           disabled={busy || !identity.trim()}
-          className="px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded transition-colors disabled:opacity-40 flex items-center gap-1"
+          size="sm"
+          icon={<Plus size={12} />}
         >
-          <Plus size={12} /> Add
-        </button>
+          Add
+        </Button>
       </div>
 
       {error && <p className="text-red-700 dark:text-red-400 text-xs">{error}</p>}

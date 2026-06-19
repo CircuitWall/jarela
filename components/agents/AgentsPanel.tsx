@@ -5,6 +5,7 @@ import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { useAgents } from "@/hooks/useAgents";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { Button } from "@/components/ui/Button";
 import { AgentEditor } from "./AgentEditor";
 
 const AVATAR_GRADIENTS = [
@@ -73,12 +74,13 @@ export function AgentsPanel() {
       {/* Header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
         <span className="text-[11px] text-fg-faint font-medium uppercase tracking-wide">Agents</span>
-        <button
+        <Button
           onClick={() => setEditing("new")}
-          className="flex items-center gap-1 px-2 py-1 text-xs bg-accent hover:bg-accent-hover text-white rounded-md transition-colors"
+          size="sm"
+          icon={<Plus size={11} />}
         >
-          <Plus size={11} /> New
-        </button>
+          New
+        </Button>
       </div>
 
       {/* List */}
