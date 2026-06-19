@@ -11,6 +11,7 @@ import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
 import { errorMessage } from "@/lib/utils/error";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 // "Credentials" is the single home for every auth surface. The default
 // sub-tab is the unified list: model API keys, integration keys, and
@@ -468,5 +469,5 @@ function ProbeIndicator({ probe }: { probe: CredentialProbeResult }) {
     );
   }
   // unsupported — provider has no health probe registered.
-  return <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />;
+  return <StatusDot tone="success" size="xs" />;
 }

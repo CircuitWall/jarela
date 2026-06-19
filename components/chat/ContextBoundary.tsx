@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { Archive, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 interface WarmSummaryCardProps {
   /** Number of messages older than the boundary that the summary covers. */
@@ -71,7 +72,7 @@ export function WarmSummaryCard({
         ) : (
           <div className="flex items-center gap-2 text-xs text-fg-faint italic">
             {computing && (
-              <span className="inline-block w-2 h-2 rounded-full bg-accent animate-pulse" aria-hidden />
+              <StatusDot tone="accent" size="sm" pulse />
             )}
             <span>
               {computing
