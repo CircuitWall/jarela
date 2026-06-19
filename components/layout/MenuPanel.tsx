@@ -6,6 +6,7 @@ import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
+import { StatusDot } from "@/components/ui/StatusDot";
 
 interface Props {
   activeTab: Tab;
@@ -217,7 +218,7 @@ function AgentSessionList({
 
             {/* Active indicator */}
             {isActive && (
-              <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+              <StatusDot tone="accent" size="xs" />
             )}
           </button>
         );
@@ -290,9 +291,10 @@ export function MenuPanel({
         <span className="shrink-0 relative">
           {TAB_ICONS[tab]}
           {needsAttention && (
-            <span
-              aria-hidden="true"
-              className="absolute -top-1 -right-1 inline-block w-2 h-2 rounded-full bg-red-500 ring-2 ring-surface-2"
+            <StatusDot
+              tone="danger"
+              size="sm"
+              className="absolute -top-1 -right-1 ring-2 ring-surface-2"
             />
           )}
         </span>
