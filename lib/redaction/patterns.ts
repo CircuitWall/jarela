@@ -25,18 +25,37 @@ const EntropyHeuristicSchema = z.object({
   exclude_patterns: z.array(z.string()).default([]),
 });
 
+// Pure-digit runs (credit cards, phone numbers, account numbers, generic
+// numeric IDs) have low Shannon entropy and slip past the high-entropy
+// heuristic. This catches consecutive digits optionally joined by
+// `separators` (e.g. "4111 1111 1111 1111", "+46-70-123-4567"), counting
+// digits only against `min_digits`.
+const DigitRunHeuristicSchema = z.object({
+  enabled: z.boolean().default(true),
+  min_digits: z.number().int().positive(),
+  separators: z.string().min(1),
+  exclude_patterns: z.array(z.string()).default([]),
+});
+
 const RedactionConfigSchema = z.object({
   patterns: z.array(PatternSchema).default([]),
   heuristics: z
     .object({
       high_entropy: EntropyHeuristicSchema,
+      digit_run: DigitRunHeuristicSchema.optional(),
     })
     .default({
       high_entropy: {
         enabled: true,
-        min_length: 10,
+        min_length: 16,
         min_entropy: 4.0,
         char_class: "[A-Za-z0-9_=+/.-]",
+        exclude_patterns: [],
+      },
+      digit_run: {
+        enabled: true,
+        min_digits: 8,
+        separators: " -.",
         exclude_patterns: [],
       },
     }),
@@ -127,12 +146,11 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
   heuristics: {
     high_entropy: {
       enabled: true,
-      // Floor at 10 chars: the entropy filter (4.0 bits/char) effectively
-      // gates this at ~16 chars in practice (max entropy of a 10-char
-      // string is log2(10) ≈ 3.32), but operators who want to catch
-      // shorter secrets can lower min_entropy via redaction-patterns.json
-      // without having to bump min_length too.
-      min_length: 10,
+      // 16 chars is the smallest length at which a random alphanumeric
+      // string can clear `min_entropy: 4.0` (max entropy of a length-N
+      // string is log2(N), so length-10 maxes at ~3.32 bits). Numeric-only
+      // secrets are handled separately by the digit_run heuristic below.
+      min_length: 16,
       min_entropy: 4.0,
       char_class: "[A-Za-z0-9_=+/.-]",
       exclude_patterns: [
@@ -146,6 +164,18 @@ export const DEFAULT_REDACTION_CONFIG: RedactionConfig = {
         "^(?:\\w+=)?[0-9A-HJKMNP-TV-Z]{26}$",
         "^[a-z]{2,8}_[A-Za-z0-9]{14,}$",
       ],
+    },
+    digit_run: {
+      enabled: true,
+      // 8 digits catches phone numbers (and longer: credit cards, IBAN
+      // tails, account numbers) while leaving 6-digit OTPs, 5-digit ZIPs,
+      // and 4-digit PINs / years alone.
+      min_digits: 8,
+      // Spaces, hyphens, and dots are the common human-readable
+      // separators for numeric secrets. `/` is intentionally excluded so
+      // dates like `2026/06/19` stay unmatched.
+      separators: " -.",
+      exclude_patterns: [],
     },
   },
   field_name_allowlist: [

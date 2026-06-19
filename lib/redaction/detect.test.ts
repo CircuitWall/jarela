@@ -123,3 +123,66 @@ describe("scanJson", () => {
     expect(matches.some((m) => m.source === "heuristic")).toBe(false);
   });
 });
+
+describe("digit_run heuristic", () => {
+  const cfg = DEFAULT_REDACTION_CONFIG;
+
+  function digitRunMatches(text: string) {
+    return detectMatches(text, cfg).filter(
+      (m) => m.type_hint === "unknown_digit_run",
+    );
+  }
+
+  it("flags credit-card-shaped runs with space separators", () => {
+    const matches = digitRunMatches("card 4111 1111 1111 1111 end");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe("4111 1111 1111 1111");
+  });
+
+  it("flags credit-card-shaped runs with dash separators", () => {
+    const matches = digitRunMatches("card 4111-1111-1111-1111 end");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe("4111-1111-1111-1111");
+  });
+
+  it("flags 10-digit phone numbers", () => {
+    const matches = digitRunMatches("call 555-867-5309 please");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe("555-867-5309");
+  });
+
+  it("flags bare 8-digit account numbers at the boundary", () => {
+    const matches = digitRunMatches("acct 12345678 done");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe("12345678");
+  });
+
+  it("does not flag 7-digit runs (below threshold)", () => {
+    const matches = digitRunMatches("zip+4 1234567 ok");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("does not flag 4-digit PINs or years", () => {
+    const matches = digitRunMatches("pin 1234, year 2026");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("does not flag slash-separated dates (slash is not a default separator)", () => {
+    const matches = digitRunMatches("date 2026/06/19 ok");
+    expect(matches).toHaveLength(0);
+  });
+
+  it("flags long bare digit runs (timestamps are an accepted false positive)", () => {
+    // 14-digit YYYYMMDDhhmmss timestamps look identical to long account
+    // numbers — accepted noise; agent still sees head/tail/len fingerprint.
+    const matches = digitRunMatches("ts 20260619221733 ok");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe("20260619221733");
+  });
+
+  it("trims leading/trailing separators from the captured value", () => {
+    const matches = digitRunMatches("acct  12345678  done");
+    expect(matches).toHaveLength(1);
+    expect(matches[0].value).toBe("12345678");
+  });
+});
