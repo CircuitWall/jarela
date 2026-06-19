@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { buildAuthorizeUrl, createFlow } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
-import { SECRET_MASK } from "@/lib/stores/integrations";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
+import { isMaskedSecret } from "@/lib/utils/secret-mask";
 
 // POST /api/v1/integrations/outlook/oauth/start
 // Body: { client_id?, client_secret?, credential_id? }
@@ -43,17 +43,26 @@ export async function POST(req: NextRequest) {
     (targetedParams.client_secret as string | undefined) ?? existing.client_secret;
 
   const clientId =
-    parsed.data.client_id && parsed.data.client_id !== SECRET_MASK
+    parsed.data.client_id && !isMaskedSecret(parsed.data.client_id)
       ? parsed.data.client_id
       : fallbackClientId;
   const clientSecret =
-    parsed.data.client_secret && parsed.data.client_secret !== SECRET_MASK
+    parsed.data.client_secret && !isMaskedSecret(parsed.data.client_secret)
       ? parsed.data.client_secret
       : fallbackClientSecret;
 
   if (!clientId || !clientSecret) {
     return NextResponse.json(
       { error: "client_id and client_secret are required (save them first or include in this request)" },
+      { status: 400 },
+    );
+  }
+  if (isMaskedSecret(clientSecret)) {
+    return NextResponse.json(
+      {
+        error:
+          "Saved client_secret looks like a placeholder. Re-enter the real OAuth client secret on this credential and click Save, then Connect again.",
+      },
       { status: 400 },
     );
   }

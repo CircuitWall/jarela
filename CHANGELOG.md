@@ -117,6 +117,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each `(type, provider)` pair, so users couldn't validate the second
   GitHub PAT or the second Outlook account without first promoting
   it to default.
+- **Gmail / Outlook OAuth Connect: invalid client_secret on re-auth.**
+  The credentials panel was masking saved secrets as `"***"` while the
+  OAuth start route only recognised the legacy `"********"` sentinel, so
+  clicking Connect on a saved Google/Microsoft credential sent the literal
+  `"***"` to the token endpoint and Google rejected it with `The provided
+  client secret is invalid.` The same mismatch let a Save-without-retype
+  persist `"***"` into the encrypted credential blob, corrupting the
+  stored secret until the user re-entered it. Introduced
+  `lib/utils/secret-mask.ts` with a shared `isMaskedSecret()` recogniser
+  that accepts both sentinel shapes; the credentials form, the
+  `stripMaskedSecrets()` save filter, and both OAuth start routes now use
+  it. The start routes also refuse to forward a placeholder secret to
+  the provider and surface a clear "re-enter the real client secret"
+  hint when corrupted data is detected.
 
 ## [1.13.2] - 2026-06-19
 
