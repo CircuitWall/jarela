@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Mail, type LucideIcon } from "lucide-react";
 import {
   siAnthropic,
   siAtlassian,
@@ -51,14 +52,21 @@ const ICONS: Record<string, SimpleIcon> = {
   grok: siX,
 };
 
-// Two-letter monograms for providers simple-icons doesn't ship a brand mark
-// for (e.g. OpenAI, Cohere, and Microsoft had their icons removed at brand
-// request).
+// Lucide stand-ins for providers simple-icons no longer ships a brand mark
+// for. Microsoft pulled Outlook/Microsoft/Office from simple-icons at brand
+// request, so we use a generic envelope glyph that still reads as "mail" in
+// the credentials list.
+const LUCIDE_ICONS: Record<string, LucideIcon> = {
+  outlook: Mail,
+};
+
+// Two-letter monograms for providers we have neither a brand mark nor a
+// sensible lucide stand-in for (e.g. OpenAI, Cohere had their icons removed
+// at brand request).
 const FALLBACK_INITIALS: Record<string, string> = {
   openai: "Ai",
   cohere: "Co",
   groq: "Gq",
-  outlook: "Ou",
   microsoft: "Ms",
   mock: "\u00b7\u00b7",
 };
@@ -74,6 +82,7 @@ function initialsFor(name: string): string {
 // shorter `jira` when we prefix-match a tool name.
 const KNOWN_BRAND_SLUGS: readonly string[] = Object.keys({
   ...ICONS,
+  ...LUCIDE_ICONS,
   ...FALLBACK_INITIALS,
 })
   .filter((s) => s !== "mock")
@@ -120,6 +129,16 @@ export function ProviderLogo({
         <title>{name}</title>
         <path d={icon.path} />
       </svg>
+    );
+  }
+  const Lucide = LUCIDE_ICONS[name];
+  if (Lucide) {
+    return (
+      <Lucide
+        aria-label={name}
+        size={size}
+        className={`inline-block shrink-0 ${className}`}
+      />
     );
   }
   const initials = initialsFor(name);
