@@ -1251,3 +1251,39 @@ export const icloudTools = [
   ...icloudCalendarTools,
   ...icloudReminderTools,
 ];
+
+// Capability buckets, matching the convention used by the other
+// CircuitWall LangChain packages (atlassian, github, jira-align) so the
+// host app can register tools per capability tier:
+//
+//   read    - inspect-only, no state change on the iCloud side.
+//   write   - create / mutate state, but reversible (drafts, moves,
+//             flag toggles, event edits, reminder completion).
+//   execute - destructive on the iCloud side. iCloud Mail moves
+//             deleted messages to Trash (recoverable for ~30 days),
+//             but CalDAV event delete is hard.
+export const icloudReadTools = [
+  icloudMailListFoldersTool,
+  icloudMailListMessagesTool,
+  icloudMailGetMessageTool,
+  icloudCalendarListCalendarsTool,
+  icloudCalendarListEventsTool,
+  icloudCalendarGetEventTool,
+  icloudRemindersListListsTool,
+  icloudRemindersListTool,
+];
+
+export const icloudWriteTools = [
+  icloudMailCreateDraftTool,
+  icloudMailMoveMessageTool,
+  icloudMailFlagMessageTool,
+  icloudCalendarCreateEventTool,
+  icloudCalendarUpdateEventTool,
+  icloudRemindersCreateTool,
+  icloudRemindersCompleteTool,
+];
+
+export const icloudExecuteTools = [
+  icloudMailDeleteMessageTool,
+  icloudCalendarDeleteEventTool,
+];
