@@ -7,8 +7,10 @@ import type { ReactNode } from "react";
 //   - tabs MUST be `shrink-0` so the strip overflows when the labels
 //     don't fit, otherwise flexbox compresses them and there is nothing
 //     for the user to scroll to.
-//   - container MUST have `touch-pan-y` (not `pan-x`) so the page can
-//     still vertical-pan while the strip horizontal-pans on swipe.
+//   - container MUST have `touch-pan-x` so horizontal swipes scroll the
+//     strip while vertical swipes bubble up to scroll the page. With
+//     `pan-y` the browser only consumes vertical panning on this element
+//     and horizontal swipes do nothing — the strip looked stuck.
 
 export interface SubTabItem<T extends string> {
   id: T;
@@ -34,7 +36,7 @@ export function SubTabBar<T extends string>({
     <div
       role="tablist"
       aria-label={ariaLabel}
-      className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar select-none touch-pan-y"
+      className="flex items-stretch gap-4 px-4 border-b border-[var(--border)] bg-[var(--bg-secondary)] overflow-x-auto no-scrollbar select-none touch-pan-x"
     >
       {tabs.map((t) => {
         const selected = t.id === active;
