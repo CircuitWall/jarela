@@ -252,6 +252,50 @@ export async function probeOutlook(): Promise<HealthResult> {
 }
 
 // ────────────────────────────────────────────────────────────────────
+// iCloud (CalDAV PROPFIND with HTTP Basic — apple_id + app_password)
+// ────────────────────────────────────────────────────────────────────
+
+export async function probeICloud(): Promise<HealthResult> {
+  const raw = getIntegrationRaw("icloud");
+  const appleId = raw?.apple_id?.trim();
+  const appPassword = raw?.app_password?.replace(/[\u200B-\u200D\uFEFF\s-]/g, "");
+  if (!appleId || !appPassword) {
+    return unconfigured("Apple ID + app-specific password not configured");
+  }
+  try {
+    const auth = "Basic " + Buffer.from(`${appleId}:${appPassword}`).toString("base64");
+    const body =
+      '<?xml version="1.0" encoding="UTF-8"?>' +
+      '<d:propfind xmlns:d="DAV:"><d:prop><d:current-user-principal/></d:prop></d:propfind>';
+    const res = await fetch("https://caldav.icloud.com/", {
+      method: "PROPFIND",
+      headers: {
+        Authorization: auth,
+        Depth: "0",
+        "Content-Type": "application/xml; charset=utf-8",
+      },
+      body,
+      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
+    });
+    if (res.status === 401 || res.status === 403) {
+      return authFailed(
+        `iCloud rejected the credentials (${res.status}). The app-specific password may have been ` +
+          "revoked or the Apple ID has 2FA disabled. Generate a new one at appleid.apple.com.",
+      );
+    }
+    if (res.status === 429) return transient("iCloud rate-limited the probe (429).");
+    // iCloud returns 207 Multi-Status on success.
+    if (res.status !== 207 && !res.ok) {
+      const text = await res.text().catch(() => "");
+      return probeError(`iCloud CalDAV ${res.status}: ${text.slice(0, 200)}`);
+    }
+    return ok({ host: "caldav.icloud.com" });
+  } catch (err) {
+    return transient(describeError(err));
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
 // LLM-provider key probes (anthropic / openai / google / deepseek)
 // ────────────────────────────────────────────────────────────────────
 
@@ -400,7 +444,7 @@ export async function probeGithubCopilot(): Promise<HealthResult> {
 // ────────────────────────────────────────────────────────────────────
 
 export type ProbeName =
-  | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook"
+  | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook" | "icloud"
   | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot";
 
 const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
@@ -410,6 +454,7 @@ const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   google: probeGoogle,
   gmail: probeGmail,
   outlook: probeOutlook,
+  icloud: probeICloud,
   anthropic: probeAnthropic,
   openai: probeOpenAI,
   deepseek: probeDeepseek,
@@ -424,6 +469,7 @@ const PROBE_LABELS: Record<ProbeName, string> = {
   google: "Google AI (Gemini + Imagen)",
   gmail: "Gmail + Calendar",
   outlook: "Outlook + Calendar",
+  icloud: "iCloud Mail + Calendar + Reminders",
   anthropic: "Anthropic (Claude)",
   openai: "OpenAI",
   deepseek: "DeepSeek",
@@ -438,6 +484,7 @@ const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
   google: "llm",
   gmail: "integration",
   outlook: "integration",
+  icloud: "integration",
   anthropic: "llm",
   openai: "llm",
   deepseek: "llm",

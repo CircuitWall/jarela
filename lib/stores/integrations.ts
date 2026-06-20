@@ -173,7 +173,23 @@ export const INTEGRATIONS = {
       { key: "client_secret", label: "Client secret value", placeholder: "abc~…", secret: true, required: true },
       { key: "refresh_token", label: "Refresh token", placeholder: "0.AXoA…", secret: true, required: true },
     ],
-  },} as const;
+  },
+  icloud: {
+    label: "iCloud Mail + Calendar + Reminders",
+    category: "mail" as IntegrationCategory,
+    description:
+      "Used by the icloud_mail_*, icloud_calendar_*, and icloud_reminders_* tools " +
+      "(list/read/draft/move/flag/trash mail; list/create/update/delete calendar events; " +
+      "list/create/complete reminders). Drafts only — Jarela intentionally does not send mail. " +
+      "Apple does not expose an OAuth REST API for these surfaces, so auth is the Apple ID plus " +
+      "an app-specific password generated at appleid.apple.com (requires 2FA on the Apple ID). " +
+      "The password is stored encrypted at rest like every other credential.",
+    fields: [
+      { key: "apple_id", label: "Apple ID", placeholder: "johnappleseed@icloud.com", secret: false, required: true },
+      { key: "app_password", label: "App-specific password", placeholder: "xxxx-xxxx-xxxx-xxxx", secret: true, required: true },
+    ],
+  },
+} as const;
 
 export type IntegrationName = keyof typeof INTEGRATIONS;
 
