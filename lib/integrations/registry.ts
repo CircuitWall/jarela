@@ -11,6 +11,7 @@ import { atlassianManifest } from "@/lib/integrations/atlassian/manifest";
 import { githubManifest } from "@/lib/integrations/github/manifest";
 import { gmailManifest } from "@/lib/integrations/gmail/manifest";
 import { googleManifest } from "@/lib/integrations/google/manifest";
+import { icloudManifest } from "@/lib/integrations/icloud/manifest";
 import { jiraAlignManifest } from "@/lib/integrations/jira_align/manifest";
 import { outlookManifest } from "@/lib/integrations/outlook/manifest";
 import type { IntegrationManifest } from "@/lib/integrations/manifest";
@@ -21,6 +22,7 @@ const RAW: IntegrationManifest[] = [
   githubManifest,
   gmailManifest,
   googleManifest,
+  icloudManifest,
   jiraAlignManifest,
   outlookManifest,
 ];

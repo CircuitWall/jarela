@@ -531,7 +531,7 @@ describe("health probes", () => {
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(11);
+      expect(names.length).toBe(12);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));

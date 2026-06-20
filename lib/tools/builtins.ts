@@ -36,6 +36,7 @@ import "./outlook";
 import "./outlook-calendar";
 import "./ms-todo";
 import "./ms-graph";
+import "./icloud";
 import "./delegate";
 import "./system_config";
 import "./list-tools";

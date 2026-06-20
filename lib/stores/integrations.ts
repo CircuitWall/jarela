@@ -172,7 +172,22 @@ export const INTEGRATIONS = {
       { key: "client_secret", label: "Client secret value", placeholder: "abc~…", secret: true, required: true },
       { key: "refresh_token", label: "Refresh token", placeholder: "0.AXoA…", secret: true, required: true },
     ],
-  },} as const;
+  },
+  icloud: {
+    label: "iCloud Mail + Calendar + Reminders",
+    category: "mail" as IntegrationCategory,
+    description:
+      "Used by the icloud_mail_*, icloud_calendar_*, and icloud_reminders_* tools (read/draft/move/trash mail " +
+      "over IMAP; list/create/update/delete calendar events and reminders over CalDAV). Drafts only — this " +
+      "integration intentionally cannot send mail. Apple does not expose an OAuth REST API for these surfaces, " +
+      "so authentication is by Apple ID + app-specific password. Generate one at appleid.apple.com → Sign-In " +
+      "and Security → App-Specific Passwords (requires 2FA on your Apple ID).",
+    fields: [
+      { key: "apple_id", label: "Apple ID", placeholder: "you@icloud.com", secret: false, required: true },
+      { key: "app_password", label: "App-specific password", placeholder: "abcd-efgh-ijkl-mnop", secret: true, required: true },
+    ],
+  },
+} as const;
 
 export type IntegrationName = keyof typeof INTEGRATIONS;
 

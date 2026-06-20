@@ -24,6 +24,8 @@ if (process.env.NEXT_PHASE !== "phase-production-build") {
 }
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
+import { _resolveIcloudAuth } from "@/lib/tools/icloud";
+import { icloudMailListFoldersTool } from "@circuitwall/icloud-langchain";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
@@ -245,6 +247,26 @@ export async function probeOutlook(): Promise<HealthResult> {
   }
 }
 
+export async function probeIcloud(): Promise<HealthResult> {
+  const auth = _resolveIcloudAuth();
+  if ("error" in auth) return unconfigured(auth.error);
+  try {
+    const raw = await icloudMailListFoldersTool.invoke({});
+    const parsed = JSON.parse(typeof raw === "string" ? raw : String(raw)) as
+      | { folders?: Array<{ path: string }>; error?: never }
+      | { folders?: never; error: string };
+    if (parsed.error) {
+      if (/authentication failed|invalid credentials|AUTH/i.test(parsed.error)) {
+        return authFailed(parsed.error);
+      }
+      return transient(parsed.error);
+    }
+    return ok({ folders: parsed.folders?.length ?? 0 });
+  } catch (err) {
+    return transient(describeError(err));
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // LLM-provider key probes (anthropic / openai / google / deepseek)
 // ────────────────────────────────────────────────────────────────────
@@ -394,7 +416,7 @@ export async function probeGithubCopilot(): Promise<HealthResult> {
 // ────────────────────────────────────────────────────────────────────
 
 export type ProbeName =
-  | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook"
+  | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook" | "icloud"
   | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot";
 
 const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
@@ -404,6 +426,7 @@ const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   google: probeGoogle,
   gmail: probeGmail,
   outlook: probeOutlook,
+  icloud: probeIcloud,
   anthropic: probeAnthropic,
   openai: probeOpenAI,
   deepseek: probeDeepseek,
@@ -418,6 +441,7 @@ const PROBE_LABELS: Record<ProbeName, string> = {
   google: "Google AI (Gemini + Imagen)",
   gmail: "Gmail + Calendar",
   outlook: "Outlook + Calendar",
+  icloud: "iCloud Mail + Calendar + Reminders",
   anthropic: "Anthropic (Claude)",
   openai: "OpenAI",
   deepseek: "DeepSeek",
@@ -432,6 +456,7 @@ const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
   google: "llm",
   gmail: "integration",
   outlook: "integration",
+  icloud: "integration",
   anthropic: "llm",
   openai: "llm",
   deepseek: "llm",
