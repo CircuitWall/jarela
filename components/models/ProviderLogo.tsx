@@ -3,14 +3,19 @@ import {
   siAnthropic,
   siAtlassian,
   siDeepseek,
+  siDiscord,
   siGithub,
   siGmail,
   siGooglegemini,
   siJira,
   siLangchain,
+  siMessenger,
   siMistralai,
   siOllama,
   siPerplexity,
+  siSignal,
+  siTelegram,
+  siWhatsapp,
   siX,
   type SimpleIcon,
 } from "simple-icons";
@@ -18,9 +23,14 @@ import {
 // Map Jarela provider slugs → CC0 brand-mark SVGs from simple-icons. We use
 // the path data only and force currentColor for a monochrome look that
 // tracks the surrounding text color.
+//
+// Covers LLM providers, credential integrations, and bridge kinds — any
+// surface that represents a third-party brand should render through here
+// so the icon stays consistent.
 const ICONS: Record<string, SimpleIcon> = {
   anthropic: siAnthropic,
   atlassian: siAtlassian,
+  discord: siDiscord,
   gemini: siGooglegemini,
   google: siGooglegemini,
   "github-copilot": siGithub,
@@ -29,10 +39,14 @@ const ICONS: Record<string, SimpleIcon> = {
   deepseek: siDeepseek,
   jira: siJira,
   jira_align: siJira,
+  messenger: siMessenger,
   mistral: siMistralai,
   ollama: siOllama,
   langchain: siLangchain,
   perplexity: siPerplexity,
+  signal: siSignal,
+  telegram: siTelegram,
+  whatsapp: siWhatsapp,
   xai: siX,
   grok: siX,
 };
@@ -53,6 +67,33 @@ function initialsFor(name: string): string {
   if (FALLBACK_INITIALS[name]) return FALLBACK_INITIALS[name];
   const trimmed = name.replace(/^[^a-z0-9]+/i, "");
   return (trimmed.slice(0, 2) || "·").toLowerCase();
+}
+
+// Slugs we know how to render a brand glyph (or branded monogram) for.
+// Sorted longest-first so multi-segment slugs like `jira_align` beat the
+// shorter `jira` when we prefix-match a tool name.
+const KNOWN_BRAND_SLUGS: readonly string[] = Object.keys({
+  ...ICONS,
+  ...FALLBACK_INITIALS,
+})
+  .filter((s) => s !== "mock")
+  .sort((a, b) => b.length - a.length);
+
+/**
+ * Recognize a third-party brand from an underscore-separated tool name.
+ *
+ * Tool names follow the convention `<brand>_<verb>_<noun>` (e.g.
+ * `gmail_send_email`, `github_create_issue`, `jira_align_list_objectives`).
+ * Returns the matching `ProviderLogo` slug if the prefix is one we have
+ * an icon for, otherwise `null` — callers should fall back to a generic
+ * tool icon.
+ */
+export function brandSlugForToolName(name: string): string | null {
+  const lower = name.toLowerCase();
+  for (const slug of KNOWN_BRAND_SLUGS) {
+    if (lower === slug || lower.startsWith(slug + "_")) return slug;
+  }
+  return null;
 }
 
 export function ProviderLogo({
