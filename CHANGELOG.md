@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-06-21
+
+### Added
+
+- **iCloud Mail + Calendar + Reminders integration.** New first-class
+  integration in the credentials panel under the *Mail* category, backed
+  by the new `@circuitwall/icloud-langchain@0.1.1` package. Connects via
+  an Apple ID + app-specific password (16-character pattern with optional
+  dashes, generated at <https://appleid.apple.com/account/manage>);
+  2FA on the Apple ID is a prerequisite. Ships **17 tools** split into
+  three permission tiers so agent policies can grant least privilege:
+  - **Read (8):** `icloud_mail_list_folders`, `icloud_mail_list_messages`,
+    `icloud_mail_get_message`, `icloud_mail_search`,
+    `icloud_calendar_list_calendars`, `icloud_calendar_list_events`,
+    `icloud_calendar_get_event`, `icloud_reminders_list_lists`,
+    `icloud_reminders_list_reminders`, `icloud_reminders_get_reminder`.
+  - **Write (7):** `icloud_mail_move_message`,
+    `icloud_mail_delete_message`, `icloud_calendar_create_event`,
+    `icloud_calendar_update_event`, `icloud_calendar_delete_event`,
+    `icloud_reminders_create_reminder`, `icloud_reminders_update_reminder`,
+    `icloud_reminders_delete_reminder`.
+  - **Execute (2):** `icloud_mail_send_message`,
+    `icloud_mail_reply_to_message`.
+- **iCloud health probe.** `probeICloud` issues a CalDAV
+  `PROPFIND` against `https://caldav.icloud.com/` with HTTP Basic auth
+  to validate the credential live. 207 → ok, 401/403 → auth-failed
+  (regenerate-app-password hint), 429 → transient. App-password input is
+  normalised to strip the optional Apple-formatted dashes and
+  zero-width characters before the basic-auth header is built.
+- **Agent-facing iCloud setup manifest.** `lib/integrations/icloud/manifest.ts`
+  documents the 3-step setup (enable 2FA → generate app-specific password
+  → save credentials with `verify: { tool: "icloud_mail_list_folders" }`)
+  plus 3 troubleshooting entries, exposing the same flow to the in-app
+  agent that other mail integrations already use.
+
+### Fixed
+
+- **Docker multi-arch build skips the `icloud-langchain` workspace.**
+  v1.16.0's `linux/arm64` and `linux/amd64` images failed at `npm ci`
+  because the Dockerfile only `COPY`'d four of the five workspace
+  `package.json` files into the deps layer; `npm` then materialised an
+  empty `packages/icloud-langchain/` directory, so the later `npm run
+  build` stage exited 127 (`tsup: not found`). Added the missing
+  `COPY packages/icloud-langchain/package.json` line so the workspace
+  resolves correctly during install.
+
 ## [1.16.0] - 2026-06-21
 
 ### Added
