@@ -2,7 +2,7 @@
 import { CheckCircle2, ExternalLink, Link as LinkIcon, Loader2, Star, Terminal, Trash2, XCircle } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Credential, IntegrationDefinition, IntegrationStatus } from "@/api/types";
+import type { Credential, IntegrationDefinition, IntegrationField, IntegrationStatus } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
 import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
@@ -272,7 +272,6 @@ export function IntegrationCard({
       </div>
 
       <div className="px-3 py-3 space-y-2">
-        {def.name === "gmail" && <GmailSetupGuide />}
         {def.name === "outlook" && <OutlookSetupGuide />}
         <label className="block text-xs text-fg-subtle">
           <span>Label <span className="text-fg-faint">(optional, e.g. &ldquo;Work&rdquo;, &ldquo;Personal&rdquo;)</span></span>
@@ -284,40 +283,23 @@ export function IntegrationCard({
             className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
           />
         </label>
-        {def.fields.map((f) => {
-          const fieldSource = status?.source?.[f.key];
-          return (
-            <label key={f.key} className="block text-xs text-fg-subtle">
-              <span className="flex items-center gap-1.5">
-                {f.label}{f.required && <span className="text-rose-700 dark:text-rose-400 ml-0.5">*</span>}
-                {fieldSource === "rc" && (
-                  <span
-                    title="Value pulled from your shell rc / Windows User env. Editing here will switch this field to manual mode."
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/30"
-                  >
-                    <Terminal size={9} /> from shell
-                  </span>
-                )}
-              </span>
-              <input
-                type={f.secret ? "password" : "text"}
-                value={values[f.key] ?? ""}
-                onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
-                onFocus={(e) => {
-                  // Clicking a masked secret field clears it so the user can type a new value
-                  // without manually selecting and replacing the dots. Accept either sentinel
-                  // shape (`"***"` from the credentials API, `"********"` from the legacy
-                  // integrations status route).
-                  if (f.secret && isMaskedSecret(e.target.value)) {
-                    setValues((p) => ({ ...p, [f.key]: "" }));
-                  }
-                }}
-                placeholder={f.placeholder}
-                className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
-              />
-            </label>
-          );
-        })}
+        {def.name === "gmail" ? (
+          // Gmail ships a bundled Jarela OAuth client — most users only need
+          // the Connect Gmail button below. The three BYO fields + GCP-setup
+          // walkthrough live inside this collapsed disclosure so the default
+          // flow stays one click.
+          <details className="rounded border border-border/60 bg-surface-3/30">
+            <summary className="cursor-pointer select-none px-2.5 py-1.5 text-xs text-fg-subtle hover:bg-surface-3">
+              Advanced — bring your own OAuth client
+            </summary>
+            <div className="px-3 py-2.5 space-y-2 border-t border-border/60">
+              <GmailSetupGuide />
+              {def.fields.map((f) => renderField(f, values, setValues, status))}
+            </div>
+          </details>
+        ) : (
+          def.fields.map((f) => renderField(f, values, setValues, status))
+        )}
 
         {error && (
           <div className="px-2 py-1.5 rounded bg-rose-950/40 border border-rose-800 text-xs text-rose-700 dark:text-rose-300">
@@ -411,6 +393,46 @@ export function IntegrationCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function renderField(
+  f: IntegrationField,
+  values: Record<string, string>,
+  setValues: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+  status?: IntegrationStatus,
+) {
+  const fieldSource = status?.source?.[f.key];
+  return (
+    <label key={f.key} className="block text-xs text-fg-subtle">
+      <span className="flex items-center gap-1.5">
+        {f.label}{f.required && <span className="text-rose-700 dark:text-rose-400 ml-0.5">*</span>}
+        {fieldSource === "rc" && (
+          <span
+            title="Value pulled from your shell rc / Windows User env. Editing here will switch this field to manual mode."
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium uppercase tracking-wide bg-sky-500/10 text-sky-700 dark:text-sky-300 border border-sky-500/30"
+          >
+            <Terminal size={9} /> from shell
+          </span>
+        )}
+      </span>
+      <input
+        type={f.secret ? "password" : "text"}
+        value={values[f.key] ?? ""}
+        onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+        onFocus={(e) => {
+          // Clicking a masked secret field clears it so the user can type a
+          // new value without manually selecting and replacing the dots.
+          // Accept either sentinel shape (`"***"` from the credentials API,
+          // `"********"` from the legacy integrations status route).
+          if (f.secret && isMaskedSecret(e.target.value)) {
+            setValues((p) => ({ ...p, [f.key]: "" }));
+          }
+        }}
+        placeholder={f.placeholder}
+        className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg font-mono"
+      />
+    </label>
   );
 }
 
