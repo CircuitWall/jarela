@@ -14,6 +14,7 @@ on:
       - "jira-align-langchain-v*"
       - "github-langchain-v*"
       - "ms-todo-langchain-v*"
+      - "icloud-langchain-v*"
 permissions:
   contents: write   # softprops/action-gh-release attaches archives to the Release
   packages: write   # ghcr.io publication for GitHub Packages card
@@ -583,4 +584,38 @@ jobs:
           fi
       - name: Publish (with provenance)
         working-directory: packages/ms-todo-langchain
+        run: npm publish --provenance --access public
+
+  publish-icloud-langchain:
+    name: Publish @circuitwall/icloud-langchain
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref_name, 'icloud-langchain-v')
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Upgrade npm (Trusted Publishers needs >= 11.5)
+        run: npm install -g npm@latest
+      - name: Install dependencies (workspaces)
+        run: npm install --no-audit --no-fund
+      - name: Build package
+        run: npm run build -w @circuitwall/icloud-langchain
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#icloud-langchain-v}"
+          pkg="$(node -p "require('./packages/icloud-langchain/package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag $tag does not match package version $pkg" >&2
+            exit 1
+          fi
+      - name: Publish (with provenance)
+        working-directory: packages/icloud-langchain
         run: npm publish --provenance --access public
