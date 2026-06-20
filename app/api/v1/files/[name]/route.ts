@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { Readable } from "node:stream";
 import { fileAbsPath } from "@/lib/files";
 
 type Params = { params: Promise<{ name: string }> };
@@ -99,7 +98,48 @@ async function serve(req: NextRequest, { name }: { name: string }, method: "GET"
   }
 
   const nodeStream = createReadStream(abs, { start, end });
-  const webStream = Readable.toWeb(nodeStream) as unknown as ReadableStream<Uint8Array>;
+  // `Readable.toWeb(nodeStream)` is fundamentally racy in current Node:
+  // when the client aborts (iOS Safari range-probing then closing the
+  // socket, tab close mid-download, HTTP/2 RST_STREAM), the web-stream
+  // controller closes, but the adapter still tries to `controller.enqueue`
+  // any buffered chunk the fs.ReadStream emits afterwards and throws
+  // ERR_INVALID_STATE as an uncaughtException. See nodejs/node#46540 and
+  // #49936. Hand-rolling lets us (a) destroy the node stream on cancel,
+  // (b) swallow late enqueue attempts after close, (c) keep `error`
+  // events from escaping to the process.
+  const webStream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let closed = false;
+      const cleanup = () => {
+        closed = true;
+        nodeStream.removeAllListeners("data");
+        nodeStream.removeAllListeners("end");
+        nodeStream.removeAllListeners("error");
+      };
+      nodeStream.on("data", (chunk: Buffer) => {
+        if (closed) return;
+        try {
+          controller.enqueue(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
+        } catch {
+          cleanup();
+          nodeStream.destroy();
+        }
+      });
+      nodeStream.on("end", () => {
+        if (closed) return;
+        cleanup();
+        try { controller.close(); } catch { /* already closed */ }
+      });
+      nodeStream.on("error", (err) => {
+        if (closed) return;
+        cleanup();
+        try { controller.error(err); } catch { /* already closed */ }
+      });
+    },
+    cancel() {
+      nodeStream.destroy();
+    },
+  });
   return new NextResponse(webStream, { status, headers });
 }
 
