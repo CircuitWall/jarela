@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-06-20
+
+### Fixed
+
+- **Accessible names stay stable across menu + sub-tab interactions.** The
+  primary navigation menu and the `SubTabBar` primitive were re-rendering
+  with computed `aria-label` strings that flickered as the active state
+  changed, causing assistive tech to re-announce the same element. Both
+  surfaces now hold a stable accessible name.
+- **`/api/v1/files/[name]` survives client aborts.** The route used
+  `Readable.toWeb(fs.createReadStream(...))` which throws
+  `ERR_INVALID_STATE` as an `uncaughtException` when the client cancels
+  mid-stream (Node web-streams adapter race,
+  [nodejs/node#46540](https://github.com/nodejs/node/issues/46540)).
+  Replaced with a hand-rolled `ReadableStream` that wraps every
+  `controller.enqueue` / `close` / `error` call in `try/catch` and
+  destroys the node stream on `cancel()`. Happy path (full read, range,
+  conditional GET, 304/416) unchanged.
+- **`SubTabBar` scrolls horizontally on iOS PWA.** The sub-tab strip
+  used `touch-action: pan-y`, which told iOS Safari to consume vertical
+  pans on the strip and route horizontal pans to the page — the
+  opposite of what a horizontally-scrolling strip needs. Switched to
+  `pan-x` so the strip itself owns horizontal swipes and the page keeps
+  scrolling vertically.
+- **Brand marks for Gmail, Atlassian, and Jira credentials.** The
+  credentials panel rendered the generic monogram fallback for these
+  three providers because they weren't registered with `ProviderLogo`.
+  Added the corresponding `simple-icons` glyphs so every credential row
+  shows the same visual weight.
+- **WhatsApp bridges show the WhatsApp brand glyph.** `BridgesPanel`
+  dropped the generic `MessageSquareText` lucide icon in favour of
+  `<ProviderLogo name={bridge.kind} size={16} />`, so bridges that map
+  onto a known third-party brand (WhatsApp, Telegram, Discord, Signal,
+  Messenger) render the brand mark inside the existing emerald avatar.
+- **Tool-call rows in the chat transcript carry brand or per-family
+  glyphs.** `ToolList` now resolves the tool's brand prefix
+  (`gmail_*`, `github_*`, `jira_align_*`, …) via
+  `brandSlugForToolName` and renders the matching `<ProviderLogo>`,
+  falls back to a per-family lucide glyph for internal tools (file,
+  web, browser, memory, schedule, workspace, local exec, generate
+  image / voice, …), and only shows the generic `Wrench` when the
+  tool name is genuinely unknown.
+- **Outlook credential renders a mail envelope.** `simple-icons`
+  removed the Outlook (and Microsoft / Office) brand marks at brand
+  request, leaving the credentials list with a `Ou` two-letter
+  monogram while every other email-shaped integration showed a real
+  glyph. `ProviderLogo` now has a small `LUCIDE_ICONS` escape hatch
+  for slugs with no simple-icons coverage but a sensible lucide
+  stand-in; `outlook` maps to lucide's `Mail` envelope.
+
 ## [1.15.0] - 2026-06-19
 
 ### Added
