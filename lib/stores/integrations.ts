@@ -141,12 +141,13 @@ export const INTEGRATIONS = {
     description:
       "Used by the gmail_* and calendar_* tools (search/read/draft/label/archive mail; " +
       "list/create/update/delete calendar events). Drafts only \u2014 this integration " +
-      "intentionally cannot send mail. See the Setup guide below for how to create the " +
-      "OAuth client. Existing connections must reconnect to grant the new Calendar scope.",
+      "intentionally cannot send mail. One-click Connect uses the bundled Jarela Google " +
+      "client (Desktop type, PKCE-only \u2014 no client secret ships in the binary); " +
+      "advanced users can paste their own OAuth client below and Jarela will use that instead.",
     fields: [
-      { key: "client_id", label: "OAuth client ID", placeholder: "<id>.apps.googleusercontent.com", secret: false, required: true },
-      { key: "client_secret", label: "OAuth client secret", placeholder: "GOCSPX-…", secret: true, required: true },
-      { key: "refresh_token", label: "Refresh token", placeholder: "1//0…", secret: true, required: true },
+      { key: "client_id", label: "OAuth client ID (advanced)", placeholder: "<id>.apps.googleusercontent.com", secret: false, required: false },
+      { key: "client_secret", label: "OAuth client secret (advanced)", placeholder: "GOCSPX-\u2026", secret: true, required: false },
+      { key: "refresh_token", label: "Refresh token", placeholder: "1//0\u2026", secret: true, required: false },
     ],
   },  github: {
     label: "GitHub",

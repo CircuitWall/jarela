@@ -10,88 +10,62 @@ export const gmailManifest: IntegrationManifest = {
   category: "mail",
   prerequisites: [
     {
-      check: "oauth_app",
+      check: "credentials",
       detail:
-        "A Google Cloud project with the Gmail API and Calendar API enabled, plus a " +
-        "Web Application OAuth client. The client_id and client_secret are required " +
-        "BEFORE the agent can propose start_oauth.",
-      docs_url: "https://console.cloud.google.com/apis/credentials",
+        "A Google account whose Gmail and Calendar the agent should reach. The user clicks " +
+        "Connect Gmail in the Integrations panel, signs in to Google, and grants the requested " +
+        "scopes (Gmail read+modify+compose, Calendar events read+write). No Google Cloud project " +
+        "or OAuth client setup is required \u2014 Jarela ships a bundled Desktop OAuth client_id " +
+        "and uses PKCE (RFC 7636) as the per-flow proof. No client secret ships in the binary.",
     },
     {
-      check: "custom",
+      check: "oauth_app",
       detail:
-        "The OAuth client's authorized redirect URI must match where Jarela is reachable. " +
-        "For local use that's typically http://localhost:4312/api/v1/integrations/gmail/oauth/callback.",
+        "ADVANCED ONLY: forks that prefer their own GCP project can set the env var " +
+        "JARELA_GMAIL_CLIENT_ID, or paste a client_id (+ optional client_secret for Web app types) " +
+        "into the integration's Advanced fields. The bundled client_id is used otherwise.",
+      docs_url: "https://console.cloud.google.com/apis/credentials",
     },
   ],
   steps: [
     {
-      id: "create-cloud-project",
-      title: "Create or pick a Google Cloud project",
+      id: "connect-gmail",
+      title: "Click Connect Gmail",
       description:
-        "Open console.cloud.google.com, create a new project (or pick an existing one). " +
-        "This is purely an instructional step — Jarela can't create the project for the user.",
-      docs_url: "https://console.cloud.google.com/projectcreate",
-    },
-    {
-      id: "enable-apis",
-      title: "Enable the Gmail and Calendar APIs",
-      description:
-        "In the project, open APIs & Services → Library, search for Gmail API and Google Calendar API, " +
-        "and enable both. The Calendar scope is required for calendarList.list to return calendars.",
-    },
-    {
-      id: "create-oauth-client",
-      title: "Create an OAuth 2.0 Client ID",
-      description:
-        "APIs & Services → Credentials → Create Credentials → OAuth client ID → Web application. " +
-        "Add the redirect URI from the prerequisite above. Copy client_id and client_secret.",
-      docs_url: "https://console.cloud.google.com/apis/credentials",
-    },
-    {
-      id: "save-client",
-      title: "Save the OAuth client in Jarela",
-      description:
-        "Propose enabling the integration. The user will paste client_id and client_secret " +
-        "into the secure form. Both are stored encrypted at rest.",
-      proposes: "enable_integration",
-    },
-    {
-      id: "authorize",
-      title: "Run the OAuth consent flow",
-      description:
-        "Once client_id and client_secret are saved, propose start_oauth. The user approves, a " +
-        "Google consent screen opens in a new tab, and on success a refresh_token is captured " +
-        "automatically. The agent can then use gmail_* and calendar_* tools.",
+        "Open Settings \u2192 Credentials \u2192 Gmail and click Connect Gmail. A Google sign-in " +
+        "popup appears. Sign in, review the requested scopes (mail read/modify/compose, calendar " +
+        "events read/write), and grant access. The popup closes automatically and the integration " +
+        "is connected.",
       proposes: "start_oauth",
       verify: { tool: "gmail_list_labels" },
     },
   ],
   troubleshooting: [
     {
-      when: "OAuth redirect returns 'redirect_uri_mismatch'",
+      when: "consent screen shows 'Google hasn't verified this app'",
       say:
-        "The redirect URI in the Google Cloud OAuth client doesn't match what Jarela sent. " +
-        "Open the OAuth client in Cloud Console → Authorized redirect URIs, and add the URI exactly " +
-        "as shown in the error page (including the port).",
+        "Until Jarela passes Google's OAuth verification process the bundled client shows this " +
+        "warning. Click Advanced \u2192 Go to Jarela (unsafe) to continue. The agent's access is " +
+        "limited to exactly the scopes shown on the consent screen.",
     },
     {
-      when: "OAuth consent screen says 'access_denied'",
+      when: "OAuth consent says 'access_denied' or 'app blocked by org'",
       say:
-        "The Google project is in 'Testing' mode and the user's email isn't on the allowed test users " +
-        "list. Either add their email under OAuth consent screen → Test users, or publish the app.",
+        "The user's Google Workspace admin has blocked unverified third-party OAuth apps. The user " +
+        "needs admin approval, or can switch to a BYO OAuth client in the Advanced fields using " +
+        "their own GCP project.",
     },
     {
       when: "tool returns 403 invalid_scope or insufficient_permissions for calendar",
       say:
-        "An older Gmail-only consent didn't include the Calendar scopes. Propose start_oauth again — " +
+        "An older Gmail-only consent didn't include the Calendar scopes. Click Connect Gmail again \u2014 " +
         "the new consent will request both Gmail and Calendar scopes and overwrite the refresh token.",
     },
     {
       when: "tool returns 401 invalid_grant",
       say:
-        "The refresh token was revoked (often because the OAuth client_secret was rotated, or the user " +
-        "revoked access at myaccount.google.com). Propose start_oauth to re-authorize.",
+        "The refresh token was revoked (often because the user revoked access at " +
+        "myaccount.google.com/permissions). Click Connect Gmail again to re-authorize.",
     },
   ],
 };

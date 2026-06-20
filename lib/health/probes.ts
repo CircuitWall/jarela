@@ -180,15 +180,16 @@ export async function probeGmail(): Promise<HealthResult> {
   const auth = _resolveGmailAuth();
   if ("error" in auth) return unconfigured(auth.error);
   try {
+    const refreshBody = new URLSearchParams({
+      client_id: auth.client_id,
+      refresh_token: auth.refresh_token,
+      grant_type: "refresh_token",
+    });
+    if (auth.client_secret) refreshBody.set("client_secret", auth.client_secret);
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: auth.client_id,
-        client_secret: auth.client_secret,
-        refresh_token: auth.refresh_token,
-        grant_type: "refresh_token",
-      }).toString(),
+      body: refreshBody.toString(),
       signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
     });
     if (tokenRes.status === 400 || tokenRes.status === 401) {
