@@ -3,6 +3,23 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronRight, X, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
+
+// Tool names follow a `<brand>_<verb>_<noun>` convention (`gmail_send_email`,
+// `github_create_issue`). When the prefix is a known brand we render its
+// glyph instead of the generic wrench, so the operator can recognize the
+// integration at a glance.
+function ToolIcon({ toolName }: { toolName: string }) {
+  const slug = brandSlugForToolName(toolName);
+  if (slug) {
+    return (
+      <span className="shrink-0 text-fg-faint" aria-hidden>
+        <ProviderLogo name={slug} size={11} />
+      </span>
+    );
+  }
+  return <Wrench size={11} className="shrink-0 text-fg-faint" aria-hidden />;
+}
 
 export interface ToolEvent {
   id: string;
@@ -119,7 +136,7 @@ function CollapsedSummary({
       aria-label={`expand ${groups.length} tool calls`}
     >
       <ChevronRight size={10} className="shrink-0 text-fg-faint" />
-      <Wrench size={11} className="shrink-0 text-fg-faint" aria-hidden />
+      <ToolIcon toolName={visible[0] ?? ""} />
       <span className="truncate flex-1 min-w-0 text-fg-muted">
         {visible.map((name, i) => {
           const slot = byName.get(name)!;
@@ -267,7 +284,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
         aria-expanded={open}
       >
         <CollapseChevron open={open} size={10} className="text-fg-faint" />
-        <Wrench size={11} className="shrink-0 text-fg-faint" aria-hidden />
+        <ToolIcon toolName={group.name} />
         <span className="font-medium text-fg-muted shrink-0">{group.name}</span>
         <span
           className="relative truncate text-fg-faint font-normal flex-1 min-w-0"

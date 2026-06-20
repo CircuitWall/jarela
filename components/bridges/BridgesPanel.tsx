@@ -1,10 +1,11 @@
 "use client";
-import { AlertCircle, CheckCircle2, Loader2, MessageSquareText, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Plus, RefreshCw, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Bridge, BridgeLiveStatus } from "@/api/types";
 import { useBridges } from "@/hooks/useBridges";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { BridgeEditor } from "./BridgeEditor";
 
 /**
@@ -142,8 +143,8 @@ function BridgeRow({
   return (
     <div data-deep-link-id={bridge.id} className="mb-2 rounded-lg border border-border bg-surface-2 hover:bg-surface-2/70 transition-colors">
       <div className="flex items-center gap-3 px-3 py-2.5">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
-          <MessageSquareText size={16} className="text-white" />
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 text-white">
+          <ProviderLogo name={bridge.kind} size={16} />
         </div>
         <button onClick={onSelect} className="flex-1 min-w-0 text-left">
           <div className="flex items-center gap-2">
