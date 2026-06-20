@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-06-21
+
+### Added
+
+- **`icloudReadTools` / `icloudWriteTools` / `icloudExecuteTools`
+  bundles.** Splits the 17 tools by capability tier so host apps (e.g.
+  Jarela's `registerLangChainPackage`) can grant agents read-only, full
+  edit, or destructive access in the same shape used by
+  `@circuitwall/atlassian-langchain`,
+  `@circuitwall/github-langchain`, and
+  `@circuitwall/jira-align-langchain`. The pre-existing
+  domain-grouped bundles (`icloudMailTools`, `icloudCalendarTools`,
+  `icloudReminderTools`, `icloudTools`) remain.
+
 ## [0.1.0] - 2026-06-20
 
 ### Added
