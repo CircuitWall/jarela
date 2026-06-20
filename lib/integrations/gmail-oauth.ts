@@ -38,29 +38,30 @@ export const GMAIL_SCOPES = [
 ];
 
 // ---------------------------------------------------------------------------
-// Bundled Jarela-owned OAuth client (Desktop type, PKCE-protected)
+// Bundled Jarela-owned OAuth client (Desktop type)
 // ---------------------------------------------------------------------------
 //
-// Per Google's current OAuth 2.0 for Native Apps spec
-// (https://developers.google.com/identity/protocols/oauth2/native-app, last
-// updated 2026-05-26), client_secret is marked Optional on both the token
-// exchange and refresh-token endpoints for Desktop OAuth clients when the
-// caller proves possession of a per-flow PKCE code_verifier. We bundle
-// ONLY the client_id and rely entirely on PKCE for security — no secret
-// ships in this repo.
+// Google's `oauth2.googleapis.com/token` endpoint requires `client_secret` on
+// every code-exchange and refresh call, even for Desktop clients using PKCE.
+// (Google's "Optional" wording in the OAuth-for-native-apps doc reflects the
+// RFC spec, not the production endpoint's actual behaviour.) Shipping the
+// secret in this repo would attract CVSS-7.5 reports the moment the source
+// hits GitHub, so we keep it server-side: requests for the bundled client_id
+// are routed through a Cloud Run Function (see `/proxy/`) that injects the
+// secret from Secret Manager before forwarding to Google.
 //
-// Forks/self-hosters can override the bundled client_id via env var
-// JARELA_GMAIL_CLIENT_ID. The legacy BYO Advanced fields still accept a
-// full client_id + client_secret pair for users who'd rather use their own
-// GCP project.
+// Forks/self-hosters override the bundled client_id via JARELA_GMAIL_CLIENT_ID
+// and the proxy URL via JARELA_GOOGLE_TOKEN_PROXY. The legacy BYO Advanced
+// fields still accept a full client_id + client_secret pair for users who'd
+// rather use their own GCP project (bypasses the proxy entirely).
 const DEFAULT_DESKTOP_CLIENT_ID =
   process.env.JARELA_GMAIL_CLIENT_ID?.trim() ||
   "134669812881-for5e5bjirjt9s2f53cvc3lcj5q257c7.apps.googleusercontent.com";
 
 export interface DefaultGoogleClient {
   client_id: string;
-  // client_secret is intentionally absent. Desktop + PKCE doesn't need it,
-  // and not shipping it means there's nothing to rotate or leak.
+  // client_secret intentionally absent: the proxy injects it server-side from
+  // Secret Manager. Nothing in this repo references the secret value.
 }
 
 export function getDefaultGoogleClient(): DefaultGoogleClient {
@@ -73,6 +74,25 @@ export function getDefaultGoogleClient(): DefaultGoogleClient {
 // it back from the bundle on demand instead.
 export function isDefaultGoogleClient(id: string): boolean {
   return id === getDefaultGoogleClient().client_id;
+}
+
+// ---------------------------------------------------------------------------
+// Token endpoint resolution: bundled-client traffic goes through Jarela's
+// hosted proxy which injects `client_secret` from Secret Manager. BYO traffic
+// goes direct to Google — the user supplied their own secret and the proxy
+// neither has nor wants it. Self-hosters override the proxy URL via
+// JARELA_GOOGLE_TOKEN_PROXY.
+// ---------------------------------------------------------------------------
+
+const GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+
+const JARELA_TOKEN_PROXY =
+  process.env.JARELA_GOOGLE_TOKEN_PROXY?.trim() ||
+  "https://jarela-oauth-proxy-134669812881.europe-west1.run.app";
+
+function selectTokenEndpoint(clientId: string, hasClientSecret: boolean): string {
+  if (isDefaultGoogleClient(clientId) && !hasClientSecret) return JARELA_TOKEN_PROXY;
+  return GOOGLE_TOKEN_ENDPOINT;
 }
 
 // PKCE per RFC 7636. With no client_secret in play, the per-flow
@@ -114,9 +134,9 @@ export function buildAuthorizeUrl(opts: {
 export async function exchangeCode(opts: {
   code: string;
   clientId: string;
-  // Optional. For the bundled Jarela Desktop client we send PKCE only —
-  // Google's spec marks client_secret Optional for Desktop+PKCE. BYO
-  // users who registered their own Web Application client still pass it.
+  // Optional. Bundled-client traffic omits this and routes through the proxy
+  // which adds the secret server-side. BYO users with their own GCP project
+  // pass their own secret and go direct to Google.
   clientSecret?: string;
   redirectUri: string;
   codeVerifier: string;
@@ -131,7 +151,8 @@ export async function exchangeCode(opts: {
     code_verifier: opts.codeVerifier,
   });
   if (clientSecret) body.set("client_secret", clientSecret);
-  const res = await fetch("https://oauth2.googleapis.com/token", {
+  const endpoint = selectTokenEndpoint(clientId, Boolean(clientSecret));
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
@@ -141,8 +162,6 @@ export async function exchangeCode(opts: {
   const parsed = parseJsonSafe<Record<string, unknown>>(text, {});
   if (!res.ok) {
     const err = (parsed["error_description"] || parsed["error"] || text || `HTTP ${res.status}`) as string;
-    // Log a non-leaking fingerprint so the operator can compare what we sent
-    // to what's in their Google Cloud Console without us echoing the secret.
     console.error(
       `[gmail-oauth] token exchange rejected (${res.status}): ${err} | client_id ${secretFingerprint(clientId)} | client_secret ${secretFingerprint(clientSecret)}`,
     );
@@ -162,7 +181,7 @@ export async function exchangeCode(opts: {
 
 export interface GoogleAuth {
   client_id: string;
-  // Optional: undefined when using the bundled Jarela Desktop client (PKCE only).
+  // Optional: undefined when using the bundled client (proxy supplies secret).
   client_secret?: string;
   refresh_token: string;
 }
@@ -178,7 +197,7 @@ export function resolveGoogleAuth(): GoogleAuth | { error: string } {
   if (saved?.refresh_token) {
     // Stored client_id wins when present (BYO path); otherwise fall back to
     // the bundled Jarela client_id. client_secret is only set on the BYO
-    // path — the bundled Desktop client refreshes via PKCE only.
+    // path — the bundled client's secret is injected server-side by the proxy.
     if (saved.client_id && saved.client_secret) {
       return {
         client_id: saved.client_id,
@@ -214,8 +233,9 @@ export async function getGoogleAccessToken(
     grant_type: "refresh_token",
   });
   if (auth.client_secret) body.set("client_secret", auth.client_secret);
+  const endpoint = selectTokenEndpoint(auth.client_id, Boolean(auth.client_secret));
   try {
-    const res = await fetch("https://oauth2.googleapis.com/token", {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: body.toString(),
