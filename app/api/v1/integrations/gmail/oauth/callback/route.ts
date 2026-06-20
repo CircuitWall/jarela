@@ -1,5 +1,10 @@
 import { NextRequest } from "next/server";
-import { exchangeCode, getFlow, updateFlow } from "@/lib/integrations/gmail-oauth";
+import {
+  exchangeCode,
+  getFlow,
+  isDefaultGoogleClient,
+  updateFlow,
+} from "@/lib/integrations/gmail-oauth";
 import { saveIntegration } from "@/lib/stores/integrations";
 import {
   getCredential,
@@ -37,11 +42,19 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    if (!flow.codeVerifier) {
+      // Older flow rows from a downgraded process. Bounce so the panel
+      // restarts cleanly with a PKCE-aware /oauth/start call.
+      const msg = "OAuth session is stale (missing PKCE verifier). Click Connect again.";
+      updateFlow(state, { status: "error", error: msg });
+      return oauthHtmlResponse(msg, true);
+    }
     const tok = await exchangeCode({
       code,
       clientId: flow.clientId,
-      clientSecret: flow.clientSecret,
+      clientSecret: flow.clientSecret || undefined,
       redirectUri: flow.redirectUri,
+      codeVerifier: flow.codeVerifier,
     });
     if (!tok.refresh_token) {
       const msg =
@@ -53,7 +66,7 @@ export async function GET(req: NextRequest) {
     const saved = persistRefreshToken({
       credentialId: flow.credentialId,
       clientId: flow.clientId,
-      clientSecret: flow.clientSecret,
+      clientSecret: flow.clientSecret || undefined,
       refreshToken: tok.refresh_token,
     });
     if ("error" in saved) {
@@ -72,31 +85,47 @@ export async function GET(req: NextRequest) {
 // Writes the freshly-minted refresh token to either the targeted
 // credential row (per-credential OAuth flow) or the provider's default
 // integration (legacy flow).
+//
+// When the flow used the bundled Jarela Desktop client (NOT a BYO from the
+// Advanced panel), we deliberately persist only the refresh token. The
+// client_id gets re-derived from the binary on each refresh via
+// `resolveGoogleAuth` — no client_secret is involved on the bundled path,
+// since Desktop+PKCE doesn't require one.
 function persistRefreshToken(input: {
   credentialId?: string;
   clientId: string;
-  clientSecret: string;
+  clientSecret?: string;
   refreshToken: string;
 }): { error: string } | { ok: true } {
+  const isBundled = isDefaultGoogleClient(input.clientId) && !input.clientSecret;
   if (input.credentialId) {
     const cred = getCredential(input.credentialId);
     if (!cred || cred.provider !== "gmail") {
       return { error: "credential not found" };
     }
-    const merged = {
-      ...getCredentialParams(cred),
-      client_id: input.clientId,
-      client_secret: input.clientSecret,
+    const existing = getCredentialParams(cred);
+    const merged: Record<string, unknown> = {
+      ...existing,
       refresh_token: input.refreshToken,
     };
+    if (isBundled) {
+      // Drop any BYO leftovers so the resolver falls through to the bundle.
+      delete merged.client_id;
+      delete merged.client_secret;
+    } else {
+      merged.client_id = input.clientId;
+      if (input.clientSecret) merged.client_secret = input.clientSecret;
+      else delete merged.client_secret;
+    }
     updateCredential(input.credentialId, { auth_method: "oauth", params: merged });
     return { ok: true };
   }
-  const saved = saveIntegration("gmail", {
-    client_id: input.clientId,
-    client_secret: input.clientSecret,
-    refresh_token: input.refreshToken,
-  });
+  const incoming: Record<string, string> = { refresh_token: input.refreshToken };
+  if (!isBundled) {
+    incoming.client_id = input.clientId;
+    if (input.clientSecret) incoming.client_secret = input.clientSecret;
+  }
+  const saved = saveIntegration("gmail", incoming);
   if ("error" in saved) return saved;
   return { ok: true };
 }

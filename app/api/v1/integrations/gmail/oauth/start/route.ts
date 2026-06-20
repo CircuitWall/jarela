@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { buildAuthorizeUrl, createFlow } from "@/lib/integrations/gmail-oauth";
+import {
+  buildAuthorizeUrl,
+  createFlow,
+  generatePkce,
+  getDefaultGoogleClient,
+} from "@/lib/integrations/gmail-oauth";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { getCredential, getCredentialParams } from "@/lib/stores/credentials";
 import { isMaskedSecret } from "@/lib/utils/secret-mask";
@@ -13,6 +18,12 @@ import { sanitizeOAuthInput } from "@/lib/utils/oauth-input";
 // Stashes the credentials in an in-memory flow keyed by `state`. The browser
 // then opens authorize_url; Google bounces back to /oauth/callback which
 // exchanges the code + persists the integration. Client polls /oauth/status.
+//
+// Resolution order for client_id/client_secret:
+//   1. Explicit values in the request body (BYO path, "Advanced" panel)
+//   2. Saved values on the targeted credential row (re-auth without retype)
+//   3. Saved values on the legacy default integration row
+//   4. Bundled Jarela Google Desktop client (one-click sign-in)
 //
 // When `credential_id` is provided the callback will write the refresh
 // token onto that specific credential row, and masked client_id/secret
@@ -50,7 +61,12 @@ export async function POST(req: NextRequest) {
   }
   const targetedParams = targeted ? getCredentialParams(targeted) : {};
   const existing = getIntegrationRaw("gmail") ?? {};
-  const fallbackClientId = (targetedParams.client_id as string | undefined) ?? existing.client_id;
+  const defaults = getDefaultGoogleClient();
+  // client_id has a bundled default (the Jarela Desktop OAuth client).
+  // client_secret does NOT — only the BYO path supplies one. Desktop+PKCE
+  // works without a client_secret per Google's spec.
+  const fallbackClientId =
+    (targetedParams.client_id as string | undefined) ?? existing.client_id ?? defaults.client_id;
   const fallbackClientSecret =
     (targetedParams.client_secret as string | undefined) ?? existing.client_secret;
 
@@ -63,13 +79,13 @@ export async function POST(req: NextRequest) {
       ? parsed.data.client_secret
       : fallbackClientSecret;
 
-  if (!clientId || !clientSecret) {
+  if (!clientId) {
     return NextResponse.json(
-      { error: "client_id and client_secret are required (save them first or include in this request)" },
+      { error: "client_id is required (or set JARELA_GMAIL_CLIENT_ID in the server env)" },
       { status: 400 },
     );
   }
-  if (isMaskedSecret(clientSecret)) {
+  if (clientSecret && isMaskedSecret(clientSecret)) {
     // A previously-saved row whose secret got corrupted by an earlier round
     // of save-without-retype (pre-1.14.0 mask-sentinel mismatch). Refuse to
     // forward the placeholder to Google; tell the user how to recover.
@@ -87,13 +103,20 @@ export async function POST(req: NextRequest) {
   const origin = req.nextUrl.origin;
   const redirectUri = `${origin}/api/v1/integrations/gmail/oauth/callback`;
 
+  const pkce = generatePkce();
   const { state } = createFlow({
     clientId,
-    clientSecret,
+    clientSecret: clientSecret ?? "",
     redirectUri,
+    codeVerifier: pkce.verifier,
     credentialId: targeted?.id,
   });
-  const authorizeUrl = buildAuthorizeUrl({ clientId, redirectUri, state });
+  const authorizeUrl = buildAuthorizeUrl({
+    clientId,
+    redirectUri,
+    state,
+    codeChallenge: pkce.challenge,
+  });
 
   return NextResponse.json({ authorize_url: authorizeUrl, state, redirect_uri: redirectUri });
 }

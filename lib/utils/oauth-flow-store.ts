@@ -19,6 +19,10 @@ export interface OAuthFlow {
   clientId: string;
   clientSecret: string;
   redirectUri: string;
+  // PKCE verifier (RFC 7636). Generated per-flow on /oauth/start and sent
+  // to the token endpoint on /oauth/callback. Required for Google Desktop
+  // clients; safely ignored by providers that don't enforce PKCE.
+  codeVerifier?: string;
   // When set, the callback writes the refresh token onto THIS specific
   // credential row instead of the provider's default. Used by the
   // credentials panel when re-authorizing a per-row credential.
@@ -32,6 +36,7 @@ export interface OAuthFlowStore {
     clientId: string;
     clientSecret: string;
     redirectUri: string;
+    codeVerifier?: string;
     credentialId?: string;
   }): {
     state: string;
