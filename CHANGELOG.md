@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-06-21
+
+### Added
+
+- **Bundled Jarela Google OAuth client + PKCE for Gmail/Calendar.** End
+  users can now connect Gmail and Google Calendar with a single click
+  instead of standing up their own GCP project. A Jarela-owned Google
+  Desktop OAuth client (`client_id` shipped in source, PKCE-protected
+  per RFC 7636) drives the bundled flow; `client_secret` lives in
+  Google Secret Manager and is injected by the hosted OAuth proxy at
+  `jarela-oauth-proxy-134669812881.europe-west1.run.app`. The Advanced
+  fields (`client_id` / `client_secret` / `refresh_token`) still work
+  and override the bundle for forks, org-managed deployments, or users
+  who prefer their own GCP project. `JARELA_GMAIL_CLIENT_ID` /
+  `JARELA_GOOGLE_TOKEN_PROXY` env vars let downstream forks rebrand
+  without code changes.
+- **Advanced disclosure on the Gmail credentials card.** The setup
+  guide and three BYO fields now live inside a single collapsed
+  `<details>` titled *"Advanced — bring your own OAuth client"*, so the
+  default flow is one click: Connect Gmail. Outlook layout unchanged
+  (BYO is still required there until the same proxy treatment lands).
+
+### Fixed
+
+- **Save no longer breaks the Gmail connection.** `probeGmail()` was
+  hitting `oauth2.googleapis.com/token` directly, which fails with
+  `client_secret is missing` for the bundled client. After every Save
+  the post-save probe re-run surfaced that as *"Integration Gmail +
+  Calendar is failing"*, so the connection looked broken. The probe now
+  routes the refresh through the hosted OAuth proxy via the same
+  `selectTokenEndpoint()` decision the runtime tools use, matching the
+  pattern `probeOutlook` already followed for Microsoft.
+
+### Notes
+
+- The bundled OAuth flow drops `client_id` and `client_secret` from the
+  *required-on-save* list for the Gmail integration. Existing rows are
+  untouched; no migration required. Operators who want to keep using
+  their own GCP project simply fill the Advanced fields as before.
+
 ## [1.15.1] - 2026-06-20
 
 ### Fixed
