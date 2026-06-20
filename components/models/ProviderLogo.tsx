@@ -1,9 +1,12 @@
 import type { CSSProperties } from "react";
 import {
   siAnthropic,
+  siAtlassian,
   siDeepseek,
   siGithub,
+  siGmail,
   siGooglegemini,
+  siJira,
   siLangchain,
   siMistralai,
   siOllama,
@@ -17,11 +20,15 @@ import {
 // tracks the surrounding text color.
 const ICONS: Record<string, SimpleIcon> = {
   anthropic: siAnthropic,
+  atlassian: siAtlassian,
   gemini: siGooglegemini,
   google: siGooglegemini,
   "github-copilot": siGithub,
   github: siGithub,
+  gmail: siGmail,
   deepseek: siDeepseek,
+  jira: siJira,
+  jira_align: siJira,
   mistral: siMistralai,
   ollama: siOllama,
   langchain: siLangchain,
@@ -31,11 +38,14 @@ const ICONS: Record<string, SimpleIcon> = {
 };
 
 // Two-letter monograms for providers simple-icons doesn't ship a brand mark
-// for (e.g. OpenAI and Cohere had their icons removed at brand request).
+// for (e.g. OpenAI, Cohere, and Microsoft had their icons removed at brand
+// request).
 const FALLBACK_INITIALS: Record<string, string> = {
   openai: "Ai",
   cohere: "Co",
   groq: "Gq",
+  outlook: "Ou",
+  microsoft: "Ms",
   mock: "\u00b7\u00b7",
 };
 
