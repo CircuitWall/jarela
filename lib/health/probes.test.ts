@@ -13,7 +13,7 @@ const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integr
 const { storeOAuthToken, clearStoredOAuthToken } = await import("@/lib/providers/github-copilot-auth");
 const {
   probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
-  probeOutlook, probeAnthropic, probeOpenAI, probeDeepseek,
+  probeOutlook, probeICloud, probeAnthropic, probeOpenAI, probeDeepseek,
   probeCohere, probeGithubCopilot,
   listProbes, probeLabel, probeCategory, isIntegrationProbe, runProbe,
 } = await import("./probes");
@@ -29,7 +29,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function wipe(): void {
-  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "anthropic", "openai", "deepseek", "cohere", "github-copilot"]) {
+  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot"]) {
     deleteIntegration(k);
   }
   clearStoredOAuthToken();
@@ -342,6 +342,52 @@ describe("health probes", () => {
     });
   });
 
+  describe("icloud", () => {
+    function icloudCreds(): void {
+      saveIntegration("icloud", { apple_id: "jappleseed@icloud.com", app_password: "abcd-efgh-ijkl-mnop" });
+    }
+    it("unconfigured", async () => {
+      expect((await probeICloud()).status).toBe("unconfigured");
+    });
+    it("ok on 207 Multi-Status", async () => {
+      icloudCreds();
+      mockFetch(() => new Response("<d:multistatus xmlns:d=\"DAV:\"/>", { status: 207 }));
+      const r = await probeICloud();
+      expect(r.status).toBe("ok");
+    });
+    it("401 auth_failed", async () => {
+      icloudCreds();
+      mockFetch(() => new Response("", { status: 401 }));
+      expect((await probeICloud()).status).toBe("auth_failed");
+    });
+    it("429 transient", async () => {
+      icloudCreds();
+      mockFetch(() => new Response("", { status: 429 }));
+      expect((await probeICloud()).status).toBe("transient");
+    });
+    it("500 error", async () => {
+      icloudCreds();
+      mockFetch(() => new Response("boom", { status: 500 }));
+      expect((await probeICloud()).status).toBe("error");
+    });
+    it("network throw transient", async () => {
+      icloudCreds();
+      mockFetch(() => { throw new Error("ECONNRESET"); });
+      expect((await probeICloud()).status).toBe("transient");
+    });
+    it("strips dashes and whitespace from app_password before basic auth", async () => {
+      saveIntegration("icloud", { apple_id: "jappleseed@icloud.com", app_password: "abcd-efgh-ijkl-mnop" });
+      let authHeader = "";
+      mockFetch((_input, init) => {
+        authHeader = String((init?.headers as Record<string, string> | undefined)?.Authorization ?? "");
+        return new Response("", { status: 207 });
+      });
+      await probeICloud();
+      const expected = "Basic " + Buffer.from("jappleseed@icloud.com:abcdefghijklmnop").toString("base64");
+      expect(authHeader).toBe(expected);
+    });
+  });
+
   describe("anthropic", () => {
     beforeEach(() => saveIntegration("anthropic", { api_key: "k" }));
     it("403 auth_failed", async () => {
@@ -531,7 +577,7 @@ describe("health probes", () => {
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(11);
+      expect(names.length).toBe(12);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));

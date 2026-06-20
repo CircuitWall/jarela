@@ -36,6 +36,14 @@ import {
   resolveJiraAlignAuthFromEnv,
   type JiraAlignAuth,
 } from "@circuitwall/jira-align-langchain";
+import {
+  icloudReadTools,
+  icloudWriteTools,
+  icloudExecuteTools,
+  setAuthResolver as setICloudAuthResolver,
+  resolveICloudAuthFromEnv,
+  type ICloudAuth,
+} from "@circuitwall/icloud-langchain";
 
 import {
   registerLangChainPackage,
@@ -173,6 +181,43 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
           notConfiguredError:
             "Jira Align not configured. Open Settings → Credentials and add your Jira Align " +
             "instance URL and API token. (Or set JIRA_ALIGN_URL / JIRA_ALIGN_TOKEN env vars.)",
+        },
+      }),
+  },
+  {
+    id: "icloud",
+    label: "iCloud",
+    category: "iCloud",
+    integrationId: "icloud",
+    npmPackage: "@circuitwall/icloud-langchain",
+    toolCounts: {
+      read: icloudReadTools.length,
+      write: icloudWriteTools.length,
+      execute: icloudExecuteTools.length,
+    },
+    description:
+      "iCloud Mail (IMAP), Calendar (CalDAV), and Reminders (VTODO): list/read/draft/move/flag/trash mail, " +
+      "manage events, and create/complete reminders. Drafts only — cannot send mail.",
+    register: () =>
+      registerLangChainPackage<ICloudAuth>({
+        category: "iCloud",
+        tools: {
+          read: icloudReadTools,
+          write: icloudWriteTools,
+          execute: icloudExecuteTools,
+        },
+        auth: {
+          integrationId: "icloud",
+          setAuthResolver: setICloudAuthResolver,
+          resolveAuthFromEnv: resolveICloudAuthFromEnv,
+          mapStoreFields: (raw): ICloudAuth | null =>
+            raw.apple_id && raw.app_password
+              ? { appleId: raw.apple_id, appPassword: raw.app_password }
+              : null,
+          notConfiguredError:
+            "iCloud not configured. Open Settings → Credentials and add your Apple ID + " +
+            "app-specific password (generate one at appleid.apple.com — requires 2FA). " +
+            "(Or set ICLOUD_APPLE_ID / ICLOUD_APP_PASSWORD env vars.)",
         },
       }),
   },
