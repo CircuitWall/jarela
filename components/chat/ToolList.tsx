@@ -1,14 +1,97 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronRight, X, Wrench } from "lucide-react";
+import {
+  Bot,
+  Brain,
+  CalendarDays,
+  Check,
+  ChevronRight,
+  ClipboardCheck,
+  FileText,
+  FolderSearch,
+  FolderTree,
+  Globe,
+  Image as ImageIcon,
+  Inbox,
+  Info,
+  KeyRound,
+  ListTree,
+  MapPin,
+  Mic,
+  Plug,
+  Power,
+  Timer,
+  Terminal,
+  Wrench,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
 
+// Distinct lucide glyph per internal tool family so the chat transcript
+// is glanceable — operator can tell a file write from a web fetch from a
+// schedule from a memory read without reading the tool name.
+//
+// Keys are matched as exact tool names OR as a `<prefix>_` against the
+// tool name; longest match wins. Anything unmatched falls back to the
+// generic wrench (same as before).
+const INTERNAL_TOOL_ICONS: ReadonlyArray<readonly [string, LucideIcon]> = [
+  ["browser", Globe],
+  ["web", Globe],
+  ["calendar", CalendarDays],
+  ["documents", FolderSearch],
+  ["file", FileText],
+  ["memory", Brain],
+  ["workspace", FolderTree],
+  ["local_exec", Terminal],
+  ["shell_exec", Terminal],
+  ["delegate_to_agent", Bot],
+  ["generate_image", ImageIcon],
+  ["generate_voice", Mic],
+  ["tool_result", Inbox],
+  ["schedule", Timer],
+  ["cancel_scheduled_task", Timer],
+  ["cancel_watcher", Timer],
+  ["list_scheduled_tasks", Timer],
+  ["list_watchers", Timer],
+  ["propose_config_change", ClipboardCheck],
+  ["check_proposal", ClipboardCheck],
+  ["restart_server", Power],
+  ["set_env_var", KeyRound],
+  ["get_user_location", MapPin],
+  ["list_integrations", Plug],
+  ["get_integration_setup", Plug],
+  ["list_mcp_servers", Plug],
+  ["list_providers", Info],
+  ["describe_provider", Info],
+  ["describe_extension_surfaces", Info],
+  ["list_reaction_scripts", ListTree],
+  ["list_tools", Wrench],
+];
+
+// Sort once at module load, longest-key first, so `cancel_scheduled_task`
+// beats `cancel` and `schedule` beats `schedule_task` (latter is already
+// the prefix, but the principle keeps future entries deterministic).
+const INTERNAL_TOOL_ICONS_SORTED = [...INTERNAL_TOOL_ICONS].sort(
+  (a, b) => b[0].length - a[0].length,
+);
+
+function renderInternalToolIcon(name: string): ReactNode {
+  const lower = name.toLowerCase();
+  for (const [key, Icon] of INTERNAL_TOOL_ICONS_SORTED) {
+    if (lower === key || lower.startsWith(key + "_")) {
+      return <Icon size={11} className="shrink-0 text-fg-faint" aria-hidden />;
+    }
+  }
+  return null;
+}
+
 // Tool names follow a `<brand>_<verb>_<noun>` convention (`gmail_send_email`,
 // `github_create_issue`). When the prefix is a known brand we render its
-// glyph instead of the generic wrench, so the operator can recognize the
-// integration at a glance.
+// glyph; otherwise we try an internal-tool icon registry so each family
+// has its own glanceable glyph instead of an undifferentiated wrench.
 function ToolIcon({ toolName }: { toolName: string }) {
   const slug = brandSlugForToolName(toolName);
   if (slug) {
@@ -18,6 +101,8 @@ function ToolIcon({ toolName }: { toolName: string }) {
       </span>
     );
   }
+  const internal = renderInternalToolIcon(toolName);
+  if (internal) return internal;
   return <Wrench size={11} className="shrink-0 text-fg-faint" aria-hidden />;
 }
 
