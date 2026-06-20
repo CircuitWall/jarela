@@ -68,10 +68,12 @@ export function IntegrationCard({
     // `invalid_client`. Same sanitizer runs server-side as a backstop.
     const clientId = sanitizeOAuthInput(values.client_id);
     const clientSecret = sanitizeOAuthInput(values.client_secret);
-    // For a per-row credential we let the backend fall back to the row's
-    // saved values; otherwise we need explicit input or a saved default.
+    // Gmail ships a bundled Jarela Desktop OAuth client (PKCE-protected),
+    // so Connect works with no user input. Outlook still requires a BYO
+    // Azure app registration until that side is verified — keep the
+    // explicit guard for the outlook path only.
     const hasSavedSource = !!editingId || !!status?.configured;
-    if (!hasSavedSource && (!clientId || !clientSecret)) {
+    if (provider === "outlook" && !hasSavedSource && (!clientId || !clientSecret)) {
       setError("Enter the OAuth client ID and client secret first.");
       return;
     }

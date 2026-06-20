@@ -9,6 +9,7 @@
 //
 // Pinned to globalThis so HMR in dev doesn't lose pending flows.
 
+import { createHash, randomBytes } from "node:crypto";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
 import { createOAuthFlowStore, type OAuthFlow } from "@/lib/utils/oauth-flow-store";
 import { parseJsonSafe } from "@/lib/utils/json";
@@ -36,10 +37,64 @@ export const GMAIL_SCOPES = [
   "https://www.googleapis.com/auth/calendar.readonly",
 ];
 
+// ---------------------------------------------------------------------------
+// Bundled Jarela-owned OAuth client (Desktop type, PKCE-protected)
+// ---------------------------------------------------------------------------
+//
+// Per Google's current OAuth 2.0 for Native Apps spec
+// (https://developers.google.com/identity/protocols/oauth2/native-app, last
+// updated 2026-05-26), client_secret is marked Optional on both the token
+// exchange and refresh-token endpoints for Desktop OAuth clients when the
+// caller proves possession of a per-flow PKCE code_verifier. We bundle
+// ONLY the client_id and rely entirely on PKCE for security — no secret
+// ships in this repo.
+//
+// Forks/self-hosters can override the bundled client_id via env var
+// JARELA_GMAIL_CLIENT_ID. The legacy BYO Advanced fields still accept a
+// full client_id + client_secret pair for users who'd rather use their own
+// GCP project.
+const DEFAULT_DESKTOP_CLIENT_ID =
+  process.env.JARELA_GMAIL_CLIENT_ID?.trim() ||
+  "134669812881-for5e5bjirjt9s2f53cvc3lcj5q257c7.apps.googleusercontent.com";
+
+export interface DefaultGoogleClient {
+  client_id: string;
+  // client_secret is intentionally absent. Desktop + PKCE doesn't need it,
+  // and not shipping it means there's nothing to rotate or leak.
+}
+
+export function getDefaultGoogleClient(): DefaultGoogleClient {
+  return { client_id: DEFAULT_DESKTOP_CLIENT_ID };
+}
+
+// True when the resolved client_id is the bundled Jarela one (NOT a BYO
+// from env or the Advanced credentials panel). Used by the callback to
+// avoid persisting a redundant client_id row — `resolveGoogleAuth` reads
+// it back from the bundle on demand instead.
+export function isDefaultGoogleClient(id: string): boolean {
+  return id === getDefaultGoogleClient().client_id;
+}
+
+// PKCE per RFC 7636. With no client_secret in play, the per-flow
+// code_verifier is the only thing tying the redeemed authorization code
+// to this specific Jarela process.
+export interface PkcePair {
+  verifier: string;
+  challenge: string;
+}
+
+export function generatePkce(): PkcePair {
+  // 32 random bytes → 43-char base64url string (well within the 43-128 spec).
+  const verifier = randomBytes(32).toString("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  return { verifier, challenge };
+}
+
 export function buildAuthorizeUrl(opts: {
   clientId: string;
   redirectUri: string;
   state: string;
+  codeChallenge: string;
 }): string {
   const p = new URLSearchParams({
     client_id: opts.clientId,
@@ -50,6 +105,8 @@ export function buildAuthorizeUrl(opts: {
     prompt: "consent",
     include_granted_scopes: "true",
     state: opts.state,
+    code_challenge: opts.codeChallenge,
+    code_challenge_method: "S256",
   });
   return `https://accounts.google.com/o/oauth2/v2/auth?${p.toString()}`;
 }
@@ -57,20 +114,23 @@ export function buildAuthorizeUrl(opts: {
 export async function exchangeCode(opts: {
   code: string;
   clientId: string;
-  clientSecret: string;
+  // Optional. For the bundled Jarela Desktop client we send PKCE only —
+  // Google's spec marks client_secret Optional for Desktop+PKCE. BYO
+  // users who registered their own Web Application client still pass it.
+  clientSecret?: string;
   redirectUri: string;
+  codeVerifier: string;
 }): Promise<{ refresh_token?: string; access_token?: string; expires_in?: number; scope?: string }> {
-  // Belt-and-suspenders: callers should already pass sanitized values, but
-  // strip again here so persisted (older) flows can't transmit invisibles.
   const clientId = sanitizeOAuthInput(opts.clientId) ?? "";
-  const clientSecret = sanitizeOAuthInput(opts.clientSecret) ?? "";
+  const clientSecret = opts.clientSecret ? (sanitizeOAuthInput(opts.clientSecret) ?? "") : "";
   const body = new URLSearchParams({
     code: opts.code,
     client_id: clientId,
-    client_secret: clientSecret,
     redirect_uri: opts.redirectUri,
     grant_type: "authorization_code",
+    code_verifier: opts.codeVerifier,
   });
+  if (clientSecret) body.set("client_secret", clientSecret);
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -102,7 +162,8 @@ export async function exchangeCode(opts: {
 
 export interface GoogleAuth {
   client_id: string;
-  client_secret: string;
+  // Optional: undefined when using the bundled Jarela Desktop client (PKCE only).
+  client_secret?: string;
   refresh_token: string;
 }
 
@@ -114,10 +175,19 @@ export function resolveGoogleAuth(): GoogleAuth | { error: string } {
     return { client_id: envId, client_secret: envSecret, refresh_token: envRefresh };
   }
   const saved = getIntegrationRaw("gmail");
-  if (saved?.client_id && saved.client_secret && saved.refresh_token) {
+  if (saved?.refresh_token) {
+    // Stored client_id wins when present (BYO path); otherwise fall back to
+    // the bundled Jarela client_id. client_secret is only set on the BYO
+    // path — the bundled Desktop client refreshes via PKCE only.
+    if (saved.client_id && saved.client_secret) {
+      return {
+        client_id: saved.client_id,
+        client_secret: saved.client_secret,
+        refresh_token: saved.refresh_token,
+      };
+    }
     return {
-      client_id: saved.client_id,
-      client_secret: saved.client_secret,
+      client_id: saved.client_id || getDefaultGoogleClient().client_id,
       refresh_token: saved.refresh_token,
     };
   }
@@ -140,10 +210,10 @@ export async function getGoogleAccessToken(
 
   const body = new URLSearchParams({
     client_id: auth.client_id,
-    client_secret: auth.client_secret,
     refresh_token: auth.refresh_token,
     grant_type: "refresh_token",
   });
+  if (auth.client_secret) body.set("client_secret", auth.client_secret);
   try {
     const res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
