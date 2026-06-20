@@ -29,9 +29,9 @@ describe("default LangChain packages", () => {
     for (const id of listDisabledPackages()) setPackageDisabled(id, false);
   });
 
-  it("ships three default descriptors (atlassian, github, jira_align)", () => {
+  it("ships the default descriptors (atlassian, github, icloud, jira_align)", () => {
     const ids = listDefaultPackages().map((p) => p.id).sort();
-    expect(ids).toEqual(["atlassian", "github", "jira_align"]);
+    expect(ids).toEqual(["atlassian", "github", "icloud", "jira_align"]);
   });
 
   it("listDefaultPackages reports enabled=true by default for all defaults", () => {
