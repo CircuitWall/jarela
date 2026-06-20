@@ -95,6 +95,11 @@ function selectTokenEndpoint(clientId: string, hasClientSecret: boolean): string
   return GOOGLE_TOKEN_ENDPOINT;
 }
 
+// Public re-export for callers that need to mirror the routing decision
+// without going through `getGoogleAccessToken` (e.g. the Gmail health
+// probe, which needs precise HTTP-status-aware error mapping).
+export const resolveGoogleTokenEndpoint = selectTokenEndpoint;
+
 // PKCE per RFC 7636. With no client_secret in play, the per-flow
 // code_verifier is the only thing tying the redeemed authorization code
 // to this specific Jarela process.
