@@ -24,6 +24,7 @@ if (process.env.NEXT_PHASE !== "phase-production-build") {
 }
 import { _resolveGmailAuth } from "@/lib/tools/gmail";
 import { _resolveOutlookAuth } from "@/lib/tools/outlook";
+import { resolveGoogleTokenEndpoint } from "@/lib/integrations/gmail-oauth";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
@@ -186,7 +187,11 @@ export async function probeGmail(): Promise<HealthResult> {
       grant_type: "refresh_token",
     });
     if (auth.client_secret) refreshBody.set("client_secret", auth.client_secret);
-    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    // Bundled-client traffic must go through Jarela's OAuth proxy, which
+    // injects client_secret from Secret Manager. Hitting Google directly
+    // for the bundled client fails with "client_secret is missing."
+    const endpoint = resolveGoogleTokenEndpoint(auth.client_id, Boolean(auth.client_secret));
+    const tokenRes = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: refreshBody.toString(),
