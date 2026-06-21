@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-06-21
+
+### Fixed
+
+- **iCloud Mail list returned `iCloud IMAP error: Command failed`
+  whenever the agent asked for the most recent N messages without a
+  filter.** The underlying tool called IMAP `SEARCH` with an empty
+  criteria object; per RFC 3501 §6.4.4 a `SEARCH` command requires at
+  least one criterion, and iCloud's server replies `NO Command failed`
+  for an empty list instead of treating it as ALL. `icloud_mail_list_messages`
+  now substitutes `{ all: true }` when the caller passed no
+  `unseen_only` / `query` / `since` / `before`, matching the
+  "give me the most recent N" use case the schema's `limit` parameter
+  implies. Also short-circuits the subsequent `client.fetch(uids, …)`
+  when the search returned zero UIDs so an empty mailbox returns
+  `{ messages: [] }` instead of another IMAP error. Bundled via
+  `@circuitwall/icloud-langchain@0.1.1`.
+
 ## [1.17.0] - 2026-06-21
 
 ### Added
