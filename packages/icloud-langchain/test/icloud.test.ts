@@ -159,6 +159,45 @@ describe("icloud_mail_list_messages", () => {
       from: "Sender <from12@x>",
     });
   });
+
+  // iCloud rejects IMAP SEARCH with no criteria as "Command failed".
+  // The tool must substitute { all: true } when the caller passes no
+  // filters so the default "give me the most recent N" works.
+  it("passes { all: true } when no filters are supplied", async () => {
+    let observed: unknown = null;
+    setImap({
+      getMailboxLock: async () => fakeLock(),
+      search: async (criteria: unknown) => {
+        observed = criteria;
+        return [1];
+      },
+      fetch: function* () {
+        yield {
+          uid: 1,
+          envelope: { subject: "x", from: [], date: new Date() },
+          flags: new Set(),
+          size: 0,
+        };
+      },
+    });
+    await icloudMailListMessagesTool.invoke({ limit: 10 });
+    expect(observed).toEqual({ all: true });
+  });
+
+  it("returns an empty list (no IMAP fetch) when search matches nothing", async () => {
+    let fetched = false;
+    setImap({
+      getMailboxLock: async () => fakeLock(),
+      search: async () => [],
+      fetch: function* () {
+        fetched = true;
+      },
+    });
+    const out = await icloudMailListMessagesTool.invoke({ query: "needle", limit: 10 });
+    const parsed = JSON.parse(out as string);
+    expect(parsed.messages).toEqual([]);
+    expect(fetched).toBe(false);
+  });
 });
 
 describe("icloud_mail_flag_message", () => {

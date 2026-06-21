@@ -21,6 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   domain-grouped bundles (`icloudMailTools`, `icloudCalendarTools`,
   `icloudReminderTools`, `icloudTools`) remain.
 
+### Fixed
+
+- **`icloud_mail_list_messages` with no filters returned `iCloud IMAP
+  error: Command failed`.** Calling IMAP `SEARCH` with an empty
+  criteria list is invalid per RFC 3501 §6.4.4, and iCloud's server
+  replies `NO Command failed` instead of treating it as ALL. The tool
+  now substitutes `{ all: true }` when the caller passes no
+  `unseen_only` / `query` / `since` / `before`, matching the
+  "give me the most recent N" use case the schema's `limit` parameter
+  implies. Also guards the subsequent `client.fetch(uids, …)` against
+  an empty UID set so a zero-result search returns `{ messages: [] }`
+  instead of another IMAP error.
+
 ## [0.1.0] - 2026-06-20
 
 ### Added
