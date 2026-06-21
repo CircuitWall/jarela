@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.3] - 2026-06-21
+
+### Fixed
+
+- **`jarela update` (and the boot-time update banner) crashed with
+  `ERR_MODULE_NOT_FOUND` on globally-installed `@circuitwall/jarela`.**
+  `scripts/jarela-bin.mjs` dynamically imports `./update.mjs`, but the
+  file was missing from the `files` allowlist in `package.json`, so
+  npm stripped it from the published tarball. Added
+  `scripts/update.mjs` to `files`, and extended the npm tarball
+  self-test (`scripts/check-npm-package.mjs`, run by the publish job
+  before `npm publish`) to assert every script the bin imports —
+  `jarela-bin.mjs`, `update.mjs`, `service-install.mjs`,
+  `first-run-prompt.mjs`, `start-prod.mjs` — is present in the tarball.
+  Prevents the same class of bug from shipping again.
+
 ## [1.17.2] - 2026-06-21
 
 ### Fixed
