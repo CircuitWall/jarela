@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { Mail, type LucideIcon } from "lucide-react";
 import {
   siAnthropic,
+  siApple,
   siAtlassian,
   siDeepseek,
   siDiscord,
@@ -38,6 +39,7 @@ const ICONS: Record<string, SimpleIcon> = {
   github: siGithub,
   gmail: siGmail,
   deepseek: siDeepseek,
+  icloud: siApple,
   jira: siJira,
   jira_align: siJira,
   messenger: siMessenger,
