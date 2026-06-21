@@ -217,6 +217,10 @@ export const icloudMailListMessagesTool = tool(
         if (query) search.body = query;
         if (since) search.since = new Date(since);
         if (before) search.before = new Date(before);
+        // IMAP SEARCH requires at least one criterion; iCloud rejects an
+        // empty body with "Command failed". Fall back to ALL when the
+        // caller passed no filters.
+        if (Object.keys(search).length === 0) search.all = true;
         const uids = (await client.search(search, { uid: true })) || [];
         const recent = uids.slice(-max).reverse();
         const messages: Array<{
@@ -227,6 +231,7 @@ export const icloudMailListMessagesTool = tool(
           flags: string[];
           size: number;
         }> = [];
+        if (recent.length === 0) return messages;
         for await (const msg of client.fetch(recent, {
           uid: true,
           envelope: true,
