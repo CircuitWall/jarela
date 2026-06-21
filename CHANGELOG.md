@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.2] - 2026-06-21
+
+### Fixed
+
+- **iCloud credential tile rendered the generic `ic` monogram instead of
+  a recognisable Apple glyph.** `ProviderLogo` didn't have an `icloud`
+  entry in its brand-mark map, so the credentials panel, tool list
+  rows, and bridge surfaces fell through to the two-letter initials
+  fallback. Wires `icloud` to `siApple` from simple-icons (CC0) so the
+  brand matches what the user actually authenticates against.
+
 ## [1.17.1] - 2026-06-21
 
 ### Fixed
