@@ -50,6 +50,11 @@ try {
     "package/.next/standalone/server.js",
     "package/.next/standalone/public/manifest.json",
     "package/package.json",
+    "package/scripts/jarela-bin.mjs",
+    "package/scripts/update.mjs",
+    "package/scripts/service-install.mjs",
+    "package/scripts/first-run-prompt.mjs",
+    "package/scripts/start-prod.mjs",
   ];
 
   for (const entry of required) {

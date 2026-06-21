@@ -64,6 +64,7 @@
     "scripts/optimize-client-chunks.mjs",
     "scripts/service-install.mjs",
     "scripts/start-prod.mjs",
+    "scripts/update.mjs",
     "scripts/postbuild.mjs",
     "scripts/check-integration-manifests.mjs",
     "scripts/check-npm-package.mjs",
