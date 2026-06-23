@@ -60,6 +60,14 @@ const nextConfig: NextConfig = {
     "sharp",
     "detect-libc",
   ],
+  // Inline the icloud-langchain workspace package into webpack chunks
+  // instead of leaving runtime `require()` calls. Without this, Next's
+  // standalone trace emits the workspace version (0.1.1) into
+  // `.next/standalone/package.json`, and downstream installers
+  // (jarela-bin preflight, vclaw mirror) try to `npm install` it from
+  // the registry — where 0.1.1 was never published. Bundling makes
+  // jarela self-contained for icloud regardless of npm publish state.
+  transpilePackages: ["@circuitwall/icloud-langchain"],
   // Workaround for Next 16 + @serwist/next: when the config is wrapped by
   // withSerwist, the built-in default `generateBuildId: () => null` is not
   // merged in, and `next build` throws "TypeError: generate is not a
