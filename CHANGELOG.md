@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.4] - 2026-06-23
+
+### Fixed
+
+- **`@circuitwall/jarela@1.17.0..1.17.3` failed to install with
+  `404 Not Found - PUT https://registry.npmjs.org/@circuitwall%2ficloud-langchain`
+  during the boot preflight optimize step (and downstream mirrors
+  such as vclaw's preflight).** Two compounding bugs: the host-app
+  integration in `lib/tools/default-packages.ts` imported
+  `@circuitwall/icloud-langchain` without declaring it in root
+  `dependencies`, while Next.js's standalone-build trace emitted it
+  into `.next/standalone/package.json` at the workspace version
+  (0.1.1) — which was never published to npm because the tag's
+  publish job 404'd on a missing Trusted Publisher entry. Inline the
+  workspace package via Next.js `transpilePackages` so its compiled
+  output is bundled into jarela's webpack chunks rather than left
+  as a runtime `require()`. The standalone manifest no longer
+  references icloud-langchain, removing the registry roundtrip
+  entirely and making jarela self-contained for this integration
+  regardless of npm publish state.
+
 ## [1.17.3] - 2026-06-21
 
 ### Fixed
