@@ -42,7 +42,11 @@ try {
   run("node", ["scripts/rewrite-workspace-deps.mjs"]);
 
   const packJson = run("npm", ["pack", "--json"]);
-  const pack = JSON.parse(packJson)[0];
+  const packResult = JSON.parse(packJson);
+  const pack = Array.isArray(packResult) ? packResult[0] : null;
+  if (!pack?.filename) {
+    throw new Error(`npm pack --json did not return a package filename:\n${packJson}`);
+  }
   filename = pack.filename;
 
   const listing = run("tar", ["-tf", filename])
