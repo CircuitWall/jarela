@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.17.5] - 2026-07-12
+## [1.17.6] - 2026-07-12
 
 ### Fixed
 
@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package. The root manifest also declares the iCloud LangChain workspace
   dependency used by `lib/tools/default-packages.ts`, so downstream rebuilds do
   not need to inject `@circuitwall/icloud-langchain` before compiling.
+- **Windows release bundles can install dependencies during `prepare`.**
+  The workspace-script helper now invokes npm through the current Node process
+  when npm exposes its CLI entrypoint, avoiding a Windows command-shim spawn
+  failure during release `npm install`.
 
 ## [1.17.4] - 2026-06-23
 
