@@ -1,7 +1,7 @@
 /**
  * Default LangChain tool packages that ship with Jarela.
  *
- * These three packages (Atlassian, GitHub, Jira Align) are bundled as
+ * These packages are bundled as
  * regular dependencies. Each one used to be hardwired at module load via
  * `lib/tools/builtin-langchain-packages.ts` so operators could not turn
  * them off; this module replaces that wiring with a runtime registry

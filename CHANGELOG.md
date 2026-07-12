@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Published package metadata is clean for downstream source rebuilds.**
+  Root workspace scripts now skip cleanly when the published tarball has no
+  `packages/*` directory, so `npm run build` no longer fails with npm 11's
+  `No workspaces found` error in consumers that rebuild Jarela from the npm
+  package. The root manifest also declares the iCloud LangChain workspace
+  dependency used by `lib/tools/default-packages.ts`, so downstream rebuilds do
+  not need to inject `@circuitwall/icloud-langchain` before compiling.
+
 ## [1.17.4] - 2026-06-23
 
 ### Fixed
