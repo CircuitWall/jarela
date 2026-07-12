@@ -43,7 +43,9 @@ try {
 
   const packJson = run("npm", ["pack", "--json"]);
   const packResult = JSON.parse(packJson);
-  const pack = Array.isArray(packResult) ? packResult[0] : null;
+  const pack = Array.isArray(packResult)
+    ? packResult[0]
+    : Object.values(packResult)[0];
   if (!pack?.filename) {
     throw new Error(`npm pack --json did not return a package filename:\n${packJson}`);
   }
