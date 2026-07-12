@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.17.6] - 2026-07-12
+## [1.17.7] - 2026-07-12
 
 ### Fixed
 
@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The workspace-script helper now invokes npm through the current Node process
   when npm exposes its CLI entrypoint, avoiding a Windows command-shim spawn
   failure during release `npm install`.
+- **Package self-test reports unexpected npm pack output clearly.**
+  The npm tarball verification script now validates the `npm pack --json`
+  response before reading the filename, so release failures show the actual
+  npm output instead of a null dereference.
 
 ## [1.17.4] - 2026-06-23
 
