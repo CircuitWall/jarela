@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 function quote(arg) {
@@ -8,7 +9,7 @@ function quote(arg) {
   return `"${String(arg).replace(/"/g, '\\"')}"`;
 }
 
-function run(command, args) {
+function run(command, args, options = {}) {
   const executable = process.platform === "win32"
     ? (process.env.ComSpec || "cmd.exe")
     : command;
@@ -18,6 +19,7 @@ function run(command, args) {
   const result = spawnSync(executable, finalArgs, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    cwd: options.cwd,
   });
   if (result.status !== 0) {
     throw new Error(
@@ -35,6 +37,7 @@ const rootPkgPath = resolve(repoRoot, "package.json");
 // tarball reflects what end users will actually receive.
 const originalRootPkg = readFileSync(rootPkgPath, "utf8");
 let filename = null;
+let extractDir = null;
 try {
   run("node", ["scripts/rewrite-workspace-deps.mjs"]);
 
@@ -55,6 +58,7 @@ try {
     "package/scripts/service-install.mjs",
     "package/scripts/first-run-prompt.mjs",
     "package/scripts/start-prod.mjs",
+    "package/scripts/run-workspace-script-if-present.mjs",
   ];
 
   for (const entry of required) {
@@ -74,8 +78,20 @@ try {
     );
   }
 
+  const packedPackage = JSON.parse(packedManifest);
+  if (!packedPackage.dependencies?.["@circuitwall/icloud-langchain"]) {
+    throw new Error(
+      "npm tarball package.json is missing dependency @circuitwall/icloud-langchain, which root source imports at build time",
+    );
+  }
+
+  extractDir = mkdtempSync(join(tmpdir(), "jarela-package-"));
+  run("tar", ["-xf", filename, "-C", extractDir]);
+  run("npm", ["run", "packages:build", "--silent"], { cwd: join(extractDir, "package") });
+
   console.log(`[npm-package] ok: ${filename} contains runnable standalone bundle`);
 } finally {
   writeFileSync(rootPkgPath, originalRootPkg);
   if (filename) rmSync(filename, { force: true });
+  if (extractDir) rmSync(extractDir, { recursive: true, force: true });
 }

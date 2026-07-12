@@ -17,6 +17,8 @@ import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/types";
 import { maskInvokeMessages } from "@/lib/redaction/mask-messages";
 
+const MAX_PROVIDER_TOOLS = 128;
+
 interface Fields {
   provider: ModelProvider;
   modelId: string;
@@ -71,7 +73,7 @@ export class JarelaChatModel extends BaseChatModel {
       } catch {
         return [];
       }
-    });
+    }).slice(0, MAX_PROVIDER_TOOLS);
   }
 
   async _generate(
