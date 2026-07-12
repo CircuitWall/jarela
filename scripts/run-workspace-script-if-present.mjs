@@ -35,8 +35,12 @@ if (!hasWorkspacePackages()) {
   process.exit(0);
 }
 
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
-const result = spawnSync(npm, ["run", scriptName, "--workspaces", "--if-present"], {
+const npmExecPath = process.env.npm_execpath;
+const command = npmExecPath ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
+const args = npmExecPath
+  ? [npmExecPath, "run", scriptName, "--workspaces", "--if-present"]
+  : ["run", scriptName, "--workspaces", "--if-present"];
+const result = spawnSync(command, args, {
   cwd: repoRoot,
   stdio: "inherit",
 });
