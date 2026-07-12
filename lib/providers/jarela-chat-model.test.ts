@@ -1,17 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { HumanMessage, AIMessageChunk } from "@langchain/core/messages";
 import type { ChatGenerationChunk } from "@langchain/core/outputs";
+import { DynamicStructuredTool } from "@langchain/core/tools";
+import { z } from "zod";
 import { JarelaChatModel } from "./jarela-chat-model";
-import type { ModelProvider, ProviderStreamEvent } from "./types";
+import type { ModelProvider, OpenAITool, ProviderStreamEvent } from "./types";
 
-function makeProvider(events: ProviderStreamEvent[]): ModelProvider {
+function makeProvider(events: ProviderStreamEvent[], onTools?: (tools: OpenAITool[]) => void): ModelProvider {
   return {
     name: "test",
     async chat() { throw new Error("unused"); },
-    async *streamInvoke() {
+    async *streamInvoke(_modelId, _messages, _params, tools) {
+      onTools?.(tools);
       for (const e of events) yield e;
     },
   };
+}
+
+function makeTool(index: number): DynamicStructuredTool {
+  return new DynamicStructuredTool({
+    name: `tool_${index}`,
+    description: `test tool ${index}`,
+    schema: z.object({ value: z.string().optional() }),
+    func: async () => "ok",
+  });
 }
 
 async function collectChunks(
@@ -92,5 +104,18 @@ describe("JarelaChatModel — empty stream handling", () => {
     );
     expect(sentinels.length).toBe(0);
     expect(chunks.length).toBeGreaterThan(0);
+  });
+
+  it("caps provider tool payloads at the OpenAI-compatible limit", async () => {
+    let seenTools: OpenAITool[] = [];
+    const provider = makeProvider([{ type: "text", delta: "ok" }], (tools) => { seenTools = tools; });
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} })
+      .bindTools(Array.from({ length: 158 }, (_, index) => makeTool(index))) as JarelaChatModel;
+
+    await collectChunks(model);
+
+    expect(seenTools).toHaveLength(128);
+    expect(seenTools[0].function.name).toBe("tool_0");
+    expect(seenTools.at(-1)?.function.name).toBe("tool_127");
   });
 });
