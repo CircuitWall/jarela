@@ -22,12 +22,17 @@ export function ToolCredentialsSection({ form }: { form: AgentEditorForm }) {
     return m;
   }, [integrationCredentials]);
 
+  const providersWithMultipleCredentials = useMemo(
+    () => [...credsByProvider.keys()].filter((p) => (credsByProvider.get(p) ?? []).length >= 2),
+    [credsByProvider],
+  );
+
   // Build {toolName: provider} only for tools whose integration has 2+
   // credentials. Heuristic: a tool belongs to provider P if its name
   // starts with `${P}_` (matches gmail_*, github_*, outlook_*, …) or if
   // its category equals the integration name (case-insensitive).
   const pickableTools = useMemo(() => {
-    const providers = [...credsByProvider.keys()].filter((p) => (credsByProvider.get(p) ?? []).length >= 2);
+    const providers = providersWithMultipleCredentials;
     if (providers.length === 0) return [] as Array<{ name: string; provider: string }>;
     const toolByName = new Map(tools.map((t) => [t.name, t]));
     const out: Array<{ name: string; provider: string }> = [];
@@ -41,15 +46,26 @@ export function ToolCredentialsSection({ form }: { form: AgentEditorForm }) {
       if (match) out.push({ name: toolName, provider: match });
     }
     return out;
-  }, [credsByProvider, selectedTools, tools]);
+  }, [providersWithMultipleCredentials, selectedTools, tools]);
 
-  if (pickableTools.length === 0) return null;
+  if (providersWithMultipleCredentials.length === 0) return null;
+
+  if (pickableTools.length === 0) {
+    return (
+      <Section step={4} title="Tool credentials">
+        <p className="text-[11px] text-fg-faint">
+          Multiple credentials are saved for {formatProviderList(providersWithMultipleCredentials)}. Select matching tools above to pin a specific credential; otherwise tools use the provider&apos;s default credential.
+        </p>
+      </Section>
+    );
+  }
 
   return (
     <Section step={4} title="Tool credentials">
       <p className="text-[11px] text-fg-faint mb-2">
         Pin a specific credential per tool. Leave on <em>Default</em> to use the
-        provider&apos;s default credential.
+        provider&apos;s default credential; adding another credential does not create
+        duplicate tool names.
       </p>
       <div className="space-y-1.5">
         {pickableTools.map(({ name, provider }) => (
@@ -64,6 +80,12 @@ export function ToolCredentialsSection({ form }: { form: AgentEditorForm }) {
       </div>
     </Section>
   );
+}
+
+function formatProviderList(providers: string[]): string {
+  if (providers.length === 1) return providers[0];
+  if (providers.length === 2) return `${providers[0]} and ${providers[1]}`;
+  return `${providers.slice(0, -1).join(", ")}, and ${providers[providers.length - 1]}`;
 }
 
 function ToolCredentialRow({

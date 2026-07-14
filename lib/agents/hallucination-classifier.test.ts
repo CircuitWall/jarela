@@ -6,7 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-anti-halluc-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { parseVerdict, resolveDetector } = await import("./hallucination-classifier");
+const { classifyStall, parseVerdict, resolveDetector } = await import("./hallucination-classifier");
 const { upsertModelConfig, deleteModelConfig } = await import("@/lib/stores/model-config");
 const { resetConfigCache } = await import("@/lib/env/config");
 
@@ -71,6 +71,24 @@ describe("parseVerdict", () => {
   it("ignores extra unknown fields", () => {
     expect(parseVerdict('{"stalled": true, "reason": "ok", "confidence": 0.7}'))
       .toEqual({ stalled: true, reason: "ok" });
+  });
+});
+
+describe("classifyStall", () => {
+  it("does not mark file_edit progress as a stall", async () => {
+    await expect(classifyStall(
+      "Created the requested file by editing the existing workspace file.",
+      ["file_edit"],
+      "missing-classifier-model",
+    )).resolves.toEqual({ stalled: false, reason: "write-class tool called" });
+  });
+
+  it("does not mark file_multi_edit progress as a stall", async () => {
+    await expect(classifyStall(
+      "Creating the updated version now.",
+      ["file_multi_edit"],
+      "missing-classifier-model",
+    )).resolves.toEqual({ stalled: false, reason: "write-class tool called" });
   });
 });
 

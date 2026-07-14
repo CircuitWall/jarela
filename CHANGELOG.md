@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.9] - 2026-07-13
+
+### Fixed
+
+- **Anti-stall detector now treats file edits as progress.** Model-based
+  stall classification short-circuits when the turn already invoked a
+  write-class tool such as `file_edit` or `file_multi_edit`, so a completion
+  that says it created or updated something via file editing is not retried as
+  a false stall.
+
 ## [1.17.8] - 2026-07-12
 
 ### Fixed
