@@ -91,6 +91,11 @@ export async function classifyStall(
   modelConfigName: string,
   signal?: AbortSignal,
 ): Promise<StallVerdict | null> {
+  const usedWriteTool = toolNames.some(isWriteLikeToolName);
+  if (usedWriteTool) {
+    return { stalled: false, reason: "write-class tool called" };
+  }
+
   const cfgName = modelConfigName.trim();
   if (!cfgName) return null;
 
@@ -106,7 +111,6 @@ export async function classifyStall(
   }
   if (!provider.invoke) return null;
 
-  const usedWriteTool = toolNames.some(isWriteLikeToolName);
   const tail = assistantText.slice(-PROMPT_TAIL_BUDGET);
   const userMsg = `Tools called this turn: ${JSON.stringify(toolNames)}
 Any write-class tools called? ${usedWriteTool ? "yes" : "no"}

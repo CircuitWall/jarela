@@ -1347,9 +1347,7 @@ function CodeFence({ language, className, children }: { language: string; classN
 
 function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceManifest }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
   if (part.type === "text") {
-    return isUser
-      ? <p className="whitespace-pre-wrap">{part.text}</p>
-      : <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />;
+    return <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />;
   }
   if (part.type === "image") {
     return <ClickableImage media_type={part.media_type} data={part.data} />;
@@ -1776,7 +1774,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
                 return (
                   <CollapsibleLong accent={true}>
-                    <p className="whitespace-pre-wrap">{parsed}</p>
+                    <MarkdownContent text={parsed} onInAppLink={handleInAppLink} />
                   </CollapsibleLong>
                 );
               })()
