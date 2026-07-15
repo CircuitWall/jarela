@@ -76,6 +76,7 @@ const SELF_CONFIG_BODY = [
   "  - toggle_mcp: enable/disable an installed MCP server.",
   "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
   "  - update_agent: edit identity, instructions, history window, or harness_id for an agent. " +
+  "When the user asks you to remember or enforce standing behavior for this agent, propose `update_agent` with `agent_id` set to this agent and the full revised `instructions` text. " +
   "Pass `harness_id` to switch which harness the agent runs under (an existing 'builtin:default' or 'custom:<uuid>'); pass null to inherit the global default.",
   "  - upsert_harness: create or edit a CUSTOM harness preset (the behavioural scaffolding wrapped around every turn). " +
   "Built-in harnesses ('builtin:*') are read-only — to tweak default behaviour, omit `id` and copy the sections you want as a starting point. " +

@@ -31,6 +31,12 @@ import {
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
+const SELF_CONFIG_TOOLS = ["propose_config_change", "check_proposal"] as const;
+
+function withSelfConfigTools(tools: string[]): string[] {
+  return Array.from(new Set([...tools, ...SELF_CONFIG_TOOLS]));
+}
+
 export class RunThreadError extends Error {
   status: number;
   code: string;
@@ -201,7 +207,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     effectiveHotSince,
   );
 
-  const allowedTools = getAgentTools(agentCfg);
+  const allowedTools = withSelfConfigTools(getAgentTools(agentCfg));
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
 
   // Recall is best-effort: cap on the recall budget so a cold embeddings
@@ -938,7 +944,7 @@ function lookupAllowedToolsForThread(thread_id: string): string[] {
   const thread = getThread(thread_id);
   if (!thread) return [];
   const agentCfg = getAgentConfig(thread.agent_id);
-  return getAgentTools(agentCfg);
+  return withSelfConfigTools(getAgentTools(agentCfg));
 }
 
 export function looksLikeStall(text: string): boolean {
