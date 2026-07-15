@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.10] - 2026-07-15
+
+### Fixed
+
+- **Agents can propose their own standing instruction updates even when their
+  tool allowlist is restricted.** The self-configuration tools are now always
+  available to the active agent during thread preparation and proposal checks,
+  and the default harness explicitly tells agents to use `update_agent` when a
+  user asks them to remember or enforce future behavior.
+
 ## [1.17.9] - 2026-07-13
 
 ### Fixed
