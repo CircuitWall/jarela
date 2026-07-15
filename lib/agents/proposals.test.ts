@@ -130,6 +130,21 @@ describe("applyAction(upsert_harness)", () => {
 });
 
 describe("applyAction(update_agent) with harness_id", () => {
+  it("updates instructions so an approved proposal can change future system prompts", async () => {
+    seedAgent("agent-update-instructions");
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-update-instructions",
+      instructions: "Prefer direct answers and persist useful behavior changes.",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result.detail as { instructions_changed: boolean }).instructions_changed).toBe(true);
+    expect(getAgentConfig("agent-update-instructions")!.instructions).toBe(
+      "Prefer direct answers and persist useful behavior changes.",
+    );
+  });
+
   it("sets harness_id to a valid custom harness", async () => {
     seedAgent("agent-set-harness");
     const harness = createCustomHarness({
