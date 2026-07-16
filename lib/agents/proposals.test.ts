@@ -220,3 +220,35 @@ describe("applyAction(update_agent) with harness_id", () => {
     expect(getAgentConfig("agent-keep-harness")!.identity).toBe("edited identity");
   });
 });
+
+describe("applyAction(update_agent) instructions_append", () => {
+  it("appends to existing instructions without overwriting them", async () => {
+    seedAgent("agent-append-1");
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-append-1",
+      instructions_append: "\n\nAlways end replies with a summary.",
+    });
+
+    expect(result.ok).toBe(true);
+    expect((result.detail as { instructions_changed: boolean }).instructions_changed).toBe(true);
+    expect(getAgentConfig("agent-append-1")!.instructions).toBe(
+      "be helpful\n\nAlways end replies with a summary.",
+    );
+  });
+
+  it("rejects a payload that provides both instructions and instructions_append", async () => {
+    seedAgent("agent-append-conflict");
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-append-conflict",
+      instructions: "completely new",
+      instructions_append: "\n\nExtra rule.",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(String(result.detail)).toMatch(/not both/);
+    // Agent row must be untouched.
+    expect(getAgentConfig("agent-append-conflict")!.instructions).toBe("be helpful");
+  });
+});

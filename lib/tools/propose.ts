@@ -63,8 +63,9 @@ export const proposeConfigChangeTool = tool(
           "  OR { name, transport, spec }\n" +
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
           "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'] }\n" +
-          "- update_agent: { agent_id, identity?, instructions?, history_limit?, history_window_hours?, harness_id? } " +
-          "  — harness_id accepts an existing harness id ('builtin:default' or 'custom:<uuid>'), or null to inherit the global default\n" +
+          "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, harness_id? } " +
+          "  — use instructions_append to add standing rules without overwriting existing ones (mutually exclusive with instructions); " +
+          "  harness_id accepts an existing harness id ('builtin:default' or 'custom:<uuid>'), or null to inherit the global default\n" +
           "- start_oauth: { integration_id: 'gmail' } — only after enable_integration saved client_id/secret\n" +
           "- set_provider_key: { name: 'anthropic-default', provider: 'anthropic', model_id: 'claude-opus-4-7', is_default?: true } " +
           "  — the user pastes the API key into the approval modal; do NOT include it here\n" +

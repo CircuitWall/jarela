@@ -121,11 +121,15 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     agent_id?: string;
     identity?: string;
     instructions?: string;
+    instructions_append?: string;
     history_limit?: number;
     history_window_hours?: number;
     harness_id?: string | null;
   };
   if (!p.agent_id) return { ok: false, detail: "agent_id required" };
+  if (p.instructions !== undefined && p.instructions_append !== undefined) {
+    return { ok: false, detail: "use instructions (full replace) OR instructions_append, not both" };
+  }
   const existing = getAgentConfig(p.agent_id);
   if (!existing) return { ok: false, detail: `agent "${p.agent_id}" not found` };
   // ADR-0036: harness_id may now be set via update_agent. Validate the id
@@ -136,12 +140,18 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
       return { ok: false, detail: `harness "${p.harness_id}" not found` };
     }
   }
+  const instructionsChanged = p.instructions !== undefined || p.instructions_append !== undefined;
+  const newInstructions = p.instructions !== undefined
+    ? p.instructions
+    : p.instructions_append !== undefined
+      ? existing.instructions + p.instructions_append
+      : existing.instructions;
   upsertAgentConfig({
     id: existing.id,
     name: existing.name,
     icon: existing.icon,
     identity: p.identity ?? existing.identity,
-    instructions: p.instructions ?? existing.instructions,
+    instructions: newInstructions,
     tools: getAgentTools(existing),
     model_config_name: existing.model_config_name,
     history_limit: p.history_limit ?? existing.history_limit,
@@ -153,7 +163,7 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     detail: {
       agent_id: p.agent_id,
       identity_changed: p.identity !== undefined,
-      instructions_changed: p.instructions !== undefined,
+      instructions_changed: instructionsChanged,
       harness_id_changed: p.harness_id !== undefined,
     },
   };
