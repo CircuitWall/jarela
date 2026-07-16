@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.12] - 2026-07-16
+
+### Fixed
+
+- **`update_agent` now accepts `instructions_append` to add standing rules
+  without overwriting existing instructions.** Previously agents had to
+  read current instructions, concatenate, and write back the full string —
+  a fetch-then-write that could race or accidentally drop content.
+  `instructions_append` is mutually exclusive with `instructions` (full
+  replace); passing both returns an error.
+
 ## [1.17.11] - 2026-07-16
 
 ### Fixed
