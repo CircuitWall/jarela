@@ -141,10 +141,14 @@ export function useSSE(onDone?: () => void) {
       } else if (event.type === "error") {
         cancelPendingFlush();
         setStreaming(false);
-        setStreamingContent("");
-        setThinkingContent("");
         closeActivity();
         setError(event.message);
+        // Keep streamingContent/thinkingContent visible — same pattern as
+        // `done` and stop(). onDone triggers finalizeRunFromServer which
+        // fetches whatever the server persisted (partial content + interrupt
+        // marker) and then calls clearStreaming(). Clearing here would blank
+        // the bubble before the persisted row arrives.
+        onDone?.();
         break;
       }
     }

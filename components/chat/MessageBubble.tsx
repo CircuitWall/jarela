@@ -1828,6 +1828,12 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             </div>
           ) : null}
         </div>
+        {isUser && "status" in message && message.status === 'pending' && (
+          <span className="flex items-center gap-1 text-xs opacity-50 px-1 self-end">
+            <Clock size={10} />
+            Sending…
+          </span>
+        )}
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
         )}

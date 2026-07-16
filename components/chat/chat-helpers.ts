@@ -32,18 +32,56 @@ export interface ThreadGetPayload {
   context_window_tokens?: number | null;
 }
 
-// Append-with-dedupe. After a run finishes, two independent code paths can
-// both fetch the freshly-persisted user+assistant rows and append them:
-//   1) handleDone (driven by the SSE `done` event for the local run), and
-//   2) the `jarela:thread-updated` window listener (driven by the
-//      cross-device events bus notification for the same run).
-// Dedupe by id at the append site so either ordering converges to the
-// same list.
+// Append-with-reconcile. Merges server-persisted rows into the local list
+// with three rules, applied in order for each incoming message:
+//
+//   1. Already present by server id → update in place (handles the
+//      handleDone / cross-device double-fetch race; both orderings converge).
+//
+//   2. User message + a pending (opt-*) placeholder with matching content
+//      exists → confirm that placeholder in place. This is the key
+//      structural invariant: optimistic user bubbles are NEVER deleted and
+//      re-added; they are promoted from pending → confirmed when the server
+//      row arrives, so the bubble never disappears from the chat.
+//
+//   3. Genuinely new → append.
+//
+// All incoming rows are stamped status='confirmed'. The local pending bubbles
+// carry status='pending' until promoted here.
 export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
   if (incoming.length === 0) return prev;
-  const seen = new Set(prev.map((m) => m.id));
-  const fresh = incoming.filter((m) => !seen.has(m.id));
-  return fresh.length === 0 ? prev : prev.concat(fresh);
+  const result = [...prev];
+  const idxById = new Map(result.map((m, i) => [m.id, i]));
+
+  for (const server of incoming) {
+    const confirmed: Message = { ...server, status: 'confirmed' };
+
+    // Rule 1: dedup by server-assigned id
+    const existing = idxById.get(server.id);
+    if (existing !== undefined) {
+      result[existing] = confirmed;
+      continue;
+    }
+
+    // Rule 2: confirm a matching pending user bubble in place
+    if (server.role === 'user') {
+      const optIdx = result.findIndex(
+        (m) => m.status === 'pending' && m.role === 'user' && m.content === server.content
+      );
+      if (optIdx >= 0) {
+        idxById.delete(result[optIdx].id);
+        result[optIdx] = confirmed;
+        idxById.set(server.id, optIdx);
+        continue;
+      }
+    }
+
+    // Rule 3: new message
+    idxById.set(server.id, result.length);
+    result.push(confirmed);
+  }
+
+  return result;
 }
 
 export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPayload): void {
