@@ -103,7 +103,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       : text;
     thread.setMessages((p) => [
       ...p,
-      { id: optId, role: "user", content: optimisticContent, created_at: new Date().toISOString() },
+      { id: optId, role: "user", content: optimisticContent, created_at: new Date().toISOString(), status: 'pending' },
     ]);
     const { accepted } = await sse.start(
       threadId,
@@ -290,19 +290,18 @@ interface FinalizeParams {
 // optimistic's created_at is from the client clock and could skip the
 // just-persisted user row if it skews ahead of the server.
 async function finalizeRunFromServer(p: FinalizeParams): Promise<void> {
-  const cur = p.messagesRef.current.filter((m) => !m.id.startsWith("opt-"));
-  const anchor = cur.length > 0 ? cur[cur.length - 1].created_at : undefined;
+  // Anchor on the last confirmed (non-opt-*) message so we only fetch the
+  // delta. Falls back to a full reload when there are no confirmed messages yet.
+  const confirmed = p.messagesRef.current.filter((m) => m.status !== 'pending');
+  const anchor = confirmed.length > 0 ? confirmed[confirmed.length - 1].created_at : undefined;
   const d = anchor
     ? await api.threads.get(p.threadId, { after: anchor })
     : await api.threads.get(p.threadId);
-  if (anchor) {
-    // Drop optimistic user bubbles before appending — their `opt-*` ids
-    // don't match the server-assigned ids of the persisted rows.
-    p.setMessages((prev) => appendUnique(prev.filter((m) => !m.id.startsWith("opt-")), d.messages));
-  } else {
-    p.setMessages(d.messages);
-    p.setHasMore(d.has_more);
-  }
+  // appendUnique reconciles: pending bubbles are promoted to confirmed in
+  // place (no deletion). Any new pending bubble added by the queue drain
+  // while the fetch was in flight is untouched — it has different content.
+  p.setMessages((prev) => appendUnique(prev, d.messages));
+  if (!anchor) p.setHasMore(d.has_more);
   applyThreadMeta(p.applyMeta, d);
   p.clearStreaming();
   if (p.pendingAutoSpeakRef.current) {

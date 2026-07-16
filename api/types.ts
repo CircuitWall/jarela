@@ -169,6 +169,10 @@ export interface Message {
   // verdict when the agent's `citation_strictness` is not `off`. Absent on
   // legacy rows and on turns where no checker ran.
   metadata?: MessageMetadata | null;
+  // Client-side only — never returned by the API. 'pending' = optimistic
+  // bubble not yet confirmed by the server. 'confirmed' = received from and
+  // reconciled with the server. Absent means the same as 'confirmed'.
+  status?: 'pending' | 'confirmed';
 }
 
 export interface CitationClaim {

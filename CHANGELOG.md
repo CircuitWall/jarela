@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.11] - 2026-07-16
+
+### Fixed
+
+- **Messages no longer disappear when a stream is interrupted.** Two
+  structural fixes: (1) the SSE error path now follows the same pattern as
+  `done` and `stop()` — streaming content stays visible until
+  `finalizeRunFromServer` replaces it with the persisted row; (2) the chat
+  message state is now append-only: optimistic user bubbles carry a
+  `status: 'pending'` marker and are promoted to `confirmed` in place when
+  the server row arrives, never deleted and re-added. A "Sending…" indicator
+  is shown on pending bubbles.
+
 ## [1.17.10] - 2026-07-15
 
 ### Fixed
