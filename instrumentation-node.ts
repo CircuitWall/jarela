@@ -30,6 +30,29 @@ export async function bootNode(): Promise<void> {
 
   installGlobalErrorHandlers();
 
+  // Single-instance guard. If another live Jarela process is already
+  // holding the lock, print a diagnostic and exit before we open the
+  // DB / bind the port. Bypass with JARELA_SKIP_INSTANCE_LOCK=1 (dev-
+  // convenience; not documented, so ops don't stumble into it).
+  if (process.env.JARELA_SKIP_INSTANCE_LOCK !== "1") {
+    const { acquirePidLock } = await import("@/lib/lifecycle/pidfile");
+    const lock = acquirePidLock();
+    if (!lock.acquired) {
+      const e = lock.existing;
+      console.error(
+        `[jarela] another instance is already running.\n` +
+          `           pid:        ${e?.pid ?? "unknown"}\n` +
+          `           started at: ${e?.startedAt ?? "unknown"}\n` +
+          `           lock file:  ${lock.path}\n` +
+          `         Refusing to start a second instance (two processes on the same\n` +
+          `         SQLite DB corrupt state). Stop the other instance first, or\n` +
+          `         delete the lock file if you are certain it is stale.\n` +
+          `         (set JARELA_SKIP_INSTANCE_LOCK=1 to bypass this check.)`,
+      );
+      process.exit(1);
+    }
+  }
+
   const { registerShutdownHandlers } = await import("@/lib/lifecycle/shutdown");
   registerShutdownHandlers();
 
