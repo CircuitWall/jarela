@@ -1,7 +1,16 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
-import type { Bridge, BridgeIn, BridgePatch, BridgeRoute, BridgeRouteIn, BridgeRoutePatch } from "@/api/types";
+import type {
+  Bridge,
+  BridgeIn,
+  BridgePatch,
+  BridgeRoute,
+  BridgeRouteIn,
+  BridgeRoutePatch,
+  BridgeIgnore,
+  BridgeIgnoreIn,
+} from "@/api/types";
 
 export function useBridges() {
   const [bridges, setBridges] = useState<Bridge[]>([]);
@@ -73,4 +82,38 @@ export function useBridgeRoutes(bridge_id: string | null) {
   }, [bridge_id]);
 
   return { routes, loading, refresh, create, update, remove };
+}
+
+/**
+ * Per-bridge chat blocklist (see `BridgeIgnore` in api/types.ts). Chats
+ * on this list are dropped by the router before any agent runs, so the
+ * catch-all route effectively becomes "everything except these chats".
+ */
+export function useBridgeIgnores(bridge_id: string | null) {
+  const [ignores, setIgnores] = useState<BridgeIgnore[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    if (!bridge_id) { setIgnores([]); return; }
+    setLoading(true);
+    try { setIgnores(await api.bridges.ignores.list(bridge_id)); }
+    finally { setLoading(false); }
+  }, [bridge_id]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const add = useCallback(async (data: BridgeIgnoreIn) => {
+    if (!bridge_id) throw new Error("No bridge selected");
+    const r = await api.bridges.ignores.add(bridge_id, data);
+    setIgnores((p) => (p.some((x) => x.remote_jid === r.remote_jid) ? p : [...p, r]));
+    return r;
+  }, [bridge_id]);
+
+  const remove = useCallback(async (remote_jid: string) => {
+    if (!bridge_id) throw new Error("No bridge selected");
+    await api.bridges.ignores.remove(bridge_id, remote_jid);
+    setIgnores((p) => p.filter((x) => x.remote_jid !== remote_jid));
+  }, [bridge_id]);
+
+  return { ignores, loading, refresh, add, remove };
 }
