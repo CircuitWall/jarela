@@ -4,7 +4,9 @@ import {
   labelForProvider,
   OTHER_PROVIDER_KEY,
   providerForToolName,
+  PROVIDER_LABELS,
 } from "./provider-grouping";
+import { KNOWN_BRAND_SLUGS } from "@/components/models/ProviderLogo";
 
 describe("provider-grouping", () => {
   it("derives known provider slugs from tool names", () => {
@@ -16,6 +18,19 @@ describe("provider-grouping", () => {
 
   it("prefers longer prefixes (jira_align beats jira)", () => {
     expect(providerForToolName("jira_align_list_objectives")).toBe("jira_align");
+  });
+
+  it("aliases short brand prefixes to their canonical slug (ms -> microsoft)", () => {
+    // Regression guard for the "ms_* tools land in the Other bucket" audit
+    // finding: ms_graph_*, ms_search, ms_people_resolve and every ms_todo_*
+    // tool must resolve to the microsoft brand so the Microsoft category
+    // and Tasks category render a proper Microsoft provider box next to
+    // iCloud / Gmail / Outlook.
+    expect(providerForToolName("ms_graph_get")).toBe("microsoft");
+    expect(providerForToolName("ms_search")).toBe("microsoft");
+    expect(providerForToolName("ms_people_resolve")).toBe("microsoft");
+    expect(providerForToolName("ms_todo_list_tasks")).toBe("microsoft");
+    expect(providerForToolName("ms_todo_create_task")).toBe("microsoft");
   });
 
   it("returns the OTHER bucket for unknown prefixes", () => {
@@ -54,5 +69,16 @@ describe("provider-grouping", () => {
     const groups = groupByProvider(["a_tool", "another_tool"], (n) => n);
     expect(groups).toHaveLength(1);
     expect(groups[0]?.provider).toBe(OTHER_PROVIDER_KEY);
+  });
+
+  it("every KNOWN_BRAND_SLUGS entry has a PROVIDER_LABELS label", () => {
+    // Drift guard: KNOWN_BRAND_SLUGS (source of truth in ProviderLogo.tsx)
+    // and PROVIDER_LABELS (display names) can silently diverge. If a new
+    // brand icon is added but nobody remembers to add a label, the fallback
+    // title-caser kicks in and can produce ugly labels (e.g. "Github-copilot"
+    // instead of "GitHub"). Anything with an icon MUST have an explicit
+    // label here.
+    const missing = KNOWN_BRAND_SLUGS.filter((slug) => !(slug in PROVIDER_LABELS));
+    expect(missing, `slugs missing a label: ${missing.join(", ")}`).toEqual([]);
   });
 });

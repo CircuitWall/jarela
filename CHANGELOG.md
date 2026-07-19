@@ -149,17 +149,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   2FA on the Apple ID is a prerequisite. Ships **17 tools** split into
   three permission tiers so agent policies can grant least privilege:
   - **Read (8):** `icloud_mail_list_folders`, `icloud_mail_list_messages`,
-    `icloud_mail_get_message`, `icloud_mail_search`,
-    `icloud_calendar_list_calendars`, `icloud_calendar_list_events`,
-    `icloud_calendar_get_event`, `icloud_reminders_list_lists`,
-    `icloud_reminders_list_reminders`, `icloud_reminders_get_reminder`.
-  - **Write (7):** `icloud_mail_move_message`,
-    `icloud_mail_delete_message`, `icloud_calendar_create_event`,
-    `icloud_calendar_update_event`, `icloud_calendar_delete_event`,
-    `icloud_reminders_create_reminder`, `icloud_reminders_update_reminder`,
-    `icloud_reminders_delete_reminder`.
-  - **Execute (2):** `icloud_mail_send_message`,
-    `icloud_mail_reply_to_message`.
+    `icloud_mail_get_message`, `icloud_calendar_list_calendars`,
+    `icloud_calendar_list_events`, `icloud_calendar_get_event`,
+    `icloud_reminders_list_lists`, `icloud_reminders_list`.
+  - **Write (7):** `icloud_mail_create_draft`, `icloud_mail_move_message`,
+    `icloud_mail_flag_message`, `icloud_calendar_create_event`,
+    `icloud_calendar_update_event`, `icloud_reminders_create`,
+    `icloud_reminders_complete`.
+  - **Execute (2):** `icloud_mail_delete_message`,
+    `icloud_calendar_delete_event`.
 - **iCloud health probe.** `probeICloud` issues a CalDAV
   `PROPFIND` against `https://caldav.icloud.com/` with HTTP Basic auth
   to validate the credential live. 207 → ok, 401/403 → auth-failed

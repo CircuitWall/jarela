@@ -82,13 +82,27 @@ function initialsFor(name: string): string {
 // Slugs we know how to render a brand glyph (or branded monogram) for.
 // Sorted longest-first so multi-segment slugs like `jira_align` beat the
 // shorter `jira` when we prefix-match a tool name.
-const KNOWN_BRAND_SLUGS: readonly string[] = Object.keys({
+export const KNOWN_BRAND_SLUGS: readonly string[] = Object.keys({
   ...ICONS,
   ...LUCIDE_ICONS,
   ...FALLBACK_INITIALS,
 })
   .filter((s) => s !== "mock")
   .sort((a, b) => b.length - a.length);
+
+// Alias map: some tool families use a shorter brand prefix than the
+// canonical simple-icons slug we render logos for. Register the short
+// prefix here and the resolver will return the canonical slug so both
+// `<ProviderLogo>` and `provider-grouping` treat them as the same brand.
+// Currently: `ms_todo_*`, `ms_graph_*`, `ms_search`, `ms_people_resolve`
+// all belong to the Microsoft brand (canonical slug `microsoft`).
+const BRAND_ALIASES: Record<string, string> = {
+  ms: "microsoft",
+};
+
+const BRAND_ALIAS_KEYS: readonly string[] = Object.keys(BRAND_ALIASES).sort(
+  (a, b) => b.length - a.length,
+);
 
 /**
  * Recognize a third-party brand from an underscore-separated tool name.
@@ -103,6 +117,9 @@ export function brandSlugForToolName(name: string): string | null {
   const lower = name.toLowerCase();
   for (const slug of KNOWN_BRAND_SLUGS) {
     if (lower === slug || lower.startsWith(slug + "_")) return slug;
+  }
+  for (const alias of BRAND_ALIAS_KEYS) {
+    if (lower === alias || lower.startsWith(alias + "_")) return BRAND_ALIASES[alias]!;
   }
   return null;
 }

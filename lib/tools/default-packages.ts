@@ -193,6 +193,15 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
 // (Mail, Calendar, Tasks) next to Gmail / Outlook / MS To-Do. All three
 // share the same auth bridge — the credential resolver just gets set
 // three times with the same closure, which is idempotent.
+//
+// Capability-tier note: the iCloud package classifies hard-delete tools
+// (`icloud_mail_delete_message`, `icloud_calendar_delete_event`) as
+// `execute` — matching iCloud's server semantics (CalDAV delete is
+// irreversible; Mail delete moves to Trash but the tool has no undo).
+// Gmail / Outlook classify their `_trash_message` / `_delete_event`
+// counterparts as `write` because those APIs auto-recover from Trash.
+// Agents granted "write on Mail" for Gmail/Outlook therefore CANNOT
+// hard-delete iCloud mail; that requires `execute` on Mail. Intentional.
 function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
   const byDomain = (
     prefix: "icloud_mail_" | "icloud_calendar_" | "icloud_reminders_",

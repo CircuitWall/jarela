@@ -44,6 +44,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   langchain: "LangChain",
   xai: "xAI",
   grok: "Grok",
+  groq: "Groq",
   microsoft: "Microsoft",
 };
 
