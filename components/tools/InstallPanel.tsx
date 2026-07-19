@@ -9,12 +9,18 @@ import type {
   LangChainCatalogEntry,
   LangChainPackageInstallResponse,
 } from "@/api/types";
+import type { BuiltinCategory } from "@/lib/tools/registry";
 
+// Kept as a local literal (not imported from `lib/tools/registry`) so this
+// client component doesn't pull the server-only tool registry into the
+// browser bundle. The `satisfies` guard makes it a compile error to drop
+// or misspell a category — if `BuiltinCategory` grows, tsc will demand
+// this list grows too.
 const CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
   "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-  "Config", "Agent",
-] as const;
+  "Tasks", "Microsoft", "iCloud", "Config", "Agent",
+] as const satisfies readonly BuiltinCategory[];
 
 const CAPABILITIES = ["read", "write", "execute"] as const;
 
