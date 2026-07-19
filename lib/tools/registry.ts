@@ -35,7 +35,7 @@ import { wrapWithWallclock } from "./wallclock";
 export type ToolCategory =
   | "Memory" | "Documents" | "Files" | "Shell" | "Web" | "Images" | "Voice"
   | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar"
-  | "Tasks" | "Microsoft" | "iCloud" | "Config" | "Agent" | "MCP";
+  | "Tasks" | "Microsoft" | "Config" | "Agent" | "MCP";
 
 // Safety class. Orthogonal to ToolCategory. See ADR-0038 for definitions
 // and tie-breakers (network reads vs writes, drafts, etc.).
@@ -53,7 +53,7 @@ export type ToolGroup = "Work" | null;
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
   "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-  "Tasks", "Microsoft", "iCloud", "Config", "Agent",
+  "Tasks", "Microsoft", "Config", "Agent",
 ] as const satisfies readonly Exclude<ToolCategory, "MCP">[];
 
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
@@ -63,7 +63,7 @@ export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
   Memory: null, Documents: null, Files: null, Shell: null, Web: null, Images: null, Voice: null,
   Schedule: null, Config: null, Mail: null, Calendar: null, Agent: null,
-  Atlassian: "Work", JiraAlign: "Work", GitHub: "Work", Tasks: "Work", Microsoft: "Work", iCloud: "Work",
+  Atlassian: "Work", JiraAlign: "Work", GitHub: "Work", Tasks: "Work", Microsoft: "Work",
 };
 
 interface RegistryEntry {

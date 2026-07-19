@@ -107,7 +107,7 @@ describe("tool registry", () => {
     expect(registeredCategory("recycle")).toBe("Web");
   });
 
-  it("BUILTIN_CATEGORIES lists every non-MCP category (including iCloud / Microsoft / Agent)", () => {
+  it("BUILTIN_CATEGORIES lists every non-MCP category (including Microsoft / Agent)", () => {
     // Regression guard for the "unknown category: iCloud" 400 that hit the
     // `PATCH /api/v1/builtin-tools` route when a hardcoded allowlist drifted
     // away from the `BuiltinCategory` type. Anything that renders a
@@ -116,11 +116,14 @@ describe("tool registry", () => {
     const required = [
       "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
       "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-      "Tasks", "Microsoft", "iCloud", "Config", "Agent",
+      "Tasks", "Microsoft", "Config", "Agent",
     ];
     for (const cat of required) {
       expect(BUILTIN_CATEGORIES).toContain(cat);
     }
     expect(BUILTIN_CATEGORIES).not.toContain("MCP");
+    // iCloud used to be its own category; its tools now live under Mail /
+    // Calendar / Tasks alongside Gmail / Outlook / MS To-Do.
+    expect(BUILTIN_CATEGORIES).not.toContain("iCloud");
   });
 });
