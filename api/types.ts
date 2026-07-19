@@ -1086,6 +1086,30 @@ export interface BridgeChatsResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Bridge ignore list — per-bridge chat blocklist
+// ---------------------------------------------------------------------------
+
+/**
+ * A chat blocked from ever entering the agent pipeline on this bridge.
+ * When an entry exists, the router returns null for inbound messages
+ * from `remote_jid` regardless of whether an explicit route or catch-all
+ * would otherwise match — no thread history, no memory writes, no tools.
+ * Delete the entry to resume forwarding.
+ */
+export interface BridgeIgnore {
+  id: string;
+  bridge_id: string;
+  remote_jid: string;
+  label: string | null;      // captured at add time so the UI can name the chat later
+  created_at: string;
+}
+
+export interface BridgeIgnoreIn {
+  remote_jid: string;        // exact JID; '*' is rejected server-side
+  label?: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Proxy configuration (ADR-0009)
 // ---------------------------------------------------------------------------
 

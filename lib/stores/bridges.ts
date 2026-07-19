@@ -51,6 +51,22 @@ export interface BridgeRouteRow {
   updated_at: string;
 }
 
+/**
+ * Per-bridge chat blocklist row. Independent from routes: when an entry
+ * exists for (bridge_id, remote_jid), the router returns `null` for that
+ * chat regardless of whether an explicit route or catch-all would match.
+ * This is the "listen to everything except these chats" primitive — the
+ * agent never sees the message, so no thread history, no memory writes,
+ * no tools fire.
+ */
+export interface BridgeIgnoreRow {
+  id: string;
+  bridge_id: string;
+  remote_jid: string;
+  label: string | null;
+  created_at: string;
+}
+
 const now = () => new Date().toISOString();
 
 // ---------------------------------------------------------------------------
@@ -142,6 +158,7 @@ export function updateBridge(
 export function deleteBridge(id: string): boolean {
   const db = getDb();
   db.prepare("DELETE FROM bridge_routes WHERE bridge_id=?").run(id);
+  db.prepare("DELETE FROM bridge_ignores WHERE bridge_id=?").run(id);
   const r = db.prepare("DELETE FROM bridges WHERE id=?").run(id);
   return r.changes > 0;
 }
@@ -253,4 +270,62 @@ export function getMaxRouteLastSeenTs(bridgeId: string): number {
     .prepare("SELECT MAX(last_seen_ts) AS m FROM bridge_routes WHERE bridge_id=?")
     .get(bridgeId) as { m: number | null } | undefined;
   return row?.m ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Ignore-list CRUD (per-bridge chat blocklist)
+//
+// Independent from routes: an ignore entry short-circuits the router even
+// when an explicit route or catch-all would otherwise match. The intent
+// is "listen to everything EXCEPT these chats" — messages from ignored
+// chats are dropped before any agent runs, so no history, no memory, no
+// tools. Delete the entry to resume forwarding.
+// ---------------------------------------------------------------------------
+
+export function listIgnores(bridgeId: string): BridgeIgnoreRow[] {
+  return getDb()
+    .prepare("SELECT * FROM bridge_ignores WHERE bridge_id=? ORDER BY created_at ASC")
+    .all(bridgeId) as unknown as BridgeIgnoreRow[];
+}
+
+export function isIgnored(bridgeId: string, remoteJid: string): boolean {
+  const row = getDb()
+    .prepare("SELECT 1 FROM bridge_ignores WHERE bridge_id=? AND remote_jid=? LIMIT 1")
+    .get(bridgeId, remoteJid) as { 1: number } | undefined;
+  return !!row;
+}
+
+/**
+ * Add a chat to the bridge's ignore list. Idempotent — re-adding the
+ * same (bridge_id, remote_jid) throws a SQLite UNIQUE violation which
+ * the caller can surface as a 409. Callers who want upsert semantics
+ * should catch and update the label separately.
+ */
+export function addIgnore(input: {
+  bridge_id: string;
+  remote_jid: string;
+  label?: string | null;
+}): BridgeIgnoreRow {
+  const id = randomUUID();
+  const t = now();
+  getDb()
+    .prepare(
+      `INSERT INTO bridge_ignores (id, bridge_id, remote_jid, label, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(id, input.bridge_id, input.remote_jid, input.label ?? null, t);
+  return {
+    id,
+    bridge_id: input.bridge_id,
+    remote_jid: input.remote_jid,
+    label: input.label ?? null,
+    created_at: t,
+  };
+}
+
+export function removeIgnore(bridgeId: string, remoteJid: string): boolean {
+  const r = getDb()
+    .prepare("DELETE FROM bridge_ignores WHERE bridge_id=? AND remote_jid=?")
+    .run(bridgeId, remoteJid);
+  return r.changes > 0;
 }

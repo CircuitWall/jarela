@@ -789,6 +789,23 @@ export const api = {
           { method: "DELETE" },
         ),
     },
+
+    ignores: {
+      list: (bridge_id: string) =>
+        request<import("./types").BridgeIgnore[]>(
+          `/bridges/${encodeURIComponent(bridge_id)}/ignores`,
+        ),
+      add: (bridge_id: string, data: import("./types").BridgeIgnoreIn) =>
+        request<import("./types").BridgeIgnore>(
+          `/bridges/${encodeURIComponent(bridge_id)}/ignores`,
+          { method: "POST", body: JSON.stringify(data) },
+        ),
+      remove: (bridge_id: string, remote_jid: string) =>
+        request<{ deleted: boolean }>(
+          `/bridges/${encodeURIComponent(bridge_id)}/ignores/${encodeURIComponent(remote_jid)}`,
+          { method: "DELETE" },
+        ),
+    },
   },
 
   tailscale: {
