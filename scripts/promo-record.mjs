@@ -187,7 +187,9 @@ async function openMenu(page) {
   // Its title flips between "Menu" and "<n> new alerts" — match either.
   const menuBtn = page.locator('header button[title*="Menu"], header button[title*="alert"]').last();
   await menuBtn.click();
-  await page.waitForSelector('[role="radiogroup"][aria-label="Workspace mode"]', { timeout: 4000 });
+  // Wait for the first tab button to be visible. We probe "Dashboard"
+  // because it's the first non-Chat tab in TOUR_TABS and always exists.
+  await page.waitForSelector('button[aria-label="Dashboard"]', { timeout: 4000 });
   await sleep(350);
 }
 
@@ -228,13 +230,15 @@ async function pickSecondAgent(page) {
   const items = page.locator('[role="menu"] [role="menuitemradio"]');
   const n = await items.count();
   if (n >= 2) {
-    await items.nth(1).hover();
+    // Force hover/click — inner SVG icons sometimes intercept pointer
+    // events depending on layout, and hover here is purely decorative.
+    await items.nth(1).hover({ force: true }).catch(() => {});
     await sleep(450);
-    await items.nth(1).click();
+    await items.nth(1).click({ force: true });
   } else if (n === 1) {
-    await items.nth(0).hover();
+    await items.nth(0).hover({ force: true }).catch(() => {});
     await sleep(600);
-    await items.nth(0).click();
+    await items.nth(0).click({ force: true });
   } else {
     await page.keyboard.press("Escape");
   }
@@ -337,6 +341,28 @@ async function main() {
   });
 
   await page.waitForSelector("header", { timeout: 15000 });
+  // BootScreen overlays at z-[70] until an agent is explicitly picked.
+  // Click the big tile (aria-label="Open <agent name>") to fall through
+  // to the chat surface, then wait for the overlay to fade out before
+  // any further interaction. If the overlay isn't present (e.g. agent
+  // already picked via persisted state), this is a no-op.
+  try {
+    const tile = page.locator('button[aria-label^="Open "]').first();
+    await tile.waitFor({ state: "visible", timeout: 10000 });
+    await sleep(700);
+    await tile.click();
+    await page.waitForFunction(
+      () => {
+        const o = document.querySelector(
+          '[role="status"][aria-live="polite"].fixed.inset-0',
+        );
+        return !o || o.classList.contains("pointer-events-none");
+      },
+      { timeout: 15000 },
+    );
+  } catch {
+    // No BootScreen present — proceed.
+  }
   await dismissBlockingModals(page);
   await sleep(900);
 
