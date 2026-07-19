@@ -27,6 +27,8 @@ public/fallback-*.js
 # build artifacts
 dist/
 build/
+# `npm pack` output (used for local install testing)
+*.tgz
 
 # env
 .env
