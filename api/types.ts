@@ -1208,6 +1208,21 @@ export interface ExtensionLoadError {
   error: string;
 }
 
+// Response from POST /api/v1/system/abort — soft reset that cancels every
+// in-flight LangGraph run without exiting the process.
+export interface SystemAbortResponse {
+  aborted: number;
+  reason: string;
+}
+
+// Response from POST /api/v1/system/restart — schedules process.exit(0)
+// ~250ms after responding so the supervisor can relaunch.
+export interface SystemRestartResponse {
+  accepted: boolean;
+  reason: string | null;
+  hint: string;
+}
+
 export interface ExtensionsListResponse {
   directories: { providers: string; tools: string };
   providers: ExtensionInfo[];

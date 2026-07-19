@@ -507,6 +507,17 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
   },
+  {
+    name: "JARELA_SKIP_INSTANCE_LOCK",
+    type: "bool",
+    default: false,
+    description:
+      "Bypass the single-instance PID-lock guard at boot. Reserved for dev-loop recovery; running two processes against the same SQLite DB corrupts state.",
+    category: "lifecycle",
+    tier: "C",
+    requiresRestart: true,
+    agentWritable: false,
+  },
 
   // ─── limits ────────────────────────────────────────────────────────
   {
