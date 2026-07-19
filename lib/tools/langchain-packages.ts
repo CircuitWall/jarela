@@ -47,12 +47,12 @@ import { categorizeByVerb } from "./categorize-by-verb";
 import { errorMessage } from "@/lib/utils/error";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
+import { BUILTIN_CATEGORIES } from "./registry";
 
-export const BUILTIN_CATEGORIES = [
-  "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
-  "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-  "Tasks", "Config", "Agent",
-] as const;
+// Re-exported for convenience so callers already importing from
+// `langchain-packages` don't have to add a second import. The single
+// source of truth lives in `./registry`.
+export { BUILTIN_CATEGORIES };
 
 export const MANIFEST_SCHEMA = z.object({
   package: z.string().min(1),
