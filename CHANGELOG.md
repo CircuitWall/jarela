@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-07-19
+
+### Added
+
+- **Per-bridge chat ignore list.** New `bridge_ignores` table plus
+  `GET/POST /api/v1/bridges/:id/ignores` and
+  `DELETE /api/v1/bridges/:id/ignores/:remote_jid`. `resolveRoute` returns
+  `null` for ignored remotes BEFORE any exact/catch-all lookup, so ignored
+  chats never reach the agent — no thread history, no memory writes, no
+  tool calls, no outbound replies. Different from `silent_mode` on a
+  route, which still runs the agent and just gags the reply. The new
+  *Ignored chats* section in `BridgeEditor` picks from synced chats or
+  accepts a manual JID.
+- **Abort and restart controls in Settings.** *Privacy & security* now
+  has a *System control* card with two buttons: *Abort ongoing work*
+  (soft, calls new `POST /api/v1/system/abort` → `abortAllRuns()`) and
+  *Restart server* (hard, supervisor relaunch via the existing
+  `/api/v1/system/restart`). Both prompt for confirmation and surface
+  the result inline. Escape hatch for stuck runs without paying the
+  encrypted-master-key PIN re-entry cost of a full process kill.
+- **Single-instance guard.** New `lib/lifecycle/pidfile.ts` writes
+  `<dataDir>/jarela.pid` at boot and checks any existing file for a live
+  PID via `process.kill(pid, 0)` (POSIX + Windows). A second Jarela
+  process on the same SQLite DB corrupts state via WAL-checkpoint races
+  and half-open second binds; `acquirePidLock()` now blocks that with an
+  actionable diagnostic pointing at the running instance. Stale files
+  from crashed processes are clobbered on next boot. Set
+  `JARELA_SKIP_INSTANCE_LOCK=1` to bypass (registered in the environment
+  schema under the *lifecycle* category, tier C, requires restart).
+- **Provider-grouped tool views.** Wide categories like *Mail* and
+  *Calendar* now group tool pills inside per-provider mini-boxes with
+  the vendor logo (Gmail, Outlook, iCloud, GitHub, Atlassian, Jira,
+  Google, WhatsApp, …). Agent permissions (advanced mode) picks up the
+  same grouping with a tri-state header checkbox per provider — flip
+  *all Outlook mail on* or *all Gmail off* in one click. Unknown-brand
+  tools fall into an *Other* bucket that always renders last.
+  Single-provider categories (Memory, Files, …) stay flat.
+- **`list_scheduled_tasks` and `list_watchers` are now cross-agent.**
+  Both tools return every row across every agent and tag each row with
+  `agent_id`, `agent_name`, and `owned_by_caller`. Previously they
+  scoped to the calling thread's agent while the Scheduled Tasks UI
+  showed rows from every agent, which bit bridge-listener setups: the
+  WhatsApp agent's tasks were invisible to the default agent asking
+  *what tasks do I have?*. `cancel_scheduled_task` / `cancel_watcher`
+  were already cross-agent; `schedule_task` / `schedule_watcher` still
+  create rows under the calling agent's id.
+
+### Changed
+
+- **iCloud tools folded into Mail / Calendar / Tasks categories.** The
+  dedicated *iCloud* tool category is gone. The single `icloud` default
+  package is now three descriptors — `icloud_mail` (Mail),
+  `icloud_calendar` (Calendar), `icloud_tasks` (Tasks) — all sharing the
+  same Apple ID + app-specific-password auth bridge. Splitting by
+  `tool.name` prefix keeps `@circuitwall/icloud-langchain` untouched.
+  Existing agent configs are unaffected because tools are selected by
+  name, not by category. `migrateICloudPackageIds()` transfers any
+  `disabled_packages.id="icloud"` or `builtin_tool_categories.category=
+  "iCloud"` intent to the three new package ids so tools stay hidden
+  after upgrade.
+- **`ms_*` tools render the Microsoft logo.** `brandSlugForToolName`
+  now aliases the short `ms` prefix to `microsoft`, so `ms_graph_*`,
+  `ms_search_*`, `ms_people_*`, and `ms_todo_*` pick up the vendor
+  logo in provider-grouped views. Added a `PROVIDER_LABELS` entry for
+  `groq` and a drift-guard test asserting every `KNOWN_BRAND_SLUGS`
+  entry has a matching label.
+
+### Fixed
+
+- **WhatsApp LID DM contacts register in the chat picker.** Baileys v7
+  delivers personal DM contacts from `messaging-history.set` and
+  `contacts.upsert` with `id` in `<n>@lid` form; the phone-number JID is
+  now only on `Contact.phoneNumber`. Our filter dropped every LID entry,
+  so DMs vanished from the picker until a message arrived on that
+  thread. New `pickContactChatJid` helper prefers `Contact.phoneNumber`
+  when present (keeps entries aligned with PN-keyed routes), else
+  accepts `@lid`, `@s.whatsapp.net`, or `@g.us`. `listChats` widened to
+  include `@lid` — v7 accepts `sendMessage` to either LID or PN.
+- **Category toggles accept iCloud, Microsoft, and Agent.**
+  `PATCH /api/v1/builtin-tools` validated `category` against a
+  hardcoded set that had drifted from `BuiltinCategory`, so toggling
+  any category added after the set was frozen returned
+  `400 unknown category`. Consolidated to a single source of truth:
+  `BUILTIN_CATEGORIES` tuple in `lib/tools/registry.ts` (with a
+  `satisfies` guard) drives the API route, the manifest schema in
+  `lib/tools/langchain-packages.ts`, and the InstallPanel dropdown. A
+  registry test guards the tuple contents.
+- **Playwright promo-record script waits for BootScreen and force-clicks
+  menu items.** Three fixes: (1) `openMenu` now waits on the Dashboard
+  tab button instead of a `[role="radiogroup"]` selector that no longer
+  sits at the top of the menu; (2) `pickSecondAgent` uses `force: true`
+  because inner SVG icons intercept pointer events; (3) on a fresh
+  boot the BootScreen overlay (`z-[70]`) covers the viewport until an
+  agent tile is picked, so we click the first *Open <agent>* tile and
+  wait for the overlay to become `pointer-events-none` before
+  proceeding. No-op when the overlay is absent.
+
 ## [1.17.12] - 2026-07-16
 
 ### Fixed
