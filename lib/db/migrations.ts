@@ -333,6 +333,49 @@ export function runMigrations(db: DatabaseSync): void {
   seedAgentConfigs(db);
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
+  migrateICloudPackageIds(db);
+}
+
+// iCloud used to register as a single default package (id: "icloud") under
+// a dedicated "iCloud" tool category. It now ships as three descriptors
+// ("icloud_mail", "icloud_calendar", "icloud_tasks") that fold into the
+// Mail / Calendar / Tasks categories alongside Gmail / Outlook / MS
+// To-Do. Preserve the operator's disable intent across the rename:
+//   - If `disabled_packages` had `icloud`, expand it into all three
+//     new ids so the same tools stay hidden.
+//   - If `builtin_tool_categories` had `iCloud` disabled, translate that
+//     to disabling all three package ids (there is no per-category dial
+//     for iCloud any more; hiding the packages is the equivalent).
+// Idempotent — safe to run on every boot.
+function migrateICloudPackageIds(db: DatabaseSync): void {
+  const nowIso = now();
+  const newIds = ["icloud_mail", "icloud_calendar", "icloud_tasks"] as const;
+
+  const legacyDisabled = db
+    .prepare("SELECT 1 FROM disabled_packages WHERE id='icloud'")
+    .get() as { 1?: number } | undefined;
+  if (legacyDisabled) {
+    const insert = db.prepare(
+      `INSERT INTO disabled_packages (id, updated_at) VALUES (?, ?)
+       ON CONFLICT(id) DO NOTHING`,
+    );
+    for (const id of newIds) insert.run(id, nowIso);
+    db.prepare("DELETE FROM disabled_packages WHERE id='icloud'").run();
+  }
+
+  const legacyCategory = db
+    .prepare("SELECT enabled FROM builtin_tool_categories WHERE category='iCloud'")
+    .get() as { enabled?: number } | undefined;
+  if (legacyCategory) {
+    if (legacyCategory.enabled === 0) {
+      const insert = db.prepare(
+        `INSERT INTO disabled_packages (id, updated_at) VALUES (?, ?)
+         ON CONFLICT(id) DO NOTHING`,
+      );
+      for (const id of newIds) insert.run(id, nowIso);
+    }
+    db.prepare("DELETE FROM builtin_tool_categories WHERE category='iCloud'").run();
+  }
 }
 
 // Multi-instance credentials per (type, provider). `label` is a

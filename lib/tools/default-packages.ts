@@ -184,44 +184,107 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
         },
       }),
   },
-  {
-    id: "icloud",
-    label: "iCloud",
-    category: "iCloud",
-    integrationId: "icloud",
-    npmPackage: "@circuitwall/icloud-langchain",
-    toolCounts: {
-      read: icloudReadTools.length,
-      write: icloudWriteTools.length,
-      execute: icloudExecuteTools.length,
-    },
-    description:
-      "iCloud Mail (IMAP), Calendar (CalDAV), and Reminders (VTODO): list/read/draft/move/flag/trash mail, " +
-      "manage events, and create/complete reminders. Drafts only — cannot send mail.",
-    register: () =>
-      registerLangChainPackage<ICloudAuth>({
-        category: "iCloud",
-        tools: {
-          read: icloudReadTools,
-          write: icloudWriteTools,
-          execute: icloudExecuteTools,
-        },
-        auth: {
-          integrationId: "icloud",
-          setAuthResolver: setICloudAuthResolver,
-          resolveAuthFromEnv: resolveICloudAuthFromEnv,
-          mapStoreFields: (raw): ICloudAuth | null =>
-            raw.apple_id && raw.app_password
-              ? { appleId: raw.apple_id, appPassword: raw.app_password }
-              : null,
-          notConfiguredError:
-            "iCloud not configured. Open Settings → Credentials and add your Apple ID + " +
-            "app-specific password (generate one at appleid.apple.com — requires 2FA). " +
-            "(Or set ICLOUD_APPLE_ID / ICLOUD_APP_PASSWORD env vars.)",
-        },
-      }),
-  },
+  ...buildICloudDescriptors(),
 ];
+
+// iCloud ships one npm package that spans three domains (Mail / Calendar
+// / Reminders). Rather than one catch-all "iCloud" category, expose one
+// descriptor per domain so the tools land under their functional category
+// (Mail, Calendar, Tasks) next to Gmail / Outlook / MS To-Do. All three
+// share the same auth bridge — the credential resolver just gets set
+// three times with the same closure, which is idempotent.
+function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
+  const byDomain = (
+    prefix: "icloud_mail_" | "icloud_calendar_" | "icloud_reminders_",
+  ) => ({
+    read: icloudReadTools.filter((t) => t.name.startsWith(prefix)),
+    write: icloudWriteTools.filter((t) => t.name.startsWith(prefix)),
+    execute: icloudExecuteTools.filter((t) => t.name.startsWith(prefix)),
+  });
+
+  const icloudAuth = {
+    integrationId: "icloud",
+    setAuthResolver: setICloudAuthResolver,
+    resolveAuthFromEnv: resolveICloudAuthFromEnv,
+    mapStoreFields: (raw: Record<string, string>): ICloudAuth | null =>
+      raw.apple_id && raw.app_password
+        ? { appleId: raw.apple_id, appPassword: raw.app_password }
+        : null,
+    notConfiguredError:
+      "iCloud not configured. Open Settings → Credentials and add your Apple ID + " +
+      "app-specific password (generate one at appleid.apple.com — requires 2FA). " +
+      "(Or set ICLOUD_APPLE_ID / ICLOUD_APP_PASSWORD env vars.)",
+  } as const;
+
+  const mail = byDomain("icloud_mail_");
+  const calendar = byDomain("icloud_calendar_");
+  const reminders = byDomain("icloud_reminders_");
+
+  return [
+    {
+      id: "icloud_mail",
+      label: "iCloud Mail",
+      category: "Mail",
+      integrationId: "icloud",
+      npmPackage: "@circuitwall/icloud-langchain",
+      toolCounts: {
+        read: mail.read.length,
+        write: mail.write.length,
+        execute: mail.execute.length,
+      },
+      description:
+        "iCloud Mail (IMAP): list folders and messages, read message bodies, draft, " +
+        "move, flag, and trash mail. Drafts only — cannot send mail.",
+      register: () =>
+        registerLangChainPackage<ICloudAuth>({
+          category: "Mail",
+          tools: mail,
+          auth: icloudAuth,
+        }),
+    },
+    {
+      id: "icloud_calendar",
+      label: "iCloud Calendar",
+      category: "Calendar",
+      integrationId: "icloud",
+      npmPackage: "@circuitwall/icloud-langchain",
+      toolCounts: {
+        read: calendar.read.length,
+        write: calendar.write.length,
+        execute: calendar.execute.length,
+      },
+      description:
+        "iCloud Calendar (CalDAV): list calendars and events, and create / update / delete events.",
+      register: () =>
+        registerLangChainPackage<ICloudAuth>({
+          category: "Calendar",
+          tools: calendar,
+          auth: icloudAuth,
+        }),
+    },
+    {
+      id: "icloud_tasks",
+      label: "iCloud Reminders",
+      category: "Tasks",
+      integrationId: "icloud",
+      npmPackage: "@circuitwall/icloud-langchain",
+      toolCounts: {
+        read: reminders.read.length,
+        write: reminders.write.length,
+        execute: reminders.execute.length,
+      },
+      description:
+        "iCloud Reminders (VTODO): list reminder lists and reminders, create new " +
+        "reminders, and mark them complete.",
+      register: () =>
+        registerLangChainPackage<ICloudAuth>({
+          category: "Tasks",
+          tools: reminders,
+          auth: icloudAuth,
+        }),
+    },
+  ];
+}
 
 const handles = new Map<string, RegisteredPackage<unknown>>();
 
