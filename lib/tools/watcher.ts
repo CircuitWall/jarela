@@ -13,6 +13,7 @@ import {
   deleteWatcher,
 } from "@/lib/stores/watchers";
 import { getThread } from "@/lib/stores/threads";
+import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { listReactionScripts } from "@/lib/triggers/scripts";
 import { errorMessage } from "@/lib/utils/error";
@@ -173,10 +174,16 @@ export const listReactionScriptsTool = tool(
 
 export const listWatchersTool = tool(
   async (_args, config) => {
-    const agentId = agentIdFromConfig(config);
-    if (!agentId) return JSON.stringify({ error: "No agent context" });
-    const watchers = listWatchers(agentId).map((w) => ({
+    const callerAgentId = agentIdFromConfig(config);
+    // Mirror list_scheduled_tasks — show every watcher across agents so
+    // the default agent can answer "what watchers exist?" even when the
+    // watchers were registered by a bridge listener or another agent.
+    const agentsById = new Map(listAgentConfigs().map((a) => [a.id, a.name]));
+    const watchers = listWatchers().map((w) => ({
       id: w.id,
+      agent_id: w.agent_id,
+      agent_name: agentsById.get(w.agent_id) ?? null,
+      owned_by_caller: w.agent_id === callerAgentId,
       label: w.label,
       tool: w.tool_name,
       args: safeParse(w.tool_args),
@@ -196,7 +203,12 @@ export const listWatchersTool = tool(
   },
   {
     name: "list_watchers",
-    description: "List all event-driven watchers registered for the current agent.",
+    description:
+      "List every event-driven watcher across all agents. Each row is tagged " +
+      "with `agent_id` (owner) and `agent_name`, plus `owned_by_caller` (true " +
+      "when the watcher belongs to the current agent). Bridge listener agents, " +
+      "delegate agents, and other siloed agents all show up here — filter by " +
+      "`agent_id` or `owned_by_caller` if you only want the current agent's watchers.",
     schema: z.object({}),
   },
 );

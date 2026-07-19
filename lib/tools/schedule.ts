@@ -9,6 +9,7 @@ import {
   computeNextRun,
 } from "@/lib/stores/scheduled-tasks";
 import { getThread } from "@/lib/stores/threads";
+import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -119,10 +120,19 @@ export const scheduleTaskTool = tool(
 
 export const listScheduledTasksTool = tool(
   async (_args, config) => {
-    const agentId = agentIdFromConfig(config);
-    if (!agentId) return JSON.stringify({ error: "No agent context" });
-    const tasks = listScheduledTasks(agentId).map((t) => ({
+    const callerAgentId = agentIdFromConfig(config);
+    // Show tasks across every agent, mirroring the Scheduled Tasks panel
+    // in the UI. Bridge listener agents (WhatsApp, etc.) create their own
+    // tasks under their own `agent_id`, and users expect the default agent
+    // to still be able to answer "what scheduled tasks do I have?" — so
+    // we surface all of them and tag each row with `agent_id` /
+    // `agent_name` for disambiguation.
+    const agentsById = new Map(listAgentConfigs().map((a) => [a.id, a.name]));
+    const tasks = listScheduledTasks().map((t) => ({
       id: t.id,
+      agent_id: t.agent_id,
+      agent_name: agentsById.get(t.agent_id) ?? null,
+      owned_by_caller: t.agent_id === callerAgentId,
       prompt: t.prompt,
       description: t.description,
       kind: t.kind,
@@ -140,7 +150,12 @@ export const listScheduledTasksTool = tool(
   },
   {
     name: "list_scheduled_tasks",
-    description: "List all scheduled tasks for the current agent.",
+    description:
+      "List every scheduled task across all agents. Each row is tagged with " +
+      "`agent_id` (owner) and `agent_name`, plus `owned_by_caller` (true when " +
+      "the task belongs to the current agent). Bridge listener agents, delegate " +
+      "agents, and other siloed agents all show up here — filter by `agent_id` " +
+      "or `owned_by_caller` if you only want the current agent's tasks.",
     schema: z.object({}),
   },
 );
