@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { registeredTools, registeredCategory, type BuiltinCategory } from "@/lib/tools/registry";
+import {
+  registeredTools,
+  registeredCategory,
+  BUILTIN_CATEGORIES,
+  type BuiltinCategory,
+} from "@/lib/tools/registry";
 import {
   disabledCategories,
   setCategoryEnabled,
@@ -11,10 +16,7 @@ import { errorResponse, validateBody } from "@/lib/api/responses";
 // and current enabled state. Default-enabled (no row = on). Used by the
 // Tools tab to render per-category on/off toggles.
 
-const ALL_VALID_CATEGORIES = new Set<string>([
-  "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
-  "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar", "Tasks", "Config",
-]);
+const ALL_VALID_CATEGORIES = new Set<string>(BUILTIN_CATEGORIES);
 
 interface CategoryRow {
   category: BuiltinCategory;

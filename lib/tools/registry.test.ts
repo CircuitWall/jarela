@@ -9,6 +9,7 @@ import {
   registeredCapability,
   registeredGroup,
   unregisterTools,
+  BUILTIN_CATEGORIES,
   _resetRegistry,
 } from "./registry";
 
@@ -104,5 +105,22 @@ describe("tool registry", () => {
     unregisterTools(["recycle"]);
     expect(() => registerTools("Web", "read", [mkTool("recycle")])).not.toThrow();
     expect(registeredCategory("recycle")).toBe("Web");
+  });
+
+  it("BUILTIN_CATEGORIES lists every non-MCP category (including iCloud / Microsoft / Agent)", () => {
+    // Regression guard for the "unknown category: iCloud" 400 that hit the
+    // `PATCH /api/v1/builtin-tools` route when a hardcoded allowlist drifted
+    // away from the `BuiltinCategory` type. Anything that renders a
+    // per-category toggle or validates a category over the wire MUST derive
+    // from this list, and this test ensures the list stays complete.
+    const required = [
+      "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
+      "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
+      "Tasks", "Microsoft", "iCloud", "Config", "Agent",
+    ];
+    for (const cat of required) {
+      expect(BUILTIN_CATEGORIES).toContain(cat);
+    }
+    expect(BUILTIN_CATEGORIES).not.toContain("MCP");
   });
 });

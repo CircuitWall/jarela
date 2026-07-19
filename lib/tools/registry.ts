@@ -44,6 +44,20 @@ export type Capability = "read" | "write" | "execute";
 // Optional parent grouping for the Agent editor sidebar.
 export type ToolGroup = "Work" | null;
 
+// Runtime tuple of every built-in category (i.e. every `ToolCategory`
+// except `"MCP"`). This is the single source of truth for anything that
+// needs a runtime list of categories — API validation, `z.enum(...)`
+// manifest schemas, UI dropdowns, etc. — so those surfaces can't drift
+// away from `BuiltinCategory` and reject legitimate categories (as the
+// `builtin-tools` PATCH route did before, rejecting `iCloud`).
+export const BUILTIN_CATEGORIES = [
+  "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
+  "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
+  "Tasks", "Microsoft", "iCloud", "Config", "Agent",
+] as const satisfies readonly Exclude<ToolCategory, "MCP">[];
+
+export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
+
 // Category → group mapping. "Work" collapses corporate-auth tools under
 // one header in the Agent editor; everything else is a top-level category.
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
@@ -51,8 +65,6 @@ const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
   Schedule: null, Config: null, Mail: null, Calendar: null, Agent: null,
   Atlassian: "Work", JiraAlign: "Work", GitHub: "Work", Tasks: "Work", Microsoft: "Work", iCloud: "Work",
 };
-
-export type BuiltinCategory = Exclude<ToolCategory, "MCP">;
 
 interface RegistryEntry {
   tool: StructuredToolInterface;
