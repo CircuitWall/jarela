@@ -1,9 +1,9 @@
 "use client";
-import { ArrowLeft, Camera, Plus, QrCode, RefreshCw, Search, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Camera, Plus, QrCode, RefreshCw, Search, Trash2, Users, VolumeX } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, Bridge, BridgeChat, BridgeLiveStatus, BridgeRoute, ModelConfig } from "@/api/types";
-import { useBridgeRoutes } from "@/hooks/useBridges";
+import { useBridgeIgnores, useBridgeRoutes } from "@/hooks/useBridges";
 import { modelSupportsImages, isProviderClassified } from "@/lib/providers/capabilities";
 import { resolveAgentModel } from "@/lib/agents/effective-model";
 import { formatRelativeOrDate } from "@/lib/utils/time";
@@ -146,12 +146,20 @@ export function BridgeEditor({
 
         <RouteTable bridge_id={bridge.id} />
 
+        <IgnoreList bridge_id={bridge.id} />
+
         <section className="rounded-lg border border-border bg-surface-2 p-3 text-[11px] text-fg-faint leading-relaxed space-y-2">
           <p>
             <strong className="text-fg-muted">Unrouted messages are ignored (unless catch-all exists).</strong>{" "}
             If a WhatsApp chat isn&apos;t mapped to an agent below, incoming messages are silently dropped
             unless you add a <em>catch-all</em> route (`*`). Each agent can still have only one route,
             but a catch-all route can intentionally aggregate many chats into one agent thread.
+          </p>
+          <p>
+            <strong className="text-fg-muted">Carve chats out of the catch-all.</strong>{" "}
+            Add specific chats to the <em>Ignored chats</em> list above to drop them <em>before</em> any
+            agent runs — no thread history, no memory writes, no tools. Different from{" "}
+            <em>Silent mode</em> on a route (agent still sees the messages, just doesn&apos;t reply).
           </p>
           <p>
             <strong className="text-fg-muted">What gets forwarded.</strong>{" "}
@@ -736,4 +744,183 @@ function formatRelative(ms: number): string {
   if (diff < 60_000) return "just now";
   if (diff > 7 * 86_400_000) return new Date(ms).toLocaleDateString();
   return formatRelativeOrDate(ms).replace(/\sago$/, "");
+}
+
+/**
+ * Per-bridge chat blocklist. When a catch-all route routes "everything
+ * else" to a listener agent, this list carves out the chats that should
+ * NEVER reach that agent — the router short-circuits to null for any
+ * entry here, before any route lookup. Independent of routes: an ignore
+ * entry can coexist with an explicit route (the ignore always wins), so
+ * temporarily muting a routed chat doesn't require deleting the route.
+ */
+function IgnoreList({ bridge_id }: { bridge_id: string }) {
+  const { ignores, add, remove } = useBridgeIgnores(bridge_id);
+  const [chats, setChats] = useState<BridgeChat[]>([]);
+  const [chatsRunning, setChatsRunning] = useState(true);
+  const [chatsLoading, setChatsLoading] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [manualJid, setManualJid] = useState("");
+  const [pickerJid, setPickerJid] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  // Load synced chats only while the Add panel is open, matching the
+  // Routes picker's polling cadence — the same chat may show up in the
+  // adapter cache seconds after pairing.
+  useEffect(() => {
+    if (!adding) return;
+    let alive = true;
+    async function load() {
+      setChatsLoading(true);
+      try {
+        const r = await api.bridges.chats(bridge_id);
+        if (!alive) return;
+        setChats(r.chats);
+        setChatsRunning(r.running);
+      } catch { /* empty state ok */ }
+      finally { if (alive) setChatsLoading(false); }
+    }
+    void load();
+    const t = setInterval(() => void load(), 4000);
+    return () => { alive = false; clearInterval(t); };
+  }, [adding, bridge_id]);
+
+  const ignoredJids = useMemo(() => new Set(ignores.map((i) => i.remote_jid)), [ignores]);
+  const availableChats = useMemo(
+    () => chats.filter((c) => !ignoredJids.has(c.remote_jid)),
+    [chats, ignoredJids],
+  );
+
+  async function onAdd(remote_jid: string, label: string | null) {
+    setError(null);
+    const jid = remote_jid.trim();
+    if (!jid) { setError("Enter a chat JID"); return; }
+    try {
+      await add({ remote_jid: jid, label });
+      setManualJid("");
+      setPickerJid("");
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+
+  async function onRemove(remote_jid: string) {
+    try { await remove(remote_jid); }
+    catch (e) {
+      pushErrorToast({
+        title: "Couldn't remove ignore entry",
+        error: e,
+        context: { panel: "bridges", action: "ignore.remove", bridge_id, remote_jid },
+      });
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-border bg-surface-2 p-3 space-y-2">
+      <header className="flex items-center gap-2">
+        <VolumeX size={12} className="text-fg-subtle" />
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Ignored chats</h3>
+        <span className="text-[11px] text-fg-faint">{ignores.length}</span>
+        <button
+          onClick={() => { setAdding((v) => !v); setError(null); }}
+          className="ml-auto px-2 py-0.5 text-[11px] rounded bg-surface-3 hover:bg-surface-2 text-fg-muted flex items-center gap-1"
+        >
+          <Plus size={10} /> {adding ? "Close" : "Add"}
+        </button>
+      </header>
+
+      <p className="text-[11px] text-fg-faint leading-snug">
+        Chats on this list are dropped <em>before</em> any route runs — the agent never sees them, no
+        memory is written, no tools fire. Useful when a catch-all route forwards everything and you
+        want to carve out specific chats (family, personal DMs, noisy groups). To just suppress
+        replies while still capturing history, use <strong>Silent mode</strong> on a normal route instead.
+      </p>
+
+      {adding && (
+        <div className="rounded border border-accent/30 bg-surface-3/30 p-2 space-y-2">
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] uppercase tracking-wide text-fg-faint font-semibold">Pick a chat</label>
+            {chatsLoading && <RefreshCw size={10} className="animate-spin text-fg-faint" />}
+          </div>
+          {!chatsRunning && (
+            <p className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+              Bridge isn&apos;t running — enable it to load your WhatsApp chats, or add a JID manually below.
+            </p>
+          )}
+          {chatsRunning && availableChats.length > 0 && (
+            <div className="max-h-48 overflow-y-auto rounded border border-border bg-surface-3/40 divide-y divide-border">
+              {availableChats.map((c) => (
+                <button
+                  key={c.remote_jid}
+                  type="button"
+                  onClick={() => { setPickerJid(c.remote_jid); void onAdd(c.remote_jid, c.name ?? null); }}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 text-left text-xs transition-colors ${
+                    pickerJid === c.remote_jid ? "bg-accent/20 text-fg" : "hover:bg-surface-3 text-fg"
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded shrink-0 flex items-center justify-center ${
+                    c.is_group
+                      ? "bg-violet-500/20 text-violet-700 dark:text-violet-300"
+                      : "bg-emerald-500/20 text-emerald-700 dark:text-emerald-300"
+                  }`}>
+                    {c.is_group ? <Users size={10} /> : <span className="text-[10px] font-bold">{(c.name ?? "?").charAt(0).toUpperCase()}</span>}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate">{c.name ?? <span className="text-fg-faint italic">Unnamed</span>}</div>
+                    <div className="text-[10px] text-fg-faint truncate font-mono">{c.remote_jid}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {chatsRunning && availableChats.length === 0 && !chatsLoading && (
+            <p className="text-[11px] text-fg-faint px-1 py-1 leading-relaxed">
+              No unignored chats synced yet. Enter a JID manually below.
+            </p>
+          )}
+          <div className="flex items-center gap-1.5">
+            <input
+              value={manualJid}
+              onChange={(e) => setManualJid(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void onAdd(manualJid, null); } }}
+              placeholder="5511999990000@s.whatsapp.net or <group-id>@g.us"
+              className="flex-1 px-2 py-1 text-xs bg-surface-3 rounded border border-border focus:border-accent outline-none font-mono"
+            />
+            <button
+              type="button"
+              onClick={() => void onAdd(manualJid, null)}
+              disabled={!manualJid.trim()}
+              className="text-[11px] px-2 py-1 rounded border border-border bg-surface-3 hover:bg-surface-2 disabled:opacity-40"
+            >
+              Ignore
+            </button>
+          </div>
+          {error && <p className="text-[11px] text-rose-700 dark:text-rose-300">{error}</p>}
+        </div>
+      )}
+
+      {ignores.length === 0 && !adding && (
+        <p className="text-[11px] text-fg-faint py-1">
+          No chats ignored. Add one to exclude it from catch-all routing without affecting other chats.
+        </p>
+      )}
+
+      {ignores.map((i) => (
+        <div key={i.id} className="py-1.5 border-t border-border first:border-t-0 flex items-center gap-2">
+          <VolumeX size={11} className="text-fg-faint shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-fg truncate">{i.label ?? i.remote_jid}</p>
+            {i.label && <p className="text-[10px] font-mono text-fg-faint truncate">{i.remote_jid}</p>}
+          </div>
+          <button
+            onClick={() => void onRemove(i.remote_jid)}
+            className="p-1 rounded text-fg-faint hover:text-rose-700 dark:hover:text-rose-400 hover:bg-surface-3"
+            title="Remove from ignore list (resume forwarding)"
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+      ))}
+    </section>
+  );
 }

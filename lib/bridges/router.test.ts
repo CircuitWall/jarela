@@ -2,14 +2,18 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { BridgeRouteRow } from "@/lib/stores/bridges";
 
 const findRouteMock = vi.fn();
+const isIgnoredMock = vi.fn();
 vi.mock("@/lib/stores/bridges", () => ({
   findRoute: (...args: unknown[]) => findRouteMock(...args),
+  isIgnored: (...args: unknown[]) => isIgnoredMock(...args),
 }));
 
 import { resolveRoute } from "./router";
 
 beforeEach(() => {
   findRouteMock.mockReset();
+  isIgnoredMock.mockReset();
+  isIgnoredMock.mockReturnValue(false);
 });
 
 const route = (over: Partial<BridgeRouteRow>): BridgeRouteRow => ({
@@ -43,5 +47,21 @@ describe("resolveRoute", () => {
     const star = route({ remote_jid: "*", agent_id: "fallback" });
     findRouteMock.mockImplementation((_b: string, j: string) => (j === "x" ? exact : j === "*" ? star : null));
     expect(resolveRoute("b", "x")?.agent_id).toBe("exact");
+  });
+
+  it("returns null when the chat is on the bridge's ignore list, even with a matching exact route", () => {
+    const exact = route({ remote_jid: "muted@c.us", agent_id: "listener" });
+    findRouteMock.mockImplementation((_b: string, j: string) => (j === "muted@c.us" ? exact : null));
+    isIgnoredMock.mockImplementation((_b: string, j: string) => j === "muted@c.us");
+    expect(resolveRoute("b", "muted@c.us")).toBeNull();
+    // Sanity: findRoute must not even be consulted for ignored chats.
+    expect(findRouteMock).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the chat is ignored and only a catch-all would otherwise match", () => {
+    const star = route({ remote_jid: "*", agent_id: "triage" });
+    findRouteMock.mockImplementation((_b: string, j: string) => (j === "*" ? star : null));
+    isIgnoredMock.mockImplementation((_b: string, j: string) => j === "muted@c.us");
+    expect(resolveRoute("b", "muted@c.us")).toBeNull();
   });
 });

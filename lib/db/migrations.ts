@@ -178,6 +178,22 @@ export function runMigrations(db: DatabaseSync): void {
       UNIQUE(agent_id)                                 -- one route per agent (catch-all may intentionally multiplex chats)
     );
     CREATE INDEX IF NOT EXISTS idx_bridge_routes_bridge ON bridge_routes(bridge_id);
+    -- Per-bridge chat blocklist. When a catch-all route (remote_jid='*')
+    -- is in place, every otherwise-unrouted inbound message fires the
+    -- catch-all agent. An entry here short-circuits the router to NULL
+    -- BEFORE the catch-all is consulted, so messages from the listed
+    -- chats never enter any agent thread, never trigger tools, and never
+    -- write to memory. Independent of routes: a chat can be ignored even
+    -- without any route existing (the entry just makes it explicit).
+    CREATE TABLE IF NOT EXISTS bridge_ignores (
+      id          TEXT PRIMARY KEY,
+      bridge_id   TEXT NOT NULL,
+      remote_jid  TEXT NOT NULL,                       -- e.g. 5511...@s.whatsapp.net or ...@g.us or ...@lid
+      label       TEXT,                                -- user-visible name captured at add time
+      created_at  TEXT NOT NULL,
+      UNIQUE(bridge_id, remote_jid)
+    );
+    CREATE INDEX IF NOT EXISTS idx_bridge_ignores_bridge ON bridge_ignores(bridge_id);
     -- HTTP/HTTPS proxy configuration (ADR-0009). Single-row table; the
     -- CHECK constraint enforces it. Non-secret fields are plaintext for
     -- diagnostics; password goes through lib/crypto/envelope.ts.
