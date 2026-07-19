@@ -19,7 +19,7 @@ import type { BuiltinCategory } from "@/lib/tools/registry";
 const CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
   "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-  "Tasks", "Microsoft", "iCloud", "Config", "Agent",
+  "Tasks", "Microsoft", "Config", "Agent",
 ] as const satisfies readonly BuiltinCategory[];
 
 const CAPABILITIES = ["read", "write", "execute"] as const;
