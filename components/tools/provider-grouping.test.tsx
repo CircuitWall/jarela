@@ -33,6 +33,21 @@ describe("provider-grouping", () => {
     expect(providerForToolName("ms_todo_create_task")).toBe("microsoft");
   });
 
+  it("aliases bare calendar_* to google (Google Calendar tools)", () => {
+    // Regression guard for the "calendar_* tools land in Other" report:
+    // Google Calendar tools are registered as bare calendar_* (no
+    // google_ prefix) while Outlook / iCloud carry outlook_calendar_* /
+    // icloud_calendar_*. Bare calendar_* must alias to google so the
+    // Calendar category renders a Google provider box next to Outlook
+    // and iCloud instead of dumping the six Google entries into Other.
+    expect(providerForToolName("calendar_list_calendars")).toBe("google");
+    expect(providerForToolName("calendar_list_events")).toBe("google");
+    expect(providerForToolName("calendar_get_event")).toBe("google");
+    expect(providerForToolName("calendar_create_event")).toBe("google");
+    expect(providerForToolName("calendar_update_event")).toBe("google");
+    expect(providerForToolName("calendar_delete_event")).toBe("google");
+  });
+
   it("returns the OTHER bucket for unknown prefixes", () => {
     expect(providerForToolName("read_memory")).toBe(OTHER_PROVIDER_KEY);
     expect(providerForToolName("shell_exec")).toBe(OTHER_PROVIDER_KEY);
