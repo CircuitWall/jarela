@@ -94,10 +94,16 @@ export const KNOWN_BRAND_SLUGS: readonly string[] = Object.keys({
 // canonical simple-icons slug we render logos for. Register the short
 // prefix here and the resolver will return the canonical slug so both
 // `<ProviderLogo>` and `provider-grouping` treat them as the same brand.
-// Currently: `ms_todo_*`, `ms_graph_*`, `ms_search`, `ms_people_resolve`
-// all belong to the Microsoft brand (canonical slug `microsoft`).
+// Currently:
+//   - `ms_todo_*`, `ms_graph_*`, `ms_search`, `ms_people_resolve` belong
+//     to the Microsoft brand (canonical slug `microsoft`).
+//   - `calendar_*` are the bare-prefixed Google Calendar tools (Outlook
+//     and iCloud carry `outlook_calendar_*` / `icloud_calendar_*` and
+//     already group via their own slug); alias `calendar` → `google` so
+//     they render in the Google box instead of falling into Other.
 const BRAND_ALIASES: Record<string, string> = {
   ms: "microsoft",
+  calendar: "google",
 };
 
 const BRAND_ALIAS_KEYS: readonly string[] = Object.keys(BRAND_ALIASES).sort(
