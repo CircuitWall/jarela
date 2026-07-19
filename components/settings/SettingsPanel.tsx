@@ -1,5 +1,6 @@
 "use client";
 import { Cpu, Globe, Key, Palette, ScrollText, ServerCog, Shapes, ShieldCheck } from "lucide-react";
+import { useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { CredentialsListPanel } from "@/components/credentials/CredentialsPanel";
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
@@ -116,6 +117,99 @@ function PrivacySecurityPanel() {
     <div className="h-full overflow-y-auto no-scrollbar max-w-lg mx-auto w-full px-4 py-3 space-y-3">
       <SecurityPanel />
       <RedactionPanel />
+      <SystemControlCard />
     </div>
+  );
+}
+
+// Danger-zone controls: soft abort (kills every in-flight run without
+// restarting the process) and full restart (relies on the supervisor to
+// relaunch). Sits at the bottom of Privacy & security so it's out of
+// the way for daily use but reachable when something is stuck.
+function SystemControlCard() {
+  const [busy, setBusy] = useState<"abort" | "restart" | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onAbort = async () => {
+    if (busy) return;
+    if (!confirm("Abort every ongoing agent run and tool call?\n\nThe process keeps running; bridges, scheduler, and the DB stay up.")) {
+      return;
+    }
+    setBusy("abort");
+    setError(null);
+    setStatus(null);
+    try {
+      const r = await fetch("/api/v1/system/abort", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "user clicked Abort in Settings" }),
+      });
+      const body: { aborted?: number } = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setStatus(`Aborted ${body.aborted ?? 0} run(s).`);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onRestart = async () => {
+    if (busy) return;
+    if (!confirm("Restart the Jarela server?\n\nIn-flight runs will be aborted; the supervisor (Task Scheduler / systemd / launchd) will relaunch the process. If you're running via `npm start`, you will have to relaunch manually.")) {
+      return;
+    }
+    setBusy("restart");
+    setError(null);
+    setStatus(null);
+    try {
+      await fetch("/api/v1/system/restart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "user clicked Restart in Settings" }),
+      });
+      setStatus("Restart requested. The server will exit shortly; refresh once it is back up.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="rounded-xl border border-border bg-surface-2/70 p-3">
+      <h3 className="text-sm font-semibold text-fg">System control</h3>
+      <p className="mt-1 text-xs text-fg-muted">
+        Escape hatches when something is stuck. Aborting cancels every ongoing
+        agent run and tool call without restarting the server. Restarting exits
+        the process; a supervisor (Task Scheduler / systemd / launchd) will
+        relaunch it.
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => { void onAbort(); }}
+          disabled={busy !== null}
+          className="text-xs px-3 py-1.5 rounded-lg border border-border bg-surface-3 hover:bg-surface-2 text-fg disabled:opacity-50"
+        >
+          {busy === "abort" ? "Aborting…" : "Abort ongoing work"}
+        </button>
+        <button
+          type="button"
+          onClick={() => { void onRestart(); }}
+          disabled={busy !== null}
+          className="text-xs px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 disabled:opacity-50"
+        >
+          {busy === "restart" ? "Restarting…" : "Restart server"}
+        </button>
+      </div>
+      {status && (
+        <p className="mt-2 text-xs text-fg-muted">{status}</p>
+      )}
+      {error && (
+        <p className="mt-2 text-xs text-red-400">Error: {error}</p>
+      )}
+    </section>
   );
 }
