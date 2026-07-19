@@ -1,6 +1,7 @@
 "use client";
 import { Cpu, Globe, Key, Palette, ScrollText, ServerCog, Shapes, ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { api } from "@/api/client";
 import { useAppContext } from "@/contexts/AppContext";
 import { CredentialsListPanel } from "@/components/credentials/CredentialsPanel";
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
@@ -140,14 +141,8 @@ function SystemControlCard() {
     setError(null);
     setStatus(null);
     try {
-      const r = await fetch("/api/v1/system/abort", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "user clicked Abort in Settings" }),
-      });
-      const body: { aborted?: number } = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      setStatus(`Aborted ${body.aborted ?? 0} run(s).`);
+      const body = await api.system.abort("user clicked Abort in Settings");
+      setStatus(`Aborted ${body.aborted} run(s).`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -164,11 +159,7 @@ function SystemControlCard() {
     setError(null);
     setStatus(null);
     try {
-      await fetch("/api/v1/system/restart", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "user clicked Restart in Settings" }),
-      });
+      await api.system.restart("user clicked Restart in Settings");
       setStatus("Restart requested. The server will exit shortly; refresh once it is back up.");
     } catch (e) {
       setError((e as Error).message);
