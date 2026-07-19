@@ -15,6 +15,8 @@ import { api } from "@/api/client";
 import { usePackages } from "@/hooks/usePackages";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { useAppContext } from "@/contexts/AppContext";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
+import { groupByProvider, OTHER_PROVIDER_KEY } from "@/components/tools/provider-grouping";
 import type {
   BuiltinToolCategoryInfo,
   DefaultLangChainPackageInfo,
@@ -540,16 +542,7 @@ function PackageListRow({
       </div>
 
       {expanded && row.toolNames.length > 0 && (
-        <ul className="mt-2 ml-6 flex flex-wrap gap-1">
-          {row.toolNames.map((n) => (
-            <li
-              key={n}
-              className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-3 text-fg-muted"
-            >
-              {n}
-            </li>
-          ))}
-        </ul>
+        <ExpandedToolList toolNames={row.toolNames} />
       )}
       {expanded && row.kind === "npm" && row.packageImport && (
         <div className="mt-2 ml-6 text-[11px] text-fg-faint font-mono break-all">
@@ -560,6 +553,43 @@ function PackageListRow({
         <DropInSecretsEditor tool={row.external} onSaved={onSecretsSaved} />
       )}
     </li>
+  );
+}
+
+// Renders the flat list of tool names under an expanded row, grouped by
+// third-party provider (Gmail / Outlook / iCloud / Other). Categories
+// that span a single provider render as one box; wide categories like
+// "Mail" that touch several vendors break out into per-provider blocks
+// so the user can eyeball which brand each tool belongs to.
+function ExpandedToolList({ toolNames }: { toolNames: string[] }) {
+  const groups = groupByProvider(toolNames, (n) => n);
+  return (
+    <div className="mt-2 ml-6 space-y-1.5">
+      {groups.map((g) => (
+        <div key={g.provider} className="rounded-md border border-border/60 bg-surface-3/40 p-1.5">
+          <div className="flex items-center gap-1.5 mb-1 text-[10px] uppercase tracking-wide text-fg-subtle">
+            {g.provider !== OTHER_PROVIDER_KEY && (
+              <ProviderLogo name={g.provider} size={11} />
+            )}
+            <span className="font-medium">{g.label}</span>
+            <span className="text-fg-faint normal-case tracking-normal">({g.items.length})</span>
+          </div>
+          <ul className="flex flex-wrap gap-1">
+            {g.items.map((n) => (
+              <li
+                key={n}
+                title={n}
+                className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-2 text-fg-muted"
+              >
+                {g.provider !== OTHER_PROVIDER_KEY && n.startsWith(g.provider + "_")
+                  ? n.slice(g.provider.length + 1)
+                  : n}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 
