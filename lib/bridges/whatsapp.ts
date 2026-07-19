@@ -390,18 +390,18 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         this.observeChat(c.id, c.name ?? null, ts);
       }
       for (const raw of payload.contacts ?? []) {
-        const ct = raw as { id?: string; name?: string; notify?: string; verifiedName?: string };
-        if (!ct.id) continue;
+        const ct = raw as {
+          id?: string;
+          name?: string;
+          notify?: string;
+          verifiedName?: string;
+          phoneNumber?: string;
+          lid?: string;
+        };
+        const chatJid = pickContactChatJid(ct);
+        if (!chatJid) continue;
         const name = ct.name ?? ct.verifiedName ?? ct.notify ?? null;
-        // Only register a chat if the contact id looks like a chat JID
-        // (skip the user's own LID/PN noise). @s.whatsapp.net / @g.us only.
-        if (ct.id.endsWith("@s.whatsapp.net") || ct.id.endsWith("@g.us")) {
-          this.observeChat(ct.id, name, null);
-        } else {
-          // Still keep the display name handy in case we see this contact
-          // from a different JID shape later — but don't surface non-chat
-          // JIDs in the picker.
-        }
+        this.observeChat(chatJid, name, null);
       }
     });
 
@@ -424,11 +424,18 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     });
 
     sock.ev.on("contacts.upsert", (...args: unknown[]) => {
-      const list = (args[0] ?? []) as Array<{ id?: string; name?: string; notify?: string; verifiedName?: string }>;
+      const list = (args[0] ?? []) as Array<{
+        id?: string;
+        name?: string;
+        notify?: string;
+        verifiedName?: string;
+        phoneNumber?: string;
+        lid?: string;
+      }>;
       for (const ct of list) {
-        if (!ct.id) continue;
-        if (!(ct.id.endsWith("@s.whatsapp.net") || ct.id.endsWith("@g.us"))) continue;
-        this.observeChat(ct.id, ct.name ?? ct.verifiedName ?? ct.notify ?? null, null);
+        const chatJid = pickContactChatJid(ct);
+        if (!chatJid) continue;
+        this.observeChat(chatJid, ct.name ?? ct.verifiedName ?? ct.notify ?? null, null);
       }
     });
   }
@@ -539,12 +546,18 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   }
 
   listChats(): ChatInfo[] {
-    // Only chats whose JID is a routable chat (1:1 or group). Status JIDs
-    // (broadcast lists, statuses, "@broadcast", "@lid", "@s.whatsapp.net:0")
-    // are filtered out — none of them are valid sendMessage targets.
+    // Only chats whose JID is a routable chat (1:1 PN, 1:1 LID, or group).
+    // Status/broadcast/self JIDs are filtered out — none of them are valid
+    // sendMessage targets. Baileys v7 delivers most DM contacts as `@lid`
+    // now (WhatsApp finalized the LID rollout for privacy), so we accept
+    // that suffix alongside the classic `@s.whatsapp.net`.
     const out: ChatInfo[] = [];
     for (const c of this.chats.values()) {
-      if (c.remote_jid.endsWith("@s.whatsapp.net") || c.remote_jid.endsWith("@g.us")) {
+      if (
+        c.remote_jid.endsWith("@s.whatsapp.net") ||
+        c.remote_jid.endsWith("@g.us") ||
+        c.remote_jid.endsWith("@lid")
+      ) {
         out.push(c);
       }
     }
@@ -927,6 +940,41 @@ function pickRoutableJid(primary: string, alt: string | undefined): string {
   if (isRoutable(primary)) return primary;
   if (isRoutable(alt)) return alt!;
   return primary;
+}
+
+/**
+ * Derive the chat JID we want to key on for a `Contact` payload delivered
+ * by `contacts.upsert` / `messaging-history.set`.
+ *
+ * Baileys v7 changed the `Contact` interface: `id` is the preferred
+ * WhatsApp identifier and may be in either LID (`@lid`) or PN
+ * (`@s.whatsapp.net`) form. If `id` is an LID, `phoneNumber` carries the
+ * PN mapping (when WhatsApp shares it); if `id` is a PN, `lid` carries
+ * the LID. See https://baileys.wiki/docs/migration/to-v7.0.0/.
+ *
+ * We prefer the PN form when available so contact-book entries collide
+ * with the PN-keyed routes established by inbound messages (see
+ * `pickRoutableJid`). If only the LID is known, we still register the
+ * chat under `@lid` so it appears in the picker — WhatsApp accepts
+ * sendMessage to either identifier in v7.
+ *
+ * Returns null for JIDs that aren't routable chats (self broadcast,
+ * status@broadcast, malformed ids, empty input).
+ */
+function pickContactChatJid(ct: {
+  id?: string;
+  phoneNumber?: string;
+  lid?: string;
+}): string | null {
+  if (ct.phoneNumber && ct.phoneNumber.endsWith("@s.whatsapp.net")) {
+    return ct.phoneNumber;
+  }
+  const id = ct.id;
+  if (!id) return null;
+  if (id.endsWith("@s.whatsapp.net") || id.endsWith("@g.us") || id.endsWith("@lid")) {
+    return id;
+  }
+  return null;
 }
 
 /**
