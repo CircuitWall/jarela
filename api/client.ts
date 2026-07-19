@@ -862,6 +862,25 @@ export const api = {
         body: JSON.stringify({ ssrf_bypass }),
       }),
   },
+
+  system: {
+    // Soft reset: aborts every in-flight LangGraph run without exiting the
+    // process. Fast and cheap — no supervisor relaunch, bridges stay up.
+    abort: (reason?: string) =>
+      request<import("./types").SystemAbortResponse>("/system/abort", {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    // Hard reset: schedules process.exit(0) ~250ms after responding so the
+    // supervisor (launchd / systemd / Task Scheduler / installed-launcher)
+    // can relaunch. No-op UX when running via `npm start` in a foreground
+    // shell — the process just exits and the operator restarts by hand.
+    restart: (reason?: string) =>
+      request<import("./types").SystemRestartResponse>("/system/restart", {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+  },
 };
 
 
