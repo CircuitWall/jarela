@@ -9,7 +9,8 @@
 //   3. close every bridge adapter (WhatsApp WS, future kinds) cleanly
 //   4. wait briefly for the runs to actually finish flushing
 //   5. close the SQLite handle so WAL is checkpointed
-//   6. exit 0
+//   6. release the single-instance PID lock
+//   7. exit 0
 //
 // A hard timeout aborts the drain if any subsystem hangs — the supervisor
 // (Task Scheduler / systemd / installed-launcher.ps1) will then restart us
@@ -147,6 +148,16 @@ async function runShutdown(): Promise<void> {
     closeDb();
   } catch (err) {
     console.error("[jarela] closing db failed:", err);
+  }
+
+  // 6. Release the single-instance PID lock so the next launch (dev
+  //    restart, launcher supervisor) doesn't see a stale file. Only
+  //    removed if the file still points at our own pid.
+  try {
+    const { releasePidLock } = await import("@/lib/lifecycle/pidfile");
+    releasePidLock();
+  } catch (err) {
+    console.error("[jarela] releasing pid lock failed:", err);
   }
 
   clearTimeout(forceExit);
