@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ToolInfo } from "@/api/types";
+import { ProviderLogo } from "@/components/models/ProviderLogo";
+import { groupByProvider, OTHER_PROVIDER_KEY } from "@/components/tools/provider-grouping";
 import { permissionKindForTool, toolScoreClass, type ToolPermissionKind } from "./permissions";
 
 interface ToolGroupBlockProps {
@@ -98,10 +100,10 @@ export function ToolCategoryBlock({
       allOn={allOn}
       onToggleAll={(enable) => onToggleCategory(category, enable)}
       headerRef={headerRef}
-      bodyClassName="grid grid-cols-1 sm:grid-cols-2 gap-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
+      bodyClassName="space-y-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
     >
       {advancedMode
-        ? tools.map((t) => <ToolCheckbox key={t.name} tool={t} selected={selected} onToggle={onToggleTool} />)
+        ? <ProviderGroupedToolGrid tools={tools} selected={selected} onToggleTool={onToggleTool} />
         : <NormalPermissionControls
             category={category}
             tools={tools}
@@ -130,6 +132,102 @@ function ToolCheckbox({ tool, selected, onToggle }: { tool: ToolInfo; selected: 
         </span>
       </span>
     </label>
+  );
+}
+
+// Renders the advanced-mode grid of per-tool checkboxes, but with tools
+// clustered into per-provider sub-boxes (Gmail / Outlook / iCloud / Other).
+// Wide categories like "Mail" span multiple vendors — the boxes let the
+// user pick "all of Outlook" without also flipping Gmail on. Provider
+// header carries a tri-state checkbox that toggles every tool inside.
+function ProviderGroupedToolGrid({
+  tools,
+  selected,
+  onToggleTool,
+}: {
+  tools: ToolInfo[];
+  selected: string[];
+  onToggleTool: (name: string) => void;
+}) {
+  const groups = groupByProvider(tools, (t) => t.name);
+  // Single provider (typically "Other" for e.g. Memory / Files / Shell):
+  // skip the extra box chrome and render a flat grid like before.
+  if (groups.length === 1) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+        {tools.map((t) => (
+          <ToolCheckbox key={t.name} tool={t} selected={selected} onToggle={onToggleTool} />
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1.5">
+      {groups.map((g) => (
+        <ProviderToolBox
+          key={g.provider}
+          provider={g.provider}
+          label={g.label}
+          tools={g.items}
+          selected={selected}
+          onToggleTool={onToggleTool}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ProviderToolBox({
+  provider,
+  label,
+  tools,
+  selected,
+  onToggleTool,
+}: {
+  provider: string;
+  label: string;
+  tools: ToolInfo[];
+  selected: string[];
+  onToggleTool: (name: string) => void;
+}) {
+  const selectedInProv = tools.filter((t) => selected.includes(t.name)).length;
+  const allOn = selectedInProv === tools.length && tools.length > 0;
+  const someOn = selectedInProv > 0 && !allOn;
+  const headerRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (headerRef.current) headerRef.current.indeterminate = someOn;
+  }, [someOn]);
+  const toggleAll = (enable: boolean) => {
+    for (const t of tools) {
+      const isOn = selected.includes(t.name);
+      if (enable !== isOn) onToggleTool(t.name);
+    }
+  };
+  return (
+    <div className="rounded-lg border border-border/70 bg-surface-2/50">
+      <div className="flex items-center gap-1.5 px-2 py-1 border-b border-border/50">
+        <input
+          ref={headerRef}
+          type="checkbox"
+          className="rounded border-border"
+          checked={allOn}
+          onChange={(e) => toggleAll(e.target.checked)}
+          aria-label={`Toggle all ${label} tools`}
+        />
+        {provider !== OTHER_PROVIDER_KEY && (
+          <ProviderLogo name={provider} size={12} className="text-fg-subtle" />
+        )}
+        <span className="text-[11px] font-semibold text-fg-muted">{label}</span>
+        <span className="text-[10px] text-fg-faint ml-auto">
+          {selectedInProv}/{tools.length}
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 p-2">
+        {tools.map((t) => (
+          <ToolCheckbox key={t.name} tool={t} selected={selected} onToggle={onToggleTool} />
+        ))}
+      </div>
+    </div>
   );
 }
 
