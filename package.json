@@ -167,7 +167,8 @@
     "@serwist/build": {
       "source-map": "^0.7.6"
     },
-    "hono": "^4.12.25"
+    "hono": "^4.12.25",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
