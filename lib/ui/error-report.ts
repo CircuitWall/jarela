@@ -161,14 +161,27 @@ export function buildEnv(appVersion: string): ReportEnv {
   };
 }
 
-// Push a sticky error toast carrying the details + report payload. The
-// Toaster reads `details` and `reportInput` and renders the expand chevron
-// plus Copy / Report buttons. We don't await the version fetch — the
-// initial render uses "unknown" and the next push gets the real value.
+// Push an error toast carrying the details + report payload. The Toaster
+// reads `details` and `reportInput` and renders the expand chevron plus
+// Copy / Report buttons. We don't await the version fetch — the initial
+// render uses "unknown" and the next push gets the real value.
+//
+// The toast is deduped by title + optional context.dedupeKey so a
+// re-firing error (e.g. a background probe retrying every few seconds)
+// collapses to a single card instead of stacking. TTL is 30s and gets
+// refreshed on every re-push, giving us "persist while broken,
+// auto-dismiss once fixed" for free — the user doesn't have to hunt
+// down and click every duplicate to clear the queue.
 export function pushErrorToast(input: ErrorReportInput): string {
   const details = stringifyError(input.error);
   // Kick off (or reuse) the version fetch but don't block the toast.
   void readAppVersion();
+  // Callers can pass an explicit `context.dedupeKey` (string) to override
+  // the default title-based key — useful when the same title covers
+  // multiple independent failure surfaces that shouldn't collapse.
+  const explicitKey = input.context && typeof input.context.dedupeKey === "string"
+    ? (input.context.dedupeKey as string)
+    : null;
   return pushToast({
     kind: "error",
     source: "system",
@@ -177,7 +190,8 @@ export function pushErrorToast(input: ErrorReportInput): string {
     body: input.summary ?? "Click to expand for details",
     agent_id: null,
     thread_id: null,
-    ttl: 0,
+    ttl: 30_000,
+    dedupeKey: explicitKey ?? `error:${input.title}`,
     details,
     reportInput: input,
   });
