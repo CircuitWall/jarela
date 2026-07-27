@@ -42,10 +42,36 @@ export interface Toast {
   // When present the Toaster renders the "Report this issue" button which
   // opens a pre-filled GitHub issue. Set by pushErrorToast.
   reportInput?: ErrorReportInput;
+  // Collapses repeat pushes into the same visible toast. When a new push
+  // arrives with a dedupeKey already on-screen we update that toast in
+  // place (same id, refreshed created_at, refreshed ttl) instead of
+  // stacking another card. Combined with a non-zero ttl this yields
+  // "persist while the error keeps re-firing, auto-dismiss once it
+  // stops" — e.g. a probe recovering, or a user-action failure that
+  // isn't retried.
+  dedupeKey?: string;
 }
 
 let toasts: Toast[] = [];
 const listeners = new Set<(t: Toast[]) => void>();
+// Per-toast auto-dismiss handles, keyed by toast id. Tracked at the store
+// layer so dedupe refresh can cancel+reschedule the timer without leaking
+// stale timeouts (which would otherwise fire a dismiss on the *refreshed*
+// toast at the *original* deadline).
+const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleDismiss(id: string, ttl: number): void {
+  const existing = dismissTimers.get(id);
+  if (existing) clearTimeout(existing);
+  dismissTimers.delete(id);
+  if (ttl > 0) {
+    const handle = setTimeout(() => {
+      dismissTimers.delete(id);
+      dismissToast(id);
+    }, ttl);
+    dismissTimers.set(id, handle);
+  }
+}
 
 // Per-agent unread counts. The `null` bucket holds events with no agent
 // (system messages). Total = sum of all buckets.
@@ -60,6 +86,27 @@ function notifyUnread() {
 }
 
 export function pushToast(input: Omit<Toast, "id" | "created_at">): string {
+  // Dedupe path: if a toast with the same dedupeKey is already on-screen,
+  // update it in place. We keep the original id (so the Toaster's ToastCard
+  // stays mounted and preserves user state like the expanded-details panel)
+  // and bump created_at so the card's countdown / progress-bar effect
+  // resets from "now". We deliberately do NOT bump the unread counter on
+  // an update — a re-firing error shouldn't keep incrementing the badge.
+  if (input.dedupeKey) {
+    const existing = toasts.find((t) => t.dedupeKey === input.dedupeKey);
+    if (existing) {
+      const updated: Toast = {
+        ...existing,
+        ...input,
+        id: existing.id,
+        created_at: Date.now(),
+      };
+      toasts = toasts.map((t) => (t.id === existing.id ? updated : t));
+      scheduleDismiss(existing.id, updated.ttl);
+      notify();
+      return existing.id;
+    }
+  }
   const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const t: Toast = { ...input, id, created_at: Date.now() };
   toasts = [...toasts, t];
@@ -67,13 +114,16 @@ export function pushToast(input: Omit<Toast, "id" | "created_at">): string {
   unreadByAgent.set(key, (unreadByAgent.get(key) ?? 0) + 1);
   notify();
   notifyUnread();
-  if (t.ttl > 0) {
-    setTimeout(() => dismissToast(id), t.ttl);
-  }
+  scheduleDismiss(id, t.ttl);
   return id;
 }
 
 export function dismissToast(id: string): void {
+  const existing = dismissTimers.get(id);
+  if (existing) {
+    clearTimeout(existing);
+    dismissTimers.delete(id);
+  }
   const before = toasts.length;
   toasts = toasts.filter((t) => t.id !== id);
   if (toasts.length !== before) notify();

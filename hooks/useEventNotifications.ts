@@ -175,6 +175,10 @@ export function useEventNotifications(options: Options) {
         // Background health probes: surface as a sticky toast so the user
         // notices before the agent burns a turn on an expired token. The
         // runner already dedups so every health_alert is worth showing.
+        // We add a dedupeKey per (category,label) so a failing→recovered
+        // transition REPLACES the failing card (turning it green and
+        // scheduling a 6s auto-dismiss) instead of stacking a second
+        // toast that the user has to click away manually.
         if (ev.type === "health_alert") {
           lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
           saveLastTs(lastTsRef.current);
@@ -190,6 +194,7 @@ export function useEventNotifications(options: Options) {
             href: "/setup",
             hrefLabel: "Open setup",
             ttl: recovered ? 6000 : 0,
+            dedupeKey: `health:${ev.category}:${ev.label}`,
           });
           return;
         }
