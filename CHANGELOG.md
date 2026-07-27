@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-07-27
+
+### Added
+
+- **Agent list sorted by latest interaction.** `listAgentConfigs()`
+  now orders agents by `MAX(threads.updated_at) DESC`, falling back
+  to the agent's own `created_at` for agents that have no thread
+  yet. The agent you last talked to (either side) bubbles to the
+  top, replacing the previous `is_default DESC, created_at ASC`
+  ordering that pinned old / default agents even when the user
+  hadn't touched them in months.
+
+### Security
+
+- **Patched high-severity CVEs in prod deps.** `npm audit fix` within
+  semver ranges (body-parser, fast-uri, protobufjs, postcss, and
+  other transitives) plus a top-level `sharp: ^0.35.3` override so
+  both baileys and next resolve past the libvips CVEs
+  (GHSA-f88m-g3jw-g9cj: CVE-2026-33327, -33328, -35590, -35591).
+  Brings `npm audit --omit=dev` from 10 vulnerabilities
+  (1 low, 5 moderate, 4 high) down to 3 moderate, unblocking the
+  `security:ci` gate. The remaining moderates are in
+  `@hono/node-server` via `@modelcontextprotocol/sdk` and only fix
+  via a breaking `@langchain/mcp-adapters` downgrade, so they stay
+  queued behind an upstream release.
+
+### Fixed
+
+- **Error notifications collapse and auto-clear.** Toasts gained an
+  optional `dedupeKey`; repeat pushes with the same key update the
+  existing card in place instead of stacking another one to click
+  away. `pushErrorToast` now defaults to `error:${title}` and a 30s
+  auto-dismiss window (was sticky), so a persistent error keeps
+  refreshing itself while a one-off error clears itself once it
+  stops re-firing. `health_alert` events use
+  `health:${category}:${label}` so a *recovered* event replaces the
+  *failing* card (turning it green and auto-dismissing after 6s)
+  instead of leaving two toasts to click through. Store-level
+  dismiss timers are tracked in a `Map` so a dedupe refresh cleanly
+  cancels + reschedules, and `ToastCard` resets its countdown +
+  progress-bar animation when `created_at` changes so the refreshed
+  ttl gets a fresh visual window.
+
 ## [1.18.0] - 2026-07-19
 
 ### Added
