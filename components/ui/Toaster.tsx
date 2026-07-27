@@ -71,7 +71,17 @@ function ToastCard({ toast }: { toast: Toast }) {
       setTimeout(() => dismissToast(toast.id), 200);
     }, Math.max(remainingRef.current, 0));
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [paused, toast.id, toast.ttl]);
+  }, [paused, toast.id, toast.ttl, toast.created_at]);
+
+  // When the store refreshes this toast via dedupe (same id, new
+  // created_at), reset the countdown so the fresh ttl gets a fresh
+  // window — otherwise the card would still dismiss at the ORIGINAL
+  // mount time + ttl even though the underlying error just re-fired.
+  useEffect(() => {
+    remainingRef.current = toast.ttl;
+    startedRef.current = Date.now();
+    setExiting(false);
+  }, [toast.created_at, toast.ttl]);
 
   function close() {
     setExiting(true);
@@ -230,9 +240,12 @@ function ToastCard({ toast }: { toast: Toast }) {
           )}
         </div>
       )}
-      {/* Bottom progress sliver showing time remaining; pauses on hover. */}
+      {/* Bottom progress sliver showing time remaining; pauses on hover.
+          Keyed by created_at so a dedupe refresh restarts the CSS
+          animation from 100% instead of continuing the stale run. */}
       {toast.ttl > 0 && !exiting && (
         <div
+          key={toast.created_at}
           className="absolute bottom-0 left-0 right-0 h-[2px] origin-left rounded-bl-xl"
           style={{
             backgroundColor: isError ? "#fb7185" : "#3b82f6",
