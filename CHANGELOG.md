@@ -7,7 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.19.0] - 2026-07-27
+## [1.20.0] - 2026-08-01
+
+### Added
+
+- **Image attachments as disk refs.** Image content parts are now
+  spilled to `%LOCALAPPDATA%\Jarela\attachments\` (or
+  `~/.jarela/attachments/`) and referenced by `image_ref` markers
+  in the persisted `messages.content` blob, replacing the base64
+  string previously stored inline. Reloading a thread with many
+  screenshots no longer streams megabytes of encoded pixels per row,
+  and the persistence path is one write per attachment instead of an
+  O(N) balloon on every subsequent turn. See ADR-0065.
+- **Image attachments shrunk at ingest.** Uploaded / captured images
+  are decoded via sharp, downscaled to 1600px on the longest edge,
+  and re-encoded at JPEG q=85 (or PNG q=90 for images with an alpha
+  channel) BEFORE hitting the disk-ref layer. Common phone screenshots
+  drop from 4-8MB to 200-400KB with no visible quality loss, so the
+  LLM's vision path pays for pixels it can actually resolve and the
+  context window budget goes further. See ADR-0066.
+- **Context window discovery + self-correcting overflow.** On model
+  save, Jarela probes the provider once for the effective context
+  window and stores it on the model row; subsequent runs use it to
+  size the history window instead of hardcoded defaults. When a run
+  overflows anyway (provider bumped the limit down mid-window, or
+  discovery was stale), the agent halves the fallback window and
+  retries once — turning what used to be a hard 400 into a graceful
+  degradation. See ADR-0067.
+- **Provider auth-failure surface.** Auth errors from Anthropic,
+  OpenAI, Gemini, and Cohere are now classified at the provider layer
+  and turned into a top-of-thread banner that deep-links straight to
+  the failing credential in Settings, instead of surfacing as a raw
+  stream error toast the user can't act on. See ADR-0068.
+- **Persistent `run_error` marker rows.** When a run crashes or is
+  interrupted, a compact assistant-role row with `category="run_error"`
+  is written to the thread so the failure survives a reload and the
+  message list shows a discrete chip (with error code + credential
+  deep-link) instead of a floating error toast that disappears on
+  refresh. The row is filtered out of the LLM context so subsequent
+  turns don't see phantom system output. See ADR-0069.
+- **Refuse-to-save on credential auth failure.** POST/PUT
+  `/api/v1/credentials` now probe the provider immediately after save
+  and roll the row back with a 400 if the vendor already returns
+  `auth_failed`. Prevents a whole class of "I saved my key, why does
+  chat still fail" reports. `?force=1` bypasses the probe when the
+  operator is intentionally saving a credential they know the vendor
+  can't yet validate (offline env, staging endpoint, etc.). See
+  ADR-0070.
+
+### Fixed
+
+- **Gemini `thoughtSignature` threaded through tool-call replay.**
+  Gemini 2.5+ models emit an opaque `thoughtSignature` on parts they
+  produce once thinking is enabled, and every follow-up request must
+  replay that signature on the corresponding `functionCall` part(s)
+  or the API 400s with "Function call is missing a thought_signature
+  in functionCall parts". The provider layer now captures the
+  signature per part in both the streaming and non-streaming decoders,
+  parks it on `AIMessage.additional_kwargs.provider_tool_call_meta`
+  keyed by tool call id (LangChain merges these across chunks via
+  recursive `_mergeDicts`), and reattaches it as a sibling
+  `thoughtSignature` field when replaying the functionCall part on
+  the next request. Also fixes a latent bug where `tool_call_chunk`
+  was emitting `index: 0` for every call in a multi-call turn — now
+  uses a per-call counter and synthesises stable ids
+  (`gemini_fc_${index}`) when Gemini omits them. See
+  `docs/adr/0065-gemini-thought-signature-passthrough.md` (#358).
+- **Steer / interrupt no longer reorders message bubbles.** When
+  the user stopped an in-flight reply and immediately sent another
+  message, the client-side queue drained optimistically as soon as
+  `sse.streaming` flipped false — BEFORE the server had persisted the
+  interrupted assistant reply — so the follow-up user bubble landed
+  above the interrupted reply in local state. `appendUnique` now
+  sorts by `created_at` after reconciliation so the display order
+  matches the server's chronological storage (#359).
+
+
 
 ### Added
 
