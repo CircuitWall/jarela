@@ -6,6 +6,7 @@ import { useSSE } from "@/hooks/useSSE";
 import { useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading } from "@/lib/ui/loading";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
+import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
 import {
@@ -72,7 +73,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   attachRef.current = sse.attach;
   clearStreamingRef.current = sse.clearStreamingContent;
 
-  useChatErrorReporting({ sessionError, streamError: sse.error, agentId, threadId });
+  useChatErrorReporting({ sessionError, streamError: sse.error, authError: sse.authError, agentId, threadId });
 
   const streamingRef = useRef(false);
   streamingRef.current = sse.streaming;
@@ -247,6 +248,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       />
 
       <ApprovalsBanner agentId={agentId} />
+      <AuthErrorBanner authError={sse.authError} onDismiss={sse.dismissAuthError} />
 
       <InputBar
         attachments={attachments}

@@ -8,6 +8,7 @@ import {
 } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { getProvider } from "@/lib/providers";
+import { ProviderAuthError, isAuthErrorMessage } from "@/lib/providers/errors";
 import { getModelConfig, getDefaultModelConfig, getModelParams, upsertModelConfig } from "@/lib/stores/model-config";
 import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
@@ -471,6 +472,18 @@ async function* streamWithConfigImpl(
           "or pin a smaller value explicitly in the model config.";
       }
       code = "context_length_exceeded";
+    } else if (err instanceof ProviderAuthError || isAuthErrorMessage(rawMsg)) {
+      // Auth failure: the credential is wrong / revoked / expired.
+      // Surface a targeted banner in the UI that deep-links to the
+      // credential editor. Carry the credential_id in the SSE payload
+      // so the UI can pre-open the right row. See ADR-0068.
+      const providerLabel = err instanceof ProviderAuthError
+        ? err.provider
+        : cfg.provider;
+      friendly =
+        `${providerLabel}: the credential the model uses was rejected as invalid or expired. ` +
+        `Open the credential in Settings → Credentials and re-enter or refresh the key, then retry.`;
+      code = "auth_failed";
     } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
       code = "max_tokens_exhausted";
     }
@@ -478,7 +491,12 @@ async function* streamWithConfigImpl(
     // module triggered it, without dumping the full Pregel/webpack trace.
     const firstAppFrame = stack.split("\n").find((l) => /\(rsc\)\.\/lib\//.test(l));
     const trimmed = firstAppFrame ? `\n${firstAppFrame.trim()}` : "";
-    yield { type: "error", data: { message: `${friendly}${trimmed}`, code } };
+    const errPayload: Record<string, unknown> = { message: `${friendly}${trimmed}`, code };
+    if (code === "auth_failed" && cfg.credential_id) {
+      errPayload.credential_id = cfg.credential_id;
+      errPayload.provider = cfg.provider;
+    }
+    yield { type: "error", data: errPayload };
     return;
   }
 

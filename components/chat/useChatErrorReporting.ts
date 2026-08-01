@@ -5,6 +5,7 @@ import { reportError } from "@/lib/ui/error-message";
 interface Params {
   sessionError?: string | null;
   streamError: string | null | undefined;
+  authError?: { message: string } | null;
   agentId: string | null;
   threadId: string | null;
 }
@@ -13,7 +14,7 @@ interface Params {
 // input or rendering an inline red banner. Toasts are dismissible,
 // dedupe-by-id, and carry the Report path. The chat stays interactive so
 // the user can retry without reloading.
-export function useChatErrorReporting({ sessionError, streamError, agentId, threadId }: Params) {
+export function useChatErrorReporting({ sessionError, streamError, authError, agentId, threadId }: Params) {
   const lastSessionErrorRef = useRef<string | null>(null);
   useEffect(() => {
     if (!sessionError) { lastSessionErrorRef.current = null; return; }
@@ -30,6 +31,10 @@ export function useChatErrorReporting({ sessionError, streamError, agentId, thre
   const lastStreamErrorRef = useRef<string | null>(null);
   useEffect(() => {
     if (!streamError) { lastStreamErrorRef.current = null; return; }
+    // Suppress the generic toast when the AuthErrorBanner already
+    // owns the presentation for this failure — otherwise the user sees
+    // both a red banner AND a toast with the same message.
+    if (authError && authError.message === streamError) { lastStreamErrorRef.current = streamError; return; }
     if (lastStreamErrorRef.current === streamError) return;
     lastStreamErrorRef.current = streamError;
     reportError({
@@ -37,5 +42,5 @@ export function useChatErrorReporting({ sessionError, streamError, agentId, thre
       fallbackTitle: "Chat stream error",
       context: { agent_id: agentId, thread_id: threadId, panel: "chat", action: "stream" },
     });
-  }, [streamError, agentId, threadId]);
+  }, [streamError, authError, agentId, threadId]);
 }
