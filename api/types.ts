@@ -984,7 +984,7 @@ export type SSEEventType =
   | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_result"; id: string; name: string; result: unknown }
   | { type: "done"; message_id: string; usage: { input_tokens: number; output_tokens: number } }
-  | { type: "error"; message: string; code: string }
+  | { type: "error"; message: string; code: string; credential_id?: string; provider?: string }
   // Server is rejecting a new POST/WS message because a run is already in
   // flight for this thread (another tab, another device). The stream that
   // follows replays the in-flight run's buffered events plus live deltas;

@@ -1,6 +1,7 @@
 import { makeOpenAICompatProvider } from "./openai";
 import { resolveProviderApiKey } from "./credentials";
 import { readSSELines } from "./streaming";
+import { ProviderAuthError, isAuthHttpStatus } from "./errors";
 import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
 import type { ModelProvider, ProviderMessage, ProviderParams, ProviderStreamEvent, ProviderStreamResult } from "./types";
 
@@ -261,6 +262,11 @@ async function geminiNativeGenerate(
   );
   if (!res.ok) {
     const msg = await res.text().catch(() => res.statusText);
+    // 400 with API_KEY_INVALID is the Google-specific auth-fail shape; the
+    // rest of the auth status set is the standard 401/403.
+    if (isAuthHttpStatus(res.status) || /API_KEY_INVALID/i.test(msg)) {
+      throw new ProviderAuthError("gemini", `Gemini generateContent auth error: ${res.status} ${msg}`, res.status);
+    }
     throw new Error(`Gemini generateContent error: ${res.status} ${msg}`);
   }
   return await res.json() as Record<string, unknown>;
@@ -330,6 +336,9 @@ async function* geminiNativeStreamInvoke(
   );
   if (!res.ok || !res.body) {
     const msg = await res.text().catch(() => res.statusText);
+    if (isAuthHttpStatus(res.status) || /API_KEY_INVALID/i.test(msg)) {
+      throw new ProviderAuthError("gemini", `Gemini streamGenerateContent auth error: ${res.status} ${msg}`, res.status);
+    }
     throw new Error(`Gemini streamGenerateContent error: ${res.status} ${msg}`);
   }
 
@@ -419,6 +428,9 @@ async function geminiNativeChat(
   );
   if (!res.ok || !res.body) {
     const msg = await res.text().catch(() => res.statusText);
+    if (isAuthHttpStatus(res.status) || /API_KEY_INVALID/i.test(msg)) {
+      throw new ProviderAuthError("gemini", `Gemini chat stream auth error: ${res.status} ${msg}`, res.status);
+    }
     throw new Error(`Gemini chat stream error: ${res.status} ${msg}`);
   }
 
@@ -499,6 +511,11 @@ export const geminiProvider: ModelProvider = {
     try {
       return await geminiNativeChat(model_id, messages, params);
     } catch (err) {
+      // Auth failures use the SAME api_key on both endpoints — falling
+      // back to compat will fail the same way and mask the real cause
+      // (ADR-0068). Re-throw so the runtime can surface a targeted
+      // "credential invalid" banner deep-linking to /settings/credentials.
+      if (err instanceof ProviderAuthError) throw err;
       console.warn("[gemini] native chat failed, falling back to OpenAI-compat:", err);
       return geminiCompat.chat(model_id, messages, params);
     }
@@ -512,6 +529,7 @@ export const geminiProvider: ModelProvider = {
     try {
       return await geminiNativeInvoke(model_id, messages, params, tools);
     } catch (err) {
+      if (err instanceof ProviderAuthError) throw err;
       console.warn("[gemini] native invoke failed, falling back to OpenAI-compat:", err);
       if (!geminiCompat.invoke) throw new Error("Gemini compat provider has no invoke() implementation");
       return geminiCompat.invoke(model_id, messages, params, tools);
@@ -527,6 +545,7 @@ export const geminiProvider: ModelProvider = {
       try {
         yield* geminiNativeStreamInvoke(model_id, messages, params, tools);
       } catch (err) {
+        if (err instanceof ProviderAuthError) throw err;
         console.warn("[gemini] native streamInvoke failed, falling back to OpenAI-compat:", err);
         if (!geminiCompat.streamInvoke) throw new Error("Gemini compat provider has no streamInvoke() implementation");
         yield* geminiCompat.streamInvoke(model_id, messages, params, tools);

@@ -18,6 +18,12 @@ export function useSSE(onDone?: () => void) {
   const [thinkingContent, setThinkingContent] = useState("");
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Structured auth-failure surface: when set, ChatView renders a banner
+  // that deep-links to /settings/credentials for the offending row.
+  // Cleared on every new start()/attach().
+  const [authError, setAuthError] = useState<
+    { message: string; credential_id?: string; provider?: string } | null
+  >(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadIdRef = useRef<string | null>(null);
   // Live "what is the agent doing" label, surfaced in the app header. The
@@ -143,6 +149,13 @@ export function useSSE(onDone?: () => void) {
         setStreaming(false);
         closeActivity();
         setError(event.message);
+        if (event.code === "auth_failed") {
+          setAuthError({
+            message: event.message,
+            credential_id: event.credential_id,
+            provider: event.provider,
+          });
+        }
         // Keep streamingContent/thinkingContent visible — same pattern as
         // `done` and stop(). onDone triggers finalizeRunFromServer which
         // fetches whatever the server persisted (partial content + interrupt
@@ -171,6 +184,7 @@ export function useSSE(onDone?: () => void) {
     setThinkingContent("");
     setToolEvents([]);
     setError(null);
+    setAuthError(null);
     openActivity("Sending…");
 
     try {
@@ -248,6 +262,7 @@ export function useSSE(onDone?: () => void) {
     setThinkingContent("");
     setToolEvents([]);
     setError(null);
+    setAuthError(null);
     openActivity("Reconnecting…");
 
     try {
@@ -271,6 +286,7 @@ export function useSSE(onDone?: () => void) {
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
   const clearStreamingContent = useCallback(() => { setStreamingContent(""); }, []);
+  const dismissAuthError = useCallback(() => { setAuthError(null); }, []);
 
-  return { streaming, streamingContent, thinkingContent, toolEvents, error, start, stop, attach, clearStreamingContent };
+  return { streaming, streamingContent, thinkingContent, toolEvents, error, authError, dismissAuthError, start, stop, attach, clearStreamingContent };
 }
