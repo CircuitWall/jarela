@@ -465,13 +465,15 @@ export const api = {
       const suffix = qs.toString() ? `?${qs.toString()}` : "";
       return request<Credential[]>(`/credentials${suffix}`);
     },
-    create: async (data: CredentialIn) => {
-      const created = await request<Credential>("/credentials", { method: "POST", body: JSON.stringify(data) });
+    create: async (data: CredentialIn, opts?: { force?: boolean }) => {
+      const qs = opts?.force ? "?force=1" : "";
+      const created = await request<Credential>(`/credentials${qs}`, { method: "POST", body: JSON.stringify(data) });
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       return created;
     },
-    update: async (id: string, data: Partial<CredentialIn>) => {
-      const updated = await request<Credential>(`/credentials/${encodeURIComponent(id)}`, {
+    update: async (id: string, data: Partial<CredentialIn>, opts?: { force?: boolean }) => {
+      const qs = opts?.force ? "?force=1" : "";
+      const updated = await request<Credential>(`/credentials/${encodeURIComponent(id)}${qs}`, {
         method: "PUT", body: JSON.stringify(data),
       });
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
