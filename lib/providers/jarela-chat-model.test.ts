@@ -118,4 +118,30 @@ describe("JarelaChatModel — empty stream handling", () => {
     expect(seenTools[0].function.name).toBe("tool_0");
     expect(seenTools.at(-1)?.function.name).toBe("tool_127");
   });
+
+  it("propagates tool_call_chunk provider_meta into additional_kwargs.provider_tool_call_meta", async () => {
+    // Gemini streams a thoughtSignature that must be echoed back on the
+    // next request. The ChatModel layer parks it in additional_kwargs
+    // keyed by tool call id so LangChain's chunk-concat merges cleanly.
+    const provider = makeProvider([
+      {
+        type: "tool_call_chunk",
+        index: 0,
+        id: "fc_1",
+        name: "memory_write",
+        args_delta: "{\"k\":\"v\"}",
+        provider_meta: { gemini_thought_signature: "sig-abc" },
+      },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} });
+    const chunks = await collectChunks(model);
+    const tcChunk = chunks.find((c) => {
+      const kwargs = (c.message as AIMessageChunk).additional_kwargs as Record<string, unknown> | undefined;
+      return kwargs?.provider_tool_call_meta !== undefined;
+    });
+    expect(tcChunk).toBeDefined();
+    const meta = (tcChunk!.message as AIMessageChunk).additional_kwargs?.provider_tool_call_meta as Record<string, Record<string, unknown>>;
+    expect(meta.fc_1).toEqual({ gemini_thought_signature: "sig-abc" });
+  });
 });

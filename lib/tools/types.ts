@@ -47,6 +47,11 @@ export interface ToolCallRef {
   id: string;
   type: "function";
   function: { name: string; arguments: string }; // arguments is JSON string
+  // Provider-specific opaque metadata to echo back on replay. Currently used
+  // for Gemini's `thoughtSignature` (required on functionCall parts once the
+  // model has emitted a thought signature earlier in the turn — omitting it
+  // makes the follow-up request 400 with API_KEY_INVALID lookalike errors).
+  provider_meta?: Record<string, unknown>;
 }
 
 export interface InvokeMessage {
@@ -67,6 +72,7 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  provider_meta?: Record<string, unknown>;
 }
 
 export interface InvokeResult {

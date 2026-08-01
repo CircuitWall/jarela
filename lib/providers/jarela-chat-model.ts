@@ -188,6 +188,14 @@ export class JarelaChatModel extends BaseChatModel {
         });
       } else if (event.type === "tool_call_chunk") {
         emittedAny = true;
+        // Provider-specific metadata (e.g. Gemini `thoughtSignature`) rides
+        // on the same AIMessageChunk via `additional_kwargs` keyed by tool
+        // call id. LangChain's chunk-concat merges additional_kwargs across
+        // chunks, so the final AIMessage sees every id→meta mapping.
+        const providerMeta = event.provider_meta;
+        const additionalKwargs = providerMeta && event.id
+          ? { provider_tool_call_meta: { [event.id]: providerMeta } }
+          : undefined;
         yield new ChatGenerationChunk({
           message: new AIMessageChunk({
             content: "",
@@ -198,6 +206,7 @@ export class JarelaChatModel extends BaseChatModel {
               args: event.args_delta,
               type: "tool_call_chunk" as const,
             }],
+            ...(additionalKwargs ? { additional_kwargs: additionalKwargs } : {}),
           }),
           text: "",
         });
@@ -342,11 +351,17 @@ function toInvokeMessages(messages: BaseMessage[]): InvokeMessage[] {
         content: typeof m.content === "string" ? m.content : lcContentToInvoke(m.content),
       };
       if (ai.tool_calls?.length) {
-        invokeMsg.tool_calls = ai.tool_calls.map((tc) => ({
-          id: tc.id ?? "",
-          type: "function" as const,
-          function: { name: tc.name, arguments: JSON.stringify(tc.args) },
-        }));
+        const metaMap = (ai.additional_kwargs?.provider_tool_call_meta ?? {}) as Record<string, Record<string, unknown>>;
+        invokeMsg.tool_calls = ai.tool_calls.map((tc) => {
+          const ref: import("@/lib/tools/types").ToolCallRef = {
+            id: tc.id ?? "",
+            type: "function" as const,
+            function: { name: tc.name, arguments: JSON.stringify(tc.args) },
+          };
+          const meta = tc.id ? metaMap[tc.id] : undefined;
+          if (meta && typeof meta === "object") ref.provider_meta = meta;
+          return ref;
+        });
       }
       // DeepSeek thinking-mode: propagate the reasoning trace back so the
       // provider can echo it on follow-up turns (required by their API).

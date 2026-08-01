@@ -55,7 +55,7 @@ export interface ProviderCatalogModel {
 export type ProviderStreamEvent =
   | { type: "text"; delta: string }
   | { type: "thinking"; delta: string }
-  | { type: "tool_call_chunk"; index: number; id?: string; name?: string; args_delta?: string }
+  | { type: "tool_call_chunk"; index: number; id?: string; name?: string; args_delta?: string; provider_meta?: Record<string, unknown> }
   | { type: "citation"; source?: string; snippet?: string; url?: string }
   | {
       type: "usage";
