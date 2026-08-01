@@ -23,6 +23,7 @@ import {
 } from "@/lib/stores/credentials";
 import { errorResponse } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { probeCredentialAfterSave } from "@/lib/health/credential-probe";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -74,6 +75,28 @@ export async function PUT(req: NextRequest, { params }: Params) {
     is_default: parsed.data.is_default,
     params: merged,
   });
+  // Refuse-save-on-401 (ADR-0070): probe the updated credential
+  // synchronously; on `auth_failed` roll back to the prior params so
+  // the previously-working secret isn't clobbered by a bad edit. Skip
+  // when `?force=1` (operator has already acknowledged the failure).
+  const force = req.nextUrl.searchParams.get("force") === "1";
+  if (!force && next) {
+    const provider = parsed.data.provider ?? existing.provider;
+    const probe = await probeCredentialAfterSave({ credentialId: id, provider }).catch(() => null);
+    if (probe && probe.status === "auth_failed") {
+      updateCredential(id, {
+        provider: existing.provider,
+        auth_method: existing.auth_method,
+        label: existing.label,
+        is_default: existing.is_default === 1,
+        params: stored,
+      });
+      return NextResponse.json(
+        { error: probe.error ?? "credential rejected by provider", code: "auth_failed" },
+        { status: 400 },
+      );
+    }
+  }
   return NextResponse.json(publicView(next));
 }
 
