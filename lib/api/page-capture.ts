@@ -14,6 +14,7 @@ import {
 import { publish } from "@/lib/notifications/bus";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
 import type { ContentPart } from "@/lib/tools/types";
+import { spillImagePart } from "@/lib/attachments/spill";
 import { errorMessage } from "@/lib/utils/error";
 
 // 100KB UTF-8 cap on captured text. The LLM context window is the real
@@ -187,13 +188,19 @@ export async function handlePageCapture(req: Request): Promise<Response> {
   });
 
   // When a screenshot is included, persist the user turn as a multipart
-  // ContentPart[] (text + image) — that's the same shape the chat UI and
-  // agent runner expect for inline images, so the picture renders in the
+  // ContentPart[] (text + image_ref) — that's the same shape the chat UI
+  // and agent runner expect for images, so the picture renders in the
   // bubble on reload and vision-capable models can see it on the silent
-  // observer turn. Without a screenshot we keep the legacy string body
-  // to avoid touching messages that never had an image.
+  // observer turn. The base64 payload is spilled to `<dataDir>/files/`
+  // and the message row stores only the ref (see ADR-0065). Without a
+  // screenshot we keep the legacy string body to avoid touching messages
+  // that never had an image.
   const screenshotPart: ContentPart | null = input.screenshot
-    ? { type: "image", media_type: input.screenshotMediaType ?? "image/png", data: input.screenshot }
+    ? await spillImagePart({
+        type: "image",
+        media_type: input.screenshotMediaType ?? "image/png",
+        data: input.screenshot,
+      })
     : null;
   const storedContent: string = screenshotPart
     ? JSON.stringify([{ type: "text", text: messageBody }, screenshotPart] satisfies ContentPart[])

@@ -17,9 +17,27 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 export type ToolDef = StructuredToolInterface;
 
 // Multipart message content parts (images, files, text)
+//
+// `image` is the inline variant — base64 payload lives in the message row.
+// It's kept for backward compat with tool outputs that produce images
+// directly (e.g. generate_image before the ref refactor) and for external
+// callers of the public API. Prefer `image_ref` for any path that
+// persists a message: the ref points at `<dataDir>/files/<name>`, served
+// by `GET /api/v1/files/[name]`, and keeps `messages.content` small.
+// See ADR-0065.
 export type ContentPart =
   | { type: "text"; text: string }
   | { type: "image"; media_type: string; data: string } // base64
+  | {
+      type: "image_ref";
+      media_type: string;
+      /** Safe file-name segment served under /api/v1/files/[name]. */
+      name: string;
+      sha256?: string;
+      width?: number;
+      height?: number;
+      size?: number;
+    }
   | { type: "file"; name: string; media_type: string; data: string }; // text or base64
 
 export type MessageContent = string | ContentPart[];

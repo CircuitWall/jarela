@@ -78,8 +78,15 @@ function toOpenAIContent(
         image_url: { url: `data:${part.media_type};base64,${part.data}` },
       };
     }
+    if (part.type === "image_ref") {
+      // Providers see refs only when a caller invoked the OpenAI adapter
+      // directly (bypassing `toBaseMessages` in `lib/agents/llm.ts`).
+      // Fall back to a text placeholder — vision blocks can't be filled
+      // without the base64 payload, which lives on disk. See ADR-0065.
+      return { type: "text", text: `[image attachment: ${part.media_type}]` };
+    }
     // Files rendered as text for OpenAI
-    return { type: "text", text: `[File: ${(part as ContentPart & { type: "file" }).name}]\n${part.data}` };
+    return { type: "text", text: `[File: ${part.name}]\n${part.data}` };
   });
 }
 

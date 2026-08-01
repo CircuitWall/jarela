@@ -295,6 +295,12 @@ export function toAnthropicContent(
       const mt = part.media_type as "image/jpeg" | "image/png" | "image/gif" | "image/webp";
       return [{ type: "image", source: { type: "base64", media_type: mt, data: part.data } }];
     }
+    if (part.type === "image_ref") {
+      // See ADR-0065. Refs are normally unwrapped by `toBaseMessages` in
+      // `lib/agents/llm.ts` before providers see them; this is a defensive
+      // fallback for any caller that bypasses that path.
+      return [{ type: "text", text: `[image attachment: ${part.media_type}]` }];
+    }
     if (part.type === "file") {
       if (part.media_type === "application/pdf") {
         return [

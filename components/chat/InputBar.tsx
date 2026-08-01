@@ -76,6 +76,7 @@ function fileToContentPart(file: File): Promise<ContentPart> {
 
 function attachmentKey(a: ContentPart, i: number): string {
   if (a.type === "text") return `text:${i}:${a.text.length}`;
+  if (a.type === "image_ref") return `image_ref:${a.media_type}:${a.name}`;
   const name = a.type === "file" ? a.name : "";
   return `${a.type}:${a.media_type}:${name}:${a.data.length}:${a.data.slice(0, 16)}`;
 }
