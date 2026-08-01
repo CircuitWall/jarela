@@ -3,6 +3,7 @@ import { z } from "zod";
 import { deleteModelConfig, getModelConfig, upsertModelConfig } from "@/lib/stores/model-config";
 import { validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
 
 type Params = { params: Promise<{ name: string }> };
 
@@ -56,11 +57,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
   const body = await validateBody(req, PutBody);
   if (body instanceof NextResponse) return body;
   const safeParams = preserveSecrets(name, body.params ?? {});
+  const enriched = await enrichParamsWithDiscoveredContext(body.provider, body.model_id, safeParams);
   const r = upsertModelConfig(
     name,
     body.provider,
     body.model_id,
-    safeParams,
+    enriched,
     body.is_default ?? false,
     body.credential_id ?? null,
   );
