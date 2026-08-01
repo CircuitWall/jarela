@@ -103,7 +103,10 @@ export function getRecentMessagesWindow(
 ): MessageRow[] {
   const db = getDb();
   const params: (string | number)[] = [thread_id];
-  let sql = MSG_COLS_SQL + " WHERE thread_id=?";
+  // Exclude `run_error` marker rows from the LLM history window — they're
+  // UI-only artefacts of failed turns and would poison the model's view
+  // of the conversation ("assistant: 400 API_KEY_INVALID"). See ADR-0069.
+  let sql = MSG_COLS_SQL + " WHERE thread_id=? AND (category IS NULL OR category != 'run_error')";
   if (sinceISO) {
     sql += " AND created_at >= ?";
     params.push(sinceISO);
