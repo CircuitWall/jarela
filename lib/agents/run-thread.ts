@@ -2,6 +2,7 @@ import { streamWithConfig } from "@/lib/agents/llm";
 import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
+import { spillImageAttachments } from "@/lib/attachments/spill";
 import { addMessage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -164,8 +165,16 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // out of the durable history — otherwise every nudge becomes a permanent
   // user-role row that the LLM mistakes for real user input on every future
   // turn.
+  //
+  // Spill inline `image` parts to disk before persist so `messages.content`
+  // stores only lightweight refs — see ADR-0065 and lib/attachments/spill.ts.
+  // Any provider that receives the message reads the ref back to base64 only
+  // at HTTP invocation time.
+  const spilledAttachments = req.attachments?.length
+    ? await spillImageAttachments(req.attachments)
+    : undefined;
   const content: string | ContentPart[] =
-    req.attachments?.length ? [{ type: "text", text: trimmed }, ...req.attachments] : trimmed;
+    spilledAttachments?.length ? [{ type: "text", text: trimmed }, ...spilledAttachments] : trimmed;
   const stored = typeof content === "string" ? content : JSON.stringify(content);
   if (!req._skip_persist_message) {
     addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);

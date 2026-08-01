@@ -10,6 +10,7 @@ export function transcriptText(raw: string): string {
       .map((p) => {
         if (p.type === "text") return p.text;
         if (p.type === "image") return `[image attachment: ${p.media_type}]`;
+        if (p.type === "image_ref") return `[image attachment: ${p.media_type}]`;
         if (p.type === "file") return `[file attachment: ${p.name} (${p.media_type})]`;
         return "";
       })
