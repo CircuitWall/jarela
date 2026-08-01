@@ -15,6 +15,7 @@ import { promises as fsp, statSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { FILES_DIR, isSafeFileName } from "@/lib/files";
+import { shrinkImage, type ShrinkOpts } from "@/lib/attachments/shrink";
 import type { ContentPart } from "@/lib/tools/types";
 
 const MIME_EXT: Record<string, string> = {
@@ -38,20 +39,26 @@ function extForMime(media_type: string): string {
  * Persist one base64-encoded image blob to the files dir, keyed by its
  * content hash. Idempotent: re-writing the same bytes is a no-op.
  * Returns the `image_ref` variant the caller should store instead.
+ *
+ * The blob is run through `shrinkImage` first (ADR-0066) so what lands
+ * on disk is already resized to a vision-friendly 1600px max-edge and
+ * transcoded off HEIC/BMP/TIFF. Pass `shrink: { maxEdge: 0 }`-style
+ * opts through if you need to override defaults.
  */
-export async function spillImagePart(part: {
-  type: "image";
-  media_type: string;
-  data: string;
-}): Promise<Extract<ContentPart, { type: "image_ref" }>> {
-  const buf = Buffer.from(part.data, "base64");
+export async function spillImagePart(
+  part: { type: "image"; media_type: string; data: string },
+  opts?: { shrink?: ShrinkOpts },
+): Promise<Extract<ContentPart, { type: "image_ref" }>> {
+  const raw = Buffer.from(part.data, "base64");
+  const shrunk = await shrinkImage(raw, part.media_type, opts?.shrink);
+  const buf = shrunk.buf;
+  const media_type = shrunk.media_type;
   const sha256 = createHash("sha256").update(buf).digest("hex");
-  const name = `${sha256}.${extForMime(part.media_type)}`;
+  const name = `${sha256}.${extForMime(media_type)}`;
   if (!isSafeFileName(name)) throw new Error(`spill: unsafe file name ${name}`);
   const abs = join(FILES_DIR, name);
 
-  // Skip the write if the file already exists — content-addressed so
-  // identical bytes always land at the same name.
+  // Content-addressed: identical bytes always land at the same name.
   let exists = false;
   try {
     const s = statSync(abs);
@@ -62,13 +69,16 @@ export async function spillImagePart(part: {
   if (!exists) {
     await fsp.writeFile(abs, buf);
   }
-  return {
+  const ref: Extract<ContentPart, { type: "image_ref" }> = {
     type: "image_ref",
-    media_type: part.media_type,
+    media_type,
     name,
     sha256,
     size: buf.length,
   };
+  if (shrunk.width) ref.width = shrunk.width;
+  if (shrunk.height) ref.height = shrunk.height;
+  return ref;
 }
 
 /**
@@ -77,10 +87,13 @@ export async function spillImagePart(part: {
  * already-refactored parts — the `image_ref` variant is passed through.
  * Returns a new array (does not mutate the input).
  */
-export async function spillImageAttachments(parts: ContentPart[]): Promise<ContentPart[]> {
+export async function spillImageAttachments(
+  parts: ContentPart[],
+  opts?: { shrink?: ShrinkOpts },
+): Promise<ContentPart[]> {
   const out: ContentPart[] = [];
   for (const p of parts) {
-    if (p.type === "image") out.push(await spillImagePart(p));
+    if (p.type === "image") out.push(await spillImagePart(p, opts));
     else out.push(p);
   }
   return out;
