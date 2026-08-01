@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { Bot, Check, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Bot, Check, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -1702,6 +1702,30 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const timeLabel = createdAt
     ? new Date(createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
     : null;
+
+  // Compact chip for `run_error` marker rows persisted by the run route
+  // when a turn ended in error without producing any assistant content.
+  // See ADR-0069.
+  if (category === "run_error" && !isUser) {
+    const text = typeof parsed === "string"
+      ? parsed
+      : parsed.map((p) => (p.type === "text" ? p.text : "")).join(" ").trim();
+    return (
+      <div className="flex flex-row gap-2 mb-1.5 items-start ml-9">
+        <div
+          role="status"
+          className="flex items-start gap-1.5 rounded-md border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[11px] text-rose-800 dark:text-rose-200 max-w-full"
+        >
+          <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+          <div className="min-w-0">
+            <span className="font-medium">Run failed</span>
+            {text ? <span className="ml-1 opacity-80 break-words">— {text}</span> : null}
+            {timeLabel ? <span className="ml-1 opacity-60">· {timeLabel}</span> : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`group flex ${isUser ? "flex-row-reverse" : "flex-row"} gap-2 mb-1.5 items-end`}>

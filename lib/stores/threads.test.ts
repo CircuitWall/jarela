@@ -17,6 +17,7 @@ const {
   pruneThreadMessages,
   deleteThread,
   listThreads,
+  getRecentMessagesWindow,
 } = await import("./threads");
 
 afterAll(() => {
@@ -140,3 +141,22 @@ describe("pruneThreadMessages", () => {
     expect(getThread(t.thread_id)?.message_count).toBe(4);
   });
 });
+
+describe("getRecentMessagesWindow (ADR-0069)", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("excludes run_error marker rows from the LLM history window", () => {
+    const t = createThread("agent-y");
+    addMessage(t.thread_id, "user", "hi");
+    addMessage(t.thread_id, "assistant", "hi back");
+    addMessage(t.thread_id, "assistant", "API_KEY_INVALID", null, "run_error", { code: "auth_failed" });
+    addMessage(t.thread_id, "user", "again");
+    // getMessages sees all four rows; getRecentMessagesWindow strips run_error.
+    expect(getMessages(t.thread_id)).toHaveLength(4);
+    const window = getRecentMessagesWindow(t.thread_id, 100);
+    expect(window.map((m) => m.content)).toEqual(["hi", "hi back", "again"]);
+  });
+});
+
