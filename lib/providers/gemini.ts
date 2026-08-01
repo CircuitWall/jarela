@@ -57,6 +57,13 @@ function contentToGeminiParts(content: string | ContentPart[]): GeminiPart[] {
       parts.push({ inlineData: { mimeType: p.media_type, data: p.data } });
       continue;
     }
+    if (p.type === "image_ref") {
+      // See ADR-0065. Refs are normally unwrapped by `toBaseMessages` in
+      // `lib/agents/llm.ts` before providers see them; this is a defensive
+      // fallback for any caller that bypasses that path.
+      parts.push({ text: `[image attachment: ${p.media_type}]` });
+      continue;
+    }
     // Files map to inlineData when possible; otherwise tool-agnostic text fallback.
     if (p.type === "file") {
       if (p.media_type && p.data) {

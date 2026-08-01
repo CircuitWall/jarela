@@ -13,6 +13,7 @@ import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
+import { readImageRef } from "@/lib/attachments/spill";
 import type { ContentPart } from "@/lib/tools/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -23,54 +24,72 @@ import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
 import { wrapToolsForCredentialRouting } from "@/lib/tools/wrap-credentials";
 import { errorMessage } from "@/lib/utils/error";
 
-function toBaseMessages(
+async function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
   systemPrompt?: string,
-): BaseMessage[] {
+): Promise<BaseMessage[]> {
   const base: BaseMessage[] = systemPrompt ? [new SystemMessage(systemPrompt)] : [];
-  return [
-    ...base,
-    ...messages.map((m) => {
-      // Plain text path — fast & most common.
-      if (typeof m.content === "string") {
-        return m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content);
-      }
-      // Multi-modal path — translate our ContentPart[] into LangChain's
-      // standard content-block array. Images become OpenAI-style
-      // `image_url` blocks (the LangChain idiom that all major providers
-      // accept on input). File attachments fall back to text so they
-      // still reach text-only models. Assistant messages currently never
-      // contain attachments in our flow, so we just flatten to text.
-      if (m.role === "assistant") {
-        const text = m.content
-          .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
-          .map((p) => p.text).join("\n");
-        return new AIMessage(text);
-      }
-      const blocks: Array<Record<string, unknown>> = [];
-      for (const part of m.content) {
-        if (part.type === "text") {
-          if (part.text) blocks.push({ type: "text", text: part.text });
-        } else if (part.type === "image") {
+  const out: BaseMessage[] = [...base];
+  for (const m of messages) {
+    // Plain text path — fast & most common.
+    if (typeof m.content === "string") {
+      out.push(m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content));
+      continue;
+    }
+    // Multi-modal path — translate our ContentPart[] into LangChain's
+    // standard content-block array. Images become OpenAI-style
+    // `image_url` blocks (the LangChain idiom that all major providers
+    // accept on input). File attachments fall back to text so they
+    // still reach text-only models. Assistant messages currently never
+    // contain attachments in our flow, so we just flatten to text.
+    if (m.role === "assistant") {
+      const text = m.content
+        .filter((p): p is ContentPart & { type: "text" } => p.type === "text")
+        .map((p) => p.text).join("\n");
+      out.push(new AIMessage(text));
+      continue;
+    }
+    const blocks: Array<Record<string, unknown>> = [];
+    for (const part of m.content) {
+      if (part.type === "text") {
+        if (part.text) blocks.push({ type: "text", text: part.text });
+      } else if (part.type === "image") {
+        blocks.push({
+          type: "image_url",
+          image_url: { url: `data:${part.media_type};base64,${part.data}` },
+        });
+      } else if (part.type === "image_ref") {
+        // Read the disk-resident blob and re-encode as base64 only for
+        // the outbound provider request. The base64 lives on the wire
+        // and inside the model's HTTP body — never in DB or checkpoints.
+        try {
+          const buf = await readImageRef({ media_type: part.media_type, name: part.name });
           blocks.push({
             type: "image_url",
-            image_url: { url: `data:${part.media_type};base64,${part.data}` },
+            image_url: { url: `data:${part.media_type};base64,${buf.toString("base64")}` },
           });
-        } else if (part.type === "file") {
-          if (part.media_type.startsWith("text/") || part.media_type === "application/json") {
-            blocks.push({ type: "text", text: `[Attached file: ${part.name}]\n${part.data}` });
-          } else {
-            blocks.push({ type: "text", text: `[Attached file: ${part.name} (${part.media_type})]` });
-          }
+        } catch (err) {
+          // The file has been pruned / deleted / moved. Substitute a
+          // text placeholder so the LLM sees SOMETHING coherent instead
+          // of a missing part, and log so operators can trace it.
+          console.warn(`[llm] image_ref ${part.name} unreadable, substituting text:`, errorMessage(err));
+          blocks.push({ type: "text", text: `[image attachment unavailable: ${part.media_type}]` });
+        }
+      } else if (part.type === "file") {
+        if (part.media_type.startsWith("text/") || part.media_type === "application/json") {
+          blocks.push({ type: "text", text: `[Attached file: ${part.name}]\n${part.data}` });
+        } else {
+          blocks.push({ type: "text", text: `[Attached file: ${part.name} (${part.media_type})]` });
         }
       }
-      // Cast through unknown — LangChain's strict block-union type rejects our
-      // dynamic shape, but at runtime BaseMessage stores content as-is and
-      // ChatModels consume whatever the provider's API expects (image_url for
-      // OpenAI, image for Anthropic, etc.).
-      return new HumanMessage({ content: blocks as unknown as string });
-    }),
-  ];
+    }
+    // Cast through unknown — LangChain's strict block-union type rejects our
+    // dynamic shape, but at runtime BaseMessage stores content as-is and
+    // ChatModels consume whatever the provider's API expects (image_url for
+    // OpenAI, image for Anthropic, etc.).
+    out.push(new HumanMessage({ content: blocks as unknown as string }));
+  }
+  return out;
 }
 
 export function streamWithConfig(
@@ -128,10 +147,16 @@ async function* streamWithConfigImpl(
   // source of truth), so the checkpointer's only job is to buffer in-flight
   // tool-call state within the current turn. Without this delete, LangGraph's
   // default messages-state reducer keeps appending — every prior turn's tool
-  // results (plus any inline image data URIs) stay in state forever and get
-  // replayed to the LLM, eventually blowing past the model's context window.
-  // See: thread fb35423b grew to 893 MB / 238 checkpoints because a single
-  // image-attached HumanMessage (~1.2 MB base64) was replayed on every retry.
+  // results stay in state forever and get replayed to the LLM, eventually
+  // blowing past the model's context window.
+  //
+  // ADR-0065 (image_ref) removed the acute pathology this hack was catching
+  // — a single 1.2 MB base64 HumanMessage being replayed 238 times, blowing
+  // thread fb35423b's checkpoints to 893 MB. Post-refs the same thread would
+  // grow ~1 KB/turn instead of ~1.2 MB/turn, but the delete still bounds
+  // generic per-turn state growth (tool_call/tool_result bundles) which
+  // refs alone do not solve. Kept until a proper per-turn checkpoint scope
+  // is designed.
   try {
     await checkpointer.deleteThread(threadId);
   } catch (err) {
@@ -197,7 +222,7 @@ async function* streamWithConfigImpl(
 
   try {
     const agentStream = await agent.stream(
-      { messages: toBaseMessages(messages, runCfg?.system_prompt) },
+      { messages: await toBaseMessages(messages, runCfg?.system_prompt) },
       {
         streamMode: ["messages", "updates"],
         configurable: {

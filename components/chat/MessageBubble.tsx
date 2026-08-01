@@ -1350,7 +1350,11 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
     return <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />;
   }
   if (part.type === "image") {
-    return <ClickableImage media_type={part.media_type} data={part.data} />;
+    return <ClickableImage src={`data:${part.media_type};base64,${part.data}`} />;
+  }
+  if (part.type === "image_ref") {
+    // Ref-based image — server-hosted at /api/v1/files/[name]. See ADR-0065.
+    return <ClickableImage src={`/api/v1/files/${encodeURIComponent(part.name)}`} />;
   }
   // File attachment — render an inline player for audio/video so voice
   // notes and short clips from the WhatsApp bridge are usable in-bubble.
@@ -1400,9 +1404,10 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
 }
 
 // Image attachment — thumbnail in the bubble, click for a full-screen lightbox.
-function ClickableImage({ media_type, data }: { media_type: string; data: string }) {
+// Accepts either a `data:` URL (inline base64) or a `/api/v1/files/[name]`
+// URL (disk-hosted ref, see ADR-0065). Both render identically.
+function ClickableImage({ src }: { src: string }) {
   const [open, setOpen] = useState(false);
-  const src = `data:${media_type};base64,${data}`;
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1453,6 +1458,7 @@ function messageTextForCopy(content: string | ContentPart[]): string {
     if (part.type === "text") return part.text;
     if (part.type === "file") return `[File: ${part.name}]`;
     if (part.type === "image") return `[Image: ${part.media_type}]`;
+    if (part.type === "image_ref") return `[Image: ${part.media_type}]`;
     return "";
   }).filter(Boolean).join("\n\n");
 }

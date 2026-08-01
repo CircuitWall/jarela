@@ -1,6 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
+import { writeFileSync, statSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
+import { FILES_DIR, isSafeFileName } from "@/lib/files";
 
 const now = () => new Date().toISOString();
 
@@ -99,7 +103,7 @@ export function runMigrations(db: DatabaseSync): void {
     -- tool with fixed args on an interval; when the tool's output changes
     -- (content hash != last_fingerprint) the agent is fired with
     -- {previous, current} as context. Until then the watcher consumes no
-    -- LLM tokens — only the polled tool runs. Plugs into the trigger
+    -- LLM tokens Ã¢â‚¬â€ only the polled tool runs. Plugs into the trigger
     -- abstraction (ADR-0025) as a sibling handler to scheduled_task.
     CREATE TABLE IF NOT EXISTS watchers (
       id                TEXT PRIMARY KEY,
@@ -204,7 +208,7 @@ export function runMigrations(db: DatabaseSync): void {
       host        TEXT,
       port        INTEGER,
       username    TEXT,
-      password    TEXT,                                    -- envelope-encrypted (enc:v1:…)
+      password    TEXT,                                    -- envelope-encrypted (enc:v1:Ã¢â‚¬Â¦)
       no_proxy    TEXT,
       ca_bundle   TEXT,                                    -- PEM, plaintext (public cert, ADR-0012)
       updated_at  TEXT    NOT NULL
@@ -219,7 +223,7 @@ export function runMigrations(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS allowed_sites (
       hostname            TEXT PRIMARY KEY,                 -- exact host, lowercased; suffix match handled in code
       ssrf_bypass         INTEGER NOT NULL DEFAULT 0,       -- 1 = let web_fetch reach private/loopback addresses for this host
-      cookies_blob        TEXT,                             -- envelope-encrypted "name=value; …"; NULL until extension first PUTs cookies
+      cookies_blob        TEXT,                             -- envelope-encrypted "name=value; Ã¢â‚¬Â¦"; NULL until extension first PUTs cookies
       created_at          TEXT NOT NULL,
       last_used_at        TEXT,
       cookies_updated_at  TEXT
@@ -334,6 +338,7 @@ export function runMigrations(db: DatabaseSync): void {
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
   migrateICloudPackageIds(db);
+  spillLegacyImageAttachments(db);
 }
 
 // iCloud used to register as a single default package (id: "icloud") under
@@ -346,7 +351,7 @@ export function runMigrations(db: DatabaseSync): void {
 //   - If `builtin_tool_categories` had `iCloud` disabled, translate that
 //     to disabling all three package ids (there is no per-category dial
 //     for iCloud any more; hiding the packages is the equivalent).
-// Idempotent — safe to run on every boot.
+// Idempotent Ã¢â‚¬â€ safe to run on every boot.
 function migrateICloudPackageIds(db: DatabaseSync): void {
   const nowIso = now();
   const newIds = ["icloud_mail", "icloud_calendar", "icloud_tasks"] as const;
@@ -379,7 +384,7 @@ function migrateICloudPackageIds(db: DatabaseSync): void {
 }
 
 // Multi-instance credentials per (type, provider). `label` is a
-// human-readable name shown in the UI ("Work", "Personal", …); `is_default`
+// human-readable name shown in the UI ("Work", "Personal", Ã¢â‚¬Â¦); `is_default`
 // picks one row per (type, provider) as the implicit pick for callers that
 // don't reference a specific id (back-compat with the old "first row wins"
 // behaviour). The first row created for a given (type, provider) is
@@ -389,8 +394,8 @@ function ensureCredentialsLabelAndDefaultColumns(db: DatabaseSync): void {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("label")) {
     db.exec("ALTER TABLE credentials ADD COLUMN label TEXT");
-    // One-shot backfill of pre-existing rows so the panel — which now
-    // only renders configured rows by their name — never displays a
+    // One-shot backfill of pre-existing rows so the panel Ã¢â‚¬â€ which now
+    // only renders configured rows by their name Ã¢â‚¬â€ never displays a
     // blank entry for legacy single-credential installs. MUST stay
     // gated on the ADD COLUMN above; running this on every boot would
     // clobber second-of-pair rows that the store layer intentionally
@@ -425,8 +430,8 @@ function ensureAgentConfigsToolCredentialsColumn(db: DatabaseSync): void {
 // ADR-0044. Per-channel warm summary so a thread shared across `chat`,
 // `scheduled_task`, `watcher`, and `bridge` channels stops blending
 // automation history into interactive turns. Replaces the single
-// `threads.warm_summary` blob — which is kept one release as a
-// read-only fallback — with one row per (thread_id, channel).
+// `threads.warm_summary` blob Ã¢â‚¬â€ which is kept one release as a
+// read-only fallback Ã¢â‚¬â€ with one row per (thread_id, channel).
 function ensureThreadChannelSummariesTable(db: DatabaseSync): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS thread_channel_summaries (
@@ -470,7 +475,7 @@ function ensureMessageUsageTable(db: DatabaseSync): void {
 
 function ensureEmbeddingColumns(db: DatabaseSync): void {  // Embeddings stored as JSON-encoded float[] in TEXT to keep migration simple.
   // For the corpus sizes we expect (thousands of rows), in-memory cosine
-  // similarity in JS is fast enough — no need for sqlite-vec or duckdb yet.
+  // similarity in JS is fast enough Ã¢â‚¬â€ no need for sqlite-vec or duckdb yet.
   const memCols = db.prepare("PRAGMA table_info(memory_store)").all() as Array<{ name: string }>;
   if (!new Set(memCols.map((c) => c.name)).has("embedding")) {
     db.exec("ALTER TABLE memory_store ADD COLUMN embedding TEXT");
@@ -484,7 +489,7 @@ function ensureEmbeddingColumns(db: DatabaseSync): void {  // Embeddings stored 
   if (!msgColSet.has("tool_events")) {
     // JSON array of { id, phase: "call"|"result", name, payload } captured at
     // stream time. Lets the chat UI render historical tool invocations the
-    // same way it renders live ones — instead of only the *— used: x* footer
+    // same way it renders live ones Ã¢â‚¬â€ instead of only the *Ã¢â‚¬â€ used: x* footer
     // text, which loses arguments + results on reload.
     db.exec("ALTER TABLE messages ADD COLUMN tool_events TEXT");
   }
@@ -504,7 +509,7 @@ function ensureUserProfileLocationColumns(db: DatabaseSync): void {
   // Browser-reported geolocation, opt-in. Lets the agent answer
   // "what's near me?" / suggest routes / weather / etc. without the user
   // re-typing their location every turn. `location_consent` is the
-  // explicit opt-in flag — when 0 the client must NOT post coordinates
+  // explicit opt-in flag Ã¢â‚¬â€ when 0 the client must NOT post coordinates
   // and the agent must NOT see a stored value.
   const cols = db.prepare("PRAGMA table_info(user_profile)").all() as Array<{ name: string }>;
   const names = new Set(cols.map((c) => c.name));
@@ -517,7 +522,7 @@ function ensureUserProfileLocationColumns(db: DatabaseSync): void {
   // Persona preset (home/work/dev/custom). Drives the Credentials panel's
   // category filter so a home user doesn't see Jira / infrastructure
   // sections, and a work user doesn't see noise outside the work
-  // toolbelt. NULL = unset (treat as "custom" → show everything). Set
+  // toolbelt. NULL = unset (treat as "custom" Ã¢â€ â€™ show everything). Set
   // by the Profile editor; consumed by IntegrationsPanel.
   if (!names.has("preset"))               db.exec("ALTER TABLE user_profile ADD COLUMN preset TEXT");
 }
@@ -540,7 +545,7 @@ function ensureMessagesCategoryColumn(db: DatabaseSync): void {
 // rows that don't carry any extra data. Current consumer is the citation
 // checker (`citation_strictness` != 'off'), which attaches a verdict shaped like
 // `{ citations: { claims: [...], unverified: [...] } }`. Adding more keys
-// later is free — readers tolerate unknown fields.
+// later is free Ã¢â‚¬â€ readers tolerate unknown fields.
 function ensureMessagesMetadataColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
   if (!cols.some((c) => c.name === "metadata")) {
@@ -548,7 +553,7 @@ function ensureMessagesMetadataColumn(db: DatabaseSync): void {
   }
 }
 
-// ADR-0030 — per-watcher reaction prompt. NULL = use the default
+// ADR-0030 Ã¢â‚¬â€ per-watcher reaction prompt. NULL = use the default
 // "summarise the diff" directive baked into buildFiringPrompt. Non-null =
 // substitute that text in place of the default; the diff envelope (label,
 // tool, args, previous, current) is unchanged.
@@ -559,7 +564,7 @@ function ensureWatchersReactionPromptColumn(db: DatabaseSync): void {
   }
 }
 
-// ADR-0031 — script-backed watcher reactions. Adds three nullable columns
+// ADR-0031 Ã¢â‚¬â€ script-backed watcher reactions. Adds three nullable columns
 // to the watchers table:
 //   reaction_kind         'agent_prompt' (default) | 'script'
 //   reaction_script       registry key, only when kind='script'
@@ -585,7 +590,7 @@ function ensureWatchersReactionKindColumns(db: DatabaseSync): void {
 
 // Per-task "silent" mode. When 1 the scheduler injects the prompt as a
 // hidden user message and instructs the agent to reply only when there is
-// something worth showing — otherwise the assistant turn is persisted
+// something worth showing Ã¢â‚¬â€ otherwise the assistant turn is persisted
 // hidden too (or skipped entirely).
 function ensureScheduledTasksSilentColumn(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(scheduled_tasks)").all() as Array<{ name: string }>;
@@ -594,7 +599,7 @@ function ensureScheduledTasksSilentColumn(db: DatabaseSync): void {
   }
 }
 
-// ADR-0032 — script-backed scheduled tasks. Mirrors the watcher migration
+// ADR-0032 Ã¢â‚¬â€ script-backed scheduled tasks. Mirrors the watcher migration
 // in ensureWatchersReactionKindColumns. Adds:
 //   reaction_kind         'agent_prompt' (default) | 'script'
 //   reaction_script       registry key, only when kind='script'
@@ -629,7 +634,7 @@ function ensureAgentDisplayFiltersColumn(db: DatabaseSync): void {
   }
 }
 
-// ADR-0026 — remote document-RAG sources (Jira / Confluence / mail). Extends the
+// ADR-0026 Ã¢â‚¬â€ remote document-RAG sources (Jira / Confluence / mail). Extends the
 // ADR-0024 document_sources table with a discriminator + JSON config so a
 // single store + indexer dispatcher serves both local folders and remote
 // content. Existing rows are 'local_folder' (matches pre-0026 behavior).
@@ -656,7 +661,7 @@ function ensureDocumentSourceRemoteColumns(db: DatabaseSync): void {
 }
 
 function ensureThreadsAgentIdUnique(db: DatabaseSync): void {
-  // Check if index already exists — skip if so
+  // Check if index already exists Ã¢â‚¬â€ skip if so
   const idx = db.prepare(
     "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_threads_agent_id'"
   ).get();
@@ -738,7 +743,7 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("voice_auto_speak")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN voice_auto_speak INTEGER NOT NULL DEFAULT 1");
   }
-  // ADR-0033 — per-agent harness override. NULL = inherit the global default
+  // ADR-0033 Ã¢â‚¬â€ per-agent harness override. NULL = inherit the global default
   // harness (app-settings.default_harness_id, which itself defaults to
   // 'builtin:default'). Non-null is either a builtin id ("builtin:default")
   // or a user-created custom id ("custom:<uuid>").
@@ -751,14 +756,14 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("delegate_targets")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN delegate_targets TEXT");
   }
-  // ADR-0043 — per-agent override of context_tier_proportions. JSON-encoded
-  // `{ hot, warm, facts }` (any positive numbers — `normalizeTierProportions`
+  // ADR-0043 Ã¢â‚¬â€ per-agent override of context_tier_proportions. JSON-encoded
+  // `{ hot, warm, facts }` (any positive numbers Ã¢â‚¬â€ `normalizeTierProportions`
   // divides by sum, so the UI can ship raw weights instead of demanding
   // sum=100 from the user). NULL = inherit from the model config.
   if (!names.has("context_tier_proportions")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN context_tier_proportions TEXT");
   }
-  // Per-agent override of the anti-hallucination classifier (ADR-…). NULL
+  // Per-agent override of the anti-hallucination classifier (ADR-Ã¢â‚¬Â¦). NULL
   // on either column = inherit the global JARELA_HALLUCINATION_DETECTOR_*
   // env knob. Mode is one of "off" | "report" | "enforce"; model_config is
   // the name of a saved model config (lib/stores/model-config) used as
@@ -778,10 +783,10 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   }
   // Replaces the boolean require_source_links with a 4-level strictness
   // enum: 'off' | 'informational' | 'standard' | 'strict'.
-  //   off           — no checker, no directive (legacy require_source_links=0)
-  //   informational — checker runs; agent NOT asked to cite (UI surfaces refs)
-  //   standard      — agent nudged to cite KEY claims (legacy require_source_links=1)
-  //   strict        — agent must cite EVERY factual claim AND stall classifier
+  //   off           Ã¢â‚¬â€ no checker, no directive (legacy require_source_links=0)
+  //   informational Ã¢â‚¬â€ checker runs; agent NOT asked to cite (UI surfaces refs)
+  //   standard      Ã¢â‚¬â€ agent nudged to cite KEY claims (legacy require_source_links=1)
+  //   strict        Ã¢â‚¬â€ agent must cite EVERY factual claim AND stall classifier
   //                   is forced to mode='model'
   if (!names.has("citation_strictness")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN citation_strictness TEXT NOT NULL DEFAULT 'off'");
@@ -795,7 +800,7 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
  * in one chat and stay observer-only in another. Backfills from the legacy
  * per-agent `never_reply` flag on first migration so behavior is preserved
  * for existing installs. After backfill, `never_reply` is no longer read by
- * the dispatcher — the route flag is canonical.
+ * the dispatcher Ã¢â‚¬â€ the route flag is canonical.
  */
 function ensureBridgeRouteColumns(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(bridge_routes)").all() as Array<{ name: string }>;
@@ -814,10 +819,10 @@ function ensureBridgeRouteColumns(db: DatabaseSync): void {
   }
   // Per-route reply trigger: which sender role unlocks an outbound reply.
   // 'counterpart' (default) = agent answers the user's chat partner / group
-  // members but stays quiet when the user themselves types — the typical
+  // members but stays quiet when the user themselves types Ã¢â‚¬â€ the typical
   // "auto-responder on my behalf" use case. 'user' = agent only reacts to
   // the user's own messages (e.g. expand/translate-my-draft assistants).
-  // silent_mode (above) overrides this — when set, nothing goes out
+  // silent_mode (above) overrides this Ã¢â‚¬â€ when set, nothing goes out
   // regardless of role match.
   if (!names.has("respond_to")) {
     db.exec("ALTER TABLE bridge_routes ADD COLUMN respond_to TEXT NOT NULL DEFAULT 'counterpart'");
@@ -844,9 +849,9 @@ function ensureTaskAssignmentColumns(db: DatabaseSync): void {
   }
 }
 
-// ADR-0042 — explicit per-thread context pin + persisted warm summary.
+// ADR-0042 Ã¢â‚¬â€ explicit per-thread context pin + persisted warm summary.
 // hot_since: ISO timestamp of the boundary the user has chosen to include in
-//   the agent's hot context. NULL = no explicit pin → buildHistoryWindow falls
+//   the agent's hot context. NULL = no explicit pin Ã¢â€ â€™ buildHistoryWindow falls
 //   back to the agent's history_window_hours default.
 // warm_summary: latest LLM-summarised recap of messages older than
 //   warm_summary_before. The chat UI renders this as an inline card above the
@@ -861,7 +866,7 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   if (!names.has("warm_summary"))            db.exec("ALTER TABLE threads ADD COLUMN warm_summary TEXT");
   if (!names.has("warm_summary_before"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_before TEXT");
   if (!names.has("warm_summary_computed_at")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_computed_at TEXT");
-  // Compaction stats — message count + original transcript char count of the
+  // Compaction stats Ã¢â‚¬â€ message count + original transcript char count of the
   // material that fed `warm_summary`. The chat UI displays them on the
   // boundary chip so the user can see how much was compressed and by how
   // much. NULL on legacy rows / rows summarised before these columns existed.
@@ -889,7 +894,7 @@ function ensureMessageUsageTierColumns(db: DatabaseSync): void {
 
 // PR #181 enabled Anthropic prompt caching, but the per-turn usage snapshot
 // only captured `input_tokens` / `output_tokens`. Anthropic returns cache
-// reads and writes as separate counts (priced at 0.1× and 1.25× the input
+// reads and writes as separate counts (priced at 0.1Ãƒâ€” and 1.25Ãƒâ€” the input
 // rate respectively), so without these columns the dashboard underreports
 // cost on cache-creating turns and *over*reports on cache-hitting turns.
 // Both columns are nullable: legacy rows and non-Anthropic providers leave
@@ -902,7 +907,7 @@ function ensureMessageUsageCacheColumns(db: DatabaseSync): void {
 }
 
 function seedAgentConfigs(db: DatabaseSync): void {
-  // Only seed on first run — once the user has any agents we must not
+  // Only seed on first run Ã¢â‚¬â€ once the user has any agents we must not
   // resurrect ones they've deleted (e.g. the legacy "echo" / "llm" defaults).
   const count = (db.prepare("SELECT COUNT(*) as n FROM agent_configs").get() as { n: number }).n;
   if (count > 0) {
@@ -958,13 +963,13 @@ interface BaseAgentProfile {
   adaptive: boolean;
   is_default?: boolean;
   // When true, the agent runs on bridge/scheduled input but does not
-  // auto-send replies — it observes and records, only speaking when the
+  // auto-send replies Ã¢â‚¬â€ it observes and records, only speaking when the
   // user directly addresses it (see lib/bridges/dispatcher.ts).
   never_reply?: boolean;
 }
 
 // Starter profiles shipped on first run. The user can edit, disable, or
-// delete any of them — once they have any agents we stop re-seeding (see
+// delete any of them Ã¢â‚¬â€ once they have any agents we stop re-seeding (see
 // the guard at the top of seedAgentConfigs), so user choices are sticky.
 //
 // Each profile pre-binds a small, focused tool set so the agent is useful
@@ -1000,7 +1005,7 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
     identity:
       "You are a pragmatic software engineer working in the user's local repo with a real build/test harness.",
     instructions:
-      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success — never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
+      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success Ã¢â‚¬â€ never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
     tools: [
       "file_read",
       "file_write",
@@ -1051,7 +1056,7 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
     identity:
       "You help triage email and calendar. You summarize, draft, and surface what actually needs attention.",
     instructions:
-      "When asked about mail, search first, then read the specific message before drafting. Drafts are created — never sent automatically. For calendar requests, list the relevant window before creating events. If an integration is not configured, tell the user which one and stop.",
+      "When asked about mail, search first, then read the specific message before drafting. Drafts are created Ã¢â‚¬â€ never sent automatically. For calendar requests, list the relevant window before creating events. If an integration is not configured, tell the user which one and stop.",
     tools: [
       "gmail_search",
       "gmail_get_message",
@@ -1102,7 +1107,7 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
 ];
 
 // Threads have a UNIQUE(agent_id) index (one thread per agent), so we can't
-// bulk-repoint orphan threads to a single fallback — that would violate the
+// bulk-repoint orphan threads to a single fallback Ã¢â‚¬â€ that would violate the
 // constraint as soon as there are 2+ orphans. Instead we drop orphan threads
 // (and their messages); the agent they pointed at no longer exists.
 function reanchorOrphanThreads(db: DatabaseSync): void {
@@ -1126,7 +1131,7 @@ function reanchorOrphanThreads(db: DatabaseSync): void {
 //                (and later other tables). Format: `<type>-<provider>`
 //                with a `-N` collision bump.
 //   type         Coarse domain bucket: `model` for LLM credentials, will
-//                grow to `tts`, `integration`, …
+//                grow to `tts`, `integration`, Ã¢â‚¬Â¦
 //   provider     Provider key within the type (e.g. `anthropic`,
 //                `github-copilot`, later `gmail`, `outlook`).
 //   auth_method  `api_key` | `oauth`. Drives the editor UI and the
@@ -1232,7 +1237,7 @@ function migrateIntegrationsToCredentials(db: DatabaseSync): void {
 
     let params: Record<string, unknown>;
     // memory_store rows in sensitive namespaces (including `integrations`)
-    // are envelope-encrypted at rest. Decrypt before parsing — without
+    // are envelope-encrypted at rest. Decrypt before parsing Ã¢â‚¬â€ without
     // this, JSON.parse throws and the `catch` below silently skips the
     // row, which is what produced the empty-credentials migration on
     // first install. See ADR-0005.
@@ -1245,5 +1250,106 @@ function migrateIntegrationsToCredentials(db: DatabaseSync): void {
     const auth_method = hasClientId && hasClientSecret ? "oauth" : "api_key";
 
     insertCred.run(id, "integration", row.key, auth_method, encrypt(JSON.stringify(params)), t, t);
+  }
+}
+
+// Spill legacy inline `image` ContentParts in messages.content down to
+// `<dataDir>/files/<sha256>.<ext>` and rewrite the row to hold only an
+// `image_ref`. One-shot, idempotent (a second pass sees only refs and
+// exits), and resumable (per-row transaction, so a mid-migration crash
+// leaves partially-migrated rows in a valid state).
+// See ADR-0065 and lib/attachments/spill.ts.
+function spillLegacyImageAttachments(db: DatabaseSync): void {
+  // Fast bail-out for the common case (no legacy blobs left).
+  const pending = db
+    .prepare(
+      "SELECT COUNT(*) AS c FROM messages WHERE content LIKE '%\"type\":\"image\"%' AND content LIKE '[%'",
+    )
+    .get() as { c?: number } | undefined;
+  const count = Number(pending?.c ?? 0);
+  if (count <= 0) return;
+
+  mkdirSync(FILES_DIR, { recursive: true });
+
+  const MIME_EXT: Record<string, string> = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/jpg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/svg+xml": "svg",
+    "image/heic": "heic",
+    "image/heif": "heif",
+    "image/bmp": "bmp",
+    "image/tiff": "tiff",
+  };
+  const extFor = (mt: string) => MIME_EXT[mt.toLowerCase()] ?? "bin";
+
+  const selectRows = db.prepare(
+    "SELECT msg_id, content FROM messages WHERE content LIKE '%\"type\":\"image\"%' AND content LIKE '[%'",
+  );
+  const updateRow = db.prepare("UPDATE messages SET content = ? WHERE msg_id = ?");
+
+  let migrated = 0;
+  let skipped = 0;
+  let dirty = false;
+  const started = Date.now();
+  console.log(`[migrate-image-refs] scanning ${count} candidate rows ...`);
+
+  const rows = selectRows.iterate() as unknown as IterableIterator<{ msg_id: string; content: string }>;
+  for (const row of rows) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(row.content); }
+    catch { skipped++; continue; }
+    if (!Array.isArray(parsed)) { skipped++; continue; }
+
+    const parts = parsed as Array<Record<string, unknown>>;
+    let rowDirty = false;
+    for (let i = 0; i < parts.length; i++) {
+      const p = parts[i];
+      if (!p || p.type !== "image") continue;
+      const media = typeof p.media_type === "string" ? p.media_type : "application/octet-stream";
+      const data = typeof p.data === "string" ? p.data : null;
+      if (!data) continue;
+
+      let buf: Buffer;
+      try { buf = Buffer.from(data, "base64"); }
+      catch { continue; }
+      const sha256 = createHash("sha256").update(buf).digest("hex");
+      const name = `${sha256}.${extFor(media)}`;
+      if (!isSafeFileName(name)) continue;
+      const abs = join(FILES_DIR, name);
+
+      let onDisk = false;
+      try { const s = statSync(abs); onDisk = s.isFile() && s.size === buf.length; }
+      catch { onDisk = false; }
+      if (!onDisk) writeFileSync(abs, buf);
+
+      parts[i] = {
+        type: "image_ref",
+        media_type: media,
+        name,
+        sha256,
+        size: buf.length,
+      };
+      rowDirty = true;
+    }
+    if (rowDirty) {
+      updateRow.run(JSON.stringify(parts), row.msg_id);
+      migrated++;
+      dirty = true;
+      if (migrated % 100 === 0) {
+        console.log(`[migrate-image-refs] migrated ${migrated} rows so far ...`);
+      }
+    } else {
+      skipped++;
+    }
+  }
+
+  if (dirty) {
+    const secs = ((Date.now() - started) / 1000).toFixed(1);
+    console.log(
+      `[migrate-image-refs] done: ${migrated} migrated, ${skipped} skipped in ${secs}s`,
+    );
   }
 }
