@@ -443,11 +443,32 @@ async function* streamWithConfigImpl(
           (observed.requested ? `, request had ~${observed.requested.toLocaleString()}` : "") +
           `). Persisted the corrected window on this model config; retry the turn or trim history.`;
       } else {
+        // No parseable limit in the error string. Halve the currently
+        // persisted `context_window_tokens` (or halve a safe assumption
+        // when nothing is pinned) and store it back. The next turn will
+        // use the smaller value; if it still overflows we halve again.
+        // Convergence takes at most log2(assumed / 2048) turns.
+        try {
+          const current = typeof params.context_window_tokens === "number" && params.context_window_tokens > 0
+            ? params.context_window_tokens
+            : 128_000; // Assume mid-size window when nothing is pinned.
+          const corrected = Math.max(2048, Math.floor(current / 2));
+          if (corrected < current) {
+            const nextParams = { ...params, context_window_tokens: corrected };
+            upsertModelConfig(cfg.name, cfg.provider, cfg.model_id, nextParams, cfg.is_default === 1);
+            console.warn(
+              `[llm] context-window halve-fallback for ${cfg.name} (${cfg.provider}/${cfg.model_id}): ` +
+              `no limit parsed from error; halved ${current} -> ${corrected}`,
+            );
+          }
+        } catch (persistErr) {
+          console.error("[llm] failed halve-fallback for context_window_tokens", persistErr);
+        }
         friendly =
-          "The request exceeded the model's context window. " +
-          "Trim history (lower `history_limit` / `history_window_hours` on the agent), " +
-          "pin a smaller `context_window_tokens` in the model config so the budget calculator " +
-          "leaves more headroom, or start a new thread.";
+          "The request exceeded the model's context window. Halved the model's " +
+          "`context_window_tokens` and persisted it — retry the turn. " +
+          "If this recurs, trim history (lower `history_limit` / `history_window_hours` on the agent) " +
+          "or pin a smaller value explicitly in the model config.";
       }
       code = "context_length_exceeded";
     } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {

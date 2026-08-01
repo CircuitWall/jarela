@@ -10,6 +10,7 @@ import { z } from "zod";
 import { getModelConfig, listModelConfigs, upsertModelConfig } from "@/lib/stores/model-config";
 import { createdResponse, cachedJson, validateBody } from "@/lib/api/responses";
 import { parseJsonSafe } from "@/lib/utils/json";
+import { enrichParamsWithDiscoveredContext } from "@/lib/models/discover-context-window";
 
 const CreateBody = z.object({
   name: z.string().min(1, "name required"),
@@ -71,11 +72,12 @@ export async function POST(req: NextRequest) {
   const body = await validateBody(req, CreateBody);
   if (body instanceof NextResponse) return body;
   const safeParams = preserveSecrets(body.name, body.params ?? {});
+  const enriched = await enrichParamsWithDiscoveredContext(body.provider, body.model_id, safeParams);
   const r = upsertModelConfig(
     body.name,
     body.provider,
     body.model_id,
-    safeParams,
+    enriched,
     body.is_default ?? false,
     body.credential_id ?? null,
   );
