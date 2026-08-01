@@ -15,9 +15,9 @@ const geminiCompat = makeOpenAICompatProvider(
 );
 
 type GeminiPart =
-  | { text: string }
+  | { text: string; thought?: boolean; thoughtSignature?: string }
   | { inlineData: { mimeType: string; data: string } }
-  | { functionCall: { name: string; args?: Record<string, unknown> } }
+  | { functionCall: { name: string; args?: Record<string, unknown> }; thoughtSignature?: string }
   | { functionResponse: { name: string; response: Record<string, unknown> } };
 
 function isCompatMode(params: ProviderParams): boolean {
@@ -128,7 +128,18 @@ function invokeMessagesToGemini(messages: InvokeMessage[]): {
       for (const tc of m.tool_calls ?? []) {
         const name = tc.function?.name ?? "tool";
         if (tc.id) toolNameById.set(tc.id, name);
-        parts.push({ functionCall: { name, args: parseJsonObject(tc.function?.arguments) } });
+        // Reattach the thoughtSignature Gemini emitted on the original
+        // response part — required on every functionCall replayed once the
+        // model started using thinking, else Gemini 400s with
+        // "Function call is missing a thought_signature in functionCall parts".
+        const sig = typeof tc.provider_meta?.gemini_thought_signature === "string"
+          ? tc.provider_meta.gemini_thought_signature
+          : undefined;
+        const fcPart: GeminiPart = {
+          functionCall: { name, args: parseJsonObject(tc.function?.arguments) },
+        };
+        if (sig) fcPart.thoughtSignature = sig;
+        parts.push(fcPart);
       }
       contents.push({ role: "model", parts });
       continue;
@@ -285,16 +296,24 @@ function extractGeminiInvokeResult(data: Record<string, unknown>): InvokeResult 
 
   let text = "";
   const tool_calls: InvokeResult["tool_calls"] = [];
+  let pendingThoughtSignature: string | undefined;
   for (const part of parts) {
     if (typeof part.text === "string") text += part.text;
+    if (part.thought === true && typeof part.thoughtSignature === "string") {
+      pendingThoughtSignature = part.thoughtSignature;
+    }
     if (part.functionCall && typeof part.functionCall === "object") {
       const fc = part.functionCall as Record<string, unknown>;
       const name = typeof fc.name === "string" ? fc.name : "tool";
       const args = fc.args && typeof fc.args === "object" ? fc.args as Record<string, unknown> : {};
+      const partSig = typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
+      const sig = partSig ?? pendingThoughtSignature;
+      pendingThoughtSignature = undefined;
       tool_calls.push({
         id: typeof fc.id === "string" ? fc.id : `call_${tool_calls.length + 1}`,
         name,
         arguments: args,
+        ...(sig ? { provider_meta: { gemini_thought_signature: sig } } : {}),
       });
     }
   }
@@ -342,6 +361,13 @@ async function* geminiNativeStreamInvoke(
     throw new Error(`Gemini streamGenerateContent error: ${res.status} ${msg}`);
   }
 
+  let functionCallIndex = 0;
+  // Gemini attaches `thoughtSignature` to the thinking-summary part, and
+  // the subsequent functionCall must carry it on replay. When the model
+  // emits multiple thought summaries in a single response, keep only the
+  // most recent one — the API pairs each functionCall with the sig from
+  // the thought block that immediately preceded it.
+  let pendingThoughtSignature: string | undefined;
   for await (const line of readSSELines(res.body)) {
     if (!line || line === "[DONE]") continue;
     let data: Record<string, unknown>;
@@ -356,8 +382,10 @@ async function* geminiNativeStreamInvoke(
     const parts = (content.parts as Array<Record<string, unknown>> | undefined) ?? [];
     for (const part of parts) {
       const isThought = part.thought === true;
+      const partSig = typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
       if (typeof part.text === "string" && part.text) {
         if (isThought) {
+          if (partSig) pendingThoughtSignature = partSig;
           yield { type: "thinking", delta: part.text };
         } else {
           yield { type: "text", delta: part.text };
@@ -367,12 +395,19 @@ async function* geminiNativeStreamInvoke(
         const fc = part.functionCall as Record<string, unknown>;
         const name = typeof fc.name === "string" ? fc.name : "tool";
         const args = fc.args && typeof fc.args === "object" ? fc.args as Record<string, unknown> : {};
+        const index = functionCallIndex++;
+        const id = typeof fc.id === "string" ? fc.id : `gemini_fc_${index}`;
+        const sig = partSig ?? pendingThoughtSignature;
+        // Consumed the signature; a subsequent functionCall in the same
+        // stream needs its own preceding thought part to supply a new one.
+        pendingThoughtSignature = undefined;
         yield {
           type: "tool_call_chunk",
-          index: 0,
-          id: typeof fc.id === "string" ? fc.id : undefined,
+          index,
+          id,
           name,
           args_delta: JSON.stringify(args),
+          ...(sig ? { provider_meta: { gemini_thought_signature: sig } } : {}),
         };
       }
     }
