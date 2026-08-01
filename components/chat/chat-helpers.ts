@@ -48,6 +48,17 @@ export interface ThreadGetPayload {
 //
 // All incoming rows are stamped status='confirmed'. The local pending bubbles
 // carry status='pending' until promoted here.
+//
+// The final step re-sorts by `created_at` ASC. This matters for the
+// steer-while-streaming race: when the user interrupts an in-flight reply,
+// the client-side queue drain optimistically appends the next user bubble
+// BEFORE the server has finished persisting the interrupted assistant
+// message. Without the sort, the interrupted reply (server timestamp T2)
+// gets appended AFTER the queued user bubble (client timestamp T3 ≈ later)
+// even though the true chronological order is [user, interrupted, user].
+// Since a single-machine install has ≤1ms clock skew, the ISO string
+// timestamps sort correctly and Array.sort's stability preserves the
+// relative order of same-timestamp confirmations.
 export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
   if (incoming.length === 0) return prev;
   const result = [...prev];
@@ -81,6 +92,7 @@ export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
     result.push(confirmed);
   }
 
+  result.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
   return result;
 }
 
