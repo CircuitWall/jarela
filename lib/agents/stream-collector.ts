@@ -20,6 +20,12 @@ export interface CollectedRun {
   toolEvents: PersistedToolEvent[];
   terminal: "done" | "error";
   errorMessage?: string;
+  // Structured fields from the terminal `error` chunk, mirrored so the
+  // route handler can persist a `run_error` marker row with the same
+  // shape the UI reads on reload. See ADR-0069.
+  errorCode?: string;
+  errorCredentialId?: string;
+  errorProvider?: string;
   // True when the run ended because the user hit Stop or steered. Distinct
   // from a generic stream error so persistence can mark the partial turn
   // with an interrupt footer instead of an error one — the next agent turn
@@ -81,9 +87,17 @@ export async function collectStream(
         }
         case "error": {
           result.terminal = "error";
-          const data = chunk.data as { message?: unknown; code?: unknown };
+          const data = chunk.data as {
+            message?: unknown;
+            code?: unknown;
+            credential_id?: unknown;
+            provider?: unknown;
+          };
           const msg = data?.message;
           if (typeof msg === "string") result.errorMessage = msg;
+          if (typeof data?.code === "string") result.errorCode = data.code;
+          if (typeof data?.credential_id === "string") result.errorCredentialId = data.credential_id;
+          if (typeof data?.provider === "string") result.errorProvider = data.provider;
           if (data?.code === "aborted") result.aborted = true;
           return result;
         }

@@ -22,7 +22,7 @@ import {
 import { broadcast, finishRun, startRun, subscribe, abortRun, getRun, waitForRun } from "@/lib/agents/run-registry";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
-import { getThread } from "@/lib/stores/threads";
+import { getThread, addMessage } from "@/lib/stores/threads";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
 import { validateBody } from "@/lib/api/responses";
@@ -32,6 +32,34 @@ type Params = { params: Promise<{ thread_id: string }> };
 
 const enc = new TextEncoder();
 const sse = (obj: Record<string, unknown>) => enc.encode(`data: ${JSON.stringify(obj)}\n\n`);
+
+// Persist a `run_error` marker row so a failed turn survives reload and
+// cross-device sync even when no assistant content was produced. The row
+// is filtered out of the LLM history window (see getRecentMessagesWindow)
+// and rendered as a compact chip by the chat UI. See ADR-0069.
+interface RunErrorSource {
+  errorMessage?: string;
+  errorCode?: string;
+  errorCredentialId?: string;
+  errorProvider?: string;
+}
+function persistRunErrorMarker(thread_id: string, src: RunErrorSource): void {
+  const raw = (src.errorMessage ?? "").trim();
+  const message = raw.length > 0 ? raw : "run failed";
+  // Cap the persisted body so a stack trace can't bloat the row.
+  const truncated = message.length > 2048 ? message.slice(0, 2045) + "…" : message;
+  const metadata: Record<string, unknown> = {
+    kind: "run_error",
+    code: src.errorCode ?? "run_crashed",
+  };
+  if (src.errorCredentialId) metadata.credential_id = src.errorCredentialId;
+  if (src.errorProvider) metadata.provider = src.errorProvider;
+  try {
+    addMessage(thread_id, "assistant", truncated, null, "run_error", metadata);
+  } catch (err) {
+    console.error("[run] failed to persist run_error marker", err);
+  }
+}
 
 // `attachments` and `stream_options` are passed through to prepareThreadRun
 // which does its own structural handling — keep loose at this boundary.
@@ -145,6 +173,20 @@ export async function POST(req: NextRequest, { params }: Params) {
             ? withInterruptMarker(collected.assistantContent)
             : collected.assistantContent;
           persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
+          // If the turn failed AND persistAssistantMessage skipped writing
+          // a row (no content + no tool events + not aborted), persist a
+          // synthetic `run_error` marker so the failure survives reload
+          // and cross-device sync. history-window filters these rows out
+          // of the LLM budget; the UI renders them as a compact chip.
+          // See ADR-0069.
+          if (
+            terminal === "error"
+            && !collected.aborted
+            && !collected.assistantContent.trim()
+            && (!collected.toolEvents || collected.toolEvents.length === 0)
+          ) {
+            persistRunErrorMarker(thread_id, collected);
+          }
         } catch (persistErr) {
           terminal = "error";
           broadcast(active, {
@@ -154,10 +196,18 @@ export async function POST(req: NextRequest, { params }: Params) {
         }
       } catch (err) {
         terminal = "error";
+        const errMsg = (err as Error).message ?? String(err);
         broadcast(active, {
           type: "error",
-          data: { message: (err as Error).message ?? String(err), code: "run_crashed" },
+          data: { message: errMsg, code: "run_crashed" },
         });
+        // Same marker semantics as above but for the outer crash path — the
+        // stream threw before collectStream could emit an error chunk.
+        try {
+          persistRunErrorMarker(thread_id, { errorMessage: errMsg, errorCode: "run_crashed" });
+        } catch (persistErr) {
+          console.error("[run] failed to persist run_error marker", persistErr);
+        }
       } finally {
         finishRun(active, terminal);
         publishNotification({
