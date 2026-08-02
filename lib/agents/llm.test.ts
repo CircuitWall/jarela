@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { isContextOverflowError, parseContextLimitFromError } from "./llm";
+import {
+  isContextOverflowError,
+  parseContextLimitFromError,
+  isRateLimitError,
+  parseRetryAfterSeconds,
+} from "./llm";
 
 describe("isContextOverflowError", () => {
   it("matches OpenAI phrasing", () => {
@@ -51,5 +56,43 @@ describe("parseContextLimitFromError", () => {
   it("returns null when no number pair is present", () => {
     expect(parseContextLimitFromError("context window exhausted, retry later")).toBeNull();
     expect(parseContextLimitFromError("")).toBeNull();
+  });
+});
+
+describe("isRateLimitError", () => {
+  it("matches SDK APIError with status=429", () => {
+    expect(isRateLimitError({ status: 429 }, "429 status code (no body)")).toBe(true);
+  });
+  it("matches by message when status is missing (Anthropic bare message)", () => {
+    expect(isRateLimitError(new Error("429 status code (no body)"), "429 status code (no body)")).toBe(true);
+  });
+  it("matches common phrasings", () => {
+    expect(isRateLimitError(null, "rate_limit_exceeded: quota exhausted")).toBe(true);
+    expect(isRateLimitError(null, "Too Many Requests")).toBe(true);
+    expect(isRateLimitError(null, "OpenAI: quota exceeded on requests-per-minute")).toBe(true);
+  });
+  it("ignores unrelated errors", () => {
+    expect(isRateLimitError(null, "ECONNREFUSED")).toBe(false);
+    expect(isRateLimitError(null, "context_length_exceeded")).toBe(false);
+    expect(isRateLimitError(null, "")).toBe(false);
+  });
+});
+
+describe("parseRetryAfterSeconds", () => {
+  it("reads lowercase retry-after header (string)", () => {
+    expect(parseRetryAfterSeconds({ headers: { "retry-after": "30" } }, "429")).toBe(30);
+  });
+  it("reads title-case Retry-After header (number)", () => {
+    expect(parseRetryAfterSeconds({ headers: { "Retry-After": 12 } }, "429")).toBe(12);
+  });
+  it("falls back to message-body regex", () => {
+    expect(parseRetryAfterSeconds(null, "please retry after 45 seconds")).toBe(45);
+  });
+  it("rounds fractional seconds up", () => {
+    expect(parseRetryAfterSeconds({ headers: { "retry-after": "1.4" } }, "")).toBe(2);
+  });
+  it("returns null when no hint present", () => {
+    expect(parseRetryAfterSeconds({}, "429 status code (no body)")).toBeNull();
+    expect(parseRetryAfterSeconds(null, "")).toBeNull();
   });
 });
