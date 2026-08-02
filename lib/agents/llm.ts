@@ -484,6 +484,20 @@ async function* streamWithConfigImpl(
         `${providerLabel}: the credential the model uses was rejected as invalid or expired. ` +
         `Open the credential in Settings → Credentials and re-enter or refresh the key, then retry.`;
       code = "auth_failed";
+    } else if (isRateLimitError(err, rawMsg)) {
+      // Provider throttled us. The raw SDK message is often useless
+      // ("429 status code (no body)"), so replace it with something the
+      // user can act on. Read `retry-after` from the SDK exception when
+      // present so we can tell them how long to wait.
+      const retryAfterSec = parseRetryAfterSeconds(err, rawMsg);
+      const waitHint = retryAfterSec != null
+        ? ` The provider asked us to wait ~${retryAfterSec}s before retrying.`
+        : "";
+      friendly =
+        `${cfg.provider}: rate-limited (HTTP 429). The provider's per-minute/per-day quota for this ` +
+        `credential is exhausted.${waitHint} Wait and retry, or switch to a different model / credential ` +
+        `in Settings → Models.`;
+      code = "rate_limited";
     } else if (/max_tokens/i.test(rawMsg) && /no content|before hitting/i.test(rawMsg)) {
       code = "max_tokens_exhausted";
     }
@@ -605,5 +619,50 @@ export function parseContextLimitFromError(
     if (limit > 0) return { limit };
   }
 
+  return null;
+}
+
+// Detect provider throttling. Anthropic / OpenAI SDKs throw an APIError
+// with `status === 429` and a message like "429 status code (no body)".
+// Context-overflow is checked first upstream, so this only fires for real
+// quota / per-minute throttling, not for oversized prompts.
+export function isRateLimitError(err: unknown, msg: string): boolean {
+  if (err && typeof err === "object") {
+    const status = (err as { status?: unknown }).status;
+    if (status === 429 || status === "429") return true;
+  }
+  if (!msg) return false;
+  return (
+    /\b429\b/.test(msg) ||
+    /\brate[_\s-]*limit/i.test(msg) ||
+    /\btoo many requests\b/i.test(msg) ||
+    /\bquota exceeded\b/i.test(msg)
+  );
+}
+
+// Extract the `retry-after` hint the provider sent, in seconds. Both the
+// Anthropic and OpenAI SDKs expose response headers on the thrown
+// APIError as `err.headers` (a plain object with lowercase keys). Some
+// providers also embed the value in the error message.
+export function parseRetryAfterSeconds(err: unknown, msg: string): number | null {
+  if (err && typeof err === "object") {
+    const headers = (err as { headers?: unknown }).headers;
+    if (headers && typeof headers === "object") {
+      const raw = (headers as Record<string, unknown>)["retry-after"]
+        ?? (headers as Record<string, unknown>)["Retry-After"];
+      if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return Math.ceil(raw);
+      if (typeof raw === "string") {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n > 0) return Math.ceil(n);
+      }
+    }
+  }
+  if (msg) {
+    const m = msg.match(/retry[_\s-]*after[:\s]*(\d+)/i);
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+  }
   return null;
 }
