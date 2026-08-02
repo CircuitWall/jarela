@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.1] - 2026-08-02
+
+### Fixed
+
+- **Friendly message when a provider returns HTTP 429.** The Anthropic /
+  OpenAI SDKs throw an `APIError` whose message is a bare
+  `"429 status code (no body)"`. That string was passed through to the SSE
+  error event and rendered in the chat toast, telling the user nothing
+  about what to do. The chat runtime now recognises rate-limit errors
+  (`isRateLimitError` in `lib/agents/llm.ts`) and emits a `rate_limited`
+  code with a message that names the provider, explains the credential's
+  quota is exhausted, quotes the `retry-after` hint from the SDK response
+  headers when present, and points at Settings → Models for switching
+  models or credentials.
+
 ## [1.20.0] - 2026-08-01
 
 ### Added
