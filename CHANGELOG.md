@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.20.2] - 2026-08-03
+
+### Added
+
+- **Running version on the boot picker.** The full-screen agent picker
+  now shows the running `vX.Y.Z` at the bottom, sourced from
+  `/api/v1/update` so the number stays consistent with the "Update
+  available" banner. Renders nothing until the fetch resolves, so it
+  never causes a layout shift.
+
 ## [1.20.1] - 2026-08-02
 
 ### Fixed

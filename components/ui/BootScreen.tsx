@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentConfig } from "@/api/types";
 import { api } from "@/api/client";
 import { Logo } from "@/components/ui/Logo";
+import { VersionTag } from "@/components/ui/VersionTag";
 
 // Hash an agent id to a deterministic gradient so the same agent always
 // renders the same color, but the colors are spread across the agent set.
@@ -349,6 +350,12 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
               </p>
             )}
         </div>
+      </div>
+      <div
+        className="absolute inset-x-0 bottom-0 flex justify-center pointer-events-none"
+        style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
+      >
+        <VersionTag />
       </div>
     </div>
   );
