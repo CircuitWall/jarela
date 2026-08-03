@@ -15,6 +15,8 @@ const KEYS = [
   "JARELA_RECURSION_LIMIT",
   "JARELA_VOICE_TIMEOUT_MS",
   "JARELA_IMAGE_TIMEOUT_MS",
+  "JARELA_MODEL_ROUTER_MODE",
+  "JARELA_MODEL_ROUTER_POLICY",
   "NEXT_PUBLIC_APP_NAME",
   "NEXT_PUBLIC_APP_DESCRIPTION",
   "NEXT_PUBLIC_APP_ISSUE_URL",
@@ -46,6 +48,8 @@ describe("getConfig", () => {
     expect(c.recursionLimit).toBe(200);
     expect(c.voiceTimeoutMs).toBe(60_000);
     expect(c.imageTimeoutMs).toBe(60_000);
+    expect(c.modelRouterMode).toBe("off");
+    expect(c.modelRouterPolicy).toBe("balanced");
     expect(c.dataDir).toBe("/tmp/jarela-test-data");
     expect(c.appName).toBe("Jarela");
     expect(c.appDescription).toBe("Jarela — local chat interface for LangGraph agents");
@@ -106,5 +110,14 @@ describe("getConfig", () => {
     const a = getConfig();
     const b = getConfig();
     expect(a).toBe(b);
+  });
+
+  it("parses model router settings", () => {
+    process.env.JARELA_MODEL_ROUTER_MODE = "heuristic";
+    process.env.JARELA_MODEL_ROUTER_POLICY = "cheap";
+    resetConfigCache();
+    const c = getConfig();
+    expect(c.modelRouterMode).toBe("heuristic");
+    expect(c.modelRouterPolicy).toBe("cheap");
   });
 });

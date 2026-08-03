@@ -84,6 +84,8 @@ export interface JarelaConfig {
   // anti-hallucination detector
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
   readonly hallucinationDetectorModel: string;
+  readonly modelRouterMode: "off" | "heuristic";
+  readonly modelRouterPolicy: "cheap" | "fast" | "balanced" | "quality";
   readonly citationCheckerTailChars: number;
   readonly citationManifestMax: number;
 
@@ -127,6 +129,26 @@ function parseHallucinationMode(
   if (!value) return fallback;
   const v = value.trim().toLowerCase();
   if (v === "off" || v === "regex" || v === "model") return v;
+  return fallback;
+}
+
+function parseModelRouterMode(
+  value: string | undefined,
+  fallback: JarelaConfig["modelRouterMode"],
+): JarelaConfig["modelRouterMode"] {
+  if (!value) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "off" || v === "heuristic") return v;
+  return fallback;
+}
+
+function parseModelRouterPolicy(
+  value: string | undefined,
+  fallback: JarelaConfig["modelRouterPolicy"],
+): JarelaConfig["modelRouterPolicy"] {
+  if (!value) return fallback;
+  const v = value.trim().toLowerCase();
+  if (v === "cheap" || v === "fast" || v === "balanced" || v === "quality") return v;
   return fallback;
 }
 
@@ -216,6 +238,14 @@ export function getConfig(): JarelaConfig {
       ENV_DEFAULTS.hallucinationDetectorMode,
     ),
     hallucinationDetectorModel: (env.JARELA_HALLUCINATION_DETECTOR_MODEL ?? ENV_DEFAULTS.hallucinationDetectorModel).trim(),
+    modelRouterMode: parseModelRouterMode(
+      env.JARELA_MODEL_ROUTER_MODE,
+      ENV_DEFAULTS.modelRouterMode,
+    ),
+    modelRouterPolicy: parseModelRouterPolicy(
+      env.JARELA_MODEL_ROUTER_POLICY,
+      ENV_DEFAULTS.modelRouterPolicy,
+    ),
     citationCheckerTailChars: parseNonNegativeInt(env.JARELA_CITATION_CHECKER_TAIL_CHARS, ENV_DEFAULTS.citationCheckerTailChars),
     citationManifestMax: parseNonNegativeInt(env.JARELA_CITATION_MANIFEST_MAX, ENV_DEFAULTS.citationManifestMax),
 

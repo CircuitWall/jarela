@@ -12,6 +12,7 @@ import {
   prepareThreadRun,
   persistAssistantMessage,
 } from "@/lib/agents/run-thread";
+import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
 import { resolveTurnProfile } from "@/lib/agents/turn-profile";
@@ -90,7 +91,14 @@ async function runDelegatedTurn(
       _delegation_depth: ctx.depth + 1,
       _delegation_ancestors: [...ctx.ancestors, ctx.parentAgentId],
     });
+    const startedAt = Date.now();
     const collected = await collectStream(prepared.stream);
+    const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
+      durationMs: Date.now() - startedAt,
+      terminal: collected.terminal,
+      errorCode: collected.errorCode,
+      retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
+    });
     if (collected.terminal !== "error") {
       persistAssistantMessage(
         childThreadId,
@@ -101,6 +109,7 @@ async function runDelegatedTurn(
         collected.usage ?? null,
         prepared.context_snapshot ?? null,
         prepared.source_manifest ?? null,
+        routeDecision,
       );
     }
     return collected;

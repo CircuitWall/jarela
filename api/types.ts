@@ -211,6 +211,19 @@ export interface RedactionSummaryEntry {
   count: number;
 }
 
+export interface RouteDecisionMetadata {
+  source: "pinned" | "agent_override" | "heuristic" | "default_fallback";
+  model_config_name: string | null;
+  route_class?: "simple-chat" | "factual" | "research" | "complex-reasoning" | "multimodal";
+  policy?: "cheap" | "fast" | "balanced" | "quality";
+  reason: string;
+  candidates?: string[];
+  duration_ms?: number;
+  terminal?: "done" | "error";
+  error_code?: string;
+  retry_count?: number;
+}
+
 export interface MessageMetadata {
   citations?: {
     /** Model config name used as the checker. */
@@ -226,6 +239,8 @@ export interface MessageMetadata {
   /** Total values held back from the LLM during this turn (ADR-0064).
    *  Absent on legacy rows and on turns where nothing matched. */
   redaction_summary?: RedactionSummaryEntry[];
+  /** Model-selection decision captured before the turn started. */
+  routing?: RouteDecisionMetadata;
 }
 
 export interface MessageUsage {

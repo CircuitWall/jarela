@@ -120,6 +120,8 @@ export const ENV_DEFAULTS = {
   // anti-hallucination classifier
   hallucinationDetectorMode: "regex" as const,
   hallucinationDetectorModel: "",
+  modelRouterMode: "off" as const,
+  modelRouterPolicy: "balanced" as const,
   // citation checker (second-pass LLM on agents with citation_strictness != 'off')
   citationCheckerTailChars: 4_000,
   // numbered source manifest shown to agents with citation_strictness != 'off'
@@ -127,6 +129,8 @@ export const ENV_DEFAULTS = {
 } as const;
 
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
+export const MODEL_ROUTER_MODES = ["off", "heuristic"] as const;
+export const MODEL_ROUTER_POLICIES = ["cheap", "fast", "balanced", "quality"] as const;
 
 export const TOOL_SAFETY_VALUES = ["safe", "mostly_safe", "bypass"] as const;
 export const LOG_LEVEL_VALUES = ["debug", "info", "warn", "error"] as const;
@@ -653,6 +657,28 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     tier: "B",
     requiresRestart: false,
     agentWritable: false,
+  },
+  {
+    name: "JARELA_MODEL_ROUTER_MODE",
+    type: "enum",
+    default: ENV_DEFAULTS.modelRouterMode,
+    description: "Pre-run model router. 'off' keeps today's explicit-or-default model resolution. 'heuristic' chooses a saved model per turn using capability, cost, speed, and cache-affinity heuristics before the agent run starts.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    enumValues: MODEL_ROUTER_MODES,
+  },
+  {
+    name: "JARELA_MODEL_ROUTER_POLICY",
+    type: "enum",
+    default: ENV_DEFAULTS.modelRouterPolicy,
+    description: "Optimization policy for the heuristic model router. 'cheap' minimizes spend, 'fast' biases low-latency families, 'balanced' trades off speed/cost/capability, and 'quality' escalates more readily to stronger models.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    enumValues: MODEL_ROUTER_POLICIES,
   },
   {
     name: "JARELA_CITATION_CHECKER_TAIL_CHARS",

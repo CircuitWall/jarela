@@ -107,3 +107,11 @@ export function getMessageUsageByIds(messageIds: readonly string[]): Map<string,
   for (const row of rows) out.set(row.message_id, row);
   return out;
 }
+
+export function getLatestMessageUsageForThread(threadId: string): MessageUsageRow | null {
+  return (
+    (getDb()
+      .prepare("SELECT * FROM message_usage WHERE thread_id=? ORDER BY created_at DESC LIMIT 1")
+      .get(threadId) as unknown as MessageUsageRow) ?? null
+  );
+}

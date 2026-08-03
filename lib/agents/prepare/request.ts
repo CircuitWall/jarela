@@ -80,26 +80,36 @@ export interface ThreadRunRequest {
    */
   _pinned_model_config_name?: string | null;
 
+  /** Internal — public callers leave undefined. Total retry count already
+   *  consumed by this turn across transient + stall retry paths. */
+  _retry_count?: number;
+
+  /** Internal — public callers leave undefined. Decremented across the
+   *  transient-failure auto-retry recursion. */
+  _transient_retries_left?: number;
+
+  /** Internal — public callers leave undefined. Lets transient retries
+   *  escalate the router policy without mutating global config. */
+  _router_policy_override?: "cheap" | "fast" | "balanced" | "quality" | null;
+
   /** Internal — public callers leave undefined. Decremented across the
    *  stall-retry recursion. */
   _stall_retries_left?: number;
 
   /**
    * Internal — public callers leave undefined. When set, prepareThreadRun
-   * will NOT call addMessage/touchThread for this request. The stall-retry
-   * recursion sets this so its synthetic `↻ Auto-retry: …` nudges don't
-   * become permanent user-role rows that the LLM later mistakes for real
-   * user input.
+   * will NOT call addMessage/touchThread for this request. Retry paths set
+   * this so synthetic nudges don't become durable user-role rows.
    */
   _skip_persist_message?: boolean;
 
   /**
    * Internal — public callers leave undefined. When set, prepareThreadRun
-   * appends the request's message to the in-memory history just before the
-   * LLM stream so the model still sees the nudge for THIS turn even though
-   * it isn't persisted. Pairs with `_skip_persist_message` for stall-retry.
+   * appends THIS explicit content to the in-memory history just before the
+   * LLM stream. Used by retry paths for transient/stall nudges that must be
+   * visible to the model for this attempt but must not be persisted.
    */
-  _inject_message_into_history?: boolean;
+  _history_append_message?: string | ContentPart[];
 
   /** Internal — public callers leave undefined. Set by `delegate_to_agent`
    *  when one agent hands a subtask to another; gates depth + cycles. */

@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.0] - 2026-08-03
+
+### Added
+
+- **Heuristic per-turn model routing.** Jarela can now choose the
+  execution model per turn from the saved model pool using task shape,
+  tool requirements, attachment capabilities, pricing hints, cache
+  affinity, and recent routing outcomes. The router remains deterministic
+  by default and only changes model choice; agent identity, tools, and
+  persistence stay unchanged.
+- **Router controls in the Models panel.** Settings for router mode and
+  routing policy now live directly in the Models panel, so operators can
+  turn automatic routing on or off and switch between `cheap`, `fast`,
+  `balanced`, and `quality` behavior without editing env files manually.
+- **Routing audit trail in chat.** Assistant messages now persist and
+  display model-selection metadata including source, route class, policy,
+  latency, retries, and final outcome, making routing behavior visible in
+  the chat UI instead of hiding it inside logs.
+
+### Changed
+
+- **Agent setup is router-first by default.** The main agent editor no
+  longer treats per-agent model selection as the normal setup path.
+  Automatic routing is now the default mental model, while explicit model
+  pinning moved into Advanced settings as an override.
+
+### Fixed
+
+- **Retry paths no longer duplicate the user's prompt in model context.**
+  Automatic transient retries and corrective stall retries now inject only
+  explicit retry nudges into in-memory history when needed, rather than
+  re-appending the already-persisted user prompt. This keeps retry turns
+  semantically stable and prevents token bloat from accidental duplication.
+- **Transient failures now retry with exponential backoff and policy
+  escalation.** Pre-output transient errors can be retried automatically
+  with bounded exponential delay, and cheap/fast routing policies may
+  escalate toward stronger models on retry without mutating the original
+  persisted user turn.
+
 ## [1.20.2] - 2026-08-03
 
 ### Added

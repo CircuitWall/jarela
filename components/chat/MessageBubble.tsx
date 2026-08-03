@@ -8,7 +8,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
 import { AlertTriangle, Bot, Check, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
-import type { AgentConfig, Message, UserProfile } from "@/api/types";
+import type { AgentConfig, Message, RouteDecisionMetadata, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
@@ -16,6 +16,7 @@ import { CountdownRing } from "@/components/chat/CountdownRing";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
+import { formatRoutingDecisionSummary, formatRoutingDuration, humanizeRouteClass } from "@/lib/ui/routing-decision";
 import { pushToast } from "@/lib/ui/toasts";
 import { parseBridgePrompt, type BridgePromptContext } from "@/lib/bridges/message-role";
 import { parseExtensionTurn, type ExtensionTurnContext } from "@/lib/api/extension-turn-prompt";
@@ -1276,6 +1277,72 @@ function RedactionShield({
   );
 }
 
+function RoutingDecisionSummary({ decision }: { decision: RouteDecisionMetadata }) {
+  const [open, setOpen] = useState(false);
+  const summary = formatRoutingDecisionSummary(decision);
+  return (
+    <div className="mt-1.5 flex items-start">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-500/20 bg-sky-500/8 px-2.5 py-1 text-[11px] text-sky-700 dark:text-sky-300/80 hover:bg-sky-500/12 transition-colors"
+        title={decision.reason}
+        aria-expanded={open}
+      >
+        <CollapseChevron open={open} size={10} />
+        <Zap size={11} />
+        <span className="truncate max-w-[24rem] text-left">{summary}</span>
+      </button>
+      {open && (
+        <div className="ml-2 mt-1 rounded border border-border/60 bg-surface-2/70 px-2.5 py-2 space-y-1 text-[11px] text-fg-muted">
+          <div>
+            <span className="text-fg-faint">source:</span>{" "}
+            <span className="font-mono">{decision.source}</span>
+          </div>
+          {decision.route_class && (
+            <div>
+              <span className="text-fg-faint">class:</span>{" "}
+              <span>{humanizeRouteClass(decision.route_class)}</span>
+            </div>
+          )}
+          {decision.policy && (
+            <div>
+              <span className="text-fg-faint">policy:</span>{" "}
+              <span className="font-mono">{decision.policy}</span>
+            </div>
+          )}
+          {typeof decision.duration_ms === "number" && decision.duration_ms > 0 && (
+            <div>
+              <span className="text-fg-faint">latency:</span>{" "}
+              <span className="font-mono">{formatRoutingDuration(decision.duration_ms)}</span>
+            </div>
+          )}
+          {typeof decision.retry_count === "number" && decision.retry_count > 0 && (
+            <div>
+              <span className="text-fg-faint">retries:</span>{" "}
+              <span className="font-mono">{decision.retry_count}</span>
+            </div>
+          )}
+          {decision.terminal && (
+            <div>
+              <span className="text-fg-faint">result:</span>{" "}
+              <span className="font-mono">{decision.terminal}</span>
+              {decision.error_code ? <span className="text-fg-faint"> · {decision.error_code}</span> : null}
+            </div>
+          )}
+          {Array.isArray(decision.candidates) && decision.candidates.length > 0 && (
+            <div>
+              <span className="text-fg-faint">candidates:</span>{" "}
+              <span>{decision.candidates.join(", ")}</span>
+            </div>
+          )}
+          <div className="italic text-fg-faint">{decision.reason}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
   const [open, setOpen] = useState(false);
   if (refs.length === 0) return null;
@@ -1682,6 +1749,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const redactionSummary = !isUser && "metadata" in message
     ? (message.metadata as { redaction_summary?: Array<{ type_hint: string; count: number }> } | null | undefined)?.redaction_summary ?? null
     : null;
+  const routingDecision = !isUser && "metadata" in message
+    ? (message.metadata as { routing?: RouteDecisionMetadata } | null | undefined)?.routing ?? null
+    : null;
   const unverifiedLinks = useMemo<ReadonlySet<string> | undefined>(
     () => citations?.unverified_links?.length ? new Set(citations.unverified_links) : undefined,
     [citations],
@@ -1866,6 +1936,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         )}
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
+        )}
+        {routingDecision && (
+          <RoutingDecisionSummary decision={routingDecision} />
         )}
         {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
           <ReferencesPanel sources={citations.sources} />

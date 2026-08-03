@@ -1,7 +1,9 @@
 "use client";
 import { Cpu, Pencil, Plus, Star, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ModelConfig } from "@/api/types";
+import { refreshRuntimeConfig } from "@/api/runtime-config";
+import { Select } from "@/components/ui/Select";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { ModelEditor } from "./ModelEditor";
@@ -16,12 +18,50 @@ const PROVIDER_COLORS: Record<string, string> = {
   "github-copilot": "bg-purple-900/40 text-purple-300 border-purple-700",
 };
 
+type RouterMode = "off" | "heuristic";
+type RouterPolicy = "cheap" | "fast" | "balanced" | "quality";
+
+interface EnvEntry {
+  name: string;
+  current: string;
+}
+
 export function ModelsPanel() {
   const { models, assignments, loading, create, update, remove, refresh } = useModels();
   const [editing, setEditing] = useState<ModelConfig | null | "new">(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [routerMode, setRouterMode] = useState<RouterMode>("off");
+  const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>("balanced");
+  const [routerLoading, setRouterLoading] = useState(true);
+  const [routerSaving, setRouterSaving] = useState<null | "mode" | "policy">(null);
+  const [routerError, setRouterError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("models", "model", containerRef);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch("/api/v1/env", { cache: "no-store" });
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const body = (await r.json()) as { entries: EnvEntry[] };
+        const mode = body.entries.find((e) => e.name === "JARELA_MODEL_ROUTER_MODE")?.current;
+        const policy = body.entries.find((e) => e.name === "JARELA_MODEL_ROUTER_POLICY")?.current;
+        if (!cancelled) {
+          setRouterMode(mode === "heuristic" ? "heuristic" : "off");
+          setRouterPolicy(
+            policy === "cheap" || policy === "fast" || policy === "quality" ? policy : "balanced",
+          );
+          setRouterError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setRouterError(errorMessage(e));
+      } finally {
+        if (!cancelled) setRouterLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   async function handleSave(name: string, data: Omit<ModelConfig, "name" | "created_at" | "updated_at">) {
     if (editing === "new") await create(name, data);
@@ -42,6 +82,48 @@ export function ModelsPanel() {
     }
   }
 
+  async function persistRouterSetting(name: string, value: string, field: "mode" | "policy") {
+    setRouterSaving(field);
+    setRouterError(null);
+    try {
+      const r = await fetch("/api/v1/env", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, value }),
+      });
+      if (!r.ok) {
+        const body = (await r.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `${r.status} ${r.statusText}`);
+      }
+      refreshRuntimeConfig();
+    } catch (e) {
+      setRouterError(errorMessage(e));
+      throw e;
+    } finally {
+      setRouterSaving(null);
+    }
+  }
+
+  async function handleRouterModeChange(next: RouterMode) {
+    const prev = routerMode;
+    setRouterMode(next);
+    try {
+      await persistRouterSetting("JARELA_MODEL_ROUTER_MODE", next, "mode");
+    } catch {
+      setRouterMode(prev);
+    }
+  }
+
+  async function handleRouterPolicyChange(next: RouterPolicy) {
+    const prev = routerPolicy;
+    setRouterPolicy(next);
+    try {
+      await persistRouterSetting("JARELA_MODEL_ROUTER_POLICY", next, "policy");
+    } catch {
+      setRouterPolicy(prev);
+    }
+  }
+
   return (
     <div className="flex flex-col h-full">
       <div className="border-b border-border px-4 py-3 flex items-center gap-2">
@@ -53,6 +135,48 @@ export function ModelsPanel() {
       </div>
 
       <div ref={containerRef} className="flex-1 overflow-y-auto no-scrollbar">
+        <div className="px-4 pt-3">
+          <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-3 space-y-3">
+            <div>
+              <h3 className="text-xs font-semibold text-fg">Routing</h3>
+              <p className="text-[11px] text-fg-subtle mt-1 leading-snug">
+                Control how Jarela chooses the execution model for each turn. Automatic routing uses task complexity, tools, attachments, recent failures, latency, cache affinity, and cost policy.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="space-y-1">
+                <span className="text-[11px] text-fg-faint">Router mode</span>
+                <Select
+                  value={routerMode}
+                  disabled={routerLoading || routerSaving !== null}
+                  onChange={(e) => { void handleRouterModeChange(e.target.value as RouterMode); }}
+                >
+                  <option value="off">Off</option>
+                  <option value="heuristic">Automatic routing</option>
+                </Select>
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] text-fg-faint">Routing policy</span>
+                <Select
+                  value={routerPolicy}
+                  disabled={routerLoading || routerSaving !== null}
+                  onChange={(e) => { void handleRouterPolicyChange(e.target.value as RouterPolicy); }}
+                >
+                  <option value="cheap">Cheap</option>
+                  <option value="fast">Fast</option>
+                  <option value="balanced">Balanced</option>
+                  <option value="quality">Quality</option>
+                </Select>
+              </label>
+            </div>
+            <p className="text-[11px] text-fg-faint">
+              Explicit per-agent model overrides still win. The starred model below remains the fallback when no explicit or routed choice is available.
+            </p>
+            {routerSaving && <p className="text-[11px] text-fg-faint">Saving router settings…</p>}
+            {routerError && <p className="text-[11px] text-red-700 dark:text-red-400">{routerError}</p>}
+          </div>
+        </div>
+
         {/* Model list */}
         <div className="px-4 py-2">
           {loading && models.length === 0 && <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>}

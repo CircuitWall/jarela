@@ -340,6 +340,24 @@ describe("messageToResponse", () => {
     expect(out.metadata).toEqual(meta);
   });
 
+  it("preserves routing metadata for router audit surfaces", () => {
+    const meta = {
+      routing: {
+        source: "heuristic",
+        model_config_name: "mini",
+        route_class: "simple-chat",
+        policy: "balanced",
+        reason: "class=simple-chat; policy=balanced; chose mini from 2 candidates",
+        candidates: ["mini", "reasoner"],
+      },
+    };
+    const out = messageToResponse(
+      makeMessageRow({ metadata: JSON.stringify(meta) }),
+      new Map(),
+    );
+    expect(out.metadata).toEqual(meta);
+  });
+
   it("collapses malformed metadata to null", () => {
     const out = messageToResponse(
       makeMessageRow({ metadata: "not json" }),
