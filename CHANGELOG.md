@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.1] - 2026-08-03
+
+### Fixed
+
+- **CVE patches in transitive prod deps.** Updated `undici` (8.10.0),
+  `fast-uri` (3.1.5), `ip-address` (10.4.0), `@hono/node-server` (2.0.12),
+  and `@modelcontextprotocol/sdk` (1.30.0) to resolve high-severity
+  advisories GHSA-8xcm-r25x-g524, GHSA-4cwx-7wf7-3272, GHSA-m8rv-5g2x-5cg5,
+  GHSA-jr45-8vmc-qm54, GHSA-v3r7-h72x-cjcm, GHSA-7p8r-x3mc-p8w7,
+  GHSA-mwp4-54f8-5fhr, GHSA-4xrf-jv44-h6hh, GHSA-22jq-vg5j-6vgg,
+  and GHSA-frvp-7c67-39w9. Lockfile-only change; no API surface altered.
+
 ## [1.21.0] - 2026-08-03
 
 ### Added
