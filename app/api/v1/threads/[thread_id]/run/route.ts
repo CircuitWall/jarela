@@ -27,6 +27,8 @@ import { publish as publishNotification } from "@/lib/notifications/bus";
 import { sseResponse } from "@/lib/api/sse";
 import { validateBody } from "@/lib/api/responses";
 import { resolveTurnProfile } from "@/lib/agents/turn-profile";
+import type { RouteDecisionMetadata } from "@/api/types";
+import { finalizeRouteDecision } from "@/lib/agents/model-router";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -42,6 +44,7 @@ interface RunErrorSource {
   errorCode?: string;
   errorCredentialId?: string;
   errorProvider?: string;
+  routeDecision?: RouteDecisionMetadata | null;
 }
 function persistRunErrorMarker(thread_id: string, src: RunErrorSource): void {
   const raw = (src.errorMessage ?? "").trim();
@@ -54,6 +57,7 @@ function persistRunErrorMarker(thread_id: string, src: RunErrorSource): void {
   };
   if (src.errorCredentialId) metadata.credential_id = src.errorCredentialId;
   if (src.errorProvider) metadata.provider = src.errorProvider;
+  if (src.routeDecision) metadata.routing = src.routeDecision;
   try {
     addMessage(thread_id, "assistant", truncated, null, "run_error", metadata);
   } catch (err) {
@@ -146,11 +150,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       let terminal: "done" | "error" = "error";
       let assistantContent = "";
       try {
+        const startedAt = Date.now();
         const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
           onChunk: (chunk) => broadcast(active, chunk),
         });
         assistantContent = collected.assistantContent;
         terminal = collected.terminal;
+        const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
+          durationMs: Date.now() - startedAt,
+          terminal: collected.terminal,
+          errorCode: collected.errorCode,
+          retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
+        });
         // If the stream threw mid-iteration, collectStream returns terminal="error"
         // but no `error` chunk was broadcast — surface one to subscribers. Skip
         // when the run was deliberately aborted: llm.ts already emitted an
@@ -172,7 +183,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           const contentToPersist = collected.aborted
             ? withInterruptMarker(collected.assistantContent)
             : collected.assistantContent;
-          persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null);
+          persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null, routeDecision);
           // If the turn failed AND persistAssistantMessage skipped writing
           // a row (no content + no tool events + not aborted), persist a
           // synthetic `run_error` marker so the failure survives reload
@@ -185,7 +196,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             && !collected.assistantContent.trim()
             && (!collected.toolEvents || collected.toolEvents.length === 0)
           ) {
-            persistRunErrorMarker(thread_id, collected);
+            persistRunErrorMarker(thread_id, { ...collected, routeDecision });
           }
         } catch (persistErr) {
           terminal = "error";
@@ -204,7 +215,7 @@ export async function POST(req: NextRequest, { params }: Params) {
         // Same marker semantics as above but for the outer crash path — the
         // stream threw before collectStream could emit an error chunk.
         try {
-          persistRunErrorMarker(thread_id, { errorMessage: errMsg, errorCode: "run_crashed" });
+          persistRunErrorMarker(thread_id, { errorMessage: errMsg, errorCode: "run_crashed", routeDecision: prepared.route_decision ?? null });
         } catch (persistErr) {
           console.error("[run] failed to persist run_error marker", persistErr);
         }

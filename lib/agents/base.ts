@@ -1,3 +1,5 @@
+import type { RouteDecisionMetadata } from "@/api/types";
+
 export interface StreamFilters {
   include_tools?: boolean;
   include_thinking?: boolean;
@@ -12,6 +14,7 @@ export interface AgentRunConfig {
   system_prompt: string;
   allowed_tools: string[];   // empty = all tools
   model_config_name: string | null;
+  route_decision?: RouteDecisionMetadata | null;
   /**
    * Per-tool credential overrides (`{ toolName: credentialId }`). Forwarded
    * to the tool wrapper so the integrations store can pick the right

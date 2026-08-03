@@ -378,6 +378,7 @@ async function* streamWithConfigImpl(
           provider: cfg.provider,
           model_id: cfg.model_id,
           model_config_name: cfg.name,
+          route_decision: runCfg?.route_decision ?? null,
           aborted: true,
         },
       };
@@ -542,6 +543,7 @@ async function* streamWithConfigImpl(
       provider: cfg.provider,
       model_id: cfg.model_id,
       model_config_name: cfg.name,
+      route_decision: runCfg?.route_decision ?? null,
     },
   };
 }

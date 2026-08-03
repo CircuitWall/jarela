@@ -96,7 +96,7 @@ describe("delegate_to_agent tool", () => {
     expect(out.used_tools).toEqual(["web_search"]);
     expect(prepareThreadRunMock).toHaveBeenCalledTimes(1);
     expect(persistAssistantMessageMock).toHaveBeenCalledWith(
-      "child-thread", "child reply", ["web_search"], [], "delegation", null, null, null,
+      "child-thread", "child reply", ["web_search"], [], "delegation", null, null, null, null,
     );
     // Recursion args: depth 1, ancestors = [parent]
     const req = prepareThreadRunMock.mock.calls[0][0] as {

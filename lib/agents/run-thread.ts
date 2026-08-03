@@ -3,24 +3,25 @@ import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { spillImageAttachments } from "@/lib/attachments/spill";
-import { addMessage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { recall, type RecalledMemory } from "@/lib/embeddings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
-import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { getDefaultModelConfig, getModelConfig, getModelParams, listModelConfigs } from "@/lib/stores/model-config";
 import {
   buildHistoryWindow,
   buildSystemPrompt,
   resolveExperienceMode,
   type ThreadRunRequest,
 } from "@/lib/agents/prepare";
-import { recordMessageUsage } from "@/lib/stores/message-usage";
+import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores/message-usage";
 import { getPricingTables, modelRatesFor, estimateCostUsd } from "@/lib/stores/pricing";
 import { estimateTokens } from "@/lib/agents/context-budget";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
+import { nextPolicyForRetry, routeTurnModel, type RouteDecisionMetadata } from "@/lib/agents/model-router";
 import {
   buildCombinedManifest,
   classifyCitations,
@@ -89,6 +90,8 @@ export interface PreparedThreadRun {
   // and the citation checker uses it to score marker validity. Empty when
   // the flag is off.
   source_manifest?: SourceManifestEntry[];
+  // Per-turn model-selection decision captured before execution.
+  route_decision?: RouteDecisionMetadata;
 }
 
 export interface ContextUsageSnapshot {
@@ -106,6 +109,38 @@ export interface ContextUsageSnapshot {
 // Read fresh per turn so non-restart-required reloads take effect.
 function maxStallRetries(): number { return getConfig().maxStallRetries; }
 function maxTransientRetries(): number { return getConfig().maxTransientRetries; }
+
+export function transientRetryDelayMs(attempt: number): number {
+  const clamped = Math.max(1, attempt);
+  return Math.min(8_000, 500 * (2 ** (clamped - 1)));
+}
+
+export function shouldRetryTransientError(code: string | null | undefined, message: string | null | undefined): boolean {
+  const normalized = (code ?? "").trim().toLowerCase();
+  if (normalized === "rate_limited" || normalized === "empty_response" || normalized === "stream_error" || normalized === "agent_error") {
+    return true;
+  }
+  if (normalized === "aborted" || normalized === "auth_failed" || normalized === "context_length_exceeded" || normalized === "recursion_limit" || normalized === "no_model") {
+    return false;
+  }
+  const text = (message ?? "").toLowerCase();
+  return /429|retry after|timed out|timeout|socket|eai_again|econnreset|fetch failed|temporar/i.test(text);
+}
+
+function getLatestRoutingObservation(threadId: string): RouteDecisionMetadata | null {
+  const page = getMessagesPage(threadId, 20);
+  for (let index = page.messages.length - 1; index >= 0; index -= 1) {
+    const raw = page.messages[index]?.metadata;
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as { routing?: RouteDecisionMetadata };
+      if (parsed?.routing && typeof parsed.routing === "object") return parsed.routing;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
 
 // Hard cap on how deep an A → B → C delegation chain can go via the
 // `delegate_to_agent` built-in tool. Public callers start at depth 0; the
@@ -129,7 +164,16 @@ export function snapshotThreadModelConfigName(thread_id: string): string | null 
   const agentCfg = getAgentConfig(thread.agent_id);
   if (!agentCfg) return null;
 
+  if (agentCfg.model_config_name) return agentCfg.model_config_name;
+  if (getConfig().modelRouterMode !== "off") return null;
   return agentCfg.model_config_name ?? getDefaultModelConfig()?.name ?? null;
+}
+
+export function appendHistoryMessage(
+  history: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
+  injected: string | ContentPart[] | undefined,
+): Array<{ role: "user" | "assistant"; content: string | ContentPart[] }> {
+  return injected === undefined ? history : [...history, { role: "user", content: injected }];
 }
 
 /**
@@ -158,6 +202,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (!agentCfg) {
     throw new RunThreadError(404, `Agent "${thread.agent_id}" not found`, "agent_not_found");
   }
+  const allowedTools = withSelfConfigTools(getAgentTools(agentCfg));
 
   // Persist the user turn (including any attachments) before the LLM stream
   // so reload-mid-stream still shows the prompt. The stall-retry path sets
@@ -183,10 +228,73 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
-  const modelConfigName = req._pinned_model_config_name
+  const defaultModelConfig = getDefaultModelConfig();
+  let modelConfigName = req._pinned_model_config_name
     ?? agentCfg.model_config_name
-    ?? getDefaultModelConfig()?.name
     ?? null;
+  let routeDecision: RouteDecisionMetadata | null = null;
+  if (req._pinned_model_config_name) {
+    routeDecision = {
+      source: "pinned",
+      model_config_name: req._pinned_model_config_name,
+      reason: "queued run reused the model pinned at submission time",
+      retry_count: req._retry_count ?? 0,
+    };
+  } else if (agentCfg.model_config_name) {
+    routeDecision = {
+      source: "agent_override",
+      model_config_name: agentCfg.model_config_name,
+      reason: "agent has an explicit model_config_name override",
+      retry_count: req._retry_count ?? 0,
+    };
+  }
+  const routePolicy = req._router_policy_override ?? getConfig().modelRouterPolicy;
+  if (!modelConfigName && getConfig().modelRouterMode === "heuristic") {
+    const pricingTables = getPricingTables();
+    const routed = routeTurnModel({
+      models: listModelConfigs().map((cfg) => ({
+        name: cfg.name,
+        provider: cfg.provider,
+        model_id: cfg.model_id,
+        params: getModelParams(cfg),
+        credential_id: cfg.credential_id ?? null,
+        is_default: cfg.is_default === 1,
+        created_at: cfg.created_at,
+        updated_at: cfg.updated_at,
+      })),
+      message: trimmed,
+      attachments: req.attachments,
+      allowedTools,
+      latestUsage: getLatestMessageUsageForThread(req.thread_id),
+      latestObservation: getLatestRoutingObservation(req.thread_id),
+      policy: routePolicy,
+      rateResolver: (provider, modelId) => modelRatesFor(pricingTables, provider, modelId),
+    });
+    if (routed.modelConfigName) {
+      modelConfigName = routed.modelConfigName;
+      routeDecision = {
+        source: "heuristic",
+        model_config_name: routed.modelConfigName,
+        route_class: routed.routeClass,
+        policy: routePolicy,
+        reason: routed.reason,
+        candidates: routed.candidates,
+        retry_count: req._retry_count ?? 0,
+      };
+      console.info(`[model_router] thread=${req.thread_id} class=${routed.routeClass} policy=${routePolicy} model=${routed.modelConfigName} reason=${routed.reason}`);
+    }
+  }
+  modelConfigName = modelConfigName ?? defaultModelConfig?.name ?? null;
+  if (!routeDecision) {
+    routeDecision = {
+      source: "default_fallback",
+      model_config_name: modelConfigName,
+      reason: modelConfigName
+        ? "used the workspace default model because no explicit or routed model was selected"
+        : "no runnable model was available",
+      retry_count: req._retry_count ?? 0,
+    };
+  }
   const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
   const baseProviderParams = getModelParams(modelCfg);
 
@@ -216,7 +324,6 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     effectiveHotSince,
   );
 
-  const allowedTools = withSelfConfigTools(getAgentTools(agentCfg));
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
 
   // Recall is best-effort: cap on the recall budget so a cold embeddings
@@ -295,6 +402,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       system_prompt: systemPrompt,
       allowed_tools: allowedTools,
       model_config_name: modelConfigName,
+      route_decision: routeDecision,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }
@@ -302,15 +410,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     },
   };
 
-  // Stall-retry path: the nudge needs to reach the LLM but isn't (and
-  // shouldn't be) in the DB. Append it to the in-memory history just for
-  // this LLM call. Use the structured `content` form (not the JSON-
-  // stringified fallback) so attachments survive into the LLM call.
-  const finalHistory = req._inject_message_into_history
-    ? [...effectiveHistory, { role: "user" as const, content }]
-    : effectiveHistory;
+  // Retry paths may need to append an explicit non-persisted message (for
+  // example a stall/transient nudge) to the in-memory history for THIS run
+  // only. Never infer that from the main request message, or retries will
+  // duplicate the already-persisted user prompt in model context.
+  const finalHistory = appendHistoryMessage(effectiveHistory, req._history_append_message);
 
   const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
+  const transientRetriesLeft = req._transient_retries_left ?? maxTransientRetries();
+  const transientWrapped = transientRetryStream(rawStream, req, transientRetriesLeft);
   const retriesLeft = req._stall_retries_left ?? maxStallRetries();
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
@@ -321,8 +429,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // strict-citation audit (which lives inside the same wrapper) would do
   // the same with retry continuations. Bypass it entirely for those callers.
   const stream = req.disable_quality_gates
-    ? rawStream
-    : stallRetryStream(rawStream, req, allowedTools, retriesLeft);
+    ? transientWrapped
+    : stallRetryStream(transientWrapped, req, allowedTools, retriesLeft);
   return {
     stream,
     thread_id: req.thread_id,
@@ -337,7 +445,77 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       facts_budget_tokens: historyWindow.budget.tierBudgets.facts,
     },
     source_manifest: sourceManifest.length > 0 ? sourceManifest : undefined,
+    route_decision: routeDecision,
   };
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function* transientRetryStream(
+  inner: AsyncIterable<StreamChunk>,
+  originalReq: ThreadRunRequest,
+  retriesLeft: number,
+): AsyncGenerator<StreamChunk> {
+  if (retriesLeft <= 0) {
+    for await (const chunk of inner) yield chunk;
+    return;
+  }
+
+  let sawVisibleOutput = false;
+  let errorChunk: StreamChunk | null = null;
+  let doneChunk: StreamChunk | null = null;
+
+  for await (const chunk of inner) {
+    if (chunk.type === "text_delta" || chunk.type === "thinking_delta" || chunk.type === "tool_call" || chunk.type === "tool_result") {
+      sawVisibleOutput = true;
+      yield chunk;
+      continue;
+    }
+    if (chunk.type === "done") {
+      doneChunk = chunk;
+      break;
+    }
+    if (chunk.type === "error") {
+      errorChunk = chunk;
+      break;
+    }
+    yield chunk;
+  }
+
+  if (doneChunk) {
+    yield doneChunk;
+    return;
+  }
+  if (!errorChunk) return;
+
+  const data = errorChunk.data as { code?: unknown; message?: unknown } | undefined;
+  const code = typeof data?.code === "string" ? data.code : "";
+  const message = typeof data?.message === "string" ? data.message : "";
+  if (sawVisibleOutput || !shouldRetryTransientError(code, message)) {
+    yield errorChunk;
+    return;
+  }
+
+  const attempt = Math.max(1, maxTransientRetries() - retriesLeft + 1);
+  const backoffMs = transientRetryDelayMs(attempt);
+  const nextPolicy = nextPolicyForRetry(originalReq._router_policy_override ?? getConfig().modelRouterPolicy);
+  console.warn(`[transient-retry] attempt=${attempt} thread=${originalReq.thread_id} code=${code || "unknown"} backoff_ms=${backoffMs} policy=${nextPolicy}`);
+  await delay(backoffMs);
+
+  const retry = await prepareThreadRun({
+    ...originalReq,
+    _transient_retries_left: retriesLeft - 1,
+    _skip_persist_message: true,
+    _retry_count: (originalReq._retry_count ?? 0) + 1,
+    _router_policy_override: originalReq._pinned_model_config_name ? (originalReq._router_policy_override ?? null) : nextPolicy,
+  }).catch(() => null);
+  if (!retry) {
+    yield errorChunk;
+    return;
+  }
+  for await (const chunk of retry.stream) yield chunk;
 }
 
 /**
@@ -575,6 +753,7 @@ async function* stallRetryStream(
     message: nudge,
     attachments: undefined,
     _stall_retries_left: retriesLeft - 1,
+    _retry_count: (originalReq._retry_count ?? 0) + 1,
     // The nudge is in-memory only — never write it to `messages`. The
     // assistant's combined (original + ↻ + retry) text gets persisted
     // ONCE at end-of-turn via `persistAssistantMessage`, which is the
@@ -582,7 +761,7 @@ async function* stallRetryStream(
     // nudge becomes a permanent user-role row the LLM mistakes for
     // user input on every future turn.
     _skip_persist_message: true,
-    _inject_message_into_history: true,
+    _history_append_message: nudge,
   });
   for await (const chunk of retry.stream) yield chunk;
 }
@@ -623,6 +802,7 @@ export function persistAssistantMessage(
   usage?: AssistantUsageSnapshot | null,
   contextSnapshot?: ContextUsageSnapshot | null,
   sourceManifest?: readonly SourceManifestEntry[] | null,
+  routeDecision?: RouteDecisionMetadata | null,
 ): void {
   const trimmed = content.trim();
   let final = trimmed;
@@ -685,6 +865,9 @@ export function persistAssistantMessage(
     const redactionSummary = getMaskRunContext()?.totalSummary() ?? [];
     if (redactionSummary.length > 0) {
       mergeMessageMetadata(row.msg_id, { redaction_summary: redactionSummary });
+    }
+    if (routeDecision) {
+      mergeMessageMetadata(row.msg_id, { routing: routeDecision });
     }
     // Persist the source manifest for THIS reply into the message's
     // metadata. The chat UI uses it to resolve inline `[N]` markers →

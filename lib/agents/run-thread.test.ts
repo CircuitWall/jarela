@@ -1,10 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  appendHistoryMessage,
   toolCallSignature,
   looksLikeStall,
   isWriteLikeToolName,
   withInterruptMarker,
   INTERRUPT_MARKER,
+  shouldRetryTransientError,
+  transientRetryDelayMs,
 } from "./run-thread";
 
 describe("toolCallSignature", () => {
@@ -26,6 +29,21 @@ describe("toolCallSignature", () => {
   it("treats different tool names as distinct", () => {
     expect(toolCallSignature("file_read", { path: "/x" }))
       .not.toBe(toolCallSignature("file_write", { path: "/x" }));
+  });
+});
+
+describe("appendHistoryMessage", () => {
+  it("does not duplicate the base message history when no injected content is provided", () => {
+    const base = [{ role: "user" as const, content: "hello" }];
+    expect(appendHistoryMessage(base, undefined)).toEqual(base);
+  });
+
+  it("appends only the explicit injected retry message", () => {
+    const base = [{ role: "user" as const, content: "hello" }];
+    expect(appendHistoryMessage(base, "retry nudge")).toEqual([
+      { role: "user", content: "hello" },
+      { role: "user", content: "retry nudge" },
+    ]);
   });
 });
 
@@ -152,5 +170,33 @@ describe("withInterruptMarker", () => {
     const once = withInterruptMarker("partial");
     const twice = withInterruptMarker(once);
     expect(twice).toBe(once);
+  });
+});
+
+describe("shouldRetryTransientError", () => {
+  it("retries known transient error codes", () => {
+    expect(shouldRetryTransientError("rate_limited", "429")).toBe(true);
+    expect(shouldRetryTransientError("empty_response", "empty response")).toBe(true);
+    expect(shouldRetryTransientError("stream_error", "socket reset")).toBe(true);
+  });
+
+  it("does not retry permanent failures", () => {
+    expect(shouldRetryTransientError("auth_failed", "bad key")).toBe(false);
+    expect(shouldRetryTransientError("context_length_exceeded", "too long")).toBe(false);
+    expect(shouldRetryTransientError("aborted", "user stopped")).toBe(false);
+  });
+
+  it("falls back to message matching for unknown codes", () => {
+    expect(shouldRetryTransientError("", "fetch failed: ETIMEDOUT")).toBe(true);
+    expect(shouldRetryTransientError("", "plain validation error")).toBe(false);
+  });
+});
+
+describe("transientRetryDelayMs", () => {
+  it("grows exponentially and caps", () => {
+    expect(transientRetryDelayMs(1)).toBe(500);
+    expect(transientRetryDelayMs(2)).toBe(1000);
+    expect(transientRetryDelayMs(3)).toBe(2000);
+    expect(transientRetryDelayMs(6)).toBe(8000);
   });
 });

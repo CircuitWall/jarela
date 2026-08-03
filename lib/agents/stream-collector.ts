@@ -10,6 +10,7 @@
 // `done`/`error`, and surface the terminal state. This helper unifies that.
 
 import type { StreamChunk } from "@/lib/agents/base";
+import type { RouteDecisionMetadata } from "@/api/types";
 import type { PersistedToolEvent } from "@/lib/stores/threads";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { errorMessage } from "@/lib/utils/error";
@@ -35,6 +36,7 @@ export interface CollectedRun {
   // the terminal `done` chunk. Undefined when the stream errored out before
   // a usage event arrived (or the provider didn't report one).
   usage?: AssistantUsageSnapshot;
+  routeDecision?: RouteDecisionMetadata | null;
 }
 
 export interface CollectStreamOptions {
@@ -113,6 +115,7 @@ export async function collectStream(
             provider?: string;
             model_id?: string;
             model_config_name?: string | null;
+            route_decision?: RouteDecisionMetadata | null;
           };
           if (d?.usage && d.provider && d.model_id && d.usage.source === "provider") {
             result.usage = {
@@ -125,6 +128,7 @@ export async function collectStream(
               model_config_name: d.model_config_name ?? null,
             };
           }
+          result.routeDecision = d.route_decision ?? null;
           return result;
         }
         // thinking_delta and unknown types are pass-through (already

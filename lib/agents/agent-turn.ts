@@ -1,6 +1,7 @@
 import type { ContentPart } from "@/lib/tools/types";
 import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigName, withInterruptMarker } from "@/lib/agents/run-thread";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
+import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { enqueueThreadRun } from "@/lib/agents/run-queue";
 import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
@@ -99,8 +100,15 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         _skip_persist_message: req.skip_persist_user_message,
       });
 
+      const startedAt = Date.now();
       const collected = await collectStream(prepared.stream, {
         onChunk: (chunk) => broadcast(active, chunk),
+      });
+      const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
+        durationMs: Date.now() - startedAt,
+        terminal: collected.terminal,
+        errorCode: collected.errorCode,
+        retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
       });
       const trimmed = collected.assistantContent.trim();
       // Silent-mode runners (bridges, watchers, schedulers) skip persistence
@@ -124,6 +132,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           collected.usage ?? null,
           prepared.context_snapshot ?? null,
           prepared.source_manifest ?? null,
+          routeDecision,
         );
       }
 

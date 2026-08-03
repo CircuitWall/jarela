@@ -18,8 +18,8 @@ interface Props {
 
 export function ModelSection({ form, models, integrations, onClose }: Props) {
   const { dispatch } = useAppContext();
-  const selectedModel = models.find((m) => m.name === form.modelConfigName);
   const defaultModel = models.find((m) => m.is_default);
+  const selectedModel = models.find((m) => m.name === form.modelConfigName) ?? defaultModel;
   const readiness = computeFeatureReadiness({
     models,
     integrations,
@@ -32,25 +32,27 @@ export function ModelSection({ form, models, integrations, onClose }: Props) {
       {!readiness.documentsReady && (
         <DocumentsReadinessNotice onOpenModels={() => { onClose(); dispatch({ type: "SET_TAB", tab: "models" }); }} />
       )}
-      <Select value={form.modelConfigName} onChange={(e) => form.setModelConfigName(e.target.value)}>
-        <option value="">
-          {defaultModel
-            ? `Default (${defaultModel.name} · ${defaultModel.model_id})${modelSupportsImages(defaultModel.provider, defaultModel.model_id) ? " 📷" : ""}`
-            : "(no default configured)"}
-        </option>
-        {models.map((m) => {
-          // Prefix with a camera glyph when the model is known to accept
-          // image inputs — surfaces "this agent can read images" without
-          // a separate column. Plain <option> can't hold an SVG.
-          const vision = modelSupportsImages(m.provider, m.model_id);
-          return (
-            <option key={m.name} value={m.name}>
-              {vision ? "📷 " : ""}{m.name} · {m.provider} / {m.model_id}
-            </option>
-          );
-        })}
-      </Select>
-      {selectedModel && <SelectedModelDescription model={selectedModel} />}
+      <div className="rounded-lg border border-border bg-surface-2/60 px-3 py-2.5 space-y-2">
+        <p className="text-[11px] text-fg-subtle leading-snug">
+          This agent normally uses automatic model routing. The system chooses the best available model per turn based on task complexity, tools, attachments, and cost policy.
+        </p>
+        {defaultModel ? (
+          <div className="space-y-1">
+            <p className="text-[11px] text-fg-faint">
+              Fallback model: <span className="text-fg-subtle">{defaultModel.name}</span>
+              <span className="text-fg-faint"> · {defaultModel.provider} / {defaultModel.model_id}</span>
+            </p>
+            <SelectedModelDescription model={defaultModel} prefix="Fallback" />
+          </div>
+        ) : (
+          <p className="text-[11px] text-amber-700 dark:text-amber-400">No default fallback model is configured yet.</p>
+        )}
+        {form.modelConfigName && models.find((m) => m.name === form.modelConfigName) && (
+          <p className="text-[11px] text-sky-700 dark:text-sky-400">
+            This agent currently has a forced model override. Clear it in Advanced settings to return to router-driven selection.
+          </p>
+        )}
+      </div>
       {models.length === 0 && (
         <p className="text-[11px] text-amber-700 dark:text-amber-400">No model configs yet — go to the Models panel to add one first.</p>
       )}
@@ -78,12 +80,12 @@ function DocumentsReadinessNotice({ onOpenModels }: { onOpenModels: () => void }
   );
 }
 
-function SelectedModelDescription({ model }: { model: ModelConfig }) {
+export function SelectedModelDescription({ model, prefix = "Using" }: { model: ModelConfig; prefix?: string }) {
   return (
     <div className="space-y-1">
       <p className="inline-flex items-center gap-1.5 text-[11px] text-fg-faint">
         <span className="text-fg-subtle"><ProviderLogo name={model.provider} size={12} /></span>
-        Using <span className="text-fg-subtle">{model.provider}</span> / <span className="font-mono text-fg-muted">{model.model_id}</span>
+        {prefix} <span className="text-fg-subtle">{model.provider}</span> / <span className="font-mono text-fg-muted">{model.model_id}</span>
         {!modelSupportsImages(model.provider, model.model_id) && (
           isProviderClassified(model.provider)
             ? <span className="ml-1 text-amber-700 dark:text-amber-300">· no image input</span>
