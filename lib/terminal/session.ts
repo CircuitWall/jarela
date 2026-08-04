@@ -15,21 +15,33 @@ import { resolveSubprocessEnv } from "@/lib/tools/subprocess-env";
 const MAX_BUF = 256_000;
 const DEFAULT_SHELL = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
 
+function shellBasename(shell: string): string {
+  return shell.toLowerCase().replace(/\\/g, "/").split("/").pop() ?? shell.toLowerCase();
+}
+function isPs(shell: string): boolean {
+  const b = shellBasename(shell);
+  return b === "powershell.exe" || b === "powershell" || b === "pwsh.exe" || b === "pwsh";
+}
+function isCmd(shell: string): boolean {
+  const b = shellBasename(shell);
+  return b === "cmd.exe" || b === "cmd";
+}
+
 function clip(s: string, max = MAX_BUF): string {
   return s.length <= max ? s : `[... truncated ...]\n${s.slice(s.length - max)}`;
 }
 
+// Sentinel embeds exit code AND cwd so the registry can track directory changes.
 function sentinelLine(uuid: string, shell: string): string {
-  if (shell.includes("powershell")) {
-    // $LASTEXITCODE reflects the last external process; $? is a bool for cmdlets.
-    // Use the ternary to normalise both cases to 0/1.
-    return `Write-Host "##JARELA:${uuid}##$(if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { if ($?) { 0 } else { 1 } })##"\n`;
+  if (isPs(shell)) {
+    // $LASTEXITCODE = last external-process code; $? = bool for PS cmdlets.
+    return `Write-Host "##JARELA:${uuid}##$(if ($LASTEXITCODE -ne $null) { $LASTEXITCODE } else { if ($?) { 0 } else { 1 } })##$(Get-Location)##"\n`;
   }
-  if (shell === "cmd.exe" || shell === "cmd") {
-    return `echo ##JARELA:${uuid}##%ERRORLEVEL%##\r\n`;
+  if (isCmd(shell)) {
+    return `echo ##JARELA:${uuid}##%ERRORLEVEL%##%CD%##\r\n`;
   }
-  // bash / sh / zsh — $? is always the previous command's exit code
-  return `echo "##JARELA:${uuid}##$?##"\n`;
+  // bash / sh / zsh / POSIX
+  return `echo "##JARELA:${uuid}##$?##$(pwd)##"\n`;
 }
 
 export interface ExecResult {
@@ -52,6 +64,7 @@ export class TerminalSession {
   private pendingErr = "";
   private _closed = false;
   private _lastActivity = Date.now();
+  private _cwd: string; // updated from sentinel after every exec
 
   // At most one exec waiter at a time — queued via promise chaining.
   private execChain: Promise<void> = Promise.resolve();
@@ -68,8 +81,18 @@ export class TerminalSession {
 
     const resolved = resolveSubprocessEnv({ cwd: opts.cwd, env: opts.env, workspaceRoot: opts.workspaceRoot });
     this.startCwd = resolved.cwd;
+    this._cwd = resolved.cwd;
 
-    this.proc = spawn(this.shell, [], { cwd: resolved.cwd, env: resolved.env, stdio: ["pipe", "pipe", "pipe"] });
+    // -NoLogo: suppress banner text that would pollute the output buffer.
+    // -NonInteractive: prevent Read-Host from hanging unattended sessions.
+    const shellArgs = isPs(this.shell) ? ["-NoLogo", "-NonInteractive"] : [];
+
+    this.proc = spawn(this.shell, shellArgs, { cwd: resolved.cwd, env: resolved.env, stdio: ["pipe", "pipe", "pipe"] });
+
+    if (isPs(this.shell)) {
+      // Force UTF-8 so non-ASCII output isn't garbled (critical for PS 5.1).
+      this.proc.stdin!.write("$OutputEncoding = [System.Text.Encoding]::UTF8; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8\n");
+    }
 
     this.proc.stdout!.on("data", (chunk: Buffer) => {
       const t = chunk.toString("utf8");
@@ -100,14 +123,14 @@ export class TerminalSession {
     if (this._closed) return Promise.reject(new Error("session is closed"));
 
     const uuid = randomUUID();
-    const cwd = this.startCwd; // best-effort; agents can run pwd themselves
 
     return new Promise<ExecResult>((resolve) => {
       this.pendingOut = "";
       this.pendingErr = "";
 
       const sentinel = `##JARELA:${uuid}##`;
-      const re = new RegExp(`##JARELA:${uuid}##(\\d+)##`);
+      // Groups: (exitCode)(cwd) — cwd captured from the sentinel itself.
+      const re = new RegExp(`##JARELA:${uuid}##(\\d+)##(.+)##`);
 
       const checkInterval = setInterval(() => {
         const m = this.pendingOut.match(re);
@@ -116,6 +139,9 @@ export class TerminalSession {
         clearTimeout(timer);
 
         const exitCode = parseInt(m[1], 10);
+        const capturedCwd = m[2].trim();
+        if (capturedCwd) this._cwd = capturedCwd;
+
         const sentinelStart = this.pendingOut.indexOf(sentinel);
         const stdout = clip(this.pendingOut.slice(0, sentinelStart).trimEnd(), MAX_BUF);
         const stderr = clip(this.pendingErr.trimEnd(), 16_000);
@@ -123,7 +149,7 @@ export class TerminalSession {
         this.pendingOut = "";
         this.pendingErr = "";
 
-        resolve({ stdout, stderr, exitCode, timedOut: false, cwd });
+        resolve({ stdout, stderr, exitCode, timedOut: false, cwd: this._cwd });
       }, 10);
 
       const timer = setTimeout(() => {
@@ -133,7 +159,7 @@ export class TerminalSession {
           stderr: clip(this.pendingErr.trimEnd(), 16_000),
           exitCode: null,
           timedOut: true,
-          cwd,
+          cwd: this._cwd,
         });
         this.pendingOut = "";
         this.pendingErr = "";
@@ -162,6 +188,7 @@ export class TerminalSession {
   close(): void {
     if (!this._closed) {
       this._closed = true;
+      // Node translates SIGTERM to TerminateProcess on Windows — safe on all platforms.
       try { this.proc.kill("SIGTERM"); } catch { /* ignore */ }
     }
   }
@@ -169,4 +196,5 @@ export class TerminalSession {
   get isDead(): boolean { return this._closed || !this.proc.pid; }
   get idleMs(): number { return Date.now() - this._lastActivity; }
   get pid(): number | undefined { return this.proc.pid; }
+  get cwd(): string { return this._cwd; }
 }

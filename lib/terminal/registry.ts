@@ -27,11 +27,11 @@ export function removeSession(sessionId: string): void {
   if (s) { s.close(); store().delete(sessionId); }
 }
 
-export function listSessions(): { sessionId: string; shell: string; idleMs: number; pid: number | undefined }[] {
+export function listSessions(): { sessionId: string; shell: string; idleMs: number; pid: number | undefined; cwd: string }[] {
   const out = [];
   for (const [id, s] of store()) {
     if (s.isDead) { store().delete(id); continue; }
-    out.push({ sessionId: id, shell: s.shell, idleMs: s.idleMs, pid: s.pid });
+    out.push({ sessionId: id, shell: s.shell, idleMs: s.idleMs, pid: s.pid, cwd: s.cwd });
   }
   return out;
 }
