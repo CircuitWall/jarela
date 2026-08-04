@@ -45,3 +45,4 @@ import "./extension-surfaces";
 import "./async-results-tool";
 import "./browser-control";
 import "./skills";
+import "./terminal";
