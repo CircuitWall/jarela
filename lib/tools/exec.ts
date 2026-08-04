@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
-import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
+import { resolveSubprocessEnv } from "./subprocess-env";
 import { checkExecAllowed, resolveSafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
@@ -32,22 +32,13 @@ function clipOutput(text: string, max = maxOutputBytes()): { value: string; trun
   return { value: `${text.slice(0, max)}\n[output truncated]`, truncated: true };
 }
 
-// Resolves cwd + env using the documented precedence:
-//   - cwd: explicit options.cwd > active workspace root > process.cwd()
-//   - env: process.env < integration-store injected env < explicit options.env
-// The workspace root takes priority over process.cwd() so the agent doesn't
-// have to thread `cwd` into every shell call once it's called workspace_init.
-// The integration-store envelope lets a service install (launchd, systemd)
-// hand encrypted credentials to subprocesses even when ANTHROPIC_API_KEY
-// etc. were never exported in the service's environment.
+// Resolves cwd + env using the documented precedence — see subprocess-env.ts.
 function resolveExecEnvironment(options: {
   cwd?: string;
   env?: Record<string, string>;
   workspaceRoot?: string;
 }): { cwd: string; env: NodeJS.ProcessEnv } {
-  const cwd = options.cwd?.trim() ? options.cwd : options.workspaceRoot ?? process.cwd();
-  const env: NodeJS.ProcessEnv = { ...process.env, ...getInjectedSubprocessEnv(), ...options.env };
-  return { cwd, env };
+  return resolveSubprocessEnv(options);
 }
 
 // Translates the variety of failure shapes execSync throws into the same
