@@ -1,19 +1,15 @@
-import { execSync } from "node:child_process";
+// local_exec and shell_exec — backward-compatible one-shot wrappers.
+// Each call creates a throwaway terminal session, runs the command, and
+// closes the session immediately. State does NOT persist between calls.
+// For stateful multi-step work, use terminal_exec.
+
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
-import { resolveSubprocessEnv } from "./subprocess-env";
 import { checkExecAllowed, resolveSafetyMode } from "./safety";
+import { TerminalSession } from "@/lib/terminal";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
-
-// JARELA_EXEC_MAX_OUTPUT_BYTES overrides the output cap.
-function maxOutputBytes(): number { return getConfig().execMaxOutputBytes; }
-// Internal subprocess timeout. The agent's wall-clock budget on the tool
-// call (see lib/tools/wallclock.ts) is the primary deadline; this kills
-// the child process so a runaway shell can't keep burning CPU after the
-// wallclock abandons the promise.
-const EXEC_DEFAULT_TIMEOUT_MS = 60_000;
 
 const BLOCKED_PATTERNS = [
   /\brm\s+-rf\s+\/\b/i,
@@ -24,114 +20,64 @@ const BLOCKED_PATTERNS = [
 ];
 
 function isBlockedCommand(command: string): boolean {
-  return BLOCKED_PATTERNS.some((pattern) => pattern.test(command));
+  return BLOCKED_PATTERNS.some((p) => p.test(command));
 }
 
-function clipOutput(text: string, max = maxOutputBytes()): { value: string; truncated: boolean } {
+function clip(text: string, max = getConfig().execMaxOutputBytes): { value: string; truncated: boolean } {
   if (text.length <= max) return { value: text, truncated: false };
   return { value: `${text.slice(0, max)}\n[output truncated]`, truncated: true };
 }
 
-// Resolves cwd + env using the documented precedence — see subprocess-env.ts.
-function resolveExecEnvironment(options: {
+async function runLocalCommand(command: string, options: {
   cwd?: string;
   env?: Record<string, string>;
+  timeout_ms?: number;
+  allow_unsafe?: boolean;
   workspaceRoot?: string;
-}): { cwd: string; env: NodeJS.ProcessEnv } {
-  return resolveSubprocessEnv(options);
-}
-
-// Translates the variety of failure shapes execSync throws into the same
-// JSON envelope as the success path. Node surfaces a `timeout` kill as
-// `signal: "SIGTERM"` and/or `killed: true` with no exit status, which
-// would otherwise read as a bare exit_code=1 + empty stderr and lead the
-// agent to retry — call timeouts out explicitly instead.
-function formatExecFailure(
-  err: unknown,
-  cwd: string,
-  timeout: number,
-): string {
-  const e = err as {
-    stdout?: string; stderr?: string; status?: number; message?: string;
-    signal?: string; code?: string; killed?: boolean;
-  };
-  const out = clipOutput(String(e.stdout ?? ""));
-  const timedOut = e.code === "ETIMEDOUT"
-    || e.signal === "SIGTERM"
-    || (e.killed === true && (e.status == null || e.status === 0));
-  if (timedOut) {
-    const errText = clipOutput(String(e.stderr ?? ""), 2_000);
-    return JSON.stringify({
-      exit_code: 124,
-      stdout: out.value,
-      stderr: errText.value,
-      truncated: out.truncated || errText.truncated,
-      cwd,
-      timed_out: true,
-      timeout_ms: timeout,
-      error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope, a smaller working set, or pass a larger timeout_ms.`,
-    });
-  }
-  const errText = clipOutput(String(e.stderr ?? e.message ?? ""), 2_000);
-  return JSON.stringify({
-    exit_code: e.status ?? 1,
-    stdout: out.value,
-    stderr: errText.value,
-    truncated: out.truncated || errText.truncated,
-    cwd,
-  });
-}
-
-function runLocalCommand(
-  command: string,
-  options: {
-    cwd?: string;
-    env?: Record<string, string>;
-    timeout_ms?: number;
-    allow_unsafe?: boolean;
-    workspaceRoot?: string;
-  },
-): string {
-  if (!command.trim()) {
-    return JSON.stringify({ exit_code: 1, stderr: "command is required" });
-  }
-
-  const timeout = options.timeout_ms ?? EXEC_DEFAULT_TIMEOUT_MS;
+}): Promise<string> {
+  if (!command.trim()) return JSON.stringify({ exit_code: 1, stderr: "command is required" });
 
   const mode = resolveSafetyMode();
-  const gate = checkExecAllowed(command, {
-    mode,
-    allowUnsafe: options.allow_unsafe,
-    blockedByPattern: isBlockedCommand(command),
-  });
-  if (!gate.allowed) {
-    return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
-  }
+  const gate = checkExecAllowed(command, { mode, allowUnsafe: options.allow_unsafe, blockedByPattern: isBlockedCommand(command) });
+  if (!gate.allowed) return JSON.stringify({ exit_code: 126, stderr: gate.reason, safety_mode: mode });
 
-  const { cwd, env } = resolveExecEnvironment(options);
+  const timeout = options.timeout_ms ?? 60_000;
+  const session = new TerminalSession({
+    sessionId: `exec:throwaway:${Date.now()}`,
+    cwd: options.cwd,
+    env: options.env,
+    workspaceRoot: options.workspaceRoot,
+  });
 
   try {
-    const output = execSync(command, {
-      cwd,
-      env,
-      timeout,
-      encoding: "utf8",
-      maxBuffer: maxOutputBytes() * 2,
-      stdio: ["pipe", "pipe", "pipe"],
+    const result = await session.exec(command, timeout);
+    const stdout = clip(result.stdout);
+    const stderr = clip(result.stderr, 2_000);
+
+    if (result.timedOut) {
+      return JSON.stringify({
+        exit_code: 124, stdout: stdout.value, stderr: stderr.value,
+        truncated: stdout.truncated || stderr.truncated, cwd: result.cwd,
+        timed_out: true, timeout_ms: timeout,
+        error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope or a larger timeout_ms.`,
+      });
+    }
+
+    return JSON.stringify({
+      exit_code: result.exitCode, stdout: stdout.value, stderr: stderr.value,
+      truncated: stdout.truncated || stderr.truncated, cwd: result.cwd,
     });
-    const clipped = clipOutput(output);
-    return JSON.stringify({ exit_code: 0, stdout: clipped.value, truncated: clipped.truncated, cwd });
-  } catch (err: unknown) {
-    return formatExecFailure(err, cwd, timeout);
+  } finally {
+    session.close();
   }
 }
 
 const execSchema = z.object({
   command: z.string().describe("Shell command to execute"),
-  cwd: z.string().optional().describe("Working directory for command execution (defaults to process cwd)"),
-  env: z.record(z.string(), z.string()).optional().describe("Environment variables to inject for this command"),
-  timeout_ms: z.number().optional().describe("Subprocess kill timeout in milliseconds (default 60000). Independent of the agent's wall-clock budget on this call."),
-  allow_unsafe: z.boolean().optional().describe("Set true to bypass safety blocking for risky commands"),
+  cwd: z.string().optional().describe("Working directory (defaults to process cwd)"),
+  env: z.record(z.string(), z.string()).optional().describe("Extra environment variables for this command"),
+  timeout_ms: z.number().optional().describe("Kill timeout in milliseconds (default 60000)"),
+  allow_unsafe: z.boolean().optional().describe("Bypass safety blocking for risky commands"),
 });
 
 export const localExecTool = tool(
@@ -139,7 +85,7 @@ export const localExecTool = tool(
     runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
     name: "local_exec",
-    description: "Run local shell commands with optional cwd/env overrides. Output is truncated to 8 KB.",
+    description: "Run a shell command in a throwaway session. Output is truncated to 8 KB. For multi-step stateful work, use terminal_exec instead.",
     schema: execSchema,
   },
 );

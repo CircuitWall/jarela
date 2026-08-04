@@ -85,6 +85,8 @@ export interface JarelaConfig {
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
   readonly hallucinationDetectorModel: string;
   readonly skillsDir: string;
+  readonly terminalMaxSessions: number;
+  readonly terminalIdleTtlMs: number;
   readonly modelRouterMode: "off" | "heuristic";
   readonly modelRouterPolicy: "cheap" | "fast" | "balanced" | "quality";
   readonly citationCheckerTailChars: number;
@@ -250,6 +252,8 @@ export function getConfig(): JarelaConfig {
     ),
     citationCheckerTailChars: parseNonNegativeInt(env.JARELA_CITATION_CHECKER_TAIL_CHARS, ENV_DEFAULTS.citationCheckerTailChars),
     citationManifestMax: parseNonNegativeInt(env.JARELA_CITATION_MANIFEST_MAX, ENV_DEFAULTS.citationManifestMax),
+    terminalMaxSessions: parsePositiveInt(env.JARELA_TERMINAL_MAX_SESSIONS, ENV_DEFAULTS.terminalMaxSessions),
+    terminalIdleTtlMs: parsePositiveInt(env.JARELA_TERMINAL_IDLE_TTL_MS, ENV_DEFAULTS.terminalIdleTtlMs),
 
     // app metadata
     appName: getAppName(),

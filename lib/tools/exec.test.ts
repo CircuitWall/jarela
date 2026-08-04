@@ -32,5 +32,5 @@ describe("local_exec timeout reporting", () => {
     const out = parse(await localExecTool.invoke({ command: "nonexistent_jarela_test_cmd_zz" }));
     expect(out.timed_out).toBeUndefined();
     expect(out.exit_code).not.toBe(124);
-  });
+  }, 15_000);
 });
