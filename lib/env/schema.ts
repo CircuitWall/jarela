@@ -128,6 +128,9 @@ export const ENV_DEFAULTS = {
   citationCheckerTailChars: 4_000,
   // numbered source manifest shown to agents with citation_strictness != 'off'
   citationManifestMax: 50,
+  // terminal sessions
+  terminalMaxSessions: 5,
+  terminalIdleTtlMs: 600_000,
 } as const;
 
 export const HALLUCINATION_DETECTOR_MODES = ["off", "regex", "model"] as const;
@@ -713,6 +716,29 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
     min: 0,
+  },
+  {
+    name: "JARELA_TERMINAL_MAX_SESSIONS",
+    type: "int",
+    default: ENV_DEFAULTS.terminalMaxSessions,
+    description: "Max number of concurrent persistent terminal sessions. New session attempts beyond this limit are rejected.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 1,
+    max: 50,
+  },
+  {
+    name: "JARELA_TERMINAL_IDLE_TTL_MS",
+    type: "int",
+    default: ENV_DEFAULTS.terminalIdleTtlMs,
+    description: "Idle TTL for persistent terminal sessions. Sessions idle longer than this are automatically closed.",
+    category: "agent",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
+    min: 60_000,
   },
 ];
 
