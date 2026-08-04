@@ -117,6 +117,8 @@ export const ENV_DEFAULTS = {
   enableMockProvider: false,
   // tool safety / policy (already in lib/env/allowlist; kept for schema completeness)
   toolSafety: "mostly_safe" as const,
+  // skills
+  skillsDir: "",
   // anti-hallucination classifier
   hallucinationDetectorMode: "regex" as const,
   hallucinationDetectorModel: "",
@@ -656,6 +658,16 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     category: "agent",
     tier: "B",
     requiresRestart: false,
+    agentWritable: false,
+  },
+  {
+    name: "JARELA_SKILLS_DIR",
+    type: "string",
+    default: "",
+    description: "Path to an external skills directory. Jarela scans for */SKILL.md (Claude-style) and *.md files and exposes them to agents via read_skill / write_skill tools. Tilde is expanded. Empty = disabled.",
+    category: "agent",
+    tier: "A",
+    requiresRestart: true,
     agentWritable: false,
   },
   {

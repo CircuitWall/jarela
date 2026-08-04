@@ -19,6 +19,7 @@ import {
   formatContextBudgetSummary,
 } from "@/lib/agents/context-budget";
 import { getAppName } from "@/lib/env/app-config";
+import { listSkills, getSkillsDir } from "@/lib/skills";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
@@ -66,6 +67,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     buildUserContext(),
     buildIntegrationsContext(),
     buildDocumentsContext(),
+    buildSkillsContext(),
     harnessParts.capabilities,
     harnessParts.plan_first,
     harnessParts.presentation,
@@ -304,6 +306,18 @@ function buildMemoryContext(budget: ContextBudget): string {
     '- A semantic search over all stored memory entries + past chat messages was run against the user\'s turn; matching items appear under "Relevant context" below.',
     "- Use memory_write proactively when the user shares a fact, preference, or decision worth remembering. Use memory_read / memory_list to recall stored facts on demand.",
     "- If you want detail from outside the recent window, the user can scroll up — but for facts you've stored explicitly, prefer recall over guessing.",
+  ].join("\n");
+}
+
+function buildSkillsContext(): string {
+  if (!getSkillsDir()) return "";
+  const skills = listSkills();
+  if (skills.length === 0) return "";
+  const lines = skills.map((s) => `  - ${s.id}${s.description ? `: ${s.description}` : ""}`);
+  return [
+    "--- Available skills ---",
+    "Use read_skill(id) to load a skill's full instructions before applying it. Only load skills relevant to the current task.",
+    ...lines,
   ].join("\n");
 }
 
