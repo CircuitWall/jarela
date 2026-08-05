@@ -123,7 +123,17 @@ async function* streamWithConfigImpl(
     return;
   }
 
-  const params: ProviderParams = getModelParams(cfg);
+  const baseParams: ProviderParams = getModelParams(cfg);
+  // If the model config doesn't set max_tokens explicitly, use the budget-
+  // derived output reserve forwarded from run-thread. This avoids both
+  // under-provisioning (4096 default on long complex turns) and
+  // over-provisioning (4096 default on simple turns where the output budget
+  // is smaller than 4096). The provider still falls back to 4096 when neither
+  // is present.
+  const params: ProviderParams =
+    runCfg?.output_reserve_tokens && !baseParams.max_tokens
+      ? { ...baseParams, max_tokens: runCfg.output_reserve_tokens }
+      : baseParams;
 
   const provider = getProvider(cfg.provider);
 

@@ -403,6 +403,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       allowed_tools: allowedTools,
       model_config_name: modelConfigName,
       route_decision: routeDecision,
+      output_reserve_tokens: historyWindow.budget.outputReserveTokens,
       tool_credentials: Object.keys(toolCredentialOverrides).length > 0 ? toolCredentialOverrides : undefined,
       delegation: delegationDepth > 0 || delegationAncestors.length > 0
         ? { depth: delegationDepth, ancestors: delegationAncestors }
