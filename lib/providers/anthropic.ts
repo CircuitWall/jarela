@@ -102,6 +102,38 @@ export function withToolsCacheControl(tools: Anthropic.Tool[]): Anthropic.Tool[]
   return [...tools.slice(0, -1), { ...last, cache_control: EPHEMERAL }];
 }
 
+// Mark the last content block of the most-recent ASSISTANT message with a
+// 1-hour cache breakpoint. On the next turn, the API can serve the entire
+// conversation history (system + tools + prior messages) from cache at 0.1×
+// the input token rate instead of billing the full history on every turn.
+// Only marks the last assistant turn — earlier breakpoints from prior turns
+// are already in place and accumulate as the conversation grows.
+export function withLastAssistantMessageCacheControl(
+  messages: Anthropic.MessageParam[],
+): Anthropic.MessageParam[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "assistant") continue;
+    const blocks = typeof m.content === "string"
+      ? [{ type: "text" as const, text: m.content }]
+      : [...m.content];
+    if (blocks.length === 0) break;
+    // Find the last block that accepts cache_control (text or tool_use).
+    // Thinking blocks don't have a cache_control field in the SDK types.
+    const targetIdx = blocks.reduce<number>((best, b, idx) =>
+      (b.type === "text" || b.type === "tool_use") ? idx : best, -1);
+    if (targetIdx === -1) break;
+    const target = blocks[targetIdx];
+    if ("cache_control" in target && target.cache_control) break; // already marked
+    const updated = [...blocks];
+    updated[targetIdx] = { ...target, cache_control: EPHEMERAL_1H } as typeof target;
+    const next = [...messages];
+    next[i] = { ...m, content: updated };
+    return next;
+  }
+  return messages;
+}
+
 export function withLastToolResultCacheControl(
   messages: Anthropic.MessageParam[],
 ): Anthropic.MessageParam[] {
@@ -207,8 +239,10 @@ export const anthropicProvider: ModelProvider = {
 
     const systemMsg = messages.find((m) => m.role === "system");
     const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
-    const msgList = withLastToolResultCacheControl(
-      toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+    const msgList = withLastAssistantMessageCacheControl(
+      withLastToolResultCacheControl(
+        toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+      ),
     );
     const anthropicTools = withToolsCacheControl(
       appendServerTools(toAnthropicTools(tools), params),
@@ -250,8 +284,10 @@ export const anthropicProvider: ModelProvider = {
 
       const systemMsg = messages.find((m) => m.role === "system");
       const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
-      const msgList = withLastToolResultCacheControl(
-        toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+      const msgList = withLastAssistantMessageCacheControl(
+        withLastToolResultCacheControl(
+          toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+        ),
       );
       const anthropicTools = withToolsCacheControl(
         appendServerTools(toAnthropicTools(tools), params),
@@ -421,8 +457,10 @@ export function buildAnthropicMessageBody(
 ): Anthropic.Messages.MessageCreateParams {
   const systemMsg = messages.find((m) => m.role === "system");
   const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
-  const msgList = withLastToolResultCacheControl(
-    toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+  const msgList = withLastAssistantMessageCacheControl(
+    withLastToolResultCacheControl(
+      toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+    ),
   );
   const anthropicTools = withToolsCacheControl(
     appendServerTools(toAnthropicTools(tools), params),
