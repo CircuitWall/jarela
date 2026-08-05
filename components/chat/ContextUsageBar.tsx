@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Brain, DatabaseZap, Layers, DollarSign } from "lucide-react";
 import type { MessageUsage } from "@/api/types";
 
 interface Props {
@@ -82,6 +83,7 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
   // count tokens served from / written to the prompt cache. Surface them
   // in the tooltip and expanded panel so the user can see when caching
   // is firing for this turn.
+  const thinkingTokens = usage.thinking_tokens ?? 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheCreation = usage.cache_creation_input_tokens ?? 0;
   const cacheActive = cacheRead > 0 || cacheCreation > 0;
@@ -127,31 +129,13 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           {trailing > 0 && <div className="h-full bg-surface-3" style={{ width: `${toPct(trailing)}%` }} aria-hidden title={`Reserved for reply: ${trailing.toLocaleString()} tokens (${Math.round((trailing/cap)*100)}% of window)`} />}
         </div>
       </button>
-      {(cacheActive || usage.cost_usd != null) && !showDetails && (
-        <div className="mt-0.5 px-2 flex items-center gap-2 text-[10px]">
-          {cacheActive && (
-            <span
-              className="text-violet-500/80"
-              title={[
-                "Prompt cache (ADR-0062). Reads bill at 0.1× input, writes at 1.25×.",
-                cacheRead > 0 ? `${cacheRead.toLocaleString()} tokens served from cache.` : "",
-                cacheCreation > 0 ? `${cacheCreation.toLocaleString()} tokens written to cache.` : "",
-              ].filter(Boolean).join("\n")}
-            >
-              {cacheRead > 0 && <>cache hit · {fmtTokens(cacheRead)} read</>}
-              {cacheRead > 0 && cacheCreation > 0 && " · "}
-              {cacheCreation > 0 && <>cache write · {fmtTokens(cacheCreation)}</>}
-            </span>
-          )}
-          {usage.cost_usd != null && (
-            <span
-              className="text-fg-faint/70 ml-auto tabular-nums"
-              title={`Estimated turn cost: ${fmtCost(usage.cost_usd)} USD\n(input + output tokens at configured provider rates, cache discount applied)`}
-            >
-              {fmtCost(usage.cost_usd)}
-            </span>
-          )}
-        </div>
+      {(thinkingTokens > 0 || cacheActive || usage.cost_usd != null) && !showDetails && (
+        <MetaChipRow
+          thinking={thinkingTokens}
+          cacheRead={cacheRead}
+          cacheCreation={cacheCreation}
+          costUsd={usage.cost_usd}
+        />
       )}
       {showDetails && (
         <div className="mt-1 px-2 pb-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] text-fg-faint">
@@ -163,15 +147,22 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
             <span
               className="col-span-2 text-violet-500"
               title={[
-                "Prompt cache (ADR-0062). Disjoint from the tiers above.",
-                `Read ${cacheRead.toLocaleString()} tokens — billed at 0.1× input rate.`,
-                `Wrote ${cacheCreation.toLocaleString()} tokens — billed at 1.25× input rate.`,
-                "Reads pay off on subsequent turns; writes are an investment.",
-              ].join("\n")}
+                "Prompt cache. Reads bill at 0.1× input rate, writes at 1.25×.",
+                `Read ${cacheRead.toLocaleString()} tokens.`,
+                cacheCreation > 0 ? `Wrote ${cacheCreation.toLocaleString()} tokens.` : "",
+              ].filter(Boolean).join(" ")}
             >
               <span className="text-violet-500">Cache</span>{" "}
               read {fmtTokens(cacheRead)}
               {cacheCreation > 0 ? ` · created ${fmtTokens(cacheCreation)}` : ""}
+            </span>
+          )}
+          {thinkingTokens > 0 && (
+            <span
+              className="col-span-2 text-fg-faint/70"
+              title="Thinking/reasoning tokens — already included in output_tokens for billing."
+            >
+              <span>Thinking</span> {fmtTokens(thinkingTokens)}
             </span>
           )}
           <span
@@ -214,5 +205,67 @@ function Row({ label, color, used, budget, hint }: { label: string; color: strin
       <span className={color}>{label}</span> {fmtTokens(used)}
       <span className="text-fg-faint/70"> / {fmtTokens(budget)} ({pct}%)</span>
     </span>
+  );
+}
+
+// Shared visual chip — non-interactive, same shape as MetaRow but display-only.
+function Chip({ icon: Icon, label, title, accent }: {
+  icon: React.FC<{ size?: number; className?: string }>;
+  label: string;
+  title?: string;
+  accent?: string;
+}) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded border bg-surface-2/40 px-1.5 py-0.5 text-[10px] ${accent ?? "border-border/40 text-fg-faint/70"}`}
+      title={title}
+    >
+      <Icon size={9} className="shrink-0 opacity-60" />
+      {label}
+    </span>
+  );
+}
+
+function MetaChipRow({ thinking, cacheRead, cacheCreation, costUsd }: {
+  thinking: number;
+  cacheRead: number;
+  cacheCreation: number;
+  costUsd: number | null;
+}) {
+  if (thinking === 0 && cacheRead === 0 && cacheCreation === 0 && costUsd == null) return null;
+  return (
+    <div className="mt-0.5 px-2 flex flex-wrap items-center gap-1">
+      {thinking > 0 && (
+        <Chip
+          icon={Brain}
+          label={`${fmtTokens(thinking)} thinking`}
+          title="Thinking/reasoning tokens — billed at output rate, already included in turn cost."
+          accent="border-violet-400/20 text-violet-600/70 dark:text-violet-300/50"
+        />
+      )}
+      {cacheRead > 0 && (
+        <Chip
+          icon={DatabaseZap}
+          label={`${fmtTokens(cacheRead)} cached`}
+          title={`${cacheRead.toLocaleString()} tokens served from prompt cache (billed at 0.1× input rate).`}
+          accent="border-sky-400/20 text-sky-600/70 dark:text-sky-300/50"
+        />
+      )}
+      {cacheCreation > 0 && (
+        <Chip
+          icon={Layers}
+          label={`${fmtTokens(cacheCreation)} written`}
+          title={`${cacheCreation.toLocaleString()} tokens written to prompt cache (billed at 1.25× input rate).`}
+          accent="border-amber-400/20 text-amber-600/70 dark:text-amber-300/50"
+        />
+      )}
+      {costUsd != null && (
+        <Chip
+          icon={DollarSign}
+          label={fmtCost(costUsd)}
+          title={`Estimated turn cost: ${fmtCost(costUsd)} USD`}
+        />
+      )}
+    </div>
   );
 }

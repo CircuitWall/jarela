@@ -222,6 +222,7 @@ export class JarelaChatModel extends BaseChatModel {
         emittedAny = true;
         const cacheCreation = event.cache_creation_input_tokens ?? 0;
         const cacheRead = event.cache_read_input_tokens ?? 0;
+        const thinkingTokens = event.thinking_tokens ?? 0;
         yield new ChatGenerationChunk({
           message: new AIMessageChunk({
             content: "",
@@ -232,6 +233,9 @@ export class JarelaChatModel extends BaseChatModel {
                 ?? (event.input_tokens ?? 0) + (event.output_tokens ?? 0),
               ...(cacheCreation > 0 || cacheRead > 0
                 ? { input_token_details: { cache_creation: cacheCreation, cache_read: cacheRead } }
+                : {}),
+              ...(thinkingTokens > 0
+                ? { output_token_details: { reasoning: thinkingTokens } }
                 : {}),
             },
           }),

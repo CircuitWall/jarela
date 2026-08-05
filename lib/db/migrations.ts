@@ -905,6 +905,7 @@ function ensureMessageUsageCacheColumns(db: DatabaseSync): void {
   const names = new Set(cols.map((c) => c.name));
   if (!names.has("cache_creation_input_tokens")) db.exec("ALTER TABLE message_usage ADD COLUMN cache_creation_input_tokens INTEGER");
   if (!names.has("cache_read_input_tokens"))     db.exec("ALTER TABLE message_usage ADD COLUMN cache_read_input_tokens INTEGER");
+  if (!names.has("thinking_tokens"))             db.exec("ALTER TABLE message_usage ADD COLUMN thinking_tokens INTEGER");
 }
 
 function seedAgentConfigs(db: DatabaseSync): void {

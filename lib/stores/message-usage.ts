@@ -31,6 +31,9 @@ export interface MessageUsageInput {
   // for providers that don't expose cache counts.
   cache_creation_input_tokens?: number | null;
   cache_read_input_tokens?: number | null;
+  // Thinking/reasoning tokens (Gemini + OpenAI). Already included in
+  // output_tokens for billing; stored separately for display in the UI.
+  thinking_tokens?: number | null;
 }
 
 export interface TierUsage {
@@ -56,6 +59,7 @@ export interface MessageUsageRow extends Omit<MessageUsageInput, "tier_usage" | 
   context_window_tokens: number | null;
   cache_creation_input_tokens: number | null;
   cache_read_input_tokens: number | null;
+  thinking_tokens: number | null;
 }
 
 export function recordMessageUsage(input: MessageUsageInput): void {
@@ -68,8 +72,8 @@ export function recordMessageUsage(input: MessageUsageInput): void {
        input_rate_usd_per_mtok, output_rate_usd_per_mtok, cost_usd, created_at,
        hot_tokens, warm_tokens, facts_tokens, overhead_tokens,
        hot_budget_tokens, warm_budget_tokens, facts_budget_tokens, context_window_tokens,
-       cache_creation_input_tokens, cache_read_input_tokens
-     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       cache_creation_input_tokens, cache_read_input_tokens, thinking_tokens
+     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     input.message_id,
     input.thread_id,
@@ -94,6 +98,7 @@ export function recordMessageUsage(input: MessageUsageInput): void {
     t?.context_window_tokens ?? null,
     input.cache_creation_input_tokens ?? null,
     input.cache_read_input_tokens ?? null,
+    input.thinking_tokens ?? null,
   );
 }
 

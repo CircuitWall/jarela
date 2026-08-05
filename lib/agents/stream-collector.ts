@@ -110,6 +110,7 @@ export async function collectStream(
               output_tokens?: number;
               cache_creation_input_tokens?: number;
               cache_read_input_tokens?: number;
+              thinking_tokens?: number;
               source?: string;
             };
             provider?: string;
@@ -123,6 +124,7 @@ export async function collectStream(
               output_tokens: d.usage.output_tokens ?? 0,
               cache_creation_input_tokens: d.usage.cache_creation_input_tokens ?? 0,
               cache_read_input_tokens: d.usage.cache_read_input_tokens ?? 0,
+              thinking_tokens: d.usage.thinking_tokens,
               provider: d.provider,
               model_id: d.model_id,
               model_config_name: d.model_config_name ?? null,

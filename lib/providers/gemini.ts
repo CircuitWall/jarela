@@ -368,6 +368,9 @@ async function* geminiNativeStreamInvoke(
   // most recent one — the API pairs each functionCall with the sig from
   // the thought block that immediately preceded it.
   let pendingThoughtSignature: string | undefined;
+  // usageMetadata in each SSE chunk is a running total, not a delta —
+  // capture only the last value and emit it once after the stream ends.
+  let lastUsageMetadata: Record<string, number> | null = null;
   for await (const line of readSSELines(res.body)) {
     if (!line || line === "[DONE]") continue;
     let data: Record<string, unknown>;
@@ -380,6 +383,8 @@ async function* geminiNativeStreamInvoke(
     const first = candidates[0] ?? {};
     const content = (first.content as Record<string, unknown> | undefined) ?? {};
     const parts = (content.parts as Array<Record<string, unknown>> | undefined) ?? [];
+    const um = data.usageMetadata as Record<string, number> | undefined;
+    if (um) lastUsageMetadata = um;
     for (const part of parts) {
       const isThought = part.thought === true;
       const partSig = typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
@@ -414,6 +419,18 @@ async function* geminiNativeStreamInvoke(
     if (typeof first.finishReason === "string") {
       yield { type: "stop", reason: mapGeminiStopReason(first.finishReason) };
     }
+  }
+  // Emit a single normalised usage event using the final cumulative totals.
+  if (lastUsageMetadata) {
+    yield {
+      type: "usage",
+      input_tokens: lastUsageMetadata.promptTokenCount ?? 0,
+      // thinking tokens bill at output rate and are separate from candidatesTokenCount
+      output_tokens: (lastUsageMetadata.candidatesTokenCount ?? 0) + (lastUsageMetadata.thoughtsTokenCount ?? 0),
+      total_tokens: lastUsageMetadata.totalTokenCount,
+      cache_read_input_tokens: lastUsageMetadata.cachedContentTokenCount || undefined,
+      thinking_tokens: lastUsageMetadata.thoughtsTokenCount || undefined,
+    };
   }
 }
 

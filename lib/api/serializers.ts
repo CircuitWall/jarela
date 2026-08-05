@@ -101,6 +101,7 @@ export function messageUsageToResponse(u: MessageUsageRow | undefined | null) {
     context_window_tokens: u.context_window_tokens,
     cache_creation_input_tokens: u.cache_creation_input_tokens,
     cache_read_input_tokens: u.cache_read_input_tokens,
+    thinking_tokens: u.thinking_tokens ?? null,
     cost_usd: u.cost_usd ?? null,
   };
 }
