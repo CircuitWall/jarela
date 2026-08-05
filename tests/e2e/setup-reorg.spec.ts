@@ -92,9 +92,11 @@ test("Settings panel exposes advanced sub-tabs when experience mode is full", as
     await expect(page.getByRole("tab", { name: label, exact: true })).toBeVisible();
   }
   // Full experience mode (seeded in beforeEach) reveals these advanced-only tabs.
-  for (const label of ["Test runs", "Logs", "Environment"]) {
+  for (const label of ["Logs", "Environment"]) {
     await expect(page.getByRole("tab", { name: label, exact: true })).toBeVisible();
   }
+  // Test runs / Harnesses moved to Agents panel.
+  await expect(page.getByRole("tab", { name: "Test runs", exact: true })).toHaveCount(0);
 });
 
 test("Profile preset picker round-trips through the API", async ({ page, request }) => {

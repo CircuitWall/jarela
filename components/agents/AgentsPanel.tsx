@@ -6,7 +6,14 @@ import { useAgents } from "@/hooks/useAgents";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { Button } from "@/components/ui/Button";
+import { SubTabBar } from "@/components/ui/SubTabBar";
+import { HarnessPanel } from "@/components/harness/HarnessPanel";
 import { AgentEditor } from "./AgentEditor";
+
+const AGENT_TABS = [
+  { id: "agents" as const, label: "Agents" },
+  { id: "harnesses" as const, label: "Harnesses" },
+];
 
 const AVATAR_GRADIENTS = [
   "from-violet-500 to-indigo-600",
@@ -46,6 +53,7 @@ function AgentAvatar({ icon, name, id }: { icon: string | null; name: string; id
 export function AgentsPanel() {
   const { agents, loading, create, update, remove } = useAgents();
   const { models } = useModels();
+  const [sub, setSub] = useState<"agents" | "harnesses">("agents");
   const [editing, setEditing] = useState<AgentConfig | null | "new">(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +78,12 @@ export function AgentsPanel() {
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0">
+      <SubTabBar ariaLabel="Agents section" tabs={AGENT_TABS} active={sub} onChange={setSub} />
+
+      {sub === "harnesses" && <HarnessPanel />}
+
+      {sub === "agents" && <>
       {/* Header */}
       <div className="flex items-center justify-between px-3 pt-3 pb-2 shrink-0">
         <span className="text-[11px] text-fg-faint font-medium uppercase tracking-wide">Agents</span>
@@ -136,6 +149,7 @@ export function AgentsPanel() {
           onClose={() => setEditing(null)}
         />
       )}
+      </>}
     </div>
   );
 }
