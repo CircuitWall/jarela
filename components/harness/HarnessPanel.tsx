@@ -1,5 +1,5 @@
 "use client";
-import { Lock, Pencil, Plus, Star, Trash2, Wrench } from "lucide-react";
+import { Lock, Plus, Star, Trash2, Wrench } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import {
@@ -118,7 +118,8 @@ export function HarnessPanel() {
           return (
             <div
               key={h.id}
-              className="flex items-center gap-3 py-2.5 border-b border-border/60 group"
+              onClick={() => { if (!isBuiltin) setEditing(h); }}
+              className={`flex items-center gap-3 py-2.5 border-b border-border/60 group${!isBuiltin ? " cursor-pointer hover:bg-surface-3/30 transition-colors" : ""}`}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
@@ -150,29 +151,20 @@ export function HarnessPanel() {
                 )}
                 {isBuiltin ? (
                   <button
-                    onClick={() => handleClone(h)}
+                    onClick={(e) => { e.stopPropagation(); handleClone(h); }}
                     className="px-2 py-0.5 text-[11px] text-accent hover:text-accent-hover transition-colors"
                     title="Clone to edit"
                   >
                     Clone
                   </button>
                 ) : (
-                  <>
-                    <button
-                      onClick={() => setEditing(h)}
-                      className="p-1 text-fg-subtle hover:text-fg transition-colors"
-                      title="Edit"
-                    >
-                      <Pencil size={13} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(h.id)}
-                      className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
-                      title="Delete"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(h.id); }}
+                    className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 )}
               </div>
             </div>

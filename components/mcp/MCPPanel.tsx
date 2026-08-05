@@ -67,11 +67,11 @@ export function MCPPanel() {
             </div>
           )}
           {servers.map((s) => (
-            <div key={s.name} data-deep-link-id={s.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
+            <div key={s.name} data-deep-link-id={s.name} onClick={() => setEditing({ mode: "form", existing: s })} className="flex items-center gap-3 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-0.5">
                   <button
-                    onClick={() => toggle(s)}
+                    onClick={(e) => { e.stopPropagation(); toggle(s); }}
                     className={s.enabled ? "text-emerald-700 dark:text-emerald-400" : "text-fg-faint hover:text-fg-subtle"}
                     title={s.enabled ? "Disable" : "Enable"}
                   >
@@ -94,10 +94,7 @@ export function MCPPanel() {
                 )}
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-                <button onClick={() => setEditing({ mode: "form", existing: s })} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit">
-                  <span className="text-xs">edit</span>
-                </button>
-                <button onClick={() => remove(s.name)} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete">
+                <button onClick={(e) => { e.stopPropagation(); remove(s.name); }} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete">
                   <Trash2 size={13} />
                 </button>
               </div>

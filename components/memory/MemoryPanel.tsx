@@ -1,5 +1,5 @@
 "use client";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MemoryItem } from "@/api/types";
 import { useMemory } from "@/hooks/useMemory";
@@ -56,7 +56,7 @@ export function MemoryPanel() {
         {loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">Loading…</p>}
         {!loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">No memory items yet</p>}
         {items.map((item) => (
-          <div key={`${item.namespace}/${item.key}`} data-deep-link-id={`${item.namespace}/${item.key}`} className="flex items-start gap-2 py-2.5 border-b border-border/60 group">
+          <div key={`${item.namespace}/${item.key}`} data-deep-link-id={`${item.namespace}/${item.key}`} onClick={() => setEditing(item)} className="flex items-start gap-2 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-1">
                 <span className="text-[10px] uppercase tracking-wide text-fg-faint">{item.namespace}</span>
@@ -66,8 +66,7 @@ export function MemoryPanel() {
               <MemoryValuePreview value={item.value} />
             </div>
             <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-              <button onClick={() => setEditing(item)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit"><Pencil size={13} /></button>
-              <button onClick={() => remove(item.namespace, item.key)} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
+              <button onClick={(e) => { e.stopPropagation(); remove(item.namespace, item.key); }} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
             </div>
           </div>
         ))}
