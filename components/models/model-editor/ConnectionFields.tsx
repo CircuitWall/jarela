@@ -1,27 +1,25 @@
 import { TextInput } from "@/components/ui/TextField";
 import type { ModelEditorForm } from "./useModelEditorForm";
 
-export function ConnectionFields({ form, expertVisible }: { form: ModelEditorForm; expertVisible: boolean }) {
+export function ConnectionFields({ form }: { form: ModelEditorForm }) {
   return (
     <>
-      {expertVisible && !form.credentialId && <InlineApiKeyField form={form} placeholder="••••••••" />}
-      {expertVisible && form.credentialId && (
+      {!form.credentialId && <InlineApiKeyField form={form} placeholder="••••••••" />}
+      {form.credentialId && (
         <InlineApiKeyField
           form={form}
           label="API Key override (advanced)"
           placeholder="leave blank — credential value used"
         />
       )}
-      {expertVisible && (
-        <label className="block">
-          <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
-          <TextInput
-            value={form.baseUrl}
-            onChange={(e) => form.setBaseUrl(e.target.value)}
-            placeholder="https://custom-endpoint"
-          />
-        </label>
-      )}
+      <label className="block">
+        <span className="text-xs text-fg-subtle mb-1 block">Base URL (optional override)</span>
+        <TextInput
+          value={form.baseUrl}
+          onChange={(e) => form.setBaseUrl(e.target.value)}
+          placeholder="https://custom-endpoint"
+        />
+      </label>
     </>
   );
 }

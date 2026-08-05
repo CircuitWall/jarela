@@ -21,7 +21,7 @@ export function CredentialSection({ form }: { form: ModelEditorForm }) {
           <span className="font-medium text-fg-muted">{form.provider}</span>{" "}
           is a pass-through provider with no shared credential form. Set the
           API key, base URL, and any extra headers under{" "}
-          <span className="font-medium text-fg-muted">Show advanced fields</span>{" "}
+          <span className="font-medium text-fg-muted">Advanced settings</span>{" "}
           below — they&apos;re stored per model row.
         </p>
       </div>
