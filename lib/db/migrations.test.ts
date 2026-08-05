@@ -262,6 +262,37 @@ describe("migrateIntegrationsToCredentials", () => {
   });
 });
 
+describe("backfillDeveloperInteractiveTerminalTools", () => {
+  it("updates the developer seed to prefer interactive terminal tools", async () => {
+    const db = getDb();
+
+    db.prepare(
+      "UPDATE agent_configs SET instructions=?, tools=?, updated_at=? WHERE id='developer'",
+    ).run(
+      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success â€” never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
+      JSON.stringify(["file_read", "file_write", "file_edit", "file_list", "file_stat", "file_mkdir", "file_move", "file_copy", "file_delete", "local_exec", "shell_exec", "web_fetch", "web_search", "github_search_issues", "github_get_issue", "github_list_pulls", "github_get_pull", "github_get_repo", "memory_read", "memory_write", "memory_list"]),
+      new Date().toISOString(),
+    );
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const row = db.prepare("SELECT instructions, tools FROM agent_configs WHERE id='developer'").get() as { instructions: string; tools: string };
+    const tools = JSON.parse(row.tools) as string[];
+
+    expect(tools).toEqual(expect.arrayContaining([
+      "terminal_open",
+      "terminal_exec",
+      "terminal_send",
+      "terminal_read",
+      "terminal_close",
+      "terminal_list",
+    ]));
+    expect(row.instructions).toContain("terminal_open + terminal_exec + terminal_read");
+    expect(row.instructions).not.toContain("shell_exec (or local_exec for a single binary)");
+  });
+});
+
 describe("ensureCredentialsLabelAndDefaultColumns", () => {
   // Regression: the NULL-label backfill MUST run only once (when the
   // `label` column is first added), not on every boot. Otherwise
