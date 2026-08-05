@@ -210,9 +210,10 @@ describe("messageUsageToResponse", () => {
       // (legacy rows + non-Anthropic providers) — see PR #181 follow-up.
       cache_creation_input_tokens: null,
       cache_read_input_tokens: null,
+      // Cost is now surfaced so the ContextUsageBar can show per-turn price.
+      cost_usd: 0.006,
     });
-    // Cost + provenance fields stay server-side; the bar doesn't need them.
-    expect(out).not.toHaveProperty("cost_usd");
+    // Provenance fields stay server-side.
     expect(out).not.toHaveProperty("provider");
     expect(out).not.toHaveProperty("agent_id");
   });
