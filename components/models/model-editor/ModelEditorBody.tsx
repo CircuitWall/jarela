@@ -1,4 +1,6 @@
 "use client";
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { AddCredentialDialog } from "@/components/credentials/AddCredentialDialog";
 import { ModelFeatureGuide } from "../ModelFeatureGuide";
 import { ProviderLogo } from "../ProviderLogo";
@@ -12,13 +14,37 @@ import { GitHubCopilotAuth } from "./GitHubCopilotAuth";
 import { ProbeBanner } from "./ProbeAndFooter";
 import { ShrinkConfirmDialog } from "./ShrinkConfirmDialog";
 
+function AdvancedFieldsSection({ form }: { form: ModelEditorForm }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-xl border border-border bg-surface-1/30 p-3">
+      <div
+        className="flex items-center gap-2 cursor-pointer select-none"
+        onClick={() => setOpen((v) => !v)}
+        role="button"
+        aria-expanded={open}
+      >
+        <span className="text-xs font-semibold text-fg-muted uppercase tracking-wide">Advanced settings</span>
+        <ChevronDown size={13} className={`ml-auto text-fg-faint transition-transform ${open ? "rotate-180" : ""}`} />
+      </div>
+      {open && (
+        <div className="mt-2.5 space-y-3">
+          <ConnectionFields form={form} />
+          <TemperatureMaxTokensRow form={form} />
+          <ContextWindowField form={form} />
+          <ExtraHeadersField form={form} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface BodyProps {
   form: ModelEditorForm;
-  expertVisible: boolean;
   onLoadCatalog: () => Promise<void>;
 }
 
-export function ModelEditorBody({ form, expertVisible, onLoadCatalog }: BodyProps) {
+export function ModelEditorBody({ form, onLoadCatalog }: BodyProps) {
   return (
     <>
       <div className="flex items-end gap-3">
@@ -31,7 +57,6 @@ export function ModelEditorBody({ form, expertVisible, onLoadCatalog }: BodyProp
       </div>
       {form.provider === "github-copilot" && <GitHubCopilotAuth />}
       <CredentialSection form={form} />
-      <ConnectionFields form={form} expertVisible={expertVisible} />
       <ModelIdSection form={form} onLoadCatalog={onLoadCatalog} />
       <ConfigNameField form={form} />
       <ModelFeatureGuide
@@ -40,9 +65,7 @@ export function ModelEditorBody({ form, expertVisible, onLoadCatalog }: BodyProp
         models={form.model ? [form.model] : []}
         integrations={form.integrations}
       />
-      {expertVisible && <TemperatureMaxTokensRow form={form} />}
-      {expertVisible && <ContextWindowField form={form} />}
-      {expertVisible && <ExtraHeadersField form={form} />}
+      <AdvancedFieldsSection form={form} />
       <label className="flex items-center gap-2 cursor-pointer">
         <input
           type="checkbox" className="rounded border-border"
