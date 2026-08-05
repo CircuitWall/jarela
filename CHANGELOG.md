@@ -35,9 +35,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code path.
 - **Cache-sticky model routing.** The model router's affinity bonus for a
   model that had a cache hit on the previous turn was raised from +10 to +30
-  (cache write: +15). A prompt-cache switch always forces a cold re-write at
-  1.25× cost; the higher bias keeps the router sticky when caching is warm
-  enough to offset typical tier-to-tier cost differences.
+  (cache write: +15, no-cache continuity: +8). A prompt-cache switch always
+  forces a cold re-write at 1.25× cost; the higher scores prevent gratuitous
+  model switches when cost differences between tiers are minor.
+- **Dynamic `max_tokens` from context budget.** `run-thread` now forwards
+  `budget.outputReserveTokens` through `AgentRunConfig` and `llm.ts` applies
+  it as `max_tokens` when the model config does not set an explicit limit.
+  Prevents silent output truncation on long complex turns (default 4096 is
+  often too low) and avoids over-provisioning on short turns.
+- **Warm-summary `max_tokens` capped at 1,024.** Summarization calls (which
+  produce 200-500 token outputs) no longer default to 4,096 output tokens,
+  reducing per-summary token cost by ~75%.
 
 ## [1.22.1] - 2026-08-05
 

@@ -298,7 +298,11 @@ async function buildWarmSummary(
 
   try {
     const provider = getProvider(providerName);
-    const summary = await summarizeTranscript(provider, modelId, providerParams, transcript);
+    // Summaries are 200-500 tokens; 4096 default wastes expensive output tokens.
+    const summaryParams: typeof providerParams = providerParams.max_tokens
+      ? providerParams
+      : { ...providerParams, max_tokens: 1024 };
+    const summary = await summarizeTranscript(provider, modelId, summaryParams, transcript);
     if (!summary) return "";
     return [
       "--- Warm context summary ---",

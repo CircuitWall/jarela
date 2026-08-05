@@ -15,6 +15,10 @@ export interface AgentRunConfig {
   allowed_tools: string[];   // empty = all tools
   model_config_name: string | null;
   route_decision?: RouteDecisionMetadata | null;
+  /** Budget-derived output token ceiling for this turn. Applied as `max_tokens`
+   *  when the model config does not explicitly set one, so the provider never
+   *  over-allocates output tokens beyond what the context budget reserved. */
+  output_reserve_tokens?: number;
   /**
    * Per-tool credential overrides (`{ toolName: credentialId }`). Forwarded
    * to the tool wrapper so the integrations store can pick the right
