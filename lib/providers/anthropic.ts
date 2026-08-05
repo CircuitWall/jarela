@@ -319,11 +319,11 @@ export const anthropicProvider: ModelProvider = {
 function resolveThinkingParam(
   thinking: Record<string, unknown>,
   modelId: string,
-): Record<string, unknown> {
+): Anthropic.ThinkingConfigParam {
   if (thinking.type === "enabled" && isModernAnthropicModel(modelId)) {
     return { type: "adaptive" };
   }
-  return thinking;
+  return thinking as unknown as Anthropic.ThinkingConfigParam;
 }
 
 export function toAnthropicContent(
