@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ContentPart } from "@/lib/tools/types";
 import { resolveProviderApiKey } from "./credentials";
-import { CACHE_SPLIT_SENTINEL } from "@/lib/agents/prepare/system-prompt";
+// Sentinel exported to lib/agents/prepare/system-prompt.ts so both sides share
+// the same contract without a providers→agents dependency.
+export const CACHE_SPLIT_SENTINEL = "<!-- jarela:dynamic -->";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -166,33 +168,50 @@ function injectMidConvSystem(
   return messages;
 }
 
-// Mark the last text or tool_use content block of the most-recent assistant
-// message with a 1-hour cache breakpoint. With dynamic context injected AFTER
-// this breakpoint via injectMidConvSystem, the prefix up to the last assistant
-// turn is byte-stable across turns → the API can serve the entire conversation
-// history from cache at 0.1× on the next turn.
+// Mark the last text/tool_use block of the N most-recent assistant messages
+// with a 1-hour cache breakpoint. With dynamic context injected AFTER these
+// breakpoints via injectMidConvSystem, the prefix bytes up to each marked
+// assistant turn are identical across consecutive turns, enabling cache reads.
+//
+// Why 2 markers instead of 1:
+//   Turn N marks asst_N-1. Turn N+1's array (rebuilt from DB) contains
+//   asst_N-1 (without cache_control) and asst_N. With only 1 marker, the
+//   breakpoint position changes every turn → writes every turn, reads never.
+//   With 2 markers, turn N+1 re-marks asst_N-1 AND marks asst_N. asst_N-1's
+//   prefix was written in turn N → HIT. asst_N → WRITE. From turn 2 onwards
+//   every turn has 1 cache hit for the conversation history.
+//
+// Budget: tools(1) + stable_sys(1) + these markers(2) = 4. The 4th slot
+// (withLastToolResultCacheControl, active only during multi-step ReAct turns)
+// would push us to 5, so cap at 1 assistant marker when tool_results are
+// present in the messages array.
 export function withLastAssistantMessageCacheControl(
   messages: Anthropic.MessageParam[],
 ): Anthropic.MessageParam[] {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
+  const hasToolResults = messages.some(
+    (m) => typeof m.content !== "string" && m.content.some((b) => b.type === "tool_result"),
+  );
+  const maxMarkers = hasToolResults ? 1 : 2;
+  const result = [...messages];
+  let marked = 0;
+  for (let i = result.length - 1; i >= 0 && marked < maxMarkers; i--) {
+    const m = result[i];
     if (m.role !== "assistant") continue;
     const blocks = typeof m.content === "string"
       ? [{ type: "text" as const, text: m.content }]
       : [...m.content];
-    if (blocks.length === 0) break;
+    if (blocks.length === 0) continue;
     const targetIdx = blocks.reduce<number>((best, b, idx) =>
       (b.type === "text" || b.type === "tool_use") ? idx : best, -1);
-    if (targetIdx === -1) break;
+    if (targetIdx === -1) continue;
     const target = blocks[targetIdx];
-    if ("cache_control" in target && target.cache_control) break;
+    if ("cache_control" in target && target.cache_control) { marked++; continue; }
     const updated = [...blocks];
     updated[targetIdx] = { ...target, cache_control: EPHEMERAL_1H } as typeof target;
-    const next = [...messages];
-    next[i] = { ...m, content: updated };
-    return next;
+    result[i] = { ...m, content: updated };
+    marked++;
   }
-  return messages;
+  return result;
 }
 
 export function withLastToolResultCacheControl(
@@ -373,9 +392,6 @@ export const anthropicProvider: ModelProvider = {
       if (params.thinking) {
         (body as unknown as Record<string, unknown>).thinking = resolveThinkingParam(params.thinking, model_id);
       }
-      // temperature is stripped for modern models inside pickAnthropicOptions;
-      // guard here is only for the legacy non-modern path where it was set top-level.
-      if (params.temperature !== undefined && !isModernAnthropicModel(model_id)) body.temperature = params.temperature;
 
       const stream = client.messages.stream(body);
       const blockType = new Map<number, "text" | "thinking" | "tool_use">();
@@ -548,7 +564,6 @@ export function buildAnthropicMessageBody(
   if (params.thinking) {
     (body as unknown as Record<string, unknown>).thinking = resolveThinkingParam(params.thinking as Record<string, unknown>, model_id);
   }
-  if (params.temperature !== undefined && !isModernAnthropicModel(model_id)) body.temperature = params.temperature;
   return body;
 }
 

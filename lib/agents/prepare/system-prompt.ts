@@ -7,6 +7,7 @@
 // See ADR-0039 for the decomposition rationale.
 
 import os from "node:os";
+import { CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
@@ -48,13 +49,9 @@ export interface SystemPromptContext {
   deliveryChannel?: DeliveryChannel | null;
 }
 
-// Sentinel that splits the system prompt into a stable cacheable prefix and a
-// dynamic per-turn suffix. `withSystemCacheControl` in anthropic.ts uses this
-// to emit two content blocks: the stable block carries `cache_control` so
-// Anthropic's ephemeral prompt cache can reuse it; the dynamic block does not.
-// Without the split the timestamp in buildTimeContext() changes every turn and
-// invalidates the cache for the entire system prompt.
-export const CACHE_SPLIT_SENTINEL = "<!-- jarela:dynamic -->";
+// Re-exported so callers that only need the sentinel don't have to import the
+// full providers package. The canonical definition lives in anthropic.ts.
+export { CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel } = ctx;
