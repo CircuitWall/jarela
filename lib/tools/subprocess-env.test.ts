@@ -8,6 +8,10 @@ vi.mock("node:child_process", async () => {
   };
 });
 
+vi.mock("@/lib/env/allowlist", () => ({
+  getInjectedSubprocessEnv: () => ({}),
+}));
+
 import { execSync } from "node:child_process";
 
 const mockedExecSync = vi.mocked(execSync);
@@ -30,7 +34,7 @@ describe("resolveSubprocessEnv", () => {
     process.env = { ...originalEnv };
   });
 
-  it("probes the user's interactive shell path and merges it into subprocess env", async () => {
+  it.skipIf(process.platform === "win32")("probes the user's interactive shell path and merges it into subprocess env", async () => {
     const { resolveSubprocessEnv } = await import("./subprocess-env");
 
     const result = resolveSubprocessEnv({ cwd: "/tmp" });
