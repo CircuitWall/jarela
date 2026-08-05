@@ -49,6 +49,18 @@ const SOURCES = [
     pricing_url: "https://cohere.com/pricing",
     notes: "Official pricing page (HTML)",
   },
+  {
+    id: "moonshot",
+    name: "Moonshot AI (Kimi)",
+    pricing_url: "https://platform.kimi.com/docs/price/chat",
+    notes: "Official Kimi API pricing (may render in Chinese)",
+  },
+  {
+    id: "qwen",
+    name: "Qwen (Alibaba / Dashscope)",
+    pricing_url: "https://www.alibabacloud.com/help/en/model-studio/pricing",
+    notes: "Alibaba Cloud Model Studio international pricing",
+  },
 ];
 
 const PRICE_LINE_RE = new RegExp(
