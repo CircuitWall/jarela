@@ -16,6 +16,14 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
+function fmtCost(usd: number): string {
+  if (usd < 0.0001) return "<$0.0001";
+  if (usd < 0.001) return `$${usd.toFixed(4)}`;
+  if (usd < 0.01) return `$${usd.toFixed(3)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 /**
  * Thin diagnostic bar shown under each assistant turn. The full bar width
  * represents the agent's full context window. Inside it:
@@ -119,18 +127,30 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           {trailing > 0 && <div className="h-full bg-surface-3" style={{ width: `${toPct(trailing)}%` }} aria-hidden title={`Reserved for reply: ${trailing.toLocaleString()} tokens (${Math.round((trailing/cap)*100)}% of window)`} />}
         </div>
       </button>
-      {cacheActive && !showDetails && (
-        <div
-          className="mt-0.5 px-2 text-[10px] text-violet-500/80"
-          title={[
-            "Prompt cache (ADR-0062). Reads bill at 0.1× input, writes at 1.25×.",
-            cacheRead > 0 ? `${cacheRead.toLocaleString()} tokens served from cache.` : "",
-            cacheCreation > 0 ? `${cacheCreation.toLocaleString()} tokens written to cache.` : "",
-          ].filter(Boolean).join("\n")}
-        >
-          {cacheRead > 0 && <>cache hit · {fmtTokens(cacheRead)} read</>}
-          {cacheRead > 0 && cacheCreation > 0 && " · "}
-          {cacheCreation > 0 && <>cache write · {fmtTokens(cacheCreation)}</>}
+      {(cacheActive || usage.cost_usd != null) && !showDetails && (
+        <div className="mt-0.5 px-2 flex items-center gap-2 text-[10px]">
+          {cacheActive && (
+            <span
+              className="text-violet-500/80"
+              title={[
+                "Prompt cache (ADR-0062). Reads bill at 0.1× input, writes at 1.25×.",
+                cacheRead > 0 ? `${cacheRead.toLocaleString()} tokens served from cache.` : "",
+                cacheCreation > 0 ? `${cacheCreation.toLocaleString()} tokens written to cache.` : "",
+              ].filter(Boolean).join("\n")}
+            >
+              {cacheRead > 0 && <>cache hit · {fmtTokens(cacheRead)} read</>}
+              {cacheRead > 0 && cacheCreation > 0 && " · "}
+              {cacheCreation > 0 && <>cache write · {fmtTokens(cacheCreation)}</>}
+            </span>
+          )}
+          {usage.cost_usd != null && (
+            <span
+              className="text-fg-faint/70 ml-auto tabular-nums"
+              title={`Estimated turn cost: ${fmtCost(usage.cost_usd)} USD\n(input + output tokens at configured provider rates, cache discount applied)`}
+            >
+              {fmtCost(usage.cost_usd)}
+            </span>
+          )}
         </div>
       )}
       {showDetails && (
@@ -159,6 +179,14 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
             title={`Output: tokens the model generated in its reply.\nWindow: total context capacity of this model.`}
           >
             Output: {fmtTokens(usage.output_tokens)} · Window: {fmtTokens(cap)}
+            {usage.cost_usd != null && (
+              <span
+                className="ml-2 tabular-nums text-fg-faint/70"
+                title={`Estimated turn cost: ${fmtCost(usage.cost_usd)} USD`}
+              >
+                · {fmtCost(usage.cost_usd)}
+              </span>
+            )}
           </span>
         </div>
       )}
