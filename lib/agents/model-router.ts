@@ -221,9 +221,17 @@ function latestCacheAffinity(modelConfigName: string, usage?: LatestUsageHint | 
   if (!usage || usage.model_config_name !== modelConfigName) return 0;
   const cacheRead = usage.cache_read_input_tokens ?? 0;
   const cacheCreate = usage.cache_creation_input_tokens ?? 0;
-  if (cacheRead > 0) return 10;
-  if (cacheCreate > 0) return 5;
-  return 2;
+  // A warm cache hit represents a large token saving on the next turn. Score it
+  // high enough to outweigh typical cost differences between model tiers so the
+  // router stays sticky when caching is active. Switching models always forces a
+  // cold cache write, which costs 1.25× AND throws away the savings.
+  // cacheRead   > 0 → cache already warm, switching would definitely lose it (+30)
+  // cacheCreate > 0 → cache was just written, sticking keeps it warm (+15)
+  // no cache    → small continuity bonus to avoid gratuitous model switches on
+  //               cold starts or after TTL expiry when cost differences are minor (+8)
+  if (cacheRead > 0) return 30;
+  if (cacheCreate > 0) return 15;
+  return 8;
 }
 
 function latestObservationBias(

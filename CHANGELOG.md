@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.2] - 2026-08-05
+
+### Fixed
+
+- **Prompt-cache hit rate dramatically improved.** The system prompt was
+  assembled as a single `cache_control` block whose content changed on every
+  turn because `buildTimeContext()` (which embeds `new Date().toISOString()`)
+  was placed mid-sequence among otherwise-static harness sections. The stable
+  prefix (agent identity, instructions, harness bodies, integration/doc
+  context) is now separated from the per-turn dynamic suffix (timestamp,
+  recall hits, warm summaries, output budget) via a sentinel that
+  `withSystemCacheControl` uses to emit two content blocks — only the stable
+  block carries `cache_control`. The cache prefix is now consistent across
+  consecutive turns, enabling the API's ephemeral cache to actually engage.
+- **Auto-upgrade deprecated `thinking` parameter for modern Claude models.**
+  `{type: "enabled", budget_tokens: N}` was removed in Claude Opus 4.7 (400 on
+  any request). Calls that carry the old shape targeting Opus 4.7 / Sonnet 5 /
+  Haiku 4.5 or newer are now silently upgraded to `{type: "adaptive"}`.
+- **Strip removed sampling params for Claude 4.7+ models.** `temperature`,
+  `top_p`, and `top_k` are rejected with a 400 on Opus 4.7 and later.
+  `pickAnthropicOptions` now detects the model family and omits those keys
+  when they would cause an error.
+- **`output_config.effort` support.** The `effort` key in a model config's
+  `params` is now forwarded as `output_config: { effort }` in the Anthropic
+  request body, enabling per-model reasoning-depth control without a separate
+  code path.
+- **Cache-sticky model routing.** The model router's affinity bonus for a
+  model that had a cache hit on the previous turn was raised from +10 to +30
+  (cache write: +15). A prompt-cache switch always forces a cold re-write at
+  1.25× cost; the higher bias keeps the router sticky when caching is warm
+  enough to offset typical tier-to-tier cost differences.
+
 ## [1.22.1] - 2026-08-05
 
 ### Fixed
