@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { useAgents } from "@/hooks/useAgents";
 import { useModels } from "@/hooks/useModels";
@@ -110,7 +110,8 @@ export function AgentsPanel() {
           <div
             key={a.id}
             data-deep-link-id={a.id}
-            className="group flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-surface-3 transition-colors"
+            onClick={() => setEditing(a)}
+            className="group flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-surface-3 transition-colors cursor-pointer"
           >
             <AgentAvatar icon={a.icon} name={a.name} id={a.id} />
             <div className="flex-1 min-w-0">
@@ -121,14 +122,7 @@ export function AgentsPanel() {
             </div>
             <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
               <button
-                onClick={() => setEditing(a)}
-                className="p-1 text-fg-muted hover:text-fg transition-colors"
-                title="Edit"
-              >
-                <Pencil size={12} />
-              </button>
-              <button
-                onClick={() => void handleDelete(a)}
+                onClick={(e) => { e.stopPropagation(); void handleDelete(a); }}
                 disabled={deleting === a.id}
                 className="p-1 text-fg-muted hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
                 title="Delete"

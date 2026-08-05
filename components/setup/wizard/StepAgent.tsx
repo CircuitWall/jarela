@@ -1,5 +1,5 @@
 "use client";
-import { Bot, Info, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Bot, Info, Plus, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { AgentConfig, AgentConfigIn, ModelConfig } from "@/api/types";
 import { api } from "@/api/client";
@@ -75,7 +75,8 @@ export function StepAgent({ agents, models, onChanged }: StepAgentProps) {
           {agents.map((a) => (
             <div
               key={a.id}
-              className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5"
+              onClick={() => setEditing(a)}
+              className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5 cursor-pointer hover:bg-surface-3/70 transition-colors"
             >
               <Bot size={14} className="shrink-0 text-fg-subtle" />
               <div className="min-w-0 flex-1">
@@ -100,15 +101,7 @@ export function StepAgent({ agents, models, onChanged }: StepAgentProps) {
               <div className="flex shrink-0 items-center gap-0.5">
                 <button
                   type="button"
-                  onClick={() => setEditing(a)}
-                  className="p-1 text-fg-subtle transition-colors hover:text-fg"
-                  title="Edit"
-                >
-                  <Pencil size={13} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(a)}
+                  onClick={(e) => { e.stopPropagation(); handleRemove(a); }}
                   className="p-1 text-fg-subtle transition-colors hover:text-red-600 dark:hover:text-red-400"
                   title="Remove"
                 >

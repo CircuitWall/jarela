@@ -1,5 +1,5 @@
 "use client";
-import { CheckCircle2, Filter, Key, Loader2, Pencil, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, Filter, Key, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { Credential, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
@@ -400,8 +400,9 @@ function ProviderGroup({
             <li
               key={c.id}
               data-deep-link-id={c.id}
+              onClick={() => onEdit(c)}
               className={
-                "flex items-center gap-3 px-3 py-2 group " +
+                "flex items-center gap-3 px-3 py-2 group cursor-pointer hover:bg-surface-3/30 transition-colors " +
                 (broken ? "bg-red-500/5" : "")
               }
             >
@@ -422,14 +423,7 @@ function ProviderGroup({
               </div>
               <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
                 <button
-                  onClick={() => onEdit(c)}
-                  className="p-1 text-fg-subtle hover:text-fg transition-colors"
-                  title="Edit credential"
-                >
-                  <Pencil size={13} />
-                </button>
-                <button
-                  onClick={() => onDelete(c)}
+                  onClick={(e) => { e.stopPropagation(); onDelete(c); }}
                   className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors"
                   title="Delete"
                 >

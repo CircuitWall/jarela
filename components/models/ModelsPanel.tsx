@@ -1,5 +1,5 @@
 "use client";
-import { Cpu, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Cpu, Plus, Star, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ModelConfig } from "@/api/types";
 import { refreshRuntimeConfig } from "@/api/runtime-config";
@@ -187,7 +187,7 @@ export function ModelsPanel() {
           {models.map((m) => {
             const inUse = assignments.some((a) => a.model_config_name === m.name);
             return (
-            <div key={m.name} data-deep-link-id={m.name} className="flex items-center gap-3 py-2.5 border-b border-border/60 group">
+            <div key={m.name} data-deep-link-id={m.name} onClick={() => setEditing(m)} className="flex items-center gap-3 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors">
               <span className="shrink-0 text-fg-subtle">
                 <ProviderLogo name={m.provider} size={22} />
               </span>
@@ -206,15 +206,12 @@ export function ModelsPanel() {
               </div>
               <div className="flex gap-1 opacity-40 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
                 {!m.is_default && (
-                  <button onClick={() => handleSetDefault(m)} className="p-1 text-fg-subtle hover:text-yellow-700 dark:hover:text-yellow-400 transition-colors" title="Set as default">
+                  <button onClick={(e) => { e.stopPropagation(); handleSetDefault(m); }} className="p-1 text-fg-subtle hover:text-yellow-700 dark:hover:text-yellow-400 transition-colors" title="Set as default">
                     <Star size={13} />
                   </button>
                 )}
-                <button onClick={() => setEditing(m)} className="p-1 text-fg-subtle hover:text-fg transition-colors" title="Edit">
-                  <Pencil size={13} />
-                </button>
                 <button
-                  onClick={() => handleRemove(m.name)}
+                  onClick={(e) => { e.stopPropagation(); handleRemove(m.name); }}
                   disabled={inUse}
                   className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   title={inUse ? "Unassign from agents first" : "Delete"}
