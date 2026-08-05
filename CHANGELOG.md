@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.3] - 2026-08-05
+
+### Fixed
+
+- **Unit test assertion updated** to reflect that `cost_usd` is now intentionally
+  exposed in `messageUsageToResponse` (the previous assertion asserted it was
+  absent, which broke coverage CI after #369).
+
 ## [1.22.2] - 2026-08-05
 
 ### Fixed
