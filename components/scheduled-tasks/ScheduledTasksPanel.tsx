@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Pencil, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ModelConfig, ScheduledTask } from "@/api/types";
@@ -114,181 +114,97 @@ function TaskCard({
   onRunNow: () => void;
   onChanged: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
   const [running, setRunning] = useState(false);
   const [editing, setEditing] = useState(false);
   const isCron = task.kind === "cron";
   const nextRun = formatRelative(task.next_run_at, { collapseSeconds: true });
-  const lastRun = task.last_run_at ? formatRelative(task.last_run_at, { collapseSeconds: true }) : null;
   const overdue = !task.last_error && new Date(task.next_run_at).getTime() < Date.now() - 60_000;
-  // Pre-flight model availability: catches "agent's model was deleted" /
-  // "no workspace default" before the next firing silently throws no_model.
-  // Script-only reactions don't talk to an LLM, so skip the check.
   const modelStatus = task.reaction_kind === "agent_prompt"
     ? agentModelStatus(agent ?? null, models)
     : null;
 
   return (
-    <div data-deep-link-id={task.id} className="mb-2 rounded-lg border border-border bg-surface-2 overflow-hidden">
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="w-full text-left px-3 py-2 hover:bg-surface-3/40 transition-colors"
+    <div data-deep-link-id={task.id} className="mb-2 rounded-lg border border-border bg-surface-2 overflow-hidden group">
+      <div
+        onClick={() => setEditing(true)}
+        className="flex items-start gap-2 px-3 py-2 hover:bg-surface-3/40 transition-colors cursor-pointer"
       >
-        <div className="flex items-start gap-2">
+        <div className="mt-1 shrink-0">
           {isCron
-            ? <Repeat size={12} className="mt-1 text-violet-700 dark:text-violet-400 shrink-0" />
-            : <Clock size={12} className="mt-1 text-sky-700 dark:text-sky-400 shrink-0" />}
-          <div className="flex-1 min-w-0">
-            <p className="text-sm text-fg truncate">{task.prompt}</p>
-            <div className="flex items-center gap-2 mt-1 text-[11px] text-fg-faint flex-wrap">
-              <span className="font-mono">
-                {isCron ? task.schedule : new Date(task.schedule).toLocaleString()}
-              </span>
-              {isCron && humanizeCron(task.schedule) && (
-                <span className="text-fg-muted">({humanizeCron(task.schedule)})</span>
-              )}
-              <span>·</span>
-              <span className={overdue ? "text-amber-700 dark:text-amber-400" : ""}>
-                {overdue ? "overdue" : `next: ${nextRun}`}
-              </span>
-              {agent && (
-                <>
-                  <span>·</span>
-                  <span className="truncate">{agent.name}</span>
-                </>
-              )}
-              {modelStatus && modelStatus.state !== "ok" && (
-                <>
-                  <span>·</span>
-                  <AgentModelBadge status={modelStatus} />
-                </>
-              )}
-              {task.silent && (
-                <>
-                  <span>·</span>
-                  <span
-                    className="inline-flex items-center gap-0.5 text-fg-faint"
-                    title="Silent: suppresses the task_completed notification and tells the agent to reply only when something material surfaces. Errors still notify."
-                  >
-                    <EyeOff size={10} /> silent
-                  </span>
-                </>
-              )}
-            </div>
+            ? <Repeat size={12} className="text-violet-700 dark:text-violet-400" />
+            : <Clock size={12} className="text-sky-700 dark:text-sky-400" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-fg truncate">{task.prompt}</p>
+          <div className="flex items-center gap-2 mt-1 text-[11px] text-fg-faint flex-wrap">
+            <span className="font-mono">
+              {isCron ? task.schedule : new Date(task.schedule).toLocaleString()}
+            </span>
+            {isCron && humanizeCron(task.schedule) && (
+              <span className="text-fg-muted">({humanizeCron(task.schedule)})</span>
+            )}
+            <span>·</span>
+            <span className={overdue ? "text-amber-700 dark:text-amber-400" : ""}>
+              {overdue ? "overdue" : `next: ${nextRun}`}
+            </span>
+            {agent && (
+              <>
+                <span>·</span>
+                <span className="truncate">{agent.name}</span>
+              </>
+            )}
+            {modelStatus && modelStatus.state !== "ok" && (
+              <>
+                <span>·</span>
+                <AgentModelBadge status={modelStatus} />
+              </>
+            )}
+            {task.silent && (
+              <>
+                <span>·</span>
+                <span className="inline-flex items-center gap-0.5 text-fg-faint" title="Silent mode">
+                  <EyeOff size={10} /> silent
+                </span>
+              </>
+            )}
           </div>
         </div>
-      </button>
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); void (async () => {
+              try {
+                await api.scheduledTasks.update(task.id, { enabled: !task.enabled });
+                onChanged();
+              } catch (err) {
+                pushErrorToast({ title: "Couldn't toggle scheduled task", error: err, context: { panel: "scheduled-tasks", action: "task.toggle", task_id: task.id } });
+              }
+            })(); }}
+            className="p-1 text-fg-subtle hover:text-fg transition-colors"
+            title={task.enabled ? "Pause" : "Resume"}
+          >
+            <Power size={11} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); if (running) return; setRunning(true); onRunNow(); void Promise.resolve().then(() => setRunning(false)); }}
+            disabled={running}
+            className="p-1 text-fg-subtle hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors disabled:opacity-50"
+            title="Run now"
+          >
+            <Play size={11} />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onCancel(); }}
+            className="p-1 text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
+            title="Cancel task"
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+      </div>
 
-      {expanded && (
+      {editing && (
         <div className="px-3 py-2 border-t border-border/60 text-[11px] text-fg-subtle space-y-2">
-          {editing ? (
-            <TaskEditor task={task} agents={agents} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
-          ) : (
-            <>
-          {task.reaction_kind === "agent_prompt" && (
-            <Row label="Prompt">
-              <pre className="whitespace-pre-wrap break-words font-mono text-fg-muted">{task.prompt}</pre>
-            </Row>
-          )}
-          {task.reaction_kind === "script" && (
-            <Row label="Prompt">
-              <span className="text-fg-faint italic">
-                (running script: <span className="font-mono">{task.reaction_script}</span> — no agent prompt)
-              </span>
-            </Row>
-          )}
-          <Row label="Reaction">
-            <TaskReactionEditor task={task} onChanged={onChanged} />
-          </Row>
-          {task.description && (
-            <Row label="Description">{task.description}</Row>
-          )}
-          <Row label="Kind">
-            <span className="font-mono">{task.kind}</span>
-          </Row>
-          <Row label={isCron ? "Cron" : "When"}>
-            <span className="font-mono">{task.schedule}</span>
-            {isCron && humanizeCron(task.schedule) && (
-              <span className="ml-1 text-fg-faint">({humanizeCron(task.schedule)})</span>
-            )}
-            {!isCron && (
-              <span className="ml-1 text-fg-faint">({new Date(task.schedule).toLocaleString()})</span>
-            )}
-          </Row>
-          <Row label="Next run">
-            <span>{new Date(task.next_run_at).toLocaleString()}</span>
-            <span className="ml-1 text-fg-faint">({nextRun})</span>
-          </Row>
-          {lastRun && (
-            <Row label="Last run">
-              <span>{new Date(task.last_run_at!).toLocaleString()}</span>
-              <span className="ml-1 text-fg-faint">({lastRun})</span>
-            </Row>
-          )}
-          <Row label="Status">
-            {task.last_error ? (
-              <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-400">
-                <AlertCircle size={11} /> error
-              </span>
-            ) : task.enabled ? (
-              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400">
-                <CheckCircle2 size={11} /> active
-              </span>
-            ) : (
-              <span className="text-fg-faint">disabled</span>
-            )}
-          </Row>
-          {task.last_error && (
-            <Row label="Error">
-              <pre className="whitespace-pre-wrap break-words text-rose-700 dark:text-rose-300/90">{task.last_error}</pre>
-            </Row>
-          )}
-          <div className="flex justify-end pt-1 gap-2">
-            <button
-              onClick={async () => {
-                try {
-                  await api.scheduledTasks.update(task.id, { enabled: !task.enabled });
-                  onChanged();
-                } catch (e) {
-                  pushErrorToast({
-                    title: "Couldn't toggle scheduled task",
-                    error: e,
-                    context: { panel: "scheduled-tasks", action: "task.toggle", task_id: task.id, target_enabled: !task.enabled },
-                  });
-                }
-              }}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted"
-              title={task.enabled ? "Pause this task (scheduler will skip it)" : "Resume this task"}
-            >
-              <Power size={11} /> {task.enabled ? "Pause" : "Resume"}
-            </button>
-            <button
-              onClick={() => setEditing(true)}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-sky-700 dark:hover:text-sky-400 hover:border-sky-700"
-            >
-              <Pencil size={11} /> Edit
-            </button>
-            <button
-              onClick={async () => {
-                if (running) return;
-                setRunning(true);
-                try { await onRunNow(); } finally { setRunning(false); }
-              }}
-              disabled={running}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
-              title="Trigger this task now to preview the notification + content. Cron tasks still continue on their normal schedule."
-            >
-              <Play size={11} /> {running ? "Running…" : "Run now"}
-            </button>
-            <button
-              onClick={onCancel}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-700"
-            >
-              <Trash2 size={11} /> Cancel task
-            </button>
-          </div>
-            </>
-          )}
+          <TaskEditor task={task} agents={agents} onCancel={() => setEditing(false)} onSaved={() => { setEditing(false); onChanged(); }} />
         </div>
       )}
     </div>

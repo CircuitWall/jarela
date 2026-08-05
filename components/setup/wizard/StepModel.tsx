@@ -1,5 +1,5 @@
 "use client";
-import { Info, Pencil, Plus, ShieldCheck, Star, Trash2 } from "lucide-react";
+import { Info, Plus, ShieldCheck, Star, Trash2 } from "lucide-react";
 import { useState } from "react";
 import type { ModelConfig } from "@/api/types";
 import { api } from "@/api/client";
@@ -90,7 +90,8 @@ export function StepModel({ models, onChanged }: StepModelProps) {
           {models.map((m) => (
             <div
               key={m.name}
-              className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5"
+              onClick={() => setEditing(m)}
+              className="flex items-center gap-3 rounded-xl border border-border bg-surface-3 px-3 py-2.5 cursor-pointer hover:bg-surface-3/70 transition-colors"
             >
               <span className="shrink-0 text-fg-subtle">
                 <ProviderLogo name={m.provider} size={22} />
@@ -114,7 +115,7 @@ export function StepModel({ models, onChanged }: StepModelProps) {
                 {!m.is_default && (
                   <button
                     type="button"
-                    onClick={() => handleSetDefault(m)}
+                    onClick={(e) => { e.stopPropagation(); handleSetDefault(m); }}
                     className="p-1 text-fg-subtle transition-colors hover:text-yellow-700 dark:hover:text-yellow-400"
                     title="Set as default chat model"
                   >
@@ -123,15 +124,7 @@ export function StepModel({ models, onChanged }: StepModelProps) {
                 )}
                 <button
                   type="button"
-                  onClick={() => setEditing(m)}
-                  className="p-1 text-fg-subtle transition-colors hover:text-fg"
-                  title="Edit"
-                >
-                  <Pencil size={13} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleRemove(m.name)}
+                  onClick={(e) => { e.stopPropagation(); handleRemove(m.name); }}
                   className="p-1 text-fg-subtle transition-colors hover:text-red-600 dark:hover:text-red-400"
                   title="Remove"
                 >
