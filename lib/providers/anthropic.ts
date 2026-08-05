@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { ContentPart } from "@/lib/tools/types";
 import { resolveProviderApiKey } from "./credentials";
+import { CACHE_SPLIT_SENTINEL } from "@/lib/agents/prepare/system-prompt";
 import type {
   ModelProvider,
   ProviderMessage,
@@ -16,13 +17,19 @@ function resolveApiKey(params: ProviderParams): string | undefined {
   return resolveProviderApiKey("anthropic", params);
 }
 
-export function pickAnthropicOptions(params: ProviderParams): Record<string, unknown> {
+// Models from Opus 4.7 onward (and Sonnet 5+) reject temperature/top_p/top_k
+// with a 400. Strip them when the model ID indicates a modern family.
+function isModernAnthropicModel(modelId: string): boolean {
+  return /claude-(opus-(4-[789]|[5-9])|fable-5|mythos-5|sonnet-5|haiku-4-5)/i.test(modelId);
+}
+
+export function pickAnthropicOptions(params: ProviderParams, modelId?: string): Record<string, unknown> {
   const p = params as Record<string, unknown>;
+  const modern = modelId ? isModernAnthropicModel(modelId) : false;
   const out: Record<string, unknown> = {};
-  const keys = [
-    "temperature",
-    "top_p",
-    "top_k",
+  const keys: string[] = [
+    // temperature/top_p/top_k are removed on Opus 4.7+ / Sonnet 5+
+    ...(modern ? [] : ["temperature", "top_p", "top_k"]),
     "stop_sequences",
     "metadata",
     "tool_choice",
@@ -30,6 +37,11 @@ export function pickAnthropicOptions(params: ProviderParams): Record<string, unk
   ];
   for (const k of keys) {
     if (p[k] !== undefined) out[k] = p[k];
+  }
+  // Map effort → output_config.effort (Opus 4.6+, Sonnet 4.6+, all 5-family)
+  const effort = (p["effort"] as string | undefined);
+  if (effort) {
+    out["output_config"] = { effort };
   }
   return out;
 }
@@ -56,10 +68,26 @@ export function appendServerTools(
 // so calls 2..N read the prefix at ~10% the input rate. The prefix below the
 // minimum cacheable size is silently ignored by the API at no extra cost,
 // so it is safe to mark unconditionally.
+//
+// System-prompt split: buildSystemPrompt() inserts CACHE_SPLIT_SENTINEL
+// between the stable prefix (agent persona, harness sections, integrations)
+// and the dynamic suffix (current timestamp, per-turn recall, warm summaries).
+// withSystemCacheControl recognises the sentinel and emits two content blocks:
+// only the stable block carries cache_control so the timestamp change on every
+// turn does NOT invalidate the cache for the entire system prompt.
 const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
 
 export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[] | undefined {
   if (!text) return undefined;
+  const splitIdx = text.indexOf(CACHE_SPLIT_SENTINEL);
+  if (splitIdx !== -1) {
+    const stable = text.slice(0, splitIdx).trimEnd();
+    const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
+    const blocks: Anthropic.TextBlockParam[] = [];
+    if (stable) blocks.push({ type: "text", text: stable, cache_control: EPHEMERAL });
+    if (dynamic) blocks.push({ type: "text", text: dynamic });
+    return blocks.length > 0 ? blocks : undefined;
+  }
   return [{ type: "text", text, cache_control: EPHEMERAL }];
 }
 
@@ -187,8 +215,8 @@ export const anthropicProvider: ModelProvider = {
       system: withSystemCacheControl(systemText),
       messages: msgList,
       tools: anthropicTools,
-      ...(params.thinking ? { thinking: params.thinking } : {}),
-      ...(pickAnthropicOptions(params) as Record<string, unknown>),
+      ...(params.thinking ? { thinking: resolveThinkingParam(params.thinking, model_id) } : {}),
+      ...(pickAnthropicOptions(params, model_id) as Record<string, unknown>),
     });
 
     const textContent = resp.content
@@ -228,15 +256,17 @@ export const anthropicProvider: ModelProvider = {
         model: model_id,
         max_tokens: params.max_tokens ?? 4096,
         messages: msgList,
-        ...(pickAnthropicOptions(params) as Record<string, unknown>),
+        ...(pickAnthropicOptions(params, model_id) as Record<string, unknown>),
       };
       const systemParam = withSystemCacheControl(systemText);
       if (systemParam) body.system = systemParam;
       if (anthropicTools.length > 0) body.tools = anthropicTools;
       if (params.thinking) {
-        (body as unknown as Record<string, unknown>).thinking = params.thinking;
+        (body as unknown as Record<string, unknown>).thinking = resolveThinkingParam(params.thinking, model_id);
       }
-      if (params.temperature !== undefined) body.temperature = params.temperature;
+      // temperature is stripped for modern models inside pickAnthropicOptions;
+      // guard here is only for the legacy non-modern path where it was set top-level.
+      if (params.temperature !== undefined && !isModernAnthropicModel(model_id)) body.temperature = params.temperature;
 
       const stream = client.messages.stream(body);
       const blockType = new Map<number, "text" | "thinking" | "tool_use">();
@@ -282,6 +312,19 @@ export const anthropicProvider: ModelProvider = {
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+// Anthropic deprecated {type:"enabled", budget_tokens:N} on Opus 4.6/Sonnet 4.6
+// and removed it on Opus 4.7+. Auto-upgrade to {type:"adaptive"} for models
+// where the old shape would 400.
+function resolveThinkingParam(
+  thinking: Record<string, unknown>,
+  modelId: string,
+): Record<string, unknown> {
+  if (thinking.type === "enabled" && isModernAnthropicModel(modelId)) {
+    return { type: "adaptive" };
+  }
+  return thinking;
+}
 
 export function toAnthropicContent(
   content: string | ContentPart[],
@@ -383,15 +426,15 @@ export function buildAnthropicMessageBody(
     model: model_id,
     max_tokens: params.max_tokens ?? 4096,
     messages: msgList,
-    ...(pickAnthropicOptions(params) as Record<string, unknown>),
+    ...(pickAnthropicOptions(params, model_id) as Record<string, unknown>),
   };
   const systemParam = withSystemCacheControl(systemText);
   if (systemParam) body.system = systemParam;
   if (anthropicTools.length > 0) body.tools = anthropicTools;
   if (params.thinking) {
-    (body as unknown as Record<string, unknown>).thinking = params.thinking;
+    (body as unknown as Record<string, unknown>).thinking = resolveThinkingParam(params.thinking as Record<string, unknown>, model_id);
   }
-  if (params.temperature !== undefined) body.temperature = params.temperature;
+  if (params.temperature !== undefined && !isModernAnthropicModel(model_id)) body.temperature = params.temperature;
   return body;
 }
 
