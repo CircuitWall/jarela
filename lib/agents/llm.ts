@@ -202,6 +202,7 @@ async function* streamWithConfigImpl(
   // are 10× cheaper, cache writes 1.25× more expensive than fresh input).
   let usageCacheCreationTokens = 0;
   let usageCacheReadTokens = 0;
+  let usageThinkingTokens = 0;
   let sawUsage = false;
   // Tracks whether the model hit max_tokens mid-stream. JarelaChatModel tags
   // the final chunk with additional_kwargs.stop_reason="length" when this
@@ -268,6 +269,10 @@ async function* streamWithConfigImpl(
             if (details) {
               usageCacheCreationTokens += details.cache_creation ?? 0;
               usageCacheReadTokens += details.cache_read ?? 0;
+            }
+            const outDetails = usage.output_token_details;
+            if (outDetails) {
+              usageThinkingTokens += outDetails.reasoning ?? 0;
             }
             sawUsage = true;
           }
@@ -382,6 +387,7 @@ async function* streamWithConfigImpl(
                 output_tokens: usageOutputTokens,
                 cache_creation_input_tokens: usageCacheCreationTokens,
                 cache_read_input_tokens: usageCacheReadTokens,
+                thinking_tokens: usageThinkingTokens || undefined,
                 source: "provider",
               }
             : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },
@@ -547,6 +553,7 @@ async function* streamWithConfigImpl(
             output_tokens: usageOutputTokens,
             cache_creation_input_tokens: usageCacheCreationTokens,
             cache_read_input_tokens: usageCacheReadTokens,
+            thinking_tokens: usageThinkingTokens || undefined,
             source: "provider",
           }
         : { input_tokens: 0, output_tokens: totalOutputTokens, source: "estimate" },

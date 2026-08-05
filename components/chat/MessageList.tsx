@@ -7,6 +7,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { MetaRow } from "@/components/ui/MetaRow";
 
 interface SystemNotice {
   id: string;
@@ -550,17 +551,14 @@ function ThinkingLine({ text }: { text: string }) {
   const preview = text.replace(/\s+/g, " ").trim();
   const tail = preview.length > 60 ? preview.slice(-60) : preview;
   return (
-    <div className="my-1.5 flex items-start">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-500/25 bg-amber-500/8 px-2.5 py-1 text-[11px] text-amber-700 dark:text-amber-300/80 hover:bg-amber-500/12 transition-colors"
-      >
-        <CollapseChevron open={open} size={10} />
+    <div className="my-1 flex flex-col items-start gap-0.5">
+      <MetaRow accent="amber" onClick={() => setOpen((v) => !v)} expanded={open}>
+        <CollapseChevron open={open} size={9} />
         <span className="font-medium">thinking</span>
-        {!open && <span className="truncate text-amber-700/70 dark:text-amber-200/45 italic font-normal max-w-[18rem] text-left">{tail}</span>}
-      </button>
+        {!open && <span className="truncate italic opacity-60 max-w-[18rem] text-left">{tail}</span>}
+      </MetaRow>
       {open && (
-        <pre className="ml-2 mt-1 px-2 py-1.5 text-[11px] text-amber-900 dark:text-amber-100/90 whitespace-pre-wrap break-words font-mono bg-amber-100/60 dark:bg-amber-950/30 rounded border border-amber-300 dark:border-amber-900/30">
+        <pre className="w-full px-2 py-1.5 text-[10px] text-fg-muted whitespace-pre-wrap break-words font-mono bg-surface-2/40 rounded border border-border/40">
           {text}
         </pre>
       )}

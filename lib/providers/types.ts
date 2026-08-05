@@ -64,6 +64,10 @@ export type ProviderStreamEvent =
       total_tokens?: number;
       cache_creation_input_tokens?: number;
       cache_read_input_tokens?: number;
+      // Reasoning/thinking tokens. For Gemini these are disjoint from
+      // output_tokens (priced separately); for Anthropic/OpenAI they are
+      // already included in output_tokens (informational only).
+      thinking_tokens?: number;
     }
   | { type: "audio_chunk"; mime_type: string; data_b64: string }
   | { type: "provider_event"; name: string; payload: unknown }

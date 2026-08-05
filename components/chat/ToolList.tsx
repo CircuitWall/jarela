@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { MetaRow } from "@/components/ui/MetaRow";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
 
 // Distinct lucide glyph per internal tool family so the chat transcript
@@ -215,12 +216,8 @@ function CollapsedSummary({
   const visible = ranked.slice(0, TOP_BUCKETS);
   const hiddenCount = ranked.length - visible.length;
   return (
-    <button
-      onClick={onExpand}
-      className="w-full min-w-0 flex items-center gap-2 px-2 py-1 text-[11px] text-left rounded-md border border-border/50 bg-surface-2/60 hover:bg-surface-3/50 transition-colors"
-      aria-label={`expand ${groups.length} tool calls`}
-    >
-      <ChevronRight size={10} className="shrink-0 text-fg-faint" />
+    <MetaRow fullWidth onClick={onExpand} aria-label={`expand ${groups.length} tool calls`}>
+      <ChevronRight size={9} className="shrink-0 text-fg-faint/70" />
       <ToolIcon toolName={visible[0] ?? ""} />
       <span className="truncate flex-1 min-w-0 text-fg-muted">
         {visible.map((name, i) => {
@@ -245,7 +242,7 @@ function CollapsedSummary({
           <span className="text-fg-faint"> · +{hiddenCount} more</span>
         )}
       </span>
-    </button>
+    </MetaRow>
   );
 }
 
@@ -362,13 +359,9 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
   const summaryTitle = argsSummaryTitle(group.name, effectiveArgs);
   const hasArgs = hasVisibleArgs(effectiveArgs);
   return (
-    <div className="min-w-0 max-w-full rounded-md border border-border/50 bg-surface-2/60 overflow-hidden">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full min-w-0 flex items-center gap-2 px-2 py-1 text-[11px] text-left hover:bg-surface-3/50 transition-colors"
-        aria-expanded={open}
-      >
-        <CollapseChevron open={open} size={10} className="text-fg-faint" />
+    <div className="min-w-0 max-w-full">
+      <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
+        <CollapseChevron open={open} size={9} className="text-fg-faint/70" />
         <ToolIcon toolName={group.name} />
         <span className="font-medium text-fg-muted shrink-0">{group.name}</span>
         <span
@@ -409,9 +402,9 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           deadlineMs={group.deadlineMs}
           startedAt={startedAt}
         />
-      </button>
+      </MetaRow>
       {open && (
-        <div className="border-t border-border/40 bg-surface/60 px-2 py-1.5 space-y-1.5">
+        <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
           {hasVisibleArgs(group.args) ? (
             <DetailSection label="arguments" value={group.args} />
           ) : hasArgs ? (

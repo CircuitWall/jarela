@@ -14,6 +14,7 @@ import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
 import { CountdownRing } from "@/components/chat/CountdownRing";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { MetaRow } from "@/components/ui/MetaRow";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { formatRoutingDecisionSummary, formatRoutingDuration, humanizeRouteClass } from "@/lib/ui/routing-decision";
@@ -1281,18 +1282,12 @@ function RoutingDecisionSummary({ decision }: { decision: RouteDecisionMetadata 
   const [open, setOpen] = useState(false);
   const summary = formatRoutingDecisionSummary(decision);
   return (
-    <div className="mt-1.5 flex items-start">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-sky-500/20 bg-sky-500/8 px-2.5 py-1 text-[11px] text-sky-700 dark:text-sky-300/80 hover:bg-sky-500/12 transition-colors"
-        title={decision.reason}
-        aria-expanded={open}
-      >
-        <CollapseChevron open={open} size={10} />
-        <Zap size={11} />
+    <div className="mt-1 flex flex-col items-start gap-0.5">
+      <MetaRow accent="sky" onClick={() => setOpen((v) => !v)} expanded={open} title={decision.reason}>
+        <CollapseChevron open={open} size={9} />
+        <Zap size={10} />
         <span className="truncate max-w-[24rem] text-left">{summary}</span>
-      </button>
+      </MetaRow>
       {open && (
         <div className="ml-2 mt-1 rounded border border-border/60 bg-surface-2/70 px-2.5 py-2 space-y-1 text-[11px] text-fg-muted">
           <div>

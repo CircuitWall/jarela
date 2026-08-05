@@ -167,10 +167,18 @@ export function parseOpenAIInvokeChoice(choice: OpenAIInvokeChoice): InvokeResul
   };
 }
 
+interface OpenAIUsageDetails {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
+  completion_tokens_details?: { reasoning_tokens?: number };
+}
+
 export async function* streamOpenAIEvents(
   stream: AsyncIterable<{
     choices?: OpenAIStreamChoice[];
-    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+    usage?: OpenAIUsageDetails | null;
   }>,
 ): AsyncIterable<ProviderStreamEvent> {
   for await (const chunk of stream) {
@@ -180,6 +188,8 @@ export async function* streamOpenAIEvents(
         input_tokens: chunk.usage.prompt_tokens,
         output_tokens: chunk.usage.completion_tokens,
         total_tokens: chunk.usage.total_tokens,
+        cache_read_input_tokens: chunk.usage.prompt_tokens_details?.cached_tokens,
+        thinking_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       };
     }
     const choice = chunk.choices?.[0];
@@ -344,7 +354,7 @@ async function* openaiStreamInvoke(
   yield* streamOpenAIEvents(
     stream as AsyncIterable<{
       choices?: OpenAIStreamChoice[];
-      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number } | null;
+      usage?: OpenAIUsageDetails | null;
     }>,
   );
 }

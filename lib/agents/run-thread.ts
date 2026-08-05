@@ -775,6 +775,9 @@ export interface AssistantUsageSnapshot {
   // priced at 1×, 1.25×, and 0.1× the input rate respectively.
   cache_creation_input_tokens?: number;
   cache_read_input_tokens?: number;
+  // Thinking/reasoning tokens: Gemini thoughtsTokenCount, OpenAI reasoning_tokens.
+  // Already included in output_tokens for billing; stored separately for display.
+  thinking_tokens?: number;
   provider: string;
   model_id: string;
   model_config_name: string | null;
@@ -952,6 +955,7 @@ export function persistAssistantMessage(
           : { inputPer1M: null, outputPer1M: null };
         const cacheCreation = hasProviderUsage ? (usage!.cache_creation_input_tokens ?? 0) : 0;
         const cacheRead = hasProviderUsage ? (usage!.cache_read_input_tokens ?? 0) : 0;
+        const thinking = hasProviderUsage ? (usage!.thinking_tokens ?? 0) : 0;
         const cost = hasProviderUsage
           ? estimateCostUsd(usage!.input_tokens, usage!.output_tokens, rates, {
               cache_creation_input_tokens: cacheCreation,
@@ -973,6 +977,7 @@ export function persistAssistantMessage(
           cost_usd: cost,
           cache_creation_input_tokens: cacheCreation > 0 ? cacheCreation : null,
           cache_read_input_tokens: cacheRead > 0 ? cacheRead : null,
+          thinking_tokens: thinking > 0 ? thinking : null,
           tier_usage: contextSnapshot
             ? {
                 hot_tokens: contextSnapshot.hot_tokens,

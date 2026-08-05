@@ -266,6 +266,9 @@ export interface MessageUsage {
   // until they grow the equivalent breakdown.
   cache_creation_input_tokens: number | null;
   cache_read_input_tokens: number | null;
+  // Thinking/reasoning tokens (Gemini + OpenAI). Included in output_tokens
+  // for billing; surfaced separately so the UI can show the breakdown.
+  thinking_tokens: number | null;
   cost_usd: number | null;
 }
 
