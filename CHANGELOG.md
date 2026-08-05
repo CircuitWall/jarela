@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.6] - 2026-08-05
+
+### Changed
+
+- **Advanced settings panel** collapsed by default in the agent editor; step
+  index removed from the section header.
+- **Settings nav renamed** to "Advanced settings" (short label "Advanced") in
+  the menu panel.
+- **Temperature, context size, and model overrides** moved into a collapsible
+  "Advanced settings" section inside the model editor (collapsed by default).
+
+### Improved
+
+- All list panels (Agents, Models, Harnesses, MCP, Memory, Credentials,
+  Scheduled Tasks, Setup wizard) replace per-row edit buttons with
+  click-to-edit rows; only Delete (and where applicable, secondary action)
+  buttons remain visible on hover/focus.
+
 ## [1.22.5] - 2026-08-05
 
 ### Fixed
