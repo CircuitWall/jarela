@@ -235,8 +235,7 @@ test.describe("credentials panel UI", () => {
     const group = page.locator(`[data-deep-link-id="${TEST_PROVIDER}"]`);
     await expect(group.getByTitle(/Add another credential/)).toBeVisible();
 
-    // Edit + Delete buttons are present per row.
-    await expect(defaultRow.getByTitle("Edit credential")).toBeVisible();
+    // Rows are clickable to edit; Delete button is present per row.
     await expect(defaultRow.getByTitle("Delete")).toBeVisible();
   });
 

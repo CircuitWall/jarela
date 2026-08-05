@@ -40,7 +40,7 @@ test("Settings tab exposes Credentials + Networking sub-tabs", async ({ page }) 
   // Settings surface (v1.9.3). The old top-level "Credentials" menu
   // button is gone; everything routes through Settings.
   await openMenu(page);
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
 
   const credentialsTab = page.getByRole("tab", { name: "Credentials", exact: true });
   const networkingTab = page.getByRole("tab", { name: "Networking", exact: true });

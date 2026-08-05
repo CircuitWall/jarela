@@ -48,7 +48,7 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
   // (Documents, Memory, Bridges, MCP, Extensions) live under Tools, and the
   // former Credentials/Models/Test-runs/Logs/Environment entries are now sub-tabs
   // of the consolidated Settings panel.
-  for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Tasks", "Profile", "Settings"]) {
+  for (const label of ["Chat", "Dashboard", "Agents", "Tools", "Tasks", "Profile", "Advanced settings"]) {
     await expect(page.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
 
@@ -85,7 +85,7 @@ test("menu separates common from advanced and Tools hosts capability sub-tabs", 
 
 test("Settings panel exposes advanced sub-tabs when experience mode is full", async ({ page }) => {
   await openMenu(page);
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
 
   // Always-visible sub-tabs.
   for (const label of ["Credentials", "Models", "Privacy & security", "Appearance", "Networking"]) {
@@ -126,9 +126,9 @@ test("Credentials list filter chip reflects the active preset", async ({ page, r
   const put = await request.put("/api/v1/profile", { data: { preset: "home" } });
   expect(put.ok()).toBeTruthy();
 
-  // Credentials now lives as a sub-tab of the Settings surface.
+  // Credentials now lives as a sub-tab of the Advanced settings surface.
   await openMenu(page);
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Advanced settings", exact: true }).click();
   await page.getByRole("tab", { name: "Credentials", exact: true }).click();
 
   // Header chip shows the human label and is clickable.
