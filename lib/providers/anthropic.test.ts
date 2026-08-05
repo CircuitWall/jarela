@@ -34,7 +34,7 @@ describe("withToolsCacheControl", () => {
     expect(out).toHaveLength(3);
     expect((out[0] as Anthropic.Tool & { cache_control?: unknown }).cache_control).toBeUndefined();
     expect((out[1] as Anthropic.Tool & { cache_control?: unknown }).cache_control).toBeUndefined();
-    expect((out[2] as Anthropic.Tool & { cache_control?: unknown }).cache_control).toEqual({ type: "ephemeral" });
+    expect((out[2] as Anthropic.Tool & { cache_control?: unknown }).cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
   });
 
   it("does not mutate the input array", () => {
