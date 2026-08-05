@@ -82,7 +82,46 @@ const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
 // (no breakpoint there) so there is no extra write cost for per-turn content.
 const EPHEMERAL_1H = { type: "ephemeral", ttl: "1h" } as Anthropic.CacheControlEphemeral;
 
+// Models that support appending {role:"system"} entries mid-conversation
+// (see Anthropic docs: "Mid-conversation system messages"). On unsupported
+// models the feature is silently ignored or 400s — stay conservative.
+function supportsMidConvSystem(modelId: string): boolean {
+  return /claude-(opus-(4-[89]|[5-9])|opus-5|fable-5|mythos-5)/i.test(modelId);
+}
+
+// Split the assembled system prompt on CACHE_SPLIT_SENTINEL.
+// Returns the stable prefix as the API `system` param (with 1h cache) and the
+// dynamic suffix as a string to be injected as a mid-conversation system
+// message right before the current user turn (when the model supports it).
+function splitSystemContent(text: string, modelId: string): {
+  systemParam: Anthropic.TextBlockParam[] | undefined;
+  dynamicText: string;
+} {
+  if (!text) return { systemParam: undefined, dynamicText: "" };
+  const splitIdx = text.indexOf(CACHE_SPLIT_SENTINEL);
+  if (splitIdx !== -1 && supportsMidConvSystem(modelId)) {
+    const stable = text.slice(0, splitIdx).trimEnd();
+    const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
+    return {
+      systemParam: stable ? [{ type: "text", text: stable, cache_control: EPHEMERAL_1H }] : undefined,
+      dynamicText: dynamic,
+    };
+  }
+  // Fallback: legacy single-block path (unsupported model or no sentinel).
+  if (splitIdx !== -1) {
+    const stable = text.slice(0, splitIdx).trimEnd();
+    const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
+    const blocks: Anthropic.TextBlockParam[] = [];
+    if (stable) blocks.push({ type: "text", text: stable, cache_control: EPHEMERAL_1H });
+    if (dynamic) blocks.push({ type: "text", text: dynamic });
+    return { systemParam: blocks.length > 0 ? blocks : undefined, dynamicText: "" };
+  }
+  return { systemParam: [{ type: "text", text, cache_control: EPHEMERAL }], dynamicText: "" };
+}
+
 export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[] | undefined {
+  // Used only by the chat() path which doesn't participate in the
+  // mid-conv system injection (no tool ReAct loop, no caching needed there).
   if (!text) return undefined;
   const splitIdx = text.indexOf(CACHE_SPLIT_SENTINEL);
   if (splitIdx !== -1) {
@@ -102,18 +141,57 @@ export function withToolsCacheControl(tools: Anthropic.Tool[]): Anthropic.Tool[]
   return [...tools.slice(0, -1), { ...last, cache_control: EPHEMERAL }];
 }
 
-// Cross-turn conversation history caching requires the dynamic system content
-// (timestamp, recall, warm summary) to appear AFTER the conversation history
-// so the message-array prefix is byte-stable across turns. Currently the
-// dynamic content is in the system block BEFORE messages, which breaks the
-// prefix match for any breakpoint in the messages array — the cache would
-// always write at 1.25–2× and never read. This function is intentionally a
-// no-op until the architecture is changed to inject dynamic content via
-// mid-conversation system messages (role:"system" in messages array, supported
-// on Opus 4.8+ / Opus 5 / Fable 5). See: docs/adr/ for the follow-up ADR.
+// Inject dynamicText as a {role:"system"} mid-conversation message right before
+// the last user message so dynamic per-turn context (timestamp, recall, warm
+// summary) appears AFTER the cached conversation history, not before it.
+// With dynamic content after the last cached assistant turn, the prefix up to
+// that turn is byte-stable across consecutive turns → cache hits accumulate.
+function injectMidConvSystem(
+  messages: Anthropic.MessageParam[],
+  dynamicText: string,
+): Anthropic.MessageParam[] {
+  if (!dynamicText) return messages;
+  // Find the last user message (the current turn) to insert before it.
+  // Cast role to satisfy the SDK's "user"|"assistant" union — the string
+  // "system" is a valid Anthropic API value for mid-conv system turns at runtime.
+  const midConvMsg = {
+    role: "system" as unknown as Anthropic.MessageParam["role"],
+    content: dynamicText,
+  } as Anthropic.MessageParam;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      return [...messages.slice(0, i), midConvMsg, ...messages.slice(i)];
+    }
+  }
+  return messages;
+}
+
+// Mark the last text or tool_use content block of the most-recent assistant
+// message with a 1-hour cache breakpoint. With dynamic context injected AFTER
+// this breakpoint via injectMidConvSystem, the prefix up to the last assistant
+// turn is byte-stable across turns → the API can serve the entire conversation
+// history from cache at 0.1× on the next turn.
 export function withLastAssistantMessageCacheControl(
   messages: Anthropic.MessageParam[],
 ): Anthropic.MessageParam[] {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== "assistant") continue;
+    const blocks = typeof m.content === "string"
+      ? [{ type: "text" as const, text: m.content }]
+      : [...m.content];
+    if (blocks.length === 0) break;
+    const targetIdx = blocks.reduce<number>((best, b, idx) =>
+      (b.type === "text" || b.type === "tool_use") ? idx : best, -1);
+    if (targetIdx === -1) break;
+    const target = blocks[targetIdx];
+    if ("cache_control" in target && target.cache_control) break;
+    const updated = [...blocks];
+    updated[targetIdx] = { ...target, cache_control: EPHEMERAL_1H } as typeof target;
+    const next = [...messages];
+    next[i] = { ...m, content: updated };
+    return next;
+  }
   return messages;
 }
 
@@ -222,9 +300,13 @@ export const anthropicProvider: ModelProvider = {
 
     const systemMsg = messages.find((m) => m.role === "system");
     const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
+    const { systemParam, dynamicText } = splitSystemContent(systemText, model_id);
     const msgList = withLastAssistantMessageCacheControl(
-      withLastToolResultCacheControl(
-        toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+      injectMidConvSystem(
+        withLastToolResultCacheControl(
+          toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+        ),
+        dynamicText,
       ),
     );
     const anthropicTools = withToolsCacheControl(
@@ -234,7 +316,7 @@ export const anthropicProvider: ModelProvider = {
     const resp = await client.messages.create({
       model: model_id,
       max_tokens: params.max_tokens ?? 4096,
-      system: withSystemCacheControl(systemText),
+      system: systemParam,
       messages: msgList,
       tools: anthropicTools,
       ...(params.thinking ? { thinking: resolveThinkingParam(params.thinking, model_id) } : {}),
@@ -267,9 +349,13 @@ export const anthropicProvider: ModelProvider = {
 
       const systemMsg = messages.find((m) => m.role === "system");
       const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
+      const { systemParam, dynamicText } = splitSystemContent(systemText, model_id);
       const msgList = withLastAssistantMessageCacheControl(
-        withLastToolResultCacheControl(
-          toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+        injectMidConvSystem(
+          withLastToolResultCacheControl(
+            toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+          ),
+          dynamicText,
         ),
       );
       const anthropicTools = withToolsCacheControl(
@@ -282,7 +368,6 @@ export const anthropicProvider: ModelProvider = {
         messages: msgList,
         ...(pickAnthropicOptions(params, model_id) as Record<string, unknown>),
       };
-      const systemParam = withSystemCacheControl(systemText);
       if (systemParam) body.system = systemParam;
       if (anthropicTools.length > 0) body.tools = anthropicTools;
       if (params.thinking) {
@@ -440,9 +525,13 @@ export function buildAnthropicMessageBody(
 ): Anthropic.Messages.MessageCreateParams {
   const systemMsg = messages.find((m) => m.role === "system");
   const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
+  const { systemParam, dynamicText } = splitSystemContent(systemText, model_id);
   const msgList = withLastAssistantMessageCacheControl(
-    withLastToolResultCacheControl(
-      toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+    injectMidConvSystem(
+      withLastToolResultCacheControl(
+        toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+      ),
+      dynamicText,
     ),
   );
   const anthropicTools = withToolsCacheControl(
@@ -454,7 +543,6 @@ export function buildAnthropicMessageBody(
     messages: msgList,
     ...(pickAnthropicOptions(params, model_id) as Record<string, unknown>),
   };
-  const systemParam = withSystemCacheControl(systemText);
   if (systemParam) body.system = systemParam;
   if (anthropicTools.length > 0) body.tools = anthropicTools;
   if (params.thinking) {
