@@ -46,8 +46,15 @@ describe("normalizeProvider", () => {
     ["GitHub Copilot", "github-copilot"],
     ["copilot", "github-copilot"],
     ["cohere", "cohere"],
-    ["DeepSeek", "deepseek"],
-  ])("normalizes %s -> %s", (input, expected) => {
+    ["DeepSeek", "deepseek"],    ["moonshot", "moonshot"],
+    ["Moonshot AI", "moonshot"],
+    ["kimi", "moonshot"],
+    ["Kimi Chat", "moonshot"],
+    ["qwen", "qwen"],
+    ["Qwen Plus", "qwen"],
+    ["alibaba", "qwen"],
+    ["dashscope", "qwen"],
+    ["DashScope API", "qwen"],  ])("normalizes %s -> %s", (input, expected) => {
     expect(normalizeProvider(input)).toBe(expected);
   });
 
@@ -444,6 +451,34 @@ describe("modelRatesFor", () => {
       expect(modelRatesFor(tables, "github-copilot", "command-r-plus").inputPer1M).toBe(0.4);
     });
 
+    it("infers Moonshot rates for kimi-* model ids", () => {
+      seedSnapshot({
+        sources: [
+          { id: "github-copilot", pricing_url: "https://x", ok: true },
+          {
+            id: "moonshot", pricing_url: "https://y",
+            price_signals: ["$2.9/1M tokens"],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      expect(modelRatesFor(tables, "github-copilot", "kimi-k3").inputPer1M).toBe(2.9);
+    });
+
+    it("infers Qwen rates for qwen-* model ids", () => {
+      seedSnapshot({
+        sources: [
+          { id: "github-copilot", pricing_url: "https://x", ok: true },
+          {
+            id: "qwen", pricing_url: "https://y",
+            price_signals: ["$0.4/1M tokens"],
+          },
+        ],
+      });
+      const tables = getPricingTables();
+      expect(modelRatesFor(tables, "github-copilot", "qwen-plus").inputPer1M).toBe(0.4);
+    });
+
     it("falls back to provider-level when model id has no recognisable prefix", () => {
       seedSnapshot({
         sources: [{ id: "github-copilot", pricing_url: "https://x", ok: true, price_signals: ["$2/1M tokens"] }],
@@ -525,6 +560,54 @@ describe("modelRatesFor", () => {
       });
       const tables = getPricingTables();
       expect(modelRatesFor(tables, "github-copilot", "openai/gpt-4o").inputPer1M).toBe(5);
+    });
+  });
+
+  describe("Kimi alias resolution", () => {
+    function seed(modelId: string, input: number) {
+      seedSnapshot({
+        sources: [{ id: "moonshot", pricing_url: "https://x", ok: true,
+          model_rates: [{ model_id: modelId, input_per_1m_usd: input, output_per_1m_usd: input * 5 }] }],
+      });
+    }
+
+    it.each([
+      ["kimi-k3", "kimi-k3", 2.9],
+      ["kimi-k2.7-code-highspeed", "kimi-k2.7-code", 0.7],
+      ["kimi-k2.6-preview", "kimi-k2.6", 0.58],
+      ["kimi-k2-instruct", "kimi-k2", 0.57],
+      ["kimi-k2-thinking-v1", "kimi-k2-thinking", 0.6],
+      ["moonshot-v1-8k", "moonshot-v1-8k", 1.6],
+      ["moonshot-v1-32k", "moonshot-v1-32k", 3.3],
+      ["moonshot-v1-128k", "moonshot-v1-128k", 11],
+    ])("resolves %s -> canonical %s", (input, canonical, expected) => {
+      seed(canonical, expected);
+      const tables = getPricingTables();
+      expect(modelRatesFor(tables, "moonshot", input).inputPer1M).toBe(expected);
+    });
+  });
+
+  describe("Qwen alias resolution", () => {
+    function seed(modelId: string, input: number) {
+      seedSnapshot({
+        sources: [{ id: "qwen", pricing_url: "https://x", ok: true,
+          model_rates: [{ model_id: modelId, input_per_1m_usd: input, output_per_1m_usd: input * 4 }] }],
+      });
+    }
+
+    it.each([
+      ["qwen-turbo-2025", "qwen-turbo", 0.05],
+      ["qwen-plus-latest", "qwen-plus", 0.4],
+      ["qwen-max-0131", "qwen-max", 1.6],
+      ["qwen3.8-max-preview", "qwen3.8-max", 2.0],
+      ["qwen3.7-max-0510", "qwen3.7-max", 1.1],
+      ["qwen3.7-plus-v1", "qwen3.7-plus", 0.28],
+      ["qwen3.7-flash-lite", "qwen3.7-flash", 0.025],
+      ["qwq-32b-preview", "qwq-32b", 0.15],
+    ])("resolves %s -> canonical %s", (input, canonical, expected) => {
+      seed(canonical, expected);
+      const tables = getPricingTables();
+      expect(modelRatesFor(tables, "qwen", input).inputPer1M).toBe(expected);
     });
   });
 
