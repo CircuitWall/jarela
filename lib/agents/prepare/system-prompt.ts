@@ -48,6 +48,14 @@ export interface SystemPromptContext {
   deliveryChannel?: DeliveryChannel | null;
 }
 
+// Sentinel that splits the system prompt into a stable cacheable prefix and a
+// dynamic per-turn suffix. `withSystemCacheControl` in anthropic.ts uses this
+// to emit two content blocks: the stable block carries `cache_control` so
+// Anthropic's ephemeral prompt cache can reuse it; the dynamic block does not.
+// Without the split the timestamp in buildTimeContext() changes every turn and
+// invalidates the cache for the entire system prompt.
+export const CACHE_SPLIT_SENTINEL = "<!-- jarela:dynamic -->";
+
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel } = ctx;
 
@@ -59,11 +67,14 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const tierCtxByName = { hot: "", warm: warmSummaryCtx, facts: factsCtx } as const;
   const tierOrderCtx = budget.tierPriority.map((t) => tierCtxByName[t]).filter(Boolean);
 
-  const parts: (string | null | undefined)[] = [
+  // Stable prefix: agent persona, integration/doc/skill facts, all harness
+  // sections, and other content that rarely changes within a session. This
+  // block is cached by Anthropic's ephemeral prompt cache and read at ~10%
+  // the normal input rate on subsequent turns.
+  const stableParts: (string | null | undefined)[] = [
     agentCfg.identity,
     agentCfg.instructions,
     buildDeliveryChannelContext(deliveryChannel),
-    adaptivePersonaCtx,
     buildUserContext(),
     buildIntegrationsContext(),
     buildDocumentsContext(),
@@ -72,19 +83,28 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.plan_first,
     harnessParts.presentation,
     harnessParts.citation,
-    buildSourceLinkContext(agentCfg, sourceManifest ?? []),
-    buildTimeContext(),
     buildEnvContext(),
     harnessParts.self_config,
-    buildExperienceContext(experienceMode),
-    buildOutputBudgetContext(budget),
     buildMemoryContext(budget),
-    ...tierOrderCtx,
-    recallCtx,
     buildDelegatesContext(delegateRosterLines),
+    buildExperienceContext(experienceMode),
   ];
 
-  return parts.filter(Boolean).join("\n\n");
+  // Dynamic suffix: content that changes on every turn (timestamp, per-turn
+  // recall, output budget derived from model params). Placed AFTER the sentinel
+  // so it never touches the stable cache breakpoint.
+  const dynamicParts: (string | null | undefined)[] = [
+    adaptivePersonaCtx,
+    buildSourceLinkContext(agentCfg, sourceManifest ?? []),
+    buildTimeContext(),
+    buildOutputBudgetContext(budget),
+    ...tierOrderCtx,
+    recallCtx,
+  ];
+
+  const stable = stableParts.filter(Boolean).join("\n\n");
+  const dynamic = dynamicParts.filter(Boolean).join("\n\n");
+  return `${stable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
 }
 
 export function resolveExperienceMode(options?: StreamOptions): "essential" | "full" {
