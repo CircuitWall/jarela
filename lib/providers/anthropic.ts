@@ -140,7 +140,7 @@ export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[]
 export function withToolsCacheControl(tools: Anthropic.Tool[]): Anthropic.Tool[] {
   if (tools.length === 0) return tools;
   const last = tools[tools.length - 1];
-  return [...tools.slice(0, -1), { ...last, cache_control: EPHEMERAL }];
+  return [...tools.slice(0, -1), { ...last, cache_control: EPHEMERAL_1H }];
 }
 
 // Inject dynamicText as a {role:"system"} mid-conversation message right before
