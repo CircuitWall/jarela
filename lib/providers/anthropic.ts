@@ -76,6 +76,11 @@ export function appendServerTools(
 // only the stable block carries cache_control so the timestamp change on every
 // turn does NOT invalidate the cache for the entire system prompt.
 const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
+// 1-hour TTL for the stable system-prompt prefix. Cost: 2× write vs 5-min TTL,
+// same 0.1× read. Break-even is ~2 reads per hour — any real chat session
+// comfortably exceeds this. The dynamic suffix still uses the default 5-min TTL
+// (no breakpoint there) so there is no extra write cost for per-turn content.
+const EPHEMERAL_1H = { type: "ephemeral", ttl: "1h" } as Anthropic.CacheControlEphemeral;
 
 export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[] | undefined {
   if (!text) return undefined;
@@ -84,7 +89,7 @@ export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[]
     const stable = text.slice(0, splitIdx).trimEnd();
     const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
     const blocks: Anthropic.TextBlockParam[] = [];
-    if (stable) blocks.push({ type: "text", text: stable, cache_control: EPHEMERAL });
+    if (stable) blocks.push({ type: "text", text: stable, cache_control: EPHEMERAL_1H });
     if (dynamic) blocks.push({ type: "text", text: dynamic });
     return blocks.length > 0 ? blocks : undefined;
   }
