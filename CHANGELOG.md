@@ -46,14 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Warm-summary `max_tokens` capped at 1,024.** Summarization calls (which
   produce 200-500 token outputs) no longer default to 4,096 output tokens,
   reducing per-summary token cost by ~75%.
-- **`withLastAssistantMessageCacheControl` stubbed for future use.** Cross-turn
-  conversation history caching requires the dynamic system content (timestamp,
-  per-turn recall) to appear AFTER the message array, not before it; with the
-  current architecture the dynamic system block sits between stable system and
-  messages and its timestamp change invalidates the cache prefix for any
-  message-level breakpoint every turn. The function is wired but a no-op until
-  the architecture migrates dynamic context to mid-conversation system messages
-  (Opus 4.8+ / Opus 5 / Fable 5).
+- **Cross-turn conversation history cached via mid-conversation system messages.**
+  For Claude Opus 4.8 / Opus 5 / Fable 5 / Mythos 5, dynamic per-turn context
+  (timestamp, recall, warm summary) is now injected as a `{role:"system"}` entry
+  directly before the current user message rather than embedded in the top-level
+  system block. This keeps the prefix from `body.system` through the entire
+  prior conversation history byte-stable across turns so the 1-hour cache
+  breakpoint on each assistant message can actually be read. Combined with
+  `withLastAssistantMessageCacheControl`, the full conversation history is served
+  at 0.1× on each subsequent turn; only the new user message is billed at full
+  rate. Falls back to the legacy single-block system for unsupported models.
 
 ## [1.22.1] - 2026-08-05
 
