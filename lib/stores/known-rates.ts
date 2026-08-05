@@ -18,11 +18,13 @@
 // the post-`/` suffix of `openai/gpt-4o`) so we don't need separate entries
 // for aggregator-namespaced ids.
 //
-// Sources, last verified 2026-06:
+// Sources, last verified 2026-08:
 //   - https://www.anthropic.com/pricing
 //   - https://openai.com/api/pricing/
 //   - https://ai.google.dev/gemini-api/docs/pricing
 //   - https://platform.deepseek.com/pricing
+//   - https://platform.kimi.com/docs/price/chat (via openrouter.ai/moonshotai)
+//   - https://www.alibabacloud.com/help/en/model-studio/pricing
 
 import type { ProviderRates } from "./pricing";
 
@@ -75,6 +77,28 @@ const KNOWN_MODEL_RATES: Record<string, KnownRate> = {
   // Cohere
   "command-r-plus": { inputPer1M: 2.5, outputPer1M: 10 },
   "command-r": { inputPer1M: 0.15, outputPer1M: 0.6 },
+
+  // Kimi (Moonshot AI)
+  "kimi-k3": { inputPer1M: 2.90, outputPer1M: 14.0 },
+  "kimi-k2.7-code": { inputPer1M: 0.70, outputPer1M: 3.50 },
+  "kimi-k2.6": { inputPer1M: 0.58, outputPer1M: 3.40 },
+  "kimi-k2": { inputPer1M: 0.57, outputPer1M: 2.30 },
+  "kimi-k2-thinking": { inputPer1M: 0.60, outputPer1M: 2.50 },
+  "moonshot-v1-8k": { inputPer1M: 1.60, outputPer1M: 1.60 },
+  "moonshot-v1-32k": { inputPer1M: 3.30, outputPer1M: 3.30 },
+  "moonshot-v1-128k": { inputPer1M: 11.0, outputPer1M: 11.0 },
+
+  // Qwen (Alibaba / Dashscope)
+  "qwen-max": { inputPer1M: 1.60, outputPer1M: 6.40 },
+  "qwen-plus": { inputPer1M: 0.40, outputPer1M: 1.20 },
+  "qwen-turbo": { inputPer1M: 0.05, outputPer1M: 0.20 },
+  "qwen3.8-max": { inputPer1M: 2.00, outputPer1M: 6.00 },
+  "qwen3.7-max": { inputPer1M: 1.10, outputPer1M: 4.40 },
+  "qwen3.7-plus": { inputPer1M: 0.28, outputPer1M: 1.10 },
+  "qwen3.7-flash": { inputPer1M: 0.025, outputPer1M: 0.10 },
+  "qwen2.5-72b-instruct": { inputPer1M: 0.35, outputPer1M: 0.40 },
+  "qwen2.5-7b-instruct": { inputPer1M: 0.05, outputPer1M: 0.10 },
+  "qwq-32b": { inputPer1M: 0.15, outputPer1M: 0.60 },
 };
 
 export function knownRateFor(modelId: string): ProviderRates | null {

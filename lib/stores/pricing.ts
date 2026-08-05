@@ -57,7 +57,7 @@ export interface PricingTables {
   generatedAt: string | null;
 }
 
-const EXPECTED_PROVIDERS = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot"];
+const EXPECTED_PROVIDERS = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot", "moonshot", "qwen"];
 
 let cached: { mtimeMs: number; tables: PricingTables } | null = null;
 
@@ -259,6 +259,8 @@ export function normalizeProvider(id: string): string | null {
   if (lower.includes("anthropic")) return "anthropic";
   if (lower.includes("cohere")) return "cohere";
   if (lower.includes("deepseek")) return "deepseek";
+  if (lower.includes("moonshot") || lower.includes("kimi")) return "moonshot";
+  if (lower.includes("qwen") || lower.includes("alibaba") || lower.includes("dashscope")) return "qwen";
   return lower || null;
 }
 
@@ -276,6 +278,26 @@ function modelAliasCandidates(provider: string, modelId: string): string[] {
     if (/reasoner/.test(id) || /r1/.test(id)) out.add("deepseek-reasoner");
     if (/chat/.test(id) || /v[0-9]/.test(id) || /coder/.test(id)) out.add("deepseek-chat");
   }
+  if (provider === "moonshot") {
+    if (/k3/.test(id)) out.add("kimi-k3");
+    if (/k2[.-]7.*code|k2-7.*code/.test(id)) out.add("kimi-k2.7-code");
+    if (/k2[.-]6/.test(id)) out.add("kimi-k2.6");
+    if (/k2.*think/.test(id)) out.add("kimi-k2-thinking");
+    if (/k2/.test(id)) out.add("kimi-k2");
+    if (/8k/.test(id)) out.add("moonshot-v1-8k");
+    if (/32k/.test(id)) out.add("moonshot-v1-32k");
+    if (/128k/.test(id)) out.add("moonshot-v1-128k");
+  }
+  if (provider === "qwen") {
+    if (/3\.8.*max|3-8.*max/.test(id)) out.add("qwen3.8-max");
+    if (/3\.7.*max|3-7.*max/.test(id)) out.add("qwen3.7-max");
+    if (/3\.7.*plus|3-7.*plus/.test(id)) out.add("qwen3.7-plus");
+    if (/3\.7.*flash|3-7.*flash/.test(id)) out.add("qwen3.7-flash");
+    if (/turbo/.test(id)) out.add("qwen-turbo");
+    if (/plus/.test(id) && !/3\./.test(id)) out.add("qwen-plus");
+    if (/max/.test(id) && !/3\./.test(id)) out.add("qwen-max");
+    if (/qwq/.test(id) || /qwq-32b/.test(id)) out.add("qwq-32b");
+  }
   return [...out];
 }
 
@@ -289,6 +311,8 @@ function inferProviderFromModelId(modelId: string): string | null {
   if (id.startsWith("gemini-")) return "google";
   if (id.startsWith("deepseek-")) return "deepseek";
   if (id.startsWith("command-") || id.startsWith("embed-")) return "cohere";
+  if (id.startsWith("kimi-") || id.startsWith("moonshot-")) return "moonshot";
+  if (id.startsWith("qwen") || id.startsWith("qwq-")) return "qwen";
   return null;
 }
 
