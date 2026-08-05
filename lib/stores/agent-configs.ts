@@ -99,13 +99,7 @@ export function getAgentTierProportions(row: AgentConfigRow): AgentTierProportio
 }
 
 export function listAgentConfigs(): AgentConfigRow[] {
-  // Order by "most recently interacted with" first: MAX(threads.updated_at)
-  // per agent (bumped on every user or assistant message via updateThread /
-  // recomputeThreadMessageCount). Falls back to the agent's own created_at
-  // for agents that don't have a thread yet, so freshly-created agents
-  // still bubble to the top. Replaces the previous
-  // `is_default DESC, created_at ASC` ordering, which pinned old agents
-  // even when the user hadn't touched them in months.
+  // Default agent always first; then by most recently interacted with.
   return getDb()
     .prepare(
       `SELECT a.*
@@ -115,7 +109,7 @@ export function listAgentConfigs(): AgentConfigRow[] {
          FROM threads
          GROUP BY agent_id
        ) t ON t.agent_id = a.id
-       ORDER BY COALESCE(t.last_active, a.created_at) DESC`
+       ORDER BY a.is_default DESC, COALESCE(t.last_active, a.created_at) DESC`
     )
     .all() as unknown as AgentConfigRow[];
 }
