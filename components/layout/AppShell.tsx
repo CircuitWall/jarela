@@ -18,7 +18,6 @@ import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { ToolsPanel } from "@/components/tools/ToolsPanel";
 import { ScheduledTasksPanel } from "@/components/scheduled-tasks/ScheduledTasksPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
-import { HarnessPanel } from "@/components/harness/HarnessPanel";
 import { LogsPanel } from "@/components/logs/LogsPanel";
 import { EnvVarsPanel } from "@/components/env/EnvVarsPanel";
 import { SettingsPanel } from "@/components/settings/SettingsPanel";
@@ -37,7 +36,7 @@ import { getAppName } from "@/lib/env/app-config";
 import { MenuPanel } from "./MenuPanel";
 import { DashboardPanel } from "@/components/dashboard/DashboardPanel";
 
-const ADVANCED_TABS = new Set(["memory", "bridges", "harness", "logs", "env"]);
+const ADVANCED_TABS = new Set(["memory", "bridges", "logs", "env"]);
 
 export function AppShell() {
   const { state, dispatch } = useAppContext();
@@ -70,6 +69,11 @@ export function AppShell() {
       dispatch({ type: "SET_TAB", tab: "profile" });
     }
   }, [dispatch, isFullMode, state.activeTab]);
+
+  // Redirect legacy deep link ?tab=harness → agents (harnesses moved to Agents panel)
+  useEffect(() => {
+    if (state.activeTab === "harness") dispatch({ type: "SET_TAB", tab: "agents" });
+  }, [dispatch, state.activeTab]);
 
   const unreadCount = useUnreadCount();
 
@@ -526,11 +530,6 @@ export function AppShell() {
         {mountedTabs.has("profile") && (
           <Activity mode={state.activeTab === "profile" ? "visible" : "hidden"}>
             <ProfilePanel />
-          </Activity>
-        )}
-        {isFullMode && mountedTabs.has("harness") && (
-          <Activity mode={state.activeTab === "harness" ? "visible" : "hidden"}>
-            <HarnessPanel />
           </Activity>
         )}
         {isFullMode && mountedTabs.has("logs") && (
