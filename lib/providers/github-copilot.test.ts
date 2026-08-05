@@ -94,7 +94,7 @@ describe("Claude-via-Copilot routing", () => {
       messages: Array<{ content: Array<{ type: string; cache_control?: { type: string } }> }>;
     };
     expect(reqBody.system[0].cache_control).toEqual({ type: "ephemeral" });
-    expect(reqBody.tools[reqBody.tools.length - 1].cache_control).toEqual({ type: "ephemeral" });
+    expect(reqBody.tools[reqBody.tools.length - 1].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
     const lastMsg = reqBody.messages[reqBody.messages.length - 1];
     const toolResult = lastMsg.content.find((b) => b.type === "tool_result");
     expect(toolResult?.cache_control).toEqual({ type: "ephemeral" });
