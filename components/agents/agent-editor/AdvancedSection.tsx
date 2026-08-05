@@ -23,7 +23,7 @@ const Divider = () => <hr className="border-border/60 my-2" />;
 export function AdvancedSection({ form, models, integrations, isFullMode, onClose }: Props) {
   const selectedModel = models.find((m) => m.name === form.modelConfigName);
   return (
-    <Section step={4} title="Advanced settings">
+    <Section title="Advanced settings" defaultCollapsed={true}>
       <div className="space-y-2">
         <p className="text-[11px] text-fg-subtle leading-snug">
           Optional override: force this agent onto one specific model instead of using the automatic router.

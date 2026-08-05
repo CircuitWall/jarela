@@ -53,7 +53,7 @@ const TAB_TITLES: Record<Tab, string> = {
   harness: "Harness",
   logs: "Logs",
   env: "Defaults",
-  settings: "Settings",
+  settings: "Advanced settings",
 };
 
 // Tiny-screen labels (<=380px). Only abbreviate where the full name is
@@ -76,7 +76,7 @@ const TAB_SHORT: Record<Tab, string> = {
   harness: "Tests",
   logs: "Logs",
   env: "Env",
-  settings: "Settings",
+  settings: "Advanced",
 };
 
 // Two-tier menu. "Common" surfaces the day-to-day verbs. Settings is
