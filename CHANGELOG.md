@@ -46,13 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Warm-summary `max_tokens` capped at 1,024.** Summarization calls (which
   produce 200-500 token outputs) no longer default to 4,096 output tokens,
   reducing per-summary token cost by ~75%.
-- **Conversation history cached across turns.** The most-recent assistant
-  message in the hot history now carries a 1-hour `cache_control` breakpoint.
-  On each subsequent turn the entire prior conversation prefix (system + tools
-  + history up to the last assistant turn) is served from cache at 0.1× the
-  input rate — only the new user message is billed at full price. Thinking
-  blocks are skipped (no `cache_control` field in the SDK); `text` and
-  `tool_use` blocks are used instead.
+- **`withLastAssistantMessageCacheControl` stubbed for future use.** Cross-turn
+  conversation history caching requires the dynamic system content (timestamp,
+  per-turn recall) to appear AFTER the message array, not before it; with the
+  current architecture the dynamic system block sits between stable system and
+  messages and its timestamp change invalidates the cache prefix for any
+  message-level breakpoint every turn. The function is wired but a no-op until
+  the architecture migrates dynamic context to mid-conversation system messages
+  (Opus 4.8+ / Opus 5 / Fable 5).
 
 ## [1.22.1] - 2026-08-05
 
