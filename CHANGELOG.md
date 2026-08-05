@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.5] - 2026-08-05
+
+### Fixed
+
+- **Anthropic cache TTL ordering corrected.** The last tool in a request was
+  marked with the default 5-minute `ephemeral` breakpoint while the stable
+  system-prompt prefix used a 1-hour TTL. Anthropic enforces non-increasing
+  TTLs in the order `tools → system → messages`, so any request combining
+  tools with a sentinel-split system prompt was rejected with
+  `"block must not come after a ttl='5m' cache_control block"`. The last-tool
+  marker now uses the same 1-hour TTL, restoring a valid sequence (1h → 1h → 5m).
+
 ## [1.22.4] - 2026-08-05
 
 ### Fixed
