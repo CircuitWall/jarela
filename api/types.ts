@@ -266,6 +266,7 @@ export interface MessageUsage {
   // until they grow the equivalent breakdown.
   cache_creation_input_tokens: number | null;
   cache_read_input_tokens: number | null;
+  cost_usd: number | null;
 }
 
 export interface ThreadDetail extends ThreadSummary {
