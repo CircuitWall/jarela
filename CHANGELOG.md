@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.4] - 2026-08-05
+
+### Fixed
+
+- **Cross-turn conversation history caching corrected.** `withLastAssistantMessageCacheControl`
+  was marking only 1 assistant message per turn — net negative, because the
+  Anthropic prefix cache only hits when the same breakpoint position appears in
+  both the write turn and the read turn. With one marker, each turn wrote a new
+  prefix that the next turn never read (paying 1.25–2× write cost, 0 reads).
+  The function now marks up to 2 assistant messages per turn so the older
+  breakpoint reappears in the next request and yields a cache read hit from
+  turn 2 onwards. Capped at 1 during multi-step ReAct turns (tool_results
+  present) to stay within Anthropic's 4-breakpoint-per-request budget.
+- **Redundant `body.temperature` assignment removed** from `streamInvoke` and
+  `buildAnthropicMessageBody`; `pickAnthropicOptions` already handles it for
+  both legacy and modern models.
+- **`CACHE_SPLIT_SENTINEL` import direction corrected.** The canonical
+  definition moved from `agents/prepare/system-prompt.ts` to `providers/anthropic.ts`
+  (where it is consumed); `system-prompt.ts` now imports it from there,
+  resolving the inverted providers → agents dependency.
+- Bump to 1.22.4.
+
 ## [1.22.3] - 2026-08-05
 
 ### Fixed
