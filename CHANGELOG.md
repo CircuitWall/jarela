@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.1] - 2026-08-05
+
+### Fixed
+
+- **Developer agent prefers interactive terminal tools.** The stock Developer
+  profile now nudges agents toward `terminal_open` + `terminal_exec` +
+  `terminal_read` for shell work, while keeping `shell_exec` / `local_exec`
+  as one-shot fallbacks. Existing installs backfill to the same tool set when
+  they still match the legacy seed.
+- **Subprocess PATH probing now honors the interactive shell.** On macOS and
+  Linux, shared subprocess env resolution probes the user's interactive shell
+  so `.zshrc` / `.bashrc` PATH changes are reflected for exec and terminal
+  tools.
+- **Added regression coverage** for the developer-seed backfill and the
+  interactive-shell PATH probe.
+
 ## [1.22.0] - 2026-08-05
 
 ### Added
