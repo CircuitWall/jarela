@@ -335,6 +335,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureModelConfigCredentialIdColumn(db);
   ensureAgentConfigsToolCredentialsColumn(db);
   seedAgentConfigs(db);
+  backfillDeveloperInteractiveTerminalTools(db);
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
   migrateICloudPackageIds(db);
@@ -952,6 +953,72 @@ function seedAgentConfigs(db: DatabaseSync): void {
   reanchorOrphanThreads(db);
 }
 
+function backfillDeveloperInteractiveTerminalTools(db: DatabaseSync): void {
+  const row = db.prepare("SELECT instructions, tools FROM agent_configs WHERE id='developer'").get() as { instructions: string; tools: string } | undefined;
+  if (!row) return;
+
+  let tools: string[] = [];
+  try {
+    const parsed = JSON.parse(row.tools);
+    if (Array.isArray(parsed)) {
+      tools = parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+    }
+  } catch {
+    tools = [];
+  }
+
+  const interactiveTools = [
+    "terminal_open",
+    "terminal_exec",
+    "terminal_send",
+    "terminal_read",
+    "terminal_close",
+    "terminal_list",
+  ];
+  const legacyTools = [
+    "file_read",
+    "file_write",
+    "file_edit",
+    "file_list",
+    "file_stat",
+    "file_mkdir",
+    "file_move",
+    "file_copy",
+    "file_delete",
+    "local_exec",
+    "shell_exec",
+    "web_fetch",
+    "web_search",
+    "github_search_issues",
+    "github_get_issue",
+    "github_list_pulls",
+    "github_get_pull",
+    "github_get_repo",
+    "memory_read",
+    "memory_write",
+    "memory_list",
+  ];
+  const hasInteractiveTools = interactiveTools.every((tool) => tools.includes(tool));
+  const isLegacyToolSet = tools.length === legacyTools.length && tools.every((tool, index) => tool === legacyTools[index]);
+  const hasOldInstruction = row.instructions.includes("shell_exec (or local_exec for a single binary)");
+
+  if (!hasOldInstruction && !isLegacyToolSet) return;
+
+  const nextTools = hasInteractiveTools ? tools : Array.from(new Set([...tools, ...interactiveTools]));
+  const nextInstructions = hasOldInstruction
+    ? row.instructions.replace(
+        "After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success â€” never claim a fix without proof.",
+        "After every meaningful edit, run the project's build, lint, or test command via terminal_open + terminal_exec + terminal_read when you need an interactive shell, or shell_exec / local_exec for a simple one-shot command, and read the output before declaring success â€” never claim a fix without proof.",
+      )
+    : row.instructions;
+
+  db.prepare("UPDATE agent_configs SET instructions=?, tools=?, updated_at=? WHERE id='developer'").run(
+    nextInstructions,
+    JSON.stringify(nextTools),
+    now(),
+  );
+}
+
 interface BaseAgentProfile {
   id: string;
   name: string;
@@ -1005,7 +1072,7 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
     identity:
       "You are a pragmatic software engineer working in the user's local repo with a real build/test harness.",
     instructions:
-      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success Ã¢â‚¬â€ never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
+      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via terminal_open + terminal_exec + terminal_read when you need an interactive shell, or shell_exec / local_exec for a simple one-shot command, and read the output before declaring success Ã¢â‚¬â€ never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
     tools: [
       "file_read",
       "file_write",
@@ -1016,6 +1083,12 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
       "file_move",
       "file_copy",
       "file_delete",
+      "terminal_open",
+      "terminal_exec",
+      "terminal_send",
+      "terminal_read",
+      "terminal_close",
+      "terminal_list",
       "local_exec",
       "shell_exec",
       "web_fetch",
