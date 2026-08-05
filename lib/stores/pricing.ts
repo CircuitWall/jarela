@@ -327,11 +327,13 @@ function inferRatesFromSignals(signals: string[]): {
 // (no separate write count) and a future PR can split that out. For now
 // any provider that emits both fields will be priced as above.
 export const CACHE_CREATION_INPUT_RATE_MULTIPLIER = 1.25;
-export const CACHE_READ_INPUT_RATE_MULTIPLIER = 0.1;
+export const CACHE_READ_INPUT_RATE_MULTIPLIER = 0.1;  // Anthropic: 0.1x; OpenAI: 0.5x; Gemini: 0.25x
 
 export interface CacheTokenBreakdown {
   cache_creation_input_tokens?: number | null;
   cache_read_input_tokens?: number | null;
+  // Provider-specific read rate; defaults to CACHE_READ_INPUT_RATE_MULTIPLIER if omitted.
+  cache_read_rate_multiplier?: number;
 }
 
 export function estimateCostUsd(
@@ -349,8 +351,9 @@ export function estimateCostUsd(
   if (cache && inputRate != null) {
     const create = cache.cache_creation_input_tokens ?? 0;
     const read = cache.cache_read_input_tokens ?? 0;
+    const readMultiplier = cache.cache_read_rate_multiplier ?? CACHE_READ_INPUT_RATE_MULTIPLIER;
     if (create > 0) cacheCost += (create / 1_000_000) * inputRate * CACHE_CREATION_INPUT_RATE_MULTIPLIER;
-    if (read > 0)   cacheCost += (read   / 1_000_000) * inputRate * CACHE_READ_INPUT_RATE_MULTIPLIER;
+    if (read > 0)   cacheCost += (read   / 1_000_000) * inputRate * readMultiplier;
   }
   return inCost + outCost + cacheCost;
 }

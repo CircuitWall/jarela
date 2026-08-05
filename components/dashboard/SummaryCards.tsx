@@ -1,5 +1,5 @@
 "use client";
-import { Activity, BarChart3, Coins, ShieldCheck, TrendingUp } from "lucide-react";
+import { Activity, BarChart3, Coins, DatabaseZap, ShieldCheck, TrendingUp } from "lucide-react";
 import type { DashboardCurrencyInfo, DashboardMetrics } from "@/api/types";
 import { formatInt, formatMoney } from "@/lib/dashboard/format";
 import { InsightChip, MetricCard } from "./Cards";
@@ -14,8 +14,10 @@ interface SummaryStripProps {
 }
 
 export function SummaryStrip({ data, currencyInfo, windowTokenTotal, activeDays, avgDailyTokens, avgDailyCostUsd }: SummaryStripProps) {
+  const cacheHitPct = (data.summary.cache_hit_rate * 100).toFixed(1);
+  const hasCacheStats = data.summary.cache_read_tokens > 0;
   return (
-    <div className="relative grid gap-2 md:grid-cols-4">
+    <div className={`relative grid gap-2 ${hasCacheStats ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
       <InsightChip
         label="Window tokens"
         value={formatInt(windowTokenTotal)}
@@ -36,6 +38,14 @@ export function SummaryStrip({ data, currencyInfo, windowTokenTotal, activeDays,
         value={formatMoney(avgDailyCostUsd, currencyInfo)}
         hint="Smoothes short-day spikes"
       />
+      {hasCacheStats && (
+        <InsightChip
+          label="Cache hit rate"
+          value={`${cacheHitPct}%`}
+          hint={`${formatInt(data.summary.cache_read_tokens)} tokens served from prompt cache — billed at a discount`}
+          icon={<DatabaseZap size={13} />}
+        />
+      )}
     </div>
   );
 }

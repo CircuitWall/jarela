@@ -593,6 +593,8 @@ export interface DashboardMetrics {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    cache_read_tokens: number;
+    cache_hit_rate: number;
     tool_calls: number;
     tool_successes: number;
     tool_errors: number;
