@@ -1,5 +1,5 @@
 "use client";
-import { Cpu, Globe, Key, Palette, ScrollText, ServerCog, Shapes, ShieldCheck } from "lucide-react";
+import { Cpu, Globe, Key, Palette, ScrollText, ServerCog, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { useAppContext } from "@/contexts/AppContext";
@@ -33,8 +33,7 @@ type Sub =
   | "appearance"
   | "networking"
   | "environment"
-  | "logs"
-  | "harness";
+  | "logs";
 
 const SUBS: ReadonlyArray<{ id: Sub; label: string; icon: React.ReactNode; advancedOnly?: boolean }> = [
   { id: "credentials", label: "Credentials", icon: <Key size={13} /> },
@@ -44,7 +43,6 @@ const SUBS: ReadonlyArray<{ id: Sub; label: string; icon: React.ReactNode; advan
   { id: "networking", label: "Networking", icon: <Globe size={13} /> },
   { id: "environment", label: "Environment", icon: <ServerCog size={13} />, advancedOnly: true },
   { id: "logs", label: "Logs", icon: <ScrollText size={13} />, advancedOnly: true },
-  { id: "harness", label: "Test runs", icon: <Shapes size={13} />, advancedOnly: true },
 ];
 
 const VALID = new Set<Sub>(SUBS.map((s) => s.id));
@@ -53,6 +51,8 @@ const VALID = new Set<Sub>(SUBS.map((s) => s.id));
 // deep links and saved selections keep resolving.
 const LEGACY_SUBS: Record<string, Sub> = {
   defaults: "environment",
+  // harness moved to the Agents panel
+  harness: "credentials",
 };
 
 function parseSub(raw: string | undefined): Sub {
@@ -102,7 +102,6 @@ export function SettingsPanel() {
         {active === "networking" && <NetworkPanel />}
         {active === "environment" && <EnvVarsPanel />}
         {active === "logs" && <LogsPanel />}
-        {active === "harness" && <HarnessPanel />}
       </div>
     </div>
   );
