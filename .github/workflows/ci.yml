@@ -19,13 +19,18 @@ concurrency:
 jobs:
   changes:
     # Detect whether the PR / push touched anything that could affect the
-    # built app. Doc-only, CHANGELOG-only, or release-workflow-only changes
-    # skip the expensive e2e job below. The other jobs (lint/build,
-    # integration) are cheap enough that we always run them.
+    # built app. Several downstream jobs are gated on `app`; the others use
+    # finer-grained `deps`, `packages`, and `pkg_meta` outputs to skip steps
+    # that are irrelevant to the change (e.g. skip `npm audit` when no
+    # dependency files changed, skip `test:package` when packaging metadata
+    # is untouched).
     name: Detect changed paths
     runs-on: ubuntu-latest
     outputs:
-      app: ${{ steps.filter.outputs.app }}
+      app:      ${{ steps.filter.outputs.app }}
+      deps:     ${{ steps.filter.outputs.deps }}
+      packages: ${{ steps.filter.outputs.packages }}
+      pkg_meta: ${{ steps.filter.outputs.pkg_meta }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -42,35 +47,59 @@ jobs:
               - 'tests/**'
               - 'api/**'
               - 'scripts/**'
+              - 'packages/**'
               - 'next.config.ts'
               - 'tsconfig.json'
               - 'playwright.config.ts'
               - 'package.json'
               - 'package-lock.json'
               - '.github/workflows/ci.yml'
+            deps:
+              - 'package.json'
+              - 'package-lock.json'
+            packages:
+              - 'packages/**'
+            pkg_meta:
+              - 'package.json'
+              - 'packages/*/package.json'
+              - 'scripts/rewrite-workspace-deps.mjs'
+              - 'scripts/check-npm-package.mjs'
 
   security:
     name: Security checks
     runs-on: ubuntu-latest
+    needs: [changes]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
+      # Secrets scan uses only Node.js built-ins — no node_modules needed.
+      # Runs unconditionally so every PR is checked, regardless of what changed.
+      - name: Scan for secrets
+        run: node scripts/scan-secrets.mjs --all
+
+      # Dependency audit and version-pin checks only matter when
+      # package.json / package-lock.json changed. Skip on source-only PRs to
+      # avoid a full `npm ci` just to run `npm audit`.
       - name: Setup Node
+        if: needs.changes.outputs.deps == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install dependencies
+        if: needs.changes.outputs.deps == 'true'
         run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
-      - name: Run security gates
-        run: npm run security:ci
+      - name: Dependency audit and version gates
+        if: needs.changes.outputs.deps == 'true'
+        run: npm run security:audit && npm run security:link-preview
 
   build:
     name: Lint, typecheck, build
     runs-on: ubuntu-latest
+    needs: [changes]
     # Runs in parallel with `security` — they share only `npm ci` and neither
     # gates the other. Cuts ~25s off the critical path on a clean PR.
     timeout-minutes: 15
@@ -112,15 +141,22 @@ jobs:
         run: npm run security:routes
 
       - name: Verify npm tarball contains runnable standalone bundle
+        # Only relevant when packaging metadata changes (package.json,
+        # workspace package.json files, or the dep-rewrite script).
+        # Skipped on pure source/UI changes — the tarball structure doesn't
+        # change and this step is expensive (~30–60s: npm pack + extract + build).
+        if: needs.changes.outputs.pkg_meta == 'true'
         run: npm run test:package
 
       - name: Test workspaces (per-package vitest suites)
+        # Only relevant when workspace package source files change.
+        if: needs.changes.outputs.packages == 'true'
         run: npm run packages:test
 
       - name: Upload runnable standalone bundle
-        # Downstream jobs (integration, e2e) reuse this instead of re-running
-        # `next build`. `npm start` reads from .next/standalone/, which
-        # postbuild has already hydrated with public/ + .next/static.
+        # Downstream jobs (unit-coverage skips it, e2e reuses it) instead of
+        # re-running `next build`. `npm start` reads from .next/standalone/,
+        # which postbuild has already hydrated with public/ + .next/static.
         # include-hidden-files is required: the bundle has its own nested
         # .next/ (BUILD_ID, server/, static/) that v4 would otherwise strip
         # as a hidden path, leaving the standalone server unable to find the
@@ -133,71 +169,14 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  integration:
-    name: Integration tests
-    runs-on: ubuntu-latest
-    needs: build
-    timeout-minutes: 20
-    env:
-      # Force an ephemeral data dir so the suite never touches a user's
-      # ~/.jarela. /tmp is writable on ubuntu-latest and wiped between runs.
-      JARELA_DB_DIR: /tmp/jarela-ci
-      # Tests target the started server on this port.
-      JARELA_URL: http://127.0.0.1:4312
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
-
-      - name: Download runnable standalone bundle
-        uses: actions/download-artifact@v4
-        with:
-          name: next-standalone
-          path: .next/standalone
-
-      - name: Start production server
-        run: |
-          mkdir -p "$JARELA_DB_DIR"
-          nohup npm start > server.log 2>&1 &
-          echo $! > server.pid
-
-      - name: Wait for /api/v1/health
-        run: |
-          for i in $(seq 1 60); do
-            if curl -fsS "$JARELA_URL/api/v1/health" >/dev/null; then
-              echo "server up after ${i}s"; exit 0
-            fi
-            sleep 1
-          done
-          echo "server did not become healthy in 60s"
-          tail -n 200 server.log || true
-          exit 1
-
-      - name: Run live integration tests (no LLM)
-        run: npm run test:live
-
-      - name: Server log on failure
-        if: failure()
-        run: tail -n 400 server.log || true
-
-      - name: Stop server
-        if: always()
-        run: |
-          if [ -f server.pid ]; then
-            kill $(cat server.pid) 2>/dev/null || true
-          fi
-
   unit-coverage:
     name: Unit coverage (>=80%)
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, changes]
+    # Skip for doc-only / CHANGELOG-only PRs — unit tests can't fail if no
+    # app code changed. `build` still gate-checks lint/typecheck/compile
+    # regardless; this job just avoids a redundant npm ci + vitest run.
+    if: ${{ needs.changes.outputs.app == 'true' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -236,6 +215,8 @@ jobs:
     env:
       JARELA_DB_DIR: /tmp/jarela-e2e
       JARELA_E2E_BASE_URL: http://127.0.0.1:4312
+      # JARELA_URL is read by test:live; point it at the same server.
+      JARELA_URL: http://127.0.0.1:4312
       # The mock provider replaces real LLM calls so we don't need keys in CI.
       JARELA_ENABLE_MOCK_PROVIDER: "1"
       JARELA_DISABLE_UPDATE_CHECK: "1"
@@ -294,6 +275,11 @@ jobs:
           echo "server did not become healthy in 60s"
           tail -n 200 server.log || true
           exit 1
+
+      - name: Run live integration tests (no LLM)
+        # Folded here from the former `integration` job — shares the server
+        # instance already started above, saving a full redundant startup cycle.
+        run: npm run test:live
 
       - name: Run Playwright tests with e2e coverage gate
         run: npm run test:e2e:coverage
