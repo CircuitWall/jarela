@@ -132,6 +132,8 @@ export interface DashboardMetrics {
     input_tokens_est: number;
     output_tokens_est: number;
     estimated_cost_usd: number;
+    cache_read_tokens: number;
+    cache_hit_rate: number;
     tool_calls: number;
     tool_successes: number;
     tool_errors: number;
@@ -179,6 +181,8 @@ type UsageRow = {
   mu_warm_tokens: number | null;
   mu_facts_tokens: number | null;
   mu_overhead_tokens: number | null;
+  mu_cache_read: number | null;
+  mu_cache_creation: number | null;
 };
 
 type TierBucket = {
@@ -247,7 +251,9 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
               mu.hot_tokens       AS mu_hot_tokens,
               mu.warm_tokens      AS mu_warm_tokens,
               mu.facts_tokens     AS mu_facts_tokens,
-              mu.overhead_tokens  AS mu_overhead_tokens
+              mu.overhead_tokens  AS mu_overhead_tokens,
+              mu.cache_read_input_tokens    AS mu_cache_read,
+              mu.cache_creation_input_tokens AS mu_cache_creation
          FROM messages m
          JOIN threads t ON t.thread_id = m.thread_id
          LEFT JOIN agent_configs a ON a.id = t.agent_id
@@ -311,6 +317,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
   let totalInput = 0;
   let totalOutput = 0;
   let totalCost = 0;
+  let totalCacheRead = 0;
   let totalCalls = 0;
   let totalSuccesses = 0;
   let totalErrors = 0;
@@ -358,6 +365,7 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       const warm = row.mu_warm_tokens ?? 0;
       const facts = row.mu_facts_tokens ?? 0;
       const overhead = row.mu_overhead_tokens ?? 0;
+      totalCacheRead += row.mu_cache_read ?? 0;
       tierTotals.hot += hot;
       tierTotals.warm += warm;
       tierTotals.facts += facts;
@@ -612,6 +620,8 @@ export async function getDashboardMetrics(days = DEFAULT_WINDOW_DAYS): Promise<D
       input_tokens_est: totalInput,
       output_tokens_est: totalOutput,
       estimated_cost_usd: totalCost,
+      cache_read_tokens: totalCacheRead,
+      cache_hit_rate: round4(totalCacheRead > 0 ? totalCacheRead / (totalInput + totalCacheRead) : 0),
       tool_calls: totalCalls,
       tool_successes: totalSuccesses,
       tool_errors: totalErrors,
