@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-08-05
+
+### Added
+
+- **Interactive terminal sessions.** Agents can now open persistent shell
+  sessions (`terminal_open`) that retain state — working directory, shell
+  variables, activated virtual environments — across multiple turns.
+  `terminal_exec` runs commands in the session; `terminal_send` writes raw
+  stdin for interactive programs (REPLs, prompts); `terminal_read` polls
+  buffered output; `terminal_close` / `terminal_list` manage the lifecycle.
+  Sessions are auto-evicted after `JARELA_TERMINAL_IDLE_TTL_MS` (default
+  10 min) and capped at `JARELA_TERMINAL_MAX_SESSIONS` (default 5).
+- **`local_exec` / `shell_exec` now use the terminal infrastructure.**
+  Each call creates a throwaway session — same JSON output shape, no
+  behaviour change for existing agents.
+- **External skills directory.** Set `JARELA_SKILLS_DIR` to a folder
+  containing Claude-style `*/SKILL.md` files or flat `*.md` files. Skills
+  are loaded at startup, injected into the agent system prompt, and
+  manageable via `read_skill` / `write_skill` / `list_skills` tools and
+  the new REST API (`GET/POST /api/v1/skills`, `GET/PUT/DELETE
+  /api/v1/skills/:id`).
+- **Shared subprocess env resolver.** Login-shell PATH probe and
+  credential injection extracted to `lib/tools/subprocess-env.ts` and
+  shared by exec and terminal tools.
+
+### Fixed
+
+- **PowerShell 7 (`pwsh`) not recognised in terminal sentinel.** The
+  shell-detection logic now matches `pwsh` and `pwsh.exe` alongside
+  `powershell.exe`.
+- **PowerShell 5.1 piped output garbled with non-ASCII.** Sessions now
+  send a UTF-8 init line immediately after spawn.
+- **Terminal sessions exposed PowerShell banner in stdout.** PowerShell
+  is now spawned with `-NoLogo -NonInteractive`.
+- **Working directory not tracked across `cd` commands.** The sentinel
+  now embeds the current directory after every exec so `cwd` in tool
+  responses reflects actual state.
+
 ## [1.21.1] - 2026-08-03
 
 ### Fixed
