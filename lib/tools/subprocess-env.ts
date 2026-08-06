@@ -9,7 +9,7 @@
 // PATH into every subprocess env. Both exec and terminal import
 // resolveSubprocessEnv from here so they share one code path.
 
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { platform, homedir } from "node:os";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
@@ -33,12 +33,14 @@ function getUserShellPath(): string {
   try {
     // -i = interactive shell (sources ~/.zshrc / ~/.bashrc / equivalent)
     // timeout keeps a hung shell from stalling the first tool call.
-    const out = execSync(`${shell} -ic 'echo $PATH'`, {
+    const result = spawnSync(shell, ["-ic", "echo $PATH"], {
       encoding: "utf8",
       timeout: 4_000,
       stdio: ["pipe", "pipe", "pipe"],
       env: { ...process.env, HOME: homedir(), TERM: "dumb" },
-    }).trim();
+    });
+    if (result.error) throw result.error;
+    const out = (result.stdout as string ?? "").trim();
     // Pick the last non-empty line (login shells can print banner text first)
     const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
     const pathLine = lines[lines.length - 1] ?? "";

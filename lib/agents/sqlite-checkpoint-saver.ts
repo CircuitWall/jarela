@@ -274,7 +274,7 @@ CREATE TABLE IF NOT EXISTS writes (
       FROM checkpoints\n`;
 
     const whereClause: string[] = [];
-    if (thread_id) whereClause.push("thread_id = ?");
+    if (thread_id !== undefined && thread_id !== null) whereClause.push("thread_id = ?");
     if (checkpoint_ns !== undefined && checkpoint_ns !== null) {
       whereClause.push("checkpoint_ns = ?");
     }

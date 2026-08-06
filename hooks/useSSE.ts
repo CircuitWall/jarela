@@ -98,11 +98,20 @@ export function useSSE(onDone?: () => void) {
   // dead component (React would warn about setState-after-unmount).
   useEffect(() => () => { cancelPendingFlush(); }, [cancelPendingFlush]);
 
+  // Abort the active EventSource on unmount so the server connection closes
+  // and we don't call state setters on a dead component.
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
+
   const consume = useCallback(async (
     iterable: AsyncIterable<string>,
   ): Promise<void> => {
     for await (const raw of iterable) {
-      const event = JSON.parse(raw) as SSEEventType;
+      let event: SSEEventType;
+      try {
+        event = JSON.parse(raw) as SSEEventType;
+      } catch {
+        continue;
+      }
       if (event.type === "text_delta") {
         pendingTextRef.current += event.delta;
         scheduleFlush();

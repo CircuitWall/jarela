@@ -155,6 +155,7 @@ async function readBodyCapped(
         break;
       }
     }
+    raw += decoder.decode();
   }
   return { raw, bytesRead, truncated: bytesRead >= maxBytes };
 }
