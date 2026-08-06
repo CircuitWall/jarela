@@ -25,7 +25,7 @@ const CreateBody = z.looseObject({
 });
 
 export function GET() {
-  return cachedJson(listAgentConfigs().map(agentToResponse), 15);
+  return cachedJson(listAgentConfigs().map(agentToResponse), 15, 60);
 }
 
 export async function POST(req: NextRequest) {

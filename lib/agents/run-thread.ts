@@ -21,7 +21,7 @@ import { getLatestMessageUsageForThread, recordMessageUsage } from "@/lib/stores
 import { getPricingTables, modelRatesFor, estimateCostUsd, CACHE_READ_INPUT_RATE_MULTIPLIER } from "@/lib/stores/pricing";
 import { estimateTokens } from "@/lib/agents/context-budget";
 import { classifyStall, resolveDetector } from "@/lib/agents/hallucination-classifier";
-import { nextPolicyForRetry, routeTurnModel, type RouteDecisionMetadata } from "@/lib/agents/model-router";
+import { nextPolicyForRetry, routeTurnModel, type ModelRouterPolicy, type RouteDecisionMetadata } from "@/lib/agents/model-router";
 import {
   buildCombinedManifest,
   classifyCitations,
@@ -248,8 +248,21 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       retry_count: req._retry_count ?? 0,
     };
   }
-  const routePolicy = req._router_policy_override ?? getConfig().modelRouterPolicy;
-  if (!modelConfigName && getConfig().modelRouterMode === "heuristic") {
+  // Per-agent router settings override the global env vars.
+  // router_enabled: 1 = force on, 0 = force off, null = follow global JARELA_MODEL_ROUTER_MODE.
+  // router_policy: set = use this policy, null = follow global JARELA_MODEL_ROUTER_POLICY.
+  const agentRouterEnabled = agentCfg.router_enabled ?? null;
+  const useRouter = agentRouterEnabled === 1
+    ? true
+    : agentRouterEnabled === 0
+    ? false
+    : getConfig().modelRouterMode === "heuristic";
+  const VALID_POLICIES: ReadonlySet<string> = new Set(["cheap", "fast", "balanced", "quality"]);
+  const agentPolicy = agentCfg.router_policy && VALID_POLICIES.has(agentCfg.router_policy)
+    ? agentCfg.router_policy as ModelRouterPolicy
+    : null;
+  const routePolicy = req._router_policy_override ?? agentPolicy ?? getConfig().modelRouterPolicy;
+  if (!modelConfigName && useRouter) {
     const pricingTables = getPricingTables();
     const routed = routeTurnModel({
       models: listModelConfigs().map((cfg) => ({

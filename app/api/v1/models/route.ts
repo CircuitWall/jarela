@@ -65,7 +65,7 @@ export function GET() {
     ...r,
     params: redactInlineParams(r.params),
     is_default: Boolean(r.is_default),
-  })), 15);
+  })), 15, 60);
 }
 
 export async function POST(req: NextRequest) {

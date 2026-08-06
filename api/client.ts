@@ -81,6 +81,7 @@ function cloneRows<T>(rows: T[]): T[] {
 const agentListCache: ListCache<AgentConfig> = emptyCache();
 const modelListCache: ListCache<ModelConfig> = emptyCache();
 const taskListCache: ListCache<TaskAssignment> = emptyCache();
+const toolListCache: ListCache<ToolInfo> = emptyCache();
 
 function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
   const snap = cloneRows(rows);
@@ -113,6 +114,25 @@ function setTaskListCache(rows: TaskAssignment[], notify = true): TaskAssignment
     window.dispatchEvent(new CustomEvent("jarela:tasks-changed"));
   }
   return cloneRows(snap);
+}
+
+// Tool list cache. Unlike agents/models/tasks, tool mutations don't patch the
+// list in-place — they invalidate the cache and dispatch jarela:tools-changed
+// so subscribers (useTools) force-refresh. The 30 s TTL matches the HTTP
+// max-age so back/forward navigation never causes a redundant network round-trip.
+function setToolListCache(rows: ToolInfo[]): ToolInfo[] {
+  const snap = cloneRows(rows);
+  toolListCache.data = snap;
+  toolListCache.fetchedAt = Date.now();
+  toolListCache.inflight = null;
+  return cloneRows(snap);
+}
+
+function invalidateToolListCache(): void {
+  toolListCache.data = null;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+  }
 }
 
 function cachedList<T>(
@@ -260,23 +280,30 @@ export const api = {
   },
 
   tools: {
-    list: () => request<ToolInfo[]>("/tools"),
+    list: (opts?: { force?: boolean }) =>
+      cachedList(toolListCache, () => request<ToolInfo[]>("/tools"), setToolListCache, opts?.force === true),
   },
 
   builtinTools: {
     list: () => request<BuiltinToolCategoryInfo[]>("/builtin-tools"),
-    setEnabled: (category: string, enabled: boolean) =>
-      request<{ category: string; enabled: boolean }>("/builtin-tools", {
+    setEnabled: async (category: string, enabled: boolean): Promise<{ category: string; enabled: boolean }> => {
+      const result = await request<{ category: string; enabled: boolean }>("/builtin-tools", {
         method: "PATCH",
         body: JSON.stringify({ category, enabled }),
-      }),
+      });
+      invalidateToolListCache();
+      return result;
+    },
   },
 
   packages: {
     list: () => request<LangChainPackageListResponse>("/packages"),
     catalog: () => request<LangChainCatalogResponse>("/packages/catalog"),
-    reload: () =>
-      request<LangChainPackageListResponse>("/packages/reload", { method: "POST" }),
+    reload: async (): Promise<LangChainPackageListResponse> => {
+      const result = await request<LangChainPackageListResponse>("/packages/reload", { method: "POST" });
+      invalidateToolListCache();
+      return result;
+    },
     install: (spec: string, version?: string) =>
       request<LangChainPackageInstallResponse>("/packages/install", {
         method: "POST",
@@ -363,11 +390,14 @@ export const api = {
         `/extensions/tools/${encodeURIComponent(name)}/config`,
         { method: "PUT", body: JSON.stringify({ values }) },
       ),
-    setDropinEnabled: (name: string, enabled: boolean) =>
-      request<{ name: string; enabled: boolean }>(
+    setDropinEnabled: async (name: string, enabled: boolean): Promise<{ name: string; enabled: boolean }> => {
+      const result = await request<{ name: string; enabled: boolean }>(
         `/extensions/tools/${encodeURIComponent(name)}`,
         { method: "PATCH", body: JSON.stringify({ enabled }) },
-      ),
+      );
+      invalidateToolListCache();
+      return result;
+    },
   },
 
   threads: {
@@ -578,17 +608,17 @@ export const api = {
     list: () => request<McpServer[]>("/mcp-servers"),
     create: async (data: McpServerIn): Promise<McpServer> => {
       const result = await request<McpServer>("/mcp-servers", { method: "POST", body: JSON.stringify(data) });
-      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+      invalidateToolListCache();
       return result;
     },
     update: async (name: string, data: Partial<McpServerIn>): Promise<McpServer> => {
       const result = await request<McpServer>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) });
-      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+      invalidateToolListCache();
       return result;
     },
     delete: async (name: string): Promise<{ deleted: boolean }> => {
       const result = await request<{ deleted: boolean }>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "DELETE" });
-      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+      invalidateToolListCache();
       return result;
     },
     registry: (params?: {

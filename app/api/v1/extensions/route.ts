@@ -8,13 +8,13 @@ import { getBuiltinToolNames } from "@/lib/tools";
 import { describeToolSecrets } from "@/lib/stores/tool-secrets";
 import { describeToolConfig } from "@/lib/stores/tool-config";
 import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
-import { cachedJson } from "@/lib/api/responses";
+import { noStoreJson } from "@/lib/api/responses";
 
 export function GET() {
   const provs = loadExternalProvidersDetailed(BUILTIN_PROVIDER_NAMES);
   const tools = loadExternalTools(getBuiltinToolNames());
 
-  return cachedJson({
+  return noStoreJson({
     directories: {
       providers: PROVIDERS_DIR,
       tools: getToolsDir(),
@@ -39,5 +39,5 @@ export function GET() {
       ...provs.errors.map((e) => ({ kind: "provider" as const, ...e })),
       ...tools.errors.map((e) => ({ kind: "tool" as const, ...e })),
     ],
-  }, 300);
+  });
 }

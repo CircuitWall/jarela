@@ -36,7 +36,7 @@ export async function GET() {
         if (usedDiff !== 0) return usedDiff;
         return a.name.localeCompare(b.name);
       }),
-      60,
+      60, 120,
     );
   } catch (err) {
     return NextResponse.json(
