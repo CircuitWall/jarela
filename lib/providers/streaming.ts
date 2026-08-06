@@ -16,6 +16,8 @@ export async function* readSSELines(body: ReadableStream<Uint8Array>): AsyncIter
         if (line.startsWith("data: ")) yield line.slice(6).trim();
       }
     }
+    buffer += decoder.decode();
+    if (buffer.startsWith("data: ")) yield buffer.slice(6).trim();
   } finally {
     reader.releaseLock();
   }

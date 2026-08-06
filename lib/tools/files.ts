@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { tool } from "@langchain/core/tools";
@@ -125,8 +125,9 @@ export function pathResolverFor(config?: ToolConfig): {
 // authorized_keys file) can opt back in with
 // JARELA_ALLOW_SENSITIVE_FILES=1.
 function isInside(abs: string, parent: string): boolean {
-  const a = path.resolve(abs);
-  const p = path.resolve(parent);
+  const tryRealpath = (p: string): string => { try { return realpathSync(p); } catch { return p; } };
+  const a = tryRealpath(path.resolve(abs));
+  const p = tryRealpath(path.resolve(parent));
   if (a === p) return true;
   const rel = path.relative(p, a);
   return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
