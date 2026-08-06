@@ -16,6 +16,10 @@ const {
   getIntegrationRawById,
   listIntegrations,
   deleteIntegration,
+  isKnownIntegration,
+  isAnyKnownIntegration,
+  registerDynamicIntegration,
+  clearDynamicIntegrations,
   SECRET_MASK,
 } = await import("./integrations");
 const { createCredential, listCredentials, setDefaultCredential } = await import("./credentials");
@@ -223,5 +227,125 @@ describe("integrations store: multi-instance + ALS routing", () => {
       () => getIntegrationRaw("github"),
     );
     expect(out?.token).toBe("ghp_default");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dynamic integrations — external drop-in provider registrations
+// ---------------------------------------------------------------------------
+
+const DROPIN_DEF = {
+  label: "My LLM",
+  category: "llm" as const,
+  description: "A drop-in LLM provider.",
+  fields: [
+    { key: "api_key", label: "API Key", placeholder: "sk-...", secret: true, required: true },
+    { key: "base_url", label: "Base URL", secret: false, required: false },
+  ],
+};
+
+describe("dynamic integrations (drop-in providers)", () => {
+  beforeEach(() => {
+    clearDynamicIntegrations();
+    // Clean up any credentials written by these tests
+    const db = getDb();
+    db.prepare("DELETE FROM credentials WHERE provider='my-llm' AND type='integration'").run();
+  });
+
+  it("isKnownIntegration does not recognise dynamic entries", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    expect(isKnownIntegration("my-llm")).toBe(false);
+  });
+
+  it("isAnyKnownIntegration recognises both static and dynamic entries", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    expect(isAnyKnownIntegration("anthropic")).toBe(true); // static
+    expect(isAnyKnownIntegration("my-llm")).toBe(true);    // dynamic
+    expect(isAnyKnownIntegration("unknown-xyz")).toBe(false);
+  });
+
+  it("clearDynamicIntegrations removes all dynamic entries", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    clearDynamicIntegrations();
+    expect(isAnyKnownIntegration("my-llm")).toBe(false);
+  });
+
+  it("listIntegrations includes dynamic entries alongside static ones", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    const all = listIntegrations();
+    const names = all.map((s) => s.name);
+    expect(names).toContain("anthropic"); // static
+    expect(names).toContain("my-llm");    // dynamic
+  });
+
+  it("getIntegrationStatus returns unconfigured status for a registered dynamic entry", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    const status = getIntegrationStatus("my-llm");
+    expect(status).not.toBeNull();
+    expect(status!.configured).toBe(false);
+    expect(status!.values).toEqual({});
+  });
+
+  it("getIntegrationStatus returns null for an unregistered name", () => {
+    expect(getIntegrationStatus("never-registered")).toBeNull();
+  });
+
+  it("saveIntegration persists credentials for a dynamic entry", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    const result = saveIntegration("my-llm", { api_key: "sk-test" });
+    expect("error" in result).toBe(false);
+    expect(getIntegrationRaw("my-llm")?.api_key).toBe("sk-test");
+  });
+
+  it("saveIntegration masks the secret field in the returned status", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    const result = saveIntegration("my-llm", { api_key: "sk-test" });
+    expect("error" in result).toBe(false);
+    expect((result as { values: Record<string, string> }).values.api_key).toBe(SECRET_MASK);
+  });
+
+  it("saveIntegration returns an error for unknown (unregistered) provider", () => {
+    const r = saveIntegration("never-registered", { api_key: "sk-test" });
+    expect("error" in r).toBe(true);
+  });
+
+  it("deleteIntegration removes credentials for a dynamic entry", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    saveIntegration("my-llm", { api_key: "sk-delete-me" });
+    expect(deleteIntegration("my-llm")).toBe(true);
+    expect(getIntegrationRaw("my-llm")).toBeNull();
+  });
+
+  it("deleteIntegration returns false for an unregistered name", () => {
+    expect(deleteIntegration("never-registered")).toBe(false);
+  });
+
+  it("SECRET_MASK on re-save preserves the existing secret for dynamic entries", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    saveIntegration("my-llm", { api_key: "sk-original" });
+    saveIntegration("my-llm", { api_key: SECRET_MASK });
+    expect(getIntegrationRaw("my-llm")?.api_key).toBe("sk-original");
+  });
+
+  it("non-secret fields are returned unmasked", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    saveIntegration("my-llm", { api_key: "sk-test", base_url: "https://my-llm.internal" });
+    const status = getIntegrationStatus("my-llm")!;
+    expect(status.values.base_url).toBe("https://my-llm.internal");
+    expect(status.values.api_key).toBe(SECRET_MASK);
+  });
+
+  it("listIntegrations shows configured=true for a dynamic entry with saved credentials", () => {
+    registerDynamicIntegration("my-llm", DROPIN_DEF);
+    saveIntegration("my-llm", { api_key: "sk-test" });
+    const entry = listIntegrations().find((s) => s.name === "my-llm");
+    expect(entry?.configured).toBe(true);
+  });
+
+  it("dynamic registration is per-name — multiple providers are independent", () => {
+    registerDynamicIntegration("provider-a", { ...DROPIN_DEF, label: "A" });
+    registerDynamicIntegration("provider-b", { ...DROPIN_DEF, label: "B" });
+    expect(isAnyKnownIntegration("provider-a")).toBe(true);
+    expect(isAnyKnownIntegration("provider-b")).toBe(true);
   });
 });

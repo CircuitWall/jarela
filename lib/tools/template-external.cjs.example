@@ -12,13 +12,21 @@
 //     category?: string,      // optional UI grouping; one of:
 //                             //   "Memory" "Files" "Shell" "Web" "Images"
 //                             //   "Schedule" "Atlassian" "Mail" "Calendar" "Config"
-//     secrets?: Array<{       // optional per-tool secret slots (ADR-0023)
+//     secrets?: Array<{       // sensitive credentials (encrypted at rest, never returned)
 //       key: string,          //   stable id, matches /^[a-z0-9_-]+$/i
 //       label?: string,       //   human-readable label for the Extensions panel
 //       required?: boolean,   //   surfaces a warning when missing
 //       description?: string, //   helper text under the input
 //     }>,
-//     async run(args, ctx) {  // ctx = { thread_id?, getSecret(key) }
+//     config?: Array<{        // non-secret settings (stored as plain text, value returned)
+//       key: string,          //   stable id, matches /^[a-z0-9_-]+$/i
+//       type: string,         //   "string" | "number" | "boolean"
+//       label?: string,       //   human-readable label for the Extensions panel
+//       required?: boolean,   //   surfaces a warning when missing
+//       default?: string,     //   default value shown in the UI (always a string)
+//       description?: string, //   helper text under the input
+//     }>,
+//     async run(args, ctx) {  // ctx = { thread_id?, getSecret(key), getConfig(key) }
 //       return any;           // return value JSON-serialized for the agent
 //     }
 //   }
@@ -27,18 +35,27 @@
 // - No need to import langchain or zod — Jarela wraps your plain object.
 // - Throw an Error to signal failure; the agent receives the message.
 // - Keep handlers pure-Node (fetch, fs, etc.) so dependencies don't matter.
-// - Secrets are stored encrypted at rest in the Jarela DB and surfaced
-//   through `ctx.getSecret(key)`. Each tool sees only its own slots.
+// - Secrets: stored encrypted at rest; use for API keys, passwords, tokens.
+//   Accessed via ctx.getSecret(key) — value is never returned to the UI.
+// - Config: stored as plain text; use for base URLs, timeouts, feature flags.
+//   Accessed via ctx.getConfig(key) — value is visible in the Extensions panel.
 
 module.exports = {
   name: "echo",
   description:
     "Echo a message back to the agent. Useful as a smoke test that external tools are wired up.",
   category: "Config",
-  // Uncomment to declare secret slots editable from the Extensions panel:
+  // Uncomment to declare secret slots (API keys, passwords — encrypted at rest):
   // secrets: [
   //   { key: "api_key", label: "Service API key", required: true,
   //     description: "Sign up at https://example.com to get one." },
+  // ],
+  // Uncomment to declare config slots (base URLs, timeouts, flags — stored as plain text):
+  // config: [
+  //   { key: "base_url", type: "string", label: "Base URL", required: true,
+  //     default: "https://api.example.com", description: "Override the API base URL." },
+  //   { key: "timeout_ms", type: "number", label: "Timeout (ms)", default: "5000" },
+  //   { key: "verify_ssl", type: "boolean", label: "Verify SSL", default: "true" },
   // ],
   schema: {
     type: "object",
@@ -62,6 +79,8 @@ module.exports = {
     // Example secret read (no-op here — the slot above is commented out):
     //   const apiKey = ctx.getSecret("api_key");
     //   if (!apiKey) throw new Error("Configure 'api_key' under Extensions → echo.");
+    // Example config read (no-op here — the slot above is commented out):
+    //   const baseUrl = ctx.getConfig("base_url") ?? "https://api.example.com";
     void ctx;
     return { echoed: uppercase ? message.toUpperCase() : message };
   },
