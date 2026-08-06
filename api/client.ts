@@ -576,12 +576,21 @@ export const api = {
 
   mcp: {
     list: () => request<McpServer[]>("/mcp-servers"),
-    create: (data: McpServerIn) =>
-      request<McpServer>("/mcp-servers", { method: "POST", body: JSON.stringify(data) }),
-    update: (name: string, data: Partial<McpServerIn>) =>
-      request<McpServer>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) }),
-    delete: (name: string) =>
-      request<{ deleted: boolean }>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "DELETE" }),
+    create: async (data: McpServerIn): Promise<McpServer> => {
+      const result = await request<McpServer>("/mcp-servers", { method: "POST", body: JSON.stringify(data) });
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+      return result;
+    },
+    update: async (name: string, data: Partial<McpServerIn>): Promise<McpServer> => {
+      const result = await request<McpServer>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(data) });
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+      return result;
+    },
+    delete: async (name: string): Promise<{ deleted: boolean }> => {
+      const result = await request<{ deleted: boolean }>(`/mcp-servers/${encodeURIComponent(name)}`, { method: "DELETE" });
+      if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
+      return result;
+    },
     registry: (params?: {
       q?: string;
       cursor?: string;

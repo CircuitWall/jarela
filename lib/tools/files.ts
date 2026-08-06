@@ -125,9 +125,29 @@ export function pathResolverFor(config?: ToolConfig): {
 // authorized_keys file) can opt back in with
 // JARELA_ALLOW_SENSITIVE_FILES=1.
 function isInside(abs: string, parent: string): boolean {
-  const tryRealpath = (p: string): string => { try { return realpathSync(p); } catch { return p; } };
-  const a = tryRealpath(path.resolve(abs));
-  const p = tryRealpath(path.resolve(parent));
+  // Walk up to the nearest existing ancestor before calling realpathSync so
+  // that intermediate symlinks are followed even when the leaf doesn't exist
+  // yet (new-file write case). A simple try/catch fallback to path.resolve
+  // would miss e.g. /safe/evil_link/newfile where evil_link→/etc: realpathSync
+  // throws ENOENT on the non-existent leaf, the catch returns the lexical path,
+  // and path.relative produces no ".." — isInside returns true incorrectly.
+  const resolveReal = (p: string): string => {
+    let current = p;
+    const tail: string[] = [];
+    for (;;) {
+      try {
+        const real = realpathSync(current);
+        return tail.reduceRight((acc, seg) => path.join(acc, seg), real);
+      } catch {
+        const up = path.dirname(current);
+        if (up === current) return p; // reached fs root, give up
+        tail.push(path.basename(current));
+        current = up;
+      }
+    }
+  };
+  const a = resolveReal(path.resolve(abs));
+  const p = resolveReal(path.resolve(parent));
   if (a === p) return true;
   const rel = path.relative(p, a);
   return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
