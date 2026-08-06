@@ -43,6 +43,10 @@ export function agentToResponse(a: AgentConfigRow) {
     anti_hallucination_model_config: a.anti_hallucination_model_config,
     citation_strictness: parseCitationStrictness(a.citation_strictness) ?? "off",
     tool_credentials: getAgentToolCredentials(a),
+    router_policy: (a.router_policy === "cheap" || a.router_policy === "fast" || a.router_policy === "balanced" || a.router_policy === "quality")
+      ? a.router_policy
+      : null,
+    router_enabled: a.router_enabled === 1 ? true : a.router_enabled === 0 ? false : null,
     created_at: a.created_at,
     updated_at: a.updated_at,
   };

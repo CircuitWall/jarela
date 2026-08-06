@@ -33,7 +33,7 @@ export function GET() {
       harnesses: listAllHarnesses(),
       default_harness_id: getDefaultHarnessId(),
     },
-    5,
+    5, 30,
   );
 }
 

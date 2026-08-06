@@ -8,6 +8,10 @@ import { useAgentToolHandlers } from "./useAgentToolHandlers";
 type TierOverride = { hot: number; warm: number; facts: number } | null;
 type AntiHallucMode = "" | "off" | "regex" | "model";
 type CitationStrictness = "off" | "informational" | "standard" | "strict";
+// "" = inherit global policy, other values = per-agent override
+type RouterPolicy = "" | "cheap" | "fast" | "balanced" | "quality";
+// null = inherit global mode, true/false = per-agent force on/off
+type RouterEnabled = boolean | null;
 
 export type AgentEditorForm = ReturnType<typeof useAgentEditorForm>;
 
@@ -52,6 +56,8 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [voiceName, setVoiceName] = useState<string>(agent?.voice_name ?? "Kore");
   const [voiceSttModel, setVoiceSttModel] = useState<string>(agent?.voice_stt_model ?? "gemini-2.5-flash");
   const [voiceAutoSpeak, setVoiceAutoSpeak] = useState<boolean>(agent?.voice_auto_speak ?? true);
+  const [routerPolicy, setRouterPolicy] = useState<RouterPolicy>(agent?.router_policy ?? "");
+  const [routerEnabled, setRouterEnabled] = useState<RouterEnabled>(agent?.router_enabled ?? null);
   const external = useAgentExternalData(agent?.id);
   const handlers = useAgentToolHandlers(tools, setSelectedTools);
   const fields = {
@@ -66,6 +72,7 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
     voiceEnabled, setVoiceEnabled, voiceModel, setVoiceModel,
     voiceName, setVoiceName, voiceSttModel, setVoiceSttModel,
     voiceAutoSpeak, setVoiceAutoSpeak,
+    routerPolicy, setRouterPolicy, routerEnabled, setRouterEnabled,
   };
   return { ...fields, ...external, ...handlers, buildPayload: () => buildAgentPayload(fields) };
 }
@@ -95,6 +102,7 @@ interface PayloadFields {
   adaptivePersonaEnabled: boolean; adaptiveMbti: MbtiType;
   voiceEnabled: boolean; voiceModel: string; voiceName: string;
   voiceSttModel: string; voiceAutoSpeak: boolean;
+  routerPolicy: RouterPolicy; routerEnabled: RouterEnabled;
 }
 
 function buildAgentPayload(f: PayloadFields): AgentConfigIn {
@@ -122,6 +130,8 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     // Drop overrides for tools the user has since disabled — the dead
     // entries would never be read but would clutter the persisted JSON.
     tool_credentials: pruneToolCredentials(f.toolCredentials, f.selectedTools),
+    router_policy: f.routerPolicy === "" ? null : f.routerPolicy,
+    router_enabled: f.routerEnabled,
   };
 }
 
