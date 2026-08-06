@@ -40,7 +40,7 @@ function getUserShellPath(): string {
       env: { ...process.env, HOME: homedir(), TERM: "dumb" },
     });
     if (result.error) throw result.error;
-    const out = (result.stdout as string ?? "").trim();
+    const out = (result.stdout ?? "").trim();
     // Pick the last non-empty line (login shells can print banner text first)
     const lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
     const pathLine = lines[lines.length - 1] ?? "";

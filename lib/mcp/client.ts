@@ -21,6 +21,29 @@ let cachedTools: StructuredToolInterface[] | null = null;
 let cacheKey = "";          // hash of the enabled server set; cache invalidated on change
 let pending: Promise<StructuredToolInterface[]> | null = null;
 let activeClient: { close: () => Promise<void> } | null = null;
+// Incremented by invalidateMcpTools(); captured by getMcpTools() at the start
+// of each async run so a stale in-flight promise can detect it was superseded.
+let generation = 0;
+
+export interface McpToolMeta {
+  category?: string;
+  group?: string;
+  credentials_required?: string[];
+}
+const mcpToolMeta = new Map<string, McpToolMeta>();
+
+/**
+ * Return the declared metadata for an MCP tool (category, group,
+ * credentials_required). Populated when getMcpTools() connects to servers;
+ * sourced from the tool's `metadata` object which @langchain/mcp-adapters
+ * populates from the MCP tool's `annotations` field.
+ *
+ * Returns stale (pre-invalidation) values during reconnect — intentional:
+ * stale metadata is better than empty metadata for the credentials badge.
+ */
+export function getMcpToolMeta(name: string): McpToolMeta | undefined {
+  return mcpToolMeta.get(name);
+}
 
 function specHash(rows: McpServerRow[]): string {
   // Only enabled servers matter. Order by name so the hash is stable.
@@ -45,6 +68,8 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
     return cachedTools;
   }
 
+  const myGen = generation; // capture before async work; invalidation will increment this
+
   pending = (async () => {
     // Close prior client if we're rebuilding due to a config change.
     if (activeClient) {
@@ -60,6 +85,7 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
     // servers with the same error message — confusing because the UI showed
     // e.g. google-maps tagged with the `time` server's connection error.
     const tools: StructuredToolInterface[] = [];
+    const newMeta = new Map<string, McpToolMeta>(); // built in isolation; written atomically
     const subClients: Array<{ close: () => Promise<void> }> = [];
 
     for (const row of enabled) {
@@ -96,6 +122,19 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
         } as ConstructorParameters<typeof MultiServerMCPClient>[0]);
         const serverTools = (await client.getTools()) as unknown as StructuredToolInterface[];
         tools.push(...serverTools);
+        for (const t of serverTools) {
+          const raw = (t as { metadata?: Record<string, unknown> }).metadata ?? {};
+          // @langchain/mcp-adapters may nest annotations under metadata.annotations
+          // or spread them directly into metadata — handle both shapes.
+          const ann = (raw.annotations as Record<string, unknown> | undefined) ?? raw;
+          newMeta.set(t.name, {
+            category: typeof ann.category === "string" ? ann.category : undefined,
+            group: typeof ann.group === "string" ? ann.group : undefined,
+            credentials_required: Array.isArray(ann.credentials_required)
+              ? ann.credentials_required.filter((c): c is string => typeof c === "string")
+              : undefined,
+          });
+        }
         subClients.push(client as unknown as { close: () => Promise<void> });
         setMcpServerError(row.name, null);
       } catch (err) {
@@ -104,6 +143,14 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
         setMcpServerError(row.name, msg);
       }
     }
+
+    // If invalidateMcpTools() was called while we were connecting, our results
+    // are stale — discard them and let the next caller reconnect fresh.
+    if (generation !== myGen) return cachedTools ?? [];
+
+    // Atomically replace metadata so callers never see a partial update.
+    mcpToolMeta.clear();
+    for (const [k, v] of newMeta) mcpToolMeta.set(k, v);
 
     activeClient = {
       close: async () => {
@@ -127,6 +174,12 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
 export function invalidateMcpTools(): void {
   cachedTools = null;
   cacheKey = "";
+  pending = null;   // clear dedup guard so the next caller starts a fresh connect
+  generation++;     // signal any in-flight promise to discard its writes
+  // mcpToolMeta intentionally NOT cleared: stale metadata (category, group,
+  // credentials_required) is better than empty during the reconnect window —
+  // the credentials badge stays visible instead of silently disappearing.
+  // The map is replaced atomically once the new connection completes.
   if (activeClient) {
     activeClient.close().catch(() => { /* */ });
     activeClient = null;

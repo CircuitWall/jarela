@@ -61,9 +61,13 @@ function applyBulkSelection(
   });
 }
 
-const CATEGORY_ORDER = [
+// Known categories in preferred display order. Unknown categories (from
+// drop-in external or MCP tools) are sorted alphabetically and inserted
+// between "Other" and "MCP" automatically — no code change required when
+// a new tool declares a custom category.
+const PINNED_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
-  "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Tasks", "Config", "Other", "MCP",
+  "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Tasks", "Config", "Other",
 ];
 
 function buildGroupedTools(tools: ToolInfo[]) {
@@ -76,9 +80,18 @@ function buildGroupedTools(tools: ToolInfo[]) {
     byCat.set(cat, arr);
     if (!catGroup.has(cat)) catGroup.set(cat, t.group ?? null);
   }
+
+  // Build a dynamic sort index: pinned first, unknown alphabetically, MCP last.
+  const pinnedSet = new Set(PINNED_CATEGORIES);
+  const dynamicCats = [...byCat.keys()]
+    .filter((c) => !pinnedSet.has(c) && c !== "MCP")
+    .sort();
   const orderOf = (c: string) => {
-    const i = CATEGORY_ORDER.indexOf(c);
-    return i === -1 ? 999 : i;
+    const pi = PINNED_CATEGORIES.indexOf(c);
+    if (pi !== -1) return pi;
+    if (c === "MCP") return PINNED_CATEGORIES.length + dynamicCats.length;
+    const di = dynamicCats.indexOf(c);
+    return PINNED_CATEGORIES.length + di;
   };
   const buckets = new Map<string | null, Array<[string, ToolInfo[]]>>();
   const groupOrder = new Map<string | null, number>();

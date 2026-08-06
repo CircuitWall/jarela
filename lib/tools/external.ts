@@ -26,6 +26,12 @@ export interface ExternalToolDef {
   description: string;
   schema: object;
   category?: ToolCategory;
+  /**
+   * Credential keys the tool needs before it can run (e.g. `["api_key"]`).
+   * Surfaced as a key icon in the agent config panel so users know they must
+   * configure the credential before enabling the tool.
+   */
+  credentials_required?: string[];
   // Optional per-tool secret slots. Surfaced in the Tools → Packages
   // panel as editable form fields; persisted (encrypted at rest) in the
   // `tool-secrets` memory namespace. Read at run time via `ctx.getSecret`.
@@ -62,6 +68,8 @@ export interface ExternalToolsResult {
   // Declared config slots per tool name (empty array if the tool did not
   // declare any). Used by the Tools → Packages panel to render input fields.
   configs: Map<string, ToolConfigSlot[]>;
+  // Credential keys required by each tool (empty if none declared).
+  credentialsRequired: Map<string, string[]>;
   errors: ExtensionLoadError[];
 }
 
@@ -108,6 +116,10 @@ function isValid(p: unknown): p is ExternalToolDef {
     if (!Array.isArray(o.config)) return false;
     if (!o.config.every(isValidConfigSlot)) return false;
   }
+  if (o.credentials_required !== undefined) {
+    if (!Array.isArray(o.credentials_required)) return false;
+    if (!(o.credentials_required as unknown[]).every((c) => typeof c === "string")) return false;
+  }
   return true;
 }
 
@@ -130,14 +142,30 @@ function wrapExternalTool(def: ExternalToolDef): StructuredToolInterface {
   ) as unknown as StructuredToolInterface;
 }
 
+// Short-lived cache so multiple per-tool metadata accessors in a single
+// GET /api/v1/tools response share one filesystem scan instead of each
+// triggering a full readdirSync + require() sweep. 5 s covers the entire
+// request cycle while still picking up new tool files within seconds.
+let _externalCache: { result: ExternalToolsResult; ts: number } | null = null;
+const EXTERNAL_CACHE_TTL_MS = 5_000;
+
+/** @internal — reset the scan cache between tests. */
+export function _resetExternalCache(): void { _externalCache = null; }
+
 export function loadExternalTools(
   builtinNames: ReadonlySet<string>,
 ): ExternalToolsResult {
+  const now = Date.now();
+  if (_externalCache && now - _externalCache.ts < EXTERNAL_CACHE_TTL_MS) {
+    return _externalCache.result;
+  }
+
   const tools: StructuredToolInterface[] = [];
   const categories = new Map<string, ToolCategory>();
   const files = new Map<string, string>();
   const secrets = new Map<string, ToolSecretSlot[]>();
   const configs = new Map<string, ToolConfigSlot[]>();
+  const credentialsRequired = new Map<string, string[]>();
 
   const { defs, errors } = scanCjsPlugins<ExternalToolDef>({
     dir: getToolsDir(),
@@ -154,7 +182,10 @@ export function loadExternalTools(
     if (def.category) categories.set(def.name, def.category);
     secrets.set(def.name, def.secrets ?? []);
     configs.set(def.name, def.config ?? []);
+    if (def.credentials_required?.length) credentialsRequired.set(def.name, def.credentials_required);
   }
 
-  return { tools, categories, files, secrets, configs, errors };
+  const result = { tools, categories, files, secrets, configs, credentialsRequired, errors };
+  _externalCache = { result, ts: Date.now() };
+  return result;
 }

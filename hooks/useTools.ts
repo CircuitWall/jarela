@@ -9,11 +9,23 @@ export function useTools() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.tools
-      .list()
-      .then(setTools)
-      .catch((err: unknown) => setError(String(err)))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+    let seq = 0;
+    const load = () => {
+      const mySeq = ++seq;
+      api.tools
+        .list()
+        .then((t) => { if (!cancelled && mySeq === seq) { setTools(t); setLoading(false); } })
+        .catch((err: unknown) => { if (!cancelled && mySeq === seq) { setError(String(err)); setLoading(false); } });
+    };
+    load();
+    // Re-fetch when a new MCP server connects, an external tool file is added,
+    // or any other event that changes the available tool set.
+    window.addEventListener("jarela:tools-changed", load);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("jarela:tools-changed", load);
+    };
   }, []);
 
   return { tools, loading, error };
