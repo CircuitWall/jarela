@@ -62,6 +62,7 @@ async function getCopilotToken(pat: string): Promise<string> {
   if (!pat) throw new Error("GitHub Copilot: no API key configured for token exchange.");
   const cached = tokenCache.get(pat);
   if (cached && cached.expiresAt - Date.now() > 60_000) return cached.token;
+  tokenCache.delete(pat);
 
   const res = await fetch("https://api.github.com/copilot_internal/v2/token", {
     headers: {

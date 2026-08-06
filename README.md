@@ -1096,4 +1096,5 @@ schema, or introducing a second process. Template lives at
 
 Licensed under the [Apache License, Version 2.0](./LICENSE). Derivative works
 and refactors must preserve the copyright/attribution notices and mark any
+
 modified files as changed (Apache-2.0 §4(b)–(c)).
