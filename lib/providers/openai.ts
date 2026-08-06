@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { zodResponseFormat } from "openai/helpers/zod";
 import type { ContentPart } from "@/lib/tools/types";
 import { resolveProviderApiKey } from "./credentials";
 import type {
@@ -12,6 +13,10 @@ import type {
   OpenAITool,
 } from "./types";
 import { errorMessage } from "@/lib/utils/error";
+
+// Re-export so callers can pass zodResponseFormat(schema, name) as params.response_format
+// without importing from openai/helpers/zod directly.
+export { zodResponseFormat };
 
 function pickOpenAICompatOptions(params: ProviderParams): Record<string, unknown> {
   const out: Record<string, unknown> = {};

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.9] - 2026-08-06
+
+### Added
+
+- **OpenAI `zodResponseFormat` re-exported** from `lib/providers/openai.ts` so
+  agent code can pass a Zod v4 schema as `params.response_format` without
+  importing from `openai/helpers/zod` directly.
+- **`gpt-5.5` and `gpt-5.6` context-window entries** in
+  `lib/providers/known-context-windows.ts` (1,050,000 context / 128,000 max
+  output tokens each, sourced from OpenAI docs 2026-08).
+
+### Changed
+
+- **`@anthropic-ai/sdk`** bumped to `^0.115.0`, enabling new Claude models
+  (`claude-opus-4-8`, `claude-mythos-5`, `claude-fable-5`) and the middleware
+  API without any code changes to the provider adapter.
+- **Sub-package TypeScript configs** add `"ignoreDeprecations": "6.0"` to
+  silence the TS5101 `baseUrl` deprecation introduced by TypeScript 5.9.
+
 ## [1.22.6] - 2026-08-05
 
 ### Changed

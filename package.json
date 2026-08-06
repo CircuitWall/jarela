@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/jarela",
-  "version": "1.22.8",
+  "version": "1.22.9",
   "description": "Jarela — local chat interface for LangGraph agents (multi-provider, single-process, SQLite-backed).",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
@@ -117,7 +117,7 @@
     "release:docker:dry": "node scripts/release-docker.mjs --dry-run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.2",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@circuitwall/atlassian-langchain": "workspace:^",
     "@circuitwall/github-langchain": "workspace:^",
     "@circuitwall/icloud-langchain": "workspace:^",
