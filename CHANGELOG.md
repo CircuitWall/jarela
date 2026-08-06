@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.23.0] - 2026-08-06
+
+### Added
+
+- **Per-agent model router configuration** — each agent can now independently
+  override the global router behaviour: set *Routing* to "always route" (enables
+  the heuristic router even when the global `JARELA_MODEL_ROUTER_MODE` is `"off"`)
+  or "never route" (bypasses it regardless of the global setting), and set
+  *Policy* to `cheap | fast | balanced | quality` to override the global
+  `JARELA_MODEL_ROUTER_POLICY`. Both choices are stored in the `agent_configs`
+  table (`router_enabled`, `router_policy` columns) so they survive restarts and
+  are preserved across exports. The Advanced Settings panel exposes the two
+  dropdowns when no forced model is selected.
+
+- **Drop-in tool metadata** — external `.cjs` tools can now declare `category`,
+  `group`, and `credentials_required` in their module exports; MCP tools surface
+  the same fields via their tool `annotations`. These flow automatically to the
+  agent config panel: unknown categories sort alphabetically between known ones
+  and "MCP" (no code change required), and a 🔑 key-icon tooltip appears on any
+  tool that declares required credentials. The `jarela:tools-changed` event is
+  now dispatched from MCP server CRUD operations so the tool list refreshes in
+  the agent editor without a page reload.
+
+### Changed
+
+- **HTTP cache** — list endpoints (`/agents`, `/models`, `/tools`, `/tasks`,
+  `/providers`, `/harnesses`) gain `stale-while-revalidate` so back/forward
+  navigation is instant while the browser refreshes data in the background.
+  The `/extensions` endpoint switches from `max-age=300` to `no-store` —
+  credential state must never be served stale after a save.
+
+- **Client-side tool list cache** — `api.tools.list()` now uses a 30 s
+  client-side cache (same pattern as agents/models). All tool-list mutations
+  (`mcp.create/update/delete`, `builtinTools.setEnabled`, `packages.reload`,
+  `extensions.setDropinEnabled`) route through a single `invalidateToolListCache()`
+  helper that busts the cache and dispatches `jarela:tools-changed`.
+
+### Fixed
+
+- **8 security/correctness bugs** fixed: `JSON.parse` crash on malformed SSE
+  events, `AbortController` leak on component unmount, `SHELL` injection in
+  subprocess PATH probe (now uses `spawnSync` with args array), symlink workspace
+  escape via `realpathSync` fallback, `TextDecoder` trailing-byte loss in
+  streaming and fetch tools, SQLite `list()` WHERE/args bind-count mismatch, and
+  unbounded `tokenCache` growth in the GitHub Copilot provider.
+
 ## [1.22.9] - 2026-08-06
 
 ### Added
