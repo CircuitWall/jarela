@@ -24,11 +24,12 @@ import {
   registeredCategory,
   registeredCapability,
   registeredGroup,
+  groupForCategory,
   type Capability,
   type ToolCategory,
   type ToolGroup,
 } from "./registry";
-import { getMcpTools } from "@/lib/mcp/client";
+import { getMcpTools, getMcpToolMeta } from "@/lib/mcp/client";
 import {
   loadExternalTools,
   getToolsDir,
@@ -111,13 +112,36 @@ export function getToolCategory(name: string): ToolCategory {
   if (builtin) return builtin;
   const ext = loadExternal().categories.get(name);
   if (ext) return ext;
+  // MCP tools can declare a category in their tool annotations; fall back to
+  // "MCP" only when none is declared so they land in the generic MCP bucket.
+  const mcpCat = getMcpToolMeta(name)?.category;
+  if (mcpCat) return mcpCat as ToolCategory;
   return getToolSource(name) === "mcp" ? "MCP" : "Config";
 }
 
 export function getToolGroup(name: string): ToolGroup {
   const cat = getToolCategory(name);
   if (cat === "MCP") return null;
-  return registeredGroup(name) ?? null;
+  // Built-ins carry their group from the registry.
+  const builtinGroup = registeredGroup(name);
+  if (builtinGroup !== undefined) return builtinGroup;
+  // MCP tools can declare an explicit group; if not, infer from the category
+  // (so an MCP tool claiming category "GitHub" inherits the "Work" group).
+  const mcpGroup = getMcpToolMeta(name)?.group;
+  if (mcpGroup !== undefined) return mcpGroup as ToolGroup;
+  return groupForCategory(cat);
+}
+
+/**
+ * Credential keys this tool requires. Non-empty for external (.cjs) and MCP
+ * tools that declare them; always empty for built-ins (they handle their own
+ * auth via the Settings → Credentials panel).
+ */
+export function getToolCredentialsRequired(name: string): string[] {
+  if (registeredCategory(name)) return [];
+  const ext = loadExternal().credentialsRequired.get(name);
+  if (ext?.length) return ext;
+  return getMcpToolMeta(name)?.credentials_required ?? [];
 }
 
 function applyPolicy(

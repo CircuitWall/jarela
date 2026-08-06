@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, KeyRound } from "lucide-react";
 import type { ToolInfo } from "@/api/types";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { groupByProvider, OTHER_PROVIDER_KEY } from "@/components/tools/provider-grouping";
@@ -117,6 +117,8 @@ export function ToolCategoryBlock({
 
 function ToolCheckbox({ tool, selected, onToggle }: { tool: ToolInfo; selected: string[]; onToggle: (name: string) => void }) {
   const isOn = selected.includes(tool.name);
+  const creds = tool.credentials_required;
+  const needsCreds = creds && creds.length > 0;
   return (
     <label
       className={`flex items-center gap-2 cursor-pointer rounded-lg border px-2 py-1.5 transition-colors ${
@@ -127,6 +129,14 @@ function ToolCheckbox({ tool, selected, onToggle }: { tool: ToolInfo; selected: 
       <input type="checkbox" className="rounded border-border" checked={isOn} onChange={() => onToggle(tool.name)} />
       <span className="min-w-0 flex-1 flex items-center gap-1.5">
         <span className="font-mono text-[11px] text-fg-muted truncate">{tool.name}</span>
+        {needsCreds && (
+          <span
+            className="shrink-0 text-amber-500/80"
+            title={`Requires credentials: ${creds!.join(", ")}`}
+          >
+            <KeyRound size={10} />
+          </span>
+        )}
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(tool.stats?.score ?? 1)}`}>
           {Math.round((tool.stats?.score ?? 1) * 100)}%
         </span>

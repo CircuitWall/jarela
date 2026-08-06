@@ -141,6 +141,18 @@ export function registeredGroup(name: string): ToolGroup | undefined {
   return REGISTRY.get(name)?.group;
 }
 
+/**
+ * @internal — Look up the work-group for any category string. Returns null
+ * for unknown categories and for "MCP". Lets external and MCP tools that
+ * declare a known built-in category (e.g. "GitHub") inherit the correct group
+ * ("Work") without being registered as built-ins.
+ */
+export function groupForCategory(cat: string): ToolGroup {
+  if (cat === "MCP") return null;
+  if (cat in CATEGORY_GROUPS) return CATEGORY_GROUPS[cat as Exclude<ToolCategory, "MCP">];
+  return null;
+}
+
 /** @internal — test-only: clear the registry between cases. */
 export function _resetRegistry(): void {
   REGISTRY.clear();

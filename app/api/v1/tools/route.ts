@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getAllToolsAsync, getToolCategory, getToolCapability, getToolGroup, getToolSource } from "@/lib/tools";
+import { getAllToolsAsync, getToolCategory, getToolCapability, getToolGroup, getToolSource, getToolCredentialsRequired } from "@/lib/tools";
 import { cachedJson } from "@/lib/api/responses";
 import { defaultToolStats, getToolStatsMap } from "@/lib/stores/tool-stats";
 
@@ -27,6 +27,7 @@ export async function GET() {
         category: getToolCategory(t.name),
         capability: getToolCapability(t.name),
         group: getToolGroup(t.name),
+        credentials_required: getToolCredentialsRequired(t.name),
         stats: stats.get(t.name) ?? defaultToolStats(),
       })).sort((a, b) => {
         const scoreDiff = (b.stats?.score ?? 0) - (a.stats?.score ?? 0);

@@ -454,8 +454,8 @@ export interface AccessWhitelistEntry {
 export interface ToolInfo {
   name: string;
   description: string;
-  /** "builtin" = shipped with Jarela; "mcp" = provided by a connected MCP server. */
-  source?: "builtin" | "mcp";
+  /** "builtin" = shipped with Jarela; "external" = loaded from JARELA_TOOLS_DIR; "mcp" = MCP server. */
+  source?: "builtin" | "external" | "mcp";
   /** UI grouping label (e.g. "Files", "Web", "MCP"). */
   category?: string;
   /**
@@ -464,6 +464,13 @@ export interface ToolInfo {
    * under a single "Work" header. `null` (or absent) means render flat.
    */
   group?: string | null;
+  /**
+   * Credential keys this tool requires before it can run. Declared by
+   * external (.cjs) tools via `credentials_required: ["my_api_key"]` and by
+   * MCP tools via the same field in their tool annotations. The agent config
+   * panel shows a key icon on the tool checkbox when this is non-empty.
+   */
+  credentials_required?: string[];
   stats?: ToolUsefulnessStats;
 }
 

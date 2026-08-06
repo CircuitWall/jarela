@@ -8,6 +8,7 @@ import {
   registeredCategory,
   registeredCapability,
   registeredGroup,
+  groupForCategory,
   unregisterTools,
   BUILTIN_CATEGORIES,
   _resetRegistry,
@@ -125,5 +126,32 @@ describe("tool registry", () => {
     // iCloud used to be its own category; its tools now live under Mail /
     // Calendar / Tasks alongside Gmail / Outlook / MS To-Do.
     expect(BUILTIN_CATEGORIES).not.toContain("iCloud");
+  });
+});
+
+describe("groupForCategory", () => {
+  it("returns Work for known Work-grouped categories", () => {
+    expect(groupForCategory("Atlassian")).toBe("Work");
+    expect(groupForCategory("GitHub")).toBe("Work");
+    expect(groupForCategory("Tasks")).toBe("Work");
+    expect(groupForCategory("Microsoft")).toBe("Work");
+    expect(groupForCategory("JiraAlign")).toBe("Work");
+  });
+
+  it("returns null for non-Work built-in categories", () => {
+    expect(groupForCategory("Files")).toBeNull();
+    expect(groupForCategory("Web")).toBeNull();
+    expect(groupForCategory("Memory")).toBeNull();
+    expect(groupForCategory("Config")).toBeNull();
+  });
+
+  it("returns null for MCP", () => {
+    expect(groupForCategory("MCP")).toBeNull();
+  });
+
+  it("returns null for unknown custom categories without throwing", () => {
+    expect(groupForCategory("Notion")).toBeNull();
+    expect(groupForCategory("")).toBeNull();
+    expect(groupForCategory("some-made-up-category")).toBeNull();
   });
 });
