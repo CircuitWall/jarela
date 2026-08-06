@@ -1206,6 +1206,16 @@ export interface ExtensionInfo {
   file: string | null;
 }
 
+// External drop-in provider (a .cjs file in PROVIDERS_DIR). When the module
+// declares `credentials`, the provider gains a first-class entry in the
+// Credentials panel and the model-editor credential picker just like native
+// providers (Anthropic, OpenAI, etc.).
+export interface ExternalProviderInfo extends ExtensionInfo {
+  label: string;
+  description: string;
+  credentials: IntegrationField[];
+}
+
 // A secret slot declared by an external tool (ADR-0023). `is_set` indicates
 // whether a value is currently persisted in the encrypted store; the actual
 // secret never leaves the server.
@@ -1217,10 +1227,24 @@ export interface ToolSecretSlotInfo {
   is_set: boolean;
 }
 
+// A non-secret configuration slot declared by an external tool. The current
+// value is returned directly (not masked) since config is not sensitive.
+export interface ToolConfigSlotInfo {
+  key: string;
+  label?: string;
+  type: "string" | "number" | "boolean";
+  required?: boolean;
+  default?: string;
+  description?: string;
+  value: string | null;
+}
+
 export interface ExternalToolInfo extends ExtensionInfo {
   description: string;
   category: string | null;
+  enabled: boolean;
   secrets: ToolSecretSlotInfo[];
+  config: ToolConfigSlotInfo[];
 }
 
 export interface ExtensionLoadError {
@@ -1246,7 +1270,7 @@ export interface SystemRestartResponse {
 
 export interface ExtensionsListResponse {
   directories: { providers: string; tools: string };
-  providers: ExtensionInfo[];
+  providers: ExternalProviderInfo[];
   tools: ExternalToolInfo[];
   errors: ExtensionLoadError[];
 }

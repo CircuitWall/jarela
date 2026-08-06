@@ -38,6 +38,7 @@ import { loadLangChainPackages } from "./langchain-packages";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
+import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
@@ -147,8 +148,12 @@ function applyCategoryToggles(tools: StructuredToolInterface[]): StructuredToolI
 // Synchronous: built-in + external tools (no MCP). Used by GET /api/v1/tools
 // and any code path that can't await.
 export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
+  const ext = loadExternal();
   return applyPolicy(
-    [...applyCategoryToggles(allBuiltins()), ...loadExternal().tools],
+    [
+      ...applyCategoryToggles(allBuiltins()),
+      ...ext.tools.filter((t) => !isDropinDisabled(t.name)),
+    ],
     policy,
   );
 }
@@ -173,7 +178,11 @@ export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredT
     console.error("[tools] MCP load failed, continuing with built-ins only:", err);
   }
   return applyPolicy(
-    [...applyCategoryToggles(allBuiltins()), ...loadExternal().tools, ...mcpTools],
+    [
+      ...applyCategoryToggles(allBuiltins()),
+      ...loadExternal().tools.filter((t) => !isDropinDisabled(t.name)),
+      ...mcpTools,
+    ],
     policy,
   );
 }
@@ -205,7 +214,13 @@ export async function executeTool(
     }
   }
   if (!t) {
-    t = loadExternal().tools.find((x) => x.name === name);
+    const extTool = loadExternal().tools.find((x) => x.name === name);
+    if (extTool) {
+      if (isDropinDisabled(name)) {
+        throw new Error(`Tool "${name}" is disabled`);
+      }
+      t = extTool;
+    }
   }
   if (!t) throw new Error(`Unknown tool: ${name}`);
 

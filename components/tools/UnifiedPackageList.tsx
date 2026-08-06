@@ -9,6 +9,7 @@ import {
   ChevronRight,
   KeyRound,
   Package,
+  Settings,
   Trash2,
 } from "lucide-react";
 import { api } from "@/api/client";
@@ -23,6 +24,7 @@ import type {
   ExtensionsListResponse,
   ExternalToolInfo,
   LangChainPackageManifestRecord,
+  ToolConfigSlotInfo,
 } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -51,6 +53,7 @@ interface UnifiedRow {
   file?: string;
   external?: ExternalToolInfo;
   hasSecretIssues?: boolean;
+  hasConfigIssues?: boolean;
 }
 
 const SOURCE_LABELS: Record<Kind, string> = {
@@ -148,6 +151,9 @@ function buildRows(
   if (ext) {
     for (const t of ext.tools) {
       const requiredMissing = t.secrets.some((s) => s.required && !s.is_set);
+      const configMissing = t.config.some(
+        (s) => s.required && s.value === null && !s.default,
+      );
       rows.push({
         kind: "dropin",
         id: `dropin:${t.name}`,
@@ -157,8 +163,10 @@ function buildRows(
         toolCount: 1,
         category: t.category ?? undefined,
         file: t.file ?? undefined,
+        enabled: t.enabled,
         external: t,
         hasSecretIssues: requiredMissing,
+        hasConfigIssues: configMissing,
       });
     }
   }
@@ -275,6 +283,32 @@ export function UnifiedPackageList() {
     }
   }
 
+  async function toggleDropin(row: UnifiedRow) {
+    const name = row.id.slice("dropin:".length);
+    setBusy((b) => ({ ...b, [row.id]: true }));
+    try {
+      await api.extensions.setDropinEnabled(name, !row.enabled);
+      setExt((prev) =>
+        prev
+          ? {
+              ...prev,
+              tools: prev.tools.map((t) =>
+                t.name === name ? { ...t, enabled: !row.enabled } : t,
+              ),
+            }
+          : prev,
+      );
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't toggle tool",
+        error: e,
+        context: { panel: "packages", action: "toggle-dropin", name, target_enabled: !row.enabled },
+      });
+    } finally {
+      setBusy((b) => ({ ...b, [row.id]: false }));
+    }
+  }
+
   async function removeManifest(row: UnifiedRow) {
     const name = row.id.slice("npm:".length);
     if (typeof window !== "undefined") {
@@ -373,6 +407,7 @@ export function UnifiedPackageList() {
                 if (row.kind === "builtin") return toggleBuiltin(row);
                 if (row.kind === "default") return toggleDefault(row);
                 if (row.kind === "npm") return toggleNpm(row);
+                if (row.kind === "dropin") return toggleDropin(row);
               }}
               onRemove={row.kind === "npm" ? () => removeManifest(row) : undefined}
               onConfigureCredentials={
@@ -490,6 +525,11 @@ function PackageListRow({
                 missing secrets
               </span>
             )}
+            {row.hasConfigIssues && (
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-900">
+                missing config
+              </span>
+            )}
           </div>
           {row.description && (
             <p className="text-xs text-fg-muted mt-0.5 break-words">{row.description}</p>
@@ -601,33 +641,45 @@ function DropInSecretsEditor({
   tool: ExternalToolInfo;
   onSaved: () => void | Promise<void>;
 }) {
-  const [values, setValues] = useState<Record<string, string>>(() =>
+  const [secretValues, setSecretValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(tool.secrets.map((s) => [s.key, s.is_set ? SECRET_MASK : ""])),
   );
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [savingSecrets, setSavingSecrets] = useState(false);
+  const [secretErr, setSecretErr] = useState<string | null>(null);
+
+  const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(tool.config.map((s) => [s.key, s.value ?? s.default ?? ""])),
+  );
+  const [savingConfig, setSavingConfig] = useState(false);
+  const [configErr, setConfigErr] = useState<string | null>(null);
 
   useEffect(() => {
-    setValues(
+    setSecretValues(
       Object.fromEntries(tool.secrets.map((s) => [s.key, s.is_set ? SECRET_MASK : ""])),
     );
   }, [tool.name, tool.secrets]);
 
-  if (tool.secrets.length === 0) {
+  useEffect(() => {
+    setConfigValues(
+      Object.fromEntries(tool.config.map((s) => [s.key, s.value ?? s.default ?? ""])),
+    );
+  }, [tool.name, tool.config]);
+
+  if (tool.secrets.length === 0 && tool.config.length === 0) {
     return (
       <p className="mt-2 ml-6 text-[11px] text-fg-faint">
-        This drop-in tool declares no secret slots.
+        This drop-in tool declares no credentials or configuration.
       </p>
     );
   }
 
-  async function save() {
-    setSaving(true);
-    setErr(null);
+  async function saveSecrets() {
+    setSavingSecrets(true);
+    setSecretErr(null);
     try {
       const payload: Record<string, string> = {};
       for (const s of tool.secrets) {
-        const v = values[s.key];
+        const v = secretValues[s.key];
         if (v === undefined) continue;
         if (v === SECRET_MASK) continue;
         payload[s.key] = v;
@@ -635,60 +687,168 @@ function DropInSecretsEditor({
       await api.extensions.saveToolSecrets(tool.name, payload);
       await onSaved();
     } catch (e) {
-      setErr(errorMessage(e));
+      setSecretErr(errorMessage(e));
     } finally {
-      setSaving(false);
+      setSavingSecrets(false);
+    }
+  }
+
+  async function saveConfig() {
+    setSavingConfig(true);
+    setConfigErr(null);
+    try {
+      const payload: Record<string, string> = {};
+      for (const s of tool.config) {
+        const v = configValues[s.key];
+        if (v !== undefined) payload[s.key] = v;
+      }
+      await api.extensions.saveToolConfig(tool.name, payload);
+      await onSaved();
+    } catch (e) {
+      setConfigErr(errorMessage(e));
+    } finally {
+      setSavingConfig(false);
     }
   }
 
   return (
-    <div className="mt-2 ml-6 border-l border-border/60 pl-3 space-y-2">
-      <div className="flex items-center gap-1 text-[11px] text-fg-faint">
-        <KeyRound size={11} /> Per-tool secrets
-      </div>
-      {tool.secrets.map((s) => (
-        <label key={s.key} className="block">
-          <span className="text-xs text-fg-subtle">
-            {s.label ?? s.key}
-            {s.required && (
-              <span className="text-rose-600 dark:text-rose-400 ml-0.5">*</span>
-            )}
-          </span>
-          {s.description && (
-            <span className="block text-[11px] text-fg-faint">{s.description}</span>
+    <div className="mt-2 ml-6 border-l border-border/60 pl-3 space-y-4">
+      {tool.secrets.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1 text-[11px] text-fg-faint">
+            <KeyRound size={11} /> Credentials
+          </div>
+          {tool.secrets.map((s) => (
+            <label key={s.key} className="block">
+              <span className="text-xs text-fg-subtle">
+                {s.label ?? s.key}
+                {s.required && (
+                  <span className="text-rose-600 dark:text-rose-400 ml-0.5">*</span>
+                )}
+              </span>
+              {s.description && (
+                <span className="block text-[11px] text-fg-faint">{s.description}</span>
+              )}
+              <input
+                type="password"
+                autoComplete="off"
+                value={secretValues[s.key] ?? ""}
+                onChange={(e) =>
+                  setSecretValues((v) => ({ ...v, [s.key]: e.target.value }))
+                }
+                onFocus={(e) => {
+                  if (e.currentTarget.value === SECRET_MASK) e.currentTarget.select();
+                }}
+                placeholder={s.is_set ? "" : "not configured"}
+                className="mt-0.5 w-full px-2 py-1 text-sm bg-surface border border-border rounded font-mono"
+              />
+            </label>
+          ))}
+          {secretErr && (
+            <p className="text-xs text-rose-700 dark:text-rose-400 flex items-center gap-1">
+              <AlertCircle size={12} /> {secretErr}
+            </p>
           )}
-          <input
-            type="password"
-            autoComplete="off"
-            value={values[s.key] ?? ""}
-            onChange={(e) =>
-              setValues((v) => ({ ...v, [s.key]: e.target.value }))
-            }
-            onFocus={(e) => {
-              if (e.currentTarget.value === SECRET_MASK) e.currentTarget.select();
-            }}
-            placeholder={s.is_set ? "" : "not configured"}
-            className="mt-0.5 w-full px-2 py-1 text-sm bg-surface border border-border rounded font-mono"
-          />
-        </label>
-      ))}
-      {err && (
-        <p className="text-xs text-rose-700 dark:text-rose-400 flex items-center gap-1">
-          <AlertCircle size={12} /> {err}
-        </p>
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => void saveSecrets()}
+              disabled={savingSecrets}
+              className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {savingSecrets ? "Saving…" : "Save credentials"}
+            </button>
+            <span className="text-[11px] text-fg-faint">
+              Leave a field empty to clear it. Stored encrypted at rest.
+            </span>
+          </div>
+        </div>
       )}
-      <div className="flex items-center gap-2 pt-1">
-        <button
-          onClick={() => void save()}
-          disabled={saving}
-          className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save secrets"}
-        </button>
-        <span className="text-[11px] text-fg-faint">
-          Leave a field empty to clear it. Stored encrypted at rest.
-        </span>
-      </div>
+
+      {tool.config.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1 text-[11px] text-fg-faint">
+            <Settings size={11} /> Configuration
+          </div>
+          {tool.config.map((s) => (
+            <ConfigSlotField
+              key={s.key}
+              slot={s}
+              value={configValues[s.key] ?? ""}
+              onChange={(v) => setConfigValues((prev) => ({ ...prev, [s.key]: v }))}
+            />
+          ))}
+          {configErr && (
+            <p className="text-xs text-rose-700 dark:text-rose-400 flex items-center gap-1">
+              <AlertCircle size={12} /> {configErr}
+            </p>
+          )}
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={() => void saveConfig()}
+              disabled={savingConfig}
+              className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            >
+              {savingConfig ? "Saving…" : "Save configuration"}
+            </button>
+            <span className="text-[11px] text-fg-faint">
+              Leave a field empty to reset to default.
+            </span>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ConfigSlotField({
+  slot,
+  value,
+  onChange,
+}: {
+  slot: ToolConfigSlotInfo;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const label = (
+    <span className="text-xs text-fg-subtle">
+      {slot.label ?? slot.key}
+      {slot.required && (
+        <span className="text-rose-600 dark:text-rose-400 ml-0.5">*</span>
+      )}
+    </span>
+  );
+  const hint = slot.description && (
+    <span className="block text-[11px] text-fg-faint">{slot.description}</span>
+  );
+
+  if (slot.type === "boolean") {
+    return (
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={value === "true"}
+          onChange={(e) => onChange(e.target.checked ? "true" : "false")}
+          className="rounded"
+        />
+        <span>
+          {label}
+          {hint}
+        </span>
+      </label>
+    );
+  }
+
+  return (
+    <label className="block">
+      {label}
+      {hint}
+      <input
+        type={slot.type === "number" ? "number" : "text"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={slot.default ?? "not configured"}
+        className="mt-0.5 w-full px-2 py-1 text-sm bg-surface border border-border rounded font-mono"
+      />
+    </label>
   );
 }

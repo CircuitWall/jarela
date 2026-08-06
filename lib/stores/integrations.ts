@@ -197,6 +197,52 @@ export function isKnownIntegration(name: string): name is IntegrationName {
   return Object.prototype.hasOwnProperty.call(INTEGRATIONS, name);
 }
 
+// ---------------------------------------------------------------------------
+// Dynamic integrations — external drop-in providers that declare credentials.
+// Populated by lib/providers/provider-integrations.ts on each request to the
+// integrations endpoint. Missing row = not registered yet (treated same as
+// "not configured" by the UI).
+// ---------------------------------------------------------------------------
+
+export interface DynamicIntegrationDef {
+  label: string;
+  category: IntegrationCategory;
+  description: string;
+  fields: ReadonlyArray<{ key: string; label: string; placeholder?: string; secret: boolean; required: boolean }>;
+}
+
+const DYNAMIC_INTEGRATIONS = new Map<string, DynamicIntegrationDef>();
+
+export function registerDynamicIntegration(name: string, def: DynamicIntegrationDef): void {
+  DYNAMIC_INTEGRATIONS.set(name, def);
+}
+
+export function clearDynamicIntegrations(): void {
+  DYNAMIC_INTEGRATIONS.clear();
+}
+
+// True for both static INTEGRATIONS entries AND dynamically-registered
+// external provider integrations. Use instead of isKnownIntegration when
+// handling requests that may reference either kind.
+export function isAnyKnownIntegration(name: string): boolean {
+  return isKnownIntegration(name) || DYNAMIC_INTEGRATIONS.has(name);
+}
+
+// Returns a snapshot of all dynamic integration entries as an array of
+// [name, def] pairs. Used by the integrations list route to include
+// drop-in provider definitions alongside static INTEGRATIONS entries.
+export function DYNAMIC_INTEGRATIONS_SNAPSHOT(): Array<[string, DynamicIntegrationDef]> {
+  return [...DYNAMIC_INTEGRATIONS.entries()];
+}
+
+function getAnyIntegrationDef(name: string): DynamicIntegrationDef | undefined {
+  if (isKnownIntegration(name)) {
+    const s = INTEGRATIONS[name];
+    return { label: s.label, category: s.category, description: s.description, fields: s.fields };
+  }
+  return DYNAMIC_INTEGRATIONS.get(name);
+}
+
 export interface IntegrationStatus {
   name: string;
   configured: boolean;
@@ -222,7 +268,8 @@ export function listIntegrations(): IntegrationStatus[] {
     if (!c) continue;
     if (!byProvider.has(c.provider)) byProvider.set(c.provider, c);
   }
-  return Object.keys(INTEGRATIONS).map((name) => {
+  const allNames = [...Object.keys(INTEGRATIONS), ...DYNAMIC_INTEGRATIONS.keys()];
+  return allNames.map((name) => {
     const cred = byProvider.get(name);
     const meta = getIntegrationMeta(name);
     if (!cred) {
@@ -238,7 +285,7 @@ export function listIntegrations(): IntegrationStatus[] {
     return {
       name,
       configured: true,
-      values: maskSecrets(name as IntegrationName, paramsToStrings(getCredentialParams(cred))),
+      values: maskSecrets(name, paramsToStrings(getCredentialParams(cred))),
       updated_at: cred.updated_at,
       source: meta.source,
       rc_synced_at: meta.rc_synced_at,
@@ -247,7 +294,7 @@ export function listIntegrations(): IntegrationStatus[] {
 }
 
 export function getIntegrationStatus(name: string): IntegrationStatus | null {
-  if (!isKnownIntegration(name)) return null;
+  if (!isAnyKnownIntegration(name)) return null;
   const cred = firstCredentialFor(name);
   const meta = getIntegrationMeta(name);
   if (!cred) {
@@ -298,7 +345,7 @@ export function getIntegrationRawById(credentialId: string): Record<string, stri
 }
 
 function resolveIntegrationCredential(name: string) {
-  if (!isKnownIntegration(name)) return null;
+  if (!isAnyKnownIntegration(name)) return null;
   const ctx = getCurrentToolCredentialContext();
   if (ctx) {
     const overrideId = ctx.toolCredentials[ctx.toolName];
@@ -320,8 +367,8 @@ function resolveIntegrationCredential(name: string) {
 // from the existing record (so unchanged secret fields don't get blanked
 // when the UI sends back the masked form).
 export function saveIntegration(name: string, incoming: Record<string, string>): IntegrationStatus | { error: string } {
-  if (!isKnownIntegration(name)) return { error: `unknown integration "${name}"` };
-  const def = INTEGRATIONS[name];
+  if (!isAnyKnownIntegration(name)) return { error: `unknown integration "${name}"` };
+  const def = getAnyIntegrationDef(name)!;
   const existingCred = firstCredentialFor(name);
   const existing = existingCred ? paramsToStrings(getCredentialParams(existingCred)) : {};
   const merged: Record<string, string> = {};
@@ -366,7 +413,7 @@ export function saveIntegration(name: string, incoming: Record<string, string>):
 }
 
 export function deleteIntegration(name: string): boolean {
-  if (!isKnownIntegration(name)) return false;
+  if (!isAnyKnownIntegration(name)) return false;
   // Delete every credential for this provider (covers multi-instance
   // future-state — the user clicking "Disconnect" on the integrations
   // panel still expects all of them gone).
@@ -389,8 +436,9 @@ function firstCredentialFor(name: string) {
 }
 
 function deriveAuthMethod(name: string): "api_key" | "oauth" {
-  if (!isKnownIntegration(name)) return "api_key";
-  const keys = new Set(INTEGRATIONS[name].fields.map((f) => f.key));
+  const def = getAnyIntegrationDef(name);
+  if (!def) return "api_key";
+  const keys = new Set(def.fields.map((f) => f.key));
   return keys.has("client_id") && keys.has("client_secret") ? "oauth" : "api_key";
 }
 
@@ -402,9 +450,11 @@ function paramsToStrings(params: Record<string, unknown>): Record<string, string
   return out;
 }
 
-function maskSecrets(name: IntegrationName, values: Record<string, string>): Record<string, string> {
+function maskSecrets(name: string, values: Record<string, string>): Record<string, string> {
+  const def = getAnyIntegrationDef(name);
+  if (!def) return {};
   const out: Record<string, string> = {};
-  for (const f of INTEGRATIONS[name].fields) {
+  for (const f of def.fields) {
     const v = values[f.key];
     if (v === undefined) continue;
     out[f.key] = f.secret ? SECRET_MASK : v;
