@@ -26,11 +26,26 @@ export function createdResponse<T>(data: T): NextResponse {
 // mounts, navigation back/forward) but mutates rarely. The TTL is short
 // enough that explicit mutations — which patch the client-side ApiClient
 // cache in place — stay observably consistent without an extra roundtrip.
-export function cachedJson<T>(data: T, maxAgeSeconds: number): NextResponse {
+//
+// swrSeconds (optional): stale-while-revalidate window. When set, the browser
+// serves the cached response immediately and refreshes in the background,
+// making navigation feel instant. Use for data that can tolerate brief
+// staleness (tool list, agent configs, model list). Omit for real-time data
+// (dashboard metrics, credential state).
+export function cachedJson<T>(data: T, maxAgeSeconds: number, swrSeconds?: number): NextResponse {
+  const swr = swrSeconds ? `, stale-while-revalidate=${swrSeconds}` : "";
   return NextResponse.json(data, {
     headers: {
-      "Cache-Control": `private, max-age=${maxAgeSeconds}`,
+      "Cache-Control": `private, max-age=${maxAgeSeconds}${swr}`,
     },
+  });
+}
+
+// Use for endpoints whose response contains live state that must never be
+// served from cache — credentials, connection status, live config values.
+export function noStoreJson<T>(data: T): NextResponse {
+  return NextResponse.json(data, {
+    headers: { "Cache-Control": "no-store" },
   });
 }
 

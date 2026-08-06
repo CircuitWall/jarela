@@ -1426,4 +1426,16 @@ function spillLegacyImageAttachments(db: DatabaseSync): void {
       `[migrate-image-refs] done: ${migrated} migrated, ${skipped} skipped in ${secs}s`,
     );
   }
+
+  // Per-agent model router configuration.
+  // router_policy: one of cheap|fast|balanced|quality; NULL = inherit JARELA_MODEL_ROUTER_POLICY.
+  // router_enabled: 1 = always use router for this agent (even when global mode is "off");
+  //                 0 = never use router; NULL = inherit JARELA_MODEL_ROUTER_MODE.
+  const routerCols = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+  if (!routerCols.some((c) => c.name === "router_policy")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN router_policy TEXT");
+  }
+  if (!routerCols.some((c) => c.name === "router_enabled")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN router_enabled INTEGER");
+  }
 }

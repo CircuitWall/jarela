@@ -66,6 +66,11 @@ export interface AgentConfigRow {
   // resolves via the integration's default credential, preserving the
   // legacy single-instance behaviour).
   tool_credentials: string | null;
+  // Per-agent model router settings (added via ALTER TABLE migration).
+  // router_policy: "cheap" | "fast" | "balanced" | "quality" | null (inherit global)
+  // router_enabled: 1 = always route, 0 = never route, NULL = inherit global mode
+  router_policy: string | null;
+  router_enabled: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -169,6 +174,12 @@ export interface UpsertAgentInput {
   // = keep existing. An empty object clears every override; missing keys
   // fall back to the integration's default credential at call time.
   tool_credentials?: Record<string, string>;
+  // Per-agent router policy. null = clear override (use global env var).
+  // undefined = keep existing.
+  router_policy?: "cheap" | "fast" | "balanced" | "quality" | null;
+  // Per-agent router enable. null = clear override (inherit global mode).
+  // undefined = keep existing.
+  router_enabled?: boolean | null;
 }
 
 /**
@@ -286,6 +297,19 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       ? (parseCitationStrictness(existing?.citation_strictness) ?? "off")
       : (parseCitationStrictness(input.citation_strictness) ?? "off");
   const toolCredentials = serialiseToolCredentials(input.tool_credentials, existing?.tool_credentials ?? null);
+  const VALID_ROUTER_POLICIES = new Set(["cheap", "fast", "balanced", "quality"]);
+  const routerPolicy =
+    input.router_policy === undefined
+      ? (existing?.router_policy ?? null)
+      : input.router_policy !== null && VALID_ROUTER_POLICIES.has(input.router_policy)
+        ? input.router_policy
+        : null;
+  const routerEnabled =
+    input.router_enabled === undefined
+      ? (existing?.router_enabled ?? null)
+      : input.router_enabled === null
+        ? null
+        : (input.router_enabled ? 1 : 0);
   db.prepare(
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
@@ -294,9 +318,9 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
-         tool_credentials,
+         tool_credentials, router_policy, router_enabled,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -340,6 +364,8 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       antiHallucModel,
       citationStrictness,
       toolCredentials,
+      routerPolicy,
+      routerEnabled,
       created_at,
       t,
     );

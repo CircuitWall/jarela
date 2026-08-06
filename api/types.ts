@@ -83,6 +83,18 @@ export interface AgentConfig {
    * back to the integration's default credential.
    */
   tool_credentials: Record<string, string>;
+  /**
+   * Per-agent model router policy override. When set, this agent uses the
+   * specified policy instead of the global JARELA_MODEL_ROUTER_POLICY env var.
+   * Ignored when `model_config_name` is set (forced model bypasses the router).
+   */
+  router_policy?: "cheap" | "fast" | "balanced" | "quality" | null;
+  /**
+   * Per-agent router enable override. true = always route (even when global
+   * mode is "off"); false = never route (even when global mode is "heuristic");
+   * null = inherit the global JARELA_MODEL_ROUTER_MODE setting.
+   */
+  router_enabled?: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -126,6 +138,10 @@ export interface AgentConfigIn {
   // Per-tool credential overrides. `undefined` = keep existing. An empty
   // object clears every override.
   tool_credentials?: Record<string, string>;
+  // null = clear override (inherit global); undefined = keep existing.
+  router_policy?: "cheap" | "fast" | "balanced" | "quality" | null;
+  // null = clear override (inherit global); undefined = keep existing.
+  router_enabled?: boolean | null;
 }
 
 export interface ThreadSummary {
