@@ -9,7 +9,7 @@
 //   3. this static fallback (this file)
 //   4. `DEFAULT_CONTEXT_WINDOW_TOKENS` in lib/agents/context-budget.ts
 //
-// Verified from each vendor's public docs as of 2026-06. Bump when vendors
+// Verified from each vendor's public docs as of 2026-08. Bump when vendors
 // publish new families.
 
 export interface KnownModelLimits {
@@ -41,6 +41,8 @@ const GEMINI: Record<string, KnownModelLimits> = {
 };
 
 const OPENAI: Record<string, KnownModelLimits> = {
+  "gpt-5.6": { context_length: 1_050_000, max_output_tokens: 128_000 },
+  "gpt-5.5": { context_length: 1_050_000, max_output_tokens: 128_000 },
   "gpt-5-mini": { context_length: 400_000, max_output_tokens: 128_000 },
   "gpt-5": { context_length: 400_000, max_output_tokens: 128_000 },
   "gpt-4.1-mini": { context_length: 1_047_576, max_output_tokens: 32_768 },
