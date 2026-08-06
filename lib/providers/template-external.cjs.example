@@ -8,6 +8,23 @@
 //
 //   module.exports = {
 //     name: string,                     // provider id (e.g. "myco-llm")
+//     label?: string,                   // human-readable name in the UI
+//     description?: string,             // shown in the Credentials panel
+//
+//     // Credential fields surfaced in Settings → Credentials and the
+//     // model-editor credential picker. Declare these and the provider
+//     // behaves exactly like a native provider (Anthropic, OpenAI, etc.):
+//     //   - A form appears in Settings → Credentials for users to fill in.
+//     //   - A credential dropdown appears when creating a model config.
+//     //   - At inference time params.api_key / params.base_url / etc. are
+//     //     automatically populated from the linked credential row.
+//     credentials?: Array<{
+//       key: string,         // e.g. "api_key" or "base_url"
+//       label: string,       // shown in the form
+//       placeholder?: string,
+//       secret: boolean,     // true → stored encrypted, masked in UI
+//       required: boolean,
+//     }>,
 //
 //     // Streaming text completion. Required.
 //     async chat(model_id, messages, params) {
@@ -54,8 +71,22 @@
 
 module.exports = {
   name: "example-echo",
+  label: "Example Echo",
+  description: "Echoes user messages back as a fake stream. Useful as a smoke test.",
+
+  // Uncomment to add a credential form in Settings → Credentials and a
+  // credential picker in the model editor:
+  // credentials: [
+  //   { key: "api_key", label: "API Key", placeholder: "sk-...", secret: true, required: true },
+  //   { key: "base_url", label: "Base URL", placeholder: "https://api.example.com/v1", secret: false, required: false },
+  // ],
 
   async chat(model_id, messages, params) {
+    // When credentials are declared and linked via a model config, Jarela
+    // merges them into `params` automatically:
+    //   const apiKey = params.api_key;   // from the linked credential
+    //   const baseUrl = params.base_url ?? "https://api.example.com/v1";
+
     // Echo the last user message back, one word per chunk, as a fake stream.
     void model_id;
     void params;

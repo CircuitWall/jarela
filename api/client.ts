@@ -40,6 +40,7 @@ import type {
   ToolInfo,
   ToolPolicy,
   ToolSecretSlotInfo,
+  ToolConfigSlotInfo,
   TaskAssignment,
   ThreadDetail,
   ThreadSummary,
@@ -352,6 +353,20 @@ export const api = {
       request<{ name: string; secrets: ToolSecretSlotInfo[] }>(
         `/extensions/tools/${encodeURIComponent(name)}/secrets`,
         { method: "PUT", body: JSON.stringify({ values }) },
+      ),
+    getToolConfig: (name: string) =>
+      request<{ name: string; config: ToolConfigSlotInfo[] }>(
+        `/extensions/tools/${encodeURIComponent(name)}/config`,
+      ),
+    saveToolConfig: (name: string, values: Record<string, string>) =>
+      request<{ name: string; config: ToolConfigSlotInfo[] }>(
+        `/extensions/tools/${encodeURIComponent(name)}/config`,
+        { method: "PUT", body: JSON.stringify({ values }) },
+      ),
+    setDropinEnabled: (name: string, enabled: boolean) =>
+      request<{ name: string; enabled: boolean }>(
+        `/extensions/tools/${encodeURIComponent(name)}`,
+        { method: "PATCH", body: JSON.stringify({ enabled }) },
       ),
   },
 

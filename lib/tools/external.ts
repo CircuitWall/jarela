@@ -3,11 +3,14 @@ import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { getConfig } from "@/lib/env/config";
 import { getToolSecret, type ToolSecretSlot } from "@/lib/stores/tool-secrets";
+import { getToolConfig, type ToolConfigSlot } from "@/lib/stores/tool-config";
 import {
   scanCjsPlugins,
   type PluginLoadError,
 } from "@/lib/utils/cjs-plugin-loader";
 import type { ToolCategory } from "./registry";
+
+export type { ToolConfigSlot };
 
 /**
  * Absolute path to the external tools directory. Resolved lazily from
@@ -28,14 +31,20 @@ export interface ExternalToolDef {
   // `tool-secrets` memory namespace. Read at run time via `ctx.getSecret`.
   // See ADR-0023.
   secrets?: ToolSecretSlot[];
+  // Optional non-secret configuration slots. Surfaced as plain text/number/
+  // boolean fields in the Tools → Packages panel; stored unencrypted in the
+  // `tool-config` memory namespace. Read at run time via `ctx.getConfig`.
+  config?: ToolConfigSlot[];
   run: (
     args: Record<string, unknown>,
     ctx: {
       thread_id?: string;
       // Returns the persisted secret for this tool's slot, or `null` if
-      // it has not been configured. Always scoped to the current tool —
-      // a tool cannot read another tool's secrets via this helper.
+      // it has not been configured. Always scoped to the current tool.
       getSecret: (key: string) => string | null;
+      // Returns the persisted config value for this tool's slot, or `null`
+      // if it has not been configured. Always scoped to the current tool.
+      getConfig: (key: string) => string | null;
     },
   ) => unknown | Promise<unknown>;
 }
@@ -50,6 +59,9 @@ export interface ExternalToolsResult {
   // Declared secret slots per tool name (empty array if the tool did not
   // declare any). Used by the Tools → Packages panel to render input fields.
   secrets: Map<string, ToolSecretSlot[]>;
+  // Declared config slots per tool name (empty array if the tool did not
+  // declare any). Used by the Tools → Packages panel to render input fields.
+  configs: Map<string, ToolConfigSlot[]>;
   errors: ExtensionLoadError[];
 }
 
@@ -59,6 +71,20 @@ function isValidSlot(v: unknown): v is ToolSecretSlot {
   if (typeof o.key !== "string" || !/^[a-z0-9_-]+$/i.test(o.key)) return false;
   if (o.label !== undefined && typeof o.label !== "string") return false;
   if (o.required !== undefined && typeof o.required !== "boolean") return false;
+  if (o.description !== undefined && typeof o.description !== "string") return false;
+  return true;
+}
+
+const CONFIG_TYPES = new Set(["string", "number", "boolean"]);
+
+function isValidConfigSlot(v: unknown): v is ToolConfigSlot {
+  if (!v || typeof v !== "object") return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.key !== "string" || !/^[a-z0-9_-]+$/i.test(o.key)) return false;
+  if (!CONFIG_TYPES.has(o.type as string)) return false;
+  if (o.label !== undefined && typeof o.label !== "string") return false;
+  if (o.required !== undefined && typeof o.required !== "boolean") return false;
+  if (o.default !== undefined && typeof o.default !== "string") return false;
   if (o.description !== undefined && typeof o.description !== "string") return false;
   return true;
 }
@@ -78,6 +104,10 @@ function isValid(p: unknown): p is ExternalToolDef {
     if (!Array.isArray(o.secrets)) return false;
     if (!o.secrets.every(isValidSlot)) return false;
   }
+  if (o.config !== undefined) {
+    if (!Array.isArray(o.config)) return false;
+    if (!o.config.every(isValidConfigSlot)) return false;
+  }
   return true;
 }
 
@@ -87,6 +117,7 @@ function wrapExternalTool(def: ExternalToolDef): StructuredToolInterface {
       const ctx = {
         thread_id: config?.configurable?.thread_id as string | undefined,
         getSecret: (key: string) => getToolSecret(def.name, key),
+        getConfig: (key: string) => getToolConfig(def.name, key),
       };
       const result = await def.run(args as Record<string, unknown>, ctx);
       return typeof result === "string" ? result : JSON.stringify(result);
@@ -106,6 +137,7 @@ export function loadExternalTools(
   const categories = new Map<string, ToolCategory>();
   const files = new Map<string, string>();
   const secrets = new Map<string, ToolSecretSlot[]>();
+  const configs = new Map<string, ToolConfigSlot[]>();
 
   const { defs, errors } = scanCjsPlugins<ExternalToolDef>({
     dir: getToolsDir(),
@@ -121,7 +153,8 @@ export function loadExternalTools(
     files.set(def.name, file);
     if (def.category) categories.set(def.name, def.category);
     secrets.set(def.name, def.secrets ?? []);
+    configs.set(def.name, def.config ?? []);
   }
 
-  return { tools, categories, files, secrets, errors };
+  return { tools, categories, files, secrets, configs, errors };
 }

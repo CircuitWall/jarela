@@ -7,10 +7,10 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getManifest, listManifests } from "@/lib/integrations/registry";
 import { registerLangChainPackage } from "./langchain-package";
-import { getIntegrationStatus, isKnownIntegration } from "@/lib/stores/integrations";
+import { getIntegrationStatus, isAnyKnownIntegration } from "@/lib/stores/integrations";
 
 function manifestStatus(id: string): "configured" | "not_configured" | "no_credentials_schema" {
-  if (!isKnownIntegration(id)) return "no_credentials_schema";
+  if (!isAnyKnownIntegration(id)) return "no_credentials_schema";
   return getIntegrationStatus(id)?.configured ? "configured" : "not_configured";
 }
 
