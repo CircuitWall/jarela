@@ -77,6 +77,8 @@ export function runMigrations(db: DatabaseSync): void {
       adaptive_expressiveness   INTEGER NOT NULL DEFAULT 50,
       adaptive_verbosity        INTEGER NOT NULL DEFAULT 50,
       adaptive_mbti            TEXT NOT NULL DEFAULT 'INTJ',
+      router_policy     TEXT,
+      router_enabled    INTEGER,
       created_at        TEXT NOT NULL,
       updated_at        TEXT NOT NULL
     );
