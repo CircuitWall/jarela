@@ -98,7 +98,7 @@ describe("resolveSubprocessEnv", () => {
       error: new Error("spawn failed"),
       pid: 0,
       output: [null, null, ""],
-    } as ReturnType<typeof spawnSync>);
+    } as unknown as ReturnType<typeof spawnSync>);
     vi.resetModules();
 
     const { resolveSubprocessEnv } = await import("./subprocess-env");
