@@ -59,26 +59,26 @@ export interface PricingTables {
 
 const EXPECTED_PROVIDERS = ["openai", "anthropic", "google", "deepseek", "cohere", "github-copilot", "moonshot", "qwen"];
 
-let cached: { mtimeMs: number; tables: PricingTables } | null = null;
+let cached: { path: string; mtimeMs: number; tables: PricingTables } | null = null;
 
 function snapshotPath(): string {
   return join(process.cwd(), "docs", "journal", "pricing-snapshot.json");
 }
 
-function readSnapshotSync(): { snapshot: PricingSnapshot | null; mtimeMs: number } {
+function readSnapshotSync(): { path: string; snapshot: PricingSnapshot | null; mtimeMs: number } {
   try {
     const p = snapshotPath();
     const stat = statSync(p);
     const raw = readFileSync(p, "utf8");
-    return { snapshot: JSON.parse(raw) as PricingSnapshot, mtimeMs: stat.mtimeMs };
+    return { path: p, snapshot: JSON.parse(raw) as PricingSnapshot, mtimeMs: stat.mtimeMs };
   } catch {
-    return { snapshot: null, mtimeMs: 0 };
+    return { path: snapshotPath(), snapshot: null, mtimeMs: 0 };
   }
 }
 
 export function getPricingTables(): PricingTables {
-  const { snapshot, mtimeMs } = readSnapshotSync();
-  if (cached && cached.mtimeMs === mtimeMs) return cached.tables;
+  const { path, snapshot, mtimeMs } = readSnapshotSync();
+  if (cached && cached.path === path && cached.mtimeMs === mtimeMs) return cached.tables;
 
   const byProvider = new Map<string, ProviderRates>();
   const byProviderModel = new Map<string, ProviderRates>();
@@ -158,7 +158,7 @@ export function getPricingTables(): PricingTables {
     byModel,
     generatedAt: snapshot?.generated_at ?? null,
   };
-  cached = { mtimeMs, tables };
+  cached = { path, mtimeMs, tables };
   return tables;
 }
 

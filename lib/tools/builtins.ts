@@ -14,6 +14,7 @@ import "./files-search";
 import "./workspace";
 import "./search";
 import "./fetch";
+import "./shopping";
 import "./location";
 import "./generate_image";
 import "./generate_voice";
