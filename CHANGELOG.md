@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   drag-preview stats badge now matches the committed separator by rendering
   inline on the line.
 
+- **Agent save 500 on older local databases.** Saving an agent could crash with
+  `table agent_configs has no column named router_policy` when the local DB had
+  skipped the late router-column migration. The migration flow now always runs
+  the router column ensure, and the agent payload mapper now preserves
+  `router_policy` / `router_enabled` on create and update.
+
 ## [1.24.0] - 2026-08-10
 
 ### Added
