@@ -5,7 +5,7 @@
 // hot context (below). Both stay inside the existing token system
 // (accent / surface-2 / fg-* / border) so they read as native chat chrome.
 
-import { useState } from "react";
+import { useState, type PointerEventHandler } from "react";
 import { Archive, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -35,7 +35,8 @@ export function WarmSummaryCard({
 }: WarmSummaryCardProps) {
   const [expanded, setExpanded] = useState(false);
   const fresh = !!summary && summaryBefore === hotSince;
-  const computing = !fresh && streaming;
+  const stale = !!summary && !fresh;
+  const computing = stale && streaming;
 
   return (
     <div
@@ -48,18 +49,18 @@ export function WarmSummaryCard({
       <div className="flex items-center gap-2 px-4 pt-3 pb-1.5">
         <Archive className="w-3.5 h-3.5 text-accent shrink-0" />
         <span className="text-xs font-semibold text-fg">
-          Summary of {olderCount} earlier message{olderCount === 1 ? "" : "s"}
+          Earlier messages summary ({olderCount})
         </span>
         <span className="text-[10px] uppercase tracking-wider px-1.5 py-px rounded text-accent bg-accent/10 border border-accent/20">
-          warm context
+          summary memory
         </span>
         <span className="ml-auto text-[10px] text-fg-faint">
-          {computedAt ? `Generated ${formatRelative(computedAt)}` : "Not yet computed"}
+          {computedAt ? `Updated ${formatRelative(computedAt)}` : "Not yet generated"}
         </span>
       </div>
 
       <div className="px-4 pb-3">
-        {fresh ? (
+        {!!summary ? (
           <div
             className={[
               "prose prose-sm dark:prose-invert max-w-none text-fg-muted",
@@ -76,8 +77,19 @@ export function WarmSummaryCard({
             )}
             <span>
               {computing
-                ? "Re-summarising older context for this turn…"
+                ? "Refreshing earlier summary for this turn..."
                 : "Summary will appear after your next reply."}
+            </span>
+          </div>
+        )}
+
+        {stale && (
+          <div className="mt-2 inline-flex items-center gap-2 text-[11px] text-fg-faint">
+            {computing ? <StatusDot tone="accent" size="sm" pulse /> : <StatusDot tone="neutral" size="sm" />}
+            <span>
+              {computing
+                ? "Updating summary for your new focus..."
+                : "This summary is from an older focus. It updates after your next reply."}
             </span>
           </div>
         )}
@@ -105,12 +117,24 @@ interface ContextBoundaryDividerProps {
   sourceMessages?: number | null;
   sourceChars?: number | null;
   summaryChars?: number | null;
+  draggable?: boolean;
+  disabled?: boolean;
+  onPointerDown?: PointerEventHandler<HTMLButtonElement>;
+  onPointerMove?: PointerEventHandler<HTMLButtonElement>;
+  onPointerUp?: PointerEventHandler<HTMLButtonElement>;
+  onPointerCancel?: PointerEventHandler<HTMLButtonElement>;
 }
 
 export function ContextBoundaryDivider({
   sourceMessages,
   sourceChars,
   summaryChars,
+  draggable = false,
+  disabled = false,
+  onPointerDown,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
 }: ContextBoundaryDividerProps = {}) {
   const hasStats =
     typeof sourceMessages === "number" && sourceMessages > 0 &&
@@ -118,40 +142,53 @@ export function ContextBoundaryDivider({
   const ratio = hasStats && typeof summaryChars === "number" && summaryChars > 0 && sourceChars! > 0
     ? Math.max(0, Math.round((1 - summaryChars / sourceChars!) * 100))
     : null;
+
+  const tooltip = hasStats
+    ? `Compacted ${sourceMessages} message${sourceMessages === 1 ? "" : "s"} (${sourceChars!.toLocaleString()} chars) into ${typeof summaryChars === "number" ? `${summaryChars.toLocaleString()} chars` : "memory"}`
+    : undefined;
+
+  if (draggable) {
+    return (
+      <div className="relative my-3 select-none" aria-label="conversation focus boundary">
+        <button
+          type="button"
+          className={[
+            "group relative block h-7 w-full touch-none",
+            disabled ? "cursor-not-allowed opacity-60" : "cursor-grab active:cursor-grabbing",
+          ].join(" ")}
+          title={tooltip}
+          aria-label="Drag to move conversation focus"
+          disabled={disabled}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+        >
+          <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-accent/40 group-hover:border-accent/70" aria-hidden />
+          <span className="absolute left-1/2 top-1/2 h-3 w-5 -translate-x-1/2 -translate-y-1/2 border-x border-accent/60 opacity-90" aria-hidden />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative my-3 select-none" aria-label="context boundary">
+    <div className="relative my-3 select-none" aria-label="conversation focus boundary">
       <div className="absolute inset-0 flex items-center" aria-hidden>
         <div className="w-full border-t border-dashed border-accent/40" />
       </div>
-      <div className="relative flex justify-center">
-        <div
-          className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-medium uppercase tracking-wider bg-surface border border-accent/40 text-accent shadow-sm"
-          title={
-            hasStats
-              ? `Compacted ${sourceMessages} message${sourceMessages === 1 ? "" : "s"} (${sourceChars!.toLocaleString()} chars) into ${typeof summaryChars === "number" ? `${summaryChars.toLocaleString()} chars` : "memory"}`
-              : undefined
-          }
-        >
-          <span>Context boundary</span>
-          {hasStats && (
-            <>
-              <span className="opacity-40" aria-hidden>·</span>
-              <span className="normal-case tracking-normal font-normal text-fg-muted">
-                {sourceMessages} msg{sourceMessages === 1 ? "" : "s"} ·{" "}
-                {formatBytes(sourceChars!)}
-                {typeof summaryChars === "number" && summaryChars > 0 && (
-                  <>
-                    {" → "}
-                    {formatBytes(summaryChars)}
-                    {ratio !== null && ratio > 0 && (
-                      <span className="ml-1 text-[9px] text-accent/80">(−{ratio}%)</span>
-                    )}
-                  </>
-                )}
-              </span>
-            </>
-          )}
-        </div>
+      <div className="relative flex justify-end pr-1">
+        {hasStats && (
+          <span className="text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded" title={tooltip}>
+            {sourceMessages} msg · {formatBytes(sourceChars!)}
+            {typeof summaryChars === "number" && summaryChars > 0 && (
+              <>
+                {" → "}
+                {formatBytes(summaryChars)}
+                {ratio !== null && ratio > 0 && ` (−${ratio}%)`}
+              </>
+            )}
+          </span>
+        )}
       </div>
     </div>
   );

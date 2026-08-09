@@ -104,19 +104,12 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   }, [threadId, attach]);
 
   // ADR-0042. Move the user's boundary line. Optimistic update so the chat
-  // chrome reacts instantly; PATCH then confirms server-side. Boundary
-  // moves invalidate the cached summary — clear it locally too so the UI
-  // shows a placeholder until the next run refreshes it.
+  // chrome reacts instantly; PATCH then confirms server-side. Keep the
+  // previous summary visible while the new one recomputes so users retain
+  // continuity instead of seeing an empty placeholder.
   const setContextPin = useCallback(async (next: string | null) => {
     if (!threadId) return;
     setHotSince(next);
-    if (warmSummaryBefore !== next) {
-      setWarmSummary(null);
-      setWarmSummaryBefore(null);
-      setWarmSummaryComputedAt(null);
-      setWarmSummarySourceMessages(null);
-      setWarmSummarySourceChars(null);
-    }
     try {
       const updated = await api.threads.setContextPin(threadId, next);
       setHotSince(updated.hot_since);
@@ -128,7 +121,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     } catch (err) {
       console.error("setContextPin failed", err);
     }
-  }, [threadId, warmSummaryBefore]);
+  }, [threadId]);
 
   const loadOlder = useCallback(async () => {
     if (!threadId || loadingMore || !hasMore || messages.length === 0) return;

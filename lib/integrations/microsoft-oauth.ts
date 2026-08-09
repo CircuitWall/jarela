@@ -285,7 +285,7 @@ export async function graphFetch(
     }
 
     if ((res.status === 429 || res.status === 503) && attempt < 3) {
-      const waitMs = parseRetryAfter(res.headers.get("Retry-After")) || backoffFor(attempt);
+      const waitMs = parseRetryAfter(res.headers.get("Retry-After")) ?? backoffFor(attempt);
       attempt += 1;
       await new Promise((r) => setTimeout(r, waitMs));
       continue;
