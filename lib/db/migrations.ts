@@ -105,7 +105,7 @@ export function runMigrations(db: DatabaseSync): void {
     -- tool with fixed args on an interval; when the tool's output changes
     -- (content hash != last_fingerprint) the agent is fired with
     -- {previous, current} as context. Until then the watcher consumes no
-    -- LLM tokens Ã¢â‚¬â€ only the polled tool runs. Plugs into the trigger
+    -- LLM tokens ├â┬ó├óÔÇÜ┬¼├óÔé¼┬Ø only the polled tool runs. Plugs into the trigger
     -- abstraction (ADR-0025) as a sibling handler to scheduled_task.
     CREATE TABLE IF NOT EXISTS watchers (
       id                TEXT PRIMARY KEY,
