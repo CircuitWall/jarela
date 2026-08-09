@@ -5,7 +5,7 @@
 // hot context (below). Both stay inside the existing token system
 // (accent / surface-2 / fg-* / border) so they read as native chat chrome.
 
-import { useState, type PointerEventHandler } from "react";
+import { useState, type MouseEventHandler, type PointerEventHandler } from "react";
 import { Archive, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -123,7 +123,10 @@ interface ContextBoundaryDividerProps {
   onPointerMove?: PointerEventHandler<HTMLButtonElement>;
   onPointerUp?: PointerEventHandler<HTMLButtonElement>;
   onPointerCancel?: PointerEventHandler<HTMLButtonElement>;
+  onClick?: MouseEventHandler<HTMLButtonElement>;
   ariaLabel?: string;
+  hidden?: boolean;
+  lineStats?: string | null;
 }
 
 export function ContextBoundaryDivider({
@@ -136,7 +139,10 @@ export function ContextBoundaryDivider({
   onPointerMove,
   onPointerUp,
   onPointerCancel,
+  onClick,
   ariaLabel = "Drag to move conversation focus",
+  hidden = false,
+  lineStats = null,
 }: ContextBoundaryDividerProps = {}) {
   const hasStats =
     typeof sourceMessages === "number" && sourceMessages > 0 &&
@@ -151,7 +157,13 @@ export function ContextBoundaryDivider({
 
   if (draggable) {
     return (
-      <div className="relative my-3 select-none" aria-label="conversation focus boundary">
+      <div
+        className={[
+          "relative my-3 select-none transition-opacity",
+          hidden ? "opacity-0" : "opacity-100",
+        ].join(" ")}
+        aria-label="conversation focus boundary"
+      >
         <button
           type="button"
           className={[
@@ -165,9 +177,21 @@ export function ContextBoundaryDivider({
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
+          onClick={onClick}
         >
           <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-accent/40 group-hover:border-accent/70" aria-hidden />
-          <span className="absolute left-1/2 top-1/2 h-3 w-5 -translate-x-1/2 -translate-y-1/2 border-x border-accent/60 opacity-90" aria-hidden />
+          <span
+            className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-gradient-to-r from-transparent via-accent/90 to-transparent opacity-95 shadow-[0_0_8px_rgba(59,130,246,0.55)] group-hover:opacity-100"
+            aria-hidden
+          />
+          {lineStats && (
+            <span
+              className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded border border-border/60"
+              aria-hidden
+            >
+              {lineStats}
+            </span>
+          )}
         </button>
       </div>
     );
@@ -175,18 +199,33 @@ export function ContextBoundaryDivider({
 
   return (
     <div className="relative my-3 select-none" aria-label="conversation focus boundary">
+      {onClick && (
+        <button
+          type="button"
+          className="absolute inset-x-0 top-1/2 h-7 -translate-y-1/2"
+          aria-label={ariaLabel}
+          onClick={onClick}
+        />
+      )}
       <div className="absolute inset-0 flex items-center" aria-hidden>
-        <div className="w-full border-t border-dashed border-accent/40" />
+        <div className="relative w-full">
+          <div className="w-full border-t border-dashed border-accent/40" />
+          <div className="absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2 bg-gradient-to-r from-transparent via-accent/85 to-transparent opacity-95 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+        </div>
       </div>
       <div className="relative flex justify-end pr-1">
-        {hasStats && (
+        {(lineStats || hasStats) && (
           <span className="text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded" title={tooltip}>
-            {sourceMessages} msg · {formatBytes(sourceChars!)}
-            {typeof summaryChars === "number" && summaryChars > 0 && (
+            {lineStats ?? (
               <>
-                {" → "}
-                {formatBytes(summaryChars)}
-                {ratio !== null && ratio > 0 && ` (−${ratio}%)`}
+                {sourceMessages} msg · {formatBytes(sourceChars!)}
+                {typeof summaryChars === "number" && summaryChars > 0 && (
+                  <>
+                    {" → "}
+                    {formatBytes(summaryChars)}
+                    {ratio !== null && ratio > 0 && ` (−${ratio}%)`}
+                  </>
+                )}
               </>
             )}
           </span>

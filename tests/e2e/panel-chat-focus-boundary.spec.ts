@@ -46,6 +46,7 @@ test("drag boundary confirms before changing the conversation focus", async ({ p
 
   const targetY = (box?.y ?? 0) + ((box?.height ?? 0) / 2);
   await handle.dispatchEvent("pointerdown", { pointerId: 1, clientY: targetY });
+  await handle.dispatchEvent("pointermove", { pointerId: 1, clientY: targetY - 10 });
   await handle.dispatchEvent("pointerup", { pointerId: 1, clientY: targetY });
 
   const dialog = page.getByRole("dialog");
@@ -92,3 +93,4 @@ test("dragging to bottom edge still opens confirmation", async ({ page, browserN
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Move conversation focus here?")).toBeVisible();
 });
+
