@@ -58,18 +58,22 @@ interface Props {
 }
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
-  const rootRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const dragFrameRef = useRef<number | null>(null);
+  const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollVelocityRef = useRef(0);
+  const autoScrollPointerYRef = useRef<number | null>(null);
   const dragYRef = useRef<number | null>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
   const [isDraggingFocus, setIsDraggingFocus] = useState(false);
   const [previewHotSince, setPreviewHotSince] = useState<string | null>(null);
-  const [dragLineTop, setDragLineTop] = useState<number | null>(null);
+  const [dragGuideTop, setDragGuideTop] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingHotSince, setPendingHotSince] = useState<string | null>(null);
+  const [topControlsOpen, setTopControlsOpen] = useState(false);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -96,21 +100,20 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
   function pickHotSinceFromPointerY(clientY: number): string | null {
     const root = scrollRef.current;
-    if (!root) return hotSince ?? null;
+    if (!root || visibleMessages.length === 0) return hotSince ?? null;
     const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
     if (candidates.length === 0) return hotSince ?? null;
-    let best: HTMLElement | null = null;
-    let bestDist = Number.POSITIVE_INFINITY;
-    for (const el of candidates) {
-      const rect = el.getBoundingClientRect();
-      const mid = rect.top + rect.height / 2;
-      const dist = Math.abs(clientY - mid);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = el;
-      }
+
+    // Use on-screen message positions (midpoints between consecutive rows)
+    // so small drags move the boundary locally instead of jumping by a large
+    // ratio across the entire loaded transcript.
+    for (let i = 0; i < candidates.length - 1; i++) {
+      const currentTop = candidates[i].getBoundingClientRect().top;
+      const nextTop = candidates[i + 1].getBoundingClientRect().top;
+      const midpoint = currentTop + (nextTop - currentTop) / 2;
+      if (clientY < midpoint) return candidates[i].dataset.createdAt ?? null;
     }
-    return best?.dataset.createdAt ?? null;
+    return candidates[candidates.length - 1]?.dataset.createdAt ?? null;
   }
 
   function boundaryIndexFor(hot: string | null): number {
@@ -125,11 +128,71 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       cancelAnimationFrame(dragFrameRef.current);
       dragFrameRef.current = null;
     }
+    if (autoScrollFrameRef.current !== null) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+    autoScrollVelocityRef.current = 0;
+    autoScrollPointerYRef.current = null;
     dragYRef.current = null;
     dragPointerIdRef.current = null;
     setIsDraggingFocus(false);
     setPreviewHotSince(null);
-    setDragLineTop(null);
+    setDragGuideTop(null);
+  }
+
+  function stepAutoScroll() {
+    const scroller = scrollRef.current;
+    if (!scroller) {
+      autoScrollFrameRef.current = null;
+      return;
+    }
+    const velocity = autoScrollVelocityRef.current;
+    if (velocity === 0) {
+      autoScrollFrameRef.current = null;
+      return;
+    }
+
+    const prevTop = scroller.scrollTop;
+    const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const nextTop = Math.max(0, Math.min(maxTop, prevTop + velocity));
+    scroller.scrollTop = nextTop;
+
+    const pointerY = autoScrollPointerYRef.current;
+    if (pointerY !== null) {
+      const rect = scroller.getBoundingClientRect();
+      const clampedY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, pointerY));
+      scheduleDragFromPointer(clampedY);
+    }
+
+    if (Math.abs(nextTop - prevTop) < 0.1 && (nextTop === 0 || nextTop === maxTop)) {
+      autoScrollFrameRef.current = null;
+      return;
+    }
+    autoScrollFrameRef.current = requestAnimationFrame(stepAutoScroll);
+  }
+
+  function updateAutoScrollFromPointer(clientY: number) {
+    autoScrollPointerYRef.current = clientY;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const rect = scroller.getBoundingClientRect();
+    const edge = Math.min(120, Math.max(56, rect.height * 0.2));
+    let velocity = 0;
+
+    if (clientY < rect.top + edge) {
+      const t = (rect.top + edge - clientY) / edge;
+      velocity = -(2 + (t * t * 22));
+    } else if (clientY > rect.bottom - edge) {
+      const t = (clientY - (rect.bottom - edge)) / edge;
+      velocity = 2 + (t * t * 22);
+    }
+
+    autoScrollVelocityRef.current = velocity;
+    if (velocity !== 0 && autoScrollFrameRef.current === null) {
+      atBottomRef.current = false;
+      autoScrollFrameRef.current = requestAnimationFrame(stepAutoScroll);
+    }
   }
 
   function updateDragFromPointer(clientY: number) {
@@ -137,15 +200,15 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (!scroller) return;
     const rect = scroller.getBoundingClientRect();
     const clampedY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, clientY));
-    const next = pickHotSinceFromPointerY(clampedY);
-    setPreviewHotSince((prev) => (prev === next ? prev : next));
 
-    const host = rootRef.current;
+    const host = hostRef.current;
     if (host) {
       const hostRect = host.getBoundingClientRect();
-      const nextTop = clampedY - hostRect.top;
-      setDragLineTop((prev) => (prev !== null && Math.abs(prev - nextTop) < 0.5 ? prev : nextTop));
+      setDragGuideTop(clampedY - hostRect.top);
     }
+
+    const next = pickHotSinceFromPointerY(clampedY);
+    setPreviewHotSince((prev) => (prev === next ? prev : next));
   }
 
   function scheduleDragFromPointer(clientY: number) {
@@ -163,6 +226,39 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (!next || next === (hotSince ?? null)) return;
     setPendingHotSince(next);
     setConfirmOpen(true);
+  }
+
+  function handleBoundaryPointerDown(e: React.PointerEvent<HTMLButtonElement>) {
+    if (streaming || !onSetContextPin) return;
+    atBottomRef.current = false;
+    dragPointerIdRef.current = e.pointerId;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsDraggingFocus(true);
+    updateAutoScrollFromPointer(e.clientY);
+    scheduleDragFromPointer(e.clientY);
+  }
+
+  function handleBoundaryPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    if (dragPointerIdRef.current !== e.pointerId) return;
+    updateAutoScrollFromPointer(e.clientY);
+    scheduleDragFromPointer(e.clientY);
+  }
+
+  function handleBoundaryPointerUp(e: React.PointerEvent<HTMLButtonElement>) {
+    if (dragPointerIdRef.current !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    const y = dragYRef.current ?? e.clientY;
+    commitDragCandidate(pickHotSinceFromPointerY(y));
+  }
+
+  function handleBoundaryPointerCancel(e: React.PointerEvent<HTMLButtonElement>) {
+    if (dragPointerIdRef.current !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    clearDragState();
   }
 
   const currentBoundaryIndex = boundaryIndexFor(hotSince ?? null);
@@ -368,100 +464,71 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     setShowScrollButton(false);
   }
 
-  const topBandH = onSetContextPin && visibleMessages.length > 0 ? 34 : 0;
+  function scrollToBoundaryLine() {
+    const root = scrollRef.current;
+    if (!root) return;
+    const boundary = root.querySelector("[data-focus-boundary='1']") as HTMLElement | null;
+    if (!boundary) return;
+    atBottomRef.current = false;
+    boundary.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   return (
-    <div ref={rootRef} className="flex-1 flex flex-col min-h-0 relative">
-      {onSetContextPin && visibleMessages.length > 0 && (
-        <div className="shrink-0 px-4 pb-2">
-          <div className="mx-auto max-w-2xl rounded-xl border border-border/60 bg-surface/94 shadow-sm backdrop-blur overflow-hidden">
-            <div className="border-b border-border/50 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
-                <span className="font-semibold uppercase tracking-[0.16em] text-fg-faint">
-                  Filters
+    <div ref={hostRef} className="flex-1 flex flex-col min-h-0 relative">
+      {visibleMessages.length > 0 && (
+        <div className="shrink-0 px-4 pt-[calc(var(--app-safe-top)+3rem)] pb-1">
+          <div className="w-full border-b border-border/45 bg-surface/30 px-2 py-1 backdrop-blur-sm">
+            <button
+              type="button"
+              onClick={() => setTopControlsOpen((v) => !v)}
+              aria-expanded={topControlsOpen}
+              className="w-full flex items-center gap-2 py-0.5 text-[11px] text-fg-faint hover:text-fg transition-colors"
+            >
+              <CollapseChevron open={topControlsOpen} size={10} />
+              <span className="font-semibold uppercase tracking-[0.16em]">Filters & focus</span>
+              {hiddenCount > 0 && (
+                <span className="ml-auto text-[10px] text-fg-faint" aria-live="polite">
+                  {hiddenCount} hidden
                 </span>
-                <span className="text-fg-subtle">These pills hide or show message types in the chat.</span>
-              </div>
-              {availableChips.length > 0 && (
-                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-                  {availableChips.map((key) => {
-                    const on = filters[key];
-                    const Icon = on ? Eye : EyeOff;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => toggle(key)}
-                        className={[
-                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
-                          on
-                            ? "border-border/70 bg-surface-2 text-fg-muted hover:text-fg"
-                            : "border-border/35 bg-transparent text-fg-faint line-through decoration-fg-faint/60 hover:text-fg-muted",
-                        ].join(" ")}
-                        title={on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`}
-                        aria-pressed={on}
-                      >
-                        <Icon size={10} />
-                        <span>{CHIP_LABELS[key]}</span>
-                      </button>
-                    );
-                  })}
-                  {hiddenCount > 0 && (
-                    <span className="ml-auto text-[11px] text-fg-faint select-none" aria-live="polite">
-                      {hiddenCount} hidden
-                    </span>
-                  )}
-                </div>
               )}
-            </div>
+            </button>
 
-            <div className="px-3 py-1.5">
-              <div className="flex items-center gap-2 text-[11px] text-fg-faint">
-                <span>{effectiveOlderCount} above</span>
-                <button
-                  type="button"
-                  className={[
-                    "group relative block h-6 min-w-0 flex-1 touch-none",
-                    streaming ? "cursor-not-allowed opacity-60" : "cursor-grab active:cursor-grabbing",
-                  ].join(" ")}
-                  aria-label="Drag to move conversation focus"
-                  title={streaming ? "Focus cannot be moved while a reply is streaming" : "Drag the line up or down across the chat to move conversation focus"}
-                  disabled={!!streaming}
-                  onPointerDown={(e) => {
-                    if (streaming) return;
-                    dragPointerIdRef.current = e.pointerId;
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    setIsDraggingFocus(true);
-                    scheduleDragFromPointer(e.clientY);
-                  }}
-                  onPointerMove={(e) => {
-                    if (dragPointerIdRef.current !== e.pointerId) return;
-                    scheduleDragFromPointer(e.clientY);
-                  }}
-                  onPointerUp={(e) => {
-                    if (dragPointerIdRef.current !== e.pointerId) return;
-                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                    }
-                    const y = dragYRef.current ?? e.clientY;
-                    commitDragCandidate(pickHotSinceFromPointerY(y));
-                  }}
-                  onPointerCancel={(e) => {
-                    if (dragPointerIdRef.current !== e.pointerId) return;
-                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-                      e.currentTarget.releasePointerCapture(e.pointerId);
-                    }
-                    clearDragState();
-                  }}
-                >
-                  <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-accent/60 shadow-[0_0_10px_rgba(56,189,248,0.45)] group-hover:border-accent/80 group-hover:shadow-[0_0_14px_rgba(56,189,248,0.6)]" aria-hidden />
-                </button>
-                <span>{effectiveHotCount} below</span>
-                {streaming && (
-                  <span className="text-[10px] text-amber-700 dark:text-amber-300">locked</span>
+            {topControlsOpen && (
+              <div className="mt-1 flex items-center gap-1.5 flex-wrap py-1">
+                {availableChips.map((key) => {
+                  const on = filters[key];
+                  const Icon = on ? Eye : EyeOff;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggle(key)}
+                      className={[
+                        "inline-flex items-center gap-1 rounded-none border px-2 py-0.5 text-[10px] leading-4 transition-colors",
+                        on
+                          ? "border-border/70 bg-surface-2/70 text-fg-muted hover:text-fg"
+                          : "border-border/35 bg-transparent text-fg-faint line-through decoration-fg-faint/60 hover:text-fg-muted",
+                      ].join(" ")}
+                      title={on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`}
+                      aria-pressed={on}
+                    >
+                      <Icon size={10} />
+                      <span>{CHIP_LABELS[key]}</span>
+                    </button>
+                  );
+                })}
+                {onSetContextPin && (
+                  <button
+                    type="button"
+                    onClick={scrollToBoundaryLine}
+                    className="control-tap ml-auto rounded-none border border-border/60 bg-surface-2/70 px-2 py-0.5 text-[10px] leading-4 text-fg-faint transition-colors hover:border-accent/40 hover:text-fg"
+                    title="Locate the focus boundary in the message list"
+                  >
+                    Locate boundary line
+                  </button>
                 )}
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -524,7 +591,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         const olderCountLabel = olderInVisible + (hasMore ? 1 : 0);
 
         const renderBoundary = (key: string) => (
-          <div key={key}>
+          <div key={key} data-focus-boundary="1">
             {effectiveHotSince && (
               <WarmSummaryCard
                 olderCount={olderCountLabel}
@@ -539,6 +606,12 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               sourceMessages={warmSummarySourceMessages ?? null}
               sourceChars={warmSummarySourceChars ?? null}
               summaryChars={warmSummary ? warmSummary.length : null}
+              draggable={!!onSetContextPin}
+              disabled={!!streaming}
+              onPointerDown={handleBoundaryPointerDown}
+              onPointerMove={handleBoundaryPointerMove}
+              onPointerUp={handleBoundaryPointerUp}
+              onPointerCancel={handleBoundaryPointerCancel}
             />
           </div>
         );
@@ -605,8 +678,8 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
-          style={{ top: `calc(3rem + var(--app-safe-top) + ${topBandH}px + 0.75rem)` }}
-          className="absolute left-1/2 -translate-x-1/2 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-top-2 duration-200 z-20"
+          style={{ bottom: "calc(1rem + var(--app-safe-bottom))" }}
+          className="absolute right-4 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-bottom-2 duration-200 z-20"
           title="Scroll to latest message"
           aria-label="Scroll to latest message"
         >
@@ -614,9 +687,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         </button>
       )}
 
-      {isDraggingFocus && dragLineTop !== null && (
-        <div className="pointer-events-none absolute left-4 right-4 z-30" style={{ top: `${dragLineTop}px` }}>
-          <div className="mx-auto max-w-2xl border-t border-dashed border-accent shadow-[0_0_14px_rgba(56,189,248,0.7)]" />
+      {isDraggingFocus && dragGuideTop !== null && (
+        <div className="pointer-events-none absolute left-4 right-4 z-30" style={{ top: `${dragGuideTop}px` }}>
+          <div className="h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-95 shadow-[0_0_8px_rgba(59,130,246,0.55)]" />
         </div>
       )}
 
