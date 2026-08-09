@@ -378,6 +378,10 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     if (!dragMovedRef.current) {
+      suppressBoundaryClickRef.current = true;
+      requestAnimationFrame(() => {
+        suppressBoundaryClickRef.current = false;
+      });
       toggleSummaryPopoverAt(e.clientY);
       clearDragState();
       return;
@@ -864,7 +868,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           <div className="h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-95 shadow-[0_0_8px_rgba(59,130,246,0.55)]" />
           <span
             ref={dragGuideStatsRef}
-            className="absolute right-1 -top-5 text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded border border-border/60"
+            className="absolute right-1 top-1/2 -translate-y-1/2 text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded border border-border/60"
           >
             {lineStatsForHotSince(hotSince ?? null)}
           </span>
