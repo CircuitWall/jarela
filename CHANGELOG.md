@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.0] - 2026-08-10
+
+### Added
+
+- **Floating summary panel from boundary line.** The inline warm-summary card is
+  replaced with a click-to-open floating panel anchored below the context
+  boundary line. The panel includes compact live status states (`updating`,
+  `ready`, `needs refresh`, `pending`) and an animated indicator while the
+  summary is refreshing.
+
+- **Live boundary line stats while dragging.** The context boundary now shows
+  `recent · warm` counts on the separator and updates the same stats in real
+  time on the drag guide.
+
+### Changed
+
+- **Boundary visual polish and drag feedback.** The separator removes center
+  vertical handle marks, the gray history mask is anchored exactly at the
+  boundary line and persists above it, and drag interaction now distinguishes
+  click (open summary) from drag (move focus) to avoid accidental repins.
+
+### Test
+
+- Updated unit coverage for boundary interactions (confirm/cancel drag plus
+  click-to-open floating summary), and refreshed boundary drag e2e assertions.
+
 ## [1.23.0] - 2026-08-06
 
 ### Added

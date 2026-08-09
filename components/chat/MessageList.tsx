@@ -63,17 +63,26 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   const dragPointerIdRef = useRef<number | null>(null);
   const dragFrameRef = useRef<number | null>(null);
   const autoScrollFrameRef = useRef<number | null>(null);
+  const autoScrollLockRef = useRef<-1 | 0 | 1>(0);
   const autoScrollVelocityRef = useRef(0);
   const autoScrollPointerYRef = useRef<number | null>(null);
   const dragYRef = useRef<number | null>(null);
+  const dragStartYRef = useRef<number | null>(null);
+  const dragMovedRef = useRef(false);
+  const suppressBoundaryClickRef = useRef(false);
+  const dragGuideTopRef = useRef<number | null>(null);
+  const dragGuideRef = useRef<HTMLDivElement>(null);
+  const dragGuideStatsRef = useRef<HTMLSpanElement>(null);
+  const dragMaskRef = useRef<HTMLDivElement>(null);
+  const previewHotSinceRef = useRef<string | null>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
   const [isDraggingFocus, setIsDraggingFocus] = useState(false);
-  const [previewHotSince, setPreviewHotSince] = useState<string | null>(null);
-  const [dragGuideTop, setDragGuideTop] = useState<number | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingHotSince, setPendingHotSince] = useState<string | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
+  const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
+  const [summaryPopoverTop, setSummaryPopoverTop] = useState<number | null>(null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -96,7 +105,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
-  const effectiveHotSince = isDraggingFocus ? (previewHotSince ?? hotSince ?? null) : (hotSince ?? null);
+  const effectiveHotSince = hotSince ?? null;
 
   function pickHotSinceFromPointerY(clientY: number): string | null {
     const root = scrollRef.current;
@@ -123,6 +132,92 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     return visibleMessages.length;
   }
 
+  function countOlderForHotSince(hot: string | null): number {
+    const interactiveBoundary = !!onSetContextPin && visibleMessages.length > 0;
+    const i = hot ? visibleMessages.findIndex((m) => m.created_at >= hot) : -1;
+    const pinAfterAll =
+      (!!hot && visibleMessages.length > 0 && i === -1
+        && visibleMessages[visibleMessages.length - 1].created_at < hot)
+      || (!hot && interactiveBoundary);
+    if (pinAfterAll) return visibleMessages.length;
+    if (hot && i !== -1) return i;
+    return 0;
+  }
+
+  function lineStatsForHotSince(hot: string | null): string {
+    const older = countOlderForHotSince(hot);
+    const recent = Math.max(0, visibleMessages.length - older);
+    return `recent ${recent} · warm ${older}`;
+  }
+
+  function boundaryTopForHotSince(hot: string | null): number | null {
+    const root = scrollRef.current;
+    const host = hostRef.current;
+    if (!root || !host || visibleMessages.length === 0) return null;
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
+    if (candidates.length === 0) return null;
+    const hostTop = host.getBoundingClientRect().top;
+
+    if (!hot) {
+      return candidates[candidates.length - 1].getBoundingClientRect().bottom - hostTop;
+    }
+
+    const i = visibleMessages.findIndex((m) => m.created_at >= hot);
+    if (i === -1) {
+      return candidates[candidates.length - 1].getBoundingClientRect().bottom - hostTop;
+    }
+
+    const target = candidates[i];
+    if (!target) return null;
+    return target.getBoundingClientRect().top - hostTop;
+  }
+
+  function committedBoundaryLineTop(): number | null {
+    const root = scrollRef.current;
+    const host = hostRef.current;
+    if (!root || !host) return null;
+    const boundary = root.querySelector<HTMLElement>("[data-focus-boundary='1'] [aria-label='conversation focus boundary']");
+    if (!boundary) return boundaryTopForHotSince(hotSince ?? null);
+    const hostTop = host.getBoundingClientRect().top;
+    const rect = boundary.getBoundingClientRect();
+    return rect.top + (rect.height / 2) - hostTop;
+  }
+
+  function firstMessageTopForMask(): number | null {
+    const root = scrollRef.current;
+    const host = hostRef.current;
+    if (!root || !host) return null;
+    const first = root.querySelector<HTMLElement>("[data-hot-candidate='1']");
+    if (!first) return null;
+    return first.getBoundingClientRect().top - host.getBoundingClientRect().top;
+  }
+
+  function updateBoundaryMask() {
+    const mask = dragMaskRef.current;
+    if (!mask) return;
+    const topStart = firstMessageTopForMask();
+    const boundaryTop = isDraggingFocus
+      ? (dragGuideTopRef.current ?? committedBoundaryLineTop())
+      : committedBoundaryLineTop();
+    if (topStart === null || boundaryTop === null) {
+      mask.style.opacity = "0";
+      mask.style.height = "0px";
+      return;
+    }
+
+    const top = Math.min(topStart, boundaryTop);
+    const height = Math.max(0, Math.abs(boundaryTop - topStart));
+    if (height < 2) {
+      mask.style.opacity = "0";
+      mask.style.height = "0px";
+      return;
+    }
+
+    mask.style.transform = `translateY(${top}px)`;
+    mask.style.height = `${height}px`;
+    mask.style.opacity = "1";
+  }
+
   function clearDragState() {
     if (dragFrameRef.current !== null) {
       cancelAnimationFrame(dragFrameRef.current);
@@ -132,13 +227,19 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       cancelAnimationFrame(autoScrollFrameRef.current);
       autoScrollFrameRef.current = null;
     }
+    autoScrollLockRef.current = 0;
     autoScrollVelocityRef.current = 0;
     autoScrollPointerYRef.current = null;
     dragYRef.current = null;
+    dragStartYRef.current = null;
+    dragMovedRef.current = false;
     dragPointerIdRef.current = null;
+    previewHotSinceRef.current = null;
+    dragGuideTopRef.current = null;
     setIsDraggingFocus(false);
-    setPreviewHotSince(null);
-    setDragGuideTop(null);
+    if (dragGuideRef.current) dragGuideRef.current.style.opacity = "0";
+    if (dragGuideStatsRef.current) dragGuideStatsRef.current.textContent = "";
+    requestAnimationFrame(() => updateBoundaryMask());
   }
 
   function stepAutoScroll() {
@@ -177,15 +278,28 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const scroller = scrollRef.current;
     if (!scroller) return;
     const rect = scroller.getBoundingClientRect();
-    const edge = Math.min(120, Math.max(56, rect.height * 0.2));
+    const edge = Math.min(180, Math.max(72, rect.height * 0.24));
+    const release = edge + 18;
+    let lock = autoScrollLockRef.current;
+
+    if (lock === -1 && clientY > rect.top + release) lock = 0;
+    if (lock === 1 && clientY < rect.bottom - release) lock = 0;
+    if (lock === 0) {
+      if (clientY < rect.top + edge) lock = -1;
+      else if (clientY > rect.bottom - edge) lock = 1;
+    }
+
+    autoScrollLockRef.current = lock;
     let velocity = 0;
 
-    if (clientY < rect.top + edge) {
-      const t = (rect.top + edge - clientY) / edge;
-      velocity = -(2 + (t * t * 22));
-    } else if (clientY > rect.bottom - edge) {
-      const t = (clientY - (rect.bottom - edge)) / edge;
-      velocity = 2 + (t * t * 22);
+    if (lock === -1) {
+      const depth = Math.max(0, rect.top + edge - clientY);
+      const t = Math.min(1, depth / edge);
+      velocity = -(2 + (t * t * 26));
+    } else if (lock === 1) {
+      const depth = Math.max(0, clientY - (rect.bottom - edge));
+      const t = Math.min(1, depth / edge);
+      velocity = 2 + (t * t * 26);
     }
 
     autoScrollVelocityRef.current = velocity;
@@ -201,14 +315,22 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const rect = scroller.getBoundingClientRect();
     const clampedY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, clientY));
 
-    const host = hostRef.current;
-    if (host) {
-      const hostRect = host.getBoundingClientRect();
-      setDragGuideTop(clampedY - hostRect.top);
+    const hostTop = hostRef.current?.getBoundingClientRect().top;
+    if (hostTop !== undefined && dragGuideRef.current) {
+      const guideTop = clampedY - hostTop;
+      dragGuideTopRef.current = guideTop;
+      dragGuideRef.current.style.transform = `translateY(${guideTop}px)`;
+      dragGuideRef.current.style.opacity = "1";
     }
 
     const next = pickHotSinceFromPointerY(clampedY);
-    setPreviewHotSince((prev) => (prev === next ? prev : next));
+    if (previewHotSinceRef.current !== next) {
+      previewHotSinceRef.current = next;
+      if (dragGuideStatsRef.current) {
+        dragGuideStatsRef.current.textContent = lineStatsForHotSince(next);
+      }
+    }
+    updateBoundaryMask();
   }
 
   function scheduleDragFromPointer(clientY: number) {
@@ -232,6 +354,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (streaming || !onSetContextPin) return;
     atBottomRef.current = false;
     dragPointerIdRef.current = e.pointerId;
+    dragStartYRef.current = e.clientY;
+    dragMovedRef.current = false;
+    previewHotSinceRef.current = hotSince ?? null;
     e.currentTarget.setPointerCapture(e.pointerId);
     setIsDraggingFocus(true);
     updateAutoScrollFromPointer(e.clientY);
@@ -240,6 +365,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
   function handleBoundaryPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
     if (dragPointerIdRef.current !== e.pointerId) return;
+    if (dragStartYRef.current !== null && Math.abs(e.clientY - dragStartYRef.current) > 3) {
+      dragMovedRef.current = true;
+    }
     updateAutoScrollFromPointer(e.clientY);
     scheduleDragFromPointer(e.clientY);
   }
@@ -249,8 +377,18 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
+    if (!dragMovedRef.current) {
+      toggleSummaryPopoverAt(e.clientY);
+      clearDragState();
+      return;
+    }
     const y = dragYRef.current ?? e.clientY;
-    commitDragCandidate(pickHotSinceFromPointerY(y));
+    const next = previewHotSinceRef.current ?? pickHotSinceFromPointerY(y);
+    suppressBoundaryClickRef.current = true;
+    requestAnimationFrame(() => {
+      suppressBoundaryClickRef.current = false;
+    });
+    commitDragCandidate(next);
   }
 
   function handleBoundaryPointerCancel(e: React.PointerEvent<HTMLButtonElement>) {
@@ -261,10 +399,27 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     clearDragState();
   }
 
+  function toggleSummaryPopoverAt(clientY: number) {
+    const host = hostRef.current;
+    if (!host) {
+      setSummaryPopoverOpen((x) => !x);
+      return;
+    }
+    const hostRect = host.getBoundingClientRect();
+    const lineTop = committedBoundaryLineTop();
+    const fallbackTop = Math.max(20, clientY - hostRect.top + 8);
+    const top = Math.max(12, Math.min(hostRect.height - 260, (lineTop ?? fallbackTop) + 14));
+    setSummaryPopoverTop(top);
+    setSummaryPopoverOpen((x) => !x);
+  }
+
+  function handleBoundaryClick(e: React.MouseEvent<HTMLButtonElement>) {
+    e.preventDefault();
+    if (suppressBoundaryClickRef.current) return;
+    toggleSummaryPopoverAt(e.clientY);
+  }
+
   const currentBoundaryIndex = boundaryIndexFor(hotSince ?? null);
-  const effectiveBoundaryIndex = boundaryIndexFor(effectiveHotSince);
-  const effectiveHotCount = effectiveBoundaryIndex < 0 ? visibleMessages.length : visibleMessages.length - effectiveBoundaryIndex;
-  const effectiveOlderCount = Math.max(0, visibleMessages.length - effectiveHotCount);
   const pendingBoundaryIndex = boundaryIndexFor(pendingHotSince);
   const currentHotCount = currentBoundaryIndex < 0 ? null : visibleMessages.length - currentBoundaryIndex;
   const nextHotCount = pendingBoundaryIndex < 0 ? null : visibleMessages.length - pendingBoundaryIndex;
@@ -272,12 +427,21 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     currentHotCount !== null && nextHotCount !== null
       ? nextHotCount < currentHotCount
       : false;
+  const hasWarmSummary = !!warmSummary;
+  const summaryFresh = hasWarmSummary && warmSummaryBefore === (hotSince ?? null);
+  const summaryUpdating = hasWarmSummary && !summaryFresh && !!streaming;
+  const summaryStale = hasWarmSummary && !summaryFresh && !summaryUpdating;
 
   useEffect(() => {
     return () => {
       if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
+      if (autoScrollFrameRef.current !== null) cancelAnimationFrame(autoScrollFrameRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(() => updateBoundaryMask());
+  }, [isDraggingFocus, hotSince, visibleMessages]);
 
   // Self-heal stale/accidental filter states that blank an entire thread.
   // If a thread has persisted messages but every one is filtered out, users
@@ -371,6 +535,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const ro = new ResizeObserver(() => {
       if (prependAnchorRef.current) return;
       if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+      updateBoundaryMask();
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -403,6 +568,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
     atBottomRef.current = isAtBottom;
     setShowScrollButton(!isAtBottom && messages.length > 0);
+    updateBoundaryMask();
   }
 
   // Resolve `#msg-<id>` deep links: scroll the matching bubble into view and
@@ -592,22 +758,15 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
         const renderBoundary = (key: string) => (
           <div key={key} data-focus-boundary="1">
-            {effectiveHotSince && (
-              <WarmSummaryCard
-                olderCount={olderCountLabel}
-                summary={warmSummary ?? null}
-                summaryBefore={warmSummaryBefore ?? null}
-                hotSince={effectiveHotSince ?? null}
-                computedAt={warmSummaryComputedAt ?? null}
-                streaming={!!streaming}
-              />
-            )}
             <ContextBoundaryDivider
               sourceMessages={warmSummarySourceMessages ?? null}
               sourceChars={warmSummarySourceChars ?? null}
               summaryChars={warmSummary ? warmSummary.length : null}
+              lineStats={lineStatsForHotSince(effectiveHotSince)}
               draggable={!!onSetContextPin}
+              hidden={isDraggingFocus}
               disabled={!!streaming}
+              onClick={handleBoundaryClick}
               onPointerDown={handleBoundaryPointerDown}
               onPointerMove={handleBoundaryPointerMove}
               onPointerUp={handleBoundaryPointerUp}
@@ -687,9 +846,95 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         </button>
       )}
 
-      {isDraggingFocus && dragGuideTop !== null && (
-        <div className="pointer-events-none absolute left-4 right-4 z-30" style={{ top: `${dragGuideTop}px` }}>
+      <div
+        ref={dragMaskRef}
+        className="pointer-events-none absolute left-0 right-0 z-40 opacity-0 transition-opacity duration-75"
+        style={{
+          transform: "translateY(0px)",
+          height: "0px",
+          background: "linear-gradient(to top, rgba(82,82,91,0.16) 0%, rgba(82,82,91,0.1) 38%, rgba(82,82,91,0.06) 100%)",
+          borderBottom: "1px solid rgba(59,130,246,0.42)",
+          backdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
+          WebkitBackdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
+        }}
+      />
+      {isDraggingFocus && (
+        <>
+          <div ref={dragGuideRef} className="pointer-events-none absolute left-4 right-4 z-50 opacity-0" style={{ transform: "translateY(0px)" }}>
           <div className="h-[2px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-95 shadow-[0_0_8px_rgba(59,130,246,0.55)]" />
+          <span
+            ref={dragGuideStatsRef}
+            className="absolute right-1 -top-5 text-[10px] text-fg-faint bg-surface/75 px-1.5 rounded border border-border/60"
+          >
+            {lineStatsForHotSince(hotSince ?? null)}
+          </span>
+          </div>
+        </>
+      )}
+
+      {summaryPopoverOpen && (
+        <div
+          data-testid="summary-popover"
+          className="absolute left-1/2 -translate-x-1/2 z-40 w-[min(42rem,calc(100%-2rem))]"
+          style={{ top: `${summaryPopoverTop ?? 20}px` }}
+        >
+          <div className="rounded-xl border border-border bg-surface/95 backdrop-blur-md shadow-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-fg">Earlier messages summary</span>
+                <span
+                  className={[
+                    "text-[10px] px-1.5 py-px rounded border inline-flex items-center gap-1",
+                    summaryUpdating ? "border-accent/40 bg-accent/10 text-accent" :
+                    summaryFresh ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
+                    summaryStale ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" :
+                    "border-border bg-surface-2 text-fg-faint",
+                  ].join(" ")}
+                >
+                  {summaryUpdating && (
+                    <span
+                      className="h-2 w-2 rounded-full bg-accent animate-pulse"
+                      aria-label="Summary updating"
+                    />
+                  )}
+                  <span>
+                    {summaryUpdating
+                      ? "updating"
+                      : summaryFresh
+                      ? "ready"
+                      : summaryStale
+                      ? "needs refresh"
+                      : "pending"}
+                  </span>
+                </span>
+              </div>
+              <button
+                type="button"
+                data-testid="summary-popover-close"
+                onClick={() => setSummaryPopoverOpen(false)}
+                className="text-xs px-2 py-1 rounded border border-border bg-surface-2 text-fg-muted hover:text-fg"
+              >
+                Close
+              </button>
+            </div>
+            {!summaryUpdating && (
+              <p className="text-[11px] text-fg-faint mb-2">
+                {summaryFresh
+                  ? "Showing the latest summary for messages above the boundary line."
+                  : summaryStale
+                  ? "This summary is from an older focus and will refresh after the next reply."
+                  : "No summary yet. It will appear after the next reply."}
+              </p>
+            )}
+            <WarmSummaryCard
+              olderCount={countOlderForHotSince(hotSince ?? null) + (hasMore ? 1 : 0)}
+              summary={warmSummary ?? null}
+              summaryBefore={warmSummaryBefore ?? null}
+              hotSince={hotSince ?? null}
+              computedAt={warmSummaryComputedAt ?? null}
+              streaming={!!streaming}
+            />
+          </div>
         </div>
       )}
 
