@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.1] - 2026-08-10
+
+### Fixed
+
+- **Boundary summary tap-open regression.** Tapping the conversation-focus
+  separator could open the floating summary on `pointerup` and then
+  immediately close it again on the follow-up `click`, making the summary hard
+  to open. The no-move release path now suppresses the synthetic click, and the
+  drag-preview stats badge now matches the committed separator by rendering
+  inline on the line.
+
 ## [1.24.0] - 2026-08-10
 
 ### Added

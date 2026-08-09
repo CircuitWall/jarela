@@ -131,4 +131,33 @@ describe("MessageList conversation focus", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(onSetContextPin).not.toHaveBeenCalled();
   });
+
+  it("opens floating summary panel on tap without closing it on the follow-up click", () => {
+    const onSetContextPin = vi.fn();
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "newer", "2026-08-09T10:00:01.000Z"),
+    ];
+    render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={onSetContextPin}
+        hotSince="2026-08-09T10:00:01.000Z"
+        warmSummary="Short cached summary"
+        warmSummaryBefore="2026-08-09T10:00:01.000Z"
+      />,
+    );
+
+    const handle = screen.getByRole("button", { name: /drag to move conversation focus/i }) as HTMLButtonElement;
+    installPointerCapture(handle);
+
+    fireEvent.pointerDown(handle, { pointerId: 1, clientY: 120 });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 120 });
+    fireEvent.click(handle);
+
+    expect(screen.getByText("Earlier messages summary")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onSetContextPin).not.toHaveBeenCalled();
+  });
 });
