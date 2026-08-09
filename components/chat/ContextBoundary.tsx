@@ -123,6 +123,7 @@ interface ContextBoundaryDividerProps {
   onPointerMove?: PointerEventHandler<HTMLButtonElement>;
   onPointerUp?: PointerEventHandler<HTMLButtonElement>;
   onPointerCancel?: PointerEventHandler<HTMLButtonElement>;
+  ariaLabel?: string;
 }
 
 export function ContextBoundaryDivider({
@@ -135,6 +136,7 @@ export function ContextBoundaryDivider({
   onPointerMove,
   onPointerUp,
   onPointerCancel,
+  ariaLabel = "Drag to move conversation focus",
 }: ContextBoundaryDividerProps = {}) {
   const hasStats =
     typeof sourceMessages === "number" && sourceMessages > 0 &&
@@ -157,7 +159,7 @@ export function ContextBoundaryDivider({
             disabled ? "cursor-not-allowed opacity-60" : "cursor-grab active:cursor-grabbing",
           ].join(" ")}
           title={tooltip}
-          aria-label="Drag to move conversation focus"
+          aria-label={ariaLabel}
           disabled={disabled}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
