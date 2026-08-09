@@ -8,6 +8,7 @@ import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { MetaRow } from "@/components/ui/MetaRow";
+import { Dialog } from "@/components/ui/Dialog";
 
 interface SystemNotice {
   id: string;
@@ -57,9 +58,18 @@ interface Props {
 }
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dragPointerIdRef = useRef<number | null>(null);
+  const dragFrameRef = useRef<number | null>(null);
+  const dragYRef = useRef<number | null>(null);
   const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
+  const [isDraggingFocus, setIsDraggingFocus] = useState(false);
+  const [previewHotSince, setPreviewHotSince] = useState<string | null>(null);
+  const [dragLineTop, setDragLineTop] = useState<number | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingHotSince, setPendingHotSince] = useState<string | null>(null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -82,6 +92,96 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   }, [messages, filters.scheduled_task, filters.watcher, filters.bridge, filters.extension, filters.page_capture, filters.synthetic]);
 
   const hiddenCount = messages.length - visibleMessages.length;
+  const effectiveHotSince = isDraggingFocus ? (previewHotSince ?? hotSince ?? null) : (hotSince ?? null);
+
+  function pickHotSinceFromPointerY(clientY: number): string | null {
+    const root = scrollRef.current;
+    if (!root) return hotSince ?? null;
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
+    if (candidates.length === 0) return hotSince ?? null;
+    let best: HTMLElement | null = null;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (const el of candidates) {
+      const rect = el.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      const dist = Math.abs(clientY - mid);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = el;
+      }
+    }
+    return best?.dataset.createdAt ?? null;
+  }
+
+  function boundaryIndexFor(hot: string | null): number {
+    if (!hot || visibleMessages.length === 0) return -1;
+    const i = visibleMessages.findIndex((m) => m.created_at >= hot);
+    if (i !== -1) return i;
+    return visibleMessages.length;
+  }
+
+  function clearDragState() {
+    if (dragFrameRef.current !== null) {
+      cancelAnimationFrame(dragFrameRef.current);
+      dragFrameRef.current = null;
+    }
+    dragYRef.current = null;
+    dragPointerIdRef.current = null;
+    setIsDraggingFocus(false);
+    setPreviewHotSince(null);
+    setDragLineTop(null);
+  }
+
+  function updateDragFromPointer(clientY: number) {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const rect = scroller.getBoundingClientRect();
+    const clampedY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, clientY));
+    const next = pickHotSinceFromPointerY(clampedY);
+    setPreviewHotSince((prev) => (prev === next ? prev : next));
+
+    const host = rootRef.current;
+    if (host) {
+      const hostRect = host.getBoundingClientRect();
+      const nextTop = clampedY - hostRect.top;
+      setDragLineTop((prev) => (prev !== null && Math.abs(prev - nextTop) < 0.5 ? prev : nextTop));
+    }
+  }
+
+  function scheduleDragFromPointer(clientY: number) {
+    dragYRef.current = clientY;
+    if (dragFrameRef.current !== null) return;
+    dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      if (dragYRef.current === null) return;
+      updateDragFromPointer(dragYRef.current);
+    });
+  }
+
+  function commitDragCandidate(next: string | null) {
+    clearDragState();
+    if (!next || next === (hotSince ?? null)) return;
+    setPendingHotSince(next);
+    setConfirmOpen(true);
+  }
+
+  const currentBoundaryIndex = boundaryIndexFor(hotSince ?? null);
+  const effectiveBoundaryIndex = boundaryIndexFor(effectiveHotSince);
+  const effectiveHotCount = effectiveBoundaryIndex < 0 ? visibleMessages.length : visibleMessages.length - effectiveBoundaryIndex;
+  const effectiveOlderCount = Math.max(0, visibleMessages.length - effectiveHotCount);
+  const pendingBoundaryIndex = boundaryIndexFor(pendingHotSince);
+  const currentHotCount = currentBoundaryIndex < 0 ? null : visibleMessages.length - currentBoundaryIndex;
+  const nextHotCount = pendingBoundaryIndex < 0 ? null : visibleMessages.length - pendingBoundaryIndex;
+  const removesFromRecent =
+    currentHotCount !== null && nextHotCount !== null
+      ? nextHotCount < currentHotCount
+      : false;
+
+  useEffect(() => {
+    return () => {
+      if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current);
+    };
+  }, []);
 
   // Self-heal stale/accidental filter states that blank an entire thread.
   // If a thread has persisted messages but every one is filtered out, users
@@ -132,6 +232,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     }
     return open.size;
   }, [toolEvents]);
+
   // Tracks whether the user was at the bottom on the most recent scroll event.
   // After every render, if true, we snap to bottom — which means: while the
   // user is at the bottom they "follow" automatically; if they scroll away,
@@ -267,47 +368,102 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     setShowScrollButton(false);
   }
 
-  // The filter toolbar uses `position: fixed` (anchored just below the
-  // fixed AppShell header) so iOS PWA rubberband-bounce and any layout
-  // shift in the surrounding flex column can't pull it under the header
-  // and strand it there. We mirror its actual rendered height into a
-  // shrink-0 spacer in the flex column so the scroll viewport doesn't
-  // slide underneath — ResizeObserver because the chip row can wrap to
-  // two lines on narrow viewports with many active categories.
-  const toolbarRef = useRef<HTMLDivElement | null>(null);
-  const [toolbarH, setToolbarH] = useState(0);
-  useEffect(() => {
-    const el = toolbarRef.current;
-    if (!el) { setToolbarH(0); return; }
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height ?? 0;
-      setToolbarH(h);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [availableChips.length]);
+  const topBandH = onSetContextPin && visibleMessages.length > 0 ? 34 : 0;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 relative">
-      {/* Fixed-positioned toolbar pinned right below the AppShell header.
-          A shrink-0 spacer below reserves its vertical space in the flex
-          column so the message viewport doesn't slide under it. */}
-      {availableChips.length > 0 && (
-        <>
-          <div
-            ref={toolbarRef}
-            className="fixed left-0 right-0 z-30"
-            style={{ top: "calc(3rem + var(--app-safe-top))" }}
-          >
-            <FilterToolbar
-              chips={availableChips}
-              filters={filters}
-              onToggle={toggle}
-              hiddenCount={hiddenCount}
-            />
+    <div ref={rootRef} className="flex-1 flex flex-col min-h-0 relative">
+      {onSetContextPin && visibleMessages.length > 0 && (
+        <div className="shrink-0 px-4 pb-2">
+          <div className="mx-auto max-w-2xl rounded-xl border border-border/60 bg-surface/94 shadow-sm backdrop-blur overflow-hidden">
+            <div className="border-b border-border/50 px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
+                <span className="font-semibold uppercase tracking-[0.16em] text-fg-faint">
+                  Filters
+                </span>
+                <span className="text-fg-subtle">These pills hide or show message types in the chat.</span>
+              </div>
+              {availableChips.length > 0 && (
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  {availableChips.map((key) => {
+                    const on = filters[key];
+                    const Icon = on ? Eye : EyeOff;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => toggle(key)}
+                        className={[
+                          "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-colors",
+                          on
+                            ? "border-border/70 bg-surface-2 text-fg-muted hover:text-fg"
+                            : "border-border/35 bg-transparent text-fg-faint line-through decoration-fg-faint/60 hover:text-fg-muted",
+                        ].join(" ")}
+                        title={on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`}
+                        aria-pressed={on}
+                      >
+                        <Icon size={10} />
+                        <span>{CHIP_LABELS[key]}</span>
+                      </button>
+                    );
+                  })}
+                  {hiddenCount > 0 && (
+                    <span className="ml-auto text-[11px] text-fg-faint select-none" aria-live="polite">
+                      {hiddenCount} hidden
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-3 py-1.5">
+              <div className="flex items-center gap-2 text-[11px] text-fg-faint">
+                <span>{effectiveOlderCount} above</span>
+                <button
+                  type="button"
+                  className={[
+                    "group relative block h-6 min-w-0 flex-1 touch-none",
+                    streaming ? "cursor-not-allowed opacity-60" : "cursor-grab active:cursor-grabbing",
+                  ].join(" ")}
+                  aria-label="Drag to move conversation focus"
+                  title={streaming ? "Focus cannot be moved while a reply is streaming" : "Drag the line up or down across the chat to move conversation focus"}
+                  disabled={!!streaming}
+                  onPointerDown={(e) => {
+                    if (streaming) return;
+                    dragPointerIdRef.current = e.pointerId;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setIsDraggingFocus(true);
+                    scheduleDragFromPointer(e.clientY);
+                  }}
+                  onPointerMove={(e) => {
+                    if (dragPointerIdRef.current !== e.pointerId) return;
+                    scheduleDragFromPointer(e.clientY);
+                  }}
+                  onPointerUp={(e) => {
+                    if (dragPointerIdRef.current !== e.pointerId) return;
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                    const y = dragYRef.current ?? e.clientY;
+                    commitDragCandidate(pickHotSinceFromPointerY(y));
+                  }}
+                  onPointerCancel={(e) => {
+                    if (dragPointerIdRef.current !== e.pointerId) return;
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                    }
+                    clearDragState();
+                  }}
+                >
+                  <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-accent/60 shadow-[0_0_10px_rgba(56,189,248,0.45)] group-hover:border-accent/80 group-hover:shadow-[0_0_14px_rgba(56,189,248,0.6)]" aria-hidden />
+                </button>
+                <span>{effectiveHotCount} below</span>
+                {streaming && (
+                  <span className="text-[10px] text-amber-700 dark:text-amber-300">locked</span>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="shrink-0" aria-hidden style={{ height: toolbarH }} />
-        </>
+        </div>
       )}
       <div
         ref={scrollRef}
@@ -352,13 +508,15 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         // If `hotSince` sits strictly after every loaded message (the
         // post-/compact "/new" state), every visible message is warm and
         // the boundary is rendered AFTER the last bubble.
-        const boundaryIndex = hotSince
-          ? visibleMessages.findIndex((m) => m.created_at >= hotSince)
+        const boundaryIndex = effectiveHotSince
+          ? visibleMessages.findIndex((m) => m.created_at >= effectiveHotSince)
           : -1;
+        const interactiveBoundary = !!onSetContextPin && visibleMessages.length > 0;
         const pinAfterAll =
-          !!hotSince && visibleMessages.length > 0 && boundaryIndex === -1
-          && visibleMessages[visibleMessages.length - 1].created_at < hotSince;
-        const hasBoundary = !!hotSince && (boundaryIndex !== -1 || pinAfterAll);
+          (!!effectiveHotSince && visibleMessages.length > 0 && boundaryIndex === -1
+            && visibleMessages[visibleMessages.length - 1].created_at < effectiveHotSince)
+          || (!effectiveHotSince && interactiveBoundary);
+        const hasBoundary = (effectiveHotSince ? (boundaryIndex !== -1 || pinAfterAll) : interactiveBoundary);
         const olderInVisible = pinAfterAll
           ? visibleMessages.length
           : hasBoundary ? boundaryIndex : 0;
@@ -367,14 +525,16 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
         const renderBoundary = (key: string) => (
           <div key={key}>
-            <WarmSummaryCard
-              olderCount={olderCountLabel}
-              summary={warmSummary ?? null}
-              summaryBefore={warmSummaryBefore ?? null}
-              hotSince={hotSince ?? null}
-              computedAt={warmSummaryComputedAt ?? null}
-              streaming={!!streaming}
-            />
+            {effectiveHotSince && (
+              <WarmSummaryCard
+                olderCount={olderCountLabel}
+                summary={warmSummary ?? null}
+                summaryBefore={warmSummaryBefore ?? null}
+                hotSince={effectiveHotSince ?? null}
+                computedAt={warmSummaryComputedAt ?? null}
+                streaming={!!streaming}
+              />
+            )}
             <ContextBoundaryDivider
               sourceMessages={warmSummarySourceMessages ?? null}
               sourceChars={warmSummarySourceChars ?? null}
@@ -394,6 +554,8 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               key={msg.id}
               id={`msg-${msg.id}`}
               data-message-id={msg.id}
+              data-hot-candidate="1"
+              data-created-at={msg.created_at}
               className={startsTurn && i > 0 ? "mt-3" : undefined}
             >
               <MessageBubble
@@ -443,7 +605,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       {showScrollButton && (
         <button
           onClick={scrollToBottom}
-          style={{ top: `calc(3rem + var(--app-safe-top) + ${toolbarH}px + 0.75rem)` }}
+          style={{ top: `calc(3rem + var(--app-safe-top) + ${topBandH}px + 0.75rem)` }}
           className="absolute left-1/2 -translate-x-1/2 p-2 rounded-full bg-accent/40 hover:bg-accent/80 text-white backdrop-blur-sm shadow-md transition-all animate-in fade-in slide-in-from-top-2 duration-200 z-20"
           title="Scroll to latest message"
           aria-label="Scroll to latest message"
@@ -451,15 +613,59 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           <ArrowDown size={18} />
         </button>
       )}
+
+      {isDraggingFocus && dragLineTop !== null && (
+        <div className="pointer-events-none absolute left-4 right-4 z-30" style={{ top: `${dragLineTop}px` }}>
+          <div className="mx-auto max-w-2xl border-t border-dashed border-accent shadow-[0_0_14px_rgba(56,189,248,0.7)]" />
+        </div>
+      )}
+
+      <Dialog
+        open={confirmOpen}
+        onClose={() => { setConfirmOpen(false); setPendingHotSince(null); }}
+        size="sm"
+        align="center"
+        dismissOnBackdrop={false}
+      >
+        <h4 className="text-sm font-semibold text-fg">Move conversation focus here?</h4>
+        <p className="text-xs text-fg-muted leading-relaxed">
+          Start a new conversation context from this point. New replies will prioritize recent messages below this line.
+        </p>
+        {nextHotCount !== null && (
+          <p className="text-[11px] text-fg-faint">
+            Recent in focus: {nextHotCount} loaded message{nextHotCount === 1 ? "" : "s"}; earlier loaded summary: {Math.max(0, visibleMessages.length - nextHotCount)}.
+          </p>
+        )}
+        {removesFromRecent && (
+          <p className="text-[11px] text-amber-600 dark:text-amber-400">
+            This reduces recent in-focus messages. You can drag upward later to add history back.
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={() => { setConfirmOpen(false); setPendingHotSince(null); }}
+            className="px-3 py-1.5 text-xs text-fg-subtle hover:text-fg transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (pendingHotSince && onSetContextPin) onSetContextPin(pendingHotSince);
+              setConfirmOpen(false);
+              setPendingHotSince(null);
+            }}
+            className="px-3 py-1.5 rounded-md text-xs border border-accent/40 bg-accent text-white hover:opacity-95 transition-opacity"
+          >
+            Move focus
+          </button>
+        </div>
+      </Dialog>
     </div>
   );
 }
 
-// Compact horizontal toolbar of category-visibility chips. Only renders
-// chips whose category is currently represented in the visible transcript,
-// so the toolbar stays empty for plain user/assistant threads. Hidden
-// counter on the right tells the user how many messages are gated out by
-// the current filter so the absence isn't mysterious.
 const CHIP_LABELS: Record<MessageFilterKey, string> = {
   scheduled_task: "scheduled",
   watcher: "watcher",
@@ -470,48 +676,6 @@ const CHIP_LABELS: Record<MessageFilterKey, string> = {
   tool_use: "tools",
   thinking: "thinking",
 };
-function FilterToolbar({
-  chips,
-  filters,
-  onToggle,
-  hiddenCount,
-}: {
-  chips: readonly MessageFilterKey[];
-  filters: Record<MessageFilterKey, boolean>;
-  onToggle: (key: MessageFilterKey) => void;
-  hiddenCount: number;
-}) {
-  return (
-    <div className="px-4 py-1.5 flex items-center gap-1.5 flex-wrap bg-surface/80 backdrop-blur border-b border-border/40 text-[11px]">
-      <span className="text-fg-faint mr-0.5 select-none">show:</span>
-      {chips.map((key) => {
-        const on = filters[key];
-        const Icon = on ? Eye : EyeOff;
-        return (
-          <button
-            key={key}
-            onClick={() => onToggle(key)}
-            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border transition-colors ${
-              on
-                ? "bg-surface-2 border-border text-fg-muted hover:text-fg"
-                : "bg-transparent border-border/40 text-fg-faint hover:text-fg-muted line-through decoration-fg-faint/60"
-            }`}
-            title={on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`}
-            aria-pressed={on}
-          >
-            <Icon size={10} />
-            <span>{CHIP_LABELS[key]}</span>
-          </button>
-        );
-      })}
-      {hiddenCount > 0 && (
-        <span className="ml-auto text-fg-faint select-none" aria-live="polite">
-          {hiddenCount} hidden
-        </span>
-      )}
-    </div>
-  );
-}
 
 // Streaming-bubble wrapper. Wraps the in-flight assistant bubble so the
 // `message` object passed to MessageBubble keeps a stable identity across

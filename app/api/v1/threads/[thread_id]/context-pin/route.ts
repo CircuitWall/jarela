@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getThread, setThreadContextPin } from "@/lib/stores/threads";
+import { kickWarmSummaryRefresh } from "@/lib/agents/warm-summary-background";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
 // ADR-0042. Move the user's hot/warm boundary without sending a turn. The
-// summary is NOT recomputed here — that's lazy, on the next POST /run. The
-// chat UI shows a placeholder card in the meantime so the user gets instant
-// feedback for the drag.
+// summary refresh is kicked off asynchronously in background so the drag stays
+// snappy and the updated warm recap appears shortly after commit.
 const Body = z.object({
   hot_since: z.string().nullable(),
 });
@@ -26,6 +26,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   setThreadContextPin(thread_id, parsed.data.hot_since);
+  kickWarmSummaryRefresh(thread_id);
   const updated = getThread(thread_id);
   return NextResponse.json({
     hot_since: updated?.hot_since ?? null,

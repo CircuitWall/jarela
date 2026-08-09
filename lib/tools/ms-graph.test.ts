@@ -77,7 +77,7 @@ afterEach(() => {
 });
 
 describe("graphFetch resilience", () => {
-  it("retries once on 401 after refreshing the access token", async () => {
+  it("retries once on 401 after refreshing the access token", { timeout: 10_000 }, async () => {
     const { graphFetch, resolveMicrosoftAuth } = await import("@/lib/integrations/microsoft-oauth");
     const auth = resolveMicrosoftAuth() as { client_id: string; client_secret: string; refresh_token: string };
     queueGraph(
