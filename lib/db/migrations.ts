@@ -341,6 +341,7 @@ export function runMigrations(db: DatabaseSync): void {
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
   migrateICloudPackageIds(db);
+  ensureAgentRouterColumns(db);
   spillLegacyImageAttachments(db);
 }
 
@@ -1428,7 +1429,9 @@ function spillLegacyImageAttachments(db: DatabaseSync): void {
       `[migrate-image-refs] done: ${migrated} migrated, ${skipped} skipped in ${secs}s`,
     );
   }
+}
 
+function ensureAgentRouterColumns(db: DatabaseSync): void {
   // Per-agent model router configuration.
   // router_policy: one of cheap|fast|balanced|quality; NULL = inherit JARELA_MODEL_ROUTER_POLICY.
   // router_enabled: 1 = always use router for this agent (even when global mode is "off");
