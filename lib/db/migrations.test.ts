@@ -330,3 +330,24 @@ describe("ensureCredentialsLabelAndDefaultColumns", () => {
   });
 });
 
+describe("router column migration", () => {
+  it("adds router columns on an existing database even when there are no legacy image rows", async () => {
+    const db = getDb();
+
+    db.exec("ALTER TABLE agent_configs DROP COLUMN router_policy");
+    db.exec("ALTER TABLE agent_configs DROP COLUMN router_enabled");
+    db.exec("DELETE FROM messages");
+
+    const before = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+    expect(before.some((c) => c.name === "router_policy")).toBe(false);
+    expect(before.some((c) => c.name === "router_enabled")).toBe(false);
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const after = db.prepare("PRAGMA table_info(agent_configs)").all() as Array<{ name: string }>;
+    expect(after.some((c) => c.name === "router_policy")).toBe(true);
+    expect(after.some((c) => c.name === "router_enabled")).toBe(true);
+  });
+});
+
