@@ -39,6 +39,14 @@ test("drag boundary confirms before changing the conversation focus", async ({ p
 
   const handle = page.getByRole("button", { name: /Drag to move conversation focus/i });
   await expect(handle).toBeVisible();
+  const markerBubble = page.getByText(marker).last();
+  await expect(markerBubble).toBeVisible();
+
+  const boundaryBefore = page.locator('[data-focus-boundary="1"]').first();
+  const beforeBox = await boundaryBefore.boundingBox();
+  const markerBox = await markerBubble.boundingBox();
+  expect(beforeBox).toBeTruthy();
+  expect(markerBox).toBeTruthy();
 
   const firstCandidate = page.locator('[data-hot-candidate="1"]').first();
   const box = await firstCandidate.boundingBox();
@@ -52,8 +60,18 @@ test("drag boundary confirms before changing the conversation focus", async ({ p
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Move conversation focus here?")).toBeVisible();
   await dialog.getByRole("button", { name: "Move focus" }).click();
+  await expect(dialog).toBeHidden();
 
-  await expect(page.getByText("Conversation focus starts here").first()).toBeVisible();
+  const boundaryAfter = page.locator('[data-focus-boundary="1"]').first();
+  await expect(boundaryAfter).toBeVisible();
+  await expect.poll(async () => {
+    const nextBoundary = await boundaryAfter.boundingBox();
+    const nextMarker = await markerBubble.boundingBox();
+    if (!nextBoundary || !nextMarker) return null;
+    // Once focus is moved to the first loaded message, the divider should sit
+    // above that message instead of below the whole visible transcript.
+    return nextBoundary.y <= (nextMarker.y + 2);
+  }).toBe(true);
 });
 
 test("dragging to bottom edge still opens confirmation", async ({ page, browserName }) => {
