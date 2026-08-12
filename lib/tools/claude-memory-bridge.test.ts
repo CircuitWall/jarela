@@ -40,6 +40,11 @@ describe("namespaceForCwd / claudeProjectDir", () => {
     const dir = memDir("/Users/example-user/workspace/example-project");
     expect(dir).toBe(join(tmpRoot, ".claude", "projects", "-Users-example-user-workspace-example-project", "memory"));
   });
+
+  it("normalizes Windows drive paths into a Claude project directory", () => {
+    const dir = memDir("C:\\Users\\andre\\workspace\\example-project");
+    expect(dir).toBe(join(tmpRoot, ".claude", "projects", "-C--Users-andre-workspace-example-project", "memory"));
+  });
 });
 
 describe("syncIn / syncOut namespace gate", () => {
