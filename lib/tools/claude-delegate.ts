@@ -92,10 +92,16 @@ export function resolveSafetyGate(requestedPermissionMode: string | undefined, a
   }
   // mostly_safe (default): force read-only unless the caller explicitly
   // escalates for this one call — mirrors `local_exec`'s `allow_unsafe`.
+  // Uses "dontAsk" rather than "default": it's the mode Claude Code's own
+  // docs document for headless auto-deny ("auto-denies every tool call
+  // that would otherwise prompt you… the session never waits for input"),
+  // confirmed empirically to allow reads while cleanly denying writes/exec
+  // with no hang — the same behavior "default" happened to show in
+  // headless mode, but without a documented guarantee behind it.
   if (allowUnsafe) {
     return { blocked: false, safetyMode, permissionMode: requestedPermissionMode ?? "bypassPermissions" };
   }
-  return { blocked: false, safetyMode, permissionMode: "default" };
+  return { blocked: false, safetyMode, permissionMode: "dontAsk" };
 }
 
 // ── stream-json parsing (ported from the prior external tool) ────────────
@@ -114,6 +120,9 @@ interface RawClaudeResult {
   duration_ms?: number;
   total_cost_usd?: number;
   num_turns?: number;
+  // Undocumented as of CLI 2.1.133 (no published stream-json schema exists —
+  // see anthropics/claude-code#24594) — treat as best-effort, not a stable
+  // contract. Confirmed present empirically on every denied tool call.
   permission_denials?: unknown[];
   _model?: string;
   _steps?: string[];
@@ -382,7 +391,7 @@ const delegateSchema = z.object({
   tools: z.string().optional().describe("Tool set: 'default' (all built-in, the default), '' (none), or a comma-separated list (e.g. 'Read,Grep,WebSearch')."),
   add_dirs: z.array(z.string()).optional().describe("Extra directories the sub-agent may access (--add-dir)."),
   permission_mode: permissionModeEnum.optional().describe(
-    "Requested permission mode. Only honoured when JARELA_TOOL_SAFETY is 'bypass', or under 'mostly_safe' when allow_unsafe is true — otherwise it's forced to 'default' (read/explore only, every write/exec auto-denied).",
+    "Requested permission mode. Only honoured when JARELA_TOOL_SAFETY is 'bypass', or under 'mostly_safe' when allow_unsafe is true — otherwise it's forced to 'dontAsk' (read/explore only, every write/exec auto-denied).",
   ),
   allow_unsafe: z.boolean().optional().describe(
     "Under the default 'mostly_safe' safety tier, escalate this one call so the requested permission_mode (default 'bypassPermissions') is actually honoured, letting Claude write/exec. Ignored under 'safe' (always blocked) and 'bypass' (already unrestricted).",
