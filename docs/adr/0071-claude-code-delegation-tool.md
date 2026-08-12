@@ -62,6 +62,15 @@ external or introducing a new category.
     explore freely, every write/exec attempt is auto-denied and surfaced
     via `permission_denials`.
   * `bypass` → honour the caller's requested `permission_mode` as-is.
+  The forced tier uses `--permission-mode dontAsk`, not `default`: Claude
+  Code's own docs document `dontAsk` for exactly this headless-auto-deny
+  case ("auto-denies every tool call that would otherwise prompt you… the
+  session never waits for input"); `default`'s headless behavior is not
+  documented, even though it produced the same result empirically.
+  `permission_denials` on the final `result` event is itself undocumented
+  as of CLI 2.1.133 (no published stream-json schema exists — see
+  anthropics/claude-code#24594) — treated as best-effort, not a stable
+  contract, and confirmed present on every denied call tested.
 * **Verify loop**: every call attaches a `changes` field — git status +
   diff-stat computed against the resolved workspace root via a shared
   `lib/tools/git-probe.ts` helper (also used by `workspace_status`) —
