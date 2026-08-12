@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.2] - 2026-08-12
+
+### Fixed
+
+- **Unread badge consumption and bucketing corrected.** Notifications that
+  arrive while the user is already on an agent chat now clear that chat's
+  unread bucket immediately, preventing stale menu and per-agent badges.
+
+- **System and malformed-agent notification buckets no longer stick.**
+  Notifications with missing/empty `agent_id` are normalized into the null
+  bucket, and opening the menu now consumes that bucket so global alert
+  badges do not remain latched.
+
 ## [1.24.1] - 2026-08-10
 
 ### Fixed

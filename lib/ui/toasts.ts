@@ -110,7 +110,10 @@ export function pushToast(input: Omit<Toast, "id" | "created_at">): string {
   const id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const t: Toast = { ...input, id, created_at: Date.now() };
   toasts = [...toasts, t];
-  const key = t.agent_id;
+  // Defensive normalisation: malformed producer payloads can send empty
+  // strings for agent_id. Treat them as null so the unread bucket remains
+  // consumable via the same system-alert clear path.
+  const key = t.agent_id && t.agent_id.trim().length > 0 ? t.agent_id : null;
   unreadByAgent.set(key, (unreadByAgent.get(key) ?? 0) + 1);
   notify();
   notifyUnread();

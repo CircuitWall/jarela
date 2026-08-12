@@ -134,10 +134,18 @@ export function AppShell() {
   // unread bucket. This keeps the per-agent breakdown honest: badges only
   // count notifications the user hasn't yet seen in context.
   useEffect(() => {
-    if (state.activeTab === "chat" && state.activeAgentId) {
-      clearUnreadForAgent(state.activeAgentId);
+    if (state.activeTab === "chat") {
+      clearUnreadForAgent(state.activeAgentId ?? null);
     }
-  }, [state.activeTab, state.activeAgentId]);
+  }, [state.activeTab, state.activeAgentId, unreadCount]);
+
+  // Opening the menu is the only place where global/system alerts are
+  // visible when they aren't tied to a specific agent. Consume the null
+  // bucket here so the header badge doesn't stay sticky.
+  useEffect(() => {
+    if (!showMenu) return;
+    clearUnreadForAgent(null);
+  }, [showMenu]);
 
   useEventNotifications({
     shouldNotify: (ev) => {
