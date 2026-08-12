@@ -47,3 +47,4 @@ import "./async-results-tool";
 import "./browser-control";
 import "./skills";
 import "./terminal";
+import "./claude-delegate";

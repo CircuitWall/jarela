@@ -311,6 +311,16 @@ export function runMigrations(db: DatabaseSync): void {
       last_called_at TEXT,
       updated_at     TEXT NOT NULL
     );
+    -- claude_delegate's per-project Claude Code session id (ADR-0071),
+    -- so a follow-up delegate call on the same project resumes the same
+    -- session instead of starting fresh. project_key is the resolved
+    -- workspace root, optionally suffixed with ":<feature>" for parallel
+    -- sub-sessions within one project.
+    CREATE TABLE IF NOT EXISTS claude_delegate_sessions (
+      project_key TEXT PRIMARY KEY,
+      session_id  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
   `);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);

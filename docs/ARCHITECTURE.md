@@ -257,8 +257,8 @@ on two orthogonal axes ([ADR-0038](./adr/0038-tool-capability-axis.md)):
     `file_write`, `schedule_task`, `documents_add_local_source`).
   * `execute`: invokes external systems with side effects users see
     outside Jarela, OR runs arbitrary code (`local_exec`,
-    `generate_image`, `delegate_to_agent`, `jira_create_issue`,
-    `gmail_create_draft`).
+    `generate_image`, `delegate_to_agent`, `claude_delegate`,
+    `jira_create_issue`, `gmail_create_draft`).
 
 Files with mixed capabilities (memory, files, schedule, atlassian, github,
 gmail, outlook, calendar) declare every capability bucket in a single
@@ -301,6 +301,32 @@ sequenceDiagram
     AG->>AG: execute graph
     AG->>DB: persist result
     AG->>N: notify (if configured)
+```
+
+## Key Flow — Delegate a coding task to Claude Code (ADR-0071)
+
+```mermaid
+sequenceDiagram
+    participant AG as Agent Runtime
+    participant CD as claude_delegate tool
+    participant MB as claude-memory-bridge
+    participant DB as SQLite (memory_store, claude_delegate_sessions)
+    participant CLI as claude CLI (child process)
+    participant FS as ~/.claude/projects/.../memory
+
+    AG->>CD: claude_delegate({ task, cwd, ... })
+    CD->>CD: resolveSafetyGate() — JARELA_TOOL_SAFETY tier
+    CD->>MB: syncIn(cwd, claude-sync:<hash>)
+    MB->>DB: listMemory(namespace)
+    MB->>FS: write *.md + MEMORY.md index
+    CD->>DB: getSession(project_key) / rememberSession
+    CD->>CLI: spawn -p --output-format stream-json --permission-mode <gated>
+    CLI-->>CD: stream-json events (steps, tool_use, result)
+    CD->>MB: syncOut(cwd, namespace, manifest)
+    MB->>FS: read *.md
+    MB->>DB: putMemory / deleteMemory
+    CD->>CD: gitDiffSummary(cwd) — verify loop
+    CD-->>AG: { result, changes, permission_denials, sync, steps }
 ```
 
 ## Key Flow — Browser-extension page capture (ADR-0018)
