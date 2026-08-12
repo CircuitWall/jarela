@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   appendHistoryMessage,
+  buildRetryContextSummary,
   toolCallSignature,
   looksLikeStall,
   isWriteLikeToolName,
@@ -44,6 +45,27 @@ describe("appendHistoryMessage", () => {
       { role: "user", content: "hello" },
       { role: "user", content: "retry nudge" },
     ]);
+  });
+});
+
+describe("buildRetryContextSummary", () => {
+  it("summarizes the stalled turn and tools already used", () => {
+    expect(buildRetryContextSummary(
+      "I’m updating the file now to finish the task.",
+      ["file_read", "file_write", "file_read"],
+      ["file_write: updated 3 files", "file_read: saw the old draft"],
+    ))
+      .toBe([
+        "Already said this turn: I’m updating the file now to finish the task.",
+        "Tools already used this turn: file_read, file_write",
+        "Tool results already seen this turn:",
+        "  1. file_write: updated 3 files",
+        "  2. file_read: saw the old draft",
+      ].join("\n"));
+  });
+
+  it("returns an empty string when there is nothing to recap", () => {
+    expect(buildRetryContextSummary("   ", [])).toBe("");
   });
 });
 

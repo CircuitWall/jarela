@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.24.3] - 2026-08-12
+
+### Fixed
+
+- **Retry nudges now carry completed work forward.** Stall and hallucination
+  retries now include the assistant text so far, tools already used, and compact
+  summaries of tool results. That gives the next pass enough context to continue
+  the same task instead of redoing completed steps.
+
 ## [1.24.2] - 2026-08-12
 
 ### Fixed
