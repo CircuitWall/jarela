@@ -580,6 +580,7 @@ async function* stallRetryStream(
 
   let textBuf = "";
   const toolNames: string[] = [];
+  const toolResultSummaries: string[] = [];
   // Track (name, args) signatures within the turn so we can detect a
   // ReAct loop where the model spins on the same tool call. Counts
   // increment only on tool_call chunks; tool_result echoes are ignored.
@@ -617,6 +618,15 @@ async function* stallRetryStream(
           yield chunk;
           break;
         }
+      }
+      yield chunk;
+    } else if (chunk.type === "tool_result") {
+      const data = chunk.data as { name?: unknown; result?: unknown } | undefined;
+      const name = typeof data?.name === "string" ? data.name : "tool";
+      const summary = summarizeRetryValue(data?.result).trim();
+      if (summary) {
+        const clipped = summary.length > 240 ? `${summary.slice(0, 237)}...` : summary;
+        toolResultSummaries.push(`${name}: ${clipped}`);
       }
       yield chunk;
     } else if (chunk.type === "done") {
@@ -762,9 +772,12 @@ async function* stallRetryStream(
             ? `↻ Auto-retry: the citation audit flagged ${uncitedHighClaims.length} high-impact claim${uncitedHighClaims.length === 1 ? "" : "s"} without a verified source:\n${uncitedHighClaims.slice(0, 5).map((c, i) => `  ${i + 1}. ${c.text}${c.reason ? ` — ${c.reason}` : ""}`).join("\n")}\n\nFix each one in exactly ONE of these three ways:\n  (a) cite an existing source from the manifest by appending the marker \`[N]\` to the claim,\n  (b) call a tool now (file_read, web_search, fetch_webpage, memory_read, …) to actually ground the claim before stating it,\n  (c) rephrase plainly — drop the specific number/fact, or say "I don't have a source for this" — so the claim is no longer load-bearing.\n\nDo NOT just restate the same claim. Do NOT invent a marker number that isn't in the manifest.`
             : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
 
+  const retryContext = buildRetryContextSummary(textBuf, toolNames, toolResultSummaries);
+  const nudgeWithContext = retryContext ? `${nudge}\n\n${retryContext}` : nudge;
+
   const retry = await prepareThreadRun({
     ...originalReq,
-    message: nudge,
+    message: nudgeWithContext,
     attachments: undefined,
     _stall_retries_left: retriesLeft - 1,
     _retry_count: (originalReq._retry_count ?? 0) + 1,
@@ -775,7 +788,7 @@ async function* stallRetryStream(
     // nudge becomes a permanent user-role row the LLM mistakes for
     // user input on every future turn.
     _skip_persist_message: true,
-    _history_append_message: nudge,
+    _history_append_message: nudgeWithContext,
   });
   for await (const chunk of retry.stream) yield chunk;
 }
@@ -1130,6 +1143,37 @@ export function toolCallSignature(name: string, args: Record<string, unknown>): 
   } catch {
     return `${name}::<unserializable>`;
   }
+}
+
+function summarizeRetryValue(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return Object.prototype.toString.call(value);
+  }
+}
+
+export function buildRetryContextSummary(
+  text: string,
+  toolNames: readonly string[],
+  toolResults: readonly string[] = [],
+): string {
+  const parts: string[] = [];
+  const trimmedText = text.trim();
+  if (trimmedText) {
+    const clipped = trimmedText.length > 280 ? `${trimmedText.slice(0, 277)}...` : trimmedText;
+    parts.push(`Already said this turn: ${clipped}`);
+  }
+  const uniqueTools = [...new Set(toolNames.filter(Boolean))];
+  if (uniqueTools.length > 0) {
+    parts.push(`Tools already used this turn: ${uniqueTools.slice(0, 8).join(", ")}`);
+  }
+  if (toolResults.length > 0) {
+    parts.push(`Tool results already seen this turn:\n${toolResults.slice(0, 5).map((line, index) => `  ${index + 1}. ${line}`).join("\n")}`);
+  }
+  return parts.join("\n");
 }
 
 const STALL_PATTERNS: RegExp[] = [
