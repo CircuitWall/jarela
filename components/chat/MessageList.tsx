@@ -705,7 +705,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-4 py-4 panel-scrollbar"
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 panel-scrollbar"
         style={{
           // Scroll-anchor jumps (deep-link to a message) land below the
           // floating header, not under it.
