@@ -115,12 +115,12 @@ describe("claude_delegate — safety gate", () => {
     expect(state.calls).toHaveLength(0);
   });
 
-  it("forces --permission-mode default under mostly_safe (the default) without allow_unsafe", async () => {
+  it("forces --permission-mode dontAsk under mostly_safe (the default) without allow_unsafe", async () => {
     const out = parse(await claudeDelegateTool.invoke({ task: "do a thing", cwd: projectRoot, sync_memory: false }));
     expect(out.safety_mode).toBe("mostly_safe");
-    expect(out.permission_mode_used).toBe("default");
+    expect(out.permission_mode_used).toBe("dontAsk");
     expect(state.calls[0]!.args).toContain("--permission-mode");
-    expect(state.calls[0]!.args[state.calls[0]!.args.indexOf("--permission-mode") + 1]).toBe("default");
+    expect(state.calls[0]!.args[state.calls[0]!.args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
   });
 
   it("honours a requested permission_mode when allow_unsafe=true under mostly_safe", async () => {
