@@ -15,8 +15,6 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
@@ -26,8 +24,7 @@ import {
   clearWorkspace,
   type ToolConfig,
 } from "./workspace-context";
-
-const execFileP = promisify(execFile);
+import { probeGit, type GitProbe } from "./git-probe";
 
 // Probe budget. Keep generous enough for slow filesystems but short
 // enough that the agent isn't blocked for tens of seconds on a stalled
@@ -90,48 +87,6 @@ async function withTimeout<T>(label: string, p: Promise<T>): Promise<T> {
   } finally {
     if (timer) clearTimeout(timer);
   }
-}
-
-interface GitProbe {
-  is_repo: boolean;
-  branch?: string;
-  remote?: string;
-  head?: string;
-  dirty?: boolean;
-  untracked_count?: number;
-}
-
-async function probeGit(root: string): Promise<GitProbe> {
-  // `git rev-parse --is-inside-work-tree` is the canonical "is this a repo?" check.
-  try {
-    await execFileP("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, timeout: PROBE_TIMEOUT_MS });
-  } catch {
-    return { is_repo: false };
-  }
-  const out: GitProbe = { is_repo: true };
-  const safe = async (args: string[]): Promise<string> => {
-    try {
-      const { stdout } = await execFileP("git", args, { cwd: root, timeout: PROBE_TIMEOUT_MS });
-      return stdout.trim();
-    } catch {
-      return "";
-    }
-  };
-  const [branch, head, remote, status] = await Promise.all([
-    safe(["rev-parse", "--abbrev-ref", "HEAD"]),
-    safe(["rev-parse", "--short", "HEAD"]),
-    safe(["config", "--get", "remote.origin.url"]),
-    safe(["status", "--porcelain"]),
-  ]);
-  if (branch) out.branch = branch;
-  if (head) out.head = head;
-  if (remote) out.remote = remote;
-  if (status !== undefined) {
-    const lines = status ? status.split(/\r?\n/) : [];
-    out.dirty = lines.length > 0;
-    out.untracked_count = lines.filter((l) => l.startsWith("??")).length;
-  }
-  return out;
 }
 
 interface PackageManifest {
