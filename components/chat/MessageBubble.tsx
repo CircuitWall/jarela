@@ -483,10 +483,10 @@ function CollapsibleLong({
   const collapsed = overflows && !open;
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col min-w-0">
       <div
         ref={innerRef}
-        className={collapsed ? "relative overflow-hidden" : ""}
+        className={collapsed ? "relative overflow-hidden min-w-0" : "min-w-0"}
         style={collapsed ? { maxHeight: threshold } : undefined}
       >
         {children}
@@ -991,7 +991,7 @@ const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInApp
     });
   }, [text, sourceManifest]);
   return (
-    <div className="prose prose-invert prose-sm max-w-none jarela-rich">
+    <div className="prose prose-invert prose-sm max-w-none jarela-rich min-w-0">
       <ReactMarkdown
         remarkPlugins={MD_REMARK_PLUGINS}
         rehypePlugins={MD_REHYPE_PLUGINS}
