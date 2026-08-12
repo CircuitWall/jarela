@@ -27,19 +27,35 @@ export interface ClaudeSyncValue {
   extra_metadata?: Record<string, unknown>;
 }
 
+function normalizeProjectPath(cwd: string): string {
+  const raw = String(cwd ?? "").trim();
+  if (!raw) return path.resolve(raw);
+  // Preserve POSIX-style absolute paths verbatim even on Windows so the
+  // Claude project directory encoding matches Claude Code's own layout.
+  if (raw.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(raw)) {
+    return raw.replace(/\/+$/, "") || "/";
+  }
+  return path.resolve(raw);
+}
+
+function encodeClaudeProjectPath(root: string): string {
+  const encoded = root.replace(/:/g, "-").replace(/[\\/]/g, "-");
+  return encoded.startsWith("-") ? encoded : `-${encoded}`;
+}
+
 // Claude Code encodes a project's working directory by replacing every
 // path separator with "-", preserving the leading separator, e.g.
 // "/Users/andwu/workspace/example-project" -> "-Users-andwu-workspace-example-project".
 export function claudeProjectDir(cwd: string): string {
-  const root = path.resolve(cwd);
-  const encoded = root.replace(/[\\/]/g, "-");
+  const root = normalizeProjectPath(cwd);
+  const encoded = encodeClaudeProjectPath(root);
   return path.join(os.homedir(), ".claude", "projects", encoded, "memory");
 }
 
 // Default per-project namespace: stable, derived from cwd so different
 // project trees don't bleed into each other when syncing.
 export function namespaceForCwd(cwd: string): string {
-  const root = path.resolve(cwd);
+  const root = normalizeProjectPath(cwd);
   const hash = crypto.createHash("sha256").update(root).digest("hex").slice(0, 12);
   return `claude-sync:${hash}`;
 }
