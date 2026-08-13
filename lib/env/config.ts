@@ -67,6 +67,7 @@ export interface JarelaConfig {
   // logging
   readonly logsRingSize: number;
   readonly logLevel: "debug" | "info" | "warn" | "error";
+  readonly perfTelemetryEnabled: boolean;
 
   // scheduler
   readonly schedulerTickMs: number;
@@ -222,6 +223,7 @@ export function getConfig(): JarelaConfig {
     // logging
     logsRingSize: parsePositiveInt(env.JARELA_LOGS_RING_SIZE, ENV_DEFAULTS.logsRingSize),
     logLevel: parseLogLevel(env.JARELA_LOG_LEVEL, ENV_DEFAULTS.logLevel),
+    perfTelemetryEnabled: parseBool(env.JARELA_PERF_TELEMETRY_ENABLED, ENV_DEFAULTS.perfTelemetryEnabled),
 
     // scheduler
     schedulerTickMs: parsePositiveInt(env.JARELA_SCHEDULER_TICK_MS, ENV_DEFAULTS.schedulerTickMs),

@@ -981,9 +981,9 @@ export async function submitRun(
   // 2xx = accepted (currently always 202); 409 = already running. We treat
   // every other status as a hard error so the consumer's catch fires.
   if (res.status === 202) {
-    // Drain the body to free the connection — Next.js sends a small JSON
-    // ack but we don't need anything from it.
-    try { await res.json(); } catch { /* ignore */ }
+    // Ack body is irrelevant for the client state machine; return
+    // immediately so subscribeRun can start consuming without waiting for
+    // body parsing.
     return { accepted: true };
   }
   let body: { code?: string; error?: string } = {};

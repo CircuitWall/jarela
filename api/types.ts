@@ -1025,6 +1025,7 @@ export interface HarnessPatch {
 export type SSEEventType =
   | { type: "text_delta"; delta: string }
   | { type: "thinking_delta"; delta: string }
+  | { type: "status"; phase: "starting" | "preparing" | "thinking"; label: string }
   | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_result"; id: string; name: string; result: unknown }
   | { type: "done"; message_id: string; usage: { input_tokens: number; output_tokens: number } }

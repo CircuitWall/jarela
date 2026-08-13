@@ -116,6 +116,11 @@ export function useSSE(onDone?: () => void) {
         pendingTextRef.current += event.delta;
         scheduleFlush();
         activityRef.current?.set("Responding…");
+      } else if (event.type === "status") {
+        const label = typeof event.label === "string" && event.label.trim().length > 0
+          ? event.label
+          : "Thinking…";
+        activityRef.current?.set(label);
       } else if (event.type === "thinking_delta") {
         pendingThinkingRef.current += event.delta;
         scheduleFlush();

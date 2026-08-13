@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Brain, DatabaseZap, Layers, DollarSign } from "lucide-react";
+import { Brain, DatabaseZap, Layers } from "lucide-react";
 import type { MessageUsage } from "@/api/types";
 
 interface Props {
@@ -15,14 +15,6 @@ function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
-}
-
-function fmtCost(usd: number): string {
-  if (usd < 0.0001) return "<$0.0001";
-  if (usd < 0.001) return `$${usd.toFixed(4)}`;
-  if (usd < 0.01) return `$${usd.toFixed(3)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(2)}`;
 }
 
 /**
@@ -129,12 +121,11 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
           {trailing > 0 && <div className="h-full bg-surface-3" style={{ width: `${toPct(trailing)}%` }} aria-hidden title={`Reserved for reply: ${trailing.toLocaleString()} tokens (${Math.round((trailing/cap)*100)}% of window)`} />}
         </div>
       </button>
-      {(thinkingTokens > 0 || cacheActive || usage.cost_usd != null) && !showDetails && (
+      {(thinkingTokens > 0 || cacheActive) && !showDetails && (
         <MetaChipRow
           thinking={thinkingTokens}
           cacheRead={cacheRead}
           cacheCreation={cacheCreation}
-          costUsd={usage.cost_usd}
         />
       )}
       {showDetails && (
@@ -170,14 +161,6 @@ export function ContextUsageBar({ usage, fallbackContextWindow }: Props) {
             title={`Output: tokens the model generated in its reply.\nWindow: total context capacity of this model.`}
           >
             Output: {fmtTokens(usage.output_tokens)} · Window: {fmtTokens(cap)}
-            {usage.cost_usd != null && (
-              <span
-                className="ml-2 tabular-nums text-fg-faint/70"
-                title={`Estimated turn cost: ${fmtCost(usage.cost_usd)} USD`}
-              >
-                · {fmtCost(usage.cost_usd)}
-              </span>
-            )}
           </span>
         </div>
       )}
@@ -226,13 +209,12 @@ function Chip({ icon: Icon, label, title, accent }: {
   );
 }
 
-function MetaChipRow({ thinking, cacheRead, cacheCreation, costUsd }: {
+function MetaChipRow({ thinking, cacheRead, cacheCreation }: {
   thinking: number;
   cacheRead: number;
   cacheCreation: number;
-  costUsd: number | null;
 }) {
-  if (thinking === 0 && cacheRead === 0 && cacheCreation === 0 && costUsd == null) return null;
+  if (thinking === 0 && cacheRead === 0 && cacheCreation === 0) return null;
   return (
     <div className="mt-0.5 px-2 flex flex-wrap items-center gap-1">
       {thinking > 0 && (
@@ -257,13 +239,6 @@ function MetaChipRow({ thinking, cacheRead, cacheCreation, costUsd }: {
           label={`${fmtTokens(cacheCreation)} written`}
           title={`${cacheCreation.toLocaleString()} tokens written to prompt cache (billed at 1.25× input rate).`}
           accent="border-amber-400/20 text-amber-600/70 dark:text-amber-300/50"
-        />
-      )}
-      {costUsd != null && (
-        <Chip
-          icon={DollarSign}
-          label={fmtCost(costUsd)}
-          title={`Estimated turn cost: ${fmtCost(costUsd)} USD`}
         />
       )}
     </div>

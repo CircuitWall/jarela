@@ -344,6 +344,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
 
+  // First-response turns (no prior assistant message in the window) should
+  // feel immediate; cap recall wait so we don't burn the full recall budget
+  // before the model even starts streaming.
+  const hasAssistantHistory = historyWindow.history.some((m) => m.role === "assistant");
+  const recallWaitBudgetMs = hasAssistantHistory
+    ? recallBudgetMs()
+    : Math.min(recallBudgetMs(), 350);
+
   // Recall is best-effort: cap on the recall budget so a cold embeddings
   // round-trip doesn't block the LLM stream from starting.
   const oldestInWindow = historyWindow.history.length > 0
@@ -353,7 +361,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     ? ""
     : await raceWithBudget(
       buildRecallContext(req.thread_id, trimmed, oldestInWindow),
-      recallBudgetMs(),
+      recallWaitBudgetMs,
       "",
     );
 

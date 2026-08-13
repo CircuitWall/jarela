@@ -124,6 +124,7 @@ export const ENV_DEFAULTS = {
   hallucinationDetectorModel: "",
   modelRouterMode: "off" as const,
   modelRouterPolicy: "balanced" as const,
+  perfTelemetryEnabled: false,
   // citation checker (second-pass LLM on agents with citation_strictness != 'off')
   citationCheckerTailChars: 4_000,
   // numbered source manifest shown to agents with citation_strictness != 'off'
@@ -694,6 +695,16 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
     enumValues: MODEL_ROUTER_POLICIES,
+  },
+  {
+    name: "JARELA_PERF_TELEMETRY_ENABLED",
+    type: "bool",
+    default: ENV_DEFAULTS.perfTelemetryEnabled,
+    description: "Enable local-only run-performance telemetry logs (queue/prep/TTFT/stream/total). No external export.",
+    category: "logging",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: false,
   },
   {
     name: "JARELA_CITATION_CHECKER_TAIL_CHARS",
