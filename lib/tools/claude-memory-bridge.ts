@@ -30,6 +30,12 @@ export interface ClaudeSyncValue {
 function normalizeProjectPath(cwd: string): string {
   const raw = String(cwd ?? "").trim();
   if (!raw) return path.resolve(raw);
+  // Treat explicit Windows drive paths as already-absolute even on POSIX
+  // runners, otherwise path.resolve prefixes the current working directory.
+  if (/^[A-Za-z]:[\\/]/.test(raw)) {
+    const normalized = raw.replace(/\\/g, "/").replace(/\/+$/, "");
+    return normalized || raw;
+  }
   // Preserve POSIX-style absolute paths verbatim even on Windows so the
   // Claude project directory encoding matches Claude Code's own layout.
   if (raw.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(raw)) {
