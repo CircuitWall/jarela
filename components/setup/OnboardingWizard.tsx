@@ -2,9 +2,11 @@
 
 import { ArrowLeft, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/api/client";
 import type {
   AgentConfig,
+  IntegrationDefinition,
   IntegrationStatus,
   ModelConfig,
   UserProfile,
@@ -13,6 +15,7 @@ import { useAppContext } from "@/contexts/AppContext";
 import { getAppName } from "@/lib/env/app-config";
 import { Logo } from "@/components/ui/Logo";
 import { StepAgent } from "./wizard/StepAgent";
+import { StepCredentials } from "./wizard/StepCredentials";
 import { StepModel } from "./wizard/StepModel";
 import { StepProfile } from "./wizard/StepProfile";
 import { StepReview } from "./wizard/StepReview";
@@ -25,6 +28,7 @@ interface Props {
 
 const STEPS: StepInfo[] = [
   { id: "profile", title: "About you", short: "Profile" },
+  { id: "credentials", title: "Credentials", short: "Credentials" },
   { id: "model", title: "Model", short: "Model" },
   { id: "agent", title: "Agent", short: "Agent" },
   { id: "review", title: "Review", short: "Review" },
@@ -32,9 +36,11 @@ const STEPS: StepInfo[] = [
 
 export function OnboardingWizard({ context }: Props) {
   const { state, dispatch } = useAppContext();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [agents, setAgents] = useState<AgentConfig[]>([]);
+  const [integrationDefs, setIntegrationDefs] = useState<IntegrationDefinition[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationStatus[]>([]);
 
   const [step, setStep] = useState(0);
@@ -54,11 +60,12 @@ export function OnboardingWizard({ context }: Props) {
     setAgents(rows);
   }, []);
   const refreshIntegrations = useCallback(async () => {
-    const res = await api.integrations
-      .list()
-      .then((r) => r.statuses)
-      .catch(() => [] as IntegrationStatus[]);
-    setIntegrations(res);
+    const res = await api.integrations.list().catch(() => ({
+      definitions: [] as IntegrationDefinition[],
+      statuses: [] as IntegrationStatus[],
+    }));
+    setIntegrationDefs(res.definitions);
+    setIntegrations(res.statuses);
   }, []);
 
   const handleModelsChanged = useCallback(() => {
@@ -81,13 +88,13 @@ export function OnboardingWizard({ context }: Props) {
             api.agents.list().catch(() => []),
             api.integrations
               .list()
-              .then((res) => res.statuses)
-              .catch(() => []),
+              .catch(() => ({ definitions: [] as IntegrationDefinition[], statuses: [] as IntegrationStatus[] })),
           ]);
         if (cancelled) return;
         setModels(modelRows);
         setAgents(agentRows);
-        setIntegrations(integrationRows);
+        setIntegrationDefs(integrationRows.definitions);
+        setIntegrations(integrationRows.statuses);
         setName(profileData?.name ?? "");
         setAbout(profileData?.about ?? "");
         setPreset(
@@ -121,7 +128,7 @@ export function OnboardingWizard({ context }: Props) {
       });
       const targetAgent = agents.find((a) => a.is_default) ?? agents[0] ?? null;
       if (context === "setup") {
-        window.location.href = "/";
+        router.push("/");
         return;
       }
       if (targetAgent) dispatch({ type: "SET_AGENT", agentId: targetAgent.id });
@@ -137,8 +144,9 @@ export function OnboardingWizard({ context }: Props) {
 
   const canAdvance = (() => {
     if (step === 0) return hasName;
-    if (step === 1) return hasModel;
-    if (step === 2) return hasAgent;
+    if (step === 1) return true;
+    if (step === 2) return hasModel;
+    if (step === 3) return hasAgent;
     return canSave;
   })();
   const isLast = step === STEPS.length - 1;
@@ -199,16 +207,23 @@ export function OnboardingWizard({ context }: Props) {
           />
         )}
         {step === 1 && (
-          <StepModel models={models} onChanged={handleModelsChanged} />
+          <StepCredentials
+            definitions={integrationDefs}
+            integrations={integrations}
+            onChanged={handleModelsChanged}
+          />
         )}
         {step === 2 && (
+          <StepModel models={models} onChanged={handleModelsChanged} />
+        )}
+        {step === 3 && (
           <StepAgent
             agents={agents}
             models={models}
             onChanged={handleAgentsChanged}
           />
         )}
-        {step === 3 && (
+        {step === 4 && (
           <StepReview
             name={name}
             about={about}
