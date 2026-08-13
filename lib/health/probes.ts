@@ -468,12 +468,22 @@ export async function probeClaudeCode(): Promise<HealthResult> {
     }
     const versionText = `${version.stdout ?? version.stderr ?? ""}`.trim().split("\n").find(Boolean) ?? "Claude Code";
 
-    if (!cfg.apiKey) {
+    if (!cfg.apiKey && !cfg.authToken) {
       return ok({ version: versionText, auth: "local-login-or-settings", bin: cfg.bin });
     }
 
+    if (cfg.authToken && !cfg.apiKey) {
+      // Claude Code token auth is verified by the CLI itself at runtime.
+      return ok({ version: versionText, auth: "auth_token", bin: cfg.bin });
+    }
+
+    const apiKey = cfg.apiKey;
+    if (!apiKey) {
+      return probeError("Claude Code auth mode is ambiguous. Set either API key or auth token in Credentials -> Claude Code.");
+    }
+
     const res = await fetch("https://api.anthropic.com/v1/models", {
-      headers: { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
       signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
     });
     if (res.status === 401 || res.status === 403) {
