@@ -685,7 +685,7 @@ that whitelists which categories are usable.
 | **Mail** | **Google:** `gmail_search`, `gmail_get_message`, `gmail_list_labels`, `gmail_modify_message`, `gmail_create_draft`, `gmail_trash_message`<br/>**Microsoft:** `outlook_search`, `outlook_get_message`, `outlook_list_folders`, `outlook_modify_message`, `outlook_create_draft`, `outlook_trash_message` | Read/search/draft only on both providers — no auto-send. Gmail via Google OAuth, Outlook via Microsoft Graph. |
 | **Calendar** | **Google:** `calendar_list_calendars`, `calendar_list_events`, `calendar_get_event`, `calendar_create_event`, `calendar_update_event`, `calendar_delete_event`<br/>**Microsoft:** `outlook_calendar_list_calendars`, `outlook_calendar_list_events`, `outlook_calendar_get_event`, `outlook_calendar_create_event`, `outlook_calendar_update_event`, `outlook_calendar_delete_event` | Full read/write on both. Outlook variant can provision Teams meetings; Google variant can provision Google Meet. |
 | **Location** | `get_user_location` | Browser geolocation forwarded by the PWA |
-| **Config** | `propose_config_change`, `check_proposal` | Human-in-the-loop approval flow |
+| **Config** | `read_agent_instruction`, `update_agent_instruction`, `propose_config_change`, `check_proposal` | `update_agent_instruction` is the direct no-approval path for an agent to self-edit its own instructions; proposals remain for broader/cross-agent config changes |
 
 Any tool exposed by a connected **MCP server** is mounted under the `MCP`
 category automatically.

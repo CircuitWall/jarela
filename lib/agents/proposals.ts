@@ -24,6 +24,7 @@ import {
   type HarnessSection,
   type HarnessSectionKey,
 } from "@/lib/agents/harness/types";
+import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
 
 export interface ApplyResult {
   ok: boolean;
@@ -122,13 +123,22 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
     identity?: string;
     instructions?: string;
     instructions_append?: string;
+    instructions_edits?: unknown;
     history_limit?: number;
     history_window_hours?: number;
     harness_id?: string | null;
   };
   if (!p.agent_id) return { ok: false, detail: "agent_id required" };
-  if (p.instructions !== undefined && p.instructions_append !== undefined) {
-    return { ok: false, detail: "use instructions (full replace) OR instructions_append, not both" };
+  const editModes = [
+    p.instructions !== undefined,
+    p.instructions_append !== undefined,
+    p.instructions_edits !== undefined,
+  ].filter(Boolean).length;
+  if (editModes > 1) {
+    return {
+      ok: false,
+      detail: "use one instructions mode only: instructions OR instructions_append OR instructions_edits",
+    };
   }
   const existing = getAgentConfig(p.agent_id);
   if (!existing) return { ok: false, detail: `agent "${p.agent_id}" not found` };
@@ -140,12 +150,22 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
       return { ok: false, detail: `harness "${p.harness_id}" not found` };
     }
   }
-  const instructionsChanged = p.instructions !== undefined || p.instructions_append !== undefined;
-  const newInstructions = p.instructions !== undefined
-    ? p.instructions
-    : p.instructions_append !== undefined
-      ? existing.instructions + p.instructions_append
-      : existing.instructions;
+  const instructionsChanged =
+    p.instructions !== undefined ||
+    p.instructions_append !== undefined ||
+    p.instructions_edits !== undefined;
+  let newInstructions = existing.instructions;
+  let instructionsEditSummary: Array<Record<string, unknown>> | undefined;
+  if (p.instructions !== undefined) {
+    newInstructions = p.instructions;
+  } else if (p.instructions_append !== undefined) {
+    newInstructions = existing.instructions + p.instructions_append;
+  } else if (p.instructions_edits !== undefined) {
+    const transformed = applyInstructionEdits(existing.instructions, p.instructions_edits);
+    if (!transformed.ok) return { ok: false, detail: transformed.error };
+    newInstructions = transformed.text;
+    instructionsEditSummary = transformed.summary;
+  }
   upsertAgentConfig({
     id: existing.id,
     name: existing.name,
@@ -164,10 +184,12 @@ function applyUpdateAgent(payload: unknown): ApplyResult {
       agent_id: p.agent_id,
       identity_changed: p.identity !== undefined,
       instructions_changed: instructionsChanged,
+      instructions_edit_summary: instructionsEditSummary,
       harness_id_changed: p.harness_id !== undefined,
     },
   };
 }
+
 
 // ADR-0036: agent-driven edits to *custom* harness presets. Built-ins remain
 // read-only; the global default pointer stays UI-only. Creates when `id` is

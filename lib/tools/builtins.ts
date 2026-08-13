@@ -21,6 +21,7 @@ import "./generate_voice";
 import "./schedule";
 import "./watcher";
 import "./propose";
+import "./agent-instruction";
 import "./integrations";
 // Default LangChain packages (Atlassian, GitHub, Jira Align) ship with
 // Jarela but are runtime-toggleable: see ./default-packages.ts.

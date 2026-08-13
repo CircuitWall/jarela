@@ -39,6 +39,7 @@ export const proposeConfigChangeTool = tool(
     description:
       "Propose a configuration change that requires user approval. Use this when you'd benefit from " +
       "installing/toggling an MCP server, or modifying agent settings (tool allowlist, identity, instructions, history window). " +
+      "For this agent's own instruction-only updates, prefer update_agent_instruction (no approval). " +
       "The proposal is queued and shown to the user; they explicitly approve or deny. " +
       "Don't propose changes the user didn't ask for — only when the current task clearly needs it.",
     schema: z.object({
@@ -64,7 +65,12 @@ export const proposeConfigChangeTool = tool(
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
           "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'] }\n" +
           "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, harness_id? } " +
-          "  — use instructions_append to add standing rules without overwriting existing ones (mutually exclusive with instructions); " +
+          "  — use instructions_append to add standing rules without overwriting existing ones; " +
+          "  use instructions_edits for deterministic transforms over the current saved instruction text " +
+          "(mutually exclusive with instructions/instructions_append). " +
+          "instructions_edits supports: " +
+          "[{ op: 'replace', find, replace, all?, ignore_case? }, { op: 'remove', text, all?, ignore_case? }, " +
+          "{ op: 'append'|'prepend', text, if_missing?, ignore_case? }, { op: 'dedupe_lines'|'dedupe_paragraphs', keep?: 'first'|'last' }]. " +
           "  harness_id accepts an existing harness id ('builtin:default' or 'custom:<uuid>'), or null to inherit the global default\n" +
           "- start_oauth: { integration_id: 'gmail' } — only after enable_integration saved client_id/secret\n" +
           "- set_provider_key: { name: 'anthropic-default', provider: 'anthropic', model_id: 'claude-opus-4-7', is_default?: true } " +
