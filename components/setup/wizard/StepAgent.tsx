@@ -42,7 +42,7 @@ export function StepAgent({ agents, models, onChanged }: StepAgentProps) {
   return (
     <StepShell
       icon={<Bot size={18} />}
-      eyebrow="Step 3 · Create an agent"
+      eyebrow="Step 4 · Create an agent"
       title="Give your assistant a personality"
       description="An agent ties a model to a name, instructions, tools, and (optionally) a voice. You can create as many as you like — start with one."
     >

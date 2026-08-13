@@ -22,7 +22,7 @@ export function StepReview({ name, about, preset, models, agents, integrations }
   return (
     <StepShell
       icon={<Sparkles size={18} />}
-      eyebrow="Step 4 · Review"
+      eyebrow="Step 5 · Review"
       title="You're all set"
       description="Quick recap of what we'll save. You can revisit any of this later from Profile, Models, and Agents."
     >
