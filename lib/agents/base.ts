@@ -56,6 +56,6 @@ export interface StreamChunk {
   // See broadcast() in run-registry.ts: heartbeats bump last_chunk_at
   // and are dropped before buffering / fan-out, so the SSE wire never
   // carries meaningless tick events.
-  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "done" | "error" | "heartbeat";
+  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "done" | "error" | "heartbeat" | "status";
   data: Record<string, unknown>;
 }

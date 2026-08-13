@@ -325,6 +325,10 @@ async function buildWarmSummary(
 async function buildFactsContext(query: string, factsBudgetTokens: number): Promise<string> {
   if (factsBudgetTokens <= 16) return "";
   if (!query.trim()) return "";
+  // Fast-path: if no durable facts exist, skip the embedding recall call.
+  // This avoids spending the recall budget on first-run setups where the
+  // facts namespace is empty.
+  if (listMemory("facts", "", 1).length === 0) return "";
   const charBudget = factsBudgetTokens * 4;
 
   let hits: Array<{ key: string; value: string }> = [];

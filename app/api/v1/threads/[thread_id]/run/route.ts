@@ -29,6 +29,7 @@ import { validateBody } from "@/lib/api/responses";
 import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 import type { RouteDecisionMetadata } from "@/api/types";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
+import { getConfig } from "@/lib/env/config";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -46,6 +47,19 @@ interface RunErrorSource {
   errorProvider?: string;
   routeDecision?: RouteDecisionMetadata | null;
 }
+
+function estimateUtf8Bytes(text: string): number {
+  return enc.encode(text).byteLength;
+}
+
+function estimatePayloadBytes(payload: unknown): number {
+  try {
+    return estimateUtf8Bytes(JSON.stringify(payload));
+  } catch {
+    return 0;
+  }
+}
+
 function persistRunErrorMarker(thread_id: string, src: RunErrorSource): void {
   const raw = (src.errorMessage ?? "").trim();
   const message = raw.length > 0 ? raw : "run failed";
@@ -105,6 +119,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   // caller can back off rather than pin yet more work in memory.
   const thread = getThread(thread_id);
   const pinnedModelConfigName = snapshotThreadModelConfigName(thread_id);
+  const enqueuedAt = Date.now();
   let position: number;
   try {
     ({ position } = enqueueThreadRun(thread_id, "user", async () => {
@@ -114,8 +129,18 @@ export async function POST(req: NextRequest, { params }: Params) {
       // SSE handler emits a synthetic done — the client reopens the
       // EventSource and picks up the stream once we're running.
       const active = startRun(thread_id, thread?.agent_id ?? null);
+      broadcast(active, { type: "status", data: { phase: "starting", label: "Starting…" } });
+      const runStartedAt = Date.now();
+      const queueWaitMs = Math.max(0, runStartedAt - enqueuedAt);
+      const perfTelemetryEnabled = getConfig().perfTelemetryEnabled;
+      let prepDurationMs = 0;
+      let ttftMs: number | null = null;
+      let streamDurationMs = 0;
+      const toolsUsed = new Set<string>();
       let prepared;
       try {
+        broadcast(active, { type: "status", data: { phase: "preparing", label: "Preparing context…" } });
+        const prepStartedAt = Date.now();
         prepared = await prepareThreadRun({
           thread_id,
           message,
@@ -126,6 +151,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           context_profile: resolveTurnProfile("user"),
           _pinned_model_config_name: pinnedModelConfigName,
         });
+        prepDurationMs = Date.now() - prepStartedAt;
       } catch (err) {
         // Prep failure (unknown agent, model misconfig, …). With queueing
         // the HTTP request has already returned 202, so the error has to
@@ -149,13 +175,48 @@ export async function POST(req: NextRequest, { params }: Params) {
       // Wrap the whole body in try/finally.
       let terminal: "done" | "error" = "error";
       let assistantContent = "";
+      let terminalErrorCode: string | undefined;
+      let inputTokens: number | null = null;
+      let outputTokens: number | null = null;
+      let cacheReadTokens: number | null = null;
+      let cacheCreateTokens: number | null = null;
+      let thinkingTokens: number | null = null;
+      let toolResultCount = 0;
+      let toolResultBytes = 0;
       try {
         const startedAt = Date.now();
+        broadcast(active, { type: "status", data: { phase: "thinking", label: "Thinking…" } });
+        const streamStartedAt = Date.now();
         const collected = await collectStream(prepared.stream as AsyncIterable<StreamChunk>, {
-          onChunk: (chunk) => broadcast(active, chunk),
+          onChunk: (chunk) => {
+            if (ttftMs === null && chunk.type !== "heartbeat") {
+              ttftMs = Math.max(0, Date.now() - runStartedAt);
+            }
+            if (chunk.type === "tool_call") {
+              const toolName = chunk.data && typeof chunk.data.name === "string"
+                ? chunk.data.name
+                : "";
+              if (toolName) toolsUsed.add(toolName);
+            }
+            broadcast(active, chunk);
+          },
         });
+        streamDurationMs = Date.now() - streamStartedAt;
         assistantContent = collected.assistantContent;
         terminal = collected.terminal;
+        terminalErrorCode = collected.errorCode;
+        if (collected.usage) {
+          inputTokens = collected.usage.input_tokens;
+          outputTokens = collected.usage.output_tokens;
+          cacheReadTokens = collected.usage.cache_read_input_tokens ?? 0;
+          cacheCreateTokens = collected.usage.cache_creation_input_tokens ?? 0;
+          thinkingTokens = collected.usage.thinking_tokens ?? null;
+        }
+        if (collected.toolEvents?.length) {
+          const resultEvents = collected.toolEvents.filter((ev) => ev.phase === "result");
+          toolResultCount = resultEvents.length;
+          toolResultBytes = resultEvents.reduce((sum, ev) => sum + estimatePayloadBytes(ev.payload), 0);
+        }
         const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
           durationMs: Date.now() - startedAt,
           terminal: collected.terminal,
@@ -220,6 +281,41 @@ export async function POST(req: NextRequest, { params }: Params) {
           console.error("[run] failed to persist run_error marker", persistErr);
         }
       } finally {
+        if (perfTelemetryEnabled) {
+          const totalMs = Math.max(0, Date.now() - runStartedAt);
+          const ttftValue = ttftMs ?? totalMs;
+          const toolList = Array.from(toolsUsed).join(",") || "none";
+          const assistantChars = assistantContent.length;
+          const assistantBytes = estimateUtf8Bytes(assistantContent);
+          const inTok = inputTokens ?? -1;
+          const outTok = outputTokens ?? -1;
+          const cacheRead = cacheReadTokens ?? -1;
+          const cacheCreate = cacheCreateTokens ?? -1;
+          const cacheDenom = Math.max(0, inTok) + Math.max(0, cacheRead) + Math.max(0, cacheCreate);
+          const cacheReadPct = cacheDenom > 0 && cacheRead >= 0
+            ? Math.round((cacheRead / cacheDenom) * 1000) / 10
+            : -1;
+          console.info(
+            `[perf.run] thread=${thread_id} status=${terminal}`
+            + ` queue_ms=${queueWaitMs}`
+            + ` prep_ms=${prepDurationMs}`
+            + ` ttft_ms=${ttftValue}`
+            + ` stream_ms=${streamDurationMs}`
+            + ` total_ms=${totalMs}`
+            + ` input_tokens=${inTok}`
+            + ` output_tokens=${outTok}`
+            + ` cache_read_tokens=${cacheRead}`
+            + ` cache_create_tokens=${cacheCreate}`
+            + ` cache_read_pct=${cacheReadPct}`
+            + ` thinking_tokens=${thinkingTokens ?? -1}`
+            + ` assistant_chars=${assistantChars}`
+            + ` assistant_bytes=${assistantBytes}`
+            + ` tool_results=${toolResultCount}`
+            + ` tool_result_bytes=${toolResultBytes}`
+            + ` tools=${toolList}`
+            + ` error_code=${terminalErrorCode ?? "-"}`,
+          );
+        }
         finishRun(active, terminal);
         publishNotification({
           type: "run_completed",
