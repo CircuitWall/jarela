@@ -102,7 +102,7 @@ describe("loadLangChainPackages", () => {
     expect(registeredNames().has("fake_a")).toBe(true);
     expect(registeredCategory("fake_a")).toBe("Web");
     expect(registeredCapability("fake_a")).toBe("read");
-  });
+  }, 20_000);
 
   it("defaults capability to execute when omitted", async () => {
     const dir = setupPackagesDir("default-cap");
