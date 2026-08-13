@@ -59,17 +59,17 @@ export function StepModel({ models, onChanged }: StepModelProps) {
   return (
     <StepShell
       icon={<ShieldCheck size={18} />}
-      eyebrow="Step 2 · Connect a model"
+      eyebrow="Step 3 · Connect a model"
       title="Pick the brain that powers your agent"
-      description="A model config links Jarela to an LLM provider — Anthropic, OpenAI, Google Gemini, GitHub Copilot, and more. You need at least one before your first agent can think."
+      description="A model config links Jarela to an LLM provider — Anthropic, OpenAI, Google Gemini, GitHub Copilot, and more. Pick one of the credentials you set up in the previous step, or use a per-model override if you need something custom."
     >
       <div className="flex items-start gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2.5 text-xs text-fg">
         <Info size={14} className="mt-0.5 shrink-0 text-accent" />
         <div className="leading-relaxed">
           <p className="font-medium">First time? Two friendly options:</p>
           <ul className="mt-1 space-y-0.5 text-fg-subtle">
-            <li>• <strong>GitHub Copilot</strong> — sign in with your browser, no API key to copy.</li>
-            <li>• <strong>Anthropic / OpenAI / Gemini / DeepSeek / Cohere</strong> — paste an API key from the provider&apos;s console.</li>
+            <li>• <strong>Reuse a saved credential</strong> — pick the provider credential you added in the previous step.</li>
+            <li>• <strong>Set it inline on this model</strong> — useful for one-off or advanced provider settings.</li>
           </ul>
           <p className="mt-1 text-fg-subtle">You can add more models or change defaults later from Settings → Models.</p>
         </div>
