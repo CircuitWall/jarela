@@ -239,7 +239,7 @@ test.describe("credentials panel UI", () => {
     await expect(defaultRow.getByTitle("Delete")).toBeVisible();
   });
 
-  test("panel shows the empty-state copy when no credentials exist", async ({ page, request }) => {
+  test("panel shows featured Claude card when no credentials exist", async ({ page, request }) => {
     await wipeTestCredentials(request); // belt-and-suspenders — afterEach should already have cleared
     // Also wipe any pre-existing model credentials the dev env created;
     // the empty-state copy renders only when the FULL list is empty.
@@ -252,7 +252,9 @@ test.describe("credentials panel UI", () => {
     try {
       await page.goto("/?tab=credentials");
       await waitForAppReady(page);
-      await expect(page.getByText(/No credentials yet/)).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
+      await expect(page.getByText("Featured", { exact: true })).toBeVisible();
+      await expect(page.getByText("Claude Code", { exact: true })).toBeVisible();
     } finally {
       // Re-seed the mock model so other tests in the file still pass.
       // seedMockAgent's POST is idempotent on the model name.
