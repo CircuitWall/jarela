@@ -28,6 +28,11 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
+  const claudeDef = useMemo(
+    () => definitions.find((def) => def.name === "claude-code") ?? null,
+    [definitions],
+  );
+
   const llmDefs = useMemo(() => {
     const byName = new Map(definitions.map((def) => [def.name, def]));
     const ordered = PROVIDER_ORDER
@@ -90,29 +95,56 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
         </p>
       </div>
 
-      <div className="grid gap-2">
-        {llmDefs.map((def) => {
-          const status = statusByName[def.name];
-          return (
-            <button
-              key={def.name}
-              type="button"
-              onClick={() => setActiveProvider(def.name)}
-              className="flex items-start gap-3 rounded-xl border border-border bg-surface-3 px-3 py-3 text-left transition-colors hover:bg-surface-3/70"
-            >
-              <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${status?.configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-sm font-medium text-fg">
-                  <span className="truncate">{def.label}</span>
-                  <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${status?.configured ? "border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-border bg-surface text-fg-subtle"}`}>
-                    {status?.configured ? "configured" : "not connected"}
-                  </span>
+      {claudeDef && (
+        <div className="space-y-2">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Agent runtime</div>
+          <button
+            type="button"
+            onClick={() => setActiveProvider(claudeDef.name)}
+            className="flex items-start gap-3 rounded-xl border border-border bg-surface-3 px-3 py-3 text-left transition-colors hover:bg-surface-3/70"
+          >
+            <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${statusByName[claudeDef.name]?.configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2 text-sm font-medium text-fg">
+                <span className="truncate">{claudeDef.label}</span>
+                <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${statusByName[claudeDef.name]?.configured ? "border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-border bg-surface text-fg-subtle"}`}>
+                  {statusByName[claudeDef.name]?.configured ? "configured" : "optional"}
                 </span>
-                <span className="mt-1 block text-[11px] leading-relaxed text-fg-faint">{def.description}</span>
               </span>
-            </button>
-          );
-        })}
+              <span className="mt-1 block text-[11px] leading-relaxed text-fg-faint">
+                Give Claude delegation its own UI-managed setup. This lets Jarela launch the local Claude Code CLI with an explicit binary path and API key instead of depending on whatever your shell exported.
+              </span>
+            </span>
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Model providers</div>
+        <div className="grid gap-2">
+          {llmDefs.map((def) => {
+            const status = statusByName[def.name];
+            return (
+              <button
+                key={def.name}
+                type="button"
+                onClick={() => setActiveProvider(def.name)}
+                className="flex items-start gap-3 rounded-xl border border-border bg-surface-3 px-3 py-3 text-left transition-colors hover:bg-surface-3/70"
+              >
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${status?.configured ? "bg-emerald-500" : "bg-fg-faint"}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-2 text-sm font-medium text-fg">
+                    <span className="truncate">{def.label}</span>
+                    <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${status?.configured ? "border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "border-border bg-surface text-fg-subtle"}`}>
+                      {status?.configured ? "configured" : "not connected"}
+                    </span>
+                  </span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-fg-faint">{def.description}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="rounded-xl border border-dashed border-border bg-surface-2/40 px-3 py-3 text-xs text-fg-subtle">
@@ -138,7 +170,6 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
 
       {activeProvider && (
         <AddCredentialDialog
-          initialCategory="llm"
           directProviderName={activeProvider}
           lockCategory
           onClose={() => setActiveProvider(null)}

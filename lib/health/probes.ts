@@ -10,6 +10,7 @@
 // every few minutes without burning quota.
 
 import { resolvePackageAuth } from "@/lib/tools/auth-registry";
+import { spawnSync } from "node:child_process";
 import type { AtlassianAuth } from "@circuitwall/atlassian-langchain";
 import type { GitHubAuth } from "@circuitwall/github-langchain";
 import type { JiraAlignAuth } from "@circuitwall/jira-align-langchain";
@@ -28,6 +29,17 @@ import { resolveGoogleTokenEndpoint } from "@/lib/integrations/gmail-oauth";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
+import { getClaudeCodeConfig } from "@/lib/tools/claude-code-config";
+
+export const __testing = {
+  spawnClaudeCodeVersion(bin: string, env: NodeJS.ProcessEnv) {
+    return spawnSync(bin, ["--version"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      env,
+    });
+  },
+};
 
 const DEFAULT_PROBE_TIMEOUT_MS = 15_000;
 
@@ -439,13 +451,49 @@ export async function probeGithubCopilot(): Promise<HealthResult> {
   }
 }
 
+export async function probeClaudeCode(): Promise<HealthResult> {
+  const cfg = getClaudeCodeConfig();
+  try {
+    const version = __testing.spawnClaudeCodeVersion(cfg.bin, { ...process.env, ...cfg.env });
+    if (version.error) {
+      const err = version.error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") {
+        return unconfigured(`Claude Code CLI not found at "${cfg.bin}". Install it or set the path in Credentials → Claude Code.`);
+      }
+      return transient(describeError(err));
+    }
+    if ((version.status ?? 0) !== 0) {
+      const out = `${version.stderr ?? ""}${version.stdout ?? ""}`.trim();
+      return probeError(`Claude Code exited ${version.status}: ${out.slice(0, 200)}`);
+    }
+    const versionText = `${version.stdout ?? version.stderr ?? ""}`.trim().split("\n").find(Boolean) ?? "Claude Code";
+
+    if (!cfg.apiKey) {
+      return ok({ version: versionText, auth: "local-login-or-settings", bin: cfg.bin });
+    }
+
+    const res = await fetch("https://api.anthropic.com/v1/models", {
+      headers: { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01" },
+      signal: probeSignal(DEFAULT_PROBE_TIMEOUT_MS),
+    });
+    if (res.status === 401 || res.status === 403) {
+      return authFailed("Anthropic rejected the Claude Code API key (401/403). Regenerate it at console.anthropic.com.");
+    }
+    if (res.status === 429) return transient("Anthropic rate-limited the Claude Code probe (429).");
+    if (!res.ok) return probeError(`Anthropic returned ${res.status}`);
+    return ok({ version: versionText, auth: "api_key", bin: cfg.bin });
+  } catch (err) {
+    return transient(describeError(err));
+  }
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Routing helpers
 // ────────────────────────────────────────────────────────────────────
 
 export type ProbeName =
   | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook" | "icloud"
-  | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot";
+  | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot" | "claude-code";
 
 const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   atlassian: probeAtlassian,
@@ -460,6 +508,7 @@ const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   deepseek: probeDeepseek,
   cohere: probeCohere,
   "github-copilot": probeGithubCopilot,
+  "claude-code": probeClaudeCode,
 };
 
 const PROBE_LABELS: Record<ProbeName, string> = {
@@ -475,6 +524,7 @@ const PROBE_LABELS: Record<ProbeName, string> = {
   deepseek: "DeepSeek",
   cohere: "Cohere",
   "github-copilot": "GitHub Copilot",
+  "claude-code": "Claude Code",
 };
 
 const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
@@ -490,6 +540,7 @@ const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
   deepseek: "llm",
   cohere: "llm",
   "github-copilot": "llm",
+  "claude-code": "integration",
 };
 
 export function listProbes(): ProbeName[] {

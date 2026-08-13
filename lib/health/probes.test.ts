@@ -14,7 +14,7 @@ const { storeOAuthToken, clearStoredOAuthToken } = await import("@/lib/providers
 const {
   probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
   probeOutlook, probeICloud, probeAnthropic, probeOpenAI, probeDeepseek,
-  probeCohere, probeGithubCopilot,
+  probeCohere, probeGithubCopilot, probeClaudeCode, __testing,
   listProbes, probeLabel, probeCategory, isIntegrationProbe, runProbe,
 } = await import("./probes");
 
@@ -29,10 +29,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function wipe(): void {
-  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot"]) {
+  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code"]) {
     deleteIntegration(k);
   }
   clearStoredOAuthToken();
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.JARELA_CLAUDE_BIN;
   delete process.env.OPENAI_API_KEY;
   delete process.env.DEEPSEEK_API_KEY;
   delete process.env.COHERE_API_KEY;
@@ -574,10 +576,57 @@ describe("health probes", () => {
     });
   });
 
+  describe("claude-code", () => {
+    it("is unconfigured when the CLI cannot be found", async () => {
+      vi.spyOn(__testing, "spawnClaudeCodeVersion").mockReturnValue({
+        error: Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }),
+      } as unknown as ReturnType<typeof __testing.spawnClaudeCodeVersion>);
+      const r = await probeClaudeCode();
+      expect(r.status).toBe("unconfigured");
+      expect(String(r.error)).toMatch(/CLI not found/i);
+    });
+
+    it("reports ok when the CLI exists and no UI-managed key is configured", async () => {
+      vi.spyOn(__testing, "spawnClaudeCodeVersion").mockReturnValue({
+        status: 0,
+        stdout: "2.1.200\n",
+        stderr: "",
+      } as unknown as ReturnType<typeof __testing.spawnClaudeCodeVersion>);
+      const r = await probeClaudeCode();
+      expect(r.status).toBe("ok");
+      expect(r.detail?.auth).toBe("local-login-or-settings");
+      expect(r.detail?.version).toBe("2.1.200");
+    });
+
+    it("validates the UI-managed API key when one is saved", async () => {
+      saveIntegration("claude-code", { api_key: "sk-ant-ui" });
+      vi.spyOn(__testing, "spawnClaudeCodeVersion").mockReturnValue({
+        status: 0,
+        stdout: "2.1.200\n",
+        stderr: "",
+      } as unknown as ReturnType<typeof __testing.spawnClaudeCodeVersion>);
+      mockFetch(() => jsonResponse({ data: [{ id: "claude-sonnet-4-6" }] }));
+      const r = await probeClaudeCode();
+      expect(r.status).toBe("ok");
+      expect(r.detail?.auth).toBe("api_key");
+    });
+
+    it("surfaces auth_failed when the saved API key is rejected", async () => {
+      saveIntegration("claude-code", { api_key: "sk-ant-ui" });
+      vi.spyOn(__testing, "spawnClaudeCodeVersion").mockReturnValue({
+        status: 0,
+        stdout: "2.1.200\n",
+        stderr: "",
+      } as unknown as ReturnType<typeof __testing.spawnClaudeCodeVersion>);
+      mockFetch(() => new Response("", { status: 401 }));
+      expect((await probeClaudeCode()).status).toBe("auth_failed");
+    });
+  });
+
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(12);
+      expect(names.length).toBe(13);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));
@@ -588,6 +637,7 @@ describe("health probes", () => {
       expect(isIntegrationProbe("atlassian")).toBe(true);
       expect(isIntegrationProbe("cohere")).toBe(true);
       expect(isIntegrationProbe("github-copilot")).toBe(true);
+      expect(isIntegrationProbe("claude-code")).toBe(true);
       expect(isIntegrationProbe("nonsense")).toBe(false);
     });
     it("runProbe dispatches by name", async () => {

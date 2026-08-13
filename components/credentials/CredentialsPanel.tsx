@@ -9,6 +9,7 @@ import { useCredentialProbes, type CredentialProbeResult } from "@/hooks/useCred
 import { NetworkPanel } from "@/components/integrations/NetworkPanel";
 import { PRESET_CATEGORIES } from "@/lib/integrations/categories";
 import { AddCredentialDialog } from "./AddCredentialDialog";
+import { IntegrationCard } from "./IntegrationCard";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { errorMessage } from "@/lib/utils/error";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
@@ -155,6 +156,9 @@ export function CredentialsListPanel() {
     for (const d of defs) m.set(d.name, d);
     return m;
   }, [defs]);
+
+  const featuredClaudeDef = defByName.get("claude-code");
+  const featuredClaudeStatus = statuses["claude-code"];
 
   async function syncFromEnv() {
     setSyncing(true);
@@ -304,7 +308,17 @@ export function CredentialsListPanel() {
           {loading && credentials.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
           )}
-          {!loading && grouped.length === 0 && (
+          {featuredClaudeDef && (
+            <section>
+              <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1 px-1">Featured</h3>
+              <IntegrationCard
+                definition={featuredClaudeDef}
+                status={featuredClaudeStatus}
+                onChanged={() => { void refresh(); }}
+              />
+            </section>
+          )}
+          {!loading && grouped.length === 0 && !featuredClaudeDef && (
             <p className="text-fg-faint text-sm py-6 text-center">
               No credentials yet. Click <span className="font-medium">+ Add credential</span> to connect a model provider (OpenAI, Anthropic, Gemini…) or an integration (Gmail, GitHub, Atlassian…).
             </p>
@@ -316,7 +330,7 @@ export function CredentialsListPanel() {
             <section key={cat}>
               <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1 px-1">{CATEGORY_LABELS[cat]}</h3>
               <div className="space-y-3">
-                {groups.map(({ provider, def, credentials: rows }) => (
+                {groups.filter(({ provider }) => provider !== "claude-code").map(({ provider, def, credentials: rows }) => (
                   <ProviderGroup
                     key={provider}
                     provider={provider}
