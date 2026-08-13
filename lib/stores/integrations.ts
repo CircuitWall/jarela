@@ -62,6 +62,17 @@ export const INTEGRATIONS = {
       { key: "api_key", label: "API key", placeholder: "sk-ant-…", secret: true, required: true },
     ],
   },
+  "claude-code": {
+    label: "Claude Code",
+    category: "infrastructure" as IntegrationCategory,
+    description:
+      "Used by the claude_delegate tool to spawn your local Claude Code CLI. " +
+      "Store an optional CLI path override and a UI-managed Anthropic API key here so Jarela doesn't depend on your shell session.",
+    fields: [
+      { key: "cli_path", label: "CLI path (optional)", placeholder: "/opt/homebrew/bin/claude", secret: false, required: false },
+      { key: "api_key", label: "Anthropic API key (optional)", placeholder: "sk-ant-…", secret: true, required: false },
+    ],
+  },
   atlassian: {
     label: "Atlassian (Jira + Confluence)",
     category: "issue-tracker" as IntegrationCategory,
@@ -392,6 +403,9 @@ export function saveIntegration(name: string, incoming: Record<string, string>):
       merged[f.key] = v;
       if (existing[f.key] !== v) touched.push(f.key);
     }
+  }
+  if (Object.keys(merged).length === 0) {
+    return { error: `add at least one field for "${def.label}" or clear the integration instead` };
   }
   const auth_method = deriveAuthMethod(name);
   if (existingCred) {
