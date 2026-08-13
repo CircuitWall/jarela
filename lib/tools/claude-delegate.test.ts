@@ -213,7 +213,7 @@ describe("claude_delegate — cwd resolution", () => {
       cli_path: "/opt/homebrew/bin/claude",
       auth_token: "auth-ui-only",
     });
-    process.env.ANTHROPIC_API_KEY = "sk-ant-env-should-not-pass";
+    process.env.ANTHROPIC_API_KEY = "env_api_key_should_not_pass";
     process.env.ANTHROPIC_AUTH_TOKEN = "auth-env-should-not-pass";
 
     await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
