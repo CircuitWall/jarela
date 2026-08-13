@@ -33,7 +33,7 @@ interface FakeChild extends EventEmitter {
   kill: (signal?: string) => void;
 }
 const state = vi.hoisted(() => ({
-  calls: [] as Array<{ bin: string; args: string[]; cwd: string }>,
+  calls: [] as Array<{ bin: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }>,
   killSpies: [] as Array<(signal?: string) => void>,
   script: [] as string[],
   exitCode: 0 as number | null,
@@ -42,15 +42,15 @@ const state = vi.hoisted(() => ({
 
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
-  const spawnFn = vi.fn((bin: string, args: string[], opts: { cwd: string }) => {
-    const isClaude = bin === "claude";
+  const spawnFn = vi.fn((bin: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => {
+    const isClaude = bin === "claude" || /(?:^|\/)claude$/.test(bin);
     const child = new EventEmitter() as FakeChild;
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
     const kill = vi.fn();
     child.kill = kill;
     if (isClaude) {
-      state.calls.push({ bin, args, cwd: opts.cwd });
+      state.calls.push({ bin, args, cwd: opts.cwd, env: opts.env });
       state.killSpies.push(kill);
     }
     if (!isClaude || state.autoClose) {
@@ -68,6 +68,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 const { claudeDelegateTool, claudeDelegateStatusTool } = await import("./claude-delegate");
 const { _resetDelegateJobs } = await import("./claude-delegate-jobs");
 const { _resetWorkspaceContext, setWorkspace } = await import("./workspace-context");
+const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
 
 function parse(s: string): Record<string, unknown> {
   return JSON.parse(s) as Record<string, unknown>;
@@ -101,6 +102,9 @@ beforeEach(() => {
   state.exitCode = 0;
   state.autoClose = true;
   delete process.env.JARELA_TOOL_SAFETY;
+  delete process.env.JARELA_CLAUDE_BIN;
+  delete process.env.ANTHROPIC_API_KEY;
+  deleteIntegration("claude-code");
   _resetDelegateJobs();
   _resetWorkspaceContext();
   projectRoot = mkdtempSync(join(tmpRoot, "proj-"));
@@ -169,6 +173,16 @@ describe("claude_delegate — cwd resolution", () => {
   it("flags workspace_missing when neither cwd nor an active workspace is set", async () => {
     const out = parse(await claudeDelegateTool.invoke({ task: "x", sync_memory: false }));
     expect(out.workspace_missing).toBe(true);
+  });
+
+  it("prefers the UI-managed Claude Code path and API key over shell discovery", async () => {
+    saveIntegration("claude-code", { cli_path: "/opt/homebrew/bin/claude", api_key: "sk-ant-ui" });
+    process.env.JARELA_CLAUDE_BIN = "/usr/local/bin/claude";
+    process.env.ANTHROPIC_API_KEY = "sk-ant-env";
+
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
+    expect(state.calls[0]!.bin).toBe("/opt/homebrew/bin/claude");
+    expect(state.calls[0]!.env.ANTHROPIC_API_KEY).toBe("sk-ant-ui");
   });
 });
 

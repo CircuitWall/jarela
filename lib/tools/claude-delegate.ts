@@ -33,6 +33,7 @@ import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { resolveSafetyMode } from "./safety";
 import { resolveSubprocessEnv } from "./subprocess-env";
 import { gitDiffSummary } from "./git-probe";
+import { getClaudeCodeConfig } from "./claude-code-config";
 import { getSession, rememberSession } from "@/lib/stores/claude-delegate-sessions";
 import * as bridge from "./claude-memory-bridge";
 import * as jobs from "./claude-delegate-jobs";
@@ -70,7 +71,7 @@ input — not for trivial style choices you can decide on your own.
 `.trim();
 
 function claudeBin(): string {
-  return process.env.JARELA_CLAUDE_BIN || "claude";
+  return getClaudeCodeConfig().bin;
 }
 
 function projectKey(cwd: string, feature?: string): string {
@@ -428,7 +429,8 @@ export const claudeDelegateTool = tool(
     }
 
     const workspaceRoot = currentWorkspace(config)?.root;
-    const { cwd, env } = resolveSubprocessEnv({ cwd: rawCwd, workspaceRoot });
+    const claudeConfig = getClaudeCodeConfig();
+    const { cwd, env } = resolveSubprocessEnv({ cwd: rawCwd, workspaceRoot, env: claudeConfig.env });
     const workspaceMissing = !rawCwd && !workspaceRoot;
 
     const key = projectKey(cwd, feature);

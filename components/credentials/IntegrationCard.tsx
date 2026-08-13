@@ -201,10 +201,19 @@ export function IntegrationCard({
     try {
       const r = await api.integrations.test(def.name, editingId ?? undefined);
       if (r.ok) {
-        const detail = r.detail as { displayName?: string; email?: string } | undefined;
+        const detail = r.detail as { displayName?: string; email?: string; version?: string; auth?: string } | undefined;
+        const message = detail?.displayName
+          ? `Connected as ${detail.displayName}`
+          : detail?.email
+            ? `Connected as ${detail.email}`
+            : detail?.version
+              ? detail.auth === "api_key"
+                ? `Claude Code ready (${detail.version})`
+                : `Claude Code detected (${detail.version})`
+              : "Connection ok";
         setTestResult({
           ok: true,
-          message: detail?.displayName ? `Connected as ${detail.displayName}` : "Connection ok",
+          message,
         });
       } else {
         setTestResult({ ok: false, message: r.error ?? "Test failed" });
@@ -272,6 +281,7 @@ export function IntegrationCard({
       </div>
 
       <div className="px-3 py-3 space-y-2">
+        {def.name === "claude-code" && <ClaudeCodeSetupGuide />}
         {def.name === "outlook" && <OutlookSetupGuide />}
         <label className="block text-xs text-fg-subtle">
           <span>Label <span className="text-fg-faint">(optional, e.g. &ldquo;Work&rdquo;, &ldquo;Personal&rdquo;)</span></span>
@@ -670,6 +680,41 @@ function OutlookSetupGuide() {
               create a new one in Azure and reconnect.</li>
           </ul>
         </div>
+      </div>
+    </details>
+  );
+}
+
+function ClaudeCodeSetupGuide() {
+  return (
+    <details className="rounded border border-border/60 bg-surface-3/40 text-xs text-fg-muted">
+      <summary className="cursor-pointer select-none px-2.5 py-1.5 text-fg hover:bg-surface-3">
+        Setup guide
+      </summary>
+      <div className="px-3 py-2.5 space-y-3 border-t border-border/60 leading-relaxed">
+        <p className="text-fg-subtle">
+          This integration powers the <code className="text-fg">claude_delegate</code> tool. Jarela runs your local Claude Code CLI and can inject a UI-managed API key so the tool does not depend on your shell session.
+        </p>
+
+        <Step n={1} title="Install Claude Code">
+          Install the CLI using the official installer or your package manager. After install, running <code className="text-fg">claude --version</code> in a terminal should print a version string.
+        </Step>
+
+        <Step n={2} title="Set the CLI path only if needed">
+          Leave <strong>CLI path</strong> blank when <code className="text-fg">claude</code> is already on PATH. Fill it in only when Jarela should use a specific binary, for example <code className="text-fg">/opt/homebrew/bin/claude</code>.
+        </Step>
+
+        <Step n={3} title="Choose how Jarela should authenticate Claude Code">
+          <ul className="list-disc ml-5 mt-1 space-y-0.5 text-fg-subtle">
+            <li>Paste an <strong>Anthropic API key</strong> here to make the UI-managed credential the primary path for Jarela-run Claude sessions.</li>
+            <li>Or leave the key blank and rely on your existing Claude Code login or settings outside Jarela.</li>
+          </ul>
+          If you save an API key here, Jarela injects it into the Claude Code subprocess directly instead of depending on a shell export.
+        </Step>
+
+        <Step n={4} title="Save and test">
+          Click <strong>Save</strong>, then <strong>Test</strong>. The test checks that the Claude binary is runnable; when an API key is saved, it also validates the key against Anthropic.
+        </Step>
       </div>
     </details>
   );
