@@ -444,8 +444,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const finalHistory = appendHistoryMessage(effectiveHistory, req._history_append_message);
 
   const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
+  // Preserve the effective per-turn router policy as the retry seed. Without
+  // this, transient retries fall back to the global policy whenever the
+  // initial request didn't carry an explicit _router_policy_override, which
+  // makes per-agent router_policy appear to "revert" during retries.
+  const retrySeedReq: ThreadRunRequest = req._router_policy_override === undefined
+    ? { ...req, _router_policy_override: routePolicy }
+    : req;
   const transientRetriesLeft = req._transient_retries_left ?? maxTransientRetries();
-  const transientWrapped = transientRetryStream(rawStream, req, transientRetriesLeft);
+  const transientWrapped = transientRetryStream(rawStream, retrySeedReq, transientRetriesLeft);
   const retriesLeft = req._stall_retries_left ?? maxStallRetries();
   // Overhead = the assembled system prompt + per-message scaffolding, which
   // is more accurate than the budget's static overhead allowance.
