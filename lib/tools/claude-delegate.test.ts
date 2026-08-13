@@ -207,6 +207,20 @@ describe("claude_delegate — cwd resolution", () => {
     expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-ui");
     expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-ui");
   });
+
+  it("does not inject env API key when UI selects auth_token-only mode", async () => {
+    saveIntegration("claude-code", {
+      cli_path: "/opt/homebrew/bin/claude",
+      auth_token: "auth-ui-only",
+    });
+    process.env.ANTHROPIC_API_KEY = "sk-ant-env-should-not-pass";
+    process.env.ANTHROPIC_AUTH_TOKEN = "auth-env-should-not-pass";
+
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
+
+    expect(state.calls[0]!.env.ANTHROPIC_AUTH_TOKEN).toBe("auth-ui-only");
+    expect(state.calls[0]!.env.ANTHROPIC_API_KEY).toBe("");
+  });
 });
 
 describe("claude_delegate — session persistence", () => {

@@ -34,6 +34,11 @@ function wipe(): void {
   }
   clearStoredOAuthToken();
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   delete process.env.JARELA_CLAUDE_BIN;
   delete process.env.OPENAI_API_KEY;
   delete process.env.DEEPSEEK_API_KEY;
@@ -620,6 +625,18 @@ describe("health probes", () => {
       } as unknown as ReturnType<typeof __testing.spawnClaudeCodeVersion>);
       mockFetch(() => new Response("", { status: 401 }));
       expect((await probeClaudeCode()).status).toBe("auth_failed");
+    });
+
+    it("reports auth_token mode when only token auth is configured", async () => {
+      saveIntegration("claude-code", { auth_token: "auth-ui" });
+      vi.spyOn(__testing, "spawnClaudeCodeVersion").mockReturnValue({
+        status: 0,
+        stdout: "2.1.200\n",
+        stderr: "",
+      } as unknown as ReturnType<typeof __testing.spawnClaudeCodeVersion>);
+      const r = await probeClaudeCode();
+      expect(r.status).toBe("ok");
+      expect(r.detail?.auth).toBe("auth_token");
     });
   });
 
