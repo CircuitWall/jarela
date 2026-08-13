@@ -67,10 +67,16 @@ export const INTEGRATIONS = {
     category: "infrastructure" as IntegrationCategory,
     description:
       "Used by the claude_delegate tool to spawn your local Claude Code CLI. " +
-      "Store an optional CLI path override and a UI-managed Anthropic API key here so Jarela doesn't depend on your shell session.",
+      "Store CLI/env overrides here so Jarela doesn't depend on your shell session. " +
+      "Supports API key or auth token, optional base URL, and default model overrides.",
     fields: [
       { key: "cli_path", label: "CLI path (optional)", placeholder: "/opt/homebrew/bin/claude", secret: false, required: false },
       { key: "api_key", label: "Anthropic API key (optional)", placeholder: "sk-ant-…", secret: true, required: false },
+      { key: "auth_token", label: "Anthropic auth token (optional)", placeholder: "auth_…", secret: true, required: false },
+      { key: "base_url", label: "Anthropic base URL (optional)", placeholder: "https://api.anthropic.com", secret: false, required: false },
+      { key: "default_opus_model", label: "Default Opus model (optional)", placeholder: "claude-opus-4-1", secret: false, required: false },
+      { key: "default_sonnet_model", label: "Default Sonnet model (optional)", placeholder: "claude-sonnet-4-5", secret: false, required: false },
+      { key: "default_haiku_model", label: "Default Haiku model (optional)", placeholder: "claude-haiku-4-5", secret: false, required: false },
     ],
   },
   atlassian: {

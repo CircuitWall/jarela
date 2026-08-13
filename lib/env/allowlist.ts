@@ -35,6 +35,13 @@ export const ENV_ALLOWLIST: readonly EnvFieldMapping[] = [
   // Anthropic (Claude) — primary LLM provider
   { envVars: ["ANTHROPIC_API_KEY"], integration: "anthropic", field: "api_key" },
 
+  // Claude Code tool runtime defaults
+  { envVars: ["ANTHROPIC_AUTH_TOKEN"], integration: "claude-code", field: "auth_token" },
+  { envVars: ["ANTHROPIC_BASE_URL"], integration: "claude-code", field: "base_url" },
+  { envVars: ["ANTHROPIC_DEFAULT_OPUS_MODEL"], integration: "claude-code", field: "default_opus_model" },
+  { envVars: ["ANTHROPIC_DEFAULT_SONNET_MODEL"], integration: "claude-code", field: "default_sonnet_model" },
+  { envVars: ["ANTHROPIC_DEFAULT_HAIKU_MODEL"], integration: "claude-code", field: "default_haiku_model" },
+
   // GitHub — used by github_* tools (ADR-0015)
   { envVars: ["GITHUB_TOKEN", "GH_TOKEN"], integration: "github", field: "token" },
 
