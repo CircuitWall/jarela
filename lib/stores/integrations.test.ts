@@ -44,6 +44,18 @@ describe("integrations store (credentials-backed)", () => {
   // breaks on the first user to upgrade. Single most important guard.
   const fixtures: Array<{ name: string; value: Record<string, string> }> = [
     { name: "anthropic", value: { api_key: "sk-ant-roundtrip" } },
+    {
+      name: "claude-code",
+      value: {
+        cli_path: "/opt/homebrew/bin/claude",
+        api_key: "sk-ant-cc",
+        auth_token: "auth_cc",
+        base_url: "https://anthropic.proxy.internal",
+        default_opus_model: "claude-opus-custom",
+        default_sonnet_model: "claude-sonnet-custom",
+        default_haiku_model: "claude-haiku-custom",
+      },
+    },
     { name: "google", value: { api_key: "AIza-roundtrip" } },
     { name: "github", value: { token: "ghp_roundtrip" } },
     { name: "atlassian", value: { url: "https://r.atlassian.net", email: "r@r.io", api_token: "ATATT-roundtrip" } },

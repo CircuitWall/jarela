@@ -51,6 +51,7 @@ export interface CredentialParams {
 // `GET /api/v1/credentials`.
 export const SECRET_PARAM_KEYS: ReadonlySet<string> = new Set([
   "api_key",
+  "auth_token",
   "api_token",
   "app_password",
   "client_secret",

@@ -707,12 +707,24 @@ function ClaudeCodeSetupGuide() {
         <Step n={3} title="Choose how Jarela should authenticate Claude Code">
           <ul className="list-disc ml-5 mt-1 space-y-0.5 text-fg-subtle">
             <li>Paste an <strong>Anthropic API key</strong> here to make the UI-managed credential the primary path for Jarela-run Claude sessions.</li>
+            <li>Or set an <strong>Anthropic auth token</strong> if your Claude setup uses token-based auth instead of an API key.</li>
             <li>Or leave the key blank and rely on your existing Claude Code login or settings outside Jarela.</li>
           </ul>
-          If you save an API key here, Jarela injects it into the Claude Code subprocess directly instead of depending on a shell export.
+          If you save these fields, Jarela injects them into the Claude Code subprocess directly instead of depending on shell exports.
         </Step>
 
-        <Step n={4} title="Save and test">
+        <Step n={4} title="Optional advanced runtime defaults">
+          You can also set optional Claude runtime env defaults in this card:
+          <ul className="list-disc ml-5 mt-1 space-y-0.5 text-fg-subtle">
+            <li><code className="text-fg">base_url</code> &rarr; <code className="text-fg">ANTHROPIC_BASE_URL</code></li>
+            <li><code className="text-fg">default_opus_model</code> &rarr; <code className="text-fg">ANTHROPIC_DEFAULT_OPUS_MODEL</code></li>
+            <li><code className="text-fg">default_sonnet_model</code> &rarr; <code className="text-fg">ANTHROPIC_DEFAULT_SONNET_MODEL</code></li>
+            <li><code className="text-fg">default_haiku_model</code> &rarr; <code className="text-fg">ANTHROPIC_DEFAULT_HAIKU_MODEL</code></li>
+          </ul>
+          Leave any of these blank if you do not need overrides.
+        </Step>
+
+        <Step n={5} title="Save and test">
           Click <strong>Save</strong>, then <strong>Test</strong>. The test checks that the Claude binary is runnable; when an API key is saved, it also validates the key against Anthropic.
         </Step>
       </div>

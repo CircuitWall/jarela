@@ -714,6 +714,7 @@ the same in-UI OAuth flow:
 | **MCP servers** | `Connections → MCP servers` | stdio / SSE via `@langchain/mcp-adapters`. Search the official [MCP Registry](https://registry.modelcontextprotocol.io/) or paste a custom command. |
 | **GitHub Copilot** (model provider) | `Profile` panel | OAuth device flow |
 | **GitHub** (issues + PRs) | `Credentials` | Personal Access Token (`repo` + optional `read:org`); used by `github_*` tools ([ADR-0015](docs/adr/0015-native-github-tools.md)) |
+| **Claude Code** (`claude_delegate`) | `Credentials` | Optional Claude CLI path + Anthropic runtime overrides (API key/auth token, base URL, default Opus/Sonnet/Haiku model envs). UI config is primary; env fallback remains (`JARELA_CLAUDE_BIN`, `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_DEFAULT_OPUS_MODEL`, `ANTHROPIC_DEFAULT_SONNET_MODEL`, `ANTHROPIC_DEFAULT_HAIKU_MODEL`) ([ADR-0071](docs/adr/0071-claude-code-delegation-tool.md)). |
 | **Atlassian** (Jira + Confluence) | `Credentials` | API token + email |
 | **Google** (Gmail + Calendar) | `Credentials` | In-app Google OAuth — click **Connect Gmail**, approve, done. Scopes: `gmail.modify` (drafts only, no send) + `calendar.events`. |
 | **Microsoft** (Outlook + Calendar) | `Credentials` | In-app Microsoft OAuth via Azure app registration — click **Connect Outlook**, approve, done. Scopes: `Mail.ReadWrite` + `Calendars.ReadWrite` + `offline_access`. Works with personal (`@outlook.com`) and work/school accounts. |
