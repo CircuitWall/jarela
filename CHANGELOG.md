@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Direct self-instruction update tools.** Added `read_agent_instruction`
+  and `update_agent_instruction` to the Config toolbelt so an agent can read
+  and update its own persisted instruction text without waiting on a proposal
+  approval flow.
+
+### Changed
+
+- **Instruction editing is now deterministic.** `update_agent` proposal payloads
+  now accept `instructions_edits` for literal replace/remove and line/paragraph
+  dedupe operations, reducing prompt-drift when tuning existing instructions.
+- **Self-config guidance now prefers direct self-update.** Harness guidance and
+  propose tool docs now steer instruction-only self updates to
+  `update_agent_instruction`, while proposal approvals remain for broader or
+  cross-agent configuration changes.
+
 ## [1.24.3] - 2026-08-12
 
 ### Fixed

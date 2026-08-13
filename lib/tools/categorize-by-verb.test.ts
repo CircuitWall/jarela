@@ -41,6 +41,7 @@ describe("categorizeByVerb", () => {
       "web_fetch",
       "web_search",
       "check_proposal",
+      "read_agent_instruction",
       "describe_extension_surfaces",
     ];
     for (const name of cases) {
@@ -79,6 +80,7 @@ describe("categorizeByVerb", () => {
       "memory_write",
       "memory_delete",
       "set_env_var",
+      "update_agent_instruction",
     ];
     for (const name of cases) {
       it(`${name} → write`, () => {

@@ -247,8 +247,43 @@ describe("applyAction(update_agent) instructions_append", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(String(result.detail)).toMatch(/not both/);
+    expect(String(result.detail)).toMatch(/one instructions mode only/);
     // Agent row must be untouched.
     expect(getAgentConfig("agent-append-conflict")!.instructions).toBe("be helpful");
+  });
+
+  it("applies deterministic instructions_edits for replace/remove/dedupe", async () => {
+    upsertAgentConfig({
+      id: "agent-edits",
+      name: "agent-edits",
+      identity: "test agent",
+      instructions: "Line A\nLine A\nLine B\n\nRule: old\nRule: old",
+      tools: [],
+    });
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-edits",
+      instructions_edits: [
+        { op: "replace", find: "old", replace: "new", all: true },
+        { op: "dedupe_lines" },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(getAgentConfig("agent-edits")!.instructions).toBe("Line A\nLine B\n\nRule: new");
+    expect((result.detail as { instructions_edit_summary?: unknown[] }).instructions_edit_summary?.length).toBe(2);
+  });
+
+  it("rejects update_agent when instructions_edit modes are mixed", async () => {
+    seedAgent("agent-edits-conflict");
+
+    const result = await applyAction("update_agent", {
+      agent_id: "agent-edits-conflict",
+      instructions_append: "\nmore",
+      instructions_edits: [{ op: "dedupe_lines" }],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(String(result.detail)).toMatch(/one instructions mode only/);
   });
 });
