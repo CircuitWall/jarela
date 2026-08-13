@@ -88,6 +88,38 @@ external or introducing a new category.
   session-local learning should flow into Jarela's own memory without the
   caller having to remember a flag.
 
+### Configuration placement and precedence
+
+This ADR also standardizes where operators configure Claude delegation:
+
+* **Primary home (UI):** `Settings -> Credentials -> Claude Code`.
+  * `cli_path` (optional, non-secret) — explicit binary override.
+  * `api_key` (optional, secret) — Anthropic key injected into spawned
+    Claude subprocesses.
+  * `auth_token` (optional, secret) — alternative Anthropic auth token.
+  * `base_url` (optional, non-secret) — override Anthropic endpoint.
+  * `default_opus_model` / `default_sonnet_model` /
+    `default_haiku_model` (all optional, non-secret) — default model
+    env overrides for Claude Code runs.
+* **Fallback (environment):**
+  * `JARELA_CLAUDE_BIN` for CLI path
+  * `ANTHROPIC_API_KEY` for auth
+  * `ANTHROPIC_AUTH_TOKEN` for auth-token mode
+  * `ANTHROPIC_BASE_URL` for endpoint override
+  * `ANTHROPIC_DEFAULT_OPUS_MODEL`
+  * `ANTHROPIC_DEFAULT_SONNET_MODEL`
+  * `ANTHROPIC_DEFAULT_HAIKU_MODEL`
+  This path exists for headless/service installs and backward compatibility,
+  but is not the first-class operator workflow.
+* **Resolution order:** integration row first, then env fallback, then
+  defaults (`claude` on PATH for binary, no API key for auth).
+* **Out of scope for Credentials UI:** invocation-time behavior
+  (`permission_mode`, `allow_unsafe`, `background`, `sync_memory`) remains
+  per-call tool input, not persisted account configuration.
+
+Rationale: keep all account/runtime identity setup in one discoverable place
+for operators while still supporting non-UI deployments that rely on env.
+
 ### Consequences
 
 * Good, because the calling agent gets a structured, checkable account of

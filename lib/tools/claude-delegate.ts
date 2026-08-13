@@ -209,7 +209,7 @@ function spawnClaude(opts: SpawnClaudeOpts): ChildProcess | null {
   } catch (e) {
     const err = e as NodeJS.ErrnoException;
     const hint = err.code === "ENOENT"
-      ? `claude CLI not found at "${bin}". Install with: npm install -g @anthropic-ai/claude-code — or set JARELA_CLAUDE_BIN to the absolute path.`
+      ? `claude CLI not found at "${bin}". Install with: npm install -g @anthropic-ai/claude-code, then configure the path in Settings -> Credentials -> Claude Code (or set JARELA_CLAUDE_BIN).`
       : `failed to spawn '${bin}': ${err.message}`;
     opts.onError(new Error(hint));
     return null;
@@ -256,7 +256,7 @@ function spawnClaude(opts: SpawnClaudeOpts): ChildProcess | null {
     clearTimeout(timer);
     const err = e as NodeJS.ErrnoException;
     const hint = err.code === "ENOENT"
-      ? `claude CLI not found at "${bin}". Install: npm install -g @anthropic-ai/claude-code or set JARELA_CLAUDE_BIN.`
+      ? `claude CLI not found at "${bin}". Install: npm install -g @anthropic-ai/claude-code, then set Settings -> Credentials -> Claude Code (or JARELA_CLAUDE_BIN).`
       : `claude spawn error: ${err.message}`;
     opts.onError(new Error(hint));
   });

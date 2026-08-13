@@ -104,6 +104,11 @@ beforeEach(() => {
   delete process.env.JARELA_TOOL_SAFETY;
   delete process.env.JARELA_CLAUDE_BIN;
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
   deleteIntegration("claude-code");
   _resetDelegateJobs();
   _resetWorkspaceContext();
@@ -175,14 +180,32 @@ describe("claude_delegate — cwd resolution", () => {
     expect(out.workspace_missing).toBe(true);
   });
 
-  it("prefers the UI-managed Claude Code path and API key over shell discovery", async () => {
-    saveIntegration("claude-code", { cli_path: "/opt/homebrew/bin/claude", api_key: "sk-ant-ui" });
+  it("prefers UI-managed Claude Code settings over shell environment values", async () => {
+    saveIntegration("claude-code", {
+      cli_path: "/opt/homebrew/bin/claude",
+      api_key: "sk-ant-ui",
+      auth_token: "auth-ui",
+      base_url: "https://ui.anthropic.example",
+      default_opus_model: "claude-opus-ui",
+      default_sonnet_model: "claude-sonnet-ui",
+      default_haiku_model: "claude-haiku-ui",
+    });
     process.env.JARELA_CLAUDE_BIN = "/usr/local/bin/claude";
     process.env.ANTHROPIC_API_KEY = "sk-ant-env";
+    process.env.ANTHROPIC_AUTH_TOKEN = "auth-env";
+    process.env.ANTHROPIC_BASE_URL = "https://env.anthropic.example";
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = "claude-opus-env";
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = "claude-sonnet-env";
+    process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = "claude-haiku-env";
 
     await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
     expect(state.calls[0]!.bin).toBe("/opt/homebrew/bin/claude");
     expect(state.calls[0]!.env.ANTHROPIC_API_KEY).toBe("sk-ant-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_AUTH_TOKEN).toBe("auth-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_BASE_URL).toBe("https://ui.anthropic.example");
+    expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-ui");
   });
 });
 

@@ -58,6 +58,11 @@ describe("getAllEnvVarNames (no overrides)", () => {
     expect(names).toContain("GOOGLE_API_KEY");
     expect(names).toContain("GEMINI_API_KEY");
     expect(names).toContain("ANTHROPIC_API_KEY");
+    expect(names).toContain("ANTHROPIC_AUTH_TOKEN");
+    expect(names).toContain("ANTHROPIC_BASE_URL");
+    expect(names).toContain("ANTHROPIC_DEFAULT_OPUS_MODEL");
+    expect(names).toContain("ANTHROPIC_DEFAULT_SONNET_MODEL");
+    expect(names).toContain("ANTHROPIC_DEFAULT_HAIKU_MODEL");
   });
 
   it("dedupes (returns each name only once)", () => {
@@ -150,7 +155,7 @@ describe("getInjectedSubprocessEnv", () => {
       deleteOverride(integration, field);
     }
     // Wipe any stored integration credentials between tests.
-    for (const def of ["anthropic", "github", "atlassian", "google"]) {
+    for (const def of ["anthropic", "claude-code", "github", "atlassian", "google"]) {
       deleteIntegration(def);
     }
   });
@@ -185,5 +190,21 @@ describe("getInjectedSubprocessEnv", () => {
     const env = getInjectedSubprocessEnv();
     expect(env.ANTHROPIC_API_KEY).toBe("sk-ant");
     expect(env.GITHUB_TOKEN).toBeUndefined();
+  });
+
+  it("projects Claude Code optional Anthropic runtime vars into subprocess env", () => {
+    saveIntegration("claude-code", {
+      auth_token: "auth_cli_token",
+      base_url: "https://proxy.anthropic.example",
+      default_opus_model: "claude-opus-custom",
+      default_sonnet_model: "claude-sonnet-custom",
+      default_haiku_model: "claude-haiku-custom",
+    });
+    const env = getInjectedSubprocessEnv();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBe("auth_cli_token");
+    expect(env.ANTHROPIC_BASE_URL).toBe("https://proxy.anthropic.example");
+    expect(env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-custom");
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-custom");
+    expect(env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-custom");
   });
 });
