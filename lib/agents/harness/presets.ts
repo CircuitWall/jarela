@@ -75,8 +75,12 @@ const SELF_CONFIG_BODY = [
   "Do NOT include real secrets in the payload — use placeholder values and ask the user to fill them in the UI before approving.",
   "  - toggle_mcp: enable/disable an installed MCP server.",
   "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
+  "  - update_agent_instruction: direct, no-approval path for THIS agent to edit its own instructions. " +
+  "Supports full replace, append, and deterministic `instructions_edits` (replace/remove/dedupe). " +
+  "This is preferred for self-tuning instruction text.",
   "  - update_agent: edit identity, instructions, history window, or harness_id for an agent. " +
-  "When the user asks you to remember or enforce standing behavior for this agent, propose `update_agent` with `agent_id` set to this agent and the full revised `instructions` text. " +
+  "When the user asks you to remember or enforce standing behavior for this agent, call read_agent_instruction first, then call update_agent_instruction directly. " +
+  "Use propose `update_agent` only when changing a DIFFERENT agent or changing non-instruction fields that need approval. " +
   "Pass `harness_id` to switch which harness the agent runs under (an existing 'builtin:default' or 'custom:<uuid>'); pass null to inherit the global default.",
   "  - upsert_harness: create or edit a CUSTOM harness preset (the behavioural scaffolding wrapped around every turn). " +
   "Built-in harnesses ('builtin:*') are read-only — to tweak default behaviour, omit `id` and copy the sections you want as a starting point. " +
