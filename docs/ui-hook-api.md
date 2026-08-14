@@ -37,6 +37,8 @@ Meaning:
 - [hooks/useAgentSession.ts](../hooks/useAgentSession.ts)
 - [hooks/useMessageFilters.ts](../hooks/useMessageFilters.ts)
 - [hooks/useSettingsAttention.ts](../hooks/useSettingsAttention.ts)
+- [hooks/useSSE.ts](../hooks/useSSE.ts)
+- [hooks/useUrlSync.ts](../hooks/useUrlSync.ts)
 
 ## Behavioral guarantees
 
@@ -84,3 +86,5 @@ Reference tests:
 - [hooks/useAgentSession.test.ts](../hooks/useAgentSession.test.ts)
 - [hooks/useMessageFilters.test.ts](../hooks/useMessageFilters.test.ts)
 - [hooks/useSettingsAttention.test.ts](../hooks/useSettingsAttention.test.ts)
+- [hooks/useSSE.test.ts](../hooks/useSSE.test.ts)
+- [hooks/useUrlSync.test.tsx](../hooks/useUrlSync.test.tsx)
