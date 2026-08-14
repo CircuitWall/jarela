@@ -9,12 +9,14 @@ vi.mock("node:child_process", async () => {
 });
 
 vi.mock("@/lib/env/allowlist", () => ({
-  getInjectedSubprocessEnv: () => ({}),
+  getInjectedSubprocessEnv: vi.fn(() => ({})),
 }));
 
 import { spawnSync } from "node:child_process";
+import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
 const mockedSpawnSync = vi.mocked(spawnSync);
+const mockedGetInjectedSubprocessEnv = vi.mocked(getInjectedSubprocessEnv);
 
 function mockSpawnOk(stdout: string) {
   mockedSpawnSync.mockReturnValue({
@@ -39,6 +41,8 @@ describe("resolveSubprocessEnv", () => {
     };
     mockedSpawnSync.mockReset();
     mockSpawnOk("/opt/homebrew/bin:/usr/bin:/bin\n");
+    mockedGetInjectedSubprocessEnv.mockReset();
+    mockedGetInjectedSubprocessEnv.mockReturnValue({});
     vi.resetModules();
   });
 
@@ -105,5 +109,66 @@ describe("resolveSubprocessEnv", () => {
     const result = resolveSubprocessEnv({ cwd: "/tmp" });
 
     expect(result.env.PATH).toBe("/usr/bin:/bin");
+  });
+});
+
+describe("full shell-env cache (setFullShellEnv / getFullShellEnv)", () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      SHELL: "/bin/zsh",
+      PATH: "/usr/bin:/bin",
+    };
+    mockedSpawnSync.mockReset();
+    mockSpawnOk("/opt/homebrew/bin:/usr/bin:/bin\n");
+    mockedGetInjectedSubprocessEnv.mockReset();
+    mockedGetInjectedSubprocessEnv.mockReturnValue({});
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it("is empty until a sync populates it", async () => {
+    const { resolveSubprocessEnv, getFullShellEnv } = await import("./subprocess-env");
+    expect(getFullShellEnv()).toEqual({});
+    expect(resolveSubprocessEnv({ cwd: "/tmp" }).env.RC_ONLY_VAR).toBeUndefined();
+  });
+
+  it("merges cached full shell env into every subprocess env", async () => {
+    const { resolveSubprocessEnv, setFullShellEnv, getFullShellEnv } = await import("./subprocess-env");
+    setFullShellEnv({ RC_ONLY_VAR: "from-rc" });
+
+    expect(getFullShellEnv()).toEqual({ RC_ONLY_VAR: "from-rc" });
+    const result = resolveSubprocessEnv({ cwd: "/tmp" });
+    expect(result.env.RC_ONLY_VAR).toBe("from-rc");
+  });
+
+  it("lets getInjectedSubprocessEnv() (credential store) win over the full shell env cache", async () => {
+    mockedGetInjectedSubprocessEnv.mockReturnValue({ SHARED: "from-store" });
+    const { resolveSubprocessEnv, setFullShellEnv } = await import("./subprocess-env");
+    setFullShellEnv({ SHARED: "from-rc" });
+
+    const result = resolveSubprocessEnv({ cwd: "/tmp" });
+    expect(result.env.SHARED).toBe("from-store");
+  });
+
+  it("lets caller-supplied options.env win over the full shell env cache", async () => {
+    const { resolveSubprocessEnv, setFullShellEnv } = await import("./subprocess-env");
+    setFullShellEnv({ SHARED: "from-rc" });
+
+    const result = resolveSubprocessEnv({ cwd: "/tmp", env: { SHARED: "from-caller" } });
+    expect(result.env.SHARED).toBe("from-caller");
+  });
+
+  it("does not let the full shell env cache override the resolved shell PATH merge", async () => {
+    const { resolveSubprocessEnv, setFullShellEnv } = await import("./subprocess-env");
+    setFullShellEnv({ PATH: "/some/stale/rc/path" });
+
+    const result = resolveSubprocessEnv({ cwd: "/tmp" });
+    expect(result.env.PATH).toBe("/opt/homebrew/bin:/usr/bin:/bin");
   });
 });

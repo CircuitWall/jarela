@@ -1,24 +1,33 @@
-// Env-sync orchestrator. Reads "standard" credential env vars from the
-// user's shell rc (or Windows User registry), writes them into the
-// encrypted integration store, and tracks per-field provenance so user
-// edits in the Integrations panel are never overwritten.
+// Env-sync orchestrator. Reads the user's FULL shell env (rc-sourced on
+// macOS/Linux, User registry on Windows), then does two things with it:
 //
-// Conflict rule: "panel-wins-once-touched". A field whose meta source
-// is `"user"` is skipped on every sync; one whose source is `"rc"` (or
-// absent) gets the rc value written through. This is what makes
-// rotation flow through automatically — the user updates `.zshrc`, the
-// next sync picks it up, the encrypted DB row updates, and the
-// existing env-then-store fallback in `lib/tools/atlassian.ts` /
-// `lib/tools/github.ts` reads the fresh value on the next tool call.
+//   1. Writes the "standard" credential vars (ENV_ALLOWLIST) into the
+//      encrypted integration store, tracking per-field provenance so
+//      user edits in the Integrations panel are never overwritten.
+//      Conflict rule: "panel-wins-once-touched" — a field whose meta
+//      source is `"user"` is skipped on every sync; one whose source is
+//      `"rc"` (or absent) gets the rc value written through. This is what
+//      makes rotation flow through automatically — the user updates
+//      `.zshrc`, the next sync picks it up, the encrypted DB row updates,
+//      and the existing env-then-store fallback in `lib/tools/atlassian.ts`
+//      / `lib/tools/github.ts` reads the fresh value on the next tool call.
+//   2. Refreshes the full shell-env snapshot cached by
+//      `lib/tools/subprocess-env.ts` (`setFullShellEnv`), which every
+//      subprocess Jarela spawns (exec, terminal, claude_delegate, MCP
+//      servers) merges into its own env — not just the allowlisted vars.
+//      This is what lets tools that shell out to other CLIs (gh, aws,
+//      jira, …) see credentials that only ever lived in the user's rc
+//      files, never in Jarela's own process.env.
 //
 // Triggered:
 //   - Once per process from `lib/db/index.ts` after DB init (silent,
-//     fire-and-forget).
+//     fire-and-forget). Restarting Jarela re-runs this and refreshes
+//     both the integration store and the subprocess-env snapshot.
 //   - On demand via POST /api/v1/env-sync (returns a SyncResult so the
-//     UI can show what happened).
+//     UI can show what happened) — the "Sync from environment" button.
 
-import { getEffectiveAllowlist, getAllEnvVarNames, type EnvFieldMapping } from "./allowlist";
-import { discoverEnvVars, type DiscoveredEnv } from "./discover";
+import { getEffectiveAllowlist, type EnvFieldMapping } from "./allowlist";
+import { discoverAllShellEnv, type DiscoveredEnv } from "./discover";
 import {
   INTEGRATIONS,
   getIntegrationRaw,
@@ -27,6 +36,7 @@ import {
 } from "@/lib/stores/integrations";
 import { getIntegrationMeta, setFieldSources, type FieldSource } from "@/lib/stores/integration_meta";
 import { putMemory } from "@/lib/stores/memory";
+import { setFullShellEnv } from "@/lib/tools/subprocess-env";
 
 const INTEGRATIONS_NS = "integrations";
 
@@ -88,7 +98,7 @@ export function runEnvSyncOnce(): Promise<SyncResult | null> {
 }
 
 async function runSync(apply: boolean): Promise<SyncResult> {
-  const discovered = await discoverEnvVars(getAllEnvVarNames());
+  const discovered = await discoverAllShellEnv();
   const ts = new Date().toISOString();
   const candidates: SyncCandidate[] = [];
 
@@ -112,12 +122,15 @@ async function runSync(apply: boolean): Promise<SyncResult> {
   }
 
   let applied_count = 0;
-  if (apply && writesByIntegration.size > 0) {
-    for (const [name, fields] of writesByIntegration) {
-      putMemory(INTEGRATIONS_NS, name, fields);
+  if (apply) {
+    if (writesByIntegration.size > 0) {
+      for (const [name, fields] of writesByIntegration) {
+        putMemory(INTEGRATIONS_NS, name, fields);
+      }
+      setFieldSources(metaUpdates, ts);
+      applied_count = metaUpdates.length;
     }
-    setFieldSources(metaUpdates, ts);
-    applied_count = metaUpdates.length;
+    setFullShellEnv(discovered.values);
   }
 
   return { discovered, candidates, applied_count, ts };
