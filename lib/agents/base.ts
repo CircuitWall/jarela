@@ -56,6 +56,15 @@ export interface StreamChunk {
   // See broadcast() in run-registry.ts: heartbeats bump last_chunk_at
   // and are dropped before buffering / fan-out, so the SSE wire never
   // carries meaningless tick events.
-  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "done" | "error" | "heartbeat" | "status";
+  //
+  // "tool_progress" carries incremental status from INSIDE a still-running
+  // tool call (e.g. claude_delegate relaying the sub-agent's own turns) —
+  // unlike "tool_call"/"tool_result", a call can emit any number of these
+  // between its call and result. `data` shape: { id, name, text }, where
+  // `id` matches the same call's "tool_call" chunk id. Emitted via
+  // lib/tools/workspace-context.ts's reportToolProgress() -> the tool's
+  // LangGraph-provided `config.writer` -> "custom" stream mode in
+  // lib/agents/llm.ts (ADR-0073).
+  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "tool_progress" | "done" | "error" | "heartbeat" | "status";
   data: Record<string, unknown>;
 }

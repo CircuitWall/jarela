@@ -78,7 +78,7 @@ Subscribe to the in-flight run as a Server-Sent Events stream. Reconnects
 resume from the last seen sequence id.
 
 - **Source:** [`app/api/v1/threads/[thread_id]/run/route.ts`](../app/api/v1/threads/[thread_id]/run/route.ts)
-- **Stream chunk types:** `text`, `thinking`, `tool_call`, `tool_result`, `usage`, `done` (see `lib/agents/base.ts` for the full union)
+- **Stream chunk types:** `text`, `thinking`, `tool_call`, `tool_result`, `tool_progress` (zero or more per call, live status from a still-running tool — ADR-0073), `usage`, `done` (see `lib/agents/base.ts` for the full union)
 
 ---
 

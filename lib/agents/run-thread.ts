@@ -1297,7 +1297,7 @@ export function shouldEmitChunk(
 ): boolean {
   const includeTools = options?.filters?.include_tools ?? true;
   const includeThinking = options?.filters?.include_thinking ?? true;
-  if (!includeTools && (chunkType === "tool_call" || chunkType === "tool_result")) return false;
+  if (!includeTools && (chunkType === "tool_call" || chunkType === "tool_result" || chunkType === "tool_progress")) return false;
   if (!includeThinking && chunkType === "thinking_delta") return false;
   return true;
 }
