@@ -11,57 +11,52 @@
 // re-mount route segments — we just want the address bar to mirror state
 // without disturbing the <Activity>-based tab keepalive in AppShell.
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
+import type { UnifiedHookResult } from "@/hooks/useListState";
 import { buildHref, parseHref } from "@/lib/ui/navigate";
 
 const TABS: Tab[] = ["chat", "dashboard", "agents", "memory", "documents", "models", "credentials", "mcp", "extensions", "tools", "tasks", "bridges", "profile", "harness", "settings"];
 
-export function useUrlSync() {
+export function useUrlSync(): UnifiedHookResult<
+  { lastWrittenHref: string | null },
+  { syncFromUrl: () => void; syncToUrl: () => void }
+> {
   const { state, dispatch } = useAppContext();
   // Idempotency guard: avoid re-firing the initial dispatch when the URL we
   // just wrote matches the state that wrote it.
   const lastWrittenRef = useRef<string | null>(null);
 
-  // Initial read + popstate (back/forward) listener.
-  useEffect(() => {
-    function applyFromUrl() {
-      if (typeof window === "undefined") return;
-      const href = `${window.location.search}${window.location.hash}`;
-      const parsed = parseHref(href);
-      let tab = parsed.tab ?? "chat";
-      let item = parsed.item ?? null;
-      // Legacy: ?tab=extensions now lives at Tools → Packages.
-      if (tab === "extensions") {
-        tab = "tools";
-        item = "packages";
-      }
-      // Browser-extension "Open Jarela" passes ?agent=<id> (and optionally
-      // ?thread=<id>) so the app lands on the user's currently-picked
-      // target agent instead of whichever chat was last open. The agent
-      // hint is one-shot — the SET_AGENT / SELECT_THREAD dispatch below
-      // triggers the second effect, which rewrites the URL via buildHref
-      // and drops the hint.
-      if (parsed.thread && parsed.agent) {
-        dispatch({ type: "SELECT_THREAD", threadId: parsed.thread, agentId: parsed.agent });
-      } else if (parsed.agent) {
-        dispatch({ type: "SET_AGENT", agentId: parsed.agent });
-        dispatch({ type: "SET_TAB", tab: "chat" });
-      }
-      if (TABS.includes(tab)) {
-        dispatch({ type: "SET_TAB", tab });
-        dispatch({ type: "SET_SELECTION", tab, itemId: item });
-      }
+  const syncFromUrl = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const href = `${window.location.search}${window.location.hash}`;
+    const parsed = parseHref(href);
+    let tab = parsed.tab ?? "chat";
+    let item = parsed.item ?? null;
+    // Legacy: ?tab=extensions now lives at Tools → Packages.
+    if (tab === "extensions") {
+      tab = "tools";
+      item = "packages";
     }
-    applyFromUrl();
-    window.addEventListener("popstate", applyFromUrl);
-    return () => window.removeEventListener("popstate", applyFromUrl);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // Browser-extension "Open Jarela" passes ?agent=<id> (and optionally
+    // ?thread=<id>) so the app lands on the user's currently-picked
+    // target agent instead of whichever chat was last open. The agent
+    // hint is one-shot — the SET_AGENT / SELECT_THREAD dispatch below
+    // triggers the second effect, which rewrites the URL via buildHref
+    // and drops the hint.
+    if (parsed.thread && parsed.agent) {
+      dispatch({ type: "SELECT_THREAD", threadId: parsed.thread, agentId: parsed.agent });
+    } else if (parsed.agent) {
+      dispatch({ type: "SET_AGENT", agentId: parsed.agent });
+      dispatch({ type: "SET_TAB", tab: "chat" });
+    }
+    if (TABS.includes(tab)) {
+      dispatch({ type: "SET_TAB", tab });
+      dispatch({ type: "SET_SELECTION", tab, itemId: item });
+    }
+  }, [dispatch]);
 
-  // Mirror reducer → URL. Preserve any existing #fragment so message anchors
-  // survive tab toggles.
-  useEffect(() => {
+  const syncToUrl = useCallback(() => {
     if (typeof window === "undefined") return;
     const item = state.selectedItem[state.activeTab] ?? null;
     const hash = window.location.hash.replace(/^#/, "") || null;
@@ -71,4 +66,29 @@ export function useUrlSync() {
     lastWrittenRef.current = next;
     window.history.replaceState(null, "", next);
   }, [state.activeTab, state.selectedItem]);
+
+  // Initial read + popstate (back/forward) listener.
+  useEffect(() => {
+    syncFromUrl();
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mirror reducer → URL. Preserve any existing #fragment so message anchors
+  // survive tab toggles.
+  useEffect(() => {
+    syncToUrl();
+  }, [syncToUrl]);
+
+  const stateView = { lastWrittenHref: lastWrittenRef.current };
+  const commands = { syncFromUrl, syncToUrl };
+
+  return {
+    state: stateView,
+    commands,
+    lastWrittenHref: lastWrittenRef.current,
+    syncFromUrl,
+    syncToUrl,
+  };
 }
