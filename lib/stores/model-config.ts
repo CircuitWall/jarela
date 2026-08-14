@@ -47,11 +47,18 @@ export function upsertModelConfig(
   const existing = getModelConfig(name);
   const created_at = existing?.created_at ?? t;
   const finalCredId = credential_id ?? existing?.credential_id ?? null;
+  // Merge onto the existing inline params rather than replacing them
+  // wholesale: the Models panel form only round-trips the fields it
+  // renders (api_key, base_url, extra_headers, temperature, max_tokens,
+  // context_window_tokens), so a plain overwrite silently deletes any
+  // other field a custom provider relies on (e.g. custom-provider.js's
+  // username/password auth auth) on every save.
+  const mergedParams = { ...decodeInlineParams(existing), ...params };
   const db = getDb();
   if (is_default) db.prepare("UPDATE model_configs SET is_default=0").run();
   db.prepare(
     "INSERT OR REPLACE INTO model_configs (name,provider,model_id,params,is_default,credential_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)"
-  ).run(name, provider, model_id, encrypt(JSON.stringify(params)), is_default ? 1 : 0, finalCredId, created_at, t);
+  ).run(name, provider, model_id, encrypt(JSON.stringify(mergedParams)), is_default ? 1 : 0, finalCredId, created_at, t);
   return getModelConfig(name)!;
 }
 
