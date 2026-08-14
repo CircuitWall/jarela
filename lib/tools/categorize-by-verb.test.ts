@@ -42,6 +42,11 @@ describe("categorizeByVerb", () => {
       "web_search",
       "check_proposal",
       "read_agent_instruction",
+      "read_agent_config",
+      "list_harnesses",
+      "read_harness",
+      "list_skills",
+      "read_skill",
       "describe_extension_surfaces",
     ];
     for (const name of cases) {

@@ -1,4 +1,5 @@
-// Skills loader — reads SKILL.md files from JARELA_SKILLS_DIR.
+// Skills loader — reads packaged built-in skills plus user SKILL.md files from
+// JARELA_SKILLS_DIR.
 //
 // Supported layouts (both may coexist):
 //   skillsDir/skill-name/SKILL.md   ← Claude-style (directory per skill)
@@ -20,6 +21,7 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
+  source: "builtin" | "user";
 }
 
 export interface SkillWithContent extends Skill {
@@ -30,7 +32,11 @@ export function getSkillsDir(): string {
   return getConfig().skillsDir;
 }
 
-function parseSkill(id: string, content: string): Skill {
+export function getBuiltinSkillsDir(): string {
+  return path.join(process.cwd(), "lib", "skills", "builtins");
+}
+
+function parseSkill(id: string, content: string, source: Skill["source"]): Skill {
   const lines = content.split("\n");
   let name = id;
   const descParts: string[] = [];
@@ -49,11 +55,26 @@ function parseSkill(id: string, content: string): Skill {
     }
   }
 
-  return { id, name, description: descParts.join(" ").slice(0, 200) };
+  return { id, name, description: descParts.join(" ").slice(0, 200), source };
 }
 
 export function listSkills(): Skill[] {
+  const byId = new Map<string, Skill>();
+  for (const skill of readSkillsFromDir(getBuiltinSkillsDir(), "builtin")) {
+    byId.set(skill.id, skill);
+  }
+
   const dir = getSkillsDir();
+  if (dir) {
+    for (const skill of readSkillsFromDir(dir, "user")) {
+      byId.set(skill.id, skill);
+    }
+  }
+
+  return Array.from(byId.values()).sort((a, b) => a.id.localeCompare(b.id));
+}
+
+function readSkillsFromDir(dir: string, source: Skill["source"]): Skill[] {
   if (!dir || !existsSync(dir)) return [];
 
   let entries: { name: string; isDir: boolean }[];
@@ -74,30 +95,37 @@ export function listSkills(): Skill[] {
       if (!existsSync(skillFile)) continue;
       try {
         const content = readFileSync(skillFile, "utf8");
-        skills.push(parseSkill(entry.name, content));
+        skills.push(parseSkill(entry.name, content, source));
       } catch { /* skip unreadable */ }
     } else if (entry.name.endsWith(".md")) {
       const id = entry.name.slice(0, -3);
       try {
         const content = readFileSync(path.join(dir, entry.name), "utf8");
-        skills.push(parseSkill(id, content));
+        skills.push(parseSkill(id, content, source));
       } catch { /* skip unreadable */ }
     }
   }
 
-  return skills.sort((a, b) => a.id.localeCompare(b.id));
+  return skills;
 }
 
 export function getSkill(id: string): SkillWithContent | null {
-  const dir = getSkillsDir();
-  if (!dir || !sanitizeId(id)) return null;
+  if (!sanitizeId(id)) return null;
+
+  const user = readSkillFromDir(getSkillsDir(), id, "user");
+  if (user) return user;
+  return readSkillFromDir(getBuiltinSkillsDir(), id, "builtin");
+}
+
+function readSkillFromDir(dir: string, id: string, source: Skill["source"]): SkillWithContent | null {
+  if (!dir) return null;
 
   // Claude-style first
   const claudeFile = path.join(dir, id, "SKILL.md");
   if (existsSync(claudeFile)) {
     try {
       const content = readFileSync(claudeFile, "utf8");
-      return { ...parseSkill(id, content), content };
+      return { ...parseSkill(id, content, source), content };
     } catch { /* fall through */ }
   }
 
@@ -106,7 +134,7 @@ export function getSkill(id: string): SkillWithContent | null {
   if (existsSync(flatFile)) {
     try {
       const content = readFileSync(flatFile, "utf8");
-      return { ...parseSkill(id, content), content };
+      return { ...parseSkill(id, content, source), content };
     } catch { /* not found */ }
   }
 

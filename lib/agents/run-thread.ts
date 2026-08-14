@@ -37,7 +37,12 @@ const SELF_CONFIG_TOOLS = [
   "propose_config_change",
   "check_proposal",
   "read_agent_instruction",
+  "read_agent_config",
   "update_agent_instruction",
+  "list_harnesses",
+  "read_harness",
+  "list_skills",
+  "read_skill",
 ] as const;
 
 function withSelfConfigTools(tools: string[]): string[] {

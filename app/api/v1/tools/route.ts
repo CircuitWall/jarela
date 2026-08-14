@@ -12,15 +12,26 @@ import { getAllToolsAsync, getToolCategory, getToolCapability, getToolGroup, get
 import { cachedJson } from "@/lib/api/responses";
 import { defaultToolStats, getToolStatsMap } from "@/lib/stores/tool-stats";
 
-export async function GET() {
+interface ToolEnvelope {
+  name: string;
+  description: string;
+  source: string;
+  category: string;
+  capability: string;
+  group: string | null;
+  credentials_required: string[];
+  stats: ReturnType<typeof defaultToolStats>;
+}
+
+export async function GET(req: Request) {
   try {
+    const q = new URL(req.url).searchParams.get("q")?.trim().toLowerCase() ?? "";
     // Use the async path so MCP-provided tools show up in the agent config UI.
     // Source ("builtin" | "external" | "mcp") is derived inside lib/tools so
     // callers can't conflate external tools with MCP tools.
     const all = await getAllToolsAsync();
     const stats = getToolStatsMap(all.map((t) => t.name));
-    return cachedJson(
-      all.map((t) => ({
+    const rows: ToolEnvelope[] = all.map((t) => ({
         name: t.name,
         description: t.description,
         source: getToolSource(t.name),
@@ -29,7 +40,9 @@ export async function GET() {
         group: getToolGroup(t.name),
         credentials_required: getToolCredentialsRequired(t.name),
         stats: stats.get(t.name) ?? defaultToolStats(),
-      })).sort((a, b) => {
+      }));
+    return cachedJson(
+      rows.filter((tool) => !q || toolSearchText(tool).includes(q)).sort((a, b) => {
         const scoreDiff = (b.stats?.score ?? 0) - (a.stats?.score ?? 0);
         if (scoreDiff !== 0) return scoreDiff;
         const usedDiff = (b.stats?.used_count ?? 0) - (a.stats?.used_count ?? 0);
@@ -44,4 +57,10 @@ export async function GET() {
       { status: 500 },
     );
   }
+}
+
+function toolSearchText(tool: ToolEnvelope): string {
+  return [tool.name, tool.description, tool.category, tool.capability, tool.source, tool.group ?? ""]
+    .join(" ")
+    .toLowerCase();
 }

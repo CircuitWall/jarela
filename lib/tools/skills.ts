@@ -3,14 +3,13 @@ import { z } from "zod";
 import { getSkill, writeSkill, listSkills, getSkillsDir } from "@/lib/skills";
 import { registerLangChainPackage } from "./langchain-package";
 
-const NOT_CONFIGURED = JSON.stringify({ error: "JARELA_SKILLS_DIR is not configured" });
+const NOT_CONFIGURED = JSON.stringify({ error: "JARELA_SKILLS_DIR is not configured; built-in skills are read-only" });
 
 export const readSkillTool = tool(
   async ({ id }) => {
-    if (!getSkillsDir()) return NOT_CONFIGURED;
     const skill = getSkill(id);
     if (!skill) return JSON.stringify({ error: `Skill "${id}" not found` });
-    return JSON.stringify({ id: skill.id, name: skill.name, content: skill.content });
+    return JSON.stringify({ id: skill.id, name: skill.name, source: skill.source, content: skill.content });
   },
   {
     name: "read_skill",
@@ -51,9 +50,8 @@ export const writeSkillTool = tool(
 
 export const listSkillsTool = tool(
   async () => {
-    if (!getSkillsDir()) return NOT_CONFIGURED;
     const skills = listSkills();
-    return JSON.stringify(skills.map(({ id, name, description }) => ({ id, name, description })));
+    return JSON.stringify(skills.map(({ id, name, description, source }) => ({ id, name, description, source })));
   },
   {
     name: "list_skills",

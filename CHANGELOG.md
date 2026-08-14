@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- No entries yet.
+### Added
+
+- **Built-in Jarela operating skills.** Packaged skills now cover operating,
+  configuring, and integrating Jarela, while user skills from
+  `JARELA_SKILLS_DIR` can override or extend them.
+- **Searchable tool catalog.** `/api/v1/tools?q=...` and the `list_tools`
+  agent tool can search by name, description, category, capability, source,
+  and group.
+
+### Changed
+
+- **Default harness instructions are leaner.** Procedural setup guidance moved
+  into built-in skills, leaving the always-on harness focused on safety,
+  follow-through, and core capability facts.
 
 ## [1.26.0] - 2026-08-14
 

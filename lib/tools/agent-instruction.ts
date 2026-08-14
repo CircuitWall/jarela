@@ -3,7 +3,14 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
 import { getThread } from "@/lib/stores/threads";
-import { getAgentConfig, getAgentTools, upsertAgentConfig } from "@/lib/stores/agent-configs";
+import {
+  getAgentConfig,
+  getAgentTools,
+  getAgentTierProportions,
+  getAgentToolCredentials,
+  parseDelegateTargets,
+  upsertAgentConfig,
+} from "@/lib/stores/agent-configs";
 import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
 
 function agentIdFromConfig(config?: RunnableConfig): string | null {
@@ -40,6 +47,58 @@ export const readAgentInstructionTool = tool(
     description:
       "Read this agent's current persisted identity+instructions from config. " +
       "Use this before proposing instruction edits so replacements/dedupes are based on the real saved text.",
+    schema: z.object({
+      agent_id: z.string().optional().describe("Optional. Must match the current agent id when provided."),
+    }),
+  },
+);
+
+export const readAgentConfigTool = tool(
+  async ({ agent_id }, config) => {
+    const currentAgentId = agentIdFromConfig(config);
+    if (!currentAgentId) return JSON.stringify({ error: "no agent context" });
+
+    if (agent_id && agent_id !== currentAgentId) {
+      return JSON.stringify({
+        error: "cross-agent config reads are not allowed; omit agent_id to read your own config",
+      });
+    }
+
+    const cfg = getAgentConfig(currentAgentId);
+    if (!cfg) return JSON.stringify({ error: `agent \"${currentAgentId}\" not found` });
+
+    return JSON.stringify({
+      agent_id: cfg.id,
+      name: cfg.name,
+      icon: cfg.icon,
+      identity: cfg.identity,
+      instruction_line_count: cfg.instructions ? cfg.instructions.split(/\r?\n/).length : 0,
+      instruction_char_count: cfg.instructions.length,
+      tools: getAgentTools(cfg),
+      model_config_name: cfg.model_config_name,
+      history_limit: cfg.history_limit,
+      history_window_hours: cfg.history_window_hours,
+      never_reply: cfg.never_reply === 1,
+      harness_id: cfg.harness_id,
+      delegate_targets: parseDelegateTargets(cfg.delegate_targets),
+      context_tier_proportions: getAgentTierProportions(cfg),
+      anti_hallucination_mode: cfg.anti_hallucination_mode,
+      anti_hallucination_model_config: cfg.anti_hallucination_model_config,
+      citation_strictness: cfg.citation_strictness,
+      tool_credential_overrides: Object.keys(getAgentToolCredentials(cfg)),
+      router_policy: cfg.router_policy,
+      router_enabled: cfg.router_enabled === null ? null : cfg.router_enabled === 1,
+      voice_enabled: cfg.voice_enabled === 1,
+      voice_model: cfg.voice_model,
+      voice_name: cfg.voice_name,
+      voice_stt_model: cfg.voice_stt_model,
+      voice_auto_speak: cfg.voice_auto_speak === 1,
+    });
+  },
+  {
+    name: "read_agent_config",
+    description:
+      "Read this agent's non-secret runtime configuration: tools, model override, history window, harness, delegates, citation/router/voice settings, and instruction counts. This tool can only read the current agent.",
     schema: z.object({
       agent_id: z.string().optional().describe("Optional. Must match the current agent id when provided."),
     }),
@@ -135,7 +194,7 @@ export const updateAgentInstructionTool = tool(
 registerLangChainPackage({
   category: "Config",
   tools: {
-    read: [readAgentInstructionTool],
+    read: [readAgentInstructionTool, readAgentConfigTool],
     write: [updateAgentInstructionTool],
   },
 });
