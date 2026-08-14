@@ -215,6 +215,14 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
           { id: event.id, phase: "result", name: event.name, payload: event.result },
         ]);
         onToolResult(event.id);
+      } else if (event.type === "tool_progress") {
+        // Doesn't flush pending text — a progress chunk from a still-running
+        // tool call doesn't mark a text/tool ordering boundary the way a
+        // call/result pair does.
+        setToolEvents((prev) => [
+          ...prev,
+          { id: event.id, phase: "progress", name: event.name, payload: event.text },
+        ]);
       } else if (event.type === "done") {
         flushPending();
         setStreaming(false);

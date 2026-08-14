@@ -236,7 +236,7 @@ async function* streamWithConfigImpl(
     const agentStream = await agent.stream(
       { messages: await toBaseMessages(messages, runCfg?.system_prompt) },
       {
-        streamMode: ["messages", "updates"],
+        streamMode: ["messages", "updates", "custom"],
         configurable: {
           thread_id: threadId,
           delegation_depth: runCfg?.delegation?.depth ?? 0,
@@ -335,6 +335,15 @@ async function* streamWithConfigImpl(
         // End of an agent step — flush any unflushed tool calls (e.g. final assistant message
         // with no follow-up tool execution).
         yield* flushPendingToolCalls();
+      } else if (mode === "custom") {
+        // Emitted by a tool via config.writer() (see reportToolProgress in
+        // lib/tools/workspace-context.ts) — incremental status from inside a
+        // still-running tool call, e.g. claude_delegate relaying the
+        // sub-agent's own turns. See ADR-0073.
+        const c = payload as { id?: string; name?: string; text?: string };
+        if (c && typeof c.text === "string" && c.text) {
+          yield { type: "tool_progress", data: { id: c.id ?? "", name: c.name ?? "", text: c.text } };
+        }
       }
     }
 

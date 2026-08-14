@@ -34,6 +34,17 @@ function streamDone(): AsyncIterable<string> {
   };
 }
 
+function streamWithProgress(): AsyncIterable<string> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield JSON.stringify({ type: "tool_call", id: "c1", name: "claude_delegate", arguments: { task: "x" } });
+      yield JSON.stringify({ type: "tool_progress", id: "c1", name: "claude_delegate", text: "Claude: looking at the code" });
+      yield JSON.stringify({ type: "tool_result", id: "c1", name: "claude_delegate", result: { ok: true } });
+      yield JSON.stringify({ type: "done" });
+    },
+  };
+}
+
 describe("useSSE contract", () => {
   it("exposes unified and compatibility surfaces", async () => {
     submitRunMock.mockResolvedValue({ accepted: true });
@@ -60,5 +71,23 @@ describe("useSSE contract", () => {
 
     expect(result.current.authError).toBeNull();
     expect(result.current.streamingContent).toBe("");
+  });
+
+  it("records tool_progress events alongside tool_call/tool_result (ADR-0073)", async () => {
+    submitRunMock.mockResolvedValue({ accepted: true });
+    subscribeRunMock.mockReturnValue(streamWithProgress());
+
+    const { result } = renderHook(() => useSSE());
+
+    await act(async () => {
+      await result.current.commands.start("thread-1", "delegate this");
+    });
+
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    expect(result.current.toolEvents).toEqual([
+      { id: "c1", phase: "call", name: "claude_delegate", payload: { task: "x" } },
+      { id: "c1", phase: "progress", name: "claude_delegate", payload: "Claude: looking at the code" },
+      { id: "c1", phase: "result", name: "claude_delegate", payload: { ok: true } },
+    ]);
   });
 });

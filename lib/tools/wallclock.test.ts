@@ -1,7 +1,22 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import { wrapWithWallclock, __DEFAULT_DEADLINE_MS } from "./wallclock";
+
+function makeReportingTool(name: string, steps: Array<{ delayMs: number; text?: string }>, finalDelayMs = 0) {
+  return tool(
+    async ({ value }: { value: string }, config?: unknown) => {
+      const writer = (config as { writer?: (c: unknown) => void } | undefined)?.writer;
+      for (const step of steps) {
+        await new Promise((r) => setTimeout(r, step.delayMs));
+        if (step.text) writer?.({ text: step.text });
+      }
+      if (finalDelayMs) await new Promise((r) => setTimeout(r, finalDelayMs));
+      return JSON.stringify({ ok: true, value });
+    },
+    { name, description: "test", schema: z.object({ value: z.string() }) },
+  );
+}
 
 function makeSlowTool(name: string, delayMs: number) {
   return tool(
@@ -77,5 +92,54 @@ describe("wrapWithWallclock", () => {
     const wrapped = wrapWithWallclock(inner);
     expect(wrapped.name).toBe("preserve-name");
     expect(wrapped.description).toBe("test");
+  });
+
+  describe("activity resets the deadline (config.writer)", () => {
+    it("does not abandon a call whose total runtime exceeds deadline_ms, as long as it keeps reporting progress", async () => {
+      // Total runtime ~90ms, well past the 50ms deadline — but each gap
+      // between writer() calls is under 50ms, so it should never fire.
+      const inner = makeReportingTool("reporter", [
+        { delayMs: 30, text: "step 1" },
+        { delayMs: 30, text: "step 2" },
+        { delayMs: 30 },
+      ]);
+      const wrapped = wrapWithWallclock(inner);
+      const writer = vi.fn();
+      const out = await wrapped.invoke({ value: "x", deadline_ms: 50 }, { writer } as never);
+      expect(JSON.parse(out as string)).toEqual({ ok: true, value: "x" });
+      expect(writer).toHaveBeenCalledTimes(2);
+    });
+
+    it("still times out after deadline_ms of silence following earlier activity", async () => {
+      const inner = makeReportingTool("stall-after-one-step", [{ delayMs: 5, text: "step 1" }], 500);
+      const wrapped = wrapWithWallclock(inner);
+      const out = await wrapped.invoke({ value: "x", deadline_ms: 30 }, { writer: () => {} } as never);
+      const parsed = JSON.parse(out as string);
+      expect(parsed.ok).toBe(false);
+      expect(parsed.error_code).toBe("tool_timeout");
+    });
+
+    it("forwards the chunk to the caller's original writer after resetting the timer", async () => {
+      const inner = makeReportingTool("forwarder", [{ delayMs: 5, text: "hello" }]);
+      const wrapped = wrapWithWallclock(inner);
+      const writer = vi.fn();
+      await wrapped.invoke({ value: "x", deadline_ms: 500 }, { writer } as never);
+      expect(writer).toHaveBeenCalledWith({ text: "hello" });
+    });
+
+    it("async_run: keeps a background call alive past the original deadline as long as it reports progress", async () => {
+      const inner = makeReportingTool("bg-reporter", [
+        { delayMs: 30, text: "step 1" },
+        { delayMs: 30, text: "step 2" },
+      ]);
+      const wrapped = wrapWithWallclock(inner);
+      const writer = vi.fn();
+      const handoff = await wrapped.invoke({ value: "x", deadline_ms: 50, async_run: true }, { writer } as never);
+      const { key } = JSON.parse(handoff as string);
+      expect(key).toBeTruthy();
+      // Give the background work time to finish (well past the 50ms deadline).
+      await new Promise((r) => setTimeout(r, 100));
+      expect(writer).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -305,7 +305,7 @@ sequenceDiagram
     AG->>N: notify (if configured)
 ```
 
-## Key Flow — Delegate a coding task to Claude Code (ADR-0071)
+## Key Flow — Delegate a coding task to Claude Code (ADR-0071, ADR-0073)
 
 ```mermaid
 sequenceDiagram
@@ -315,6 +315,7 @@ sequenceDiagram
     participant DB as SQLite (memory_store, claude_delegate_sessions)
     participant CLI as claude CLI (child process)
     participant FS as ~/.claude/projects/.../memory
+    participant UI as Chat UI (ToolList card)
 
     AG->>CD: claude_delegate({ task, cwd, ... })
     CD->>CD: resolveSafetyGate() — JARELA_TOOL_SAFETY tier
@@ -323,7 +324,12 @@ sequenceDiagram
     MB->>FS: write *.md + MEMORY.md index
     CD->>DB: getSession(project_key) / rememberSession
     CD->>CLI: spawn -p --output-format stream-json --permission-mode <gated>
-    CLI-->>CD: stream-json events (steps, tool_use, result)
+    loop each stream-json turn
+      CLI-->>CD: stream-json event (text / tool_use)
+      CD->>CD: armTimer() — resets the subprocess idle timer
+      CD->>UI: config.writer() -> "custom" stream -> tool_progress chunk (live step, also resets the outer wallclock)
+    end
+    CLI-->>CD: stream-json result event
     CD->>MB: syncOut(cwd, namespace, manifest)
     MB->>FS: read *.md
     MB->>DB: putMemory / deleteMemory

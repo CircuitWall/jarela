@@ -109,7 +109,11 @@ function ToolIcon({ toolName }: { toolName: string }) {
 
 export interface ToolEvent {
   id: string;
-  phase: "call" | "result";
+  // "progress" can arrive any number of times between "call" and "result"
+  // — incremental status from inside a still-running tool call (e.g.
+  // claude_delegate relaying the sub-agent's own turns). `payload` is the
+  // step text (a string). See ADR-0073.
+  phase: "call" | "result" | "progress";
   name: string;
   payload: unknown;
 }
@@ -260,6 +264,10 @@ interface ToolCallGroup {
   // Internal — set on tool_result_get groups that got absorbed into the
   // matching async handoff card. Skipped during render.
   absorbed: boolean;
+  // Incremental status reported from inside the call via "progress" events
+  // (ADR-0073). Empty for tools that never report progress — those render
+  // the original synthetic wallclock progress bar unchanged.
+  steps: string[];
 }
 
 function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
@@ -277,6 +285,7 @@ function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
         status: "running",
         readByAgent: false,
         absorbed: false,
+        steps: [],
       };
       map.set(ev.id, g);
       order.push(ev.id);
@@ -286,6 +295,8 @@ function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
       g.args = unwrapLangChainSerializable(ev.payload);
       const d = readDeadlineMs(g.args);
       if (d) g.deadlineMs = d;
+    } else if (ev.phase === "progress") {
+      if (typeof ev.payload === "string" && ev.payload) g.steps.push(ev.payload);
     } else {
       const payload = unwrapLangChainSerializable(ev.payload);
       g.result = payload;
@@ -358,6 +369,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
   const summary = renderArgsSummary(group.name, effectiveArgs);
   const summaryTitle = argsSummaryTitle(group.name, effectiveArgs);
   const hasArgs = hasVisibleArgs(effectiveArgs);
+  const latestStep = group.steps.at(-1);
   return (
     <div className="min-w-0 max-w-full">
       <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
@@ -401,10 +413,19 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           status={group.status}
           deadlineMs={group.deadlineMs}
           startedAt={startedAt}
+          stepCount={group.steps.length}
         />
       </MetaRow>
+      {!open && latestStep && (group.status === "running" || group.status === "async") && (
+        <div className="pl-[22px] -mt-0.5 truncate text-[10px] italic text-fg-faint/80" title={latestStep}>
+          {latestStep}
+        </div>
+      )}
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
+          {group.steps.length > 0 && (
+            <DetailSection label={`live steps (${group.steps.length})`} value={group.steps.join("\n")} />
+          )}
           {hasVisibleArgs(group.args) ? (
             <DetailSection label="arguments" value={group.args} />
           ) : hasArgs ? (
@@ -436,10 +457,12 @@ function StatusIndicator({
   status,
   deadlineMs,
   startedAt,
+  stepCount,
 }: {
   status: "running" | "ok" | "error" | "async";
   deadlineMs: number;
   startedAt: number;
+  stepCount: number;
 }) {
   if (status === "ok") {
     return (
@@ -455,6 +478,12 @@ function StatusIndicator({
       </span>
     );
   }
+  // Once a call starts reporting real activity (ADR-0073), its wallclock
+  // is idle-reset \u2014 a percent-toward-deadline bar would misleadingly read
+  // "almost overdue" on a call that's actually healthy. Real step count is
+  // the more honest signal for those; calls that never report progress
+  // keep the original synthetic budget bar unchanged.
+  if (stepCount > 0) return <LiveStepIndicator stepCount={stepCount} />;
   // "running" (sync) and "async" (background) are both still in-flight from
   // the user's perspective \u2014 a wallclock progress bar reads the same.
   // The card-level `bg` pill differentiates them.
@@ -500,6 +529,21 @@ function ProgressBar({ deadlineMs, startedAt }: { deadlineMs: number; startedAt:
         className="h-full bg-sky-500/80 transition-[width] duration-75 ease-linear"
         style={{ width: "0%" }}
       />
+    </span>
+  );
+}
+
+// Shown instead of ProgressBar once a call reports real activity (ADR-0073)
+// — a pulsing dot + step count, since the call's wallclock is idle-reset
+// and no longer has a meaningful "percent toward deadline" to show.
+function LiveStepIndicator({ stepCount }: { stepCount: number }) {
+  return (
+    <span
+      className="shrink-0 inline-flex items-center gap-1 text-[10px] text-fg-faint tabular-nums"
+      aria-label={`${stepCount} step${stepCount === 1 ? "" : "s"} so far`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-sky-500/80 animate-pulse" aria-hidden />
+      {stepCount}
     </span>
   );
 }
