@@ -4,18 +4,15 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-function quote(arg) {
-  if (/^[A-Za-z0-9_./:-]+$/.test(arg)) return arg;
-  return `"${String(arg).replace(/"/g, '\\"')}"`;
+function executableFor(command) {
+  if (command === "node") return process.execPath;
+  return command;
 }
 
 function run(command, args, options = {}) {
-  const executable = process.platform === "win32"
-    ? (process.env.ComSpec || "cmd.exe")
-    : command;
-  const finalArgs = process.platform === "win32"
-    ? ["/d", "/s", "/c", [command, ...args].map(quote).join(" ")]
-    : args;
+  const useCmdForNpm = process.platform === "win32" && command === "npm";
+  const executable = useCmdForNpm ? (process.env.ComSpec || "cmd.exe") : executableFor(command);
+  const finalArgs = useCmdForNpm ? ["/d", "/s", "/c", "npm", ...args] : args;
   const result = spawnSync(executable, finalArgs, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
@@ -23,7 +20,7 @@ function run(command, args, options = {}) {
   });
   if (result.status !== 0) {
     throw new Error(
-      `${executable} ${finalArgs.join(" ")} failed (exit ${result.status})\n${result.stdout}${result.stderr}`,
+      `${executable} ${finalArgs.join(" ")} failed (exit ${result.status})\n${result.stdout}${result.stderr}${result.error?.stack ?? result.error ?? ""}`,
     );
   }
   return result.stdout;
