@@ -9,6 +9,7 @@ export function useMemory(namespace?: string, search?: string) {
     items,
     setItems,
     loading,
+    error,
     refresh,
   } = useListState<MemoryItem>({
     loader: () => api.memory.list(namespace, search),
@@ -31,5 +32,8 @@ export function useMemory(namespace?: string, search?: string) {
     setItems((p) => p.filter((i) => !(i.namespace === ns && i.key === key)));
   }, [setItems]);
 
-  return { items, loading, refresh, create, update, remove };
+  const state = { items, loading, error };
+  const commands = { refresh, create, update, remove };
+
+  return { state, commands, items, loading, error, refresh, create, update, remove };
 }

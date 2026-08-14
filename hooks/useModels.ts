@@ -9,6 +9,7 @@ export function useModels() {
     items: models,
     setItems: setModels,
     loading: modelsLoading,
+    error: modelsError,
     refresh: refreshModels,
   } = useListState<ModelConfig>({
     loader: () => api.models.list(),
@@ -19,6 +20,7 @@ export function useModels() {
     items: assignments,
     setItems: setAssignments,
     loading: assignmentsLoading,
+    error: assignmentsError,
     refresh: refreshAssignments,
   } = useListState<TaskAssignment>({
     loader: () => api.tasks.list(),
@@ -26,6 +28,7 @@ export function useModels() {
   });
 
   const loading = modelsLoading || assignmentsLoading;
+  const error = modelsError ?? assignmentsError;
 
   const refresh = useCallback(async () => {
     await Promise.all([refreshModels(), refreshAssignments()]);
@@ -63,5 +66,21 @@ export function useModels() {
     setAssignments((p) => p.filter((x) => x.agent_id !== agent_id));
   }, [setAssignments]);
 
-  return { models, assignments, loading, refresh, create, update, remove, assign, unassign };
+  const state = { models, assignments, loading, error };
+  const commands = { refresh, create, update, remove, assign, unassign };
+
+  return {
+    state,
+    commands,
+    models,
+    assignments,
+    loading,
+    error,
+    refresh,
+    create,
+    update,
+    remove,
+    assign,
+    unassign,
+  };
 }

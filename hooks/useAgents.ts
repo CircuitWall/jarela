@@ -9,6 +9,7 @@ export function useAgents() {
     items: agents,
     setItems: setAgents,
     loading,
+    error,
     refresh,
   } = useListState<AgentConfig>({
     loader: () => api.agents.list(),
@@ -32,5 +33,8 @@ export function useAgents() {
     setAgents((p) => p.filter((x) => x.id !== id));
   }, [setAgents]);
 
-  return { agents, loading, refresh, create, update, remove };
+  const state = { agents, loading, error };
+  const commands = { refresh, create, update, remove };
+
+  return { state, commands, agents, loading, error, refresh, create, update, remove };
 }

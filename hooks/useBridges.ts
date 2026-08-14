@@ -18,6 +18,7 @@ export function useBridges() {
     items: bridges,
     setItems: setBridges,
     loading,
+    error,
     refresh,
   } = useListState<Bridge>({
     loader: () => api.bridges.list(),
@@ -44,7 +45,10 @@ export function useBridges() {
     await api.bridges.pair(id);
   }, []);
 
-  return { bridges, loading, refresh, create, update, remove, pair };
+  const state = { bridges, loading, error };
+  const commands = { refresh, create, update, remove, pair };
+
+  return { state, commands, bridges, loading, error, refresh, create, update, remove, pair };
 }
 
 export function useBridgeRoutes(bridge_id: string | null) {
@@ -52,6 +56,7 @@ export function useBridgeRoutes(bridge_id: string | null) {
     items: routes,
     setItems: setRoutes,
     loading,
+    error,
     refresh,
   } = useListState<BridgeRoute>({
     loader: () => api.bridges.routes.list(bridge_id!),
@@ -79,7 +84,10 @@ export function useBridgeRoutes(bridge_id: string | null) {
     setRoutes((p) => p.filter((x) => x.id !== route_id));
   }, [bridge_id, setRoutes]);
 
-  return { routes, loading, refresh, create, update, remove };
+  const state = { routes, loading, error };
+  const commands = { refresh, create, update, remove };
+
+  return { state, commands, routes, loading, error, refresh, create, update, remove };
 }
 
 /**
@@ -92,6 +100,7 @@ export function useBridgeIgnores(bridge_id: string | null) {
     items: ignores,
     setItems: setIgnores,
     loading,
+    error,
     refresh,
   } = useListState<BridgeIgnore>({
     loader: () => api.bridges.ignores.list(bridge_id!),
@@ -112,5 +121,8 @@ export function useBridgeIgnores(bridge_id: string | null) {
     setIgnores((p) => p.filter((x) => x.remote_jid !== remote_jid));
   }, [bridge_id, setIgnores]);
 
-  return { ignores, loading, refresh, add, remove };
+  const state = { ignores, loading, error };
+  const commands = { refresh, add, remove };
+
+  return { state, commands, ignores, loading, error, refresh, add, remove };
 }

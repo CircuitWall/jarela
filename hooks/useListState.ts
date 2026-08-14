@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 
-interface UseListStateOptions<T> {
+export interface UseListStateOptions<T> {
   loader: () => Promise<T[]>;
   eventName?: string;
   eventLoader?: () => Promise<T[]>;
@@ -10,7 +10,7 @@ interface UseListStateOptions<T> {
   onDisabled?: () => void;
 }
 
-interface UseListStateResult<T> {
+export interface UseListStateResult<T> {
   items: T[];
   setItems: React.Dispatch<React.SetStateAction<T[]>>;
   loading: boolean;
