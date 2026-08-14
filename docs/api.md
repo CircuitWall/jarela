@@ -1,5 +1,8 @@
 # HTTP API reference
 
+For client-side React integration contracts, see
+[docs/ui-hook-api.md](./ui-hook-api.md).
+
 This page lists every route that is part of Jarela's stable HTTP API. **A
 route is part of the contract only if its source file carries a `@public`
 JSDoc header**; everything else under `app/api/v1/*` is considered UI-internal
