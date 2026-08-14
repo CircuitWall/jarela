@@ -63,7 +63,7 @@ export function usePackages(): UnifiedHookResult<
   }, []);
 
   useEffect(() => {
-    void refresh();
+    void refresh().catch(() => undefined);
   }, [refresh]);
 
   const install = useCallback(async (spec: string, version?: string) => {
