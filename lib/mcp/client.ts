@@ -7,6 +7,7 @@ import {
   type McpStdioSpec,
 } from "@/lib/stores/mcp-servers";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
+import { getFullShellEnv } from "@/lib/tools/subprocess-env";
 import { errorMessage } from "@/lib/utils/error";
 
 // Singleton MCP client manager. Connects to enabled servers on first access,
@@ -213,7 +214,7 @@ const SCRUBBED_VARS = new Set([
   "NPM_TOKEN", "NODE_AUTH_TOKEN",
 ]);
 
-function buildSubprocessEnv(userEnv: Record<string, string>): Record<string, string> {
+export function buildSubprocessEnv(userEnv: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
 
   // 1. Inherit the host process env wholesale. This carries through:
@@ -226,6 +227,14 @@ function buildSubprocessEnv(userEnv: Record<string, string>): Record<string, str
   //    - Locale, terminal, etc.
   for (const [k, v] of Object.entries(process.env)) {
     if (typeof v !== "string") continue;
+    if (SCRUBBED_VARS.has(k)) continue;
+    out[k] = v;
+  }
+
+  // 1b. Merge in the env-sync full shell-env snapshot (lib/tools/subprocess-env.ts).
+  //    Covers vars the user's rc files export that never made it into
+  //    Jarela's own process.env — e.g. running as a launchd/systemd service.
+  for (const [k, v] of Object.entries(getFullShellEnv())) {
     if (SCRUBBED_VARS.has(k)) continue;
     out[k] = v;
   }
