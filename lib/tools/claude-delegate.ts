@@ -30,6 +30,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
 import { currentWorkspace, reportToolProgress, type ToolConfig } from "./workspace-context";
+import { withStreamDefault } from "./tool-metadata";
 import { resolveSafetyMode } from "./safety";
 import { resolveSubprocessEnv } from "./subprocess-env";
 import { gitDiffSummary } from "./git-probe";
@@ -143,18 +144,53 @@ function summarizeInput(toolName: string, input: unknown): string {
   }
 }
 
-function extractSteps(ev: StreamEvent): string[] {
-  if (ev.type !== "assistant" || !Array.isArray(ev.message?.content)) return [];
+// `pending` tracks tool_use id -> tool name across calls so a later
+// tool_result (which only carries the id) can still be labelled with the
+// tool it came from. Caller owns the map's lifetime (one per spawnClaude
+// run) so unrelated runs never share state.
+function extractSteps(ev: StreamEvent, pending: Map<string, string>): string[] {
+  if (!Array.isArray(ev.message?.content)) return [];
   const steps: string[] = [];
-  for (const block of ev.message.content) {
-    if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-      steps.push(`Claude: ${block.text.trim().replace(/\s+/g, " ").slice(0, 200)}`);
-    } else if (block.type === "tool_use" && typeof block.name === "string") {
-      const detail = summarizeInput(block.name, block.input);
-      steps.push(detail ? `→ ${block.name}: ${detail}` : `→ ${block.name}`);
+  if (ev.type === "assistant") {
+    for (const block of ev.message.content) {
+      if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+        steps.push(`Claude: ${block.text.trim().replace(/\s+/g, " ").slice(0, 200)}`);
+      } else if (block.type === "tool_use" && typeof block.name === "string") {
+        if (typeof block.id === "string") pending.set(block.id, block.name);
+        const detail = summarizeInput(block.name, block.input);
+        steps.push(detail ? `→ ${block.name}: ${detail}` : `→ ${block.name}`);
+      }
+    }
+  } else if (ev.type === "user") {
+    for (const block of ev.message.content) {
+      if (block.type !== "tool_result") continue;
+      const toolUseId = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+      const name = pending.get(toolUseId) ?? "tool";
+      pending.delete(toolUseId);
+      const text = summarizeToolResult(block.content).replace(/\s+/g, " ").trim().slice(0, 200);
+      const marker = block.is_error ? "✗" : "✓";
+      steps.push(text ? `${marker} ${name}: ${text}` : `${marker} ${name}`);
     }
   }
   return steps;
+}
+
+// tool_result content is either a plain string or an array of content
+// blocks (Anthropic Messages API shape) — pull the readable text out of
+// either form for the step line.
+function summarizeToolResult(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((b) =>
+        b && typeof b === "object" && typeof (b as Record<string, unknown>).text === "string"
+          ? ((b as Record<string, unknown>).text as string)
+          : "",
+      )
+      .filter(Boolean)
+      .join(" ");
+  }
+  return "";
 }
 
 // ── spawn (event-driven; supports both sync and background) ──────────────
@@ -220,6 +256,7 @@ function spawnClaude(opts: SpawnClaudeOpts): ChildProcess | null {
   let finalResult: RawClaudeResult | null = null;
   let model: string | null = null;
   let killed = false;
+  const pendingToolNames = new Map<string, string>();
 
   // Idle timer, not a total-runtime budget: any stdout activity proves the
   // process is alive and re-arms it, so a healthy long-running session is
@@ -254,7 +291,7 @@ function spawnClaude(opts: SpawnClaudeOpts): ChildProcess | null {
           finalResult = ev as RawClaudeResult;
         } else {
           if (ev.type === "system" && ev.subtype === "init" && typeof ev.model === "string") model = ev.model;
-          for (const s of extractSteps(ev)) opts.onStep(s);
+          for (const s of extractSteps(ev, pendingToolNames)) opts.onStep(s);
         }
       } catch { /* non-JSON line, ignore */ }
     }
@@ -423,7 +460,7 @@ const delegateSchema = z.object({
   ),
 });
 
-export const claudeDelegateTool = tool(
+export const claudeDelegateTool = withStreamDefault(tool(
   async (input, config?: ToolConfig) => {
     const {
       task, cwd: rawCwd, feature, model, tools, add_dirs,
@@ -535,7 +572,7 @@ export const claudeDelegateTool = tool(
       "For long tasks, use background: true — returns a job_id immediately; poll with claude_delegate_status. When awaiting_answers is true, relay the '## Design questions' block to the user and call again with answers folded into the next task.",
     schema: delegateSchema,
   },
-);
+), true);
 
 // ── claude_delegate_status ─────────────────────────────────────────────────
 

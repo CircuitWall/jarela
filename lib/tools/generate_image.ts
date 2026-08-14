@@ -16,6 +16,7 @@ import { writeBinaryFile } from "@/lib/files";
 import { getConfig } from "@/lib/env/config";
 import { resolveGoogleApiKey, timeoutSignal } from "@/lib/utils/google-api";
 import { registerLangChainPackage } from "./langchain-package";
+import { withStreamDefault } from "./tool-metadata";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -125,7 +126,7 @@ function extForMime(mime: string): string {
   return "png";
 }
 
-export const generateImageTool = tool(
+export const generateImageTool = withStreamDefault(tool(
   async ({ prompt, model, count, aspect_ratio }) => {
     const trimmed = prompt.trim();
     if (!trimmed) throw new Error("prompt is required and must be non-empty");
@@ -185,7 +186,7 @@ export const generateImageTool = tool(
         .describe("Aspect ratio. Only honored by Imagen models; ignored by Gemini image models."),
     }),
   },
-);
+), true);
 
 registerLangChainPackage({
   category: "Images",

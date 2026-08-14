@@ -8,6 +8,7 @@ import path from "node:path";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
+import { withStreamDefault } from "./tool-metadata";
 import { searchDocuments } from "@/lib/documents/search";
 import {
   createDocumentSource,
@@ -217,7 +218,7 @@ export const documentsRemoveSource = tool(
   },
 );
 
-export const documentsReindexSource = tool(
+export const documentsReindexSource = withStreamDefault(tool(
   async ({ source_id }) => {
     const row = getDocumentSource(source_id);
     if (!row) return JSON.stringify({ error: "source not found" });
@@ -240,7 +241,7 @@ export const documentsReindexSource = tool(
       "Force an immediate incremental sync of a remote document source. Returns counts of added / updated / unchanged docs.",
     schema: z.object({ source_id: z.string() }),
   },
-);
+), true);
 
 export const documentsIndexUrl = tool(
   async ({ input }) => {

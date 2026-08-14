@@ -36,6 +36,7 @@ import {
   type ExtensionLoadError,
 } from "./external";
 import { loadLangChainPackages } from "./langchain-packages";
+import { wrapWithWallclock } from "./wallclock";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
@@ -176,7 +177,13 @@ export function getAllTools(policy?: ToolPolicy): StructuredToolInterface[] {
   return applyPolicy(
     [
       ...applyCategoryToggles(allBuiltins()),
-      ...ext.tools.filter((t) => !isDropinDisabled(t.name)),
+      // External tools never pass through registerTools (they're not
+      // stored in the builtin REGISTRY — no category/capability, no
+      // duplicate-name bookkeeping) so they'd otherwise never get the
+      // wallclock protection built-ins get for free. Wrap them here, at
+      // the merge point, instead — same deadline_ms/async_run/stream
+      // fields, just without the registry side-effects.
+      ...ext.tools.filter((t) => !isDropinDisabled(t.name)).map(wrapWithWallclock),
     ],
     policy,
   );
@@ -204,8 +211,13 @@ export async function getAllToolsAsync(policy?: ToolPolicy): Promise<StructuredT
   return applyPolicy(
     [
       ...applyCategoryToggles(allBuiltins()),
-      ...loadExternal().tools.filter((t) => !isDropinDisabled(t.name)),
-      ...mcpTools,
+      // Same reasoning as getAllTools above, extended to MCP: neither
+      // external nor MCP tools ever go through registerTools, so without
+      // this they'd run with no deadline at all — a single stuck MCP
+      // server call or hung external tool could otherwise pin the turn
+      // indefinitely (built-ins are protected; these weren't).
+      ...loadExternal().tools.filter((t) => !isDropinDisabled(t.name)).map(wrapWithWallclock),
+      ...mcpTools.map(wrapWithWallclock),
     ],
     policy,
   );
