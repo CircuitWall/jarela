@@ -17,6 +17,24 @@ import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 let resolvedUserPath: string | null = null;
 let pathProbed = false;
 
+// Full shell-env snapshot (every var the user's interactive shell exports,
+// not just PATH). Empty until the first successful env-sync (boot or the
+// "Sync from environment" button) — see lib/env/sync.ts, which calls
+// setFullShellEnv() after probing with lib/env/discover.ts's
+// discoverAllShellEnv(). Restarting Jarela re-runs the boot-time sync and
+// refreshes this from scratch.
+let fullShellEnv: Record<string, string> = {};
+
+/** Replace the cached full shell-env snapshot. Called by lib/env/sync.ts. */
+export function setFullShellEnv(vars: Record<string, string>): void {
+  fullShellEnv = vars;
+}
+
+/** Read the cached full shell-env snapshot (for tests / diagnostics). */
+export function getFullShellEnv(): Record<string, string> {
+  return fullShellEnv;
+}
+
 /** Probe the user's interactive shell PATH. Falls back to process.env.PATH silently. */
 function getUserShellPath(): string {
   if (pathProbed) return resolvedUserPath ?? process.env.PATH ?? "";
@@ -77,11 +95,16 @@ export interface SubprocessEnvOptions {
 }
 
 /**
- * Resolve cwd + env for a subprocess. Merges user-shell PATH, injected
- * credentials, and any caller-supplied overrides (highest priority).
+ * Resolve cwd + env for a subprocess. Merges the full shell-env snapshot,
+ * user-shell PATH, injected credentials, and any caller-supplied overrides
+ * (highest priority). The shell-env snapshot matters for tools like
+ * claude_delegate, whose spawned `claude` CLI may itself shell out to other
+ * CLIs (gh, aws, jira, …) that read credentials straight from the
+ * environment — those only exist in the user's rc files, not in Jarela's
+ * own process.env when it runs as a background service.
  *
  * Precedence (low → high):
- *   process.env < user-shell PATH < getInjectedSubprocessEnv() < options.env
+ *   process.env < full shell-env snapshot < user-shell PATH < getInjectedSubprocessEnv() < options.env
  *
  * cwd precedence: options.cwd > workspaceRoot > process.cwd()
  */
@@ -89,6 +112,7 @@ export function resolveSubprocessEnv(options: SubprocessEnvOptions): { cwd: stri
   const cwd = options.cwd?.trim() ? options.cwd : options.workspaceRoot ?? process.cwd();
   const env: NodeJS.ProcessEnv = {
     ...process.env,
+    ...fullShellEnv,
     PATH: buildMergedPath(),
     ...getInjectedSubprocessEnv(),
     ...options.env,

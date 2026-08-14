@@ -23,7 +23,7 @@ C4Container
       Container(registry, "Run Registry", "lib/agents/run-registry", "In-memory pub/sub of in-flight agent chunks; replay buffer for reattaching EventSource clients")
       Container(crypto, "Crypto Envelope", "lib/crypto", "AES-GCM-at-rest for sensitive memory + OAuth tokens; OS keychain or .secret-key fallback")
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
-      Container(envsync, "Env Sync", "lib/env", "Probes user shell rc / Windows User-scope env for credential vars on boot (ADR-0016)")
+      Container(envsync, "Env Sync", "lib/env", "Probes user shell rc / Windows User-scope env on boot + on demand: writes credential vars into the encrypted store (ADR-0016, ADR-0034) and caches the full env for every spawned subprocess — exec, terminal, claude_delegate, MCP stdio children (ADR-0072)")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
       ContainerDb(filestore, "File Store", "lib/files + ~/.jarela/files/", "Binary artifacts produced by tools (generated images, voice clips); served by /api/v1/files/[name]")
       ContainerDb(extdir, "Extension dirs", "filesystem (~/.jarela/{providers,tools}/)", "Drop-in .cjs files for external providers + tools, hot-loaded per request (ADR-0013)")
@@ -39,7 +39,7 @@ C4Container
     System_Ext(github, "GitHub API", "Issues / PRs / Repos (native github_* tools, ADR-0015) + Copilot OAuth (model provider)")
     System_Ext(atlassian, "Atlassian Cloud", "Jira REST + Confluence REST (tools + document-RAG ingest, ADR-0026)")
     System_Ext(whatsapp, "WhatsApp Web", "Baileys-paired endpoint")
-    System_Ext(usershell, "User shell rc / Windows User env", "Source for credential env vars (ADR-0016)")
+    System_Ext(usershell, "User shell rc / Windows User env", "Source for credential env vars (ADR-0016) and, since ADR-0072, the full env every spawned subprocess inherits")
     System_Ext(browserext, "Jarela Browser Extension", "Chrome MV3 — element picker, posts captures to localhost (ADR-0018)")
 
     Rel(user, ui, "HTTPS")
@@ -135,7 +135,9 @@ flowchart LR
     B --> L[Notifications<br/>lib/notifications]
     BR[Bridges<br/>lib/bridges] --> B
     SC[Scheduler<br/>lib/scheduler] --> B
-    EN[Env Sync<br/>lib/env<br/>boot probe] --> K
+    EN[Env Sync<br/>lib/env<br/>boot probe + Sync button] --> K
+    EN -."full shell env<br/>(ADR-0072)".-> D
+    EN -."full shell env<br/>(ADR-0072)".-> E
     RR[Run Registry<br/>lib/agents/run-registry] -.pub/sub + replay buffer.-> A
 ```
 

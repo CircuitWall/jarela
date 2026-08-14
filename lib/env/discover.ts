@@ -1,4 +1,4 @@
-// Cross-platform discovery of "shell-defined" environment variables.
+// Cross-platform discovery of the user's FULL shell-defined environment.
 //
 // The problem: Jarela installed as a macOS LaunchAgent or a Linux systemd
 // user unit doesn't run inside a login shell, so it never sees vars
@@ -7,13 +7,13 @@
 // but vars set only inside a PowerShell `$PROFILE` are not.
 //
 // Strategy:
-//   - macOS / Linux: spawn `$SHELL -ic '<print-allowlisted>'`. Sourcing
-//     the rc file is the whole point of the `-i` flag. Output is
-//     framed with a unique sentinel so user rc echo doesn't poison the
-//     parser.
-//   - Windows: read the User-scope environment block via
-//     `[Environment]::GetEnvironmentVariable($name, 'User')`. This hits
-//     the registry directly — no rc-equivalent to source.
+//   - macOS / Linux: spawn `$SHELL -ic 'env -0'`. Sourcing the rc file is
+//     the whole point of the `-i` flag. Output is framed with a unique
+//     sentinel and NUL-separated so user rc echo / multi-line values
+//     can't poison the parser.
+//   - Windows: read the entire User-scope environment block via
+//     `[Environment]::GetEnvironmentVariables('User')`. This hits the
+//     registry directly — no rc-equivalent to source.
 //
 // Always falls back gracefully to whatever is already in `process.env`.
 // Hard 4 s timeout per probe so a hung shell can't stall startup.
@@ -42,29 +42,27 @@ const SENTINEL_OPEN = "__JARELA_ENV_BEGIN__";
 const SENTINEL_CLOSE = "__JARELA_ENV_END__";
 
 /**
- * Discover values for the given allowlist of env-var names. Always
- * returns; never throws. On platforms or shells we can't probe, falls
- * back to `process.env`.
+ * Discover the FULL shell environment — every var the user's interactive
+ * shell exports, not just an allowlisted subset. Used to seed subprocess
+ * env for every child process Jarela spawns (see
+ * lib/tools/subprocess-env.ts, lib/mcp/client.ts) so tools, MCP servers,
+ * and terminal sessions see the same environment a real terminal would.
  */
-export async function discoverEnvVars(allowlist: readonly string[]): Promise<DiscoveredEnv> {
+export async function discoverAllShellEnv(): Promise<DiscoveredEnv> {
   const t0 = Date.now();
   const warnings: string[] = [];
 
-  // Baseline: whatever the running process already has. On Windows this
-  // already includes registry User vars. In dev mode (`npm run dev` from
-  // a terminal) it includes the parent shell's exports.
   const fromProcess: Record<string, string> = {};
-  for (const name of allowlist) {
-    const v = process.env[name];
-    if (v && v.trim()) fromProcess[name] = v.trim();
+  for (const [name, value] of Object.entries(process.env)) {
+    if (value && value.trim()) fromProcess[name] = value.trim();
   }
 
   if (platform() === "win32") {
-    const reg = await queryWindowsUserEnv(allowlist).catch((e: unknown): null => {
+    const reg = await queryWindowsUserEnvAll().catch((e: unknown): null => {
       warnings.push(`windows registry probe failed: ${String(e)}`);
       return null;
     });
-    if (reg) {
+    if (reg && Object.keys(reg).length > 0) {
       // Registry wins over process.env: the registry is the *current*
       // truth, while process.env is frozen at process-spawn time. This
       // is what makes rotation pickup work after the user updates a
@@ -77,22 +75,15 @@ export async function discoverEnvVars(allowlist: readonly string[]): Promise<Dis
         elapsed_ms: Date.now() - t0,
       };
     }
-    return {
-      values: fromProcess,
-      source: "process",
-      shell: null,
-      warnings,
-      elapsed_ms: Date.now() - t0,
-    };
+    return { values: fromProcess, source: "process", shell: null, warnings, elapsed_ms: Date.now() - t0 };
   }
 
-  // macOS / Linux
   const shell = process.env.SHELL || "/bin/sh";
-  const fromShell = await queryUnixShellEnv(shell, allowlist).catch((e: unknown): null => {
+  const fromShell = await queryUnixShellEnvAll(shell).catch((e: unknown): null => {
     warnings.push(`shell rc probe (${shell}) failed: ${String(e)}`);
     return null;
   });
-  if (fromShell) {
+  if (fromShell && Object.keys(fromShell).length > 0) {
     return {
       values: { ...fromProcess, ...fromShell },
       source: "shell-rc",
@@ -101,30 +92,14 @@ export async function discoverEnvVars(allowlist: readonly string[]): Promise<Dis
       elapsed_ms: Date.now() - t0,
     };
   }
-  return {
-    values: fromProcess,
-    source: "process",
-    shell,
-    warnings,
-    elapsed_ms: Date.now() - t0,
-  };
+  return { values: fromProcess, source: "process", shell, warnings, elapsed_ms: Date.now() - t0 };
 }
 
-function queryUnixShellEnv(shell: string, allowlist: readonly string[]): Promise<Record<string, string>> {
+/** Full, unfiltered shell env dump via `env -0` (NUL-separated — safe for values containing `=` or newlines). */
+function queryUnixShellEnvAll(shell: string): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
-    // Frame each var with sentinels so any noise the user's rc prints
-    // (oh-my-zsh banners, version-manager init logs, etc.) gets
-    // skipped by the parser. Single-quoted names are JS-side string
-    // constants, double-quoted "$VAR" lets the shell expand.
-    const lines = allowlist
-      .map(
-        (n) =>
-          `printf '${SENTINEL_OPEN}%s=%s${SENTINEL_CLOSE}\\n' '${n}' "$${n}"`,
-      )
-      .join("; ");
-    // Suppress prompts and history side-effects. Pipe stderr to /dev/null
-    // — we don't care about rc-emitted warnings.
-    const child = spawn(shell, ["-ic", lines], {
+    const script = `printf '${SENTINEL_OPEN}'; env -0; printf '${SENTINEL_CLOSE}'`;
+    const child = spawn(shell, ["-ic", script], {
       env: { ...process.env, PS1: "", PROMPT: "", HISTFILE: "/dev/null" },
       stdio: ["ignore", "pipe", "ignore"],
     });
@@ -134,21 +109,15 @@ function queryUnixShellEnv(shell: string, allowlist: readonly string[]): Promise
       reject(new Error("timeout"));
     }, TIMEOUT_MS);
     child.stdout.on("data", (b: Buffer) => {
-      stdout += b.toString();
+      stdout += b.toString("utf8");
     });
     child.on("close", (code: number | null) => {
       clearTimeout(t);
-      if (code !== 0 && code !== null) {
-        // Some shells return non-zero from `-ic` if rc has any failing
-        // command, but our printfs still ran first — try parsing anyway.
-        // Only reject if we got nothing usable.
-        const parsed = parseSentinelStream(stdout, allowlist);
-        if (Object.keys(parsed).length === 0) {
-          return reject(new Error(`shell exited ${code} with no parseable output`));
-        }
-        return resolve(parsed);
+      const parsed = parseFullEnvBlock(stdout);
+      if (code !== 0 && code !== null && Object.keys(parsed).length === 0) {
+        return reject(new Error(`shell exited ${code} with no parseable output`));
       }
-      resolve(parseSentinelStream(stdout, allowlist));
+      resolve(parsed);
     });
     child.on("error", (e: Error) => {
       clearTimeout(t);
@@ -157,31 +126,48 @@ function queryUnixShellEnv(shell: string, allowlist: readonly string[]): Promise
   });
 }
 
-async function queryWindowsUserEnv(allowlist: readonly string[]): Promise<Record<string, string>> {
+/** Parse a sentinel-framed `env -0` dump into a name -> value map. */
+function parseFullEnvBlock(stream: string): Record<string, string> {
+  const start = stream.indexOf(SENTINEL_OPEN);
+  const end = stream.indexOf(SENTINEL_CLOSE);
+  if (start < 0 || end < 0 || end <= start) return {};
+  const body = stream.slice(start + SENTINEL_OPEN.length, end);
+  const out: Record<string, string> = {};
+  for (const entry of body.split("\0")) {
+    if (!entry) continue;
+    const eq = entry.indexOf("=");
+    if (eq <= 0) continue;
+    const name = entry.slice(0, eq);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) continue;
+    const value = entry.slice(eq + 1);
+    if (value) out[name] = value;
+  }
+  return out;
+}
+
+async function queryWindowsUserEnvAll(): Promise<Record<string, string>> {
   // Try modern PowerShell 7+ (pwsh) first, then fall back to the always-
   // present Windows PowerShell 5.1 (powershell.exe). pwsh defaults to
   // UTF-8 stdout; powershell.exe 5.1 defaults to UTF-16, so we force
   // UTF-8 inside the script either way.
   try {
-    return await runWindowsProbe("pwsh.exe", allowlist);
+    return await runWindowsProbeAll("pwsh.exe");
   } catch {
-    return await runWindowsProbe("powershell.exe", allowlist);
+    return await runWindowsProbeAll("powershell.exe");
   }
 }
 
-function runWindowsProbe(exe: string, allowlist: readonly string[]): Promise<Record<string, string>> {
+function runWindowsProbeAll(exe: string): Promise<Record<string, string>> {
   return new Promise((resolve, reject) => {
-    const namesArr = allowlist.map((n) => `'${n.replace(/'/g, "''")}'`).join(",");
     // Force UTF-8 stdout — Windows PowerShell 5.1 emits UTF-16 LE by
     // default, which would garble the sentinel parser. The
     // `[Console]::OutputEncoding` line is a no-op on pwsh 7+ but
     // critical on legacy powershell.exe.
     const script =
       `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ` +
-      `$names = @(${namesArr}); ` +
-      `foreach ($n in $names) { ` +
-      `  $v = [Environment]::GetEnvironmentVariable($n, 'User'); ` +
-      `  if ($v) { Write-Output ('${SENTINEL_OPEN}' + $n + '=' + $v + '${SENTINEL_CLOSE}') } ` +
+      `$vars = [Environment]::GetEnvironmentVariables('User'); ` +
+      `foreach ($k in $vars.Keys) { ` +
+      `  Write-Output ('${SENTINEL_OPEN}' + $k + '=' + $vars[$k] + '${SENTINEL_CLOSE}') ` +
       `}`;
     const child = spawn(
       exe,
@@ -199,7 +185,7 @@ function runWindowsProbe(exe: string, allowlist: readonly string[]): Promise<Rec
     child.on("close", (code: number | null) => {
       clearTimeout(t);
       if (code !== 0 && code !== null) return reject(new Error(`${exe} exited ${code}`));
-      resolve(parseSentinelStream(stdout, allowlist));
+      resolve(parseSentinelEntries(stdout));
     });
     child.on("error", (e: Error) => {
       clearTimeout(t);
@@ -210,13 +196,10 @@ function runWindowsProbe(exe: string, allowlist: readonly string[]): Promise<Rec
 
 /**
  * Pull `__OPEN__NAME=VALUE__CLOSE__` segments out of a stream, ignoring
- * everything else. Tolerates rc-line noise and partial reads.
+ * everything else. Tolerates banner/log noise and partial reads.
  */
-function parseSentinelStream(stream: string, allowlist: readonly string[]): Record<string, string> {
-  const allow = new Set(allowlist);
+function parseSentinelEntries(stream: string): Record<string, string> {
   const out: Record<string, string> = {};
-  // Non-greedy, case-sensitive, multi-line capable. Use `split` so we
-  // don't depend on regex flags that some Node versions surface oddly.
   const parts = stream.split(SENTINEL_OPEN);
   for (let i = 1; i < parts.length; i += 1) {
     const seg = parts[i];
@@ -227,7 +210,7 @@ function parseSentinelStream(stream: string, allowlist: readonly string[]): Reco
     if (eq <= 0) continue;
     const name = body.slice(0, eq);
     const value = body.slice(eq + 1).trim();
-    if (allow.has(name) && value) out[name] = value;
+    if (value) out[name] = value;
   }
   return out;
 }
