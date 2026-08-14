@@ -11,9 +11,18 @@ import type {
   BridgeIgnore,
   BridgeIgnoreIn,
 } from "@/api/types";
-import { useListState } from "@/hooks/useListState";
+import { useListState, type UnifiedHookResult } from "@/hooks/useListState";
 
-export function useBridges() {
+export function useBridges(): UnifiedHookResult<
+  { bridges: Bridge[]; loading: boolean; error: string | null },
+  {
+    refresh: () => Promise<void>;
+    create: (data: BridgeIn) => Promise<Bridge>;
+    update: (id: string, patch: BridgePatch) => Promise<Bridge>;
+    remove: (id: string) => Promise<void>;
+    pair: (id: string) => Promise<void>;
+  }
+> {
   const {
     items: bridges,
     setItems: setBridges,
@@ -51,7 +60,15 @@ export function useBridges() {
   return { state, commands, bridges, loading, error, refresh, create, update, remove, pair };
 }
 
-export function useBridgeRoutes(bridge_id: string | null) {
+export function useBridgeRoutes(bridge_id: string | null): UnifiedHookResult<
+  { routes: BridgeRoute[]; loading: boolean; error: string | null },
+  {
+    refresh: () => Promise<void>;
+    create: (data: BridgeRouteIn) => Promise<BridgeRoute>;
+    update: (route_id: string, patch: BridgeRoutePatch) => Promise<BridgeRoute>;
+    remove: (route_id: string) => Promise<void>;
+  }
+> {
   const {
     items: routes,
     setItems: setRoutes,
@@ -95,7 +112,14 @@ export function useBridgeRoutes(bridge_id: string | null) {
  * on this list are dropped by the router before any agent runs, so the
  * catch-all route effectively becomes "everything except these chats".
  */
-export function useBridgeIgnores(bridge_id: string | null) {
+export function useBridgeIgnores(bridge_id: string | null): UnifiedHookResult<
+  { ignores: BridgeIgnore[]; loading: boolean; error: string | null },
+  {
+    refresh: () => Promise<void>;
+    add: (data: BridgeIgnoreIn) => Promise<BridgeIgnore>;
+    remove: (remote_jid: string) => Promise<void>;
+  }
+> {
   const {
     items: ignores,
     setItems: setIgnores,

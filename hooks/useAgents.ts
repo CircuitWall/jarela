@@ -2,9 +2,17 @@
 import { useCallback } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
-import { useListState } from "@/hooks/useListState";
+import { useListState, type UnifiedHookResult } from "@/hooks/useListState";
 
-export function useAgents() {
+export function useAgents(): UnifiedHookResult<
+  { agents: AgentConfig[]; loading: boolean; error: string | null },
+  {
+    refresh: () => Promise<void>;
+    create: (data: AgentConfigIn) => Promise<AgentConfig>;
+    update: (id: string, data: AgentConfigIn) => Promise<AgentConfig>;
+    remove: (id: string) => Promise<void>;
+  }
+> {
   const {
     items: agents,
     setItems: setAgents,
