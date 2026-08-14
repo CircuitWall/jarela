@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface UseListStateOptions<T> {
   loader: () => Promise<T[]>;
@@ -42,23 +42,38 @@ export function useListState<T>({
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(initialLoading);
   const [error, setError] = useState<string | null>(null);
+  const loaderRef = useRef(loader);
+  const eventLoaderRef = useRef(eventLoader);
+  const onDisabledRef = useRef(onDisabled);
+
+  useEffect(() => {
+    loaderRef.current = loader;
+  }, [loader]);
+
+  useEffect(() => {
+    eventLoaderRef.current = eventLoader;
+  }, [eventLoader]);
+
+  useEffect(() => {
+    onDisabledRef.current = onDisabled;
+  }, [onDisabled]);
 
   const refresh = useCallback(async () => {
     if (!enabled) {
-      onDisabled?.();
+      onDisabledRef.current?.();
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      setItems(await loader());
+      setItems(await loaderRef.current());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load list");
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [enabled, loader, onDisabled]);
+  }, [enabled]);
 
   useEffect(() => {
     void refresh();
@@ -66,10 +81,10 @@ export function useListState<T>({
 
   const refreshFromEvent = useCallback(async () => {
     if (!enabled) {
-      onDisabled?.();
+      onDisabledRef.current?.();
       return;
     }
-    if (!eventLoader) {
+    if (!eventLoaderRef.current) {
       await refresh();
       return;
     }
@@ -77,22 +92,23 @@ export function useListState<T>({
     setLoading(true);
     setError(null);
     try {
-      setItems(await eventLoader());
+      setItems(await eventLoaderRef.current());
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load list");
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [enabled, eventLoader, onDisabled, refresh]);
+  }, [enabled, refresh]);
 
   useEffect(() => {
     if (!eventName || typeof window === "undefined") return;
+    const hasEventLoader = Boolean(eventLoaderRef.current);
     const onChange = () => { void refresh(); };
     const onEvent = () => { void refreshFromEvent(); };
-    window.addEventListener(eventName, eventLoader ? onEvent : onChange);
-    return () => window.removeEventListener(eventName, eventLoader ? onEvent : onChange);
-  }, [eventLoader, eventName, refresh, refreshFromEvent]);
+    window.addEventListener(eventName, hasEventLoader ? onEvent : onChange);
+    return () => window.removeEventListener(eventName, hasEventLoader ? onEvent : onChange);
+  }, [eventName, refresh, refreshFromEvent]);
 
   return { items, setItems, loading, error, refresh };
 }
