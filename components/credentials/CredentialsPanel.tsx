@@ -1,8 +1,8 @@
 "use client";
-import { CheckCircle2, Filter, Key, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
+import { CheckCircle2, ChevronRight, Filter, Key, Loader2, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Credential, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
+import type { Credential, CredentialType, IntegrationDefinition, IntegrationStatus, UserProfile } from "@/api/types";
 import { useAppContext } from "@/contexts/AppContext";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { useCredentialProbes, type CredentialProbeResult } from "@/hooks/useCredentialProbes";
@@ -34,26 +34,22 @@ const SUB_TITLES: Record<Sub, string> = {
   network: "Network & environment",
 };
 
-type Category = NonNullable<IntegrationDefinition["category"]>;
+const TYPE_ORDER = ["model", "integration", "tts", "bridge"] as const;
 
-const CATEGORY_ORDER: Category[] = [
-  "llm",
-  "mail",
-  "calendar",
-  "issue-tracker",
-  "infrastructure",
-  "chat",
-  "other",
-];
+type GroupTypeKey = (typeof TYPE_ORDER)[number];
 
-const CATEGORY_LABELS: Record<Category, string> = {
-  llm: "Model providers (LLM)",
-  mail: "Mail",
-  calendar: "Calendar",
-  "issue-tracker": "Issue trackers",
-  infrastructure: "Infrastructure",
-  chat: "Chat",
-  other: "Other",
+const TYPE_LABELS: Record<GroupTypeKey, string> = {
+  model: "Model provider credentials",
+  integration: "Tool credentials",
+  tts: "Voice credentials",
+  bridge: "Bridge credentials",
+};
+
+const TYPE_HINTS: Record<GroupTypeKey, string> = {
+  model: "Keys used by model configurations.",
+  integration: "Credentials used by tools and integrations.",
+  tts: "Credentials used by voice output providers.",
+  bridge: "Credentials used by external bridge connectors.",
 };
 
 const PRESET_LABELS: Record<NonNullable<UserProfile["preset"]>, string> = {
@@ -117,6 +113,12 @@ export function CredentialsListPanel() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [collapsedByType, setCollapsedByType] = useState<Record<GroupTypeKey, boolean>>({
+    model: true,
+    integration: true,
+    tts: true,
+    bridge: true,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("credentials", "credential", containerRef);
   useDeepLinkScroll("credentials", "integration", containerRef);
@@ -156,9 +158,6 @@ export function CredentialsListPanel() {
     for (const d of defs) m.set(d.name, d);
     return m;
   }, [defs]);
-
-  const featuredClaudeDef = defByName.get("claude-code");
-  const featuredClaudeStatus = statuses["claude-code"];
 
   async function syncFromEnv() {
     setSyncing(true);
@@ -222,39 +221,58 @@ export function CredentialsListPanel() {
 
   const hiddenCount = defs.length - visibleDefs.length;
 
-  // Group only providers the user has actually saved credentials for.
-  // Each group renders the default credential first, then any additional
-  // rows, and an "Add another" button for that provider. Unconfigured
-  // providers are reachable only through the top-level "+ Add credential"
-  // picker — the panel no longer lists every possible integration.
-  const grouped = useMemo(() => {
+  // Group saved credentials by type, then provider. "integration" rows are
+  // the unified tool-credential bucket so mail/github/calendar/etc all live
+  // in one collapsible section.
+  const groupedByType = useMemo(() => {
     type ProviderGroup = {
+      type: CredentialType;
       provider: string;
       def: IntegrationDefinition | undefined;
       credentials: Credential[];
+      sortLabel: string;
     };
-    const byCat = new Map<Category, ProviderGroup[]>();
+
+    const byType = new Map<GroupTypeKey, ProviderGroup[]>();
     const byProvider = new Map<string, Credential[]>();
     for (const c of credentials) {
-      const arr = byProvider.get(c.provider) ?? [];
+      const key = `${c.type}::${c.provider}`;
+      const arr = byProvider.get(key) ?? [];
       arr.push(c);
-      byProvider.set(c.provider, arr);
+      byProvider.set(key, arr);
     }
-    for (const [provider, rows] of byProvider) {
+
+    for (const rows of byProvider.values()) {
+      const type = rows[0]?.type;
+      const provider = rows[0]?.provider;
+      if (!type || !provider) continue;
       // Stable ordering: default first, then by id.
       rows.sort((a, b) => {
         if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
         return a.id.localeCompare(b.id);
       });
       const def = defByName.get(provider);
-      const cat = (def?.category ?? "other") as Category;
-      const arr = byCat.get(cat) ?? [];
-      arr.push({ provider, def, credentials: rows });
-      byCat.set(cat, arr);
+      const section = TYPE_ORDER.includes(type as GroupTypeKey)
+        ? (type as GroupTypeKey)
+        : "integration";
+      const arr = byType.get(section) ?? [];
+      arr.push({
+        type,
+        provider,
+        def,
+        credentials: rows,
+        sortLabel: (def?.label ?? provider).toLowerCase(),
+      });
+      byType.set(section, arr);
     }
-    return CATEGORY_ORDER
-      .filter((c) => byCat.has(c))
-      .map((c) => [c, byCat.get(c)!] as const);
+
+    for (const groups of byType.values()) {
+      groups.sort((a, b) => a.sortLabel.localeCompare(b.sortLabel) || a.provider.localeCompare(b.provider));
+    }
+
+    return TYPE_ORDER
+      .filter((t) => byType.has(t))
+      .map((t) => [t, byType.get(t)!] as const);
   }, [credentials, defByName]);
 
   return (
@@ -308,17 +326,7 @@ export function CredentialsListPanel() {
           {loading && credentials.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">Loading…</p>
           )}
-          {featuredClaudeDef && (
-            <section>
-              <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1 px-1">Featured</h3>
-              <IntegrationCard
-                definition={featuredClaudeDef}
-                status={featuredClaudeStatus}
-                onChanged={() => { void refresh(); }}
-              />
-            </section>
-          )}
-          {!loading && grouped.length === 0 && !featuredClaudeDef && (
+          {!loading && groupedByType.length === 0 && (
             <p className="text-fg-faint text-sm py-6 text-center">
               No credentials yet. Click <span className="font-medium">+ Add credential</span> to connect a model provider (OpenAI, Anthropic, Gemini…) or an integration (Gmail, GitHub, Atlassian…).
             </p>
@@ -326,25 +334,50 @@ export function CredentialsListPanel() {
           {deleteError && (
             <p className="text-red-700 dark:text-red-400 text-xs mb-2 px-1">{deleteError}</p>
           )}
-          {grouped.map(([cat, groups]) => (
-            <section key={cat}>
-              <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1 px-1">{CATEGORY_LABELS[cat]}</h3>
-              <div className="space-y-3">
-                {groups.filter(({ provider }) => provider !== "claude-code").map(({ provider, def, credentials: rows }) => (
-                  <ProviderGroup
-                    key={provider}
-                    provider={provider}
-                    def={def}
-                    rows={rows}
-                    probes={probes}
-                    onEdit={(c) => setEditingCredential(c)}
-                    onAddAnother={() => setAddAnotherProvider(provider)}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+          {groupedByType.map(([type, groups]) => {
+            const credentialCount = groups.reduce((sum, g) => sum + g.credentials.length, 0);
+            const collapsed = collapsedByType[type];
+            return (
+              <section key={type} className="rounded-lg border border-border/60 bg-surface-2/35 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setCollapsedByType((prev) => ({ ...prev, [type]: !prev[type] }))}
+                  className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-surface-3/30 transition-colors"
+                  aria-expanded={!collapsed}
+                >
+                  <ChevronRight size={14} className={["text-fg-faint transition-transform", collapsed ? "" : "rotate-90"].join(" ")} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-fg truncate">{TYPE_LABELS[type]}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border">
+                        {groups.length} provider{groups.length === 1 ? "" : "s"}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border">
+                        {credentialCount} credential{credentialCount === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-fg-faint truncate">{TYPE_HINTS[type]}</p>
+                  </div>
+                </button>
+                {!collapsed && (
+                  <div className="px-2 pb-2 space-y-3 border-t border-border/50">
+                    {groups.map(({ provider, def, credentials: rows }) => (
+                      <ProviderGroup
+                        key={`${type}:${provider}`}
+                        provider={provider}
+                        def={def}
+                        rows={rows}
+                        probes={probes}
+                        onEdit={(c) => setEditingCredential(c)}
+                        onAddAnother={() => setAddAnotherProvider(provider)}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
         </div>
       </div>
 
