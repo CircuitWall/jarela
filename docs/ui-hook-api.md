@@ -39,6 +39,8 @@ Meaning:
 - [hooks/useSettingsAttention.ts](../hooks/useSettingsAttention.ts)
 - [hooks/useSSE.ts](../hooks/useSSE.ts)
 - [hooks/useUrlSync.ts](../hooks/useUrlSync.ts)
+- [hooks/useLocationSharing.ts](../hooks/useLocationSharing.ts)
+- [hooks/useEventNotifications.ts](../hooks/useEventNotifications.ts)
 
 ## Behavioral guarantees
 
@@ -87,4 +89,15 @@ Reference tests:
 - [hooks/useMessageFilters.test.ts](../hooks/useMessageFilters.test.ts)
 - [hooks/useSettingsAttention.test.ts](../hooks/useSettingsAttention.test.ts)
 - [hooks/useSSE.test.ts](../hooks/useSSE.test.ts)
-- [hooks/useUrlSync.test.tsx](../hooks/useUrlSync.test.tsx)
+- [hooks/useUrlSync.test.ts](../hooks/useUrlSync.test.ts)
+- [hooks/useLocationSharing.test.ts](../hooks/useLocationSharing.test.ts)
+- [hooks/useEventNotifications.test.ts](../hooks/useEventNotifications.test.ts)
+
+## Naming and packaging conventions
+
+- Hook implementation files live in [hooks/](../hooks/) and are named
+  use{Name}.ts.
+- Hook contract tests live in [hooks/](../hooks/) and are named
+  use{Name}.test.ts.
+- Avoid placing hook tests under [components/](../components/).
+- Only use .tsx for tests when JSX is strictly required.
