@@ -26,7 +26,7 @@ interface ToolSummary {
 }
 
 export const listToolsTool = tool(
-  async ({ category, capability, source }) => {
+  async ({ query, category, capability, source }) => {
     const all = await getAllToolsAsync();
     const summaries: ToolSummary[] = all.map((t) => ({
       name: t.name,
@@ -37,7 +37,9 @@ export const listToolsTool = tool(
       group: getToolGroup(t.name),
     }));
 
+    const q = typeof query === "string" ? query.trim().toLowerCase() : "";
     const filtered = summaries.filter((s) =>
+      (!q || toolSearchText(s).includes(q)) &&
       (!category || s.category === category) &&
       (!capability || s.capability === capability) &&
       (!source || s.source === source),
@@ -65,6 +67,10 @@ export const listToolsTool = tool(
       "tools for a task, or when troubleshooting whether a specific tool is " +
       "registered. Optional filters narrow by category, capability, or source.",
     schema: z.object({
+      query: z
+        .string()
+        .optional()
+        .describe("Optional search query matched against name, description, category, capability, source, and group."),
       category: z
         .string()
         .optional()
@@ -80,6 +86,12 @@ export const listToolsTool = tool(
     }),
   },
 );
+
+function toolSearchText(tool: ToolSummary): string {
+  return [tool.name, tool.description, tool.category, tool.capability, tool.source, tool.group ?? ""]
+    .join(" ")
+    .toLowerCase();
+}
 
 registerLangChainPackage({
   category: "Config",

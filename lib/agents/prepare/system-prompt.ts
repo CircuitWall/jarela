@@ -20,7 +20,7 @@ import {
   formatContextBudgetSummary,
 } from "@/lib/agents/context-budget";
 import { getAppName } from "@/lib/env/app-config";
-import { listSkills, getSkillsDir } from "@/lib/skills";
+import { listSkills } from "@/lib/skills";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
@@ -327,10 +327,9 @@ function buildMemoryContext(budget: ContextBudget): string {
 }
 
 function buildSkillsContext(): string {
-  if (!getSkillsDir()) return "";
   const skills = listSkills();
   if (skills.length === 0) return "";
-  const lines = skills.map((s) => `  - ${s.id}${s.description ? `: ${s.description}` : ""}`);
+  const lines = skills.map((s) => `  - ${s.id} (${s.source})${s.description ? `: ${s.description}` : ""}`);
   return [
     "--- Available skills ---",
     "Use read_skill(id) to load a skill's full instructions before applying it. Only load skills relevant to the current task.",

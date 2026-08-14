@@ -280,8 +280,11 @@ export const api = {
   },
 
   tools: {
-    list: (opts?: { force?: boolean }) =>
-      cachedList(toolListCache, () => request<ToolInfo[]>("/tools"), setToolListCache, opts?.force === true),
+    list: (opts?: { force?: boolean; query?: string }) => {
+      const q = opts?.query?.trim();
+      if (q) return request<ToolInfo[]>(`/tools?q=${encodeURIComponent(q)}`);
+      return cachedList(toolListCache, () => request<ToolInfo[]>("/tools"), setToolListCache, opts?.force === true);
+    },
   },
 
   builtinTools: {

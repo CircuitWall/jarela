@@ -474,6 +474,8 @@ export interface ToolInfo {
   source?: "builtin" | "external" | "mcp";
   /** UI grouping label (e.g. "Files", "Web", "MCP"). */
   category?: string;
+  /** Safety class: read-only inspection, content mutation, or external/workflow execution. */
+  capability?: "read" | "write" | "execute";
   /**
    * Optional parent group rendered above the category in the Agent editor.
    * Currently used to collapse vendor-native categories (Atlassian, GitHub)

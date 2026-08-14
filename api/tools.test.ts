@@ -14,7 +14,7 @@ afterAll(() => {
 
 describe("GET /api/v1/tools", () => {
   it("includes usefulness stats for each tool", async () => {
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/v1/tools"));
     expect(res.ok).toBe(true);
     const tools = await res.json() as Array<{
       name: string;
@@ -31,5 +31,13 @@ describe("GET /api/v1/tools", () => {
     expect(tools[0]?.stats?.score).toBeLessThanOrEqual(1);
     expect(tools[0]?.stats?.success_rate).toBeGreaterThanOrEqual(0);
     expect(tools[0]?.stats?.usefulness_rate).toBeGreaterThanOrEqual(0);
+  });
+
+  it("filters tools by search query", async () => {
+    const res = await GET(new Request("http://localhost/api/v1/tools?q=read_skill"));
+    expect(res.ok).toBe(true);
+    const tools = await res.json() as Array<{ name: string; category?: string }>;
+    expect(tools.map((t) => t.name)).toContain("read_skill");
+    expect(tools.map((t) => t.name)).not.toContain("file_read");
   });
 });

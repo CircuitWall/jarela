@@ -44,6 +44,7 @@ import "./list-tools";
 import "./providers-info";
 import "./mcp-servers-info";
 import "./extension-surfaces";
+import "./harness-info";
 import "./async-results-tool";
 import "./browser-control";
 import "./skills";
