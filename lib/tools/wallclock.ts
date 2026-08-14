@@ -27,6 +27,7 @@ import {
   completeAsyncCall,
   failAsyncCall,
 } from "./async-results";
+import { getStreamDefault } from "./tool-metadata";
 
 const DEFAULT_DEADLINE_MS = 120_000;
 
@@ -60,6 +61,15 @@ const ASYNC_RUN_DESCRIPTION =
   "`tool_result_get` with the returned key. The original `deadline_ms` " +
   "still applies — it just runs in the background.";
 
+const STREAM_DESCRIPTION =
+  "Optional. Controls whether this call's incremental progress (only " +
+  "tools that report progress internally, e.g. claude_delegate, do this) " +
+  "reaches the UI live as it runs. Omit this to use the tool's own " +
+  "default. Set true to force a live trace for this call even on a tool " +
+  "that's normally quiet, or false to silence one that normally streams " +
+  "(e.g. a claude_delegate call whose intermediate steps you don't want " +
+  "surfaced to the user this time).";
+
 interface WallclockedFunc {
   (args: Record<string, unknown>, config?: unknown): Promise<unknown>;
 }
@@ -78,29 +88,75 @@ interface ConfigWithWriter {
  * ("reset on activity") just by adopting reportToolProgress — the wrapper
  * doesn't know or care which tool is doing it. See ADR-0073.
  */
-function withActivityReset(config: unknown, onActivity: () => void): unknown {
+function withActivityReset(config: unknown, onActivity: () => void, forward: boolean): unknown {
   const c = config as ConfigWithWriter | undefined;
   const originalWriter = c?.writer;
   return {
     ...(c ?? {}),
     writer: (chunk: unknown) => {
+      // Activity always resets the idle timer, even when streaming is off
+      // for this call — "don't show it live" shouldn't also mean "treat
+      // the tool as stalled".
       onActivity();
-      originalWriter?.(chunk);
+      if (forward) originalWriter?.(chunk);
+    },
+  };
+}
+
+interface JsonObjectSchema {
+  type?: string;
+  properties?: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+// A JSON-Schema tool (external .cjs tools, MCP tools) is "object-shaped"
+// when it declares `type: "object"`, or omits `type` but already has a
+// `properties` map (some MCP servers drop the redundant `type`). Anything
+// else (arrays, primitives, `false`/`true` boolean schemas) isn't a shape
+// we can merge properties into.
+function isJsonObjectSchema(schema: unknown): schema is JsonObjectSchema {
+  if (!schema || typeof schema !== "object") return false;
+  const s = schema as JsonObjectSchema;
+  if (s.type === "object") return true;
+  return s.type === undefined && typeof s.properties === "object" && s.properties !== null;
+}
+
+// Merge the three wrapper properties into an existing JSON Schema object.
+// Deliberately does not touch `required` (all three are optional) or
+// `additionalProperties` — adding the keys to `properties` is enough for
+// `additionalProperties: false` to keep admitting them while still
+// rejecting genuinely unknown properties.
+function extendJsonObjectSchema(schema: JsonObjectSchema): JsonObjectSchema {
+  return {
+    ...schema,
+    properties: {
+      ...(schema.properties ?? {}),
+      deadline_ms: { type: "number", description: DEADLINE_DESCRIPTION },
+      async_run: { type: "boolean", description: ASYNC_RUN_DESCRIPTION },
+      stream: { type: "boolean", description: STREAM_DESCRIPTION },
     },
   };
 }
 
 export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
-  // Only zod-object schemas can be extended with `deadline_ms`. Other
-  // schema shapes (raw JSON Schema, ZodString) pass through unchanged.
-  // Those tools still get the wallclock race using the default budget.
+  // Zod-object schemas (every built-in tool) get `.extend()`. Plain
+  // JSON-Schema object schemas (every external .cjs tool, every MCP
+  // tool — neither speaks Zod) get the same three properties merged in
+  // by hand. Anything else (ZodString, a JSON schema that isn't an
+  // object type, …) passes through unchanged — those tools still get the
+  // wallclock race, just with the silent default budget, since there's
+  // no schema shape to advertise deadline_ms/async_run/stream through.
   const schema = (t as unknown as { schema: unknown }).schema;
-  const extendedSchema = schema instanceof z.ZodObject
-    ? schema.extend({
-        deadline_ms: z.number().int().positive().optional().describe(DEADLINE_DESCRIPTION),
-        async_run: z.boolean().optional().describe(ASYNC_RUN_DESCRIPTION),
-      })
-    : null;
+  let extendedSchema: unknown = null;
+  if (schema instanceof z.ZodObject) {
+    extendedSchema = schema.extend({
+      deadline_ms: z.number().int().positive().optional().describe(DEADLINE_DESCRIPTION),
+      async_run: z.boolean().optional().describe(ASYNC_RUN_DESCRIPTION),
+      stream: z.boolean().optional().describe(STREAM_DESCRIPTION),
+    });
+  } else if (isJsonObjectSchema(schema)) {
+    extendedSchema = extendJsonObjectSchema(schema);
+  }
 
   const wrappedFunc: WallclockedFunc = async (args, config) => {
     const requested = readDeadlineMs(args) ?? DEFAULT_DEADLINE_MS;
@@ -113,10 +169,11 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
       );
     }
     const asyncRun = readAsyncRun(args);
+    const streamOn = readStream(args) ?? getStreamDefault(t);
     const innerArgs = stripWrapperFields(args);
 
     if (asyncRun) {
-      return runAsync(t, innerArgs, config, deadlineMs);
+      return runAsync(t, innerArgs, config, deadlineMs, streamOn);
     }
 
     let timer!: ReturnType<typeof setTimeout>;
@@ -141,7 +198,7 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
     armTimer();
     // Any config.writer() call from inside the tool (reportToolProgress)
     // proves it's still active — reset the budget instead of abandoning it.
-    const configForInner = withActivityReset(config, armTimer);
+    const configForInner = withActivityReset(config, armTimer, streamOn);
 
     try {
       // Cast: invoke accepts a typed input matching the original schema,
@@ -179,10 +236,18 @@ function readAsyncRun(args: Record<string, unknown> | unknown): boolean {
   return (args as Record<string, unknown>).async_run === true;
 }
 
+// null means "not specified by the caller" so wrappedFunc can fall back
+// to the tool's own default.
+function readStream(args: Record<string, unknown> | unknown): boolean | null {
+  if (!args || typeof args !== "object") return null;
+  const v = (args as Record<string, unknown>).stream;
+  return typeof v === "boolean" ? v : null;
+}
+
 function stripWrapperFields(args: Record<string, unknown> | unknown): Record<string, unknown> | unknown {
   if (!args || typeof args !== "object") return args;
-  const { deadline_ms: _d, async_run: _a, ...rest } = args as Record<string, unknown>;
-  void _d; void _a;
+  const { deadline_ms: _d, async_run: _a, stream: _s, ...rest } = args as Record<string, unknown>;
+  void _d; void _a; void _s;
   return rest;
 }
 
@@ -196,6 +261,7 @@ function runAsync<T extends StructuredToolInterface>(
   innerArgs: unknown,
   config: unknown,
   deadlineMs: number,
+  streamOn: boolean,
 ): string {
   const key = startAsyncCall(t.name);
   const startedAt = Date.now();
@@ -218,7 +284,7 @@ function runAsync<T extends StructuredToolInterface>(
   armTimer();
   // Same idle-reset hook as the sync path — a config.writer() call from
   // inside the tool (reportToolProgress) proves it's still active.
-  const configForInner = withActivityReset(config, armTimer);
+  const configForInner = withActivityReset(config, armTimer, streamOn);
 
   void (async () => {
     try {

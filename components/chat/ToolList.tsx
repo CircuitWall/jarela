@@ -126,7 +126,7 @@ const DEFAULT_DEADLINE_MS = 120_000;
 // Wrapper-injected schema fields that should not appear in the user-facing
 // "command/usage" summary — they're transport plumbing, not arguments
 // the operator cares about glancing at.
-const HIDDEN_ARG_KEYS = new Set(["deadline_ms", "async_run"]);
+const HIDDEN_ARG_KEYS = new Set(["deadline_ms", "async_run", "stream"]);
 
 // Above this many grouped tool calls, the per-call cards collapse into a
 // single summary line ("local_exec(2) web_search(5)") that the user can
@@ -369,7 +369,6 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
   const summary = renderArgsSummary(group.name, effectiveArgs);
   const summaryTitle = argsSummaryTitle(group.name, effectiveArgs);
   const hasArgs = hasVisibleArgs(effectiveArgs);
-  const latestStep = group.steps.at(-1);
   return (
     <div className="min-w-0 max-w-full">
       <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
@@ -416,16 +415,9 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           stepCount={group.steps.length}
         />
       </MetaRow>
-      {!open && latestStep && (group.status === "running" || group.status === "async") && (
-        <div className="pl-[22px] -mt-0.5 truncate text-[10px] italic text-fg-faint/80" title={latestStep}>
-          {latestStep}
-        </div>
-      )}
+      <LiveTranscript steps={group.steps} />
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
-          {group.steps.length > 0 && (
-            <DetailSection label={`live steps (${group.steps.length})`} value={group.steps.join("\n")} />
-          )}
           {hasVisibleArgs(group.args) ? (
             <DetailSection label="arguments" value={group.args} />
           ) : hasArgs ? (
@@ -448,6 +440,93 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
             />
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Marker prefixes are set by extractSteps in lib/tools/claude-delegate.ts
+// ("Claude: ...", "→ Name: detail", "✓ Name: result", "✗ Name: error") —
+// parsed here only to pick a per-row icon/tone; the wire format (SSE
+// tool_progress payload) stays a plain string, so any tool can adopt the
+// same convention without a schema change.
+type StepKind = "text" | "call" | "result" | "error";
+
+function classifyStep(step: string): { kind: StepKind; body: string } {
+  if (step.startsWith("✓ ")) return { kind: "result", body: step.slice(2) };
+  if (step.startsWith("✗ ")) return { kind: "error", body: step.slice(2) };
+  if (step.startsWith("→ ")) return { kind: "call", body: step.slice(2) };
+  return { kind: "text", body: step };
+}
+
+function StepIcon({ kind }: { kind: StepKind }) {
+  if (kind === "result") {
+    return <Check size={9} strokeWidth={3} className="shrink-0 text-emerald-500/80" aria-hidden />;
+  }
+  if (kind === "error") {
+    return <X size={9} strokeWidth={3} className="shrink-0 text-rose-500/80" aria-hidden />;
+  }
+  if (kind === "call") {
+    return <ChevronRight size={9} className="shrink-0 text-sky-500/70" aria-hidden />;
+  }
+  return <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-fg-faint/50" aria-hidden />;
+}
+
+function StepRow({ step }: { step: string }) {
+  const { kind, body } = classifyStep(step);
+  return (
+    <div className="flex items-baseline gap-1.5 min-w-0 text-[10px] leading-[1.5]" title={body}>
+      <StepIcon kind={kind} />
+      <span
+        className={`truncate min-w-0 ${
+          kind === "error" ? "text-rose-600 dark:text-rose-300/90" : "text-fg-faint"
+        }`}
+      >
+        {body}
+      </span>
+    </div>
+  );
+}
+
+// Live per-call transcript (ADR-0073): nested directly under the tool
+// call's own header row for the whole lifetime of the call, not gated
+// behind the "expand raw args/result" toggle. Grows with content up to a
+// capped height and auto-scrolls to the newest line; once it overflows,
+// "read more" lifts the cap instead of forcing an inline scrollbar.
+const TRANSCRIPT_COLLAPSED_MAX_PX = 112; // ~7 rows
+const TRANSCRIPT_EXPANDED_MAX_PX = 320;
+
+function LiveTranscript({ steps }: { steps: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setOverflowing(el.scrollHeight > el.clientHeight);
+  }, [steps.length, expanded]);
+
+  if (steps.length === 0) return null;
+  return (
+    <div className="pl-[22px] -mt-0.5 min-w-0">
+      <div
+        ref={scrollRef}
+        className="flex flex-col gap-0.5 overflow-y-auto rounded border border-border/30 bg-surface-2/20 px-1.5 py-1 transition-[max-height] duration-150 ease-out"
+        style={{ maxHeight: expanded ? TRANSCRIPT_EXPANDED_MAX_PX : TRANSCRIPT_COLLAPSED_MAX_PX }}
+      >
+        {steps.map((s, i) => (
+          <StepRow key={i} step={s} />
+        ))}
+      </div>
+      {overflowing && (
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="mt-0.5 text-[9px] uppercase tracking-wide text-fg-faint hover:text-fg-muted"
+        >
+          {expanded ? "show less" : "read more"}
+        </button>
       )}
     </div>
   );

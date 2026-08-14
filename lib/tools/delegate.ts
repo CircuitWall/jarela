@@ -2,6 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { registerLangChainPackage } from "./langchain-package";
+import { withStreamDefault } from "./tool-metadata";
 import {
   getAgentConfig,
   parseDelegateTargets,
@@ -116,7 +117,7 @@ async function runDelegatedTurn(
   }).result;
 }
 
-export const delegateToAgentTool = tool(
+export const delegateToAgentTool = withStreamDefault(tool(
   async ({ agent_id, task }, config) => {
     const ctx = readDelegateContext(config);
     if (!ctx) return fail("no_context", "No agent context (missing thread_id)");
@@ -185,7 +186,7 @@ export const delegateToAgentTool = tool(
       ),
     }),
   },
-);
+), true);
 
 registerLangChainPackage({
   category: "Agent",
