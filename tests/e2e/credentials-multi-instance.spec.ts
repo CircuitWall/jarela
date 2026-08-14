@@ -221,6 +221,12 @@ test.describe("credentials panel UI", () => {
     await waitForAppReady(page);
     await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
 
+    // Credential-type groups render collapsed by default; expand "Model
+    // provider credentials" so its rows are actually in the DOM.
+    const modelGroupHeader = page.getByRole("button", { name: /Model provider credentials/ });
+    await modelGroupHeader.click();
+    await expect(modelGroupHeader).toHaveAttribute("aria-expanded", "true");
+
     // Both rows render — the auto-Default one and the Personal one.
     const defaultRow = page.locator(`li[data-deep-link-id="model-${TEST_PROVIDER}"]`);
     const personalRow = page.locator(`li[data-deep-link-id^="model-${TEST_PROVIDER}-"]`);
