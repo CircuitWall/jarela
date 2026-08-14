@@ -19,5 +19,8 @@ export function useTools() {
     initialLoading: true,
   });
 
-  return { tools, loading, error, refresh };
+  const state = { tools, loading, error };
+  const commands = { refresh };
+
+  return { state, commands, tools, loading, error, refresh };
 }
