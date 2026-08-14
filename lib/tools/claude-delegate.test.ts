@@ -376,8 +376,15 @@ function assistantTextLine(text: string): string {
   return JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } });
 }
 
-function assistantToolUseLine(name: string, input: Record<string, unknown>): string {
-  return JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name, input }] } });
+function assistantToolUseLine(name: string, input: Record<string, unknown>, id = "tu_1"): string {
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
+}
+
+function toolResultLine(toolUseId: string, content: unknown, isError = false): string {
+  return JSON.stringify({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: toolUseId, content, is_error: isError }] },
+  });
 }
 
 describe("claude_delegate — live progress (config.writer)", () => {
@@ -408,6 +415,28 @@ describe("claude_delegate — live progress (config.writer)", () => {
       await new Promise((r) => setTimeout(r, 10));
     }
     expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "Claude: working in the background" });
+  });
+
+  it("reports tool_result events, labelled with the tool name from the matching tool_use id", async () => {
+    state.script = [
+      assistantToolUseLine("Bash", { command: "ls" }, "tu_1"),
+      toolResultLine("tu_1", "a.ts\nb.ts"),
+      resultLine(),
+    ];
+    const writer = vi.fn();
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }, { writer } as never);
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "✓ Bash: a.ts b.ts" });
+  });
+
+  it("marks a failed tool_result with the ✗ marker", async () => {
+    state.script = [
+      assistantToolUseLine("Bash", { command: "ls /nope" }, "tu_1"),
+      toolResultLine("tu_1", "No such file or directory", true),
+      resultLine(),
+    ];
+    const writer = vi.fn();
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }, { writer } as never);
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "✗ Bash: No such file or directory" });
   });
 });
 

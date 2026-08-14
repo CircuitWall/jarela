@@ -10,6 +10,7 @@ import { checkExecAllowed, resolveSafetyMode } from "./safety";
 import { TerminalSession } from "@/lib/terminal";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
+import { withStreamDefault } from "./tool-metadata";
 
 const BLOCKED_PATTERNS = [
   /\brm\s+-rf\s+\/\b/i,
@@ -80,7 +81,7 @@ const execSchema = z.object({
   allow_unsafe: z.boolean().optional().describe("Bypass safety blocking for risky commands"),
 });
 
-export const localExecTool = tool(
+export const localExecTool = withStreamDefault(tool(
   async ({ command, cwd, env, timeout_ms, allow_unsafe }, config?: ToolConfig) =>
     runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
@@ -88,9 +89,9 @@ export const localExecTool = tool(
     description: "Run a shell command in a throwaway session. Output is truncated to 8 KB. For multi-step stateful work, use terminal_exec instead.",
     schema: execSchema,
   },
-);
+), true);
 
-export const shellExecTool = tool(
+export const shellExecTool = withStreamDefault(tool(
   async ({ command, cwd, env, timeout_ms, allow_unsafe }, config?: ToolConfig) =>
     runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
@@ -98,7 +99,7 @@ export const shellExecTool = tool(
     description: "Backward-compatible alias for local_exec.",
     schema: execSchema,
   },
-);
+), true);
 
 registerLangChainPackage({
   category: "Shell",

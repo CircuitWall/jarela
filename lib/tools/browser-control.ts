@@ -23,6 +23,7 @@ import {
 } from "@/lib/api/browser-control";
 import { writeBinaryFile } from "@/lib/files";
 import { registerLangChainPackage } from "./langchain-package";
+import { withStreamDefault } from "./tool-metadata";
 
 const TimeoutMs = z
   .number()
@@ -275,7 +276,7 @@ function formatActionResult(action: string, result: BrowserResult): string {
 // navigate                                                              //
 // --------------------------------------------------------------------- //
 
-export const browserNavigateTool = tool(
+export const browserNavigateTool = withStreamDefault(tool(
   async ({ url, wait_for_selector, timeout_ms }) => {
     const result = await run(
       { type: "navigate", url, wait_for_selector, auto_snapshot: true },
@@ -300,13 +301,13 @@ export const browserNavigateTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 // --------------------------------------------------------------------- //
 // click                                                                 //
 // --------------------------------------------------------------------- //
 
-export const browserClickTool = tool(
+export const browserClickTool = withStreamDefault(tool(
   async ({ selector, handle, role, name, timeout_ms }) => {
     const loc = resolveLocator({ selector, handle, role, name });
     if (!loc.ok) {
@@ -350,13 +351,13 @@ export const browserClickTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 // --------------------------------------------------------------------- //
 // fill                                                                  //
 // --------------------------------------------------------------------- //
 
-export const browserFillTool = tool(
+export const browserFillTool = withStreamDefault(tool(
   async ({ selector, handle, role, name, value, submit, timeout_ms }) => {
     const loc = resolveLocator({ selector, handle, role, name });
     if (!loc.ok) {
@@ -398,13 +399,13 @@ export const browserFillTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 // --------------------------------------------------------------------- //
 // scroll                                                                //
 // --------------------------------------------------------------------- //
 
-export const browserScrollTool = tool(
+export const browserScrollTool = withStreamDefault(tool(
   async ({ selector, to, timeout_ms }) => {
     const result = await run({ type: "scroll", selector, to }, timeout_ms);
     return stringifyResult("browser_scroll", result);
@@ -424,7 +425,7 @@ export const browserScrollTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 // --------------------------------------------------------------------- //
 // screenshot                                                            //
@@ -435,7 +436,7 @@ interface ScreenshotData {
   media_type?: string;
 }
 
-export const browserScreenshotTool = tool(
+export const browserScreenshotTool = withStreamDefault(tool(
   async ({ selector, format, full_page, timeout_ms }) => {
     const result = await run(
       { type: "screenshot", selector, format: format ?? "png", full_page },
@@ -483,13 +484,13 @@ export const browserScreenshotTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 // --------------------------------------------------------------------- //
 // extract                                                               //
 // --------------------------------------------------------------------- //
 
-export const browserExtractTool = tool(
+export const browserExtractTool = withStreamDefault(tool(
   async ({ selector, format, max_chars, timeout_ms }) => {
     const result = await run(
       { type: "extract", selector, format: format ?? "text", max_chars },
@@ -520,13 +521,13 @@ export const browserExtractTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 // --------------------------------------------------------------------- //
 // snapshot                                                              //
 // --------------------------------------------------------------------- //
 
-export const browserSnapshotTool = tool(
+export const browserSnapshotTool = withStreamDefault(tool(
   async ({ max_items, include_hidden, timeout_ms }) => {
     const result = await run(
       { type: "snapshot", max_items, include_hidden },
@@ -558,7 +559,7 @@ export const browserSnapshotTool = tool(
       timeout_ms: TimeoutMs,
     }),
   },
-);
+), true);
 
 registerLangChainPackage({
   category: "Web",

@@ -12,6 +12,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { registerLangChainPackage } from "./langchain-package";
+import { withStreamDefault } from "./tool-metadata";
 import { writeBinaryFile } from "@/lib/files";
 import { geminiTts, resolveGoogleApiKey } from "@/lib/voice/gemini";
 import { getThread } from "@/lib/stores/threads";
@@ -38,7 +39,7 @@ function resolveAgentVoice(config?: RunnableConfig): { model: string; voice: str
   };
 }
 
-export const generateVoiceTool = tool(
+export const generateVoiceTool = withStreamDefault(tool(
   async ({ text, style, speakers, autoplay }, config) => {
     const trimmed = (text ?? "").trim();
     if (!trimmed) throw new Error("text is required and must be non-empty");
@@ -115,7 +116,7 @@ export const generateVoiceTool = tool(
         ),
     }),
   },
-);
+), true);
 
 registerLangChainPackage({
   category: "Voice",

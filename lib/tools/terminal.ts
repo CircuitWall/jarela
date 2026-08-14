@@ -8,6 +8,7 @@ import { checkExecAllowed, resolveSafetyMode, type SafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
 import type { ToolConfig } from "./workspace-context";
 import { currentWorkspace } from "./workspace-context";
+import { withStreamDefault } from "./tool-metadata";
 
 // Evict idle sessions every 60 s. .unref() so this timer doesn't keep Node alive.
 setInterval(() => evictIdleSessions(getConfig().terminalIdleTtlMs), 60_000).unref();
@@ -76,7 +77,7 @@ export const terminalOpenTool = tool(
 
 // ── terminal_exec ─────────────────────────────────────────────────────────────
 
-export const terminalExecTool = tool(
+export const terminalExecTool = withStreamDefault(tool(
   async ({ session_id, command, timeout_ms, allow_unsafe }, config?: ToolConfig) => {
     const mode = resolveSafetyMode();
     const deny = checkCommand(command, allow_unsafe, mode);
@@ -125,7 +126,7 @@ export const terminalExecTool = tool(
       allow_unsafe: z.boolean().optional().describe("Bypass safety block for a single call"),
     }),
   },
-);
+), true);
 
 // ── terminal_send ─────────────────────────────────────────────────────────────
 
