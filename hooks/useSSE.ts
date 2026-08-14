@@ -133,8 +133,24 @@ export function useSSE(onDone?: () => void) {
   const [authError, setAuthError] = useState<AuthError>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadIdRef = useRef<string | null>(null);
-  const activity = useRunActivity();
-  const buffer = useStreamingBuffer();
+  const {
+    open: openActivity,
+    close: closeActivity,
+    setStatus: setActivityStatus,
+    onToolCall,
+    onToolResult,
+    activeToolsRef,
+  } = useRunActivity();
+  const {
+    streamingContent,
+    thinkingContent,
+    appendText,
+    appendThinking,
+    flushPending,
+    cancelPendingFlush,
+    reset: resetBuffer,
+    clearStreamingContent,
+  } = useStreamingBuffer();
 
   // Abort the active EventSource on unmount so the server connection closes
   // and we don't call state setters on a dead component.
@@ -151,36 +167,36 @@ export function useSSE(onDone?: () => void) {
         continue;
       }
       if (event.type === "text_delta") {
-        buffer.appendText(event.delta);
-        activity.setStatus("Responding…");
+        appendText(event.delta);
+        setActivityStatus("Responding…");
       } else if (event.type === "status") {
         const label = typeof event.label === "string" && event.label.trim().length > 0
           ? event.label
           : "Thinking…";
-        activity.setStatus(label);
+        setActivityStatus(label);
       } else if (event.type === "thinking_delta") {
-        buffer.appendThinking(event.delta);
-        if (activity.activeToolsRef.current.size === 0) activity.setStatus("Thinking…");
+        appendThinking(event.delta);
+        if (activeToolsRef.current.size === 0) setActivityStatus("Thinking…");
       } else if (event.type === "tool_call") {
         // Flush any buffered text before the tool event so the order on
         // screen matches the order on the wire.
-        buffer.flushPending();
+        flushPending();
         setToolEvents((prev) => [
           ...prev,
           { id: event.id, phase: "call", name: event.name, payload: event.arguments },
         ]);
-        activity.onToolCall(event.id, event.name);
+        onToolCall(event.id, event.name);
       } else if (event.type === "tool_result") {
-        buffer.flushPending();
+        flushPending();
         setToolEvents((prev) => [
           ...prev,
           { id: event.id, phase: "result", name: event.name, payload: event.result },
         ]);
-        activity.onToolResult(event.id);
+        onToolResult(event.id);
       } else if (event.type === "done") {
-        buffer.flushPending();
+        flushPending();
         setStreaming(false);
-        activity.close();
+        closeActivity();
         // Don't clear streamingContent here — it would cause a visual gap
         // between "stream done" and "refetched messages arrived" where the
         // assistant bubble disappears for ~100ms. The consumer (ChatView)
@@ -192,9 +208,9 @@ export function useSSE(onDone?: () => void) {
         onDone?.();
         break;
       } else if (event.type === "error") {
-        buffer.cancelPendingFlush();
+        cancelPendingFlush();
         setStreaming(false);
-        activity.close();
+        closeActivity();
         setError(event.message);
         if (event.code === "auth_failed") {
           setAuthError({
@@ -212,7 +228,7 @@ export function useSSE(onDone?: () => void) {
         break;
       }
     }
-  }, [activity, buffer, onDone]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, onToolCall, onToolResult, setActivityStatus, activeToolsRef]);
 
   const start = useCallback(async (
     threadId: string,
@@ -225,12 +241,12 @@ export function useSSE(onDone?: () => void) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     threadIdRef.current = threadId;
-    buffer.reset();
+    resetBuffer();
     setStreaming(true);
     setToolEvents([]);
     setError(null);
     setAuthError(null);
-    activity.open("Sending…");
+    openActivity("Sending…");
 
     try {
       // Command: register the run server-side. 202 = we own this turn; 409
@@ -261,9 +277,9 @@ export function useSSE(onDone?: () => void) {
       // the text out from under the user. The next start()/attach() resets
       // them.
       setStreaming(false);
-      activity.close();
+      closeActivity();
     }
-  }, [activity, buffer, consume]);
+  }, [closeActivity, consume, openActivity, resetBuffer]);
 
   // Stop the active run. Three-part: (1) tell the server to abort the
   // agent stream so the LangGraph loop unwinds; (2) tear down local
@@ -280,14 +296,14 @@ export function useSSE(onDone?: () => void) {
     if (tid) {
       void api.threads.abortRun(tid).catch(() => { /* server already idle */ });
     }
-    buffer.flushPending();
+    flushPending();
     setStreaming(false);
     // Keep streamingContent and thinkingContent visible until the next
     // start()/attach() — same pattern as the `done` branch in consume().
-    activity.close();
+    closeActivity();
     abortRef.current?.abort();
     onDone?.();
-  }, [activity, buffer, onDone]);
+  }, [closeActivity, flushPending, onDone]);
 
   // Attach to an in-flight run for the given thread (server-side run kept
   // going because the user switched away, or because this is a fresh
@@ -301,12 +317,12 @@ export function useSSE(onDone?: () => void) {
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     threadIdRef.current = threadId;
-    buffer.reset();
+    resetBuffer();
     setStreaming(true);
     setToolEvents([]);
     setError(null);
     setAuthError(null);
-    activity.open("Reconnecting…");
+    openActivity("Reconnecting…");
 
     try {
       await consume(subscribeRun(threadId, ctrl.signal));
@@ -322,9 +338,9 @@ export function useSSE(onDone?: () => void) {
       // into an idle thread leaves streaming=true forever: the Stop button
       // hangs in the composer and the "Reconnecting…" badge never clears.
       setStreaming(false);
-      activity.close();
+      closeActivity();
     }
-  }, [activity, buffer, consume, onDone]);
+  }, [closeActivity, consume, onDone, openActivity, resetBuffer]);
 
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
@@ -332,8 +348,8 @@ export function useSSE(onDone?: () => void) {
 
   return {
     streaming,
-    streamingContent: buffer.streamingContent,
-    thinkingContent: buffer.thinkingContent,
+    streamingContent,
+    thinkingContent,
     toolEvents,
     error,
     authError,
@@ -341,6 +357,6 @@ export function useSSE(onDone?: () => void) {
     start,
     stop,
     attach,
-    clearStreamingContent: buffer.clearStreamingContent,
+    clearStreamingContent,
   };
 }
