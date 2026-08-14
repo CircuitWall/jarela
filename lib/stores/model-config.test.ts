@@ -6,7 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-modelconfig-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { getModelParams, upsertModelConfig, deleteModelConfig, getDefaultModelConfig } = await import("./model-config");
+const { getModelParams, upsertModelConfig, deleteModelConfig, getDefaultModelConfig, getModelConfig } = await import("./model-config");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -32,6 +32,26 @@ describe("getModelParams", () => {
     expect(getModelParams({ params: JSON.stringify([1, 2, 3]) })).toEqual({});
     expect(getModelParams({ params: JSON.stringify("string") })).toEqual({});
     expect(getModelParams({ params: JSON.stringify(42) })).toEqual({});
+  });
+});
+
+describe("upsertModelConfig params merge", () => {
+  it("preserves an existing field the next save's payload omits", () => {
+    upsertModelConfig("merge-test", "visa", "claude-sonnet-5", { username: "andwu", password: "secret", base_url: "https://a" }, false);
+    upsertModelConfig("merge-test", "visa", "claude-sonnet-5", { base_url: "https://b" }, false);
+    expect(getModelParams(getModelConfig("merge-test"))).toEqual({
+      username: "andwu",
+      password: "secret",
+      base_url: "https://b",
+    });
+    deleteModelConfig("merge-test");
+  });
+
+  it("lets a save explicitly overwrite a field with a new value", () => {
+    upsertModelConfig("merge-test-2", "anthropic", "claude-sonnet-5", { api_key: "sk-old" }, false);
+    upsertModelConfig("merge-test-2", "anthropic", "claude-sonnet-5", { api_key: "sk-new" }, false);
+    expect(getModelParams(getModelConfig("merge-test-2"))).toEqual({ api_key: "sk-new" });
+    deleteModelConfig("merge-test-2");
   });
 });
 
