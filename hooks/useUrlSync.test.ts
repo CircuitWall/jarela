@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 
 import { act, renderHook, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { AppProvider } from "@/contexts/AppContext";
 import { useUrlSync } from "@/hooks/useUrlSync";
 
 function wrapper({ children }: { children: ReactNode }) {
-  return <AppProvider>{children}</AppProvider>;
+  return createElement(AppProvider, null, children);
 }
 
 describe("useUrlSync contract", () => {

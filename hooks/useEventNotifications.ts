@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { UnifiedHookResult } from "@/hooks/useListState";
 import { pushToast, type NotifSource } from "@/lib/ui/toasts";
 
 interface RunCompleted {
@@ -112,10 +113,20 @@ function saveLastTs(ts: number): void {
   try { window.localStorage.setItem(LAST_TS_KEY, String(ts)); } catch { /* quota / privacy mode */ }
 }
 
-export function useEventNotifications(options: Options) {
+export function useEventNotifications(options: Options): UnifiedHookResult<
+  { connected: boolean; lastEventTs: number; lastError: string | null },
+  { reconnectNow: () => void }
+> {
   const lastTsRef = useRef<number>(loadLastTs());
   const optsRef = useRef(options);
   optsRef.current = options;
+  const [connected, setConnected] = useState(false);
+  const [lastEventTs, setLastEventTs] = useState<number>(lastTsRef.current);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [reconnectNonce, setReconnectNonce] = useState(0);
+  const reconnectNow = useCallback(() => {
+    setReconnectNonce((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof EventSource === "undefined") return;
@@ -133,12 +144,17 @@ export function useEventNotifications(options: Options) {
       if (cancelled) return;
       const url = `/api/v1/events?since=${lastTsRef.current}`;
       es = new EventSource(url);
+      es.onopen = () => {
+        setConnected(true);
+        setLastError(null);
+      };
 
       es.onmessage = (msg) => {
         backoff = 500;
         let ev: StreamEvent;
         try { ev = JSON.parse(msg.data) as StreamEvent; } catch { return; }
         if (!ev.ts) return;
+        setLastEventTs(ev.ts);
 
         // Page-capture push: re-fetch the affected thread AND drop a small
         // toast so the user can see *which* agent received the capture
@@ -230,6 +246,8 @@ export function useEventNotifications(options: Options) {
       };
 
       es.onerror = () => {
+        setConnected(false);
+        setLastError("event stream disconnected");
         es?.close();
         es = null;
         if (cancelled) return;
@@ -311,11 +329,24 @@ export function useEventNotifications(options: Options) {
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      setConnected(false);
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       document.removeEventListener("visibilitychange", onVisible);
       es?.close();
     };
-  }, []);
+  }, [reconnectNonce]);
+
+  const state = { connected, lastEventTs, lastError };
+  const commands = { reconnectNow };
+
+  return {
+    state,
+    commands,
+    connected,
+    lastEventTs,
+    lastError,
+    reconnectNow,
+  };
 }
 
 function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
