@@ -1,7 +1,7 @@
 "use client";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { ContentPart, Message } from "@/api/types";
+import type { ContentPart } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
 import { useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading } from "@/lib/ui/loading";
@@ -9,15 +9,14 @@ import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
-import {
-  appendUnique, applyThreadMeta, makeQueuedId,
-  type ThreadMetaApplier,
-} from "./chat-helpers";
+import { makeQueuedId } from "./chat-helpers";
 import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
 import { useThreadCrossDeviceSync } from "./useThreadCrossDeviceSync";
 import { useThreadData } from "./useThreadData";
 import { useUserProfileAndAgent } from "./useUserProfileAndAgent";
+import { composerPlaceholder, finalizeRunFromServer } from "./chat-run-utils";
+import { useChatSubmitHandlers } from "./useChatSubmitHandlers";
 
 interface Props {
   threadId: string | null;
@@ -158,61 +157,24 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     }
   }
 
-  // Default Send / Enter. Send-when-idle, STEER-when-streaming.
-  // Steer = prepend message to queue and abort the current run; the existing
-  // handleDone → drain machinery picks the prepended item up first once
-  // the abort settles.
-  async function handleSubmit(rawInput: string) {
-    let msg = rawInput.trim();
-    if (!msg || !agentId) return;
-    if (msg.toLowerCase() === "/new") { await handleCompact(); return; }
-    // /btw is intent flavor — strip the prefix so the agent never sees it.
-    if (msg.toLowerCase().startsWith("/btw ")) {
-      msg = msg.slice(5).trim();
-      if (!msg) return;
-    }
-    const atts = attachments;
-    setAttachments([]);
-    if (queue.isReady()) { await launchRun(msg, atts); return; }
-    queue.prepend(msg, atts);
-    if (sse.streaming) sse.stop();
-  }
-
-  // Ctrl/Cmd+Enter — explicit "queue this turn" path. Always appends; never
-  // aborts. When idle and the queue is empty we just send normally.
-  async function handleQueue(rawInput: string) {
-    const msg = rawInput.trim();
-    if (!msg || !agentId) return;
-    if (msg.toLowerCase() === "/new" || msg.toLowerCase().startsWith("/btw ")) {
-      await handleSubmit(rawInput);
-      return;
-    }
-    const atts = attachments;
-    setAttachments([]);
-    if (queue.isReady()) { await launchRun(msg, atts); return; }
-    queue.enqueue(msg, atts);
-  }
-
-  const handleVoiceTranscript = (text: string) => {
-    const msg = text.trim();
-    if (!msg || !agentId) return;
-    if (agentConfig?.voice_auto_speak !== false) pendingAutoSpeakRef.current = true;
-    if (queue.isReady()) { void launchRun(msg, []); return; }
-    queue.enqueue(msg, []);
-  };
-
-  const handleRetryMessage = useCallback((text: string, atts: ContentPart[]) => {
-    const msg = text.trim();
-    if (!msg || !agentId) return;
-    queue.retry(msg, atts);
-  }, [agentId, queue]);
-
-  // Shallow projection so the queued-bubble subtree doesn't re-reconcile
-  // on every streaming delta.
-  const queuedMessages = useMemo(
-    () => queue.queue.map((q) => ({ id: q.id, text: q.text, attachmentCount: q.attachments.length })),
-    [queue.queue],
-  );
+  const {
+    handleSubmit,
+    handleQueue,
+    handleVoiceTranscript,
+    handleRetryMessage,
+    queuedMessages,
+  } = useChatSubmitHandlers({
+    agentId,
+    attachments,
+    setAttachments,
+    queue,
+    launchRun,
+    stopStreaming: sse.stop,
+    streaming: sse.streaming,
+    onCompact: handleCompact,
+    pendingAutoSpeakRef,
+    agentConfig,
+  });
 
   return (
     <div className="flex flex-col h-full">
@@ -271,63 +233,4 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       />
     </div>
   );
-}
-
-interface FinalizeParams {
-  threadId: string;
-  messagesRef: React.MutableRefObject<Message[]>;
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-  setHasMore: (v: boolean) => void;
-  applyMeta: ThreadMetaApplier;
-  clearStreaming: () => void;
-  pendingAutoSpeakRef: React.MutableRefObject<boolean>;
-}
-
-// Forward-fetch only the messages persisted after our newest known one.
-// Typically two rows (user + assistant) instead of the full 50-row page,
-// so this is O(turn) instead of O(thread). Falls back to full reload if
-// no anchor (fresh thread, race).
-//
-// Anchor on the last *persisted* row, never an `opt-*` optimistic — the
-// optimistic's created_at is from the client clock and could skip the
-// just-persisted user row if it skews ahead of the server.
-async function finalizeRunFromServer(p: FinalizeParams): Promise<void> {
-  // Anchor on the last confirmed (non-opt-*) message so we only fetch the
-  // delta. Falls back to a full reload when there are no confirmed messages yet.
-  const confirmed = p.messagesRef.current.filter((m) => m.status !== 'pending');
-  const anchor = confirmed.length > 0 ? confirmed[confirmed.length - 1].created_at : undefined;
-  const d = anchor
-    ? await api.threads.get(p.threadId, { after: anchor })
-    : await api.threads.get(p.threadId);
-  // appendUnique reconciles: pending bubbles are promoted to confirmed in
-  // place (no deletion). Any new pending bubble added by the queue drain
-  // while the fetch was in flight is untouched — it has different content.
-  p.setMessages((prev) => appendUnique(prev, d.messages));
-  if (!anchor) p.setHasMore(d.has_more);
-  applyThreadMeta(p.applyMeta, d);
-  p.clearStreaming();
-  if (p.pendingAutoSpeakRef.current) {
-    p.pendingAutoSpeakRef.current = false;
-    const latest = [...d.messages].reverse().find((m) => m.role === "assistant" && m.id);
-    if (latest?.id && typeof window !== "undefined") {
-      requestAnimationFrame(() => {
-        window.dispatchEvent(new CustomEvent("jarela:speak-message", { detail: { messageId: latest.id } }));
-      });
-    }
-  }
-}
-
-function composerPlaceholder(s: {
-  compacting: boolean;
-  sessionLoading: boolean;
-  messagesLoading: boolean;
-  agentConfigLoading: boolean;
-  profileLoading: boolean;
-}): string | undefined {
-  if (s.compacting) return "Compacting session… your messages will queue";
-  if (s.sessionLoading) return "Loading session… your messages will queue";
-  if (s.messagesLoading) return "Loading chat history…";
-  if (s.agentConfigLoading) return "Loading agent…";
-  if (s.profileLoading) return "Loading profile…";
-  return undefined;
 }
