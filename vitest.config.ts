@@ -14,6 +14,8 @@ export default defineConfig({
     include: [
       "lib/**/*.test.ts",
       "api/**/*.test.ts",
+      "hooks/**/*.test.ts",
+      "hooks/**/*.test.tsx",
       "browser-extension/lib/**/*.test.mjs",
       "components/**/*.test.tsx",
     ],
