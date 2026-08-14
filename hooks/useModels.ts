@@ -2,9 +2,24 @@
 import { useCallback } from "react";
 import { api } from "@/api/client";
 import type { ModelConfig, ModelConfigIn, TaskAssignment, ToolPolicy } from "@/api/types";
-import { useListState } from "@/hooks/useListState";
+import { useListState, type UnifiedHookResult } from "@/hooks/useListState";
 
-export function useModels() {
+export function useModels(): UnifiedHookResult<
+  {
+    models: ModelConfig[];
+    assignments: TaskAssignment[];
+    loading: boolean;
+    error: string | null;
+  },
+  {
+    refresh: () => Promise<void>;
+    create: (name: string, data: ModelConfigIn) => Promise<ModelConfig>;
+    update: (name: string, data: ModelConfigIn) => Promise<ModelConfig>;
+    remove: (name: string) => Promise<void>;
+    assign: (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) => Promise<TaskAssignment>;
+    unassign: (agent_id: string) => Promise<void>;
+  }
+> {
   const {
     items: models,
     setItems: setModels,

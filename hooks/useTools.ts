@@ -1,9 +1,12 @@
 "use client";
 import { api } from "@/api/client";
 import type { ToolInfo } from "@/api/types";
-import { useListState } from "@/hooks/useListState";
+import { useListState, type UnifiedHookResult } from "@/hooks/useListState";
 
-export function useTools() {
+export function useTools(): UnifiedHookResult<
+  { tools: ToolInfo[]; loading: boolean; error: string | null },
+  { refresh: () => Promise<void> }
+> {
   const {
     items: tools,
     loading,

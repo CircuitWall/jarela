@@ -9,29 +9,29 @@ import type {
   LangChainPackageManifestRecord,
   LangChainPackagePendingInstall,
 } from "@/api/types";
+import type { UnifiedHookResult } from "@/hooks/useListState";
 
-export interface UsePackagesResult {
-  loadResult: LangChainPackageListResponse | null;
-  manifests: LangChainPackageManifestRecord[];
-  pending: LangChainPackagePendingInstall[];
-  loading: boolean;
-  error: string | null;
-  refresh: () => Promise<void>;
-  install: (spec: string, version?: string) => Promise<LangChainPackageInstallResponse>;
-  approveInstall: (id: string) => Promise<LangChainPackageInstallResponse>;
-  denyInstall: (id: string) => Promise<void>;
-  createManifest: (data: LangChainPackageManifestInput) => Promise<void>;
-  updateManifest: (
-    name: string,
-    data: Omit<LangChainPackageManifestInput, "name">,
-  ) => Promise<void>;
-  deleteManifest: (name: string) => Promise<void>;
-  reload: () => Promise<void>;
-  setDefaultEnabled: (id: string, enabled: boolean) => Promise<void>;
-  setManifestEnabled: (name: string, enabled: boolean) => Promise<void>;
-}
-
-export function usePackages(): UsePackagesResult {
+export function usePackages(): UnifiedHookResult<
+  {
+    loadResult: LangChainPackageListResponse | null;
+    manifests: LangChainPackageManifestRecord[];
+    pending: LangChainPackagePendingInstall[];
+    loading: boolean;
+    error: string | null;
+  },
+  {
+    refresh: () => Promise<void>;
+    install: (spec: string, version?: string) => Promise<LangChainPackageInstallResponse>;
+    approveInstall: (id: string) => Promise<LangChainPackageInstallResponse>;
+    denyInstall: (id: string) => Promise<void>;
+    createManifest: (data: LangChainPackageManifestInput) => Promise<void>;
+    updateManifest: (name: string, data: Omit<LangChainPackageManifestInput, "name">) => Promise<void>;
+    deleteManifest: (name: string) => Promise<void>;
+    reload: () => Promise<void>;
+    setDefaultEnabled: (id: string, enabled: boolean) => Promise<void>;
+    setManifestEnabled: (name: string, enabled: boolean) => Promise<void>;
+  }
+> {
   const [snapshot, setSnapshot] = useState<{
     loadResult: LangChainPackageListResponse | null;
     manifests: LangChainPackageManifestRecord[];
@@ -116,12 +116,14 @@ export function usePackages(): UsePackagesResult {
     await refresh();
   }, [refresh]);
 
-  return {
+  const state = {
     loadResult: snapshot.loadResult,
     manifests: snapshot.manifests,
     pending: snapshot.pending,
     loading,
     error,
+  };
+  const commands = {
     refresh,
     install,
     approveInstall,
@@ -132,5 +134,12 @@ export function usePackages(): UsePackagesResult {
     reload,
     setDefaultEnabled,
     setManifestEnabled,
+  };
+
+  return {
+    state,
+    commands,
+    ...state,
+    ...commands,
   };
 }

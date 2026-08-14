@@ -18,6 +18,11 @@ export interface UseListStateResult<T> {
   refresh: () => Promise<void>;
 }
 
+export type UnifiedHookResult<TState extends object, TCommands extends object> = {
+  state: TState;
+  commands: TCommands;
+} & TState & TCommands;
+
 /**
  * Shared async list state primitive used by UI hooks.
  *

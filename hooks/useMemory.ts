@@ -2,9 +2,17 @@
 import { useCallback } from "react";
 import { api } from "@/api/client";
 import type { MemoryItem } from "@/api/types";
-import { useListState } from "@/hooks/useListState";
+import { useListState, type UnifiedHookResult } from "@/hooks/useListState";
 
-export function useMemory(namespace?: string, search?: string) {
+export function useMemory(namespace?: string, search?: string): UnifiedHookResult<
+  { items: MemoryItem[]; loading: boolean; error: string | null },
+  {
+    refresh: () => Promise<void>;
+    create: (ns: string, key: string, value: unknown) => Promise<MemoryItem>;
+    update: (ns: string, key: string, value: unknown) => Promise<MemoryItem>;
+    remove: (ns: string, key: string) => Promise<void>;
+  }
+> {
   const {
     items,
     setItems,
