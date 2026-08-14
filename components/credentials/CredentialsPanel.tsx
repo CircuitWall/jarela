@@ -194,12 +194,8 @@ export function CredentialsListPanel() {
   async function handleDelete(c: Credential) {
     setDeleteError(null);
     try {
-      if (c.type === "integration") {
-        await api.integrations.delete(c.provider);
-      } else {
-        await api.credentials.delete(c.id);
-      }
-      refresh();
+      await api.credentials.delete(c.id);
+      await refresh();
     } catch (e) {
       setDeleteError(`Could not delete "${c.id}": ${errorMessage(e)}`);
     }

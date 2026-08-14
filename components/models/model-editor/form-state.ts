@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { CatalogModel, Credential, IntegrationStatus, ModelConfig } from "@/api/types";
 import { integrationNameForProvider } from "@/lib/providers/provider-integration-map";
@@ -105,41 +105,72 @@ export function useIntegrationsState() {
 }
 
 function useProviderList(setProviders: (v: string[]) => void) {
-  useEffect(() => {
-    let mounted = true;
-    api.models.providers()
-      .then((names) => {
-        if (!mounted || !Array.isArray(names) || names.length === 0) return;
-        setProviders(names);
-      })
-      .catch(() => { /* Keep fallback provider list if endpoint fails. */ });
-    return () => { mounted = false; };
+  const run = useCallback(async () => {
+    const names = await api.models.providers();
+    if (Array.isArray(names) && names.length > 0) setProviders(names);
   }, [setProviders]);
+
+  useRefreshableLoad(
+    run,
+  );
 }
 
 function useIntegrationList(setIntegrations: (v: IntegrationStatus[]) => void) {
-  useEffect(() => {
-    let mounted = true;
-    api.integrations.list()
-      .then((res) => { if (mounted) setIntegrations(res.statuses); })
-      .catch(() => { if (mounted) setIntegrations([]); });
-    return () => { mounted = false; };
+  const run = useCallback(async () => {
+    const res = await api.integrations.list();
+    setIntegrations(res.statuses);
   }, [setIntegrations]);
+
+  const handleError = useCallback(() => {
+    setIntegrations([]);
+  }, [setIntegrations]);
+
+  useRefreshableLoad(
+    run,
+    handleError,
+  );
 }
 
 function useCredentialList(setCredentials: (v: Credential[]) => void) {
-  const refresh = async () => {
-    try { setCredentials(await api.credentials.list({ type: "integration" })); }
-    catch { setCredentials([]); }
-  };
+  const run = useCallback(async () => {
+    setCredentials(await api.credentials.list({ type: "integration" }));
+  }, [setCredentials]);
+
+  const handleError = useCallback(() => {
+    setCredentials([]);
+  }, [setCredentials]);
+
+  const refresh = useRefreshableLoad(
+    run,
+    handleError,
+    "jarela:credentials-changed",
+  );
+  return refresh;
+}
+
+function useRefreshableLoad(
+  run: () => Promise<void>,
+  onError?: () => void,
+  eventName?: string,
+) {
+  const refresh = useCallback(async () => {
+    try {
+      await run();
+    } catch {
+      onError?.();
+    }
+  }, [run, onError]);
+
   useEffect(() => {
-    refresh();
-    const onChange = () => { refresh(); };
-    if (typeof window !== "undefined") window.addEventListener("jarela:credentials-changed", onChange);
-    return () => {
-      if (typeof window !== "undefined") window.removeEventListener("jarela:credentials-changed", onChange);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    if (!eventName || typeof window === "undefined") return;
+    const onChange = () => { void refresh(); };
+    window.addEventListener(eventName, onChange);
+    return () => window.removeEventListener(eventName, onChange);
+  }, [eventName, refresh]);
+
   return refresh;
 }
