@@ -79,8 +79,8 @@ asserts:
 
 Reference tests:
 
-- [components/hooks/unifiedHookContracts.test.tsx](../components/hooks/unifiedHookContracts.test.tsx)
-- [components/hooks/useListState.test.tsx](../components/hooks/useListState.test.tsx)
-- [components/hooks/useAgentSession.contract.test.tsx](../components/hooks/useAgentSession.contract.test.tsx)
-- [components/hooks/useMessageFilters.contract.test.tsx](../components/hooks/useMessageFilters.contract.test.tsx)
-- [components/hooks/useSettingsAttention.contract.test.tsx](../components/hooks/useSettingsAttention.contract.test.tsx)
+- [hooks/unifiedHookContracts.test.ts](../hooks/unifiedHookContracts.test.ts)
+- [hooks/useListState.test.ts](../hooks/useListState.test.ts)
+- [hooks/useAgentSession.test.ts](../hooks/useAgentSession.test.ts)
+- [hooks/useMessageFilters.test.ts](../hooks/useMessageFilters.test.ts)
+- [hooks/useSettingsAttention.test.ts](../hooks/useSettingsAttention.test.ts)
