@@ -34,23 +34,24 @@ const SUB_TITLES: Record<Sub, string> = {
   network: "Network & environment",
 };
 
-const TYPE_ORDER = ["model", "integration", "tts", "bridge"] as const;
+const SECTION_ORDER = ["modelProviders", "tools"] as const;
 
-type GroupTypeKey = (typeof TYPE_ORDER)[number];
+type SectionKey = (typeof SECTION_ORDER)[number];
 
-const TYPE_LABELS: Record<GroupTypeKey, string> = {
-  model: "Model provider credentials",
-  integration: "Tool credentials",
-  tts: "Voice credentials",
-  bridge: "Bridge credentials",
+const SECTION_LABELS: Record<SectionKey, string> = {
+  modelProviders: "Model provider credentials",
+  tools: "Tool credentials",
 };
 
-const TYPE_HINTS: Record<GroupTypeKey, string> = {
-  model: "Keys used by model configurations.",
-  integration: "Credentials used by tools and integrations.",
-  tts: "Credentials used by voice output providers.",
-  bridge: "Credentials used by external bridge connectors.",
+const SECTION_HINTS: Record<SectionKey, string> = {
+  modelProviders: "Keys used by model configurations.",
+  tools: "Credentials used by tools, integrations, voice providers, and bridge connectors.",
 };
+
+function credentialSection(type: CredentialType, category?: IntegrationDefinition["category"] | null): SectionKey {
+  if (type === "model" || category === "llm") return "modelProviders";
+  return "tools";
+}
 
 const PRESET_LABELS: Record<NonNullable<UserProfile["preset"]>, string> = {
   home: "Home",
@@ -113,11 +114,9 @@ export function CredentialsListPanel() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [collapsedByType, setCollapsedByType] = useState<Record<GroupTypeKey, boolean>>({
-    model: true,
-    integration: true,
-    tts: true,
-    bridge: true,
+  const [collapsedByType, setCollapsedByType] = useState<Record<SectionKey, boolean>>({
+    modelProviders: true,
+    tools: true,
   });
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("credentials", "credential", containerRef);
@@ -217,9 +216,8 @@ export function CredentialsListPanel() {
 
   const hiddenCount = defs.length - visibleDefs.length;
 
-  // Group saved credentials by type, then provider. "integration" rows are
-  // the unified tool-credential bucket so mail/github/calendar/etc all live
-  // in one collapsible section.
+  // Group saved credentials by provider first, then place each provider bucket
+  // under either model-provider credentials or tool credentials.
   const groupedByType = useMemo(() => {
     type ProviderGroup = {
       type: CredentialType;
@@ -229,7 +227,7 @@ export function CredentialsListPanel() {
       sortLabel: string;
     };
 
-    const byType = new Map<GroupTypeKey, ProviderGroup[]>();
+    const bySection = new Map<SectionKey, ProviderGroup[]>();
     const byProvider = new Map<string, Credential[]>();
     for (const c of credentials) {
       const key = `${c.type}::${c.provider}`;
@@ -242,16 +240,13 @@ export function CredentialsListPanel() {
       const type = rows[0]?.type;
       const provider = rows[0]?.provider;
       if (!type || !provider) continue;
-      // Stable ordering: default first, then by id.
       rows.sort((a, b) => {
         if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
         return a.id.localeCompare(b.id);
       });
       const def = defByName.get(provider);
-      const section = TYPE_ORDER.includes(type as GroupTypeKey)
-        ? (type as GroupTypeKey)
-        : "integration";
-      const arr = byType.get(section) ?? [];
+      const section = credentialSection(type, def?.category ?? null);
+      const arr = bySection.get(section) ?? [];
       arr.push({
         type,
         provider,
@@ -259,16 +254,16 @@ export function CredentialsListPanel() {
         credentials: rows,
         sortLabel: (def?.label ?? provider).toLowerCase(),
       });
-      byType.set(section, arr);
+      bySection.set(section, arr);
     }
 
-    for (const groups of byType.values()) {
+    for (const groups of bySection.values()) {
       groups.sort((a, b) => a.sortLabel.localeCompare(b.sortLabel) || a.provider.localeCompare(b.provider));
     }
 
-    return TYPE_ORDER
-      .filter((t) => byType.has(t))
-      .map((t) => [t, byType.get(t)!] as const);
+    return SECTION_ORDER
+      .filter((t) => bySection.has(t))
+      .map((t) => [t, bySection.get(t)!] as const);
   }, [credentials, defByName]);
 
   return (
@@ -344,7 +339,7 @@ export function CredentialsListPanel() {
                   <ChevronRight size={14} className={["text-fg-faint transition-transform", collapsed ? "" : "rotate-90"].join(" ")} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-fg truncate">{TYPE_LABELS[type]}</span>
+                      <span className="text-xs font-semibold text-fg truncate">{SECTION_LABELS[type]}</span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded border bg-surface-3 text-fg-muted border-border">
                         {groups.length} provider{groups.length === 1 ? "" : "s"}
                       </span>
@@ -352,7 +347,7 @@ export function CredentialsListPanel() {
                         {credentialCount} credential{credentialCount === 1 ? "" : "s"}
                       </span>
                     </div>
-                    <p className="text-[11px] text-fg-faint truncate">{TYPE_HINTS[type]}</p>
+                    <p className="text-[11px] text-fg-faint truncate">{SECTION_HINTS[type]}</p>
                   </div>
                 </button>
                 {!collapsed && (
