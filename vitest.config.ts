@@ -11,6 +11,15 @@ export default defineConfig({
     environment: "node",
     globals: false,
     setupFiles: ["./tests/setup-rtl.ts"],
+    // Node 25 stabilized a native `globalThis.localStorage` (Web Storage
+    // API) that's a stub without `--localstorage-file` set. It shadows
+    // jsdom's own Storage implementation in the same realm, so any
+    // `@vitest-environment jsdom` test touching `window.localStorage`
+    // gets the broken native object instead — `.clear()` etc. are
+    // missing. Disable it in test workers; jsdom provides its own.
+    // (`poolOptions.*.execArgv` was removed in Vitest 4 — this is the
+    // top-level replacement per the migration guide.)
+    execArgv: ["--no-experimental-webstorage"],
     include: [
       "lib/**/*.test.ts",
       "api/**/*.test.ts",
