@@ -1078,6 +1078,10 @@ All long-form docs live under [`docs/`](./docs/):
   npm install paths, uninstall steps.
 - [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — C4 container + component
   diagrams and the main request / streaming / tool-call sequence flows.
+- [docs/DEVELOPMENT.md](./docs/DEVELOPMENT.md) — day-to-day developer
+  workflow, hook migration checklist, and fast validation commands.
+- [docs/ui-hook-api.md](./docs/ui-hook-api.md) — unified client hook
+  contracts, compatibility policy, and naming/packaging conventions.
 - [docs/adr/](./docs/adr/) — Architecture Decision Records. Start at
   [ADR-0001](./docs/adr/0001-record-architecture-decisions.md); recent ones
   worth skimming: [ADR-0010](./docs/adr/0010-agent-led-setup-and-integration-manifests.md)
