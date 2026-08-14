@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { UnifiedHookResult } from "@/hooks/useListState";
 
 // ADR-0022: per-agent message-channel display filters.
 //
@@ -87,7 +88,10 @@ function readLegacyGlobal(): Partial<MessageFilters> | null {
  * into the first agent's filters, set a one-shot migration flag, and
  * remove the global key. After that the agent column is canonical.
  */
-export function useMessageFilters(agentId?: string | null) {
+export function useMessageFilters(agentId?: string | null): UnifiedHookResult<
+  { filters: MessageFilters },
+  { toggle: (key: MessageFilterKey) => void; reset: () => void }
+> {
   const [filters, setFilters] = useState<MessageFilters>(() =>
     agentId ? readCache(agentId) ?? DEFAULTS : DEFAULTS,
   );
@@ -191,5 +195,8 @@ export function useMessageFilters(agentId?: string | null) {
     }).catch(() => {});
   }, [agentId]);
 
-  return { filters, toggle, reset };
+  const state = { filters };
+  const commands = { toggle, reset };
+
+  return { state, commands, filters, toggle, reset };
 }

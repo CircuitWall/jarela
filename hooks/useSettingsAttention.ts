@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "@/api/client";
+import type { UnifiedHookResult } from "@/hooks/useListState";
 
 // Bare-bones signal for "the operator has a critical gap in Settings".
 // Drives a small red dot on the Settings menu tab and on individual
@@ -19,42 +20,42 @@ export type SettingsAttention = {
 
 const EMPTY: SettingsAttention = { any: false, models: false, credentials: false };
 
-export function useSettingsAttention(): SettingsAttention {
+export function useSettingsAttention(): UnifiedHookResult<
+  SettingsAttention,
+  { refresh: () => Promise<void> }
+> {
   const [state, setState] = useState<SettingsAttention>(EMPTY);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function refresh() {
-      try {
-        const [models, integrations] = await Promise.all([
-          api.models.list(),
-          api.integrations.list(),
-        ]);
-        if (cancelled) return;
-        const noModels = models.length === 0;
-        const noCreds = !integrations.statuses.some((s) => s.configured);
-        setState({
-          any: noModels || noCreds,
-          models: noModels,
-          credentials: noCreds,
-        });
-      } catch {
-        // Server unreachable — leave the indicator off rather than
-        // flashing a false-positive every reconnect cycle.
-      }
+  const refresh = useCallback(async () => {
+    try {
+      const [models, integrations] = await Promise.all([
+        api.models.list(),
+        api.integrations.list(),
+      ]);
+      const noModels = models.length === 0;
+      const noCreds = !integrations.statuses.some((s) => s.configured);
+      setState({
+        any: noModels || noCreds,
+        models: noModels,
+        credentials: noCreds,
+      });
+    } catch {
+      // Server unreachable — leave the indicator off rather than
+      // flashing a false-positive every reconnect cycle.
     }
+  }, []);
 
+  useEffect(() => {
     void refresh();
     const onChange = () => { void refresh(); };
     window.addEventListener("jarela:models-changed", onChange);
     window.addEventListener("jarela:credentials-changed", onChange);
     return () => {
-      cancelled = true;
       window.removeEventListener("jarela:models-changed", onChange);
       window.removeEventListener("jarela:credentials-changed", onChange);
     };
-  }, []);
+  }, [refresh]);
 
-  return state;
+  const commands = { refresh };
+  return { state, commands, ...state, refresh };
 }
