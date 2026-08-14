@@ -59,6 +59,7 @@ interface Props {
 
 export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragPointerIdRef = useRef<number | null>(null);
   const dragFrameRef = useRef<number | null>(null);
@@ -185,20 +186,47 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
   function firstMessageTopForMask(): number | null {
     const root = scrollRef.current;
-    const host = hostRef.current;
-    if (!root || !host) return null;
+    const region = maskRegionRef.current;
+    if (!root || !region) return null;
     const first = root.querySelector<HTMLElement>("[data-hot-candidate='1']");
     if (!first) return null;
-    return first.getBoundingClientRect().top - host.getBoundingClientRect().top;
+    return first.getBoundingClientRect().top - region.getBoundingClientRect().top;
+  }
+
+  function boundaryLineTopForMask(): number | null {
+    const root = scrollRef.current;
+    const region = maskRegionRef.current;
+    if (!root || !region) return null;
+    const boundary = root.querySelector<HTMLElement>("[data-focus-boundary='1'] [aria-label='conversation focus boundary']");
+    if (boundary) {
+      const rect = boundary.getBoundingClientRect();
+      return rect.top + (rect.height / 2) - region.getBoundingClientRect().top;
+    }
+
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
+    if (candidates.length === 0 || visibleMessages.length === 0) return null;
+
+    const regionTop = region.getBoundingClientRect().top;
+    const effective = hotSince ?? null;
+    if (!effective) {
+      return candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
+    }
+
+    const i = visibleMessages.findIndex((m) => m.created_at >= effective);
+    if (i === -1) {
+      return candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
+    }
+
+    const target = candidates[i];
+    if (!target) return null;
+    return target.getBoundingClientRect().top - regionTop;
   }
 
   function updateBoundaryMask() {
     const mask = dragMaskRef.current;
     if (!mask) return;
     const topStart = firstMessageTopForMask();
-    const boundaryTop = isDraggingFocus
-      ? (dragGuideTopRef.current ?? committedBoundaryLineTop())
-      : committedBoundaryLineTop();
+    const boundaryTop = boundaryLineTopForMask();
     if (topStart === null || boundaryTop === null) {
       mask.style.opacity = "0";
       mask.style.height = "0px";
@@ -702,16 +730,17 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           </div>
         </div>
       )}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 panel-scrollbar"
-        style={{
-          // Scroll-anchor jumps (deep-link to a message) land below the
-          // floating header, not under it.
-          scrollPaddingTop: "calc(3rem + var(--app-safe-top))",
-        }}
-      >
+      <div ref={maskRegionRef} className="relative flex-1 min-h-0 overflow-hidden">
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="flex-1 h-full overflow-y-auto overflow-x-hidden px-4 py-4 panel-scrollbar"
+          style={{
+            // Scroll-anchor jumps (deep-link to a message) land below the
+            // floating header, not under it.
+            scrollPaddingTop: "calc(3rem + var(--app-safe-top))",
+          }}
+        >
         {hasMore && (
           <div className="text-center py-1.5 text-[11px] text-fg-faint select-none">
             {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
@@ -837,6 +866,20 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           </span>
         </div>
       ))}
+        </div>
+
+        <div
+          ref={dragMaskRef}
+          className="pointer-events-none absolute left-0 right-0 top-0 z-40 opacity-0 transition-opacity duration-75"
+          style={{
+            transform: "translateY(0px)",
+            height: "0px",
+            background: "linear-gradient(to top, rgba(82,82,91,0.16) 0%, rgba(82,82,91,0.1) 38%, rgba(82,82,91,0.06) 100%)",
+            borderBottom: "1px solid rgba(59,130,246,0.42)",
+            backdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
+            WebkitBackdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
+          }}
+        />
       </div>
       {showScrollButton && (
         <button
@@ -850,18 +893,6 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         </button>
       )}
 
-      <div
-        ref={dragMaskRef}
-        className="pointer-events-none absolute left-0 right-0 z-40 opacity-0 transition-opacity duration-75"
-        style={{
-          transform: "translateY(0px)",
-          height: "0px",
-          background: "linear-gradient(to top, rgba(82,82,91,0.16) 0%, rgba(82,82,91,0.1) 38%, rgba(82,82,91,0.06) 100%)",
-          borderBottom: "1px solid rgba(59,130,246,0.42)",
-          backdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
-          WebkitBackdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
-        }}
-      />
       {isDraggingFocus && (
         <>
           <div ref={dragGuideRef} className="pointer-events-none absolute left-4 right-4 z-50 opacity-0" style={{ transform: "translateY(0px)" }}>
