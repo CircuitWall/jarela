@@ -40,6 +40,28 @@ export interface ToolConfig {
     thread_id?: string;
     [k: string]: unknown;
   };
+  /**
+   * LangGraph's ToolNode populates this on the runtime object passed as a
+   * tool's `config` (`writer: config.writer ?? config.configurable?.writer
+   * ?? null` in @langchain/langgraph's ToolNode) whenever the top-level
+   * `agent.stream()` call includes `"custom"` in `streamMode` (see
+   * lib/agents/llm.ts). Calling it pushes onto the graph's stream
+   * immediately — see reportToolProgress below.
+   */
+  writer?: (chunk: unknown) => void;
+  /** Same runtime object; matches the tool_call id used for this call. */
+  toolCallId?: string;
+}
+
+/**
+ * Stream incremental progress from inside a still-running tool call, e.g.
+ * claude_delegate relaying the sub-agent's own turns. Surfaces as a
+ * `tool_progress` StreamChunk (ADR-0073) via LangGraph's native
+ * `config.writer`/"custom" stream mode — no-op if the caller's `config`
+ * doesn't carry a writer (e.g. direct unit-test invocation outside a run).
+ */
+export function reportToolProgress(config: ToolConfig | undefined, name: string, text: string): void {
+  config?.writer?.({ id: config?.toolCallId ?? "", name, text });
 }
 
 function keyFor(config?: ToolConfig): string {

@@ -64,6 +64,32 @@ interface WallclockedFunc {
   (args: Record<string, unknown>, config?: unknown): Promise<unknown>;
 }
 
+interface ConfigWithWriter {
+  writer?: (chunk: unknown) => void;
+  [k: string]: unknown;
+}
+
+/**
+ * Wrap `config.writer` (LangGraph's custom-stream channel, see
+ * reportToolProgress in lib/tools/workspace-context.ts) so that any call a
+ * tool makes to report progress also resets an activity timer, before
+ * forwarding the chunk to the caller's own writer unchanged. This is the
+ * generic hook that lets ANY tool's wall-clock budget become idle-based
+ * ("reset on activity") just by adopting reportToolProgress — the wrapper
+ * doesn't know or care which tool is doing it. See ADR-0073.
+ */
+function withActivityReset(config: unknown, onActivity: () => void): unknown {
+  const c = config as ConfigWithWriter | undefined;
+  const originalWriter = c?.writer;
+  return {
+    ...(c ?? {}),
+    writer: (chunk: unknown) => {
+      onActivity();
+      originalWriter?.(chunk);
+    },
+  };
+}
+
 export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
   // Only zod-object schemas can be extended with `deadline_ms`. Other
   // schema shapes (raw JSON Schema, ZodString) pass through unchanged.
@@ -93,10 +119,13 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
       return runAsync(t, innerArgs, config, deadlineMs);
     }
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<string>((resolve) => {
+    let timer!: ReturnType<typeof setTimeout>;
+    let resolveTimeout!: (v: string) => void;
+    const timeoutPromise = new Promise<string>((resolve) => { resolveTimeout = resolve; });
+    const armTimer = () => {
+      clearTimeout(timer);
       timer = setTimeout(() => {
-        resolve(JSON.stringify({
+        resolveTimeout(JSON.stringify({
           ok: false,
           error_code: "tool_timeout",
           message:
@@ -108,15 +137,19 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
       }, deadlineMs);
       // Don't keep the event loop alive purely for a timeout race.
       (timer as unknown as { unref?: () => void }).unref?.();
-    });
+    };
+    armTimer();
+    // Any config.writer() call from inside the tool (reportToolProgress)
+    // proves it's still active — reset the budget instead of abandoning it.
+    const configForInner = withActivityReset(config, armTimer);
 
     try {
       // Cast: invoke accepts a typed input matching the original schema,
       // but the wrapper is generic over all tools.
-      const work = (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> }).invoke(innerArgs, config);
+      const work = (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> }).invoke(innerArgs, configForInner);
       return await Promise.race([work, timeoutPromise]);
     } finally {
-      if (timer) clearTimeout(timer);
+      clearTimeout(timer);
     }
   };
 
@@ -168,21 +201,29 @@ function runAsync<T extends StructuredToolInterface>(
   const startedAt = Date.now();
 
   let settled = false;
-  const timer = setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    failAsyncCall(
-      key,
-      `Tool "${t.name}" exceeded its background wall-clock budget of ${deadlineMs}ms. ` +
-        "The underlying operation may still be running but its result is discarded.",
-    );
-  }, deadlineMs);
-  (timer as unknown as { unref?: () => void }).unref?.();
+  let timer!: ReturnType<typeof setTimeout>;
+  const armTimer = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      failAsyncCall(
+        key,
+        `Tool "${t.name}" exceeded its background wall-clock budget of ${deadlineMs}ms. ` +
+          "The underlying operation may still be running but its result is discarded.",
+      );
+    }, deadlineMs);
+    (timer as unknown as { unref?: () => void }).unref?.();
+  };
+  armTimer();
+  // Same idle-reset hook as the sync path — a config.writer() call from
+  // inside the tool (reportToolProgress) proves it's still active.
+  const configForInner = withActivityReset(config, armTimer);
 
   void (async () => {
     try {
       const work = (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> })
-        .invoke(innerArgs, config);
+        .invoke(innerArgs, configForInner);
       const result = await work;
       if (settled) return;
       settled = true;

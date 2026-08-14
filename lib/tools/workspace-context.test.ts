@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   currentWorkspace,
   setWorkspace,
   clearWorkspace,
   _resetWorkspaceContext,
+  reportToolProgress,
 } from "./workspace-context";
 
 beforeEach(() => {
@@ -69,5 +70,24 @@ describe("workspace-context", () => {
     _resetWorkspaceContext();
     expect(currentWorkspace()).toBeUndefined();
     expect(currentWorkspace({ configurable: { thread_id: "t1" } })).toBeUndefined();
+  });
+});
+
+describe("reportToolProgress", () => {
+  it("calls config.writer with { id, name, text }", () => {
+    const writer = vi.fn();
+    reportToolProgress({ writer, toolCallId: "call-1" }, "claude_delegate", "→ Read: foo.ts");
+    expect(writer).toHaveBeenCalledWith({ id: "call-1", name: "claude_delegate", text: "→ Read: foo.ts" });
+  });
+
+  it("defaults id to an empty string when toolCallId is missing", () => {
+    const writer = vi.fn();
+    reportToolProgress({ writer }, "claude_delegate", "step");
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "step" });
+  });
+
+  it("is a no-op when config or config.writer is missing", () => {
+    expect(() => reportToolProgress(undefined, "claude_delegate", "step")).not.toThrow();
+    expect(() => reportToolProgress({}, "claude_delegate", "step")).not.toThrow();
   });
 });

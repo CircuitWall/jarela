@@ -35,6 +35,7 @@ interface FakeChild extends EventEmitter {
 const state = vi.hoisted(() => ({
   calls: [] as Array<{ bin: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }>,
   killSpies: [] as Array<(signal?: string) => void>,
+  children: [] as unknown[],
   script: [] as string[],
   exitCode: 0 as number | null,
   autoClose: true,
@@ -52,6 +53,7 @@ vi.mock("node:child_process", async (importOriginal) => {
     if (isClaude) {
       state.calls.push({ bin, args, cwd: opts.cwd, env: opts.env });
       state.killSpies.push(kill);
+      state.children.push(child);
     }
     if (!isClaude || state.autoClose) {
       queueMicrotask(() => {
@@ -87,6 +89,20 @@ function resultLine(overrides: Record<string, unknown> = {}): string {
   });
 }
 
+// Deterministic sync point for "has spawnClaude actually been called yet" —
+// LangChain's own invoke() ceremony (callback manager, tracing) inserts at
+// least one microtask before the underlying tool function runs, so reading
+// state.children immediately after calling .invoke() (without awaiting it)
+// is a race. Poll instead of guessing a delay, mirroring the existing
+// job-settle poll below.
+async function waitForChild(precedingCount: number): Promise<FakeChild> {
+  for (let i = 0; i < 50; i++) {
+    if (state.children.length > precedingCount) return state.children.at(-1) as FakeChild;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error("spawnClaude was never called");
+}
+
 function gitInit(dir: string): void {
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore" });
   execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore" });
@@ -98,6 +114,7 @@ let projectRoot: string;
 beforeEach(() => {
   state.calls = [];
   state.killSpies = [];
+  state.children = [];
   state.script = [resultLine()];
   state.exitCode = 0;
   state.autoClose = true;
@@ -352,5 +369,79 @@ describe("claude_delegate — background mode + claude_delegate_status", () => {
 
   it("cancel on an unknown job_id throws", async () => {
     await expect(claudeDelegateStatusTool.invoke({ job_id: "does-not-exist", action: "cancel" })).rejects.toThrow(/No running job/);
+  });
+});
+
+function assistantTextLine(text: string): string {
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } });
+}
+
+function assistantToolUseLine(name: string, input: Record<string, unknown>): string {
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name, input }] } });
+}
+
+describe("claude_delegate — live progress (config.writer)", () => {
+  it("reports each stream-json step via config.writer as it arrives (foreground)", async () => {
+    state.script = [
+      assistantTextLine("Looking at the code"),
+      assistantToolUseLine("Read", { file_path: "a.ts" }),
+      resultLine(),
+    ];
+    const writer = vi.fn();
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }, { writer } as never);
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "Claude: Looking at the code" });
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "→ Read: a.ts" });
+  });
+
+  it("reports steps for background jobs too, not just foreground", async () => {
+    state.script = [assistantTextLine("working in the background"), resultLine()];
+    const writer = vi.fn();
+    const started = parse(await claudeDelegateTool.invoke(
+      { task: "x", cwd: projectRoot, background: true, sync_memory: false },
+      { writer } as never,
+    ));
+    // Wait for the job to actually settle (mirrors the other background test).
+    let status: Record<string, unknown> = {};
+    for (let i = 0; i < 50; i++) {
+      status = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string }));
+      if (status.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "Claude: working in the background" });
+  });
+});
+
+describe("claude_delegate — idle wall-clock (resets on subprocess activity)", () => {
+  it("does not kill a subprocess that keeps producing output, even past the original timeout_seconds", async () => {
+    state.autoClose = false;
+    const precedingCount = state.children.length;
+    const promise = claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, timeout_seconds: 0.05 });
+    const child = await waitForChild(precedingCount);
+
+    // Two activity bursts, 30ms apart — each resets the 50ms idle timer, so
+    // by 60ms total (past the ORIGINAL 50ms deadline) it must still be alive.
+    await new Promise((r) => setTimeout(r, 30));
+    child.stdout.emit("data", Buffer.from(assistantTextLine("still working") + "\n"));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(state.killSpies.at(-1)).not.toHaveBeenCalled();
+
+    // Now finish normally.
+    child.stdout.emit("data", Buffer.from(resultLine() + "\n"));
+    child.emit("close", 0);
+    await promise;
+    expect(state.killSpies.at(-1)).not.toHaveBeenCalled();
+  });
+
+  it("kills the subprocess after timeout_seconds of true silence", async () => {
+    state.autoClose = false;
+    const precedingCount = state.children.length;
+    const promise = claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, timeout_seconds: 0.03 });
+    const child = await waitForChild(precedingCount);
+
+    await new Promise((r) => setTimeout(r, 60));
+    expect(state.killSpies.at(-1)).toHaveBeenCalledWith("SIGTERM");
+
+    child.emit("close", null);
+    await expect(promise).rejects.toThrow(/exceeded.*timeout/);
   });
 });

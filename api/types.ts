@@ -1028,6 +1028,11 @@ export type SSEEventType =
   | { type: "status"; phase: "starting" | "preparing" | "thinking"; label: string }
   | { type: "tool_call"; id: string; name: string; arguments: Record<string, unknown> }
   | { type: "tool_result"; id: string; name: string; result: unknown }
+  // Zero or more of these can arrive between a call's "tool_call" and
+  // "tool_result" — incremental status from inside a still-running tool
+  // (e.g. claude_delegate relaying the sub-agent's own turns). `id` matches
+  // the same call's "tool_call"/"tool_result" id.
+  | { type: "tool_progress"; id: string; name: string; text: string }
   | { type: "done"; message_id: string; usage: { input_tokens: number; output_tokens: number } }
   | { type: "error"; message: string; code: string; credential_id?: string; provider?: string }
   // Server is rejecting a new POST/WS message because a run is already in

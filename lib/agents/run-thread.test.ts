@@ -9,6 +9,7 @@ import {
   INTERRUPT_MARKER,
   shouldRetryTransientError,
   transientRetryDelayMs,
+  shouldEmitChunk,
 } from "./run-thread";
 
 describe("toolCallSignature", () => {
@@ -220,5 +221,18 @@ describe("transientRetryDelayMs", () => {
     expect(transientRetryDelayMs(2)).toBe(1000);
     expect(transientRetryDelayMs(3)).toBe(2000);
     expect(transientRetryDelayMs(6)).toBe(8000);
+  });
+});
+
+describe("shouldEmitChunk", () => {
+  it("suppresses tool_progress alongside tool_call/tool_result when include_tools is false", () => {
+    const options = { filters: { include_tools: false } };
+    expect(shouldEmitChunk("tool_call", options)).toBe(false);
+    expect(shouldEmitChunk("tool_result", options)).toBe(false);
+    expect(shouldEmitChunk("tool_progress", options)).toBe(false);
+  });
+
+  it("emits tool_progress by default (include_tools defaults to true)", () => {
+    expect(shouldEmitChunk("tool_progress")).toBe(true);
   });
 });

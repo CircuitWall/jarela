@@ -29,7 +29,7 @@ import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
-import { currentWorkspace, type ToolConfig } from "./workspace-context";
+import { currentWorkspace, reportToolProgress, type ToolConfig } from "./workspace-context";
 import { resolveSafetyMode } from "./safety";
 import { resolveSubprocessEnv } from "./subprocess-env";
 import { gitDiffSummary } from "./git-probe";
@@ -221,16 +221,26 @@ function spawnClaude(opts: SpawnClaudeOpts): ChildProcess | null {
   let model: string | null = null;
   let killed = false;
 
-  const timer: NodeJS.Timeout = setTimeout(() => {
-    killed = true;
-    try { child.kill("SIGTERM"); } catch { /* already dead */ }
-    const killTimer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch { /* already dead */ }
-    }, 2_000);
-    killTimer.unref();
-  }, opts.timeoutMs);
+  // Idle timer, not a total-runtime budget: any stdout activity proves the
+  // process is alive and re-arms it, so a healthy long-running session is
+  // never killed just for taking a while — only a genuine stall (no output
+  // at all for timeoutMs) fires it. See ADR-0073.
+  let timer!: NodeJS.Timeout;
+  const armTimer = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      killed = true;
+      try { child.kill("SIGTERM"); } catch { /* already dead */ }
+      const killTimer = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* already dead */ }
+      }, 2_000);
+      killTimer.unref();
+    }, opts.timeoutMs);
+  };
+  armTimer();
 
   child.stdout?.on("data", (buf: Buffer) => {
+    armTimer();
     const chunk = buf.toString();
     stdoutFallback += chunk;
     lineBuffer += chunk;
@@ -290,12 +300,15 @@ function spawnClaude(opts: SpawnClaudeOpts): ChildProcess | null {
   return child;
 }
 
-function runClaude(opts: Omit<SpawnClaudeOpts, "onStep" | "onDone" | "onError">): Promise<RawClaudeResult> {
+function runClaude(
+  opts: Omit<SpawnClaudeOpts, "onStep" | "onDone" | "onError">,
+  onStep?: (step: string) => void,
+): Promise<RawClaudeResult> {
   const steps: string[] = [];
   return new Promise((resolve, reject) => {
     spawnClaude({
       ...opts,
-      onStep: (s) => steps.push(s),
+      onStep: (s) => { steps.push(s); onStep?.(s); },
       onDone: (result) => resolve({ ...result, _steps: steps }),
       onError: reject,
     });
@@ -473,7 +486,7 @@ export const claudeDelegateTool = tool(
       const job = jobs.createJob(jobId, { projectKey: key, sessionId });
       const child = spawnClaude({
         args: spawnArgs, cwd, env, timeoutMs,
-        onStep: (s) => jobs.appendStep(jobId, s),
+        onStep: (s) => { jobs.appendStep(jobId, s); reportToolProgress(config, "claude_delegate", s); },
         async onDone(raw) {
           try {
             const shaped = await finalizeRun(raw, {
@@ -497,7 +510,10 @@ export const claudeDelegateTool = tool(
       return JSON.stringify({ job_id: jobId, status: "running", project_key: key, session_id: sessionId, resumed: resume });
     }
 
-    const raw = await runClaude({ args: spawnArgs, cwd, env, timeoutMs });
+    const raw = await runClaude(
+      { args: spawnArgs, cwd, env, timeoutMs },
+      (s) => reportToolProgress(config, "claude_delegate", s),
+    );
     if (raw.is_error) {
       throw new Error(`claude reported error: ${raw.result ?? JSON.stringify(raw).slice(0, 500)}`);
     }
