@@ -15,6 +15,7 @@ export interface UsePackagesResult {
   manifests: LangChainPackageManifestRecord[];
   pending: LangChainPackagePendingInstall[];
   loading: boolean;
+  error: string | null;
   refresh: () => Promise<void>;
   install: (spec: string, version?: string) => Promise<LangChainPackageInstallResponse>;
   approveInstall: (id: string) => Promise<LangChainPackageInstallResponse>;
@@ -31,22 +32,31 @@ export interface UsePackagesResult {
 }
 
 export function usePackages(): UsePackagesResult {
-  const [loadResult, setLoadResult] = useState<LangChainPackageListResponse | null>(null);
-  const [manifests, setManifests] = useState<LangChainPackageManifestRecord[]>([]);
-  const [pending, setPending] = useState<LangChainPackagePendingInstall[]>([]);
+  const [snapshot, setSnapshot] = useState<{
+    loadResult: LangChainPackageListResponse | null;
+    manifests: LangChainPackageManifestRecord[];
+    pending: LangChainPackagePendingInstall[];
+  }>({
+    loadResult: null,
+    manifests: [],
+    pending: [],
+  });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const [load, mfs, pend] = await Promise.all([
         api.packages.list(),
         api.packages.listManifests(),
         api.packages.listPending(),
       ]);
-      setLoadResult(load);
-      setManifests(mfs);
-      setPending(pend);
+      setSnapshot({ loadResult: load, manifests: mfs, pending: pend });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      throw e;
     } finally {
       setLoading(false);
     }
@@ -93,7 +103,7 @@ export function usePackages(): UsePackagesResult {
 
   const reload = useCallback(async () => {
     const res = await api.packages.reload();
-    setLoadResult(res);
+    setSnapshot((prev) => ({ ...prev, loadResult: res }));
   }, []);
 
   const setDefaultEnabled = useCallback(async (id: string, enabled: boolean) => {
@@ -107,10 +117,11 @@ export function usePackages(): UsePackagesResult {
   }, [refresh]);
 
   return {
-    loadResult,
-    manifests,
-    pending,
+    loadResult: snapshot.loadResult,
+    manifests: snapshot.manifests,
+    pending: snapshot.pending,
     loading,
+    error,
     refresh,
     install,
     approveInstall,
