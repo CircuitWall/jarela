@@ -1,34 +1,23 @@
 "use client";
-import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import type { ToolInfo } from "@/api/types";
+import { useListState } from "@/hooks/useListState";
 
 export function useTools() {
-  const [tools, setTools] = useState<ToolInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let seq = 0;
-    const load = (force?: boolean) => {
-      const mySeq = ++seq;
-      api.tools
-        .list(force ? { force: true } : undefined)
-        .then((t) => { if (!cancelled && mySeq === seq) { setTools(t); setLoading(false); } })
-        .catch((err: unknown) => { if (!cancelled && mySeq === seq) { setError(String(err)); setLoading(false); } });
-    };
-    load();
+  const {
+    items: tools,
+    loading,
+    error,
+    refresh,
+  } = useListState<ToolInfo>({
+    loader: () => api.tools.list(),
     // Re-fetch when a new MCP server connects, an external tool file is added,
     // or any other event that changes the available tool set. Force-bypass the
     // client cache so we always get the post-mutation state.
-    const onChanged = () => load(true);
-    window.addEventListener("jarela:tools-changed", onChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("jarela:tools-changed", onChanged);
-    };
-  }, []);
+    eventName: "jarela:tools-changed",
+    eventLoader: () => api.tools.list({ force: true }),
+    initialLoading: true,
+  });
 
-  return { tools, loading, error };
+  return { tools, loading, error, refresh };
 }
