@@ -1,44 +1,36 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
+import { useListState } from "@/hooks/useListState";
 
 export function useAgents() {
-  const [agents, setAgents] = useState<AgentConfig[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try {
-      setAgents(await api.agents.list());
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    function onAgentsChanged() { void refresh(); }
-    window.addEventListener("jarela:agents-changed", onAgentsChanged);
-    return () => window.removeEventListener("jarela:agents-changed", onAgentsChanged);
-  }, [refresh]);
+  const {
+    items: agents,
+    setItems: setAgents,
+    loading,
+    refresh,
+  } = useListState<AgentConfig>({
+    loader: () => api.agents.list(),
+    eventName: "jarela:agents-changed",
+  });
 
   const create = useCallback(async (data: AgentConfigIn) => {
     const a = await api.agents.create(data);
     setAgents((p) => [...p, a]);
     return a;
-  }, []);
+  }, [setAgents]);
 
   const update = useCallback(async (id: string, data: AgentConfigIn) => {
     const a = await api.agents.update(id, data);
     setAgents((p) => p.map((x) => (x.id === id ? a : x)));
     return a;
-  }, []);
+  }, [setAgents]);
 
   const remove = useCallback(async (id: string) => {
     await api.agents.delete(id);
     setAgents((p) => p.filter((x) => x.id !== id));
-  }, []);
+  }, [setAgents]);
 
   return { agents, loading, refresh, create, update, remove };
 }

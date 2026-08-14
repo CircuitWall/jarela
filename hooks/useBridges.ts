@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 import { api } from "@/api/client";
 import type {
   Bridge,
@@ -11,35 +11,34 @@ import type {
   BridgeIgnore,
   BridgeIgnoreIn,
 } from "@/api/types";
+import { useListState } from "@/hooks/useListState";
 
 export function useBridges() {
-  const [bridges, setBridges] = useState<Bridge[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    try { setBridges(await api.bridges.list()); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { refresh(); }, [refresh]);
+  const {
+    items: bridges,
+    setItems: setBridges,
+    loading,
+    refresh,
+  } = useListState<Bridge>({
+    loader: () => api.bridges.list(),
+  });
 
   const create = useCallback(async (data: BridgeIn) => {
     const b = await api.bridges.create(data);
     setBridges((p) => [...p, b]);
     return b;
-  }, []);
+  }, [setBridges]);
 
   const update = useCallback(async (id: string, patch: BridgePatch) => {
     const b = await api.bridges.update(id, patch);
     setBridges((p) => p.map((x) => (x.id === id ? b : x)));
     return b;
-  }, []);
+  }, [setBridges]);
 
   const remove = useCallback(async (id: string) => {
     await api.bridges.delete(id);
     setBridges((p) => p.filter((x) => x.id !== id));
-  }, []);
+  }, [setBridges]);
 
   const pair = useCallback(async (id: string) => {
     await api.bridges.pair(id);
@@ -49,37 +48,36 @@ export function useBridges() {
 }
 
 export function useBridgeRoutes(bridge_id: string | null) {
-  const [routes, setRoutes] = useState<BridgeRoute[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const refresh = useCallback(async () => {
-    if (!bridge_id) { setRoutes([]); return; }
-    setLoading(true);
-    try { setRoutes(await api.bridges.routes.list(bridge_id)); }
-    finally { setLoading(false); }
-  }, [bridge_id]);
-
-  useEffect(() => { refresh(); }, [refresh]);
+  const {
+    items: routes,
+    setItems: setRoutes,
+    loading,
+    refresh,
+  } = useListState<BridgeRoute>({
+    loader: () => api.bridges.routes.list(bridge_id!),
+    enabled: !!bridge_id,
+    onDisabled: () => setRoutes([]),
+  });
 
   const create = useCallback(async (data: BridgeRouteIn) => {
     if (!bridge_id) throw new Error("No bridge selected");
     const r = await api.bridges.routes.create(bridge_id, data);
     setRoutes((p) => [...p, r]);
     return r;
-  }, [bridge_id]);
+  }, [bridge_id, setRoutes]);
 
   const update = useCallback(async (route_id: string, patch: BridgeRoutePatch) => {
     if (!bridge_id) throw new Error("No bridge selected");
     const r = await api.bridges.routes.update(bridge_id, route_id, patch);
     setRoutes((p) => p.map((x) => (x.id === route_id ? r : x)));
     return r;
-  }, [bridge_id]);
+  }, [bridge_id, setRoutes]);
 
   const remove = useCallback(async (route_id: string) => {
     if (!bridge_id) throw new Error("No bridge selected");
     await api.bridges.routes.delete(bridge_id, route_id);
     setRoutes((p) => p.filter((x) => x.id !== route_id));
-  }, [bridge_id]);
+  }, [bridge_id, setRoutes]);
 
   return { routes, loading, refresh, create, update, remove };
 }
@@ -90,30 +88,29 @@ export function useBridgeRoutes(bridge_id: string | null) {
  * catch-all route effectively becomes "everything except these chats".
  */
 export function useBridgeIgnores(bridge_id: string | null) {
-  const [ignores, setIgnores] = useState<BridgeIgnore[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const refresh = useCallback(async () => {
-    if (!bridge_id) { setIgnores([]); return; }
-    setLoading(true);
-    try { setIgnores(await api.bridges.ignores.list(bridge_id)); }
-    finally { setLoading(false); }
-  }, [bridge_id]);
-
-  useEffect(() => { refresh(); }, [refresh]);
+  const {
+    items: ignores,
+    setItems: setIgnores,
+    loading,
+    refresh,
+  } = useListState<BridgeIgnore>({
+    loader: () => api.bridges.ignores.list(bridge_id!),
+    enabled: !!bridge_id,
+    onDisabled: () => setIgnores([]),
+  });
 
   const add = useCallback(async (data: BridgeIgnoreIn) => {
     if (!bridge_id) throw new Error("No bridge selected");
     const r = await api.bridges.ignores.add(bridge_id, data);
     setIgnores((p) => (p.some((x) => x.remote_jid === r.remote_jid) ? p : [...p, r]));
     return r;
-  }, [bridge_id]);
+  }, [bridge_id, setIgnores]);
 
   const remove = useCallback(async (remote_jid: string) => {
     if (!bridge_id) throw new Error("No bridge selected");
     await api.bridges.ignores.remove(bridge_id, remote_jid);
     setIgnores((p) => p.filter((x) => x.remote_jid !== remote_jid));
-  }, [bridge_id]);
+  }, [bridge_id, setIgnores]);
 
   return { ignores, loading, refresh, add, remove };
 }
