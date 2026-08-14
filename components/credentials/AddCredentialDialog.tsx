@@ -20,13 +20,13 @@ const CATEGORY_ORDER: Category[] = [
 ];
 
 const CATEGORY_LABELS: Record<Category, string> = {
-  llm: "Model providers (LLM)",
-  mail: "Mail",
-  calendar: "Calendar",
-  "issue-tracker": "Issue trackers",
-  infrastructure: "Infrastructure",
-  chat: "Chat",
-  other: "Other",
+  llm: "Model providers",
+  mail: "Mail & productivity tools",
+  calendar: "Mail & productivity tools",
+  "issue-tracker": "Tool credentials",
+  infrastructure: "Tool credentials",
+  chat: "Tool credentials",
+  other: "Tool credentials",
 };
 
 interface Props {
@@ -107,6 +107,18 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
     return out;
   }, [defs]);
 
+  const displayGroups = useMemo(() => {
+    const groups: Array<{ key: string; label: string; categories: Category[] }> = [];
+    if (grouped.has("llm")) {
+      groups.push({ key: "modelProviders", label: "Model provider credentials", categories: ["llm"] });
+    }
+    const toolCategories = CATEGORY_ORDER.filter((c) => c !== "llm" && grouped.has(c));
+    if (toolCategories.length > 0) {
+      groups.push({ key: "tools", label: "Tool credentials", categories: toolCategories });
+    }
+    return groups;
+  }, [grouped]);
+
   const visibleCategories = useMemo(() => {
     if (category) return [category];
     return CATEGORY_ORDER.filter((c) => grouped.has(c));
@@ -159,12 +171,13 @@ export function AddCredentialDialog({ initialCategory, directProviderName, lockC
           {!loading && defs.length === 0 && (
             <p className="text-fg-faint text-sm text-center py-6">No credential providers available.</p>
           )}
-          {!loading && visibleCategories.map((cat) => {
-            const entries = grouped.get(cat) ?? [];
+          {!loading && displayGroups.map((group) => {
+            const entries = group.categories
+              .flatMap((cat) => grouped.get(cat) ?? []);
             if (entries.length === 0) return null;
             return (
-              <section key={cat}>
-                <h4 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1.5 px-1">{CATEGORY_LABELS[cat]}</h4>
+              <section key={group.key}>
+                <h4 className="text-[11px] uppercase tracking-wide text-fg-faint mb-1.5 px-1">{group.label}</h4>
                 <div className="divide-y divide-border/60 border border-border/60 rounded-xl overflow-hidden bg-surface-3/40">
                   {entries.map((def) => {
                     const configured = statuses[def.name]?.configured;

@@ -41,6 +41,8 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
         </Select>
         {selectedModel && <SelectedModelDescription model={selectedModel} prefix="Forced" />}
       </div>
+      <Divider />
+      <TierOverrideField form={form} selectedModel={selectedModel} />
       {!form.modelConfigName && (
         <>
           <Divider />
@@ -93,8 +95,6 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
           <Divider />
         </>
       )}
-      <TierOverrideField form={form} selectedModel={selectedModel} />
-      <Divider />
       <AdaptivePersonaFields form={form} />
       <Divider />
       <VoiceFields
