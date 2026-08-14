@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.25.1] - 2026-08-14
+
+### Fixed
+
+- **`claude_delegate` and every other spawned subprocess now see the user's
+  full shell environment**, not just the Anthropic-related allowlist. The
+  `claude` CLI it delegates to often shells out to other CLI tools (`gh`,
+  `aws`, `jira`, …) that read credentials straight from the environment;
+  those only ever lived in the user's shell rc, never in Jarela's own
+  process env when running as a background service. `exec`, `terminal`,
+  and MCP stdio children pick this up too. See
+  [ADR-0072](docs/adr/0072-full-shell-env-for-subprocesses.md).
+
 ## [1.25.0] - 2026-08-14
 
 ### Added
