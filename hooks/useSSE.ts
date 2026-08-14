@@ -3,11 +3,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, submitRun, subscribeRun } from "@/api/client";
 import type { ContentPart, SSEEventType, StreamOptions } from "@/api/types";
 import type { ToolEvent } from "@/components/chat/ToolList";
+import type { UnifiedHookResult } from "@/hooks/useListState";
 import { pushActivity } from "@/lib/ui/loading";
 
 export type { ToolEvent };
 
 type AuthError = { message: string; credential_id?: string; provider?: string } | null;
+type UseSSEState = {
+  streaming: boolean;
+  streamingContent: string;
+  thinkingContent: string;
+  toolEvents: ToolEvent[];
+  error: string | null;
+  authError: AuthError;
+};
+type UseSSECommands = {
+  dismissAuthError: () => void;
+  start: (
+    threadId: string,
+    message: string,
+    options?: StreamOptions,
+    attachments?: ContentPart[],
+    hotSince?: string | null,
+  ) => Promise<{ accepted: boolean }>;
+  stop: () => void;
+  attach: (threadId: string) => Promise<void>;
+  clearStreamingContent: () => void;
+};
 
 function useRunActivity() {
   const activityRef = useRef<ReturnType<typeof pushActivity> | null>(null);
@@ -123,7 +145,7 @@ function useStreamingBuffer() {
 // surface for `ChatView` — `start`, `attach`, `stop`, `streaming`,
 // `streamingContent`, etc. — even though the transport underneath collapsed
 // from three legs (WS sidecar / SSE-POST / SSE-GET reattach) to one.
-export function useSSE(onDone?: () => void) {
+export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseSSECommands> {
   const [streaming, setStreaming] = useState(false);
   const [toolEvents, setToolEvents] = useState<ToolEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -346,7 +368,25 @@ export function useSSE(onDone?: () => void) {
   // gets swapped for the persisted assistant message in a single render.
   const dismissAuthError = useCallback(() => { setAuthError(null); }, []);
 
+  const state: UseSSEState = {
+    streaming,
+    streamingContent,
+    thinkingContent,
+    toolEvents,
+    error,
+    authError,
+  };
+  const commands: UseSSECommands = {
+    dismissAuthError,
+    start,
+    stop,
+    attach,
+    clearStreamingContent,
+  };
+
   return {
+    state,
+    commands,
     streaming,
     streamingContent,
     thinkingContent,
