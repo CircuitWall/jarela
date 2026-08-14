@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [1.25.0] - 2026-08-14
+
 ### Added
 
 - **Direct self-instruction update tools.** Added `read_agent_instruction`
@@ -23,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   propose tool docs now steer instruction-only self updates to
   `update_agent_instruction`, while proposal approvals remain for broader or
   cross-agent configuration changes.
+
+- **Unified hook contracts expanded across core UI surfaces.** `useSSE`,
+  `useUrlSync`, `useLocationSharing`, and `useEventNotifications` now expose a
+  canonical `state` + `commands` contract while preserving compatibility flat
+  fields during migration.
+
+- **Hook test naming and packaging standardized for DX.** Hook contract tests
+  now live under `hooks/` with normalized `use{Name}.test.ts` filenames, with
+  matching Vitest discovery updates.
+
+- **Hook workflow docs and scripts added.** Added `docs/DEVELOPMENT.md`,
+  expanded `docs/ui-hook-api.md` with naming/packaging conventions, and added
+  fast local commands (`npm run test:hooks`, `npm run lint:hooks`).
 
 ## [1.24.3] - 2026-08-12
 
