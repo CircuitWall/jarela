@@ -9,7 +9,7 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { readAgentInstructionTool, updateAgentInstructionTool } = await import("./agent-instruction");
+const { readAgentConfigTool, readAgentInstructionTool, updateAgentInstructionTool } = await import("./agent-instruction");
 const { createThread } = await import("@/lib/stores/threads");
 const { upsertAgentConfig, getAgentConfig } = await import("@/lib/stores/agent-configs");
 
@@ -32,6 +32,38 @@ describe("agent instruction tools", () => {
     expect(out.agent_id).toBe("agent-self-read");
     expect(out.instruction_line_count).toBe(2);
     expect(out.instructions).toBe("line one\nline two");
+  });
+
+  it("reads the current agent config without returning instruction text or secrets", async () => {
+    upsertAgentConfig({
+      id: "agent-self-config",
+      name: "Self Config",
+      identity: "reader",
+      instructions: "private standing rule",
+      tools: ["file_read", "list_tools"],
+      model_config_name: "workhorse",
+      history_limit: 12,
+      history_window_hours: 2,
+      harness_id: "builtin:default",
+      delegate_targets: ["delegate-a"],
+      tool_credentials: { github_search: "cred-1" },
+      router_policy: "quality",
+      router_enabled: true,
+    });
+    const thread = createThread("agent-self-config");
+
+    const out = parse(await readAgentConfigTool.invoke({}, { configurable: { thread_id: thread.thread_id } }));
+
+    expect(out.agent_id).toBe("agent-self-config");
+    expect(out.tools).toEqual(["file_read", "list_tools"]);
+    expect(out.model_config_name).toBe("workhorse");
+    expect(out.history_limit).toBe(12);
+    expect(out.harness_id).toBe("builtin:default");
+    expect(out.delegate_targets).toEqual(["delegate-a"]);
+    expect(out.tool_credential_overrides).toEqual(["github_search"]);
+    expect(out.router_policy).toBe("quality");
+    expect(out.router_enabled).toBe(true);
+    expect(out.instructions).toBeUndefined();
   });
 
   it("updates instructions directly without proposals", async () => {

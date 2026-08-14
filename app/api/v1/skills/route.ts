@@ -12,9 +12,6 @@ const createSchema = z.object({
 });
 
 export function GET() {
-  if (!getSkillsDir()) {
-    return cachedJson({ skills: [], skills_dir: null }, 5);
-  }
   return cachedJson({ skills: listSkills(), skills_dir: getSkillsDir() }, 5);
 }
 

@@ -12,7 +12,6 @@ const updateSchema = z.object({
 
 export async function GET(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getSkillsDir()) return errorResponse("JARELA_SKILLS_DIR is not configured", 503);
   const skill = getSkill(id);
   if (!skill) return notFoundResponse(`Skill "${id}" not found`);
   return cachedJson(skill, 5);

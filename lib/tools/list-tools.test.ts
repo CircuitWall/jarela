@@ -66,6 +66,15 @@ describe("list_tools", () => {
     expect(out.tools.every((t) => t.source === "builtin")).toBe(true);
   });
 
+  it("searches by tool name, category, and description", async () => {
+    const byName = parse(await listToolsTool.invoke({ query: "read_skill" }));
+    expect(byName.tools.map((t) => t.name)).toContain("read_skill");
+    expect(byName.tools.map((t) => t.name)).not.toContain("file_read");
+
+    const byCategory = parse(await listToolsTool.invoke({ query: "skills" }));
+    expect(byCategory.tools.some((t) => t.category === "Skills")).toBe(true);
+  });
+
   it("returns empty list (not error) when filters match nothing", async () => {
     const out = parse(await listToolsTool.invoke({ source: "external", capability: "read" }));
     // The clean-tmpdir HOME has no JARELA_TOOLS_DIR, so external is empty

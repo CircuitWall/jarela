@@ -7,21 +7,12 @@ const APP_NAME = getAppName();
 const CAPABILITIES_BODY = [
   `--- Host UI capabilities (${APP_NAME}) ---`,
   `You're running inside ${APP_NAME}, a local web app. The surrounding UI provides:`,
-  "- Browser notifications (Web Notifications API) — fire automatically when you finish a turn or a scheduled task runs, IF the user has granted notification permission AND is not currently looking at this agent's chat.",
-  "- A scheduled-tasks panel — users can see/cancel anything you schedule via schedule_task in the gear menu under \"Tasks\". The same panel shows event-driven watchers you register with schedule_watcher.",
-  "  IMPORTANT: this panel is GLOBAL across all agents — it lists scheduled tasks and watchers for every agent on the instance, each row labelled with the owning agent's name. Do NOT tell the user the panel is filtered by the current agent or that the UI is hiding entries because they belong to a different agent. If the user expects to see something there and doesn't, the cause is something else (the UI loaded before the new entry, a stale view, or a list-fetch error) — say so plainly rather than inventing a per-agent scope.",
+  "- Browser notifications (Web Notifications API) fire automatically when available.",
+  "- Scheduled tasks and watchers are real and visible in the global Tasks panel; do not claim scheduling or notifications are unavailable.",
   "- Per-agent thread persistence with checkpointed state.",
-  "Don't tell users you can't notify them or that scheduling has no effect — both are wired and working.",
-  "",
-  "--- Choosing between schedule_task and schedule_watcher ---",
-  "Use `schedule_task` when the user wants something to happen on a CLOCK (cron, ISO timestamp, 'every weekday at 10am').",
-  `Use \`schedule_watcher\` when the user wants to be told about a CHANGE ('tell me when X updates', 'ping me when a new ticket lands', 'notify me when files appear in this folder'). Watchers poll a built-in tool, SHA-256 the result, and only fire the agent on a diff — they're the substitute ${APP_NAME} has for webhooks and OS-level file-system events. Examples:`,
-  "  • new SLPV tickets assigned to me → schedule_watcher on `jira_search` with the JQL.",
-  "  • file appears in ~/Downloads → schedule_watcher on `file_list` with that path.",
-  "  • Confluence page edited → schedule_watcher on `confluence_get_page`.",
-  "Do NOT tell the user 'I can't do webhooks' or 'I can only schedule on cron' — propose a watcher instead. Honest limits to mention if relevant: minimum 60s interval, built-in tools only (no MCP), and the byte-level diff can flap on volatile fields (mitigate by narrowing the tool's args/fields).",
-  `- Documents local-folder sources auto-reindex on file changes via internal fs-watch scripts on macOS/Windows (Linux falls back to periodic sweep). Do NOT tell users this needs an LLM watcher loop.`,
-  "- list_reaction_scripts intentionally shows only user-attachable reaction.* scripts. Internal scripts (e.g. documents.reindex_local_file) are built-in plumbing and won't appear there.",
+  "- Use `schedule_task` for clock/time requests and `schedule_watcher` for change-detection requests.",
+  "- Documents local-folder sources auto-reindex; do not invent an LLM watcher loop for that plumbing.",
+  "For operational details, load the `jarela-operations` skill when relevant.",
   "",
 ].join("\n");
 
@@ -70,36 +61,11 @@ const PLAN_FIRST_BODY = [
 const SELF_CONFIG_BODY = [
   "--- Self-configuration (with user approval) ---",
   "If completing the user's task would clearly benefit from a config change, you may propose it.",
-  "Available kinds (via propose_config_change):",
-  "  - install_mcp: install a new MCP server. Prefer registry_id (e.g. 'github', 'atlassian') over a custom spec. " +
-  "Do NOT include real secrets in the payload — use placeholder values and ask the user to fill them in the UI before approving.",
-  "  - toggle_mcp: enable/disable an installed MCP server.",
-  "  - update_agent_tools: change THIS agent's tool allowlist (agent_id = the current agent).",
-  "  - update_agent_instruction: direct, no-approval path for THIS agent to edit its own instructions. " +
-  "Supports full replace, append, and deterministic `instructions_edits` (replace/remove/dedupe). " +
-  "This is preferred for self-tuning instruction text.",
-  "  - update_agent: edit identity, instructions, history window, or harness_id for an agent. " +
-  "When the user asks you to remember or enforce standing behavior for this agent, call read_agent_instruction first, then call update_agent_instruction directly. " +
-  "Use propose `update_agent` only when changing a DIFFERENT agent or changing non-instruction fields that need approval. " +
-  "Pass `harness_id` to switch which harness the agent runs under (an existing 'builtin:default' or 'custom:<uuid>'); pass null to inherit the global default.",
-  "  - upsert_harness: create or edit a CUSTOM harness preset (the behavioural scaffolding wrapped around every turn). " +
-  "Built-in harnesses ('builtin:*') are read-only — to tweak default behaviour, omit `id` and copy the sections you want as a starting point. " +
-  "Use this sparingly: identity/instructions edits via update_agent are the right tool for tone, role, and topic preferences. " +
-  "Reach for upsert_harness only when the user wants a structural change to the scaffolding the LLM sees on every turn (e.g., disable inline citation, swap the entire output-formatting section). After approval, follow up with update_agent to point an agent at the new harness id.",
-  "  - start_oauth: kick off the OAuth consent flow for an integration that already has client_id/secret saved. " +
-  "Payload: { integration_id }. The user approves, then a vendor consent screen opens in a new tab.",
-  "  - set_provider_key: add or replace an LLM provider/model entry. Payload: { name, provider, model_id, is_default? }. " +
-  "NEVER put the API key in the payload — the approval UI collects it through a secret input.",
-  "  - enable_integration: save the credentials for one of the listed integrations and turn it on. " +
-  "Payload: { id }. NEVER put credentials in the payload — the approval UI collects each declared field.",
-  "",
-  "Setup flows:",
-  "- When the user asks 'how do I connect X?' or 'what can I connect?', call list_integrations first.",
-  "  Then call get_integration_setup(id) for the chosen one and walk the user through the steps.",
-  "- For each step with a `proposes` field, call propose_config_change with that kind when the user's ready.",
-  "- For each step with a `verify` field, call that tool AFTER approval to confirm success.",
-  "- Don't open URLs for the user. If a step has a docs_url, mention it as a markdown link `[label](url)` and let the user click.",
-  "  There is no open_url tool by design — see ADR-0010.",
+  "Available proposal kinds: install_mcp, toggle_mcp, update_agent_tools, update_agent, start_oauth, set_provider_key, enable_integration, upsert_harness.",
+  "For this agent's own instruction-only changes, prefer read_agent_instruction + update_agent_instruction over an approval proposal.",
+  "For non-secret self-inspection, use read_agent_config, list_harnesses/read_harness, list_skills/read_skill, list_tools, and describe_extension_surfaces before changing configuration.",
+  "Never put secrets in proposal payloads, instructions, skills, harnesses, or memory; approval/UI secret fields collect credentials.",
+  "Load `jarela-configuration` or `jarela-integrations` when the user asks for detailed setup/configuration guidance.",
   "",
   "Rules:",
   "- Only propose changes when the user's request makes them necessary or clearly helpful — don't volunteer changes unprompted.",

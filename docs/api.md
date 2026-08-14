@@ -112,8 +112,25 @@ Returns every tool in the agent's pool with `{ name, description, source,
 category, capability, group, stats }`. Source is `builtin | external | mcp`.
 Capability is `read | write | execute`.
 
+Query parameters:
+
+- `q` — optional case-insensitive search across name, description, category,
+  capability, source, and group.
+
 - **Source:** [`app/api/v1/tools/route.ts`](../app/api/v1/tools/route.ts)
-- **Agent equivalent:** `list_tools` tool — same data, callable from inside an agent run.
+- **Agent equivalent:** `list_tools` tool — same data, callable from inside an agent run, with the same `query` search behavior.
+
+---
+
+## Skills
+
+Packaged built-in skills are always readable. User skills are layered on top
+from `JARELA_SKILLS_DIR` when configured and override built-ins with the same
+id. Writes still require `JARELA_SKILLS_DIR` so packaged skills remain
+read-only.
+
+- **Sources:** [`lib/skills/index.ts`](../lib/skills/index.ts), [`app/api/v1/skills/route.ts`](../app/api/v1/skills/route.ts), [`app/api/v1/skills/[id]/route.ts`](../app/api/v1/skills/[id]/route.ts)
+- **Agent equivalent:** `list_skills`, `read_skill`, and `write_skill` tools.
 
 ---
 
