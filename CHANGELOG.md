@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.26.0] - 2026-08-14
+
+### Added
+
+- **Live delegate tool progress in chat.** `claude_delegate` can now stream
+  progress updates into the tool timeline while a call is still running, and
+  wallclock budgets reset on reported activity instead of total elapsed time.
+
+### Fixed
+
+- **Credential groups are separated correctly.** The Credentials panel and add
+  dialog now group model provider credentials separately from tool credentials,
+  matching how users choose and manage them.
+
 ## [1.25.1] - 2026-08-14
 
 ### Fixed

@@ -169,6 +169,6 @@ describe("full shell-env cache (setFullShellEnv / getFullShellEnv)", () => {
     setFullShellEnv({ PATH: "/some/stale/rc/path" });
 
     const result = resolveSubprocessEnv({ cwd: "/tmp" });
-    expect(result.env.PATH).toBe("/opt/homebrew/bin:/usr/bin:/bin");
+    expect(result.env.PATH).toBe(process.platform === "win32" ? "/usr/bin:/bin" : "/opt/homebrew/bin:/usr/bin:/bin");
   });
 });
