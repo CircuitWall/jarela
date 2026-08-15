@@ -3,7 +3,6 @@ import { BarChart3, Bot, Brain, Calendar, ChevronDown, Cpu, FolderSearch, Key, M
 import { useEffect, useState } from "react";
 import { useAppContext, type Tab } from "@/contexts/AppContext";
 import type { AgentConfig } from "@/api/types";
-import { api } from "@/api/client";
 import { useUnreadByAgent } from "@/lib/ui/toasts";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -11,6 +10,7 @@ import { StatusDot } from "@/components/ui/StatusDot";
 interface Props {
   activeTab: Tab;
   agentId: string | null;
+  agents: AgentConfig[];
   onClose: () => void;
   onAgentChange: (agentId: string) => void;
   onSetTab: (tab: Tab) => void;
@@ -131,25 +131,14 @@ function avatarGradient(id: string): string {
 
 function AgentSessionList({
   activeAgentId,
+  agents,
   onSelect,
 }: {
   activeAgentId: string | null;
+  agents: AgentConfig[];
   onSelect: (id: string) => void;
 }) {
-  const [agents, setAgents] = useState<AgentConfig[]>([]);
   const unread = useUnreadByAgent();
-
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => api.agents.list().then((rows) => { if (!cancelled) setAgents(rows); }).catch(console.error);
-    void load();
-    function onAgentsChanged() { void load(); }
-    window.addEventListener("jarela:agents-changed", onAgentsChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("jarela:agents-changed", onAgentsChanged);
-    };
-  }, []);
 
   if (agents.length === 0) {
     return (
@@ -230,6 +219,7 @@ function AgentSessionList({
 export function MenuPanel({
   activeTab,
   agentId,
+  agents,
   onClose,
   onAgentChange,
   onSetTab,
@@ -343,6 +333,7 @@ export function MenuPanel({
       <div className="flex-1 overflow-y-auto min-h-0 panel-scrollbar">
         <AgentSessionList
           activeAgentId={agentId}
+          agents={agents}
           onSelect={(id) => { onAgentChange(id); onSetTab("chat"); onClose(); }}
         />
       </div>
