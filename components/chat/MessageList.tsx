@@ -1,6 +1,6 @@
 "use client";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
+import { Brain, ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
@@ -841,17 +841,16 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         if (pinAfterAll) nodes.push(renderBoundary("boundary-tail"));
         return nodes;
       })()}
-      {thinkingContent && filters.thinking && <ThinkingLine text={thinkingContent} />}
-      {streamingContent && (
-        <StreamingBubble
-          content={streamingContent}
-          threadId={threadId ?? null}
-          agentConfig={agentConfig ?? null}
-          showAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
-          inflightToolCount={inflightToolCount}
-        />
-      )}
-      {toolEvents && toolEvents.length > 0 && filters.tool_use && <ToolList events={toolEvents} />}
+      <LiveTurnActivity
+        thinkingContent={thinkingContent}
+        streamingContent={streamingContent}
+        toolEvents={toolEvents}
+        filters={filters}
+        threadId={threadId ?? null}
+        agentConfig={agentConfig ?? null}
+        showStreamingAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
+        inflightToolCount={inflightToolCount}
+      />
       {queuedMessages && queuedMessages.length > 0 && (
         <div className="flex flex-col gap-1 mt-2 mb-1">
           {queuedMessages.map((q) => (
@@ -1030,6 +1029,45 @@ const CHIP_LABELS: Record<MessageFilterKey, string> = {
   thinking: "thinking",
 };
 
+function LiveTurnActivity({
+  thinkingContent,
+  streamingContent,
+  toolEvents,
+  filters,
+  threadId,
+  agentConfig,
+  showStreamingAvatar,
+  inflightToolCount,
+}: {
+  thinkingContent?: string;
+  streamingContent?: string;
+  toolEvents?: ToolEvent[];
+  filters: Record<MessageFilterKey, boolean>;
+  threadId: string | null;
+  agentConfig: AgentConfig | null;
+  showStreamingAvatar: boolean;
+  inflightToolCount: number;
+}) {
+  const showThinking = !!thinkingContent && filters.thinking;
+  const showTools = !!toolEvents && toolEvents.length > 0 && filters.tool_use;
+  if (!showThinking && !streamingContent && !showTools) return null;
+  return (
+    <div data-testid="live-turn-activity" className="mt-1 flex w-full min-w-0 flex-col gap-1">
+      {showThinking && <ThinkingLine text={thinkingContent} />}
+      {streamingContent && (
+        <StreamingBubble
+          content={streamingContent}
+          threadId={threadId}
+          agentConfig={agentConfig}
+          showAvatar={showStreamingAvatar}
+          inflightToolCount={inflightToolCount}
+        />
+      )}
+      {showTools && <ToolList events={toolEvents} />}
+    </div>
+  );
+}
+
 // Streaming-bubble wrapper. Wraps the in-flight assistant bubble so the
 // `message` object passed to MessageBubble keeps a stable identity across
 // renders that don't actually change the streaming text — without this
@@ -1068,11 +1106,12 @@ function ThinkingLine({ text }: { text: string }) {
   const preview = text.replace(/\s+/g, " ").trim();
   const tail = preview.length > 60 ? preview.slice(-60) : preview;
   return (
-    <div className="my-1 flex flex-col items-start gap-0.5">
-      <MetaRow accent="amber" onClick={() => setOpen((v) => !v)} expanded={open}>
+    <div className="w-full min-w-0 max-w-full flex flex-col items-start gap-0.5">
+      <MetaRow accent="amber" fullWidth onClick={() => setOpen((v) => !v)} expanded={open} aria-label="toggle thinking details">
         <CollapseChevron open={open} size={9} />
+        <Brain size={11} className="shrink-0" aria-hidden />
         <span className="font-medium">thinking</span>
-        {!open && <span className="truncate italic opacity-60 max-w-[18rem] text-left">{tail}</span>}
+        {!open && <span className="truncate italic opacity-60 flex-1 min-w-0 text-left">{tail}</span>}
       </MetaRow>
       {open && (
         <pre className="w-full px-2 py-1.5 text-[10px] text-fg-muted whitespace-pre-wrap break-words font-mono bg-surface-2/40 rounded border border-border/40">
