@@ -3,10 +3,10 @@ import { Check, ChevronDown, Menu } from "lucide-react";
 import { Activity, useCallback, useEffect, useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { useAgentSession } from "@/hooks/useAgentSession";
+import { useAgents } from "@/hooks/useAgents";
 import { useEventNotifications } from "@/hooks/useEventNotifications";
 import { useUrlSync } from "@/hooks/useUrlSync";
 import { useConfigurationIssues } from "@/hooks/useConfigurationIssues";
-import { api } from "@/api/client";
 import type { AgentConfig } from "@/api/types";
 import { ChatView } from "@/components/chat/ChatView";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
@@ -77,25 +77,9 @@ export function AppShell() {
 
   const unreadCount = useUnreadCount();
 
-  // Cache agent id → name for notification titles. Refreshed on agent CRUD.
-  const [agents, setAgents] = useState<AgentConfig[]>([]);
-  const [agentsLoaded, setAgentsLoaded] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      api.agents
-        .list()
-        .then((rows) => { if (!cancelled) setAgents(rows); })
-        .catch(() => {})
-        .finally(() => { if (!cancelled) setAgentsLoaded(true); });
-    void load();
-    function onAgentsChanged() { void load(); }
-    window.addEventListener("jarela:agents-changed", onAgentsChanged);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("jarela:agents-changed", onAgentsChanged);
-    };
-  }, []);
+  // Shared agent list for boot picker, menu, and notification titles.
+  const { agents, loading: agentsLoading } = useAgents();
+  const agentsLoaded = !agentsLoading;
   const agentsRef = useRef<AgentConfig[]>([]);
   agentsRef.current = agents;
 
@@ -568,6 +552,7 @@ export function AppShell() {
           <MenuPanel
             activeTab={state.activeTab}
             agentId={state.activeAgentId}
+            agents={agents}
             onClose={() => setShowMenu(false)}
             onAgentChange={(agentId) => dispatch({ type: "SET_AGENT", agentId })}
             onSetTab={(tab) => {
