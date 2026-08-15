@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import { MessageList } from "./MessageList";
 import type { Message } from "@/api/types";
 
@@ -42,7 +42,7 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
-  it("opens a confirmation dialog on drag release and only persists after confirm", () => {
+  it("opens a confirmation dialog on drag release and only persists after confirm", async () => {
     const onSetContextPin = vi.fn();
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
@@ -53,11 +53,13 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={onSetContextPin}
+        hotSince="2026-08-09T10:00:00.000Z"
       />,
     );
 
     const candidates = Array.from(container.querySelectorAll("[data-hot-candidate='1']"));
     expect(candidates).toHaveLength(2);
+    setRect(container.querySelector(".panel-scrollbar")!, 0, 400);
     setRect(candidates[0], 120);
     setRect(candidates[1], 220);
 
@@ -68,7 +70,7 @@ describe("MessageList conversation focus", () => {
     fireEvent.pointerMove(handle, { pointerId: 1, clientY: 212 });
     fireEvent.pointerUp(handle, { pointerId: 1, clientY: 220 });
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = await waitFor(() => screen.getByRole("dialog"));
     expect(within(dialog).getByText("Move conversation focus here?")).toBeTruthy();
     expect(onSetContextPin).not.toHaveBeenCalled();
 
@@ -76,7 +78,7 @@ describe("MessageList conversation focus", () => {
     expect(onSetContextPin).toHaveBeenCalledWith("2026-08-09T10:00:01.000Z");
   });
 
-  it("cancels without persisting when the dialog is dismissed", () => {
+  it("cancels without persisting when the dialog is dismissed", async () => {
     const onSetContextPin = vi.fn();
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
@@ -87,10 +89,12 @@ describe("MessageList conversation focus", () => {
         threadId="thread-1"
         messages={messages}
         onSetContextPin={onSetContextPin}
+        hotSince="2026-08-09T10:00:01.000Z"
       />,
     );
 
     const candidates = Array.from(container.querySelectorAll("[data-hot-candidate='1']"));
+    setRect(container.querySelector(".panel-scrollbar")!, 0, 400);
     setRect(candidates[0], 120);
     setRect(candidates[1], 220);
 
@@ -101,7 +105,7 @@ describe("MessageList conversation focus", () => {
     fireEvent.pointerMove(handle, { pointerId: 1, clientY: 112 });
     fireEvent.pointerUp(handle, { pointerId: 1, clientY: 120 });
 
-    const dialog = screen.getByRole("dialog");
+    const dialog = await waitFor(() => screen.getByRole("dialog"));
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onSetContextPin).not.toHaveBeenCalled();
   });
@@ -159,5 +163,25 @@ describe("MessageList conversation focus", () => {
     expect(screen.getByText("Earlier messages summary")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(onSetContextPin).not.toHaveBeenCalled();
+  });
+
+  it("does not render a warm/recent boundary for unpinned threads", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "newer", "2026-08-09T10:00:01.000Z"),
+    ];
+    render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+        hotSince={null}
+        warmSummary={null}
+        warmSummaryBefore={null}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /drag to move conversation focus/i })).toBeNull();
+    expect(screen.queryByLabelText("conversation focus boundary")).toBeNull();
   });
 });
