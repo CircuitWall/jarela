@@ -2,9 +2,18 @@
 // chunks; substring fallback for chunks without embeddings (covers the
 // "no embedding provider configured" case and the brief window before
 // async embed completes after indexing).
+//
+// When a dimension mismatch is detected (old embeddings incompatible with
+// new query vector), the search falls back to substring matching and queues
+// an async reindex of that document's chunks so the semantic index is
+// eventually repaired (see queueDocumentReindex).
 
 import { getDb } from "@/lib/db";
 import { embedOne, cosine } from "@/lib/embeddings";
+
+// Track documents we've already queued for reindexing this session to avoid
+// repeated work. This is session-scoped; the Set resets on app restart.
+const reindexQueued = new Set<string>();
 
 export interface DocumentHit {
   document_id: string;
@@ -69,6 +78,7 @@ export async function searchDocuments(
   const qVec = await embedOne(trimmed);
   const scored: DocumentHit[] = [];
   const lowered = trimmed.toLowerCase();
+  const mismatched = new Set<string>();
 
   for (const r of rows) {
     let score = 0;
@@ -83,6 +93,8 @@ export async function searchDocuments(
           match = "substring";
         }
       } else {
+        // Dimension mismatch: track this document for reindexing.
+        mismatched.add(r.document_id);
         score = substringScore(r.text, lowered);
         match = "substring";
       }
@@ -104,6 +116,19 @@ export async function searchDocuments(
     });
   }
 
+  // Queue mismatched documents for reindexing if we haven't already in this session.
+  for (const docId of mismatched) {
+    if (!reindexQueued.has(docId)) {
+      reindexQueued.add(docId);
+      clearEmbeddingsForDocument(docId).catch((err) => {
+        console.error(
+          `[search] failed to queue document ${docId} for reindexing:`,
+          err,
+        );
+      });
+    }
+  }
+
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, limit);
 }
@@ -121,3 +146,23 @@ function substringScore(haystack: string, needleLower: string): number {
   // Phrase match — high but below typical semantic top scores.
   return 0.6;
 }
+
+/**
+ * Clear embeddings for a document's chunks so they can be re-embedded.
+ * Called when a dimension mismatch is detected during search.
+ * Fire-and-forget: the next scheduler tick's indexAllSources() will
+ * re-embed these chunks via backfillDocumentEmbeddings().
+ */
+async function clearEmbeddingsForDocument(documentId: string): Promise<void> {
+  const db = getDb();
+  const count = db
+    .prepare("UPDATE document_chunks SET embedding=NULL WHERE document_id=?")
+    .run(documentId).changes;
+  if (count > 0) {
+    console.log(
+      `[search] detected embedding dimension mismatch; cleared ${count} chunks for document ${documentId}. ` +
+      `Scheduler will re-embed on the next tick.`,
+    );
+  }
+}
+
