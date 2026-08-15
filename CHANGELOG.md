@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.27.1] - 2026-08-15
+
+### Fixed
+
+- **Conversation focus boundary now only appears after the user pins it.**
+  Unpinned threads no longer show a misleading `recent 0 · warm N` divider.
+- **Chat image attachments use the available viewport.** Sent pictures expand
+  to the available chat width while preserving the original pixel bounds and
+  click-to-lightbox behavior.
+
 ## [1.27.0] - 2026-08-15
 
 ### Added

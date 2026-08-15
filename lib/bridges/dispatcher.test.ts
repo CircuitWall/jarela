@@ -3,6 +3,7 @@ import type { BridgeAdapter, InboundMessage } from "./types";
 
 const resolveRouteMock = vi.fn();
 const getAgentConfigMock = vi.fn();
+const getBridgeMock = vi.fn();
 const getOrCreateAgentThreadMock = vi.fn();
 const runAgentTurnMock = vi.fn();
 const publishNotificationMock = vi.fn();
@@ -14,6 +15,10 @@ vi.mock("./router", () => ({
 
 vi.mock("@/lib/stores/agent-configs", () => ({
   getAgentConfig: (...args: unknown[]) => getAgentConfigMock(...args),
+}));
+
+vi.mock("@/lib/stores/bridges", () => ({
+  getBridge: (...args: unknown[]) => getBridgeMock(...args),
 }));
 
 vi.mock("@/lib/stores/threads", () => ({
@@ -69,6 +74,7 @@ describe("handleInboundMessage silent observer mode", () => {
   beforeEach(() => {
     resolveRouteMock.mockReset();
     getAgentConfigMock.mockReset();
+    getBridgeMock.mockReset();
     getOrCreateAgentThreadMock.mockReset();
     runAgentTurnMock.mockReset();
     publishNotificationMock.mockReset();
@@ -82,6 +88,7 @@ describe("handleInboundMessage silent observer mode", () => {
       respond_to: "counterpart",
     });
     getAgentConfigMock.mockReturnValue({ id: "a1" });
+    getBridgeMock.mockReturnValue({ id: "b1", kind: "whatsapp", name: "Family bridge" });
     getOrCreateAgentThreadMock.mockReturnValue({ thread_id: "t1" });
     runAgentTurnMock.mockResolvedValue({
       assistantContent: "NO_REPLY",
