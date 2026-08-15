@@ -76,8 +76,16 @@ export async function searchDocuments(
     if (qVec && r.embedding) {
       let vec: number[] | null = null;
       try { vec = JSON.parse(r.embedding) as number[]; } catch { vec = null; }
-      if (vec) score = cosine(qVec, vec);
-      else { score = substringScore(r.text, lowered); match = "substring"; }
+      if (vec && vec.length === qVec.length) {
+        score = cosine(qVec, vec);
+        if (score <= 0) {
+          score = substringScore(r.text, lowered);
+          match = "substring";
+        }
+      } else {
+        score = substringScore(r.text, lowered);
+        match = "substring";
+      }
     } else {
       score = substringScore(r.text, lowered);
       match = "substring";
