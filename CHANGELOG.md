@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vector search finds no close matches, the document search now tries
   substring matching as a fallback, improving discoverability on sparse
   or short document sets.
+- **Embedding dimension mismatches are auto-repaired.** When embeddings from
+  an old model are detected (dimension mismatch), the search immediately
+  falls back to substring matching and queues the chunks for re-embedding
+  on the next scheduler tick. This repairs the semantic index instead of
+  permanently degrading it.
 - **Chat turn metadata displays inline in message context.** Turn timestamps,
   token counts, and provider info now appear alongside the message text
   instead of in a separate panel.
