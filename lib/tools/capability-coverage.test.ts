@@ -1,7 +1,17 @@
-import { describe, it, expect } from "vitest";
-import "./builtins";
-import { registeredTools } from "./registry";
-import { registeredCapability } from "./registry";
+import { afterAll, describe, it, expect } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-capability-coverage-"));
+process.env.JARELA_DB_DIR = tmpRoot;
+
+afterAll(() => {
+  try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
+});
+
+await import("./builtins");
+const { registeredTools, registeredCapability } = await import("./registry");
 
 // Ensures every built-in tool was registered with a capability. The
 // registerTools signature already enforces this at compile time
