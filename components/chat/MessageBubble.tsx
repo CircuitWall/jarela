@@ -1465,20 +1465,35 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
   );
 }
 
+function hasImageAttachment(content: string | ContentPart[]): boolean {
+  return Array.isArray(content) && content.some((part) => part.type === "image" || part.type === "image_ref");
+}
+
 // Image attachment — thumbnail in the bubble, click for a full-screen lightbox.
 // Accepts either a `data:` URL (inline base64) or a `/api/v1/files/[name]`
 // URL (disk-hosted ref, see ADR-0065). Both render identically.
 function ClickableImage({ src }: { src: string }) {
   const [open, setOpen] = useState(false);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt="attached image"
+        onLoad={(e) => {
+          const img = e.currentTarget;
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight });
+          }
+        }}
         onClick={() => setOpen(true)}
-        className="max-w-full rounded-xl mt-1 border border-border/40 cursor-zoom-in hover:border-fg-faint transition-colors"
-        style={{ maxHeight: "400px", objectFit: "contain" }}
+        className="block w-full max-w-full rounded-xl mt-1 border border-border/40 cursor-zoom-in hover:border-fg-faint transition-colors"
+        style={{
+          width: naturalSize ? `min(100%, ${naturalSize.width}px)` : "100%",
+          maxHeight: naturalSize ? `min(82dvh, ${naturalSize.height}px)` : "82dvh",
+          objectFit: "contain",
+        }}
       />
       {open && (
         <div
@@ -1541,6 +1556,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   // memoization we'd re-parse the entire (growing) blob each frame.
   const parsed = useMemo(() => parseContent(message.content), [message.content]);
   const messageId = "id" in message ? message.id : null;
+  const containsImageAttachment = hasImageAttachment(parsed);
 
   const handleInAppLink = useCallback((href: string) => {
     const p = parseHref(href);
@@ -1802,7 +1818,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         )}
       </div>
 
-      <div className={`flex flex-col max-w-[88%] sm:max-w-[75%] min-w-0 ${isUser ? "items-end" : "items-start"}`}>
+      <div className={`flex flex-col min-w-0 ${containsImageAttachment ? "max-w-[calc(100%-2.25rem)] sm:max-w-[92%] md:max-w-[86%]" : "max-w-[88%] sm:max-w-[75%]"} ${isUser ? "items-end" : "items-start"}`}>
         {(timeLabel || messageId) && (
           <div className={`flex items-center gap-1 mb-0.5 px-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity ${isUser ? "flex-row-reverse" : ""}`}>
             {timeLabel && (
@@ -1852,7 +1868,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
           </div>
         )}
         <div
-          className={`rounded-2xl px-4 py-3 text-sm leading-relaxed max-w-full overflow-hidden ${
+          className={`rounded-2xl ${containsImageAttachment ? "p-1.5" : "px-4 py-3"} text-sm leading-relaxed max-w-full overflow-hidden ${
             isUser ? "glass-bubble-accent text-white rounded-br-sm" : "glass-bubble text-fg rounded-bl-sm"
           }`}
         >
