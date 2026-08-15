@@ -18,4 +18,12 @@ describe("built-in skills", () => {
     expect(skill?.content).toContain("# Jarela Integrations");
     expect(skill?.content).toContain("describe_extension_surfaces");
   });
+
+  it("documents agent-callable env overrides in the configuration skill", () => {
+    const skill = getSkill("jarela-configuration");
+    expect(skill?.source).toBe("builtin");
+    expect(skill?.content).toContain("set_env_var");
+    expect(skill?.content).toContain("requiresRestart");
+    expect(skill?.content).toContain("restart_server");
+  });
 });
