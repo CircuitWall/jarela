@@ -1,6 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { seedMockAgent } from "./helpers";
 
+type ThreadSummary = { thread_id: string; agent_id: string; updated_at: string; message_count: number };
+type ThreadDetail = ThreadSummary & { messages: Array<{ created_at: string }> };
+
 test.beforeEach(async ({ request }) => {
   await seedMockAgent(request);
 });
@@ -12,8 +15,8 @@ async function sendMockReply(page: import("@playwright/test").Page, marker: stri
   await expect(composer).toBeEnabled({ timeout: 15_000 });
   await composer.fill(`MOCK:reply=${marker}`);
   await page.locator('button[aria-label="Send"]').click();
-  await expect(page.getByRole("button", { name: /Drag to move conversation focus/i })).toBeEnabled({ timeout: 20_000 });
   await expect(page.getByText(marker).last()).toBeVisible();
+  await pinLatestThreadForBoundary(page);
 }
 
 async function sendMockReplies(page: import("@playwright/test").Page, count: number, prefix: string) {
@@ -29,6 +32,26 @@ async function sendMockReplies(page: import("@playwright/test").Page, count: num
     await expect(page.getByText(marker).last()).toBeVisible({ timeout: 20_000 });
   }
 
+  await pinLatestThreadForBoundary(page);
+}
+
+async function pinLatestThreadForBoundary(page: import("@playwright/test").Page) {
+  const pinned = await page.request.get("/api/v1/threads?limit=1");
+  expect(pinned.ok()).toBeTruthy();
+  const [thread] = (await pinned.json()) as ThreadSummary[];
+  expect(thread?.thread_id).toBeTruthy();
+
+  const detailRes = await page.request.get(`/api/v1/threads/${thread.thread_id}`);
+  expect(detailRes.ok()).toBeTruthy();
+  const detail = (await detailRes.json()) as ThreadDetail;
+  const firstMessage = detail.messages[0];
+  expect(firstMessage?.created_at).toBeTruthy();
+
+  const pinRes = await page.request.patch(`/api/v1/threads/${thread.thread_id}/context-pin`, {
+    data: { hot_since: firstMessage.created_at },
+  });
+  expect(pinRes.ok()).toBeTruthy();
+  await page.goto(`/?agent=${encodeURIComponent(thread.agent_id)}&thread=${encodeURIComponent(thread.thread_id)}`);
   await expect(page.getByRole("button", { name: /Drag to move conversation focus/i })).toBeEnabled({ timeout: 20_000 });
 }
 
@@ -48,8 +71,8 @@ test("drag boundary confirms before changing the conversation focus", async ({ p
   expect(beforeBox).toBeTruthy();
   expect(markerBox).toBeTruthy();
 
-  const firstCandidate = page.locator('[data-hot-candidate="1"]').first();
-  const box = await firstCandidate.boundingBox();
+  const targetCandidate = page.locator('[data-hot-candidate="1"]').nth(1);
+  const box = await targetCandidate.boundingBox();
   expect(box).toBeTruthy();
 
   const targetY = (box?.y ?? 0) + ((box?.height ?? 0) / 2);
