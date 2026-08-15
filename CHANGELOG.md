@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.27.2] - 2026-08-15
+
+### Fixed
+
+- **Document search now falls back to substring matching.** When semantic
+  vector search finds no close matches, the document search now tries
+  substring matching as a fallback, improving discoverability on sparse
+  or short document sets.
+- **Chat turn metadata displays inline in message context.** Turn timestamps,
+  token counts, and provider info now appear alongside the message text
+  instead of in a separate panel.
+- **Agents can now expose environment configuration tools.** The Jarela
+  operating skills now include tools to list and describe environment
+  variables and configuration options available to the agent.
+
+### Changed
+
+- **Shared agent list hook reduces component duplication.** AppShell and
+  MenuPanel now reuse the `useAgents` hook instead of duplicating
+  subscription and loading logic.
+
 ## [1.27.1] - 2026-08-15
 
 ### Fixed
