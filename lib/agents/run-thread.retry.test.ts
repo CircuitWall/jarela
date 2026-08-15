@@ -153,4 +153,49 @@ describe("prepareThreadRun transient retry", () => {
     // seed (balanced), it would incorrectly jump to quality.
     expect(secondOpts.agent_run_config?.route_decision?.policy).toBe("balanced");
   });
+
+  it("adds env override and restart tools to the effective self-config surface", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-env-config",
+      name: "Env Config Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-env-config");
+
+    streamWithConfigMock.mockImplementationOnce(() => chunks(
+      {
+        type: "done",
+        data: {
+          message_id: "done-env-1",
+          usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+          provider: "openai",
+          model_id: "gpt-4o-mini",
+          model_config_name: "default",
+        },
+      },
+    ));
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Lower the idle timeout and restart if needed",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const firstOpts = streamWithConfigMock.mock.calls[0][2] as {
+      agent_run_config?: { allowed_tools?: string[] };
+    };
+    expect(firstOpts.agent_run_config?.allowed_tools).toEqual(expect.arrayContaining([
+      "set_env_var",
+      "restart_server",
+    ]));
+  });
 });
