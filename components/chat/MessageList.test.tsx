@@ -11,7 +11,7 @@ vi.mock("./MessageBubble", () => ({
 }));
 
 vi.mock("./ToolList", () => ({
-  ToolList: () => null,
+  ToolList: () => <div data-testid="tool-list">tools</div>,
 }));
 
 function mkMessage(id: string, role: "user" | "assistant", content: string, created_at: string): Message {
@@ -42,6 +42,24 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it("groups live thinking, streamed text, and tools into one turn activity stack", () => {
+    const { container } = render(
+      <MessageList
+        threadId="thread-1"
+        messages={[]}
+        thinkingContent="checking the useful documents"
+        streamingContent="I found a match"
+        toolEvents={[{ id: "call-1", phase: "call", name: "documents_search", payload: { query: "jarela" } }]}
+      />,
+    );
+
+    const activity = screen.getByTestId("live-turn-activity");
+    expect(within(activity).getByRole("button", { name: "toggle thinking details" })).toBeTruthy();
+    expect(within(activity).getByText("I found a match")).toBeTruthy();
+    expect(within(activity).getByTestId("tool-list")).toBeTruthy();
+    expect(container.querySelectorAll("[data-testid='live-turn-activity']")).toHaveLength(1);
+  });
+
   it("opens a confirmation dialog on drag release and only persists after confirm", async () => {
     const onSetContextPin = vi.fn();
     const messages = [
