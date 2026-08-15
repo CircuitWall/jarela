@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,6 +19,7 @@ const {
 
 const { upsertRemoteDocument } = await import("./upsert");
 const { searchDocuments } = await import("@/lib/documents/search");
+const { getDb } = await import("@/lib/db");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -137,5 +138,37 @@ describe("upsertRemoteDocument", () => {
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0].rel_path).toBe("Kafka incident runbook");
     expect(hits[0].abs_path).toBe("confluence://12345");
+  });
+
+  it("falls back to substring when embedding dimensions mismatch", async () => {
+    const s = createDocumentSource({
+      path: "confluence-space://ENG", label: "ENG",
+      kind: "confluence_space", config: { space_key: "ENG" },
+    });
+    const docPath = "confluence://99999";
+    await upsertRemoteDocument(s.id, {
+      path: docPath,
+      title: "Kafka recovery notes",
+      externalUpdatedAt: "2026-01-01T00:00:00Z",
+      text: "Kafka broker restart checklist and email escalation path.",
+    });
+
+    // Simulate stale/legacy chunk vectors with a different dimension.
+    getDb().prepare(
+      `UPDATE document_chunks
+       SET embedding = ?
+       WHERE document_id = (SELECT id FROM documents WHERE path = ? LIMIT 1)`,
+    ).run(JSON.stringify([0.1, 0.2]), docPath);
+
+    const embeddings = await import("@/lib/embeddings");
+    const embedOneSpy = vi.spyOn(embeddings, "embedOne").mockResolvedValue([0.9, 0.8, 0.7]);
+    try {
+      const hits = await searchDocuments("kafka broker", { limit: 5 });
+      expect(hits.length).toBeGreaterThan(0);
+      expect(hits[0].abs_path).toBe(docPath);
+      expect(hits[0].match).toBe("substring");
+    } finally {
+      embedOneSpy.mockRestore();
+    }
   });
 });
