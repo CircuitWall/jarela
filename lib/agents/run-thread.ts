@@ -43,6 +43,8 @@ const SELF_CONFIG_TOOLS = [
   "read_harness",
   "list_skills",
   "read_skill",
+  "set_env_var",
+  "restart_server",
 ] as const;
 
 function withSelfConfigTools(tools: string[]): string[] {

@@ -31,6 +31,23 @@ provider setup.
 - If shrinking or changing context windows, compact affected threads before or
   after the change so warm summaries remain available.
 
+## Environment Variables
+
+- Use `set_env_var` only when the user explicitly asks to change a runtime
+  setting. It accepts schema-defined `JARELA_*` keys that are flagged
+  `agentWritable`; unknown or protected keys return a structured error.
+- Use string values (`"30000"`, `"debug"`, `"true"`). Pass `null` to clear an
+  override and return to the schema/default value.
+- Read the `requiresRestart` field from the `set_env_var` result. If it is
+  `false`, tell the user the change is active immediately.
+- If `requiresRestart` is `true`, explain that a restart is needed. Call
+  `restart_server` when the user asked you to restart or has agreed to apply
+  the restart now; otherwise tell them they can restart from the Environment
+  panel later.
+- Never put secrets into env-var tool calls unless the schema explicitly marks
+  the key as safe for agent writes. Credentials belong in the Credentials or
+  Integrations surfaces.
+
 ## Tool Configuration
 
 - Use `list_tools` with `query`, `category`, `capability`, or `source` to find
