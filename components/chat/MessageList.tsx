@@ -415,7 +415,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       return;
     }
     const y = dragYRef.current ?? e.clientY;
-    const next = previewHotSinceRef.current ?? pickHotSinceFromPointerY(y);
+    const next = pickHotSinceFromPointerY(y);
     suppressBoundaryClickRef.current = true;
     requestAnimationFrame(() => {
       suppressBoundaryClickRef.current = false;
@@ -777,7 +777,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         const boundaryIndex = effectiveHotSince
           ? visibleMessages.findIndex((m) => m.created_at >= effectiveHotSince)
           : -1;
-        const interactiveBoundary = !!onSetContextPin && visibleMessages.length > 0;
+        const interactiveBoundary = !!effectiveHotSince && !!onSetContextPin && visibleMessages.length > 0;
         const pinAfterAll =
           (!!effectiveHotSince && visibleMessages.length > 0 && boundaryIndex === -1
             && visibleMessages[visibleMessages.length - 1].created_at < effectiveHotSince)
