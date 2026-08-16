@@ -991,8 +991,8 @@ make start           # serve standalone build
 make lint
 make test            # live smoke tests
 make icons           # regenerate logo / icon set
-make install-task    # register auto-start (LaunchAgent on mac, Scheduled Task on Windows)
-make start-task      # / stop-task / restart-task
+make install-service # register auto-start (LaunchAgent on mac, Scheduled Task on Windows)
+make start-service   # / stop-service / restart-service
 make logs            # tail the installed-task log
 make status          # task state + listener on :4312 + data dir
 make push            # git push current branch -> jarela remote

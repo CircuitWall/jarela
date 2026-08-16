@@ -10,7 +10,7 @@
     .\make.ps1 help
     .\make.ps1 dev
     .\make.ps1 build
-    .\make.ps1 install-task
+    .\make.ps1 install-service
 #>
 [CmdletBinding()]
 param(
@@ -40,11 +40,12 @@ $Targets = [ordered]@{
     'test-full'      = 'Extended live test suite.'
     'icons'          = 'Regenerate the logo / icon set from public\logo-source.png.'
     'clean'          = 'Remove .next, build artefacts, and node_modules cache.'
-    'install-task'   = 'Install the per-user Windows scheduled task (auto-start at logon). Add -Boot to start at machine boot (requires elevated shell).'
-    'uninstall-task' = 'Remove the Jarela scheduled task and installed files.'
-    'start-task'     = 'Start-ScheduledTask -TaskName Jarela.'
-    'stop-task'      = 'Stop-ScheduledTask  -TaskName Jarela.'
-    'restart-task'   = 'Stop then start the scheduled task.'
+    'install-service' = 'Install the per-user Windows scheduled task (auto-start at logon). Add -Boot to start at machine boot (requires elevated shell).'
+    'uninstall-service' = 'Remove the Jarela scheduled task and installed files.'
+    'start-service' = 'Start-ScheduledTask -TaskName Jarela.'
+    'stop-service'  = 'Stop-ScheduledTask  -TaskName Jarela.'
+    'restart-service' = 'Stop then start the scheduled task.'
+    '*-task'        = 'Back-compat aliases for the service targets.'
     'logs'           = 'Tail the installed-task log file (Ctrl+C to stop).'
     'status'         = 'Show scheduled-task state and listener on :4312.'
     'push'           = 'Push the current branch to the jarela remote.'
@@ -84,7 +85,16 @@ function Get-LogPath { Join-Path $env:LOCALAPPDATA 'Jarela\logs\app.log' }
 # Dispatch
 # ---------------------------------------------------------------------------
 
-switch ($Target.ToLowerInvariant()) {
+$NormalizedTarget = switch ($Target.ToLowerInvariant()) {
+    'install-task'   { 'install-service'; break }
+    'uninstall-task' { 'uninstall-service'; break }
+    'start-task'     { 'start-service'; break }
+    'stop-task'      { 'stop-service'; break }
+    'restart-task'   { 'restart-service'; break }
+    default          { $Target.ToLowerInvariant() }
+}
+
+switch ($NormalizedTarget) {
 
     'help'           { Show-Help }
 
@@ -113,7 +123,7 @@ switch ($Target.ToLowerInvariant()) {
         }
     }
 
-    'install-task' {
+    'install-service' {
         # The installer (Windows PowerShell 5.1) shells out to `npm run build`,
         # which writes Next's "Compiled with warnings" to stderr even on a
         # successful build. PowerShell 7 with $ErrorActionPreference='Stop'
@@ -134,16 +144,16 @@ switch ($Target.ToLowerInvariant()) {
         if ($LASTEXITCODE -ne 0) { throw "installer failed (exit $LASTEXITCODE)" }
     }
 
-    'uninstall-task' {
+    'uninstall-service' {
         & powershell -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'scripts\uninstall-from-system.ps1') @Rest
         if ($LASTEXITCODE -ne 0) { throw "uninstaller failed (exit $LASTEXITCODE)" }
     }
 
-    'start-task'     { Start-ScheduledTask -TaskName 'Jarela' }
+    'start-service'     { Start-ScheduledTask -TaskName 'Jarela' }
 
-    'stop-task'      { Stop-ScheduledTask  -TaskName 'Jarela' -ErrorAction SilentlyContinue }
+    'stop-service'      { Stop-ScheduledTask  -TaskName 'Jarela' -ErrorAction SilentlyContinue }
 
-    'restart-task' {
+    'restart-service' {
         Stop-ScheduledTask  -TaskName 'Jarela' -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 800
         Start-ScheduledTask -TaskName 'Jarela'
