@@ -63,7 +63,8 @@ export const proposeConfigChangeTool = tool(
           "- install_mcp: { registry_id: 'github', variables: { GITHUB_TOKEN: 'asks-user-for-it' } } " +
           "  OR { name, transport, spec }\n" +
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
-          "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'] }\n" +
+          "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'], mode?: 'add'|'replace' } " +
+          "— default mode is 'add' and merges tools into the existing allowlist; use mode='replace' only when the user explicitly asks to replace the full tool list\n" +
           "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, harness_id? } " +
           "  — use instructions_append to add standing rules without overwriting existing ones; " +
           "  use instructions_edits for deterministic transforms over the current saved instruction text " +

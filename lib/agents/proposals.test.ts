@@ -221,6 +221,57 @@ describe("applyAction(update_agent) with harness_id", () => {
   });
 });
 
+describe("applyAction(update_agent_tools)", () => {
+  it("adds tools incrementally by default", async () => {
+    upsertAgentConfig({
+      id: "agent-tools-add",
+      name: "agent-tools-add",
+      identity: "test agent",
+      instructions: "be helpful",
+      tools: ["memory_read", "web_search"],
+    });
+
+    const result = await applyAction("update_agent_tools", {
+      agent_id: "agent-tools-add",
+      tools: ["web_search", "documents_search"],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(getAgentConfig("agent-tools-add")!.tools).toBe(JSON.stringify(["memory_read", "web_search", "documents_search"]));
+    expect(result.detail).toMatchObject({
+      mode: "add",
+      before_tools: ["memory_read", "web_search"],
+      tools: ["memory_read", "web_search", "documents_search"],
+      added_tools: ["documents_search"],
+    });
+  });
+
+  it("replaces the full tool list only when mode is replace", async () => {
+    upsertAgentConfig({
+      id: "agent-tools-replace",
+      name: "agent-tools-replace",
+      identity: "test agent",
+      instructions: "be helpful",
+      tools: ["memory_read", "web_search"],
+    });
+
+    const result = await applyAction("update_agent_tools", {
+      agent_id: "agent-tools-replace",
+      tools: ["documents_search"],
+      mode: "replace",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(getAgentConfig("agent-tools-replace")!.tools).toBe(JSON.stringify(["documents_search"]));
+    expect(result.detail).toMatchObject({
+      mode: "replace",
+      before_tools: ["memory_read", "web_search"],
+      tools: ["documents_search"],
+      added_tools: ["documents_search"],
+    });
+  });
+});
+
 describe("applyAction(update_agent) instructions_append", () => {
   it("appends to existing instructions without overwriting them", async () => {
     seedAgent("agent-append-1");

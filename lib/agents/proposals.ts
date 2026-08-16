@@ -101,20 +101,26 @@ function applyToggleMcp(payload: unknown): ApplyResult {
 }
 
 function applyUpdateAgentTools(payload: unknown): ApplyResult {
-  const p = payload as { agent_id?: string; tools?: string[] };
+  const p = payload as { agent_id?: string; tools?: string[]; mode?: "add" | "replace" };
   if (!p.agent_id || !Array.isArray(p.tools)) return { ok: false, detail: "agent_id and tools[] required" };
   const existing = getAgentConfig(p.agent_id);
   if (!existing) return { ok: false, detail: `agent "${p.agent_id}" not found` };
+  const before = getAgentTools(existing);
+  const mode = p.mode ?? "add";
+  if (mode !== "add" && mode !== "replace") return { ok: false, detail: "mode must be add or replace" };
+  const nextTools = mode === "replace"
+    ? [...new Set(p.tools)]
+    : [...new Set([...before, ...p.tools])];
   upsertAgentConfig({
     id: existing.id,
     name: existing.name,
     icon: existing.icon,
     identity: existing.identity,
     instructions: existing.instructions,
-    tools: p.tools,
+    tools: nextTools,
     model_config_name: existing.model_config_name,
   });
-  return { ok: true, detail: { agent_id: p.agent_id, tools: p.tools } };
+  return { ok: true, detail: { agent_id: p.agent_id, mode, before_tools: before, tools: nextTools, added_tools: nextTools.filter((t) => !before.includes(t)) } };
 }
 
 function applyUpdateAgent(payload: unknown): ApplyResult {
