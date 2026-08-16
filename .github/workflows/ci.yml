@@ -17,6 +17,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  conventions:
+    name: Commit and PR conventions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check pull request title
+        if: github.event_name == 'pull_request'
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/check-git-conventions.mjs --subject-env PR_TITLE --label "pull request title"
+
+      - name: Check pushed commit subjects
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "$BEFORE" =~ ^0+$ ]]; then
+            RANGE="$SHA^..$SHA"
+          else
+            RANGE="$BEFORE..$SHA"
+          fi
+          node scripts/check-git-conventions.mjs --range "$RANGE" --label "commit subject"
+
   changes:
     # Detect whether the PR / push touched anything that could affect the
     # built app. Several downstream jobs are gated on `app`; the others use

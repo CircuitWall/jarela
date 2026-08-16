@@ -49,7 +49,7 @@ type(scope)[!]: description
 
 - **type** — one of: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`,
   `build`, `ci`, `chore`. No invented types (no `ui:`, `style:`, `wip:`).
-- **scope** — optional, lowercase, single token in `(...)`. Example:
+- **scope** — required, lowercase, single token in `(...)`. Example:
   `feat(bridges): …`, `fix(tools/gmail): …`.
 - **`!`** — append immediately before the colon to flag a **breaking change**.
   A breaking commit MUST also carry a `BREAKING CHANGE: <migration notes>`
@@ -76,7 +76,7 @@ Before every commit, PR, or squash-merge title, verify all of the following:
 - The branch is a topic branch, not `main`.
 - The subject starts with an allowed type: `feat`, `fix`, `docs`, `refactor`,
   `perf`, `test`, `build`, `ci`, or `chore`.
-- Any scope is lowercase and single-token: `type(scope): ...`.
+- A scope is required, lowercase, and single-token: `type(scope): ...`.
 - The description starts with a real imperative verb, is lowercase, has no
   trailing period, and keeps the whole subject at 72 characters or less.
 - The description does not contain parenthesized asides; use `scope` instead.
@@ -86,6 +86,10 @@ Before every commit, PR, or squash-merge title, verify all of the following:
   when they are in the touched workflow or block the hook.
 - The PR title is exactly the subject you would want to see on `main` after the
   squash merge.
+
+These rules are executable, not advisory: `.githooks/pre-commit` checks the
+topic branch, `.githooks/commit-msg` checks the commit message, and CI checks
+pull request titles plus post-merge commit subjects on `main`.
 
 When a local commit accidentally lands on `main`, move it to a topic branch
 before pushing:
