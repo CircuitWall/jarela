@@ -24,7 +24,8 @@ GRN  := \033[32m
 RST  := \033[0m
 
 .PHONY: help install dev build start lint test test-full icons clean \
-        install-task uninstall-task start-task stop-task restart-task \
+	install-service uninstall-service start-service stop-service restart-service \
+	install-task uninstall-task start-task stop-task restart-task \
         logs status push
 
 help:
@@ -39,11 +40,12 @@ help:
 	@printf "  $(YEL)test-full$(RST)       Extended live test suite\n"
 	@printf "  $(YEL)icons$(RST)           Regenerate the logo / icon set\n"
 	@printf "  $(YEL)clean$(RST)           Remove .next, build artefacts, node_modules cache\n"
-	@printf "  $(YEL)install-task$(RST)    Install per-user LaunchAgent (auto-start at login)\n"
-	@printf "  $(YEL)uninstall-task$(RST)  Remove the LaunchAgent + installed files\n"
-	@printf "  $(YEL)start-task$(RST)      launchctl kickstart $(LABEL)\n"
-	@printf "  $(YEL)stop-task$(RST)       launchctl kill TERM gui/<uid>/$(LABEL)\n"
-	@printf "  $(YEL)restart-task$(RST)    Stop then start the LaunchAgent\n"
+	@printf "  $(YEL)install-service$(RST) Install per-user LaunchAgent (auto-start at login)\n"
+	@printf "  $(YEL)uninstall-service$(RST) Remove the LaunchAgent + installed files\n"
+	@printf "  $(YEL)start-service$(RST)   launchctl kickstart $(LABEL)\n"
+	@printf "  $(YEL)stop-service$(RST)    launchctl kill TERM gui/<uid>/$(LABEL)\n"
+	@printf "  $(YEL)restart-service$(RST) Stop then start the LaunchAgent\n"
+	@printf "  $(YEL)*-task$(RST)          Back-compat aliases for the service targets\n"
 	@printf "  $(YEL)logs$(RST)            Tail the installed-task log file (Ctrl+C to stop)\n"
 	@printf "  $(YEL)status$(RST)          Show LaunchAgent state + listener on :$(PORT)\n"
 	@printf "  $(YEL)push$(RST)            git push current branch to the jarela remote\n\n"
@@ -82,7 +84,7 @@ clean:
 	  fi; \
 	done
 
-install-task: build
+install-service: build
 	@printf "$(CYAN)==> Installing $(APP_NAME) to $(INSTALL_DIR)$(RST)\n"
 	@if [ -z "$(NODE_BIN)" ]; then \
 	  printf "$(RED)node not found on PATH. Install Node.js first.$(RST)\n"; exit 1; \
@@ -153,10 +155,10 @@ install-task: build
 	@printf "  URL:   http://localhost:$(PORT)\n"
 	@printf "  Data:  $(DATA_DIR)\n"
 	@printf "  Logs:  $(LOG_FILE)\n"
-	@printf "  Stop:  make stop-task\n"
-	@printf "  Off:   make uninstall-task\n"
+	@printf "  Stop:  make stop-service\n"
+	@printf "  Off:   make uninstall-service\n"
 
-uninstall-task:
+uninstall-service:
 	@printf "$(CYAN)==> Removing $(APP_NAME) LaunchAgent$(RST)\n"
 	@launchctl bootout gui/$$(id -u)/$(LABEL) 2>/dev/null || \
 	 launchctl unload "$(PLIST)" 2>/dev/null || true
@@ -167,16 +169,22 @@ uninstall-task:
 	fi
 	@printf "$(GRN)Removed.$(RST) Data dir $(DATA_DIR) preserved.\n"
 
-start-task:
+start-service:
 	@launchctl kickstart -k gui/$$(id -u)/$(LABEL)
 
-stop-task:
+stop-service:
 	@launchctl kill TERM gui/$$(id -u)/$(LABEL) 2>/dev/null || true
 
-restart-task:
-	@$(MAKE) -s stop-task
+restart-service:
+	@$(MAKE) -s stop-service
 	@sleep 1
-	@$(MAKE) -s start-task
+	@$(MAKE) -s start-service
+
+install-task: install-service
+uninstall-task: uninstall-service
+start-task: start-service
+stop-task: stop-service
+restart-task: restart-service
 
 logs:
 	@if [ ! -f "$(LOG_FILE)" ]; then \
