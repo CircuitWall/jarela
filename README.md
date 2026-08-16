@@ -55,11 +55,7 @@
 </p>
 
 <p align="center">
-  <video src="https://raw.githubusercontent.com/CircuitWall/jarela/main/docs/assets/jarela-promo.mp4" poster="https://raw.githubusercontent.com/CircuitWall/jarela/main/docs/assets/jarela-promo-poster.jpg" autoplay loop muted playsinline controls width="320">
-    <img src="./docs/assets/jarela-promo-poster.jpg" alt="Jarela promo &mdash; PIN unlock, agent picker, chat, panel tour" width="320" />
-  </video>
-  <br/>
-  <sub><i>Tap-to-unlock &rarr; agent picker &rarr; human-paced chat &rarr; full panel tour</i> &middot; <a href="./docs/assets/jarela-promo.mp4">Download .mp4</a></sub>
+  <strong>Local AI assistant UI - agents, multi-provider LLM, single-process, SQLite-backed.</strong>
 </p>
 
 ---
