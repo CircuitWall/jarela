@@ -69,7 +69,9 @@ async function clearCachesAndReload() {
   }
   // Force a hard navigation that bypasses both the precache and HTTP cache.
   const sep = window.location.search ? "&" : "?";
-  window.location.href = `${window.location.pathname}${window.location.search}${sep}_=${Date.now()}${window.location.hash}`;
+  const nextUrl = `${window.location.pathname}${window.location.search}${sep}_=${Date.now()}${window.location.hash}`;
+  window.history.replaceState(null, "", nextUrl);
+  window.location.reload();
 }
 
 export function UpdateAvailableBanner() {

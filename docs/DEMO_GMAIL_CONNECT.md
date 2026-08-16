@@ -34,8 +34,8 @@ if (Test-Path $dataDir) {
 ```
 
 Recording setup:
-- **Resolution**: 1920x1080 (16:9) for desktop; or use `npm run promo:record`
-  for a 540x960 9:16 vertical clip.
+- **Resolution**: 1920x1080 (16:9) for desktop for a full-screen desktop clip,
+  or 540x960 9:16 for a vertical mobile clip.
 - **Terminal font**: 18pt minimum (Cascadia Code, Consolas).
 - **Browser**: separate Chrome profile with no extensions, devtools
   closed, theme matching Jarela (dark).
@@ -133,35 +133,16 @@ areas in post).
 
 ## Recording tools
 
-### Manual capture (recommended for OAuth scenes)
+### Manual capture (recommended for all scenes)
 
 Google's consent screen blocks Playwright/headless flows, so the OAuth
-hop must be hand-recorded. Tools:
+hop must be hand-recorded. All scenes are best captured manually. Tools:
 
 - **OBS Studio** (free, cross-platform): Scene Collection with
   separate sources for terminal and browser, hotkey-switchable.
 - **Xbox Game Bar** (Win+G, Windows built-in): one-click record,
   saves to `Videos\Captures`.
 - **ScreenToGif** (Win): great for short embedded clips.
-
-### Scripted capture (Scenes 1–3 + 5–7 only)
-
-The existing `scripts/promo-record.mjs` drives Jarela in a 9:16
-viewport with Playwright. It does **not** handle the Google OAuth
-hop. Run it for the non-OAuth scenes:
-
-```powershell
-$env:JARELA_PROMO_URL = "http://127.0.0.1:4312"
-$env:JARELA_PROMO_MSG = "Summarize my 5 most recent unread emails."
-npm run promo:record
-```
-
-Output: `promo/jarela-promo-<timestamp>.webm`.
-
-### Hybrid
-
-Record Scenes 1–3 with `promo:record`, Scenes 4 with manual capture,
-splice in post (DaVinci Resolve free / Clipchamp).
 
 ---
 

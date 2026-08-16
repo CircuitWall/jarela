@@ -69,6 +69,33 @@ type(scope)[!]: description
 Squash merge means the PR title becomes the merge commit subject — so the **PR
 title MUST follow the same rules**.
 
+### Pre-commit / PR-title checklist
+
+Before every commit, PR, or squash-merge title, verify all of the following:
+
+- The branch is a topic branch, not `main`.
+- The subject starts with an allowed type: `feat`, `fix`, `docs`, `refactor`,
+  `perf`, `test`, `build`, `ci`, or `chore`.
+- Any scope is lowercase and single-token: `type(scope): ...`.
+- The description starts with a real imperative verb, is lowercase, has no
+  trailing period, and keeps the whole subject at 72 characters or less.
+- The description does not contain parenthesized asides; use `scope` instead.
+- Any breaking change uses both `!` in the subject and a `BREAKING CHANGE:`
+  footer with operator migration notes.
+- `npm run lint` is clean. Do not carry lint warnings forward as "pre-existing"
+  when they are in the touched workflow or block the hook.
+- The PR title is exactly the subject you would want to see on `main` after the
+  squash merge.
+
+When a local commit accidentally lands on `main`, move it to a topic branch
+before pushing:
+
+```bash
+git switch -c <type>/<slug>
+git branch --force main origin/main
+git push -u origin <type>/<slug>
+```
+
 ## Pull-request process
 
 1. **Branch off `main`** with a topic-typed branch name.
