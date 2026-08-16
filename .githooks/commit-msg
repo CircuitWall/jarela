@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Commit-message gate: enforce the Conventional Commit subject rules in
+# CONTRIBUTING.md before a bad title can reach a PR or squash merge.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+node scripts/check-git-conventions.mjs --message-file "$1"
