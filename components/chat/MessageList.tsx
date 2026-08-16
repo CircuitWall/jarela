@@ -46,6 +46,7 @@ interface Props {
   warmSummaryComputedAt?: string | null;
   warmSummarySourceMessages?: number | null;
   warmSummarySourceChars?: number | null;
+  warmSummaryPending?: boolean;
   onSetContextPin?: (hot_since: string | null) => void;
   streaming?: boolean;
   // Thread-level context window cap, forwarded to each MessageBubble so
@@ -57,7 +58,7 @@ interface Props {
   onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -802,6 +803,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
             && visibleMessages[visibleMessages.length - 1].created_at < effectiveHotSince)
           || (!effectiveHotSince && interactiveBoundary);
         const hasSummaryBoundary = !!effectiveHotSince && (
+          warmSummaryPending ||
           !!warmSummary ||
           warmSummaryBefore === effectiveHotSince ||
           !!warmSummaryComputedAt ||
@@ -822,6 +824,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               sourceChars={warmSummarySourceChars ?? null}
               summaryChars={warmSummary ? warmSummary.length : null}
               lineStats={lineStatsForHotSince(effectiveHotSince)}
+              updating={warmSummaryPending && warmSummaryBefore !== effectiveHotSince}
               draggable={!!onSetContextPin}
               hidden={isDraggingFocus}
               disabled={!!streaming}

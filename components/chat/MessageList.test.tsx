@@ -227,6 +227,33 @@ describe("MessageList conversation focus", () => {
     expect(screen.queryByLabelText("conversation focus boundary")).toBeNull();
   });
 
+  it("renders a breathing boundary while a confirmed focus move refreshes summary", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
+    ];
+    const { container } = render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+        hotSince="2026-08-09T10:00:01.000Z"
+        warmSummary="Old cached summary"
+        warmSummaryBefore="2026-08-09T10:00:00.000Z"
+        warmSummaryPending={true}
+      />,
+    );
+
+    const boundary = container.querySelector("[data-focus-boundary='1']");
+    const line = boundary?.querySelector(".animate-pulse");
+    const messageNodes = Array.from(container.querySelectorAll("[data-hot-candidate='1']"));
+
+    expect(boundary).toBeTruthy();
+    expect(line).toBeTruthy();
+    expect(boundary!.compareDocumentPosition(messageNodes[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("recent 1 · warm 1")).toBeTruthy();
+  });
+
   it("renders the boundary when hot_since has matching summary state", () => {
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),

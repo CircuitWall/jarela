@@ -26,6 +26,7 @@ export interface ThreadDataApi {
   warmSummaryComputedAt: string | null;
   warmSummarySourceMessages: number | null;
   warmSummarySourceChars: number | null;
+  warmSummaryPending: boolean;
   contextWindowTokens: number | null;
   metaApplier: ThreadMetaApplier;
   loadOlder: () => Promise<void>;
@@ -44,6 +45,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [warmSummaryComputedAt, setWarmSummaryComputedAt] = useState<string | null>(null);
   const [warmSummarySourceMessages, setWarmSummarySourceMessages] = useState<number | null>(null);
   const [warmSummarySourceChars, setWarmSummarySourceChars] = useState<number | null>(null);
+  const [warmSummaryPending, setWarmSummaryPending] = useState(false);
   const [contextWindowTokens, setContextWindowTokens] = useState<number | null>(null);
 
   const messagesRef = useRef<Message[]>([]);
@@ -71,6 +73,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummaryComputedAt(null);
       setWarmSummarySourceMessages(null);
       setWarmSummarySourceChars(null);
+      setWarmSummaryPending(false);
       setContextWindowTokens(null);
       return;
     }
@@ -84,6 +87,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setWarmSummaryComputedAt(null);
     setWarmSummarySourceMessages(null);
     setWarmSummarySourceChars(null);
+    setWarmSummaryPending(false);
     setContextWindowTokens(null);
     api.threads.get(threadId).then((d) => {
       if (cancelled) return;
@@ -110,6 +114,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const setContextPin = useCallback(async (next: string | null) => {
     if (!threadId) return;
     setHotSince(next);
+    setWarmSummaryPending(!!next);
     try {
       const updated = await api.threads.setContextPin(threadId, next);
       setHotSince(updated.hot_since);
@@ -118,10 +123,39 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummaryComputedAt(updated.warm_summary_computed_at);
       setWarmSummarySourceMessages(updated.warm_summary_source_messages);
       setWarmSummarySourceChars(updated.warm_summary_source_chars);
+      if (!updated.hot_since || updated.warm_summary_before === updated.hot_since) {
+        setWarmSummaryPending(false);
+      }
     } catch (err) {
+      setWarmSummaryPending(false);
       console.error("setContextPin failed", err);
     }
   }, [threadId]);
+
+  useEffect(() => {
+    if (!threadId || !warmSummaryPending || !hotSince) return;
+    if (warmSummaryBefore === hotSince) {
+      setWarmSummaryPending(false);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void api.threads.get(threadId).then((d) => {
+        if (cancelled) return;
+        applyThreadMeta(metaApplier, d);
+        if (!d.hot_since || d.warm_summary_before === d.hot_since) {
+          setWarmSummaryPending(false);
+        }
+      }).catch((err) => {
+        if (!cancelled) console.error("warm summary refresh poll failed", err);
+      });
+    }, 1600);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId, warmSummaryPending, hotSince, warmSummaryBefore]);
 
   const loadOlder = useCallback(async () => {
     if (!threadId || loadingMore || !hasMore || messages.length === 0) return;
@@ -145,7 +179,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     messages, setMessages, messagesRef, notices, setNotices, addNotice,
     hasMore, setHasMore, loadingMore, messagesLoading,
     hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt,
-    warmSummarySourceMessages, warmSummarySourceChars, contextWindowTokens,
+    warmSummarySourceMessages, warmSummarySourceChars, warmSummaryPending, contextWindowTokens,
     metaApplier, loadOlder, setContextPin,
   };
 }
