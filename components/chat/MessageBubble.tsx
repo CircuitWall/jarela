@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { AlertTriangle, Bot, Check, Clock, Copy, Eye, EyeOff, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Bot, Check, Clock, Copy, Eye, EyeOff, ExternalLink, FileText, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, Message, RouteDecisionMetadata, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -550,6 +550,127 @@ const MD_REHYPE_PLUGINS: import("unified").PluggableList = [
   [rehypeSanitize, sanitizeSchema],
 ];
 
+function isLikelyLocalFileHref(href: string): boolean {
+  if (!href || href.startsWith("#")) return false;
+  if (/^(mailto|tel|javascript|data|blob):/i.test(href)) return false;
+  if (/^file:\/\//i.test(href)) return true;
+  if (/^[A-Za-z]:[\\/]/.test(href) || href.startsWith("~/") || href.startsWith("~\\")) return true;
+  if (/^https?:\/\//i.test(href)) {
+    try {
+      const url = new URL(href);
+      if (!["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname)) return false;
+      return !/^\/(api|_next)(\/|$)/.test(url.pathname);
+    } catch {
+      return false;
+    }
+  }
+  if (href.startsWith("/")) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return false;
+  return /(^\.\.?[\\/]|[\\/]|\.[A-Za-z0-9]{1,12}(?:[?#]|$))/.test(href);
+}
+
+interface LocalFilePreview {
+  path: string;
+  name: string;
+  size: number;
+  renderable: boolean;
+  snippet?: string;
+  truncated?: boolean;
+  error?: string;
+}
+
+function LocalFileLink({ href, threadId, children, className, title }: { href: string; threadId?: string | null; children: ReactNode; className?: string; title?: string }) {
+  const [preview, setPreview] = useState<LocalFilePreview | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  const openDefault = useCallback(async () => {
+    setOpenError(null);
+    const res = await fetch("/api/v1/local-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ href, thread_id: threadId ?? undefined }),
+    });
+    const body = await res.json().catch(() => ({} as { error?: string }));
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+    pushToast({
+      kind: "success",
+      source: "system",
+      sourceLabel: "Chat",
+      title: "Opening file",
+      body: "Sent the file to the operating system default app.",
+      agent_id: null,
+      thread_id: threadId ?? null,
+      ttl: 1800,
+    });
+  }, [href, threadId]);
+
+  const activate = useCallback(async () => {
+    setLoading(true);
+    setOpenError(null);
+    try {
+      const params = new URLSearchParams({ href });
+      if (threadId) params.set("thread_id", threadId);
+      const res = await fetch(`/api/v1/local-file?${params.toString()}`);
+      const body = await res.json().catch(() => ({} as LocalFilePreview));
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      const info = body as LocalFilePreview;
+      setPreview(info);
+      if (!info.renderable) await openDefault();
+    } catch (err) {
+      const msg = errorMessage(err);
+      setOpenError(msg);
+      pushToast({
+        kind: "error",
+        source: "system",
+        sourceLabel: "Chat",
+        title: "Could not open file",
+        body: msg,
+        agent_id: null,
+        thread_id: threadId ?? null,
+        ttl: 5000,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [href, openDefault, threadId]);
+
+  return (
+    <span className="inline-flex flex-col max-w-full align-baseline">
+      <button
+        type="button"
+        className={`${className ?? ""} inline-flex items-baseline gap-1 text-left underline decoration-dotted hover:decoration-solid break-all`.trim()}
+        title={title ?? href}
+        onClick={activate}
+        disabled={loading}
+      >
+        <FileText size={12} className="relative top-0.5 shrink-0" />
+        <span>{children}</span>
+        {loading && <Loader2 size={11} className="relative top-0.5 shrink-0 animate-spin" />}
+      </button>
+      {preview?.renderable && typeof preview.snippet === "string" && (
+        <span className="not-prose my-2 block rounded-md border border-border/60 bg-surface-2 overflow-hidden">
+          <span className="flex items-center justify-between gap-2 px-2 py-1 text-[10px] text-fg-faint bg-surface-3">
+            <span className="truncate" title={preview.path}>{preview.path}</span>
+            <button
+              type="button"
+              onClick={openDefault}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border/60 bg-surface-2 text-fg-muted hover:text-fg shrink-0"
+            >
+              <ExternalLink size={10} />
+              Open
+            </button>
+          </span>
+          <code className="block max-h-72 overflow-auto whitespace-pre-wrap break-words px-3 py-2 text-xs leading-relaxed text-fg-muted bg-[#0d1117]">
+            {preview.snippet}{preview.truncated ? "\n..." : ""}
+          </code>
+        </span>
+      )}
+      {openError && <span className="text-[11px] text-rose-400 mt-1">{openError}</span>}
+    </span>
+  );
+}
+
 function reactChildrenToText(children: ReactNode): string {
   if (children == null || typeof children === "boolean") return "";
   if (typeof children === "string" || typeof children === "number") return String(children);
@@ -976,7 +1097,7 @@ function MapEmbed({ payload }: { payload: string }) {
 // against unchanged text on every parent render shows up as jank on long
 // threads. With memo, only the in-flight bubble re-renders during streaming;
 // persisted siblings sit idle.
-const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest, inflightToolCount = 0 }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }>; inflightToolCount?: number }) {
+const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInAppLink, unverifiedLinks, sourceManifest, inflightToolCount = 0, threadId }: { text: string; streaming?: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }>; inflightToolCount?: number; threadId?: string | null }) {
   // Inline-citation pre-processor. The agent writes `[3]` markers in-prose;
   // we resolve each to a markdown link `[3](href)` BEFORE react-markdown
   // parses the string so the existing <a> renderer below picks it up with
@@ -1018,9 +1139,17 @@ const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInApp
             if (href && /^\/api\/v1\/files\/[^?#]+\.(wav|mp3|ogg|webm|m4a)(\?|#|$)/i.test(href)) {
               return <InlineAudio href={href} />;
             }
-            const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash || (!!parsed.thread && !!parsed.agent));
             const unverifiedCls = isUnverified ? "decoration-warn decoration-wavy underline-offset-2" : "";
             const unverifiedTitle = isUnverified ? "Agent did not visit this source in this conversation — the citation may be invented." : undefined;
+            if (href && isLikelyLocalFileHref(href)) {
+              return (
+                <LocalFileLink href={href} threadId={threadId} title={unverifiedTitle ?? rest.title} className={`${rest.className ?? ""} ${unverifiedCls}`.trim()}>
+                  {children}
+                  {isUnverified && <sup className="text-warn ml-0.5" aria-label="unverified citation">⚠</sup>}
+                </LocalFileLink>
+              );
+            }
+            const inApp = !!parsed && !parsed.external && (!!parsed.tab || !!parsed.hash || (!!parsed.thread && !!parsed.agent));
             // Citation-marker rendering: superscript chip with a tooltip
             // showing the source label so the user can preview what the
             // marker points to without clicking. The href is still active
@@ -1407,9 +1536,9 @@ function CodeFence({ language, className, children }: { language: string; classN
   );
 }
 
-function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceManifest }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }> }) {
+function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceManifest, threadId }: { part: ContentPart; isUser: boolean; onInAppLink?: (href: string) => void; unverifiedLinks?: ReadonlySet<string>; sourceManifest?: ReadonlyMap<number, { href: string; label: string }>; threadId?: string | null }) {
   if (part.type === "text") {
-    return <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />;
+    return <MarkdownContent text={part.text} onInAppLink={onInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} threadId={threadId} />;
   }
   if (part.type === "image") {
     return <ClickableImage src={`data:${part.media_type};base64,${part.data}`} />;
@@ -1885,7 +2014,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                 if (ctx) return <CapturedContextCard ctx={ctx} accent={true} />;
                 return (
                   <CollapsibleLong accent={true}>
-                    <MarkdownContent text={parsed} onInAppLink={handleInAppLink} />
+                    <MarkdownContent text={parsed} onInAppLink={handleInAppLink} threadId={threadId} />
                   </CollapsibleLong>
                 );
               })()
@@ -1893,7 +2022,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
               <div className="flex flex-col">
                 {category && <CategorySourceBadge category={category} />}
                 <CollapsibleLong accent={false} streaming={streaming} defaultOpen={isLatest}>
-                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} inflightToolCount={inflightToolCount} />
+                  <MarkdownContent text={renderedString ?? parsed} streaming={streaming} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} inflightToolCount={inflightToolCount} threadId={threadId} />
                 </CollapsibleLong>
               </div>
             )
@@ -1914,13 +2043,13 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                     <>
                       <BridgeMessageCard ctx={bridge} />
                       {parsed.slice(1).map((part, i) => (
-                        <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} />
+                        <ContentPartView key={i + 1} part={part} isUser={isUser} onInAppLink={handleInAppLink} threadId={threadId} />
                       ))}
                     </>
                   );
                 }
                 return parsed.map((part, i) => (
-                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} />
+                  <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} threadId={threadId} />
                 ));
               })()}
               {streaming && (

@@ -1,9 +1,21 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { AppProvider } from "@/contexts/AppContext";
 import { MessageBubble } from "./MessageBubble";
 import type { Message } from "@/api/types";
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    disconnect() {}
+  });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("MessageBubble image attachments", () => {
   it("renders sent images at viewport-sized bubble width while preserving original pixel bounds", () => {
@@ -32,5 +44,42 @@ describe("MessageBubble image attachments", () => {
       node = node.parentElement;
     }
     expect(node).toBeTruthy();
+  });
+});
+
+describe("MessageBubble local file links", () => {
+  it("renders a local markdown link as an inline snippet instead of a localhost anchor", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        path: "C:\\repo\\README.md",
+        name: "README.md",
+        size: 12,
+        renderable: true,
+        snippet: "# Jarela",
+        truncated: false,
+      }),
+    } as Response);
+    const message: Message = {
+      id: "local-link-1",
+      role: "assistant",
+      content: "Open [README](README.md)",
+      created_at: "2026-08-16T12:00:00.000Z",
+      status: "confirmed",
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} showAvatar={false} threadId="thread-1" />
+      </AppProvider>,
+    );
+
+    const linkButton = screen.getByRole("button", { name: /README/i });
+    expect(screen.queryByRole("link", { name: /README/i })).toBeNull();
+
+    fireEvent.click(linkButton);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/local-file?href=README.md&thread_id=thread-1");
+    expect(await screen.findByText("# Jarela")).toBeTruthy();
   });
 });
