@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.27.3] - 2026-08-16
+
+### Fixed
+
+- **Conversation focus boundaries now reflect real summary state.** Automatic
+  internal hot/warm context splits no longer render an empty focus line in chat;
+  the divider appears only for user-pinned or summarized context.
+- **Moved focus boundaries show background refresh progress.** After a user
+  drags and confirms the focus line, Jarela renders it at the chosen location
+  immediately and gives it a slow pulse until the warm summary refresh finishes.
+- **Local file links in chat no longer become localhost links.** Markdown links
+  to local files now preview renderable text files inline and open other files
+  with the operating system default app.
+
+### Changed
+
+- **Source checkout service targets match the packaged CLI.** `make` and
+  `make.ps1` now expose `install-service`, `uninstall-service`, `start-service`,
+  `stop-service`, and `restart-service`, while preserving the old `*-task`
+  aliases.
+
 ## [1.27.2] - 2026-08-15
 
 ### Fixed
