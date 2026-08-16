@@ -18,7 +18,7 @@
 # and the task still runs as the current user (the SQLite DB at
 # %USERPROFILE%\.jarela stays owned by the right account).
 #   powershell -ExecutionPolicy Bypass -File scripts\install-to-system.ps1 -Boot
-# Also reachable via: make install-task -Boot
+# Also reachable via: make install-service -Boot
 #
 # Note: if you've set an encryption PIN (lib/crypto/pin-wrap.ts) the server
 # will boot but stay locked until you visit the UI and enter it. With no PIN,
