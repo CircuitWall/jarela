@@ -72,6 +72,8 @@ describe("MessageList conversation focus", () => {
         messages={messages}
         onSetContextPin={onSetContextPin}
         hotSince="2026-08-09T10:00:00.000Z"
+        warmSummary="Short cached summary"
+        warmSummaryBefore="2026-08-09T10:00:00.000Z"
       />,
     );
 
@@ -108,6 +110,8 @@ describe("MessageList conversation focus", () => {
         messages={messages}
         onSetContextPin={onSetContextPin}
         hotSince="2026-08-09T10:00:01.000Z"
+        warmSummary="Short cached summary"
+        warmSummaryBefore="2026-08-09T10:00:01.000Z"
       />,
     );
 
@@ -201,5 +205,48 @@ describe("MessageList conversation focus", () => {
 
     expect(screen.queryByRole("button", { name: /drag to move conversation focus/i })).toBeNull();
     expect(screen.queryByLabelText("conversation focus boundary")).toBeNull();
+  });
+
+  it("does not render a boundary for a bare automatic hot_since without summary state", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
+    ];
+    render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+        hotSince="2026-08-09T10:00:02.000Z"
+        warmSummary={null}
+        warmSummaryBefore={null}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /drag to move conversation focus/i })).toBeNull();
+    expect(screen.queryByLabelText("conversation focus boundary")).toBeNull();
+  });
+
+  it("renders the boundary when hot_since has matching summary state", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
+    ];
+    const { container } = render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+        hotSince="2026-08-09T10:00:02.000Z"
+        warmSummary="Short cached summary"
+        warmSummaryBefore="2026-08-09T10:00:02.000Z"
+      />,
+    );
+
+    const boundary = container.querySelector("[data-focus-boundary='1']");
+    const messageNodes = Array.from(container.querySelectorAll("[data-hot-candidate='1']"));
+    expect(boundary).toBeTruthy();
+    expect(messageNodes[1].compareDocumentPosition(boundary!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("recent 0 · warm 2")).toBeTruthy();
   });
 });
