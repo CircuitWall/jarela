@@ -975,10 +975,18 @@ export async function submitRun(
   attachments?: ContentPart[],
   hot_since?: string | null,
 ): Promise<SubmitResult> {
+  const payload: {
+    message: string;
+    stream_options?: StreamOptions;
+    attachments?: ContentPart[];
+    hot_since?: string | null;
+  } = { message, stream_options, attachments };
+  if (hot_since !== undefined) payload.hot_since = hot_since;
+
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, stream_options, attachments, hot_since }),
+    body: JSON.stringify(payload),
     signal,
   });
   // 2xx = accepted (currently always 202); 409 = already running. We treat
