@@ -86,6 +86,8 @@ describe("categorizeByVerb", () => {
       "memory_delete",
       "set_env_var",
       "update_agent_instruction",
+      "update_scheduled_task",
+      "update_watcher",
     ];
     for (const name of cases) {
       it(`${name} → write`, () => {
