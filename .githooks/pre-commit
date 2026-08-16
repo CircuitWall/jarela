@@ -12,6 +12,9 @@ if git diff --cached --quiet; then
   exit 0
 fi
 
+echo "[pre-commit] git conventions"
+node scripts/check-git-conventions.mjs --branch
+
 echo "[pre-commit] lint"
 npm run -s lint
 

@@ -11,6 +11,25 @@ This guide focuses on developer experience for UI/state work.
 - Test hooks only: `npm run test:hooks`
 - Watch hook tests: `npm run test:hooks:watch`
 
+## Git and PR conventions
+
+[CONTRIBUTING.md](../CONTRIBUTING.md) is the source of truth. Do not drift
+from it when creating commits, branches, or PRs.
+
+- Work on a topic branch, never local `main`.
+- Use Conventional Commits v1.0.0 with required scope: `type(scope)[!]: description`.
+- Allowed types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`,
+  `ci`, `chore`.
+- Keep the full subject at 72 characters or less.
+- Start the description with a real lowercase imperative verb, with no trailing
+  period and no parenthesized asides.
+- PR titles must follow the same format because squash merge turns the PR title
+  into the commit on `main`.
+- Do not carry lint warnings forward; fix warnings in touched workflows before
+  committing.
+- Local hooks enforce branch and commit-message format. CI enforces pull request
+  titles and post-merge commit subjects.
+
 ## Hook API conventions
 
 - Prefer the unified contract in [docs/ui-hook-api.md](./ui-hook-api.md):

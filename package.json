@@ -98,6 +98,7 @@
     "security:link-preview": "node scripts/check-link-preview-version.mjs",
     "security:routes": "node scripts/check-route-bundles.mjs",
     "security:ci": "npm run security:audit && npm run security:secrets && npm run security:link-preview",
+    "check:conventions": "node scripts/check-git-conventions.mjs --branch",
     "pricing:snapshot": "node scripts/snapshot-pricing.mjs",
     "prepublishOnly": "node scripts/rewrite-workspace-deps.mjs",
     "test:package": "node scripts/check-npm-package.mjs",
