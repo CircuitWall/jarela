@@ -6,6 +6,7 @@ import {
   createScheduledTask,
   listScheduledTasks,
   deleteScheduledTask,
+  updateScheduledTask,
   computeNextRun,
 } from "@/lib/stores/scheduled-tasks";
 import { getThread } from "@/lib/stores/threads";
@@ -174,10 +175,64 @@ export const cancelScheduledTaskTool = tool(
   },
 );
 
+export const updateScheduledTaskTool = tool(
+  async ({ id, prompt, description, kind, schedule, enabled, silent, reaction_kind, reaction_script, reaction_script_args }) => {
+    try {
+      const row = updateScheduledTask(id, {
+        prompt,
+        description,
+        kind,
+        schedule,
+        enabled,
+        silent,
+        reaction_kind,
+        reaction_script,
+        reaction_script_args,
+      });
+      if (!row) return JSON.stringify({ error: `Task ${id} not found` });
+      startScheduler();
+      return JSON.stringify({
+        ok: true,
+        id: row.id,
+        prompt: row.prompt,
+        description: row.description,
+        kind: row.kind,
+        schedule: row.schedule,
+        next_run_at: row.next_run_at,
+        enabled: row.enabled === 1,
+        silent: row.silent === 1,
+        reaction_kind: row.reaction_kind,
+        reaction_script: row.reaction_script,
+        reaction_script_args: row.reaction_script_args ? safeJson(row.reaction_script_args) : null,
+      });
+    } catch (err) {
+      return JSON.stringify({ error: errorMessage(err) });
+    }
+  },
+  {
+    name: "update_scheduled_task",
+    description:
+      "Patch an existing scheduled task by id. Supports editing prompt, description, schedule, silent, reaction fields, and enabled. " +
+      "Use enabled=false to pause a task and enabled=true to resume it. Only supplied fields are changed.",
+    schema: z.object({
+      id: z.string().describe("Task id returned by schedule_task or list_scheduled_tasks."),
+      prompt: z.string().min(1).optional().describe("Replacement prompt. Required if switching reaction_kind to agent_prompt and the task had no prompt."),
+      description: z.string().nullable().optional().describe("Short human label; null clears it."),
+      kind: z.enum(["once", "cron"]).optional().describe("Schedule kind. If changed, also provide a matching schedule."),
+      schedule: z.string().min(1).optional().describe("ISO timestamp for once, or 5-field cron for cron."),
+      enabled: z.boolean().optional().describe("false pauses the task; true resumes it."),
+      silent: z.boolean().optional().describe("Whether to suppress routine notifications / allow NO_REPLY drops."),
+      reaction_kind: z.enum(["agent_prompt", "script"]).optional().describe("Switch reaction mode. If script, provide reaction_script."),
+      reaction_script: z.string().nullable().optional().describe("Reaction script name for reaction_kind=script; null only valid when switching away from script."),
+      reaction_script_args: z.record(z.string(), z.unknown()).nullable().optional().describe("JSON object args for the reaction script; null clears."),
+    }),
+  },
+);
+
 registerLangChainPackage({
   category: "Schedule",
   tools: {
     read: [listScheduledTasksTool],
-    write: [scheduleTaskTool, cancelScheduledTaskTool],
+    write: [scheduleTaskTool, updateScheduledTaskTool, cancelScheduledTaskTool],
   },
 });

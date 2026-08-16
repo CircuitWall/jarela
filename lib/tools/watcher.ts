@@ -11,6 +11,7 @@ import {
   createWatcher,
   listWatchers,
   deleteWatcher,
+  updateWatcher,
 } from "@/lib/stores/watchers";
 import { getThread } from "@/lib/stores/threads";
 import { listAgentConfigs } from "@/lib/stores/agent-configs";
@@ -227,6 +228,57 @@ export const cancelWatcherTool = tool(
   },
 );
 
+export const updateWatcherTool = tool(
+  async ({ id, label, interval_seconds, enabled, silent, reaction_prompt, reaction_kind, reaction_script, reaction_script_args }) => {
+    try {
+      const row = updateWatcher(id, {
+        label,
+        interval_seconds,
+        enabled,
+        silent,
+        reaction_prompt,
+        reaction_kind,
+        reaction_script,
+        reaction_script_args,
+      });
+      if (!row) return JSON.stringify({ error: `Watcher ${id} not found` });
+      startScheduler();
+      return JSON.stringify({
+        ok: true,
+        id: row.id,
+        label: row.label,
+        interval_seconds: row.interval_seconds,
+        next_run_at: row.next_run_at,
+        enabled: row.enabled === 1,
+        silent: row.silent === 1,
+        reaction_kind: row.reaction_kind,
+        reaction_prompt: row.reaction_prompt,
+        reaction_script: row.reaction_script,
+        reaction_script_args: row.reaction_script_args ? safeParse(row.reaction_script_args) : null,
+      });
+    } catch (err) {
+      return JSON.stringify({ error: errorMessage(err) });
+    }
+  },
+  {
+    name: "update_watcher",
+    description:
+      "Patch an existing watcher by id. Supports label, interval, silent, reaction fields, and enabled. " +
+      "Use enabled=false to pause a watcher and enabled=true to resume it. Tool name and args are intentionally immutable; cancel and recreate to change what is polled.",
+    schema: z.object({
+      id: z.string().describe("Watcher id returned by schedule_watcher or list_watchers."),
+      label: z.string().min(1).optional().describe("Replacement human-readable label."),
+      interval_seconds: z.number().int().min(60).optional().describe("Polling interval in seconds; minimum 60."),
+      enabled: z.boolean().optional().describe("false pauses the watcher; true resumes it."),
+      silent: z.boolean().optional().describe("Whether to suppress routine notifications / allow NO_REPLY drops."),
+      reaction_prompt: z.string().max(4000).nullable().optional().describe("Directive for agent_prompt reaction mode; null clears to default."),
+      reaction_kind: z.enum(["agent_prompt", "script"]).optional().describe("Switch reaction mode. If script, provide reaction_script."),
+      reaction_script: z.string().nullable().optional().describe("Reaction script name for reaction_kind=script; null only valid when switching away from script."),
+      reaction_script_args: z.record(z.string(), z.unknown()).nullable().optional().describe("JSON object args for the reaction script; null clears."),
+    }),
+  },
+);
+
 function safeParse(s: string): unknown {
   try { return JSON.parse(s); } catch { return s; }
 }
@@ -235,6 +287,6 @@ registerLangChainPackage({
   category: "Schedule",
   tools: {
     read: [listWatchersTool, listReactionScriptsTool],
-    write: [scheduleWatcherTool, cancelWatcherTool],
+    write: [scheduleWatcherTool, updateWatcherTool, cancelWatcherTool],
   },
 });
