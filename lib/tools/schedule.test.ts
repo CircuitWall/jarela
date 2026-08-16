@@ -11,12 +11,15 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { listScheduledTasksTool } = await import("./schedule");
+const { listScheduledTasksTool, updateScheduledTaskTool } = await import("./schedule");
 const {
   createScheduledTask,
   listScheduledTasks,
   deleteScheduledTask,
+  getScheduledTask,
 } = await import("@/lib/stores/scheduled-tasks");
+const { scheduleWatcherTool, updateWatcherTool } = await import("./watcher");
+const { deleteWatcher, getWatcher, listWatchers } = await import("@/lib/stores/watchers");
 const { createThread } = await import("@/lib/stores/threads");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 
@@ -35,6 +38,7 @@ function parse(s: unknown) {
 describe("list_scheduled_tasks tool (cross-agent visibility)", () => {
   beforeEach(() => {
     for (const t of listScheduledTasks()) deleteScheduledTask(t.id);
+    for (const w of listWatchers()) deleteWatcher(w.id);
   });
 
   it("returns tasks owned by other agents and tags them with agent_id / agent_name / owned_by_caller=false", async () => {
@@ -108,5 +112,92 @@ describe("list_scheduled_tasks tool (cross-agent visibility)", () => {
     expect(out.count).toBe(1);
     expect(out.tasks[0].agent_name).toBe("Orphan");
     expect(out.tasks[0].owned_by_caller).toBe(false);
+  });
+
+  it("updates and pauses an existing scheduled task", async () => {
+    upsertAgentConfig({
+      id: "default-agent",
+      name: "Default",
+      identity: "d",
+      instructions: "",
+      tools: [],
+      model_config_name: null,
+      is_default: true,
+    });
+    const row = createScheduledTask({
+      agent_id: "default-agent",
+      prompt: "old prompt",
+      kind: "cron",
+      schedule: "0 9 * * *",
+    });
+
+    const out = JSON.parse(String(await updateScheduledTaskTool.invoke({
+      id: row.id,
+      prompt: "new prompt",
+      description: "daily check",
+      enabled: false,
+      silent: true,
+    }, {}))) as { ok: boolean; id: string; enabled: boolean; silent: boolean; prompt: string; description: string };
+
+    expect(out).toMatchObject({
+      ok: true,
+      id: row.id,
+      enabled: false,
+      silent: true,
+      prompt: "new prompt",
+      description: "daily check",
+    });
+    expect(getScheduledTask(row.id)).toMatchObject({
+      prompt: "new prompt",
+      description: "daily check",
+      enabled: 0,
+      silent: 1,
+    });
+  });
+
+  it("updates and pauses an existing watcher", async () => {
+    upsertAgentConfig({
+      id: "default-agent",
+      name: "Default",
+      identity: "d",
+      instructions: "",
+      tools: [],
+      model_config_name: null,
+      is_default: true,
+    });
+    const thread = createThread("default-agent");
+    const created = JSON.parse(String(await scheduleWatcherTool.invoke({
+      label: "downloads",
+      tool: "list_tools",
+      args: {},
+      every_seconds: 120,
+      silent: false,
+    }, { configurable: { thread_id: thread.thread_id } }))) as { id: string };
+
+    const out = JSON.parse(String(await updateWatcherTool.invoke({
+      id: created.id,
+      label: "paused downloads",
+      interval_seconds: 300,
+      enabled: false,
+      silent: true,
+      reaction_prompt: "Only notify if there is a material change.",
+    }, {}))) as { ok: boolean; id: string; label: string; enabled: boolean; silent: boolean; interval_seconds: number; reaction_prompt: string };
+
+    expect(out).toMatchObject({
+      ok: true,
+      id: created.id,
+      label: "paused downloads",
+      enabled: false,
+      silent: true,
+      interval_seconds: 300,
+      reaction_prompt: "Only notify if there is a material change.",
+    });
+    expect(getWatcher(created.id)).toMatchObject({
+      label: "paused downloads",
+      enabled: 0,
+      silent: 1,
+      interval_seconds: 300,
+      reaction_prompt: "Only notify if there is a material change.",
+    });
   });
 });
