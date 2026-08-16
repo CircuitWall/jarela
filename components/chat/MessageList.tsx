@@ -1,5 +1,5 @@
 "use client";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Brain, ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
@@ -222,11 +222,33 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     return target.getBoundingClientRect().top - regionTop;
   }
 
-  function updateBoundaryMask() {
+  const updateBoundaryMask = useCallback(() => {
     const mask = dragMaskRef.current;
     if (!mask) return;
-    const topStart = firstMessageTopForMask();
-    const boundaryTop = boundaryLineTopForMask();
+    const root = scrollRef.current;
+    const region = maskRegionRef.current;
+    if (!root || !region) return;
+    const first = root.querySelector<HTMLElement>("[data-hot-candidate='1']");
+    const topStart = first ? first.getBoundingClientRect().top - region.getBoundingClientRect().top : null;
+    const boundary = root.querySelector<HTMLElement>("[data-focus-boundary='1'] [aria-label='conversation focus boundary']");
+    let boundaryTop: number | null = null;
+    if (boundary) {
+      const rect = boundary.getBoundingClientRect();
+      boundaryTop = rect.top + (rect.height / 2) - region.getBoundingClientRect().top;
+    } else {
+      const candidates = Array.from(root.querySelectorAll<HTMLElement>("[data-hot-candidate='1']"));
+      if (candidates.length > 0 && visibleMessages.length > 0) {
+        const regionTop = region.getBoundingClientRect().top;
+        const effective = hotSince ?? null;
+        const targetIndex = effective ? visibleMessages.findIndex((m) => m.created_at >= effective) : -1;
+        if (!effective || targetIndex === -1) {
+          boundaryTop = candidates[candidates.length - 1].getBoundingClientRect().bottom - regionTop;
+        } else {
+          const target = candidates[targetIndex];
+          boundaryTop = target ? target.getBoundingClientRect().top - regionTop : null;
+        }
+      }
+    }
     if (topStart === null || boundaryTop === null) {
       mask.style.opacity = "0";
       mask.style.height = "0px";
@@ -244,7 +266,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     mask.style.transform = `translateY(${top}px)`;
     mask.style.height = `${height}px`;
     mask.style.opacity = "1";
-  }
+  }, [hotSince, visibleMessages]);
 
   function clearDragState() {
     if (dragFrameRef.current !== null) {
@@ -473,7 +495,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
   useEffect(() => {
     requestAnimationFrame(() => updateBoundaryMask());
-  }, [isDraggingFocus, hotSince, visibleMessages]);
+  }, [isDraggingFocus, updateBoundaryMask]);
 
   // Self-heal stale/accidental filter states that blank an entire thread.
   // If a thread has persisted messages but every one is filtered out, users
@@ -571,7 +593,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [updateBoundaryMask]);
 
   // Restore scroll position after older messages have been prepended.
   // useLayoutEffect runs synchronously after DOM mutations but before paint,

@@ -115,7 +115,6 @@
     "test:live:isolated:full": "node scripts/live-test-isolated.mjs --llm",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "promo:record": "node scripts/promo-record.mjs",
     "release:docker": "node scripts/release-docker.mjs",
     "release:docker:dry": "node scripts/release-docker.mjs --dry-run"
   },
