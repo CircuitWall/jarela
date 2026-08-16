@@ -793,9 +793,6 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         // the visible list; everything before it is older-than-pin and gets
         // covered by the warm summary card sitting above the divider.
         //
-        // If `hotSince` sits strictly after every loaded message (the
-        // post-/compact "/new" state), every visible message is warm and
-        // the boundary is rendered AFTER the last bubble.
         const boundaryIndex = effectiveHotSince
           ? visibleMessages.findIndex((m) => m.created_at >= effectiveHotSince)
           : -1;
@@ -804,7 +801,14 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           (!!effectiveHotSince && visibleMessages.length > 0 && boundaryIndex === -1
             && visibleMessages[visibleMessages.length - 1].created_at < effectiveHotSince)
           || (!effectiveHotSince && interactiveBoundary);
-        const hasBoundary = (effectiveHotSince ? (boundaryIndex !== -1 || pinAfterAll) : interactiveBoundary);
+        const hasSummaryBoundary = !!effectiveHotSince && (
+          !!warmSummary ||
+          warmSummaryBefore === effectiveHotSince ||
+          !!warmSummaryComputedAt ||
+          typeof warmSummarySourceMessages === "number" ||
+          typeof warmSummarySourceChars === "number"
+        );
+        const hasBoundary = hasSummaryBoundary && (boundaryIndex !== -1 || pinAfterAll);
         const olderInVisible = pinAfterAll
           ? visibleMessages.length
           : hasBoundary ? boundaryIndex : 0;
@@ -860,7 +864,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           );
           return out;
         });
-        if (pinAfterAll) nodes.push(renderBoundary("boundary-tail"));
+        if (hasBoundary && pinAfterAll) nodes.push(renderBoundary("boundary-tail"));
         return nodes;
       })()}
       <LiveTurnActivity

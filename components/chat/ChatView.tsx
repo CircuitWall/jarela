@@ -110,7 +110,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       text,
       { filters: { include_tools: true, include_thinking: true }, ui_experience_mode: state.experienceMode },
       atts.length ? atts : undefined,
-      thread.hotSince,
+      thread.hotSince ?? undefined,
     );
     if (!accepted) {
       // Server rejected because another run was in flight (second tab,
@@ -135,8 +135,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       if (result.compacted) {
         // Server moved the hot/warm pin to just after the last existing
         // message and persisted the warm summary. Mirror that in-place so
-        // the boundary divider drops to the bottom of the chat and the
-        // warm card shows the fresh summary — without wiping the visible
+        // the warm card shows the fresh summary without wiping the visible
         // transcript. The user can still scroll up to read prior turns;
         // older history past JARELA_MAX_THREAD_MESSAGES has been pruned
         // server-side but its content lives on inside the warm summary.
