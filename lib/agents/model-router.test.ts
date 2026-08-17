@@ -108,6 +108,33 @@ describe("routeTurnModel", () => {
     expect(result.modelConfigName).toBe("haiku");
   });
 
+  it("excludes embedding/reranking/moderation models from the candidate pool", () => {
+    const result = routeTurnModel({
+      models: [
+        model("embedder", "openai", "text-embedding-3-small"),
+        model("reranker", "cohere", "rerank-english-v3.0"),
+        model("mini", "openai", "gpt-4o-mini"),
+      ],
+      message: "Write a short friendly reply",
+      allowedTools: ["memory_read"],
+      policy: "balanced",
+      rateResolver,
+    });
+    expect(result.modelConfigName).toBe("mini");
+    expect(result.candidates).toEqual(["mini"]);
+  });
+
+  it("reports no viable model when only non-generative configs are saved", () => {
+    const result = routeTurnModel({
+      models: [model("embedder", "openai", "text-embedding-3-small")],
+      message: "Write a short friendly reply",
+      policy: "balanced",
+      rateResolver,
+    });
+    expect(result.modelConfigName).toBeNull();
+    expect(result.candidates).toEqual([]);
+  });
+
   it("penalizes the last failed model when rerouting", () => {
     const result = routeTurnModel({
       models: [
