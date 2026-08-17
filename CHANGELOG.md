@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.27.4] - 2026-08-17
+
+### Fixed
+
+- **Auto-routing no longer picks embedding/reranking/moderation models for a chat turn.** The model router used a model's detected type only as a soft ranking hint, so a `ModelConfig` saved for embeddings/RAG could occasionally win a turn's routing decision and get called with a normal completion request, which the provider rejects. Non-generative model types are now excluded from the routing candidate pool entirely, including the fallback path used when no candidate matches the turn's vision/tool/file requirements.
+
 ## [1.27.3] - 2026-08-16
 
 ### Fixed
