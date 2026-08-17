@@ -12,6 +12,7 @@
 //      github-copilot.ts).
 
 import { getMemory, putMemory, deleteMemory } from "@/lib/stores/memory";
+import { readErrorBody } from "@/lib/utils/error";
 
 // Public client ID used by the official VS Code GitHub Copilot extension.
 // Same value is hard-coded into many open-source Copilot clients.
@@ -47,7 +48,7 @@ export async function startDeviceFlow(): Promise<DeviceCodeResponse> {
     signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => res.statusText);
+    const body = await readErrorBody(res);
     throw new Error(`GitHub device code request failed (${res.status}): ${body}`);
   }
   const json = await res.json() as DeviceCodeResponse;

@@ -8,6 +8,7 @@ import type {
   InvokeResult,
 } from "./types";
 import { getStoredOAuthToken } from "./github-copilot-auth";
+import { readErrorBody } from "@/lib/utils/error";
 import { openaiTokenLimitParams, parseOpenAIInvokeChoice, streamOpenAIEvents, toOpenAIMessages } from "./openai";
 import {
   buildAnthropicMessageBody,
@@ -73,7 +74,7 @@ async function getCopilotToken(pat: string): Promise<string> {
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => res.statusText);
+    const body = await readErrorBody(res);
     if (res.status === 401) {
       throw new Error(
         `GitHub Copilot: token exchange failed (401). ` +
