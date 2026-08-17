@@ -6,6 +6,7 @@ import {
   getKnownContextLength,
   getKnownMaxOutputTokens,
 } from "@/lib/providers/known-context-windows";
+import { readErrorBody } from "@/lib/utils/error";
 
 export interface CatalogModel {
   id: string;
@@ -217,7 +218,7 @@ async function fetchCopilotChatCatalog(sessionToken: string): Promise<CatalogMod
     },
   });
   if (!res.ok) {
-    const body = await res.text().catch(() => res.statusText);
+    const body = await readErrorBody(res);
     throw new Error(`GitHub Copilot catalog error: ${res.status} ${body}`);
   }
   const data = await res.json() as { data: Array<{ id: string; capabilities?: { supports?: { tool_calls?: boolean; streaming?: boolean; vision?: boolean } } }> };
@@ -252,7 +253,7 @@ async function exchangeCopilotSessionToken(pat: string): Promise<string> {
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => res.statusText);
+    const body = await readErrorBody(res);
     throw new Error(`GitHub Copilot token exchange failed: ${res.status} ${body}`);
   }
 
