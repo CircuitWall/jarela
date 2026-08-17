@@ -59,15 +59,23 @@ const FAST_MODEL_RE = /\b(mini|nano|haiku|flash)\b/i;
 const SLOW_MODEL_RE = /\b(opus|sonnet|max|pro|o1|o3|reasoner|gpt-5)\b/i;
 const FILEY_TYPES = new Set(["file", "image_ref", "image"]);
 const RESEARCH_TOOLS = new Set(["web_search", "fetch_webpage", "documents", "file_read", "memory_read"]);
+// These model types don't accept chat/completion requests at all (e.g. an
+// embeddings endpoint rejects a normal turn), so they must never enter the
+// routing pool — not even as a last-resort fallback when no other candidate
+// matches the turn's requirements.
+const NON_GENERATIVE_FUNCTIONALITY = new Set(["embeddings", "reranking", "moderation"]);
 
 export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelResult {
   const routeClass = classifyTurn(options.message, options.attachments, options.allowedTools);
-  if (options.models.length === 0) {
-    return { modelConfigName: null, routeClass, reason: "no saved model configs available", candidates: [] };
+  const routable = options.models.filter(
+    (model) => !NON_GENERATIVE_FUNCTIONALITY.has(detectModelFunctionality(model.model_id)),
+  );
+  if (routable.length === 0) {
+    return { modelConfigName: null, routeClass, reason: "no chat-capable model configs available", candidates: [] };
   }
 
-  const filtered = filterCandidates(options.models, routeClass, options.attachments, options.allowedTools);
-  const candidates = filtered.length > 0 ? filtered : [...options.models];
+  const filtered = filterCandidates(routable, routeClass, options.attachments, options.allowedTools);
+  const candidates = filtered.length > 0 ? filtered : routable;
   const scored = candidates
     .map((model) => ({
       model,
