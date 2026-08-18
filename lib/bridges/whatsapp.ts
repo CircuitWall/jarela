@@ -29,6 +29,7 @@ import {
   bumpRouteLastSeenTs,
   ensureBridgeAuthDir,
   findRoute,
+  getBridge,
   getMaxRouteLastSeenTs,
   removeBridgeAuthDir,
 } from "@/lib/stores/bridges";
@@ -636,6 +637,11 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     text: string,
     actorJid: string | null,
   ): Promise<void> {
+    const bridge = getBridge(this.bridge_id);
+    if (!bridge) return;
+    if (event.type === "group_profile_update" && bridge.forward_group_profile_updates !== 1) return;
+    if (event.type === "group_participants_update" && bridge.forward_group_participants_updates !== 1) return;
+
     const handler = this.inboundHandler;
     if (!handler) return;
     const senderJid = actorJid ?? remote_jid;

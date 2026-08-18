@@ -61,6 +61,10 @@ export function bridgeToResponse(r: BridgeRow) {
     last_error: r.last_error,
     paired_id: r.paired_id,
     enabled: r.enabled === 1,
+    event_subscriptions: {
+      group_profile_updates: r.forward_group_profile_updates === 1,
+      group_participants_updates: r.forward_group_participants_updates === 1,
+    },
     created_at: r.created_at,
     updated_at: r.updated_at,
   };
