@@ -19,6 +19,8 @@ export interface BridgeRow {
   last_error: string | null;
   paired_id: string | null;
   enabled: number;          // 0 | 1
+  forward_group_profile_updates: number;      // 0 | 1
+  forward_group_participants_updates: number; // 0 | 1
   created_at: string;
   updated_at: string;
 }
@@ -111,8 +113,8 @@ export function createBridge(input: { kind: BridgeKind; name: string }): BridgeR
   const t = now();
   getDb()
     .prepare(
-      `INSERT INTO bridges (id, kind, name, status, qr, last_error, paired_id, enabled, created_at, updated_at)
-       VALUES (?, ?, ?, 'disconnected', NULL, NULL, NULL, 0, ?, ?)`,
+      `INSERT INTO bridges (id, kind, name, status, qr, last_error, paired_id, enabled, forward_group_profile_updates, forward_group_participants_updates, created_at, updated_at)
+       VALUES (?, ?, ?, 'disconnected', NULL, NULL, NULL, 0, 1, 1, ?, ?)`,
     )
     .run(id, input.kind, input.name, t, t);
   return {
@@ -124,6 +126,8 @@ export function createBridge(input: { kind: BridgeKind; name: string }): BridgeR
     last_error: null,
     paired_id: null,
     enabled: 0,
+    forward_group_profile_updates: 1,
+    forward_group_participants_updates: 1,
     created_at: t,
     updated_at: t,
   };
@@ -131,7 +135,7 @@ export function createBridge(input: { kind: BridgeKind; name: string }): BridgeR
 
 export function updateBridge(
   id: string,
-  patch: Partial<Pick<BridgeRow, "name" | "enabled" | "status" | "qr" | "last_error" | "paired_id">>,
+  patch: Partial<Pick<BridgeRow, "name" | "enabled" | "status" | "qr" | "last_error" | "paired_id" | "forward_group_profile_updates" | "forward_group_participants_updates">>,
 ): BridgeRow | null {
   const existing = getBridge(id);
   if (!existing) return null;
@@ -143,15 +147,34 @@ export function updateBridge(
     qr: patch.qr !== undefined ? patch.qr : existing.qr,
     last_error: patch.last_error !== undefined ? patch.last_error : existing.last_error,
     paired_id: patch.paired_id !== undefined ? patch.paired_id : existing.paired_id,
+    forward_group_profile_updates:
+      patch.forward_group_profile_updates !== undefined
+        ? patch.forward_group_profile_updates
+        : existing.forward_group_profile_updates,
+    forward_group_participants_updates:
+      patch.forward_group_participants_updates !== undefined
+        ? patch.forward_group_participants_updates
+        : existing.forward_group_participants_updates,
     updated_at: now(),
   };
   getDb()
     .prepare(
       `UPDATE bridges
-       SET name=?, enabled=?, status=?, qr=?, last_error=?, paired_id=?, updated_at=?
+       SET name=?, enabled=?, status=?, qr=?, last_error=?, paired_id=?, forward_group_profile_updates=?, forward_group_participants_updates=?, updated_at=?
        WHERE id=?`,
     )
-    .run(merged.name, merged.enabled, merged.status, merged.qr, merged.last_error, merged.paired_id, merged.updated_at, id);
+    .run(
+      merged.name,
+      merged.enabled,
+      merged.status,
+      merged.qr,
+      merged.last_error,
+      merged.paired_id,
+      merged.forward_group_profile_updates,
+      merged.forward_group_participants_updates,
+      merged.updated_at,
+      id,
+    );
   return merged;
 }
 

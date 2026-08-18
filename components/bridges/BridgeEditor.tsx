@@ -22,17 +22,19 @@ import { errorMessage } from "@/lib/utils/error";
  * cases inbound text is enqueued into that agent's existing thread.
  */
 export function BridgeEditor({
-  bridge, onBack, onRename, onToggleEnabled,
+  bridge, onBack, onRename, onToggleEnabled, onPatch,
 }: {
   bridge: Bridge;
   onBack: () => void;
   onRename: (name: string) => Promise<unknown>;
   onToggleEnabled: () => Promise<unknown> | unknown;
+  onPatch: (patch: import("@/api/types").BridgePatch) => Promise<unknown>;
 }) {
   const [name, setName] = useState(bridge.name);
   const [savingName, setSavingName] = useState(false);
   const [live, setLive] = useState<BridgeLiveStatus | null>(null);
   const [repairing, setRepairing] = useState(false);
+  const [savingSubscriptions, setSavingSubscriptions] = useState<null | "group_profile_updates" | "group_participants_updates">(null);
 
   // Poll live status while pairing so the QR shows up quickly, then slow
   // down once we're stable.
@@ -76,6 +78,22 @@ export function BridgeEditor({
       });
     } finally {
       setRepairing(false);
+    }
+  }
+
+  async function toggleEventSubscription(
+    key: "group_profile_updates" | "group_participants_updates",
+    next: boolean,
+  ) {
+    setSavingSubscriptions(key);
+    try {
+      await onPatch({
+        event_subscriptions: {
+          [key]: next,
+        },
+      });
+    } finally {
+      setSavingSubscriptions(null);
     }
   }
 
@@ -142,6 +160,47 @@ export function BridgeEditor({
               Re-pair
             </button>
           </div>
+        </section>
+
+        <section className="rounded-lg border border-border bg-surface-2 p-3 space-y-2">
+          <header className="flex items-center gap-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-fg-subtle">Event forwarding</h3>
+          </header>
+          <p className="text-[11px] text-fg-faint leading-relaxed">
+            Choose which WhatsApp group update types are forwarded to agents. Event payloads use the same
+            unified bridge message envelope as chat messages, with explicit event metadata so agents can
+            distinguish system updates from participant text.
+          </p>
+          <label className="flex items-start gap-2 cursor-pointer select-none px-0.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-border"
+              checked={bridge.event_subscriptions.group_profile_updates}
+              disabled={savingSubscriptions !== null}
+              onChange={(e) => void toggleEventSubscription("group_profile_updates", e.target.checked)}
+            />
+            <span className="text-[11px] text-fg-subtle leading-snug">
+              <span className="text-fg-muted font-medium">Group profile/settings updates</span>
+              <span className="block text-[10px] text-fg-faint">
+                Subject, description, announce/restrict mode, and disappearing-message timer changes.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer select-none px-0.5">
+            <input
+              type="checkbox"
+              className="mt-0.5 rounded border-border"
+              checked={bridge.event_subscriptions.group_participants_updates}
+              disabled={savingSubscriptions !== null}
+              onChange={(e) => void toggleEventSubscription("group_participants_updates", e.target.checked)}
+            />
+            <span className="text-[11px] text-fg-subtle leading-snug">
+              <span className="text-fg-muted font-medium">Group participant updates</span>
+              <span className="block text-[10px] text-fg-faint">
+                Member add/remove and admin promote/demote changes.
+              </span>
+            </span>
+          </label>
         </section>
 
         <RouteTable bridge_id={bridge.id} />

@@ -94,6 +94,8 @@ describe("bridgeToResponse", () => {
     last_error: null,
     paired_id: "55123",
     enabled: 1,
+    forward_group_profile_updates: 1,
+    forward_group_participants_updates: 1,
     created_at: "2026-05-21T00:00:00Z",
     updated_at: "2026-05-21T00:00:00Z",
   } as unknown as BridgeRow;
@@ -112,6 +114,18 @@ describe("bridgeToResponse", () => {
     expect(out.kind).toBe("whatsapp");
     expect(out.status).toBe("connected");
     expect(out.paired_id).toBe("55123");
+  });
+
+  it("maps event forwarding flags into event_subscriptions", () => {
+    const out = bridgeToResponse({
+      ...row,
+      forward_group_profile_updates: 1,
+      forward_group_participants_updates: 0,
+    } as BridgeRow);
+    expect(out.event_subscriptions).toEqual({
+      group_profile_updates: true,
+      group_participants_updates: false,
+    });
   });
 });
 
