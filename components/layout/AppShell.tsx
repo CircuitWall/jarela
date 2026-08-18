@@ -78,7 +78,7 @@ export function AppShell() {
   const unreadCount = useUnreadCount();
 
   // Shared agent list for boot picker, menu, and notification titles.
-  const { agents, loading: agentsLoading } = useAgents();
+  const { agents, loading: agentsLoading, refresh: refreshAgents } = useAgents();
   const agentsLoaded = !agentsLoading;
   const agentsRef = useRef<AgentConfig[]>([]);
   agentsRef.current = agents;
@@ -203,6 +203,7 @@ export function AppShell() {
   // sees the matching 423 response.
   const [screenLocked, setScreenLocked] = useState(false);
   const [masterKeyLocked, setMasterKeyLocked] = useState(false);
+  const [postUnlockPreferredAgentId, setPostUnlockPreferredAgentId] = useState<string | null | undefined>(undefined);
   // Bumped after each unlock so BootScreen remounts with fresh state
   // (its `done` / `pickedId` / `prefetchStartedRef` would otherwise
   // suppress the picker on the second appearance). Both unlock paths
@@ -253,14 +254,36 @@ export function AppShell() {
     };
   }, []);
 
+  // After unlocking, the app may have temporarily lost in-memory list state
+  // due to 423 responses. Rehydrate a usable active agent automatically so
+  // mobile PWA users are not stranded on a "no agent configured" state.
+  useEffect(() => {
+    if (postUnlockPreferredAgentId === undefined) return;
+    if (!agentsLoaded) return;
+
+    const preferred = postUnlockPreferredAgentId
+      ? agents.find((a) => a.id === postUnlockPreferredAgentId) ?? null
+      : null;
+    const fallback = agents.find((a) => a.is_default) ?? agents[0] ?? null;
+    const nextAgent = preferred ?? fallback;
+
+    if (nextAgent && state.activeAgentId !== nextAgent.id) {
+      dispatch({ type: "SET_AGENT", agentId: nextAgent.id });
+    }
+    setPostUnlockPreferredAgentId(undefined);
+  }, [agents, agentsLoaded, dispatch, postUnlockPreferredAgentId, state.activeAgentId]);
+
   // Shared post-unlock landing: clear the current chat and force the
   // BootScreen to remount so the user lands on the agent picker. Used
   // by BOTH the screen-unlock and the master-key decrypt paths so the
   // two transitions feel identical from the user's side.
   const landOnAgentPicker = useCallback(() => {
+    const preferredAgentId = stateRef.current.activeAgentId;
     dispatch({ type: "NEW_CHAT" });
     setBootSeq((n) => n + 1);
-  }, [dispatch]);
+    setPostUnlockPreferredAgentId(preferredAgentId ?? null);
+    void refreshAgents();
+  }, [dispatch, refreshAgents]);
 
   return (
     // `dvh` natively tracks the visible viewport on iOS 16.4+ / modern
