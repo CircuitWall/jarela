@@ -110,6 +110,16 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   private recvIds: string[] = [];
   private recvIdsSet = new Set<string>();
   private static readonly RECV_IDS_MAX = 2000;
+  // Synthetic event replay guard. WhatsApp/Baileys can emit a burst of
+  // group metadata / participant updates right after reconnect. Suppress
+  // those during a short warm-up window, then dedupe exact repeats for a
+  // bounded TTL so reconnect churn doesn't pollute agent context.
+  private syntheticEventSeen = new Map<string, number>();
+  private syntheticEventOrder: string[] = [];
+  private suppressSyntheticUntilTs = 0;
+  private static readonly SYNTHETIC_DEDUPE_TTL_MS = 6 * 60 * 60 * 1000;
+  private static readonly SYNTHETIC_DEDUPE_MAX = 4000;
+  private static readonly SYNTHETIC_BOOT_SUPPRESS_MS = 20_000;
   /**
    * Cap on per-attachment payload size we'll forward to the LLM. WhatsApp
    * compresses images to a few hundred KB; voice notes / short videos
@@ -225,6 +235,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           this.selfJid = selfJid;
           if (selfJid) this.observeChat(selfJid, "Yourself", null);
         }
+        // Reconnect/startup replay noise guard. Ignore synthetic group
+        // events for a short window immediately after connection opens.
+        this.suppressSyntheticUntilTs = Date.now() + WhatsAppBridgeAdapter.SYNTHETIC_BOOT_SUPPRESS_MS;
         // Kick off a background fetch of group metadata so the picker has
         // names for joined groups even before any message arrives. Personal
         // chats trickle in via messaging-history.set + chats.upsert.
@@ -560,6 +573,9 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     this.sentIdsSet.clear();
     this.recvIds = [];
     this.recvIdsSet.clear();
+    this.syntheticEventSeen.clear();
+    this.syntheticEventOrder = [];
+    this.suppressSyntheticUntilTs = 0;
     if (!sock) return;
     try {
       // logout() also wipes server-side auth — we just want to close the
@@ -642,6 +658,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     if (event.type === "group_profile_update" && bridge.forward_group_profile_updates !== 1) return;
     if (event.type === "group_participants_update" && bridge.forward_group_participants_updates !== 1) return;
 
+    if (this.shouldSuppressSyntheticEvent(remote_jid, event, text, actorJid)) return;
+
     const handler = this.inboundHandler;
     if (!handler) return;
     const senderJid = actorJid ?? remote_jid;
@@ -663,6 +681,56 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       await handler(inbound);
     } catch (err) {
       console.error(`[bridge ${this.bridge_id}] synthetic inbound handler threw:`, err);
+    }
+  }
+
+  private shouldSuppressSyntheticEvent(
+    remote_jid: string,
+    event: InboundEvent,
+    text: string,
+    actorJid: string | null,
+  ): boolean {
+    const nowTs = Date.now();
+    const normalizedText = text.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 512);
+    const key = [
+      remote_jid,
+      event.type,
+      event.subtype,
+      actorJid ?? "",
+      normalizedText,
+    ].join("|");
+
+    const seenAt = this.syntheticEventSeen.get(key);
+    if (typeof seenAt === "number" && (nowTs - seenAt) < WhatsAppBridgeAdapter.SYNTHETIC_DEDUPE_TTL_MS) {
+      return true;
+    }
+
+    this.syntheticEventSeen.set(key, nowTs);
+    this.syntheticEventOrder.push(key);
+    this.pruneSyntheticEventCache(nowTs);
+
+    // During the immediate post-connect sync burst, record signatures but
+    // suppress delivery so stale replay does not reach the agent.
+    if (nowTs < this.suppressSyntheticUntilTs) {
+      return true;
+    }
+    return false;
+  }
+
+  private pruneSyntheticEventCache(nowTs: number): void {
+    const ttl = WhatsAppBridgeAdapter.SYNTHETIC_DEDUPE_TTL_MS;
+    while (this.syntheticEventOrder.length > 0) {
+      const key = this.syntheticEventOrder[0];
+      const seenAt = this.syntheticEventSeen.get(key);
+      if (typeof seenAt !== "number") {
+        this.syntheticEventOrder.shift();
+        continue;
+      }
+      const tooOld = (nowTs - seenAt) >= ttl;
+      const tooMany = this.syntheticEventOrder.length > WhatsAppBridgeAdapter.SYNTHETIC_DEDUPE_MAX;
+      if (!tooOld && !tooMany) break;
+      this.syntheticEventOrder.shift();
+      this.syntheticEventSeen.delete(key);
     }
   }
 
