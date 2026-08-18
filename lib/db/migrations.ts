@@ -169,6 +169,8 @@ export function runMigrations(db: DatabaseSync): void {
       last_error  TEXT,
       paired_id   TEXT,                                -- the remote-account identifier (e.g. WhatsApp phone JID) once paired
       enabled     INTEGER NOT NULL DEFAULT 0,
+      forward_group_profile_updates      INTEGER NOT NULL DEFAULT 1,
+      forward_group_participants_updates INTEGER NOT NULL DEFAULT 1,
       created_at  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
     );
@@ -322,6 +324,7 @@ export function runMigrations(db: DatabaseSync): void {
       updated_at  TEXT NOT NULL
     );
   `);
+  ensureBridgeEventSubscriptionColumns(db);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);
@@ -353,6 +356,17 @@ export function runMigrations(db: DatabaseSync): void {
   migrateICloudPackageIds(db);
   ensureAgentRouterColumns(db);
   spillLegacyImageAttachments(db);
+}
+
+function ensureBridgeEventSubscriptionColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(bridges)").all() as Array<{ name: string }>;
+  const names = new Set(cols.map((c) => c.name));
+  if (!names.has("forward_group_profile_updates")) {
+    db.exec("ALTER TABLE bridges ADD COLUMN forward_group_profile_updates INTEGER NOT NULL DEFAULT 1");
+  }
+  if (!names.has("forward_group_participants_updates")) {
+    db.exec("ALTER TABLE bridges ADD COLUMN forward_group_participants_updates INTEGER NOT NULL DEFAULT 1");
+  }
 }
 
 // iCloud used to register as a single default package (id: "icloud") under

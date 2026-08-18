@@ -17,6 +17,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
 const PatchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   enabled: z.boolean().optional(),
+  event_subscriptions: z
+    .object({
+      group_profile_updates: z.boolean().optional(),
+      group_participants_updates: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -30,6 +36,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   const patch: Parameters<typeof updateBridge>[1] = {};
   if (parsed.name !== undefined) patch.name = parsed.name;
   if (parsed.enabled !== undefined) patch.enabled = parsed.enabled ? 1 : 0;
+  if (parsed.event_subscriptions?.group_profile_updates !== undefined) {
+    patch.forward_group_profile_updates = parsed.event_subscriptions.group_profile_updates ? 1 : 0;
+  }
+  if (parsed.event_subscriptions?.group_participants_updates !== undefined) {
+    patch.forward_group_participants_updates = parsed.event_subscriptions.group_participants_updates ? 1 : 0;
+  }
   const updated = updateBridge(id, patch);
   if (!updated) return errorResponse("update failed", 500);
 

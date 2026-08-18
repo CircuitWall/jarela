@@ -63,6 +63,7 @@ export function BridgesPanel() {
         onBack={() => { setSelectedId(null); void refresh(); }}
         onRename={(name) => update(b.id, { name })}
         onToggleEnabled={() => onToggleEnabled(b)}
+        onPatch={(patch) => update(b.id, patch)}
       />
     );
   }

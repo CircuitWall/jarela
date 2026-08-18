@@ -1059,6 +1059,10 @@ export interface Bridge {
   last_error: string | null;
   paired_id: string | null;
   enabled: boolean;
+  event_subscriptions: {
+    group_profile_updates: boolean;
+    group_participants_updates: boolean;
+  };
   created_at: string;
   updated_at: string;
 }
@@ -1071,6 +1075,10 @@ export interface BridgeIn {
 export interface BridgePatch {
   name?: string;
   enabled?: boolean;
+  event_subscriptions?: {
+    group_profile_updates?: boolean;
+    group_participants_updates?: boolean;
+  };
 }
 
 export interface BridgeLiveStatus {
