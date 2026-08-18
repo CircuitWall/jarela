@@ -146,7 +146,16 @@ function cachedList<T>(
     return Promise.resolve(cloneRows(cache.data));
   }
   if (!force && cache.inflight) return cache.inflight;
-  const req = fetchFn().then((rows) => setCache(rows, false));
+  const req = fetchFn()
+    .then((rows) => setCache(rows, false))
+    .catch((err) => {
+      // Critical: clear failed inflight requests. If we keep a rejected
+      // promise here, every subsequent caller gets the same stale rejection
+      // forever (until hard refresh), which is exactly what happens after a
+      // temporary 423 lock during idle-screen unlock flows.
+      if (cache.inflight === req) cache.inflight = null;
+      throw err;
+    });
   cache.inflight = req;
   return req;
 }
