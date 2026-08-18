@@ -60,6 +60,15 @@ export interface BridgePromptInput {
    * the paired user. See `roleNote` for the exact instructions.
    */
   silent?: boolean;
+  /**
+   * Optional structured event marker for non-chat updates (group metadata,
+   * membership changes, etc.). When present, the agent framing clarifies
+   * this is a system event, not a participant-authored chat line.
+   */
+  event?: {
+    type: "group_profile_update" | "group_participants_update";
+    subtype: string;
+  };
 }
 
 // Parsed chat-friendly envelope extracted from a bridge prompt body.
@@ -97,7 +106,7 @@ export interface BridgePromptContext {
  * convention. Both are stable across adapters.
  */
 export function formatBridgePrompt(input: BridgePromptInput): string {
-  const note = roleNote(input.role, input.is_group, input.silent === true);
+  const note = roleNote(input.role, input.is_group, input.silent === true, input.event);
   const lines = [
     `[bridge:${input.bridge_id}]`,
     `[chat_id:${input.chat_id}]`,
@@ -107,6 +116,10 @@ export function formatBridgePrompt(input: BridgePromptInput): string {
     `[sender_id:${input.sender_id}]`,
     `[sender_name:${input.sender_name}]`,
   ];
+  if (input.event) {
+    lines.push(`[event_type:${input.event.type}]`);
+    lines.push(`[event_subtype:${input.event.subtype}]`);
+  }
   if (input.is_group) {
     lines.push(`[group_name:${input.chat_name}]`);
     lines.push(`[participant_id:${input.sender_id}]`);
@@ -149,7 +162,21 @@ export function parseBridgePrompt(raw: string): BridgePromptContext | null {
   };
 }
 
-function roleNote(role: MessageRole, isGroup: boolean, silent: boolean): string {
+function roleNote(
+  role: MessageRole,
+  isGroup: boolean,
+  silent: boolean,
+  event?: { type: "group_profile_update" | "group_participants_update"; subtype: string },
+): string {
+  if (event) {
+    const evt = event.type === "group_profile_update"
+      ? "group profile/settings update"
+      : "group participant update";
+    return (
+      `The payload below is a ${evt} (${event.subtype}) emitted by the platform, not a normal chat message typed by a participant. `
+      + "Use it as conversation state/context. Do not assume someone is directly addressing you unless your instructions explicitly require replying to system events."
+    );
+  }
   if (silent) {
     // Observer mode overrides the per-role framing: the agent is forbidden
     // from speaking on the chat regardless of who sent the inbound message.

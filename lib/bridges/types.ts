@@ -16,6 +16,16 @@ import type { MessageRole } from "./message-role";
 
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";
 
+export type InboundEventType =
+  | "group_profile_update"
+  | "group_participants_update";
+
+export interface InboundEvent {
+  type: InboundEventType;
+  /** Adapter-supplied subtype, e.g. "subject", "description", "announce", "add", "promote". */
+  subtype: string;
+}
+
 export interface InboundMessage {
   /** The remote chat identifier the adapter speaks (Baileys JID for WhatsApp). */
   remote_jid: string;
@@ -56,6 +66,12 @@ export interface InboundMessage {
    * (Adapter-side echo filtering means "agent" should never appear.)
    */
   role: MessageRole;
+  /**
+   * Optional non-chat event metadata. Present when the adapter forwards a
+   * platform/system update (group subject change, participant promotion, …)
+   * instead of a regular user-authored chat message.
+   */
+  event?: InboundEvent;
 }
 
 export interface StatusUpdate {

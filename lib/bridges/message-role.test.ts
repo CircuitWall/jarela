@@ -42,6 +42,26 @@ describe("bridge prompt envelope", () => {
     expect(parsed?.body).toBe("group message");
   });
 
+  it("marks synthetic group updates as event envelopes", () => {
+    const raw = formatBridgePrompt({
+      bridge_id: "b1",
+      chat_id: "group@jid",
+      chat_name: "Family Group",
+      is_group: true,
+      role: "counterpart",
+      sender_id: "admin@jid",
+      sender_name: "Admin",
+      text: "Admin changed the group subject to \"Weekend Plan\".",
+      event: { type: "group_profile_update", subtype: "subject" },
+    });
+    expect(raw).toContain("[event_type:group_profile_update]");
+    expect(raw).toContain("[event_subtype:subject]");
+    expect(raw).toContain("not a normal chat message");
+    const parsed = parseBridgePrompt(raw);
+    expect(parsed?.chatJid).toBe("group@jid");
+    expect(parsed?.body).toContain("changed the group subject");
+  });
+
   it("parses envelopes with prose preface before bracket headers", () => {
     const raw = [
       "The paired user themselves sent the message below.",
