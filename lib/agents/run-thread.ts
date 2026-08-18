@@ -4,11 +4,12 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
-import { recall, type RecalledMemory } from "@/lib/embeddings";
+import { cosine, embedOne, recall, type RecalledMemory } from "@/lib/embeddings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getDefaultModelConfig, getModelConfig, getModelParams, listModelConfigs } from "@/lib/stores/model-config";
 import {
@@ -30,6 +31,7 @@ import {
   mergeDeclaredReferences,
   type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
+import { parseBridgePrompt } from "@/lib/bridges/message-role";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -47,8 +49,99 @@ const SELF_CONFIG_TOOLS = [
   "restart_server",
 ] as const;
 
+const AUTO_BOUNDARY_IDLE_MS = 3 * 60 * 60 * 1000;
+const AUTO_BOUNDARY_HISTORY_SAMPLES = 10;
+const AUTO_BOUNDARY_MIN_TOKENS = 4;
+const AUTO_BOUNDARY_EMBEDDING_SIMILARITY_THRESHOLD = 0.72;
+const AUTO_BOUNDARY_LEXICAL_OVERLAP_THRESHOLD = 0.22;
+
+const SUBJECT_STOP_WORDS = new Set([
+  "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "of", "to", "in",
+  "on", "at", "by", "for", "with", "about", "as", "what", "which", "who", "whose", "why",
+  "how", "do", "does", "did", "i", "me", "my", "you", "your", "it", "its", "this", "that",
+  "and", "or", "but", "if", "then", "than", "so", "have", "has", "had", "can", "will",
+]);
+
 function withSelfConfigTools(tools: string[]): string[] {
   return Array.from(new Set([...tools, ...SELF_CONFIG_TOOLS]));
+}
+
+function normalizeInboundForSubjectDetection(raw: string): string {
+  const bridge = parseBridgePrompt(raw);
+  const base = bridge?.body ?? raw;
+  return base
+    .split("\n")
+    .filter((line) => !/^\[[a-z_]+:[\s\S]*\]$/i.test(line.trim()))
+    .join("\n")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function subjectTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9_-]+/)
+    .filter((w) => w.length >= 3 && !SUBJECT_STOP_WORDS.has(w));
+}
+
+function lexicalOverlap(queryTokens: readonly string[], text: string): number {
+  if (queryTokens.length === 0) return 0;
+  const haystack = text.toLowerCase();
+  let hits = 0;
+  for (const token of queryTokens) {
+    if (haystack.includes(token)) hits += 1;
+  }
+  return hits / queryTokens.length;
+}
+
+async function isSubjectShift(incoming: string, baseline: string): Promise<boolean> {
+  const incomingTokens = subjectTokens(incoming);
+  const baselineOverlap = lexicalOverlap(incomingTokens, baseline);
+  if (baselineOverlap >= AUTO_BOUNDARY_LEXICAL_OVERLAP_THRESHOLD) return false;
+
+  const [incomingVec, baselineVec] = await Promise.all([embedOne(incoming), embedOne(baseline)]);
+  if (incomingVec && baselineVec && incomingVec.length === baselineVec.length) {
+    return cosine(incomingVec, baselineVec) < AUTO_BOUNDARY_EMBEDDING_SIMILARITY_THRESHOLD;
+  }
+
+  // Fallback when embeddings are unavailable: lexical overlap only.
+  return baselineOverlap < AUTO_BOUNDARY_LEXICAL_OVERLAP_THRESHOLD;
+}
+
+function isAutoBoundaryEligibleCategory(category: string | null | undefined): boolean {
+  return category == null || category === "bridge";
+}
+
+async function maybeAutoContextBoundary(thread_id: string, incomingRaw: string): Promise<string | null> {
+  const page = getMessagesPage(thread_id, AUTO_BOUNDARY_HISTORY_SAMPLES);
+  const nonError = page.messages.filter((m) => m.category !== "run_error");
+  const latest = nonError[nonError.length - 1] ?? null;
+  if (!latest) return null;
+
+  const lastMs = Date.parse(latest.created_at);
+  if (!Number.isFinite(lastMs)) return null;
+  const idleMs = Date.now() - lastMs;
+  if (idleMs < AUTO_BOUNDARY_IDLE_MS) return null;
+
+  const incoming = normalizeInboundForSubjectDetection(incomingRaw);
+  const incomingTokens = subjectTokens(incoming);
+  if (incomingTokens.length < AUTO_BOUNDARY_MIN_TOKENS) return null;
+
+  const baseline = nonError
+    .slice(-AUTO_BOUNDARY_HISTORY_SAMPLES)
+    .map((m) => normalizeInboundForSubjectDetection(transcriptText(m.content)))
+    .filter(Boolean)
+    .join("\n");
+  if (!baseline) return null;
+
+  const shifted = await isSubjectShift(incoming, baseline);
+  if (!shifted) return null;
+
+  const nextBoundary = new Date().toISOString();
+  console.info(
+    `[context-boundary:auto] thread=${thread_id} idle_ms=${idleMs} moved_to=${nextBoundary}`,
+  );
+  return nextBoundary;
 }
 
 export class RunThreadError extends Error {
@@ -233,6 +326,19 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const content: string | ContentPart[] =
     spilledAttachments?.length ? [{ type: "text", text: trimmed }, ...spilledAttachments] : trimmed;
   const stored = typeof content === "string" ? content : JSON.stringify(content);
+
+  let autoHotSince: string | null = null;
+  if (
+    req.hot_since === undefined
+    && !req._skip_persist_message
+    && isAutoBoundaryEligibleCategory(req.user_category)
+  ) {
+    autoHotSince = await maybeAutoContextBoundary(req.thread_id, trimmed);
+    if (autoHotSince) {
+      setThreadContextPin(req.thread_id, autoHotSince);
+    }
+  }
+
   if (!req._skip_persist_message) {
     addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
     touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
@@ -338,7 +444,9 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (req.hot_since !== undefined) {
     setThreadContextPin(req.thread_id, req.hot_since);
   }
-  const effectiveHotSince = req.hot_since !== undefined ? req.hot_since : (thread.hot_since ?? null);
+  const effectiveHotSince = req.hot_since !== undefined
+    ? req.hot_since
+    : (autoHotSince ?? thread.hot_since ?? null);
 
   const historyWindow = await buildHistoryWindow(
     req.thread_id,
