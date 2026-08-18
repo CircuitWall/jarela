@@ -65,6 +65,7 @@ export async function handleInboundMessage(
       sender_name: senderName,
       text: msg.text,
       silent,
+      event: msg.event,
     });
     // Keep typing outside the queue so users still see "thinking" while
     // waiting behind other queued turns for the same thread.

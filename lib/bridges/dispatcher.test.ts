@@ -67,6 +67,7 @@ function makeMessage(): InboundMessage {
     is_group: true,
     participant_jid: "bob@jid",
     role: "counterpart",
+    event: undefined,
   };
 }
 
@@ -135,5 +136,21 @@ describe("handleInboundMessage silent observer mode", () => {
     expect(publishNotificationMock).toHaveBeenCalledTimes(1);
     const payload = publishNotificationMock.mock.calls[0][0] as { preview: string };
     expect(payload.preview).toContain("Important:");
+  });
+
+  it("forwards synthetic event metadata to bridge prompt formatter", async () => {
+    const adapter = makeAdapter();
+    const msg = makeMessage();
+    msg.event = { type: "group_participants_update", subtype: "promote" };
+
+    await handleInboundMessage(adapter, msg);
+
+    const fmtArg = formatBridgePromptMock.mock.calls[0][0] as {
+      event?: { type: string; subtype: string };
+    };
+    expect(fmtArg.event).toEqual({
+      type: "group_participants_update",
+      subtype: "promote",
+    });
   });
 });

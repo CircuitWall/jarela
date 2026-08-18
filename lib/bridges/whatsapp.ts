@@ -16,8 +16,9 @@
  *    echoes are suppressed via sent-message ID tracking. Text, captions, images
  *    (vision), stickers (as webp images), voice notes / audio, video, and
  *    documents are all extracted via `extractContent`; location and contact
- *    payloads are flattened into the text body. Reactions, polls and other
- *    protocol-only messages are silently dropped.
+ *    payloads are flattened into the text body. Group profile/settings and
+ *    participant-change updates are forwarded as structured synthetic events.
+ *    Reactions, polls and other protocol-only messages are still dropped.
  *  - `stop()` closes the WS without wiping auth.
  *  - `resetAuth()` removes the auth dir on disk; the next `start()` will
  *    fall into pairing mode again.
@@ -31,7 +32,7 @@ import {
   getMaxRouteLastSeenTs,
   removeBridgeAuthDir,
 } from "@/lib/stores/bridges";
-import type { BridgeAdapter, ChatInfo, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
+import type { BridgeAdapter, ChatInfo, InboundEvent, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/types";
 import { saveBridgeAttachment, shouldInline } from "./attachment-store";
 import { errorMessage } from "@/lib/utils/error";
@@ -438,6 +439,114 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         this.observeChat(chatJid, ct.name ?? ct.verifiedName ?? ct.notify ?? null, null);
       }
     });
+
+    // Group profile/settings updates (subject/description/permissions/etc.).
+    // These are not user-authored chat lines; we emit them as synthetic
+    // inbound events so the agent can reason about context changes.
+    sock.ev.on("groups.update", async (...args: unknown[]) => {
+      const list = (args[0] ?? []) as Array<{
+        id?: string;
+        author?: string;
+        subject?: string;
+        desc?: string;
+        announce?: boolean;
+        restrict?: boolean;
+        ephemeralDuration?: number;
+      }>;
+      for (const g of list) {
+        if (!g.id || !g.id.endsWith("@g.us")) continue;
+        const groupJid = g.id;
+        if (typeof g.subject === "string" && g.subject.trim().length > 0) {
+          this.observeChat(groupJid, g.subject.trim(), null);
+        }
+
+        const actorJid = normalizeUserJid(g.author ?? "") ?? null;
+        const actor = actorJid ? this.displayNameForJid(actorJid) : "A participant";
+
+        if (typeof g.subject === "string") {
+          const subject = g.subject.trim();
+          const detail = subject ? ` to \"${subject}\"` : "";
+          await this.emitSyntheticEvent(groupJid, {
+            type: "group_profile_update",
+            subtype: "subject",
+          }, `${actor} changed the group subject${detail}.`, actorJid);
+        }
+        if (typeof g.desc === "string") {
+          const summary = truncateOneLine(g.desc.trim(), 180);
+          const suffix = summary ? `: \"${summary}\"` : "";
+          await this.emitSyntheticEvent(groupJid, {
+            type: "group_profile_update",
+            subtype: "description",
+          }, `${actor} updated the group description${suffix}.`, actorJid);
+        }
+        if (typeof g.announce === "boolean") {
+          await this.emitSyntheticEvent(groupJid, {
+            type: "group_profile_update",
+            subtype: "announce",
+          }, g.announce
+            ? `${actor} set the group to admins-only posting.`
+            : `${actor} allowed all members to post messages.`, actorJid);
+        }
+        if (typeof g.restrict === "boolean") {
+          await this.emitSyntheticEvent(groupJid, {
+            type: "group_profile_update",
+            subtype: "restrict",
+          }, g.restrict
+            ? `${actor} restricted group info edits to admins.`
+            : `${actor} allowed all members to edit group info.`, actorJid);
+        }
+        if (typeof g.ephemeralDuration === "number") {
+          const mode = g.ephemeralDuration > 0
+            ? `enabled disappearing messages (${g.ephemeralDuration}s).`
+            : "disabled disappearing messages.";
+          await this.emitSyntheticEvent(groupJid, {
+            type: "group_profile_update",
+            subtype: "ephemeral",
+          }, `${actor} ${mode}`, actorJid);
+        }
+      }
+    });
+
+    // Group membership / role transitions (add/remove/promote/demote).
+    sock.ev.on("group-participants.update", async (...args: unknown[]) => {
+      const u = (args[0] ?? {}) as {
+        id?: string;
+        author?: string;
+        participants?: string[];
+        action?: "add" | "remove" | "promote" | "demote" | string;
+      };
+      if (!u.id || !u.id.endsWith("@g.us")) return;
+      const participants = (u.participants ?? [])
+        .map((id) => normalizeUserJid(id) ?? id)
+        .filter((id) => !!id);
+      if (participants.length === 0) return;
+
+      const actorJid = normalizeUserJid(u.author ?? "") ?? null;
+      const actor = actorJid ? this.displayNameForJid(actorJid) : "A participant";
+      const targets = participants.map((jid) => this.displayNameForJid(jid));
+      const targetText = humanList(targets, 4);
+      const action = u.action ?? "update";
+
+      const sentence = (() => {
+        switch (action) {
+          case "add":
+            return `${actor} added ${targetText} to the group.`;
+          case "remove":
+            return `${actor} removed ${targetText} from the group.`;
+          case "promote":
+            return `${actor} promoted ${targetText} to admin.`;
+          case "demote":
+            return `${actor} demoted ${targetText} from admin.`;
+          default:
+            return `${actor} updated group participants (${action}): ${targetText}.`;
+        }
+      })();
+
+      await this.emitSyntheticEvent(u.id, {
+        type: "group_participants_update",
+        subtype: action,
+      }, sentence, actorJid);
+    });
   }
 
   async stop(): Promise<void> {
@@ -514,6 +623,40 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
     while (this.recvIds.length > WhatsAppBridgeAdapter.RECV_IDS_MAX) {
       const evict = this.recvIds.shift();
       if (evict) this.recvIdsSet.delete(evict);
+    }
+  }
+
+  private displayNameForJid(jid: string): string {
+    return this.chats.get(jid)?.name ?? jid;
+  }
+
+  private async emitSyntheticEvent(
+    remote_jid: string,
+    event: InboundEvent,
+    text: string,
+    actorJid: string | null,
+  ): Promise<void> {
+    const handler = this.inboundHandler;
+    if (!handler) return;
+    const senderJid = actorJid ?? remote_jid;
+    const senderName = actorJid ? this.displayNameForJid(actorJid) : "System";
+    const inbound: InboundMessage = {
+      remote_jid,
+      push_name: null,
+      chat_name: this.chats.get(remote_jid)?.name ?? null,
+      sender_name: senderName,
+      text,
+      attachments: undefined,
+      message_id: null,
+      is_group: remote_jid.endsWith("@g.us"),
+      participant_jid: actorJid,
+      role: "counterpart",
+      event,
+    };
+    try {
+      await handler(inbound);
+    } catch (err) {
+      console.error(`[bridge ${this.bridge_id}] synthetic inbound handler threw:`, err);
     }
   }
 
@@ -994,4 +1137,18 @@ function normalizeUserJid(id: string): string | null {
   // Baileys exposes @c.us as a legacy alias — normalize to @s.whatsapp.net.
   const normHost = host === "c.us" ? "s.whatsapp.net" : host;
   return `${user}@${normHost}`;
+}
+
+function truncateOneLine(text: string, max: number): string {
+  if (!text) return "";
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length <= max ? compact : `${compact.slice(0, max - 3)}...`;
+}
+
+function humanList(items: string[], max: number): string {
+  const clean = items.filter((s) => s && s.trim().length > 0);
+  if (clean.length === 0) return "(none)";
+  if (clean.length <= max) return clean.join(", ");
+  const head = clean.slice(0, max).join(", ");
+  return `${head}, and ${clean.length - max} more`;
 }
