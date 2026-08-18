@@ -569,6 +569,16 @@ function isLikelyLocalFileHref(href: string): boolean {
   return /(^\.\.?[\\/]|[\\/]|\.[A-Za-z0-9]{1,12}(?:[?#]|$))/.test(href);
 }
 
+function shouldOpenInSameTabOnThisDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const standalone =
+    window.matchMedia?.("(display-mode: standalone)").matches
+    || window.matchMedia?.("(display-mode: fullscreen)").matches
+    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+  const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  return standalone || coarsePointer;
+}
+
 interface LocalFilePreview {
   path: string;
   name: string;
@@ -945,6 +955,7 @@ function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: strin
   const [failed, setFailed] = useState(false);
 
   const normalizedSrc = typeof src === "string" ? src : src instanceof Blob ? URL.createObjectURL(src) : "";
+  const sameTab = shouldOpenInSameTabOnThisDevice();
   const effectiveSrc = normalizedSrc
     ? `${normalizedSrc}${normalizedSrc.includes("?") ? "&" : "?"}retry=${retryNonce}`
     : "";
@@ -974,8 +985,8 @@ function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: strin
           </button>
           <a
             href={normalizedSrc}
-            target="_blank"
-            rel="noopener noreferrer"
+            target={sameTab ? undefined : "_blank"}
+            rel={sameTab ? undefined : "noopener noreferrer"}
             className="underline decoration-dotted hover:decoration-solid break-all"
           >
             Open image
@@ -1551,6 +1562,7 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
   // notes and short clips from the WhatsApp bridge are usable in-bubble.
   // Other file types still fall through to a download/open-in-new-tab link.
   const file = part as ContentPart & { type: "file"; name: string; media_type: string; data: string };
+  const sameTab = shouldOpenInSameTabOnThisDevice();
   const dataUrl = `data:${file.media_type};base64,${file.data}`;
   // For text files our data field is plain text, not base64. Detect and wrap.
   const href = /^text\/|^application\/json$/.test(file.media_type)
@@ -1583,10 +1595,10 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
   return (
     <a
       href={href}
-      target="_blank"
-      rel="noreferrer"
+      target={sameTab ? undefined : "_blank"}
+      rel={sameTab ? undefined : "noreferrer"}
       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 hover:bg-surface-3 hover:border-border text-[11px] text-fg-muted transition-colors"
-      title="Open in new tab"
+      title={sameTab ? "Open file" : "Open in new tab"}
     >
       <Paperclip size={11} className="text-fg-faint shrink-0" />
       <span className="truncate max-w-[200px]">{file.name}</span>
@@ -1604,6 +1616,7 @@ function hasImageAttachment(content: string | ContentPart[]): boolean {
 function ClickableImage({ src }: { src: string }) {
   const [open, setOpen] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const sameTab = shouldOpenInSameTabOnThisDevice();
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1645,12 +1658,12 @@ function ClickableImage({ src }: { src: string }) {
           </button>
           <a
             href={src}
-            target="_blank"
-            rel="noreferrer"
+            target={sameTab ? undefined : "_blank"}
+            rel={sameTab ? undefined : "noreferrer"}
             onClick={(e) => e.stopPropagation()}
             className="absolute bottom-4 right-4 px-3 py-1.5 rounded-md bg-black/40 hover:bg-black/60 text-white text-xs"
           >
-            Open in new tab
+            {sameTab ? "Open" : "Open in new tab"}
           </a>
         </div>
       )}
