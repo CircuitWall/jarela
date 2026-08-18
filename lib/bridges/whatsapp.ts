@@ -473,7 +473,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           }, `${actor} changed the group subject${detail}.`, actorJid);
         }
         if (typeof g.desc === "string") {
-          const summary = truncateOneLine(g.desc.trim(), 180);
+          const summary = g.desc.trim();
           const suffix = summary ? `: \"${summary}\"` : "";
           await this.emitSyntheticEvent(groupJid, {
             type: "group_profile_update",
@@ -1143,12 +1143,6 @@ function normalizeUserJid(id: string): string | null {
   // Baileys exposes @c.us as a legacy alias — normalize to @s.whatsapp.net.
   const normHost = host === "c.us" ? "s.whatsapp.net" : host;
   return `${user}@${normHost}`;
-}
-
-function truncateOneLine(text: string, max: number): string {
-  if (!text) return "";
-  const compact = text.replace(/\s+/g, " ").trim();
-  return compact.length <= max ? compact : `${compact.slice(0, max - 3)}...`;
 }
 
 function humanList(items: string[], max: number): string {
