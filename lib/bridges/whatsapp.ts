@@ -526,13 +526,13 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       const u = (args[0] ?? {}) as {
         id?: string;
         author?: string;
-        participants?: string[];
+        participants?: unknown[];
         action?: "add" | "remove" | "promote" | "demote" | string;
       };
       if (!u.id || !u.id.endsWith("@g.us")) return;
       const participants = (u.participants ?? [])
-        .map((id) => normalizeUserJid(id) ?? id)
-        .filter((id) => !!id);
+        .map((id) => normalizeUserJid(id))
+        .filter((id): id is string => !!id);
       if (participants.length === 0) return;
 
       const actorJid = normalizeUserJid(u.author ?? "") ?? null;
@@ -1200,7 +1200,8 @@ function pickContactChatJid(ct: {
  * routable user JID — `sendMessage` won't deliver to a JID with `:NN`.
  * Returns null if the input is malformed.
  */
-function normalizeUserJid(id: string): string | null {
+function normalizeUserJid(id: unknown): string | null {
+  if (typeof id !== "string") return null;
   // Strip any device suffix (":NN") before the '@'.
   const at = id.indexOf("@");
   if (at < 0) return null;
