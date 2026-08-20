@@ -1678,7 +1678,7 @@ function ImagePreviewDialog({ src, alt, open, onClose }: { src: string; alt: str
         <img
           src={src}
           alt={alt}
-          className="block h-full w-full object-contain"
+          className="block max-h-full max-w-full h-auto w-auto object-contain"
         />
       </div>
     </Dialog>
