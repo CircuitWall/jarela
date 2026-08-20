@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.28.1] - 2026-08-20
+
+### Fixed
+
+- **Image previews now truly use the full viewport.** Markdown images and
+  attachments share the same edge-to-edge preview dialog, and the previewed
+  image is no longer constrained by the original message bubble width.
+- **Hot/warm focus masks now visibly fade out at the top.** The mask now fades
+  the entire overlay, including the backdrop filter, so the upper edge becomes
+  fully transparent instead of staying subtly desaturated.
+- **Image history no longer routes to text-only models.** Turns with image
+  attachments already present in hot history now prefer vision-capable models,
+  and text-only fallbacks omit image blocks instead of sending unsupported
+  `image_url` payloads to providers that reject them.
+
 ## [1.28.0] - 2026-08-20
 
 ### Added
