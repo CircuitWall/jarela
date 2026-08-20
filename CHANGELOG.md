@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.28.0] - 2026-08-20
+
+### Added
+
+- **Agents can learn from repeated workflows.** Agents now detect repeated
+  similar work from recall, ask before creating reusable skills, and can write
+  scoped skills when the user agrees.
+- **Long-lived agent sessions compact automatically.** Oversized agent threads
+  now compact through the same safe path as `/compact`, preserving warm
+  summaries and pruning old rows before one-session-per-agent histories grow
+  without bound.
+
+### Fixed
+
+- **Tool reliability guidance now steers agents away from repeat failures.**
+  Tool stats now produce compact, aggregate-only reliability hints scoped to
+  the tools available for the current run, including bounded failure categories
+  for auth, validation, not-found, timeout, rate-limit, and size/context issues.
+- **Tool failure telemetry stays bounded.** Failure diagnostics are aggregated
+  by tool and normalized reason, scrubbed/truncated, TTL-pruned, and never store
+  raw tool arguments or per-call logs.
+- **Tool catalog diagnostics are quieter by default.** Raw call/success/error
+  stats and failure categories are hidden inside collapsed advanced details,
+  while problematic tools still show a compact health badge.
+- **Document, calendar, mail, browser, Microsoft Graph, proposal, and file tools
+  fail earlier with clearer recovery hints.** High-failure tools now validate
+  common bad inputs locally, cap oversized draft bodies and search patterns,
+  add machine-readable truncation reasons, and guide agents toward source
+  refreshes, snapshot refreshes, credential setup, or smaller work batches.
+- **Context windows stay within model limits more reliably.** Over-large saved
+  context-window overrides are capped to known provider/model limits, and
+  oversized hot messages are clipped even when warm-summary generation succeeds.
+- **Agent credential overrides no longer dominate the editor.** Per-tool
+  credential overrides are tucked into collapsed advanced sections instead of
+  rendering a long list by default.
+
 ## [1.27.5] - 2026-08-20
 
 ### Fixed
