@@ -1,16 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Globe2, RotateCcw, Save, Sparkles } from "lucide-react";
-import { refreshRuntimeConfig } from "@/api/runtime-config";
-
-interface EnvRow {
-  name: string;
-  current: string;
-  default: number | string | boolean;
-  overridden: boolean;
-  requiresRestart: boolean;
-}
+import { useEnvSettings } from "@/hooks/useEnvSettings";
 
 const VAR_NAME = "JARELA_WEB_SEARCH_PROVIDER_ORDER";
 const VALID = ["tavily", "duckduckgo"] as const;
@@ -31,29 +23,16 @@ const PRESETS: Array<{ id: string; label: string; value: string; description: st
 ];
 
 export function WebSearchConfigCard() {
-  const [row, setRow] = useState<EnvRow | null>(null);
+  const { rows, error, setError, save: saveEnv } = useEnvSettings();
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const r = await fetch("/api/v1/env", { cache: "no-store" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const body = (await r.json()) as { entries: EnvRow[] };
-      const found = body.entries.find((e) => e.name === VAR_NAME) ?? null;
-      setRow(found);
-      if (found) setValue(found.current);
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
+  const row = rows.find((e) => e.name === VAR_NAME) ?? null;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!row) return;
+    setValue((prev) => (prev.trim().length > 0 ? prev : row.current));
+  }, [row]);
 
   const normalized = useMemo(() => {
     const out: string[] = [];
@@ -75,17 +54,7 @@ export function WebSearchConfigCard() {
     setError(null);
     setStatus(null);
     try {
-      const r = await fetch("/api/v1/env", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: VAR_NAME, value: next }),
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `${r.status} ${r.statusText}`);
-      }
-      refreshRuntimeConfig();
-      await load();
+      await saveEnv(VAR_NAME, next);
       setStatus("Saved. New order applies immediately.");
     } catch (e) {
       setError((e as Error).message);
@@ -99,17 +68,7 @@ export function WebSearchConfigCard() {
     setError(null);
     setStatus(null);
     try {
-      const r = await fetch("/api/v1/env", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: VAR_NAME, value: null }),
-      });
-      if (!r.ok) {
-        const body = (await r.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `${r.status} ${r.statusText}`);
-      }
-      refreshRuntimeConfig();
-      await load();
+      await saveEnv(VAR_NAME, null);
       setStatus("Reset to default provider order.");
     } catch (e) {
       setError((e as Error).message);

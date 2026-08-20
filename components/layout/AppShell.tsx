@@ -70,9 +70,12 @@ export function AppShell() {
     }
   }, [dispatch, isFullMode, state.activeTab]);
 
-  // Redirect legacy deep link ?tab=harness → agents (harnesses moved to Agents panel)
+  // Redirect legacy deep link ?tab=harness → settings (harnesses now live under Settings).
   useEffect(() => {
-    if (state.activeTab === "harness") dispatch({ type: "SET_TAB", tab: "agents" });
+    if (state.activeTab === "harness") {
+      dispatch({ type: "SET_TAB", tab: "settings" });
+      dispatch({ type: "SET_SELECTION", tab: "settings", itemId: "harness" });
+    }
   }, [dispatch, state.activeTab]);
 
   const unreadCount = useUnreadCount();
