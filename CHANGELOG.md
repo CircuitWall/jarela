@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - No entries yet.
 
+## [1.27.5] - 2026-08-20
+
+### Fixed
+
+- **Image previews now use the full viewport.** Clicking an image in chat opens an edge-to-edge preview dialog that uses the full viewport surface instead of a constrained modal width, while preserving explicit close controls and accessibility behavior.
+- **Focus-boundary history mask now fades smoothly upward.** The gray mask above the hot/warm line now transitions gradually and reaches full transparency toward the top for a cleaner visual boundary.
+- **Pre-commit/unit test runs are more stable on loaded Windows environments.** Vitest test and hook timeouts are raised from the default 5s to 15s to avoid spurious timeout failures during full-suite runs.
+
 ## [1.27.4] - 2026-08-17
 
 ### Fixed
