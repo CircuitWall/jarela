@@ -29,6 +29,7 @@ import { StatusDot } from "@/components/ui/StatusDot";
 type Sub =
   | "credentials"
   | "models"
+  | "harness"
   | "privacy"
   | "appearance"
   | "networking"
@@ -38,6 +39,7 @@ type Sub =
 const SUBS: ReadonlyArray<{ id: Sub; label: string; icon: React.ReactNode; advancedOnly?: boolean }> = [
   { id: "credentials", label: "Credentials", icon: <Key size={13} /> },
   { id: "models", label: "Models", icon: <Cpu size={13} /> },
+  { id: "harness", label: "Harnesses", icon: <Cpu size={13} />, advancedOnly: true },
   { id: "privacy", label: "Privacy & security", icon: <ShieldCheck size={13} /> },
   { id: "appearance", label: "Appearance", icon: <Palette size={13} /> },
   { id: "networking", label: "Networking", icon: <Globe size={13} /> },
@@ -51,8 +53,7 @@ const VALID = new Set<Sub>(SUBS.map((s) => s.id));
 // deep links and saved selections keep resolving.
 const LEGACY_SUBS: Record<string, Sub> = {
   defaults: "environment",
-  // harness moved to the Agents panel
-  harness: "credentials",
+  harness: "harness",
 };
 
 function parseSub(raw: string | undefined): Sub {
@@ -97,6 +98,7 @@ export function SettingsPanel() {
       <div className="flex-1 min-h-0 overflow-hidden">
         {active === "credentials" && <CredentialsListPanel />}
         {active === "models" && <ModelsPanel />}
+        {active === "harness" && <HarnessPanel />}
         {active === "privacy" && <PrivacySecurityPanel />}
         {active === "appearance" && <AppearancePanel />}
         {active === "networking" && <NetworkPanel />}
