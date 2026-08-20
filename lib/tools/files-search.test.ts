@@ -85,6 +85,11 @@ describe("file_glob", () => {
     const out = parse(await fileGlobTool.invoke({ pattern: "**/*.ts", root: projectRoot, max_results: 5 }));
     expect((out.matches as string[]).length).toBe(5);
     expect(out.truncated).toBe(true);
+    expect(out.truncated_reason).toBe("result_cap");
+  });
+
+  it("rejects overlong glob patterns before scanning", async () => {
+    await expect(fileGlobTool.invoke({ pattern: "x".repeat(10_001), root: projectRoot })).rejects.toThrow(/10000/);
   });
 
   it("include_hidden=true reveals dot-prefixed paths", async () => {
@@ -181,6 +186,11 @@ describe("file_grep", () => {
     const out = parse(await fileGrepTool.invoke({ pattern: "hit", root: projectRoot, max_matches: 5 }));
     expect((out.matches as unknown[]).length).toBe(5);
     expect(out.truncated).toBe(true);
+    expect(out.truncated_reason).toBe("match_cap");
+  });
+
+  it("rejects overlong grep patterns before scanning", async () => {
+    await expect(fileGrepTool.invoke({ pattern: "x".repeat(10_001), root: projectRoot })).rejects.toThrow(/10000/);
   });
 
   it("defaults root to the active workspace", async () => {
