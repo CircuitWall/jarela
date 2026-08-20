@@ -88,11 +88,16 @@ export async function buildHistoryWindow(
   // the result was never persisted, so the summariser tax was permanent.
   const cached = getThread(thread_id);
 
+  const explicitContextWindow = typeof providerParams.context_window_tokens === "number"
+    ? providerParams.context_window_tokens
+    : undefined;
+  const knownContextWindow = resolveFallbackContextWindow(modelInfo);
+  const effectiveContextWindow = explicitContextWindow && knownContextWindow
+    ? Math.min(explicitContextWindow, knownContextWindow)
+    : explicitContextWindow ?? knownContextWindow;
+
   const budget = computeContextBudget({
-    context_window_tokens:
-      typeof providerParams.context_window_tokens === "number"
-        ? providerParams.context_window_tokens
-        : resolveFallbackContextWindow(modelInfo),
+    context_window_tokens: effectiveContextWindow,
     max_tokens: typeof providerParams.max_tokens === "number" ? providerParams.max_tokens : undefined,
     context_tier_proportions:
       typeof providerParams.context_tier_proportions === "object" && providerParams.context_tier_proportions
@@ -182,11 +187,12 @@ export async function buildHistoryWindow(
   // but TypeScript can't see that. Default to an empty list defensively.
   const hotMessagesResolved = hotMessages ?? [];
 
-  // If the warm tier was expected but failed to summarise, fall back to
-  // truncating the largest hot messages so the older context isn't silently
-  // dropped — better to clip overlong messages than lose them entirely.
+  // Always enforce the final hot cap. takeRecentMessagesWithinBudget keeps at
+  // least the latest message even if that one message alone is larger than
+  // the budget; clip that pathological case before it reaches the provider.
   const warmWasExpected = budget.tierBudgets.warm > 32 && (allWindowMessages.length - hotMessagesResolved.length) >= 2;
-  const hotMessagesForPrompt = !warmSummaryCtx && warmWasExpected
+  const hotMessagesNeedTruncation = sumMessageTokens(hotMessagesResolved) > (hotCap || budget.tierBudgets.hot);
+  const hotMessagesForPrompt = hotMessagesNeedTruncation || (!warmSummaryCtx && warmWasExpected)
     ? truncateLargestMessagesWithinBudget(hotMessagesResolved, hotCap || budget.tierBudgets.hot)
     : hotMessagesResolved;
 

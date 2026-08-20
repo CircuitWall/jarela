@@ -6,6 +6,7 @@ import { AntiHallucinationFields, CitationStrictnessField } from "./Hallucinatio
 import { TierOverrideField } from "./TierOverrideField";
 import { AdaptivePersonaFields } from "./AdaptivePersonaFields";
 import { VoiceFields } from "./VoiceFields";
+import { ToolCredentialsSection } from "./ToolCredentialsSection";
 import { Select } from "@/components/ui/Select";
 import { modelSupportsImages } from "@/lib/providers/capabilities";
 import { SelectedModelDescription } from "./ModelSection";
@@ -43,6 +44,8 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
       </div>
       <Divider />
       <TierOverrideField form={form} selectedModel={selectedModel} />
+      <Divider />
+      <ToolCredentialsSection form={form} embedded />
       {!form.modelConfigName && (
         <>
           <Divider />

@@ -147,6 +147,21 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(chatSpy).not.toHaveBeenCalled();
   });
 
+  it("caps an over-large explicit context window to the known model limit", async () => {
+    const thread_id = seedWarmThread();
+    chatReturns("RECAP-CAPPED");
+
+    const result = await buildHistoryWindow(
+      thread_id,
+      agentCfg(),
+      { ...providerParams, context_window_tokens: 1_000_000 },
+      "q",
+      { providerName: "anthropic", modelId: "claude-sonnet-4-6" },
+    );
+
+    expect(result.budget.contextWindowTokens).toBe(200_000);
+  });
+
   it("re-summarises when the explicit pin moves", async () => {
     const thread_id = seedWarmThread();
     chatReturns("RECAP-PIN-1");
@@ -179,6 +194,18 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(elapsed).toBeLessThan(2000);
     // Hung summariser must not poison the cache.
     expect(getThread(thread_id)?.warm_summary).toBeFalsy();
+  });
+
+  it("clips an oversized latest hot message even when warm summary succeeds", async () => {
+    const thread_id = seedWarmThread();
+    addMessage(thread_id, "user", "latest " + "y ".repeat(20_000));
+    chatReturns("RECAP-HUGE-HOT");
+
+    const result = await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q", modelInfo);
+
+    expect(result.warmSummaryCtx).toContain("RECAP-HUGE-HOT");
+    expect(result.tierUsage.hot_tokens).toBeLessThanOrEqual(result.budget.tierBudgets.hot);
+    expect(String(result.history.at(-1)?.content)).toContain("[truncated for context budget]");
   });
 
   it("falls back to empty facts context when recall hangs past the budget", async () => {
