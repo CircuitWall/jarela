@@ -45,6 +45,31 @@ describe("MessageBubble image attachments", () => {
     }
     expect(node).toBeTruthy();
   });
+
+  it("opens image preview in an in-app dialog with a close control", () => {
+    const content = JSON.stringify([
+      { type: "image", media_type: "image/png", data: "iVBORw0KGgo=" },
+    ]);
+    const message: Message = {
+      id: "img-2",
+      role: "user",
+      content,
+      created_at: "2026-08-15T12:00:00.000Z",
+      status: "confirmed",
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} showAvatar={false} />
+      </AppProvider>,
+    );
+
+    fireEvent.click(screen.getByAltText("attached image"));
+
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0]);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
 });
 
 describe("MessageBubble local file links", () => {
