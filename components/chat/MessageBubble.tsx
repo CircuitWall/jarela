@@ -14,6 +14,7 @@ import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
 import { CountdownRing } from "@/components/chat/CountdownRing";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { Dialog } from "@/components/ui/Dialog";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
@@ -569,16 +570,6 @@ function isLikelyLocalFileHref(href: string): boolean {
   return /(^\.\.?[\\/]|[\\/]|\.[A-Za-z0-9]{1,12}(?:[?#]|$))/.test(href);
 }
 
-function shouldOpenInSameTabOnThisDevice(): boolean {
-  if (typeof window === "undefined") return false;
-  const standalone =
-    window.matchMedia?.("(display-mode: standalone)").matches
-    || window.matchMedia?.("(display-mode: fullscreen)").matches
-    || (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
-  const coarsePointer = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-  return standalone || coarsePointer;
-}
-
 interface LocalFilePreview {
   path: string;
   name: string;
@@ -953,9 +944,15 @@ function parseContent(raw: string): string | ContentPart[] {
 function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: string }) {
   const [retryNonce, setRetryNonce] = useState(0);
   const [failed, setFailed] = useState(false);
+  const objectUrl = useMemo(() => (src instanceof Blob ? URL.createObjectURL(src) : null), [src]);
 
-  const normalizedSrc = typeof src === "string" ? src : src instanceof Blob ? URL.createObjectURL(src) : "";
-  const sameTab = shouldOpenInSameTabOnThisDevice();
+  useEffect(() => {
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [objectUrl]);
+
+  const normalizedSrc = typeof src === "string" ? src : objectUrl ?? "";
   const effectiveSrc = normalizedSrc
     ? `${normalizedSrc}${normalizedSrc.includes("?") ? "&" : "?"}retry=${retryNonce}`
     : "";
@@ -985,8 +982,8 @@ function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: strin
           </button>
           <a
             href={normalizedSrc}
-            target={sameTab ? undefined : "_blank"}
-            rel={sameTab ? undefined : "noopener noreferrer"}
+            target="_blank"
+            rel="noopener noreferrer"
             className="underline decoration-dotted hover:decoration-solid break-all"
           >
             Open image
@@ -1562,7 +1559,6 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
   // notes and short clips from the WhatsApp bridge are usable in-bubble.
   // Other file types still fall through to a download/open-in-new-tab link.
   const file = part as ContentPart & { type: "file"; name: string; media_type: string; data: string };
-  const sameTab = shouldOpenInSameTabOnThisDevice();
   const dataUrl = `data:${file.media_type};base64,${file.data}`;
   // For text files our data field is plain text, not base64. Detect and wrap.
   const href = /^text\/|^application\/json$/.test(file.media_type)
@@ -1595,10 +1591,10 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
   return (
     <a
       href={href}
-      target={sameTab ? undefined : "_blank"}
-      rel={sameTab ? undefined : "noreferrer"}
+      target="_blank"
+      rel="noopener noreferrer"
       className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 hover:bg-surface-3 hover:border-border text-[11px] text-fg-muted transition-colors"
-      title={sameTab ? "Open file" : "Open in new tab"}
+      title="Open in new tab"
     >
       <Paperclip size={11} className="text-fg-faint shrink-0" />
       <span className="truncate max-w-[200px]">{file.name}</span>
@@ -1616,7 +1612,6 @@ function hasImageAttachment(content: string | ContentPart[]): boolean {
 function ClickableImage({ src }: { src: string }) {
   const [open, setOpen] = useState(false);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
-  const sameTab = shouldOpenInSameTabOnThisDevice();
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1637,36 +1632,43 @@ function ClickableImage({ src }: { src: string }) {
           objectFit: "contain",
         }}
       />
-      {open && (
-        <div
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-[60] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 cursor-zoom-out animate-in fade-in"
-        >
+      <Dialog
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Image preview"
+        size="full"
+        align="center"
+        level="elevated"
+        padded={false}
+        footer={(
+          <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-surface-2/90">
+            <a
+              href={src}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-2.5 py-1.5 rounded-md border border-border/70 bg-surface-3 text-xs text-fg-muted hover:text-fg hover:border-border"
+            >
+              Open in new tab
+            </a>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="px-2.5 py-1.5 rounded-md border border-border/70 bg-surface-3 text-xs text-fg-muted hover:text-fg hover:border-border"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      >
+        <div className="bg-black/90 flex items-center justify-center p-2 sm:p-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src}
             alt="attached image"
-            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
+            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
           />
-          <button
-            onClick={(e) => { e.stopPropagation(); setOpen(false); }}
-            className="absolute top-4 right-4 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white"
-            aria-label="Close"
-          >
-            <X size={16} />
-          </button>
-          <a
-            href={src}
-            target={sameTab ? undefined : "_blank"}
-            rel={sameTab ? undefined : "noreferrer"}
-            onClick={(e) => e.stopPropagation()}
-            className="absolute bottom-4 right-4 px-3 py-1.5 rounded-md bg-black/40 hover:bg-black/60 text-white text-xs"
-          >
-            {sameTab ? "Open" : "Open in new tab"}
-          </a>
         </div>
-      )}
+      </Dialog>
     </>
   );
 }

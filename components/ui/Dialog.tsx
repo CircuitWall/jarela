@@ -20,6 +20,7 @@ const SIZE = {
   md: "max-w-lg",
   lg: "max-w-xl",
   xl: "max-w-2xl",
+  full: "max-w-[min(96vw,1400px)]",
 } as const;
 
 const LEVEL = {
