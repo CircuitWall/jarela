@@ -163,13 +163,13 @@ describe("Dialog", () => {
   });
 
   it("omits default padding/spacing when padded=false", () => {
-    const { container } = render(
+    render(
       <Dialog open onClose={noop} padded={false}>
         body
       </Dialog>,
     );
     // Body wrapper is the only child of the dialog card containing the text.
-    const dialog = container.querySelector("[role='dialog']")!;
+    const dialog = screen.getByRole("dialog");
     const body = dialog.lastElementChild as HTMLElement;
     expect(body.className).not.toContain("p-4");
     expect(body.className).not.toContain("space-y-3");

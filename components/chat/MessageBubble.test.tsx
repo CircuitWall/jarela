@@ -91,8 +91,8 @@ describe("MessageBubble image attachments", () => {
     const dialog = screen.getByRole("dialog");
     expect(dialog).toBeTruthy();
     const preview = screen.getAllByAltText("diagram").at(-1)!;
-    expect(preview.className).toContain("h-full");
-    expect(preview.className).toContain("w-full");
+    expect(preview.className).toContain("max-h-full");
+    expect(preview.className).toContain("max-w-full");
     expect(preview.className).toContain("object-contain");
   });
 });
