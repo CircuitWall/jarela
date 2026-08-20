@@ -590,6 +590,7 @@ function buildListPayload(
   truncated: boolean,
   filters: { include_hidden: boolean; pattern: string | null; max_entries: number; depth: number },
 ): string {
+  const reason = (droppedForSize: number) => droppedForSize > 0 ? "json_size_cap" : truncated ? "entry_cap" : undefined;
   const build = (es: ListEntry[], droppedForSize: number) => JSON.stringify({
     ok: true,
     path: abs,
@@ -600,6 +601,7 @@ function buildListPayload(
     truncated_hint: (truncated || droppedForSize > 0)
       ? "Result truncated. Lower max_entries, add a `pattern` filter, or descend into a more specific subdirectory."
       : undefined,
+    truncated_reason: reason(droppedForSize),
     dropped_for_size: droppedForSize > 0 ? droppedForSize : undefined,
     filters,
   });
