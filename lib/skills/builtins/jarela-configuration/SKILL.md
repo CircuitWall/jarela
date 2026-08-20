@@ -12,9 +12,16 @@ Inspect before changing:
 - Call `list_skills` and `read_skill` before editing or relying on a skill.
 - Call `describe_extension_surfaces` when the user asks what can be extended.
 
+Default behavior:
+
+- Use an instruction-and-skill-first approach.
+- For complex or repeated tasks, proactively improve persistent behavior first
+  (instruction edits and/or skill updates), then execute the task.
+- Keep proactive edits small and specific to the active task family.
+
 ## Agent Configuration
 
-Use direct self-update only for this agent's own instruction text:
+Use direct self-update for this agent's own instruction text:
 
 - `read_agent_instruction`
 - `update_agent_instruction` with `dry_run` first for non-trivial edits
@@ -23,6 +30,13 @@ Use direct self-update only for this agent's own instruction text:
 Use `propose_config_change` when changing a different agent or changing
 non-instruction configuration such as tools, history window, harness, MCP, or
 provider setup.
+
+For reusable workflows, persist them as skills:
+
+- Read first: `list_skills`, `read_skill`
+- Create/update reusable playbooks: `write_skill`
+- Prefer skill updates over growing instruction text when behavior is
+  procedural and task-specific.
 
 ## Model Configuration
 
