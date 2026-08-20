@@ -16,7 +16,7 @@ interface MatchedTool {
 // default state with hint to add another credential; multi-credential
 // tools show active dropdown to override. All matched tools are visible
 // to make the tool-provider linkage explicit.
-export function ToolCredentialsSection({ form }: { form: AgentEditorForm }) {
+export function ToolCredentialsSection({ form, embedded = false }: { form: AgentEditorForm; embedded?: boolean }) {
   const { selectedTools, tools, integrationCredentials } = form;
 
   const credsByProvider = useMemo(() => {
@@ -65,9 +65,9 @@ export function ToolCredentialsSection({ form }: { form: AgentEditorForm }) {
 
   const providersWithMultiple = allProviders.filter((p) => (credsByProvider.get(p) ?? []).length >= 2);
 
-  return (
-    <Section step={4} title="Tool credentials">
-      <div className="space-y-3">
+  const body = (
+    <div className="space-y-3">
+      {embedded && <p className="text-[11px] text-fg-subtle leading-snug font-medium">Tool credentials</p>}
         <div className="text-[11px] text-fg-faint space-y-1">
           <p>
             Credentials are automatically matched to tools by integration. Tools use
@@ -98,8 +98,11 @@ export function ToolCredentialsSection({ form }: { form: AgentEditorForm }) {
           ))}
         </div>
       </div>
-    </Section>
   );
+
+  if (embedded) return body;
+
+  return <Section step={4} title="Tool credentials">{body}</Section>;
 }
 
 function formatProviderList(providers: string[]): string {
