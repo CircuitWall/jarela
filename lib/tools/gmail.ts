@@ -28,6 +28,7 @@ import {
   resolveGoogleAuth,
   type GoogleAuth,
 } from "@/lib/integrations/gmail-oauth";
+import { errorMessage } from "@/lib/utils/error";
 
 // Re-export under the old name so existing imports (e.g. the integrations
 // test endpoint) keep working unchanged.
@@ -41,6 +42,23 @@ export function _resolveGmailAuth(): GmailAuth | { error: string } {
 const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const gmailFetch = (auth: GmailAuth, path: string, init?: RequestInit) =>
   googleFetch(auth, "Gmail", GMAIL_BASE, path, init);
+const DRAFT_BODY_MAX_CHARS = 100_000;
+
+function gmailAuthError(error: string): string {
+  return JSON.stringify({
+    error,
+    error_code: "gmail_auth_required",
+    recovery_hint: "Open Settings > Integrations > Gmail and reconnect or update the Gmail OAuth credentials before retrying.",
+  });
+}
+
+function resolveGmailAuthForTool(): GmailAuth | { error: string } {
+  try {
+    return resolveGoogleAuth();
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+}
 
 // ── Decoders / helpers ──────────────────────────────────────────────────────
 
@@ -124,8 +142,8 @@ function encodeSubject(s: string): string {
 
 export const gmailSearchTool = tool(
   async ({ query, max_results }) => {
-    const auth = resolveGoogleAuth();
-    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
     const limit = Math.min(Math.max(max_results ?? 25, 1), 100);
     const list = await gmailFetch(
       auth,
@@ -184,8 +202,8 @@ export const gmailSearchTool = tool(
 
 export const gmailGetMessageTool = tool(
   async ({ id }) => {
-    const auth = resolveGoogleAuth();
-    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
     const m = await gmailFetch(auth, `/messages/${encodeURIComponent(id)}?format=full`) as {
       id?: string;
       threadId?: string;
@@ -226,8 +244,8 @@ export const gmailGetMessageTool = tool(
 
 export const gmailListLabelsTool = tool(
   async () => {
-    const auth = resolveGoogleAuth();
-    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
     const data = await gmailFetch(auth, `/labels`) as { labels?: Array<{ id: string; name: string; type: string }>; error?: string };
     if (data.error) return JSON.stringify(data);
     return JSON.stringify({
@@ -246,8 +264,8 @@ export const gmailListLabelsTool = tool(
 
 export const gmailModifyMessageTool = tool(
   async ({ id, add_labels, remove_labels }) => {
-    const auth = resolveGoogleAuth();
-    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
     if (!(add_labels?.length || remove_labels?.length)) {
       return JSON.stringify({ error: "Provide at least one of add_labels / remove_labels" });
     }
@@ -278,8 +296,8 @@ export const gmailModifyMessageTool = tool(
 
 export const gmailCreateDraftTool = tool(
   async ({ to, cc, bcc, subject, body, in_reply_to_id }) => {
-    const auth = resolveGoogleAuth();
-    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
 
     let in_reply_to: string | null = null;
     let references: string | null = null;
@@ -328,7 +346,7 @@ export const gmailCreateDraftTool = tool(
       cc: z.array(z.string()).optional(),
       bcc: z.array(z.string()).optional(),
       subject: z.string(),
-      body: z.string().describe("Plain text body (use \\n for line breaks)"),
+      body: z.string().max(DRAFT_BODY_MAX_CHARS).describe("Plain text body (use \\n for line breaks; max 100,000 characters)"),
       in_reply_to_id: z.string().optional().describe("Gmail message id to reply to (for threading)"),
     }),
   },
@@ -336,8 +354,8 @@ export const gmailCreateDraftTool = tool(
 
 export const gmailTrashMessageTool = tool(
   async ({ id }) => {
-    const auth = resolveGoogleAuth();
-    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
     const data = await gmailFetch(auth, `/messages/${encodeURIComponent(id)}/trash`, {
       method: "POST",
     }) as { id?: string; labelIds?: string[]; error?: string };

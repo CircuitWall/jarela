@@ -6,7 +6,8 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { buildSystemPrompt } = await import("./system-prompt");
+const { buildSystemPrompt, buildToolReliabilityContext } = await import("./system-prompt");
+const { recordToolUsage } = await import("@/lib/stores/tool-stats");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
 
@@ -143,5 +144,38 @@ describe("buildSystemPrompt self-configuration", () => {
     expect(prompt).toContain("third or later instance of the same workflow");
     expect(prompt).toContain("ask whether the user wants you to create or update a skill");
     expect(prompt).toContain("Do not persist a newly synthesized skill without user consent");
+  });
+});
+
+describe("buildToolReliabilityContext", () => {
+  it("surfaces compact allowed-tool recovery hints from aggregate stats", () => {
+    recordToolUsage([
+      { id: "doc-a", phase: "call", name: "documents_search", payload: { query: "alpha" } },
+      { id: "doc-a", phase: "result", name: "documents_search", payload: { error: "source missing" } },
+      { id: "doc-b", phase: "call", name: "documents_search", payload: { query: "beta" } },
+      { id: "doc-b", phase: "result", name: "documents_search", payload: { error: "source missing" } },
+      { id: "doc-c", phase: "call", name: "documents_search", payload: { query: "gamma" } },
+      { id: "doc-c", phase: "result", name: "documents_search", payload: { error: "source missing" } },
+      { id: "file-a", phase: "call", name: "file_read", payload: { path: "README.md" } },
+      { id: "file-a", phase: "result", name: "file_read", payload: { content: "Alpha success result" } },
+      { id: "file-b", phase: "call", name: "file_read", payload: { path: "README.md" } },
+      { id: "file-b", phase: "result", name: "file_read", payload: { content: "Beta success result" } },
+      { id: "file-c", phase: "call", name: "file_read", payload: { path: "README.md" } },
+      { id: "file-c", phase: "result", name: "file_read", payload: { content: "Gamma success result" } },
+    ], "Alpha success result Beta success result Gamma success result");
+
+    const ctx = buildToolReliabilityContext(["documents_search", "file_read"]);
+
+    expect(ctx).toContain("--- Tool reliability hints ---");
+    expect(ctx).toContain("file_read: historically reliable");
+    expect(ctx).toContain("documents_search: check document sources/indexing");
+    expect(ctx).not.toContain("source missing");
+    expect(ctx).not.toContain("README.md");
+  });
+
+  it("omits stats for tools that are not allowed in the current run", () => {
+    const ctx = buildToolReliabilityContext(["file_read"]);
+
+    expect(ctx).not.toContain("documents_search");
   });
 });

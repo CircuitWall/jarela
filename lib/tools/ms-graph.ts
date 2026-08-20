@@ -35,6 +35,7 @@ import {
 // 60KB cap on response payloads. Mirrors the convention used in
 // outlook.ts / outlook-calendar.ts so the agent's context stays bounded.
 const MAX_RESPONSE_BYTES = 60_000;
+const SAFE_SEARCH_QUERY = /^[^"'{}\r\n]{1,300}$/;
 
 function resolveAuth(): MicrosoftAuth | { error: string } {
   return resolveMicrosoftAuth();
@@ -63,7 +64,7 @@ const msGraphGetTool = tool(
     if ("error" in auth) return JSON.stringify({ error: auth.error });
 
     const cleaned = path.startsWith("/") ? path : `/${path}`;
-    if (cleaned.startsWith("/http") || cleaned.includes("://")) {
+    if (cleaned.startsWith("//") || cleaned.startsWith("/http") || cleaned.includes("://")) {
       return JSON.stringify({ error: "path must be a relative Graph path, not an absolute URL" });
     }
 
@@ -210,7 +211,7 @@ const msSearchTool = tool(
       "['message','event','driveItem','listItem']. Override entity_types for narrower searches " +
       "(e.g. ['chatMessage'] for Teams, ['person'] for people, ['site'] for SharePoint sites).",
     schema: z.object({
-      query: z.string().min(1).describe("Free-text search query (KQL syntax supported)"),
+      query: z.string().min(1).max(300).regex(SAFE_SEARCH_QUERY, "Use a simple Microsoft Search query without quotes, braces, or newlines").describe("Free-text search query. Keep it simple; quotes/braces/newlines are rejected to avoid malformed KQL."),
       entity_types: z
         .array(
           z.enum([

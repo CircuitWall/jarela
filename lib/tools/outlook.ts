@@ -89,6 +89,7 @@ function summarizeMessage(m: GraphMessage): Record<string, unknown> {
 }
 
 const BODY_CAP = 30_000;
+const DRAFT_BODY_MAX_CHARS = 100_000;
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -277,7 +278,7 @@ export const outlookCreateDraftTool = tool(
       to: z.array(z.string().email()).min(1).describe("Primary recipient emails"),
       cc: z.array(z.string().email()).optional().describe("CC recipient emails"),
       subject: z.string().optional().describe("Subject line"),
-      body: z.string().optional().describe("Email body"),
+      body: z.string().max(DRAFT_BODY_MAX_CHARS).optional().describe("Email body (max 100,000 characters)"),
       content_type: z.enum(["text", "html"]).optional().describe("Body content type (default 'text')"),
     }),
   },

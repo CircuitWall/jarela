@@ -46,9 +46,12 @@ export function ToolsAndAgentsRow({ data, toolSort, onToolSortChange, effectiveT
                 <div className="grid grid-cols-[1fr_auto] items-center gap-2">
                   <div className="min-w-0">
                     <div className="truncate text-sm text-[var(--text-primary)]">{tool.name}</div>
-                    <div className="mt-0.5 text-[11px] text-[var(--text-secondary)]">
-                      score {tool.score.toFixed(2)} · {(tool.success_rate * 100).toFixed(1)}% success · {tool.call_count} calls · {tool.error_count} errors
-                    </div>
+                    <details className="group mt-1 text-[11px] text-[var(--text-secondary)]">
+                      <summary className="cursor-pointer select-none marker:content-none">Advanced stats</summary>
+                      <div className="mt-1">
+                        score {tool.score.toFixed(2)} · {(tool.success_rate * 100).toFixed(1)}% success · {tool.call_count} calls · {tool.error_count} errors
+                      </div>
+                    </details>
                   </div>
                   <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                     tool.score >= 0.85

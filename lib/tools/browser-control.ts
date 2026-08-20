@@ -181,7 +181,7 @@ export function resolveLocator(input: LocatorInput): Locator {
     if (candidates.length === 0) {
       return {
         ok: false,
-        error: `no ${input.role} with accessible name "${input.name}" in the last snapshot.`,
+        error: `no ${input.role} with accessible name "${input.name}" in the last snapshot. Call browser_snapshot to refresh handles if the page changed, or pass an explicit selector.`,
       };
     }
     if (candidates.length > 1) {
@@ -191,7 +191,7 @@ export function resolveLocator(input: LocatorInput): Locator {
         .join(", ");
       return {
         ok: false,
-        error: `${candidates.length} ${input.role}s match name "${input.name}" — disambiguate with a numeric handle: ${hits}.`,
+        error: `${candidates.length} ${input.role}s match name "${input.name}" — disambiguate with a numeric handle: ${hits}. Call browser_snapshot to refresh handles if these options look stale.`,
       };
     }
     return { ok: true, selector: candidates[0].selector };

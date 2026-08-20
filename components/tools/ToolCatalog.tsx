@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 import { api } from "@/api/client";
 import type { ToolInfo, ToolUsefulnessStats } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
@@ -113,6 +113,9 @@ export function ToolCatalog() {
           const usefulness = Math.round((stats?.usefulness_rate ?? 1) * 100);
           const health = classifyToolHealth(stats);
           const errorRate = Math.round(getErrorRate(stats) * 100);
+          const scoreTone = score >= 75
+            ? "text-emerald-700 dark:text-emerald-300"
+            : "text-amber-700 dark:text-amber-300";
           return (
             <article
               key={tool.name}
@@ -141,21 +144,20 @@ export function ToolCatalog() {
                   </div>
                   <p className="mt-1 text-xs text-fg-muted">{tool.description}</p>
                 </div>
-                <div className="rounded-lg border border-border bg-surface-1 px-3 py-2 text-right min-w-[120px]">
-                  <div
-                    className={`text-lg font-semibold ${score >= 75 ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"}`}
-                  >
-                    {score}%
-                  </div>
-                  <div className="text-[11px] text-fg-faint">rank score</div>
+              </div>
+              <details className="group mt-3 rounded-md border border-border/70 bg-surface-1 px-2.5 py-2">
+                <summary className="flex cursor-pointer select-none items-center gap-2 text-[11px] font-medium text-fg-muted marker:content-none">
+                  <span>Advanced stats</span>
+                  <ChevronDown size={13} className="ml-auto text-fg-faint transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="mt-2.5 grid gap-2 sm:grid-cols-5">
+                  <Metric label="Score" value={`${score}%`} tone={scoreTone} />
+                  <Metric label="Calls" value={String(stats?.call_count ?? 0)} />
+                  <Metric label="Success" value={`${success}%`} />
+                  <Metric label="Used" value={`${usefulness}%`} />
+                  <Metric label="Errors" value={`${stats?.error_count ?? 0}${stats?.never_used ? "" : ` (${errorRate}%)`}`} />
                 </div>
-              </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                <Metric label="Calls" value={String(stats?.call_count ?? 0)} />
-                <Metric label="Success" value={`${success}%`} />
-                <Metric label="Used" value={`${usefulness}%`} />
-                <Metric label="Errors" value={`${stats?.error_count ?? 0}${stats?.never_used ? "" : ` (${errorRate}%)`}`} />
-              </div>
+              </details>
             </article>
           );
         })}
@@ -178,11 +180,11 @@ function getErrorRate(stats: ToolUsefulnessStats | undefined): number {
   return Math.max(0, Math.min(1, stats.error_count / stats.call_count));
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value, tone = "text-fg" }: { label: string; value: string; tone?: string }) {
   return (
     <div className="rounded-md border border-border bg-surface-1 px-2.5 py-2">
       <div className="text-[11px] text-fg-faint uppercase tracking-wide">{label}</div>
-      <div className="text-sm text-fg font-medium">{value}</div>
+      <div className={`text-sm font-medium ${tone}`}>{value}</div>
     </div>
   );
 }

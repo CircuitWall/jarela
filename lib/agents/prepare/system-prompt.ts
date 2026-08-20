@@ -21,6 +21,7 @@ import {
 } from "@/lib/agents/context-budget";
 import { getAppName } from "@/lib/env/app-config";
 import { listSkills } from "@/lib/skills";
+import { getToolStatsMap, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
@@ -47,6 +48,9 @@ export interface SystemPromptContext {
    *  answering on e.g. WhatsApp via a configured bridge — stops the
    *  "I don't have access to WhatsApp" hallucination. */
   deliveryChannel?: DeliveryChannel | null;
+  /** Tool names available to this run. Used to derive compact historical
+   *  reliability hints from aggregate tool stats only. */
+  allowedTools?: readonly string[];
 }
 
 // Re-exported so callers that only need the sentinel don't have to import the
@@ -54,7 +58,7 @@ export interface SystemPromptContext {
 export { CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
-  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel } = ctx;
+  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools } = ctx;
 
   const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
@@ -92,6 +96,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // so it never touches the stable cache breakpoint.
   const dynamicParts: (string | null | undefined)[] = [
     adaptivePersonaCtx,
+    buildToolReliabilityContext(allowedTools ?? []),
     buildSourceLinkContext(agentCfg, sourceManifest ?? []),
     buildTimeContext(),
     buildOutputBudgetContext(budget),
@@ -102,6 +107,63 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const stable = stableParts.filter(Boolean).join("\n\n");
   const dynamic = dynamicParts.filter(Boolean).join("\n\n");
   return `${stable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
+}
+
+const TOOL_RECOVERY_HINTS: Record<string, string> = {
+  documents_search: "check document sources/indexing before retrying; if source_id is supplied, verify it exists",
+  calendar_list_events: "use full RFC3339 datetime strings for time_min/time_max and verify the calendar id",
+  gmail_modify_message: "verify message and label ids first; if auth fails, guide the user to Gmail integration setup",
+  gmail_create_draft: "keep draft bodies bounded and validate recipient/thread ids before creating",
+  outlook_create_draft: "keep draft bodies bounded and verify Microsoft auth before creating",
+  browser_click: "refresh handles with browser_snapshot before retrying stale or ambiguous targets",
+  propose_config_change: "validate the proposal kind and required payload fields before calling",
+  ms_graph_get: "prefer narrow paths with $select and bounded pagination; verify Microsoft auth/scopes first",
+  ms_search: "keep queries simple and verify Microsoft auth/scopes first",
+};
+
+export function buildToolReliabilityContext(allowedTools: readonly string[]): string {
+  if (allowedTools.length === 0) return "";
+  const statsMap = getToolStatsMap(allowedTools);
+  const rows = [...statsMap.entries()]
+    .filter(([, stats]) => stats.call_count >= 3 && !stats.never_used);
+  if (rows.length === 0) return "";
+
+  const problematic = rows
+    .filter(([, stats]) => isProblematicTool(stats))
+    .sort((a, b) => problemSeverity(b[1]) - problemSeverity(a[1]))
+    .slice(0, 5);
+  const reliable = rows
+    .filter(([, stats]) => stats.score >= 0.85 && stats.success_rate >= 0.85)
+    .sort((a, b) => b[1].score - a[1].score)
+    .slice(0, 3);
+
+  if (problematic.length === 0 && reliable.length === 0) return "";
+
+  const lines = [
+    "--- Tool reliability hints ---",
+    "Use these aggregate historical signals as recovery guidance, not hard bans.",
+  ];
+  if (reliable.length > 0) {
+    lines.push("Prefer when applicable:");
+    for (const [name] of reliable) lines.push(`- ${name}: historically reliable.`);
+  }
+  if (problematic.length > 0) {
+    lines.push("Verify before using or recover carefully:");
+    for (const [name] of problematic) {
+      lines.push(`- ${name}: ${TOOL_RECOVERY_HINTS[name] ?? "high recent failure/usefulness risk; validate inputs and avoid blind retries"}.`);
+    }
+  }
+  return lines.join("\n");
+}
+
+function isProblematicTool(stats: ToolUsefulnessStats): boolean {
+  const errorRate = stats.call_count > 0 ? stats.error_count / stats.call_count : 0;
+  return errorRate >= 0.25 || stats.success_rate < 0.75 || stats.score < 0.6;
+}
+
+function problemSeverity(stats: ToolUsefulnessStats): number {
+  const errorRate = stats.call_count > 0 ? stats.error_count / stats.call_count : 0;
+  return (errorRate * 0.5) + ((1 - stats.success_rate) * 0.3) + ((1 - stats.score) * 0.2);
 }
 
 export function resolveExperienceMode(options?: StreamOptions): "essential" | "full" {

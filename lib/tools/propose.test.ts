@@ -114,7 +114,10 @@ describe("propose_config_change", () => {
     const thread = createThread("agent-2");
     const cases: Array<{ kind: Kind; payload: Record<string, unknown> }> = [
       { kind: "install_mcp", payload: { registry_id: "github" } },
+      { kind: "install_mcp", payload: { name: "custom", transport: "stdio", spec: { command: "x" } } },
+      { kind: "toggle_mcp", payload: { name: "github", enabled: true } },
       { kind: "update_agent_tools", payload: { agent_id: "agent-2", tools: ["web_search"] } },
+      { kind: "start_oauth", payload: { integration_id: "gmail" } },
       { kind: "enable_integration", payload: { id: "gmail" } },
       { kind: "set_provider_key", payload: { name: "anthropic-default", provider: "anthropic", model_id: "claude-opus-4-7" } },
       { kind: "upsert_harness", payload: { name: "Strict Citations", sections: { citation: { enabled: true, body: "tightened" } } } },
@@ -129,6 +132,29 @@ describe("propose_config_change", () => {
       expect(row.kind).toBe(c.kind);
       expect(JSON.parse(row.payload)).toEqual(c.payload);
     }
+  });
+
+  it("rejects invalid per-kind payloads before creating proposals", async () => {
+    const thread = createThread("agent-invalid-proposal");
+    const out = parse(await proposeConfigChangeTool.invoke(
+      { kind: "install_mcp", payload: {}, reason: "install github mcp" },
+      { configurable: { thread_id: thread.thread_id } },
+    ));
+
+    expect(out).toMatchObject({
+      error_code: "invalid_proposal_payload",
+      error: "install_mcp requires registry_id or name + transport + spec",
+    });
+    expect(out.recovery_hint).toContain("required payload fields");
+    expect(captured).toHaveLength(0);
+  });
+
+  it("rejects overlong proposal reasons at schema validation", async () => {
+    const thread = createThread("agent-overlong-proposal");
+    await expect(proposeConfigChangeTool.invoke(
+      { kind: "toggle_mcp", payload: { name: "github", enabled: true }, reason: "x".repeat(101) },
+      { configurable: { thread_id: thread.thread_id } },
+    )).rejects.toThrow(/100/);
   });
 });
 
@@ -155,7 +181,7 @@ describe("check_proposal", () => {
   it("reflects the user's decision and decodes JSON results", async () => {
     const thread = createThread("agent-4");
     const proposed = parse(await proposeConfigChangeTool.invoke(
-      { kind: "toggle_mcp", payload: { name: "y" }, reason: "r" },
+      { kind: "toggle_mcp", payload: { name: "y", enabled: true }, reason: "r" },
       { configurable: { thread_id: thread.thread_id } },
     ));
     setActionStatus(proposed.proposal_id as string, "approved", { applied: true, server: "y" });
@@ -169,7 +195,7 @@ describe("check_proposal", () => {
   it("falls back to the raw string when result isn't valid JSON (safeParse)", async () => {
     const thread = createThread("agent-5");
     const proposed = parse(await proposeConfigChangeTool.invoke(
-      { kind: "toggle_mcp", payload: { name: "z" }, reason: "r" },
+      { kind: "toggle_mcp", payload: { name: "z", enabled: true }, reason: "r" },
       { configurable: { thread_id: thread.thread_id } },
     ));
     // setActionStatus JSON-encodes its result arg, but a string is valid JSON

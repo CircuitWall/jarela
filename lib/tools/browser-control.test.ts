@@ -270,7 +270,15 @@ describe("resolveLocator", () => {
       expect(r.error).toMatch(/2 buttons match/);
       expect(r.error).toMatch(/handle 0/);
       expect(r.error).toMatch(/handle 1/);
+      expect(r.error).toMatch(/browser_snapshot/);
     }
+  });
+
+  it("suggests refreshing the snapshot when role+name no longer matches", async () => {
+    await seedSnapshotCache();
+    const r = resolveLocator({ role: "button", name: "Continue" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/browser_snapshot/);
   });
 });
 
