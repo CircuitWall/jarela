@@ -78,13 +78,13 @@ export function WebSearchConfigCard() {
   }
 
   return (
-    <section className="rounded-xl border border-border bg-surface-2/70 p-4 mt-4">
+    <section className="rounded-xl border border-border bg-surface-2/70 p-4">
       <div className="flex items-center gap-2">
         <Globe2 size={14} className="text-accent" />
         <h3 className="text-sm font-semibold text-fg">Web search fallback</h3>
       </div>
       <p className="mt-1 text-xs text-fg-muted">
-        Choose provider order for the built-in web_search tool. Supported providers: tavily, duckduckgo.
+        Configure provider order for the built-in web_search tool. Supported providers: tavily, duckduckgo.
       </p>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">

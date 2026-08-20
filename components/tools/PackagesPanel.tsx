@@ -4,6 +4,7 @@ import { Package } from "lucide-react";
 import { InstallPanel } from "./InstallPanel";
 import { ToolCatalog } from "./ToolCatalog";
 import { UnifiedPackageList } from "./UnifiedPackageList";
+import { WebSearchConfigCard } from "./WebSearchConfigCard";
 
 // Single home for everything that turns into a LangChain tool.
 //
@@ -34,6 +35,7 @@ export function PackagesPanel() {
       </header>
 
       <InstallPanel />
+      <WebSearchConfigCard />
       <UnifiedPackageList />
       <div className="border-t border-border pt-4" />
       <ToolCatalog />
