@@ -902,7 +902,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
           style={{
             transform: "translateY(0px)",
             height: "0px",
-            background: "linear-gradient(to top, rgba(82,82,91,0.16) 0%, rgba(82,82,91,0.1) 38%, rgba(82,82,91,0.06) 100%)",
+            background: "linear-gradient(to top, rgba(82,82,91,0.24) 0%, rgba(82,82,91,0.2) 22%, rgba(82,82,91,0.14) 48%, rgba(82,82,91,0.08) 72%, rgba(82,82,91,0.03) 88%, rgba(82,82,91,0) 100%)",
             borderBottom: "1px solid rgba(59,130,246,0.42)",
             backdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
             WebkitBackdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
