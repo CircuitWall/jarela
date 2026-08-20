@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server";
 import { getAllToolsAsync, getToolCategory, getToolCapability, getToolGroup, getToolSource, getToolCredentialsRequired } from "@/lib/tools";
 import { cachedJson } from "@/lib/api/responses";
-import { defaultToolStats, getToolStatsMap } from "@/lib/stores/tool-stats";
+import { defaultToolStats, getToolStatsMap, listToolFailureSamples } from "@/lib/stores/tool-stats";
 
 interface ToolEnvelope {
   name: string;
@@ -21,6 +21,7 @@ interface ToolEnvelope {
   group: string | null;
   credentials_required: string[];
   stats: ReturnType<typeof defaultToolStats>;
+  failure_samples: Array<{ normalized_reason: string; count: number; last_seen_at: string }>;
 }
 
 export async function GET(req: Request) {
@@ -31,6 +32,18 @@ export async function GET(req: Request) {
     // callers can't conflate external tools with MCP tools.
     const all = await getAllToolsAsync();
     const stats = getToolStatsMap(all.map((t) => t.name));
+    const failuresByTool = new Map<string, Array<{ normalized_reason: string; count: number; last_seen_at: string }>>();
+    for (const sample of listToolFailureSamples()) {
+      const rows = failuresByTool.get(sample.tool_name) ?? [];
+      if (rows.length < 3) {
+        rows.push({
+          normalized_reason: sample.normalized_reason,
+          count: sample.count,
+          last_seen_at: sample.last_seen_at,
+        });
+        failuresByTool.set(sample.tool_name, rows);
+      }
+    }
     const rows: ToolEnvelope[] = all.map((t) => ({
         name: t.name,
         description: t.description,
@@ -40,6 +53,7 @@ export async function GET(req: Request) {
         group: getToolGroup(t.name),
         credentials_required: getToolCredentialsRequired(t.name),
         stats: stats.get(t.name) ?? defaultToolStats(),
+        failure_samples: failuresByTool.get(t.name) ?? [],
       }));
     return cachedJson(
       rows.filter((tool) => !q || toolSearchText(tool).includes(q)).sort((a, b) => {
