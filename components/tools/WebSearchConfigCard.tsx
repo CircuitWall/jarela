@@ -1,8 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, RotateCcw, Save, Sparkles } from "lucide-react";
+import { Globe2, Sparkles } from "lucide-react";
 import { useEnvSettings } from "@/hooks/useEnvSettings";
+import { ToolSettingsActionRow } from "./ToolSettingsActionRow";
+import { ToolSettingsStatus } from "./ToolSettingsStatus";
+import { ToolSettingsSection } from "./ToolSettingsSection";
 
 const VAR_NAME = "JARELA_WEB_SEARCH_PROVIDER_ORDER";
 const VALID = ["tavily", "duckduckgo"] as const;
@@ -78,16 +81,13 @@ export function WebSearchConfigCard() {
   }
 
   return (
-    <section className="rounded-xl border border-border bg-surface-2/70 p-4">
-      <div className="flex items-center gap-2">
-        <Globe2 size={14} className="text-accent" />
-        <h3 className="text-sm font-semibold text-fg">Web search fallback</h3>
-      </div>
-      <p className="mt-1 text-xs text-fg-muted">
-        Configure provider order for the built-in web_search tool. Supported providers: tavily, duckduckgo.
-      </p>
+    <ToolSettingsSection
+      title="Web search fallback"
+      description="Configure provider order for the built-in web_search tool. Supported providers: tavily, duckduckgo."
+      icon={<Globe2 size={14} className="text-accent" />}
+    >
 
-      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {PRESETS.map((p) => (
           <button
             key={p.id}
@@ -113,7 +113,7 @@ export function WebSearchConfigCard() {
         <label className="text-[11px] text-fg-muted" htmlFor="web-search-order">
           Custom order (comma-separated)
         </label>
-        <div className="mt-1 flex items-center gap-2">
+        <div className="mt-1 space-y-2">
           <input
             id="web-search-order"
             type="text"
@@ -122,22 +122,15 @@ export function WebSearchConfigCard() {
             placeholder="tavily,duckduckgo"
             className="flex-1 px-2 py-1 rounded border border-border bg-surface text-fg text-[12px] font-mono"
           />
-          <button
-            type="button"
-            onClick={() => { void save(value); }}
-            disabled={!canSave || saving}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 text-[11px]"
-          >
-            <Save size={11} /> Save
-          </button>
-          <button
-            type="button"
-            onClick={() => { void resetToDefault(); }}
-            disabled={!row?.overridden || saving}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 text-[11px]"
-          >
-            <RotateCcw size={11} /> Reset
-          </button>
+          <ToolSettingsActionRow
+            onSave={() => { void save(value); }}
+            saving={saving}
+            saveLabel="Save"
+            savingLabel="Saving..."
+            onReset={() => { void resetToDefault(); }}
+            resetLabel="Reset"
+            resetDisabled={!row?.overridden}
+          />
         </div>
         <p className="mt-1 text-[11px] text-fg-faint">
           Current effective order: {normalized.length > 0 ? normalized.join(" -> ") : "(empty)"}
@@ -149,14 +142,13 @@ export function WebSearchConfigCard() {
         )}
       </div>
 
-      {status && <p className="mt-2 text-[11px] text-emerald-400">{status}</p>}
-      {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
+      <ToolSettingsStatus status={status} error={error} />
 
       {row && (
         <p className="mt-2 text-[11px] text-fg-faint">
           Env var: {VAR_NAME} {row.requiresRestart ? "(restart required)" : "(hot-applied)"}
         </p>
       )}
-    </section>
+    </ToolSettingsSection>
   );
 }

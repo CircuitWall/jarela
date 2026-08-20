@@ -6,6 +6,7 @@ import { useEnvSettings, type EnvSettingRow } from "@/hooks/useEnvSettings";
 import { ToolSettingInput } from "./ToolSettingInput";
 import { ToolSettingsActionRow } from "./ToolSettingsActionRow";
 import { ToolSettingsStatus } from "./ToolSettingsStatus";
+import { ToolSettingsSection } from "./ToolSettingsSection";
 
 const TOOL_GROUPS: Array<{ title: string; vars: string[]; description: string }> = [
   {
@@ -139,21 +140,20 @@ export function InternalToolConfigCard() {
   }
 
   return (
-    <section className="rounded-xl border border-border bg-surface-2/70 p-4 space-y-3">
-      <div className="flex items-center gap-2">
-        <Settings2 size={14} className="text-accent" />
-        <h3 className="text-sm font-semibold text-fg">Internal tool runtime controls</h3>
+    <ToolSettingsSection
+      title="Internal tool runtime controls"
+      description="These are built-in tool controls with schema defaults from Jarela. Changes apply immediately unless marked restart."
+      icon={<Settings2 size={14} className="text-accent" />}
+      actions={(
         <button
           type="button"
           onClick={() => { void resetAll(); }}
-          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border border-border text-fg-muted hover:bg-surface-3 text-[11px]"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border text-fg-muted hover:bg-surface-3 text-[11px]"
         >
           <RotateCcw size={11} /> Reset all to defaults
         </button>
-      </div>
-      <p className="text-xs text-fg-muted">
-        These are built-in tool controls with schema defaults from Jarela. Changes apply immediately unless marked restart.
-      </p>
+      )}
+    >
 
       {loading && <p className="text-xs text-fg-muted">Loading tool settings…</p>}
       {!loading && grouped.length === 0 && (
@@ -189,6 +189,6 @@ export function InternalToolConfigCard() {
       ))}
 
       <ToolSettingsStatus status={status} error={error} />
-    </section>
+    </ToolSettingsSection>
   );
 }
