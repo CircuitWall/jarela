@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AlertCircle,
   AlertTriangle,
   Boxes,
   ChevronDown,
@@ -19,6 +18,8 @@ import { useAppContext } from "@/contexts/AppContext";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { groupByProvider, OTHER_PROVIDER_KEY } from "@/components/tools/provider-grouping";
 import { ToolSettingInput } from "./ToolSettingInput";
+import { ToolSettingsActionRow } from "./ToolSettingsActionRow";
+import { ToolSettingsStatus } from "./ToolSettingsStatus";
 import type {
   BuiltinToolCategoryInfo,
   DefaultLangChainPackageInfo,
@@ -646,12 +647,14 @@ function DropInSecretsEditor({
   );
   const [savingSecrets, setSavingSecrets] = useState(false);
   const [secretErr, setSecretErr] = useState<string | null>(null);
+  const [secretStatus, setSecretStatus] = useState<string | null>(null);
 
   const [configValues, setConfigValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(tool.config.map((s) => [s.key, s.value ?? s.default ?? ""])),
   );
   const [savingConfig, setSavingConfig] = useState(false);
   const [configErr, setConfigErr] = useState<string | null>(null);
+  const [configStatus, setConfigStatus] = useState<string | null>(null);
 
   useEffect(() => {
     setSecretValues(
@@ -676,6 +679,7 @@ function DropInSecretsEditor({
   async function saveSecrets() {
     setSavingSecrets(true);
     setSecretErr(null);
+    setSecretStatus(null);
     try {
       const payload: Record<string, string> = {};
       for (const s of tool.secrets) {
@@ -686,6 +690,7 @@ function DropInSecretsEditor({
       }
       await api.extensions.saveToolSecrets(tool.name, payload);
       await onSaved();
+      setSecretStatus("Credentials saved.");
     } catch (e) {
       setSecretErr(errorMessage(e));
     } finally {
@@ -696,6 +701,7 @@ function DropInSecretsEditor({
   async function saveConfig() {
     setSavingConfig(true);
     setConfigErr(null);
+    setConfigStatus(null);
     try {
       const payload: Record<string, string> = {};
       for (const s of tool.config) {
@@ -704,6 +710,7 @@ function DropInSecretsEditor({
       }
       await api.extensions.saveToolConfig(tool.name, payload);
       await onSaved();
+      setConfigStatus("Configuration saved.");
     } catch (e) {
       setConfigErr(errorMessage(e));
     } finally {
@@ -744,23 +751,14 @@ function DropInSecretsEditor({
               />
             </label>
           ))}
-          {secretErr && (
-            <p className="text-xs text-rose-700 dark:text-rose-400 flex items-center gap-1">
-              <AlertCircle size={12} /> {secretErr}
-            </p>
-          )}
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={() => void saveSecrets()}
-              disabled={savingSecrets}
-              className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {savingSecrets ? "Saving…" : "Save credentials"}
-            </button>
-            <span className="text-[11px] text-fg-faint">
-              Leave a field empty to clear it. Stored encrypted at rest.
-            </span>
-          </div>
+          <ToolSettingsStatus status={secretStatus} error={secretErr} />
+          <ToolSettingsActionRow
+            onSave={() => { void saveSecrets(); }}
+            saving={savingSecrets}
+            saveLabel="Save credentials"
+            savingLabel="Saving..."
+            hint="Leave a field empty to clear it. Stored encrypted at rest."
+          />
         </div>
       )}
 
@@ -781,23 +779,14 @@ function DropInSecretsEditor({
               placeholder={s.default ?? "not configured"}
             />
           ))}
-          {configErr && (
-            <p className="text-xs text-rose-700 dark:text-rose-400 flex items-center gap-1">
-              <AlertCircle size={12} /> {configErr}
-            </p>
-          )}
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={() => void saveConfig()}
-              disabled={savingConfig}
-              className="text-xs px-2 py-1 rounded bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
-            >
-              {savingConfig ? "Saving…" : "Save configuration"}
-            </button>
-            <span className="text-[11px] text-fg-faint">
-              Leave a field empty to reset to default.
-            </span>
-          </div>
+          <ToolSettingsStatus status={configStatus} error={configErr} />
+          <ToolSettingsActionRow
+            onSave={() => { void saveConfig(); }}
+            saving={savingConfig}
+            saveLabel="Save configuration"
+            savingLabel="Saving..."
+            hint="Leave a field empty to reset to default."
+          />
         </div>
       )}
     </div>
