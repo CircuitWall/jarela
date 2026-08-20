@@ -18,13 +18,13 @@ import { pushErrorToast } from "@/lib/ui/error-report";
 import { useAppContext } from "@/contexts/AppContext";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { groupByProvider, OTHER_PROVIDER_KEY } from "@/components/tools/provider-grouping";
+import { ToolSettingInput } from "./ToolSettingInput";
 import type {
   BuiltinToolCategoryInfo,
   DefaultLangChainPackageInfo,
   ExtensionsListResponse,
   ExternalToolInfo,
   LangChainPackageManifestRecord,
-  ToolConfigSlotInfo,
 } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -770,11 +770,15 @@ function DropInSecretsEditor({
             <Settings size={11} /> Configuration
           </div>
           {tool.config.map((s) => (
-            <ConfigSlotField
+            <ToolSettingInput
               key={s.key}
-              slot={s}
+              label={s.label ?? s.key}
+              hint={s.description}
+              required={s.required}
+              type={s.type}
               value={configValues[s.key] ?? ""}
               onChange={(v) => setConfigValues((prev) => ({ ...prev, [s.key]: v }))}
+              placeholder={s.default ?? "not configured"}
             />
           ))}
           {configErr && (
@@ -797,58 +801,5 @@ function DropInSecretsEditor({
         </div>
       )}
     </div>
-  );
-}
-
-function ConfigSlotField({
-  slot,
-  value,
-  onChange,
-}: {
-  slot: ToolConfigSlotInfo;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const label = (
-    <span className="text-xs text-fg-subtle">
-      {slot.label ?? slot.key}
-      {slot.required && (
-        <span className="text-rose-600 dark:text-rose-400 ml-0.5">*</span>
-      )}
-    </span>
-  );
-  const hint = slot.description && (
-    <span className="block text-[11px] text-fg-faint">{slot.description}</span>
-  );
-
-  if (slot.type === "boolean") {
-    return (
-      <label className="flex items-center gap-2 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={value === "true"}
-          onChange={(e) => onChange(e.target.checked ? "true" : "false")}
-          className="rounded"
-        />
-        <span>
-          {label}
-          {hint}
-        </span>
-      </label>
-    );
-  }
-
-  return (
-    <label className="block">
-      {label}
-      {hint}
-      <input
-        type={slot.type === "number" ? "number" : "text"}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={slot.default ?? "not configured"}
-        className="mt-0.5 w-full px-2 py-1 text-sm bg-surface border border-border rounded font-mono"
-      />
-    </label>
   );
 }

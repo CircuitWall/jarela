@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertCircle, RotateCcw, Save, Settings2 } from "lucide-react";
 import { useEnvSettings, type EnvSettingRow } from "@/hooks/useEnvSettings";
+import { ToolSettingInput } from "./ToolSettingInput";
 
 const TOOL_GROUPS: Array<{ title: string; vars: string[]; description: string }> = [
   {
@@ -60,26 +61,16 @@ function ToolVarField({
       </div>
       <p className="mt-1 text-[11px] text-fg-muted">{row.description}</p>
       <div className="mt-2 flex items-center gap-2">
-        {row.type === "enum" && row.enumValues ? (
-          <select
+        <div className="flex-1">
+          <ToolSettingInput
+            label="Value"
+            type={row.type === "int" ? "number" : row.type === "bool" ? "boolean" : row.type === "enum" ? "enum" : "string"}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="flex-1 px-2 py-1 rounded border border-border bg-surface text-fg text-[12px] font-mono"
-          >
-            {row.enumValues.map((v) => (
-              <option key={v} value={v}>{v}</option>
-            ))}
-          </select>
-        ) : (
-          <input
-            type={row.type === "int" ? "number" : "text"}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            min={row.min}
-            max={row.max}
-            className="flex-1 px-2 py-1 rounded border border-border bg-surface text-fg text-[12px] font-mono"
+            onChange={onChange}
+            placeholder={String(row.default)}
+            enumValues={row.enumValues}
           />
-        )}
+        </div>
         <button
           type="button"
           onClick={onSave}
