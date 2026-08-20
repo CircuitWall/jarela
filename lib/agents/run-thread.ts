@@ -3,6 +3,7 @@ import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { spillImageAttachments } from "@/lib/attachments/spill";
+import { compactAgentThread } from "@/lib/agents/thread-compaction";
 import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
@@ -45,6 +46,7 @@ const SELF_CONFIG_TOOLS = [
   "read_harness",
   "list_skills",
   "read_skill",
+  "write_skill",
   "set_env_var",
   "restart_server",
 ] as const;
@@ -110,6 +112,21 @@ async function isSubjectShift(incoming: string, baseline: string): Promise<boole
 
 function isAutoBoundaryEligibleCategory(category: string | null | undefined): boolean {
   return category == null || category === "bridge";
+}
+
+async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
+  const cap = getConfig().maxThreadMessages;
+  if (!Number.isFinite(cap) || cap <= 0 || messageCount < cap) return;
+  try {
+    const result = await compactAgentThread(agentId);
+    if (result.compacted) {
+      console.info(
+        `[thread-compaction:auto] thread=${threadId} messages=${messageCount} pruned=${result.pruned}`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[thread-compaction:auto] thread=${threadId} failed: ${String(err)}`);
+  }
 }
 
 async function maybeAutoContextBoundary(thread_id: string, incomingRaw: string): Promise<string | null> {
@@ -308,6 +325,10 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     throw new RunThreadError(404, `Agent "${thread.agent_id}" not found`, "agent_not_found");
   }
   const allowedTools = withSelfConfigTools(getAgentTools(agentCfg));
+
+  if (!req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)) {
+    await maybeAutoCompactOversizedThread(agentCfg.id, req.thread_id, thread.message_count);
+  }
 
   // Persist the user turn (including any attachments) before the LLM stream
   // so reload-mid-stream still shows the prompt. The stall-retry path sets
@@ -1383,12 +1404,22 @@ async function buildRecallContext(
   });
   if (filtered.length === 0) return "";
 
+  const similarPriorUserRequests = filtered.filter(
+    (h) => h.source === "message" && h.role === "user" && h.score >= 0.3,
+  );
+
   const lines = [
     "--- Your retrieved memory for this turn ---",
     "These entries were pulled from YOUR own memory store (not user-supplied just now).",
     "Treat them as facts you previously committed to remember. Cite them confidently when relevant.",
     "",
   ];
+  if (similarPriorUserRequests.length >= 2) {
+    lines.push(
+      `Repeated-task signal: this user turn resembles ${similarPriorUserRequests.length} prior user requests. If your response confirms this is the same workflow, briefly summarize the common pattern and ask whether the user wants a reusable skill created or updated before persisting one.`,
+      "",
+    );
+  }
   for (const h of filtered) {
     const stamp = h.created_at.slice(0, 10);
     if (h.source === "memory") {

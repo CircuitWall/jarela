@@ -126,3 +126,22 @@ describe("buildSystemPrompt delivery channel", () => {
     expect(prompt).not.toContain("Delivery channel");
   });
 });
+
+describe("buildSystemPrompt self-configuration", () => {
+  it("tells agents to ask before creating skills for repeated workflows", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "repeat the release cleanup",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+    });
+
+    expect(prompt).toContain("third or later instance of the same workflow");
+    expect(prompt).toContain("ask whether the user wants you to create or update a skill");
+    expect(prompt).toContain("Do not persist a newly synthesized skill without user consent");
+  });
+});
