@@ -89,6 +89,23 @@ describe("routeTurnModel", () => {
     expect(result.candidates).toEqual(["vision"]);
   });
 
+  it("filters out non-vision models when prior hot history has images", () => {
+    const result = routeTurnModel({
+      models: [
+        model("text-only", "deepseek", "deepseek-v4-pro"),
+        model("vision", "openai", "gpt-4.1"),
+      ],
+      message: "Continue from the prior screenshot",
+      hasImageContext: true,
+      allowedTools: ["memory_read"],
+      policy: "quality",
+      rateResolver,
+    });
+    expect(result.routeClass).toBe("multimodal");
+    expect(result.modelConfigName).toBe("vision");
+    expect(result.candidates).toEqual(["vision"]);
+  });
+
   it("prefers the last cached model when candidates are otherwise close", () => {
     const result = routeTurnModel({
       models: [

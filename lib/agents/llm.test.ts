@@ -4,7 +4,27 @@ import {
   parseContextLimitFromError,
   isRateLimitError,
   parseRetryAfterSeconds,
+  toBaseMessages,
 } from "./llm";
+import { HumanMessage } from "@langchain/core/messages";
+
+describe("toBaseMessages", () => {
+  it("omits image blocks for text-only model calls", async () => {
+    const messages = await toBaseMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image", media_type: "image/png", data: "abcd" },
+        ],
+      },
+    ], undefined, { includeImages: false });
+
+    const human = messages[0] as HumanMessage;
+    expect(JSON.stringify(human.content)).toContain("image attachment omitted");
+    expect(JSON.stringify(human.content)).not.toContain("image_url");
+  });
+});
 
 describe("isContextOverflowError", () => {
   it("matches OpenAI phrasing", () => {
