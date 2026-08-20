@@ -35,6 +35,7 @@ const MAX_LINE_BYTES = 2_000;            // truncate any matched line longer tha
 const MAX_GLOB_RESULTS = 1_000;          // hard cap on file_glob returns
 const MAX_MULTI_EDITS = 50;              // hard cap on edits per multi_edit call
 const MAX_GREP_FILE_BYTES = 1_000_000;   // skip files larger than ~1 MB (likely binary or vendored)
+const MAX_PATTERN_CHARS = 10_000;         // keep glob/regex compilation bounded
 
 // Directories we never recurse into — same list as workspace_init's tree
 // walker. Keeps grep snappy on real projects.
@@ -151,7 +152,7 @@ async function walk(
 // ---------------------------------------------------------------------------
 
 const globSchema = z.object({
-  pattern: z.string().min(1).describe("Glob pattern matched against POSIX-relative paths from `root`. Supports *, **, ?, and {a,b} alternation. Example: 'src/**/*.{ts,tsx}'."),
+  pattern: z.string().min(1).max(MAX_PATTERN_CHARS).describe("Glob pattern matched against POSIX-relative paths from `root`. Supports *, **, ?, and {a,b} alternation. Example: 'src/**/*.{ts,tsx}'."),
   root: z.string().optional().describe("Directory to search under. Defaults to the active workspace root, or $HOME if no workspace is open. Absolute / ~/ / relative paths accepted."),
   include_hidden: z.boolean().optional().describe("Include dot-prefixed directories and files. Default false."),
   max_results: z.number().int().min(1).max(MAX_GLOB_RESULTS).optional().describe(`Cap on returned matches (default 200, max ${MAX_GLOB_RESULTS}).`),
@@ -203,6 +204,7 @@ export const fileGlobTool = tool(
       count: matches.length,
       files_scanned: walked.scanned,
       truncated: walked.truncated || matches.length >= cap,
+      truncated_reason: walked.truncated ? "scan_limit" : matches.length >= cap ? "result_cap" : undefined,
       truncated_hint: (walked.truncated || matches.length >= cap)
         ? "Narrow the pattern, raise max_results, or set a more specific root."
         : undefined,
@@ -221,7 +223,7 @@ export const fileGlobTool = tool(
 // ---------------------------------------------------------------------------
 
 const grepSchema = z.object({
-  pattern: z.string().min(1).describe("Search pattern. Regex by default; pass literal=true to treat as a plain substring."),
+  pattern: z.string().min(1).max(MAX_PATTERN_CHARS).describe("Search pattern. Regex by default; pass literal=true to treat as a plain substring."),
   literal: z.boolean().optional().describe("Treat `pattern` as a literal substring instead of a regex. Default false."),
   case_insensitive: z.boolean().optional().describe("Case-insensitive match. Default false."),
   root: z.string().optional().describe("Directory to search under. Defaults to the active workspace root, or $HOME."),
@@ -368,6 +370,7 @@ export const fileGrepTool = tool(
       files_with_matches: filesWithMatches,
       files_scanned: filesScanned,
       truncated,
+      truncated_reason: walked.truncated ? "scan_limit" : matches.length >= cap ? "match_cap" : undefined,
       truncated_hint: truncated
         ? "Narrow the pattern, add a glob filter, raise max_matches, or set a more specific root."
         : undefined,

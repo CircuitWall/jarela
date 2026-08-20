@@ -460,6 +460,7 @@ describe("file_list", () => {
     const out = parse(await fileListTool.invoke({ path: d, max_entries: 3 }));
     expect((out.entries as unknown[]).length).toBe(3);
     expect(out.truncated).toBe(true);
+    expect(out.truncated_reason).toBe("entry_cap");
     expect(out.truncated_hint).toMatch(/truncated/i);
   });
 
