@@ -54,6 +54,7 @@ const PLAN_FIRST_BODY = [
   "- For `schedule_task` specifically: the response will contain `proposal_id` only if propose_config_change was used, or `id` + `next_run_at` from schedule_task. Quote those values verbatim. If you didn't call the tool, you don't have an id.",
   "",
   "FOLLOW-THROUGH RULES (very important):",
+  "- For large code or file-changing tasks, avoid one huge tool call. Split work into small batches, validate after each batch, and checkpoint progress in the final answer if the full scope cannot fit safely in one turn.",
   "- NEVER end a turn with a promise to do something next. Forbidden as the LAST sentence of your reply (case-insensitive, in any language):",
   "    \"give me a moment\" / \"one moment\" / \"one sec\" / \"hold on\" / \"just a moment\" / \"bear with me\"",
   "    \"let me check\" / \"let me verify\" / \"let me continue\" / \"let me proceed\" / \"let me look\"",

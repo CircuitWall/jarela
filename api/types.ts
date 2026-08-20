@@ -490,6 +490,7 @@ export interface ToolInfo {
    */
   credentials_required?: string[];
   stats?: ToolUsefulnessStats;
+  failure_samples?: ToolFailureSampleInfo[];
 }
 
 export interface ToolUsefulnessStats {
@@ -502,6 +503,12 @@ export interface ToolUsefulnessStats {
   score: number;
   never_used: boolean;
   last_called_at: string | null;
+}
+
+export interface ToolFailureSampleInfo {
+  normalized_reason: string;
+  count: number;
+  last_seen_at: string;
 }
 
 export interface DashboardTierTokens {
