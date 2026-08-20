@@ -10,11 +10,9 @@ test.beforeEach(async ({ request, page }) => {
     // Harness panel is gated behind the full experience mode (AppShell.tsx).
     try { localStorage.setItem("jarela.experience.mode", "full"); } catch { /* sandbox */ }
   });
-  await page.goto("/?tab=agents");
+  await page.goto("/?tab=settings&item=harness");
 });
 
 test("Harness panel renders the Harnesses header", async ({ page }) => {
-  // Harnesses moved to the Agents panel; click the sub-tab to reveal it.
-  await page.getByRole("tab", { name: "Harnesses" }).click();
   await expect(page.getByRole("heading", { name: "Harnesses" })).toBeVisible({ timeout: 15_000 });
 });
