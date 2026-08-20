@@ -157,6 +157,21 @@ export function ToolCatalog() {
                   <Metric label="Used" value={`${usefulness}%`} />
                   <Metric label="Errors" value={`${stats?.error_count ?? 0}${stats?.never_used ? "" : ` (${errorRate}%)`}`} />
                 </div>
+                {tool.failure_samples && tool.failure_samples.length > 0 && (
+                  <div className="mt-2.5 rounded-md border border-border bg-surface-2 px-2.5 py-2">
+                    <div className="text-[11px] text-fg-faint uppercase tracking-wide">Failure patterns</div>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {tool.failure_samples.map((sample) => (
+                        <span
+                          key={`${sample.normalized_reason}-${sample.last_seen_at}`}
+                          className="rounded-full border border-border bg-surface-3 px-2 py-0.5 text-[11px] text-fg-muted"
+                        >
+                          {sample.normalized_reason} x{sample.count}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </details>
             </article>
           );
