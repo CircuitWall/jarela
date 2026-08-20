@@ -9,7 +9,9 @@ process.env.JARELA_DB_DIR = tmpRoot;
 const {
   defaultToolStats,
   getToolStatsMap,
+  listToolFailureSamples,
   recordToolUsage,
+  summarizeToolFailureSamples,
   summarizeToolUsage,
 } = await import("./tool-stats");
 
@@ -59,5 +61,47 @@ describe("tool usefulness telemetry", () => {
     expect(stats?.error_count).toBe(0);
     expect(stats?.used_count).toBe(1);
     expect(stats?.score).toBe(1);
+  });
+
+  it("summarizes failures into bounded categories without raw arguments", () => {
+    const rows = summarizeToolFailureSamples([
+      {
+        id: "secret-call",
+        phase: "call",
+        name: "gmail_modify_message",
+        payload: { id: "raw-message-id", refresh_token: "super-secret-token", remove_labels: ["INBOX"] },
+      },
+      {
+        id: "secret-call",
+        phase: "result",
+        name: "gmail_modify_message",
+        payload: { error: "401 invalid access_token=abc123 super-secret-token" },
+      },
+    ]);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: "gmail_modify_message", reason: "auth" });
+    expect(rows[0].argShape).toContain("remove_labels");
+    expect(rows[0].argShape).not.toContain("raw-message-id");
+    expect(rows[0].sampleError).not.toContain("super-secret-token");
+  });
+
+  it("persists bounded failure samples by category instead of per call", () => {
+    const unique = `bad_tool_${Date.now()}`;
+    for (let i = 0; i < 3; i += 1) {
+      recordToolUsage([
+        { id: `x${i}`, phase: "call", name: unique, payload: { path: `/tmp/raw-${i}.txt`, token: `secret-${i}` } },
+        { id: `x${i}`, phase: "result", name: unique, payload: { error: `ENOENT missing /tmp/raw-${i}.txt ${"x".repeat(400)}` } },
+      ], "");
+    }
+
+    const rows = listToolFailureSamples(unique);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].normalized_reason).toBe("not_found");
+    expect(rows[0].count).toBe(3);
+    expect(rows[0].sample_error.length).toBeLessThanOrEqual(300);
+    expect(rows[0].sample_arg_shape).toContain("path");
+    expect(rows[0].sample_arg_shape).not.toContain("raw-2.txt");
+    expect(rows[0].sample_arg_shape).not.toContain("secret-2");
   });
 });

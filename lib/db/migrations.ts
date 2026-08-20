@@ -313,6 +313,21 @@ export function runMigrations(db: DatabaseSync): void {
       last_called_at TEXT,
       updated_at     TEXT NOT NULL
     );
+    -- Bounded tool failure diagnostics. One row per (tool, normalized
+    -- reason), not one row per call; sample_arg_shape is a key/type
+    -- fingerprint only, never raw args or secrets.
+    CREATE TABLE IF NOT EXISTS tool_failure_samples (
+      tool_name          TEXT NOT NULL,
+      normalized_reason  TEXT NOT NULL,
+      count              INTEGER NOT NULL DEFAULT 0,
+      sample_error       TEXT NOT NULL,
+      sample_arg_shape   TEXT NOT NULL,
+      first_seen_at      TEXT NOT NULL,
+      last_seen_at       TEXT NOT NULL,
+      PRIMARY KEY (tool_name, normalized_reason)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tool_failure_samples_last_seen
+      ON tool_failure_samples(last_seen_at);
     -- claude_delegate's per-project Claude Code session id (ADR-0071),
     -- so a follow-up delegate call on the same project resumes the same
     -- session instead of starting fresh. project_key is the resolved

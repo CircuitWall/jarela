@@ -178,4 +178,19 @@ describe("buildToolReliabilityContext", () => {
 
     expect(ctx).not.toContain("documents_search");
   });
+
+  it("turns repeated timeout failure categories into split-work guidance", () => {
+    recordToolUsage([
+      { id: "large-a", phase: "call", name: "file_multi_edit", payload: { edits: "array" } },
+      { id: "large-a", phase: "result", name: "file_multi_edit", payload: { error: "tool timeout after huge change" } },
+      { id: "large-b", phase: "call", name: "file_multi_edit", payload: { edits: "array" } },
+      { id: "large-b", phase: "result", name: "file_multi_edit", payload: { error: "deadline exceeded while applying huge change" } },
+    ], "");
+
+    const ctx = buildToolReliabilityContext(["file_multi_edit"]);
+
+    expect(ctx).toContain("file_multi_edit: repeated timeout failures");
+    expect(ctx).toContain("split large changes into smaller batches");
+    expect(ctx).not.toContain("huge change");
+  });
 });
