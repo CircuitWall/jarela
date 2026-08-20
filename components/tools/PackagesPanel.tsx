@@ -5,6 +5,7 @@ import { InstallPanel } from "./InstallPanel";
 import { ToolCatalog } from "./ToolCatalog";
 import { UnifiedPackageList } from "./UnifiedPackageList";
 import { WebSearchConfigCard } from "./WebSearchConfigCard";
+import { InternalToolConfigCard } from "./InternalToolConfigCard";
 
 // Single home for everything that turns into a LangChain tool.
 //
@@ -32,9 +33,15 @@ export function PackagesPanel() {
           tools ship with Jarela; everything below them is added at runtime
           and can be enabled, disabled, or removed.
         </p>
+        <p className="text-xs text-fg-faint">
+          External drop-in tools expose credentials and configuration inline in
+          their rows below. Built-in runtime controls live in the card directly
+          under Install package.
+        </p>
       </header>
 
       <InstallPanel />
+      <InternalToolConfigCard />
       <WebSearchConfigCard />
       <UnifiedPackageList />
       <div className="border-t border-border pt-4" />
