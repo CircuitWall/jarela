@@ -21,7 +21,7 @@ import {
 } from "@/lib/agents/context-budget";
 import { getAppName } from "@/lib/env/app-config";
 import { listSkills } from "@/lib/skills";
-import { getToolStatsMap, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
+import { getToolStatsMap, listToolFailureSamples, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
@@ -124,9 +124,11 @@ const TOOL_RECOVERY_HINTS: Record<string, string> = {
 export function buildToolReliabilityContext(allowedTools: readonly string[]): string {
   if (allowedTools.length === 0) return "";
   const statsMap = getToolStatsMap(allowedTools);
+  const allowed = new Set(allowedTools);
   const rows = [...statsMap.entries()]
     .filter(([, stats]) => stats.call_count >= 3 && !stats.never_used);
-  if (rows.length === 0) return "";
+  const failureHints = buildFailurePatternHints(allowed);
+  if (rows.length === 0 && failureHints.length === 0) return "";
 
   const problematic = rows
     .filter(([, stats]) => isProblematicTool(stats))
@@ -137,7 +139,7 @@ export function buildToolReliabilityContext(allowedTools: readonly string[]): st
     .sort((a, b) => b[1].score - a[1].score)
     .slice(0, 3);
 
-  if (problematic.length === 0 && reliable.length === 0) return "";
+  if (problematic.length === 0 && reliable.length === 0 && failureHints.length === 0) return "";
 
   const lines = [
     "--- Tool reliability hints ---",
@@ -153,7 +155,25 @@ export function buildToolReliabilityContext(allowedTools: readonly string[]): st
       lines.push(`- ${name}: ${TOOL_RECOVERY_HINTS[name] ?? "high recent failure/usefulness risk; validate inputs and avoid blind retries"}.`);
     }
   }
+  if (failureHints.length > 0) {
+    lines.push("Recurring failure patterns:");
+    lines.push(...failureHints);
+  }
   return lines.join("\n");
+}
+
+function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {
+  return listToolFailureSamples()
+    .filter((sample) => allowed.has(sample.tool_name) && sample.count >= 2)
+    .filter((sample) => sample.normalized_reason === "timeout" || sample.normalized_reason === "size_or_context")
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 3)
+    .map((sample) => {
+      const hint = sample.normalized_reason === "timeout"
+        ? "split large changes into smaller batches, checkpoint progress, and avoid retrying the same huge call"
+        : "reduce payload size, narrow scope, or summarize before retrying";
+      return `- ${sample.tool_name}: repeated ${sample.normalized_reason} failures; ${hint}.`;
+    });
 }
 
 function isProblematicTool(stats: ToolUsefulnessStats): boolean {

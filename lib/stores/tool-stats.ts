@@ -33,6 +33,26 @@ interface ToolUsageDelta {
   used: number;
 }
 
+export interface ToolFailureSampleRow {
+  tool_name: string;
+  normalized_reason: string;
+  count: number;
+  sample_error: string;
+  sample_arg_shape: string;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+interface ToolFailureSampleDelta {
+  name: string;
+  reason: string;
+  sampleError: string;
+  argShape: string;
+}
+
+const FAILURE_SAMPLE_MAX_CHARS = 300;
+const FAILURE_ARG_SHAPE_MAX_CHARS = 200;
+
 const UPSERT_SQL = `
   INSERT INTO tool_stats
     (tool_name, call_count, success_count, error_count, used_count, last_called_at, updated_at)
@@ -47,18 +67,32 @@ const UPSERT_SQL = `
     updated_at = excluded.updated_at
 `;
 
+const UPSERT_FAILURE_SAMPLE_SQL = `
+  INSERT INTO tool_failure_samples
+    (tool_name, normalized_reason, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
+  VALUES
+    (?, ?, 1, ?, ?, ?, ?)
+  ON CONFLICT(tool_name, normalized_reason) DO UPDATE SET
+    count = tool_failure_samples.count + 1,
+    sample_error = excluded.sample_error,
+    sample_arg_shape = excluded.sample_arg_shape,
+    last_seen_at = excluded.last_seen_at
+`;
+
 export function recordToolUsage(
   toolEvents: readonly PersistedToolEvent[],
   assistantContent: string,
 ): void {
   const deltas = summarizeToolUsage(toolEvents, assistantContent);
+  const failureSamples = summarizeToolFailureSamples(toolEvents);
   if (deltas.length === 0) return;
 
   const db = getDb();
   const stamp = now();
   const stmt = db.prepare(UPSERT_SQL);
-    db.exec("BEGIN");
-    try {
+  const failureStmt = db.prepare(UPSERT_FAILURE_SAMPLE_SQL);
+  db.exec("BEGIN");
+  try {
     for (const row of deltas) {
       stmt.run(
         row.name,
@@ -70,11 +104,21 @@ export function recordToolUsage(
         stamp,
       );
     }
-      db.exec("COMMIT");
-    } catch (err) {
-      try { db.exec("ROLLBACK"); } catch { /* ignore rollback failure */ }
-      throw err;
+    for (const sample of failureSamples) {
+      failureStmt.run(
+        sample.name,
+        sample.reason,
+        sample.sampleError,
+        sample.argShape,
+        stamp,
+        stamp,
+      );
     }
+    db.exec("COMMIT");
+  } catch (err) {
+    try { db.exec("ROLLBACK"); } catch { /* ignore rollback failure */ }
+    throw err;
+  }
 }
 
 export function listToolStats(): ToolStatsRow[] {
@@ -100,6 +144,15 @@ export function getToolStatsMap(names?: readonly string[]): Map<string, ToolUsef
   const out = new Map<string, ToolUsefulnessStats>();
   for (const row of rows) out.set(row.tool_name, toStats(row));
   return out;
+}
+
+export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[] {
+  const sql = `SELECT tool_name, normalized_reason, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at
+     FROM tool_failure_samples${toolName ? " WHERE tool_name=?" : ""}
+     ORDER BY count DESC, last_seen_at DESC`;
+  return (toolName
+    ? getDb().prepare(sql).all(toolName)
+    : getDb().prepare(sql).all()) as unknown as ToolFailureSampleRow[];
 }
 
 export function defaultToolStats(): ToolUsefulnessStats {
@@ -182,6 +235,34 @@ export function summarizeToolUsage(
   return [...totals.values()];
 }
 
+export function summarizeToolFailureSamples(
+  toolEvents: readonly PersistedToolEvent[],
+): ToolFailureSampleDelta[] {
+  const byId = new Map<string, { name: string; callPayload: unknown; resultPayload?: unknown }>();
+  for (const ev of toolEvents) {
+    if (!ev.name) continue;
+    const key = ev.id || `${ev.phase}:${ev.name}`;
+    const existing = byId.get(key) ?? { name: ev.name, callPayload: undefined };
+    existing.name = ev.name;
+    if (ev.phase === "call") existing.callPayload = ev.payload;
+    else if (ev.phase === "result") existing.resultPayload = ev.payload;
+    byId.set(key, existing);
+  }
+
+  const out: ToolFailureSampleDelta[] = [];
+  for (const item of byId.values()) {
+    if (!isErrorPayload(item.resultPayload)) continue;
+    const errorText = sampleErrorText(item.resultPayload);
+    out.push({
+      name: item.name,
+      reason: normalizeFailureReason(errorText, item.resultPayload),
+      sampleError: truncateForSample(redactPotentialSecret(errorText), FAILURE_SAMPLE_MAX_CHARS),
+      argShape: truncateForSample(argShape(item.callPayload), FAILURE_ARG_SHAPE_MAX_CHARS),
+    });
+  }
+  return out;
+}
+
 function payloadLooksUsed(payload: unknown, assistantTerms: Set<string>): boolean {
   if (assistantTerms.size === 0) return false;
   const candidates = extractPayloadTerms(payload);
@@ -233,6 +314,51 @@ function isErrorPayload(payload: unknown): boolean {
   const status = "status" in payload ? (payload as { status?: unknown }).status : undefined;
   if (typeof status === "string" && /error|failed/i.test(status)) return true;
   return false;
+}
+
+function sampleErrorText(payload: unknown): string {
+  if (typeof payload === "string") return payload;
+  if (!payload || typeof payload !== "object") return String(payload ?? "");
+  const obj = payload as Record<string, unknown>;
+  const candidate = obj.error ?? obj.message ?? obj.status ?? obj.errors;
+  if (typeof candidate === "string") return candidate;
+  return stringifyPayload(candidate ?? payload);
+}
+
+function normalizeFailureReason(text: string, payload: unknown): string {
+  const lower = `${text} ${stringifyPayload(payload)}`.toLowerCase();
+  if (/auth|token|credential|unauthorized|401|master key|locked/.test(lower)) return "auth";
+  if (/permission|forbidden|denied|403/.test(lower)) return "permission";
+  if (/not found|enoent|404|missing|unknown/.test(lower)) return "not_found";
+  if (/invalid|schema|validation|bad request|400|malformed/.test(lower)) return "validation";
+  if (/timeout|timed out|deadline|aborted/.test(lower)) return "timeout";
+  if (/rate.?limit|too many requests|429|quota/.test(lower)) return "rate_limited";
+  if (/context|too long|max_tokens|token count|payload too large/.test(lower)) return "size_or_context";
+  return "other";
+}
+
+function argShape(payload: unknown): string {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return typeof payload;
+  const shape: Record<string, string> = {};
+  for (const key of Object.keys(payload as Record<string, unknown>).sort()) {
+    const value = (payload as Record<string, unknown>)[key];
+    if (Array.isArray(value)) shape[key] = "array";
+    else if (value === null) shape[key] = "null";
+    else shape[key] = typeof value;
+  }
+  return JSON.stringify(shape);
+}
+
+function redactPotentialSecret(text: string): string {
+  return text
+    .replace(/\b(?:sk|pk|ghp|gho|github_pat|xox[baprs])-?[A-Za-z0-9_\-]{12,}\b/g, "[redacted]")
+    .replace(/\b[A-Za-z0-9_-]*(?:secret|token|password|credential|apikey|api_key)[A-Za-z0-9_-]*\b/gi, "[redacted]")
+    .replace(/(api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret)[=:]\s*[^\s,;}]+/gi, "$1=[redacted]");
+}
+
+function truncateForSample(text: string, max: number): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 function clamp01(value: number): number {
