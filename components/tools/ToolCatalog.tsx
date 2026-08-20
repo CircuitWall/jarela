@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import { api } from "@/api/client";
-import type { ToolInfo } from "@/api/types";
+import type { ToolInfo, ToolUsefulnessStats } from "@/api/types";
 import { pushErrorToast } from "@/lib/ui/error-report";
 
 // Per-tool drill-down view: every individual LangChain tool the agent
@@ -40,8 +41,9 @@ export function ToolCatalog() {
     if (sourceFilter !== "all" && tool.source !== sourceFilter) return false;
     const stats = tool.stats;
     if (statusFilter === "new" && !stats?.never_used) return false;
-    if (statusFilter === "healthy" && (stats?.never_used || (stats?.score ?? 0) < 0.75)) return false;
-    if (statusFilter === "attention" && (stats?.never_used || (stats?.score ?? 0) >= 0.75)) return false;
+    const health = classifyToolHealth(stats);
+    if (statusFilter === "healthy" && health !== "healthy") return false;
+    if (statusFilter === "attention" && health !== "problematic") return false;
     return true;
   });
 
@@ -109,10 +111,12 @@ export function ToolCatalog() {
           const score = Math.round((stats?.score ?? 1) * 100);
           const success = Math.round((stats?.success_rate ?? 1) * 100);
           const usefulness = Math.round((stats?.usefulness_rate ?? 1) * 100);
+          const health = classifyToolHealth(stats);
+          const errorRate = Math.round(getErrorRate(stats) * 100);
           return (
             <article
               key={tool.name}
-              className="rounded-lg border border-border bg-surface-2 px-3 py-3"
+              className={`rounded-lg border px-3 py-3 ${health === "problematic" ? "border-amber-500/40 bg-amber-500/5" : "border-border bg-surface-2"}`}
             >
               <div className="flex flex-wrap items-start gap-2">
                 <div className="min-w-0 flex-1">
@@ -127,6 +131,11 @@ export function ToolCatalog() {
                     {stats?.never_used && (
                       <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
                         new 100%
+                      </span>
+                    )}
+                    {health === "problematic" && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-800 dark:text-amber-200">
+                        <AlertTriangle size={11} /> problematic
                       </span>
                     )}
                   </div>
@@ -145,7 +154,7 @@ export function ToolCatalog() {
                 <Metric label="Calls" value={String(stats?.call_count ?? 0)} />
                 <Metric label="Success" value={`${success}%`} />
                 <Metric label="Used" value={`${usefulness}%`} />
-                <Metric label="Errors" value={String(stats?.error_count ?? 0)} />
+                <Metric label="Errors" value={`${stats?.error_count ?? 0}${stats?.never_used ? "" : ` (${errorRate}%)`}`} />
               </div>
             </article>
           );
@@ -153,6 +162,20 @@ export function ToolCatalog() {
       </div>
     </section>
   );
+}
+
+function classifyToolHealth(stats: ToolUsefulnessStats | undefined): "new" | "healthy" | "problematic" {
+  if (!stats || stats.never_used || stats.call_count === 0) return "new";
+  const errorRate = getErrorRate(stats);
+  if (stats.call_count >= 3 && (errorRate >= 0.25 || stats.success_rate < 0.75 || stats.score < 0.6)) {
+    return "problematic";
+  }
+  return "healthy";
+}
+
+function getErrorRate(stats: ToolUsefulnessStats | undefined): number {
+  if (!stats || stats.call_count <= 0) return 0;
+  return Math.max(0, Math.min(1, stats.error_count / stats.call_count));
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
