@@ -35,6 +35,11 @@ const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const calendarFetch = (auth: GoogleAuth, path: string, init?: RequestInit) =>
   googleFetch(auth, "Calendar", CALENDAR_BASE, path, init);
 
+const RFC3339_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const rfc3339DateTime = z
+  .string()
+  .regex(RFC3339_DATETIME, "Use a full RFC3339 datetime, e.g. 2026-05-19T16:00:00-07:00 or 2026-05-19T23:00:00Z");
+
 // ── Type shapes (minimal — only what we read back) ──────────────────────────
 
 interface CalendarListEntry {
@@ -160,8 +165,8 @@ export const calendarListEventsTool = tool(
       "Datetimes are RFC3339 (e.g. '2026-05-19T16:00:00-07:00').",
     schema: z.object({
       calendar_id: z.string().optional().describe("Calendar id (default: 'primary')"),
-      time_min: z.string().optional().describe("RFC3339 lower bound (default: now)"),
-      time_max: z.string().optional().describe("RFC3339 upper bound (default: now + 7 days)"),
+      time_min: rfc3339DateTime.optional().describe("RFC3339 lower bound (default: now)"),
+      time_max: rfc3339DateTime.optional().describe("RFC3339 upper bound (default: now + 7 days)"),
       query: z.string().optional().describe("Free-text search across event fields"),
       max_results: z.number().int().optional().describe("Max events (default 25, max 100)"),
     }),

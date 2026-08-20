@@ -553,6 +553,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     delegateRosterLines,
     sourceManifest,
     deliveryChannel: req.delivery_channel ?? null,
+    allowedTools,
   });
 
   const delegationDepth = req._delegation_depth ?? 0;
