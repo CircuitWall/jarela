@@ -24,10 +24,12 @@ import { StreamRehydrator } from "@/lib/redaction/stream-rehydrate";
 import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
 import { wrapToolsForCredentialRouting } from "@/lib/tools/wrap-credentials";
 import { errorMessage } from "@/lib/utils/error";
+import { modelCapabilities } from "@/lib/providers/capabilities";
 
-async function toBaseMessages(
+export async function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
   systemPrompt?: string,
+  options?: { includeImages?: boolean },
 ): Promise<BaseMessage[]> {
   const base: BaseMessage[] = systemPrompt ? [new SystemMessage(systemPrompt)] : [];
   const out: BaseMessage[] = [...base];
@@ -55,11 +57,19 @@ async function toBaseMessages(
       if (part.type === "text") {
         if (part.text) blocks.push({ type: "text", text: part.text });
       } else if (part.type === "image") {
-        blocks.push({
-          type: "image_url",
-          image_url: { url: `data:${part.media_type};base64,${part.data}` },
-        });
+        if (options?.includeImages === false) {
+          blocks.push({ type: "text", text: `[image attachment omitted: ${part.media_type}]` });
+        } else {
+          blocks.push({
+            type: "image_url",
+            image_url: { url: `data:${part.media_type};base64,${part.data}` },
+          });
+        }
       } else if (part.type === "image_ref") {
+        if (options?.includeImages === false) {
+          blocks.push({ type: "text", text: `[image attachment omitted: ${part.media_type}]` });
+          continue;
+        }
         // Read the disk-resident blob and re-encode as base64 only for
         // the outbound provider request. The base64 lives on the wire
         // and inside the model's HTTP body — never in DB or checkpoints.
@@ -136,6 +146,7 @@ async function* streamWithConfigImpl(
       : baseParams;
 
   const provider = getProvider(cfg.provider);
+  const includeImages = modelCapabilities(cfg.provider, cfg.model_id).vision;
 
   const toolPolicy = runCfg?.allowed_tools?.length
     ? { allow: runCfg.allowed_tools }
@@ -234,7 +245,7 @@ async function* streamWithConfigImpl(
 
   try {
     const agentStream = await agent.stream(
-      { messages: await toBaseMessages(messages, runCfg?.system_prompt) },
+      { messages: await toBaseMessages(messages, runCfg?.system_prompt, { includeImages }) },
       {
         streamMode: ["messages", "updates", "custom"],
         configurable: {

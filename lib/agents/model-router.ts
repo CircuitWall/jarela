@@ -18,6 +18,7 @@ export interface RouteTurnModelOptions {
   models: readonly ModelConfig[];
   message: string;
   attachments?: readonly ContentPart[];
+  hasImageContext?: boolean;
   allowedTools?: readonly string[];
   policy: ModelRouterPolicy;
   latestUsage?: LatestUsageHint | null;
@@ -66,7 +67,7 @@ const RESEARCH_TOOLS = new Set(["web_search", "fetch_webpage", "documents", "fil
 const NON_GENERATIVE_FUNCTIONALITY = new Set(["embeddings", "reranking", "moderation"]);
 
 export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelResult {
-  const routeClass = classifyTurn(options.message, options.attachments, options.allowedTools);
+  const routeClass = classifyTurn(options.message, options.attachments, options.allowedTools, options.hasImageContext);
   const routable = options.models.filter(
     (model) => !NON_GENERATIVE_FUNCTIONALITY.has(detectModelFunctionality(model.model_id)),
   );
@@ -74,7 +75,7 @@ export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelRe
     return { modelConfigName: null, routeClass, reason: "no chat-capable model configs available", candidates: [] };
   }
 
-  const filtered = filterCandidates(routable, routeClass, options.attachments, options.allowedTools);
+  const filtered = filterCandidates(routable, routeClass, options.attachments, options.allowedTools, options.hasImageContext);
   const candidates = filtered.length > 0 ? filtered : routable;
   const scored = candidates
     .map((model) => ({
@@ -98,10 +99,11 @@ export function classifyTurn(
   message: string,
   attachments?: readonly ContentPart[],
   allowedTools?: readonly string[],
+  hasImageContext?: boolean,
 ): ModelRouteClass {
   const text = (message ?? "").trim();
   const lowerTools = new Set((allowedTools ?? []).map((tool) => tool.toLowerCase()));
-  const hasImage = (attachments ?? []).some((part) => part.type === "image" || part.type === "image_ref");
+  const hasImage = hasImageContext || (attachments ?? []).some((part) => part.type === "image" || part.type === "image_ref");
   const hasFile = (attachments ?? []).some((part) => FILEY_TYPES.has(part.type));
   const hasResearchTool = Array.from(lowerTools).some((tool) => RESEARCH_TOOLS.has(tool));
 
@@ -117,8 +119,9 @@ function filterCandidates(
   routeClass: ModelRouteClass,
   attachments?: readonly ContentPart[],
   allowedTools?: readonly string[],
+  hasImageContext?: boolean,
 ): ModelConfig[] {
-  const requiresVision = (attachments ?? []).some((part) => part.type === "image" || part.type === "image_ref");
+  const requiresVision = hasImageContext || (attachments ?? []).some((part) => part.type === "image" || part.type === "image_ref");
   const requiresFiles = (attachments ?? []).some((part) => part.type === "file");
   const requiresTools = (allowedTools ?? []).length > 0;
 

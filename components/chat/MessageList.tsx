@@ -906,6 +906,8 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
             borderBottom: "1px solid rgba(59,130,246,0.42)",
             backdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
             WebkitBackdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
+            maskImage: "linear-gradient(to top, black 0%, rgba(0,0,0,0.88) 72%, rgba(0,0,0,0.32) 90%, transparent 100%)",
+            WebkitMaskImage: "linear-gradient(to top, black 0%, rgba(0,0,0,0.88) 72%, rgba(0,0,0,0.32) 90%, transparent 100%)",
           }}
         />
       </div>
