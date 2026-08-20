@@ -1640,6 +1640,7 @@ function ClickableImage({ src }: { src: string }) {
         align="center"
         level="elevated"
         padded={false}
+        fitViewport
         footer={(
           <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-surface-2/90">
             <a
@@ -1660,12 +1661,12 @@ function ClickableImage({ src }: { src: string }) {
           </div>
         )}
       >
-        <div className="bg-black/90 flex items-center justify-center p-2 sm:p-4">
+        <div className="h-full bg-black/95 flex items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={src}
             alt="attached image"
-            className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            className="max-w-full max-h-full object-contain"
           />
         </div>
       </Dialog>

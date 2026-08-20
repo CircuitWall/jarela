@@ -50,6 +50,8 @@ export interface DialogProps {
   showClose?: boolean;
   /** Apply default body padding/spacing wrapper. Default true. */
   padded?: boolean;
+  /** Render edge-to-edge at viewport size (used for immersive previews). */
+  fitViewport?: boolean;
 }
 
 export function Dialog({
@@ -66,6 +68,7 @@ export function Dialog({
   dismissOnEscape = true,
   showClose,
   padded = true,
+  fitViewport = false,
 }: DialogProps) {
   useEscapeKey(onClose, open && dismissOnEscape);
 
@@ -84,16 +87,19 @@ export function Dialog({
   const renderClose = showClose ?? showHeader;
 
   const overlayCls =
-    "fixed inset-0 bg-black/60 flex justify-center p-2 sm:p-4 " +
+    "fixed inset-0 bg-black/60 flex justify-center " +
+    (fitViewport ? "p-0 " : "p-2 sm:p-4 ") +
     LEVEL[level] +
     " " +
-    (align === "top" ? "items-start overflow-y-auto" : "items-center");
+    (fitViewport ? "items-stretch" : (align === "top" ? "items-start overflow-y-auto" : "items-center"));
 
   const cardCls =
-    "bg-surface-2 border border-border rounded-2xl w-full shadow-xl flex flex-col " +
-    SIZE[size] +
-    " " +
-    (align === "top" ? "my-2 sm:my-4" : "max-h-[90vh]");
+    (fitViewport
+      ? "bg-surface-2 w-screen h-[100dvh] max-w-[100vw] max-h-[100dvh] shadow-xl flex flex-col rounded-none border-0"
+      : "bg-surface-2 border border-border rounded-2xl w-full shadow-xl flex flex-col " +
+        SIZE[size] +
+        " " +
+        (align === "top" ? "my-2 sm:my-4" : "max-h-[90vh]"));
 
   return (
     <div
