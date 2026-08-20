@@ -256,8 +256,15 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       return;
     }
 
-    const top = Math.min(topStart, boundaryTop);
-    const height = Math.max(0, Math.abs(boundaryTop - topStart));
+    const regionRect = region.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect();
+    const viewportTop = Math.max(0, rootRect.top - regionRect.top);
+    const viewportBottom = Math.min(regionRect.height, rootRect.bottom - regionRect.top);
+    const rawTop = Math.min(topStart, boundaryTop);
+    const rawBottom = Math.max(topStart, boundaryTop);
+    const top = Math.max(rawTop, viewportTop);
+    const bottom = Math.min(rawBottom, viewportBottom);
+    const height = Math.max(0, bottom - top);
     if (height < 2) {
       mask.style.opacity = "0";
       mask.style.height = "0px";
@@ -266,6 +273,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
     mask.style.transform = `translateY(${top}px)`;
     mask.style.height = `${height}px`;
+    mask.style.borderBottom = boundaryTop >= viewportTop && boundaryTop <= viewportBottom
+      ? "1px solid rgba(59,130,246,0.42)"
+      : "0";
     mask.style.opacity = "1";
   }, [hotSince, visibleMessages]);
 
@@ -903,7 +913,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
             transform: "translateY(0px)",
             height: "0px",
             background: "linear-gradient(to top, rgba(82,82,91,0.24) 0%, rgba(82,82,91,0.2) 22%, rgba(82,82,91,0.14) 48%, rgba(82,82,91,0.08) 72%, rgba(82,82,91,0.03) 88%, rgba(82,82,91,0) 100%)",
-            borderBottom: "1px solid rgba(59,130,246,0.42)",
+            borderBottom: "0",
             backdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
             WebkitBackdropFilter: "grayscale(0.5) saturate(0.18) contrast(0.98)",
             maskImage: "linear-gradient(to top, black 0%, rgba(0,0,0,0.88) 72%, rgba(0,0,0,0.32) 90%, transparent 100%)",
