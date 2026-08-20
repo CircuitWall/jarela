@@ -2,11 +2,30 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
 import { errorMessage } from "@/lib/utils/error";
+import { getConfig } from "@/lib/env/config";
 
 interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+}
+
+type SearchProvider = "tavily" | "duckduckgo";
+
+const DEFAULT_PROVIDER_ORDER: SearchProvider[] = ["tavily", "duckduckgo"];
+
+function parseProviderOrder(raw: string): SearchProvider[] {
+  const out: SearchProvider[] = [];
+  const seen = new Set<SearchProvider>();
+  for (const token of raw.split(",")) {
+    const p = token.trim().toLowerCase();
+    if (p !== "tavily" && p !== "duckduckgo") continue;
+    const provider = p as SearchProvider;
+    if (seen.has(provider)) continue;
+    seen.add(provider);
+    out.push(provider);
+  }
+  return out.length > 0 ? out : [...DEFAULT_PROVIDER_ORDER];
 }
 
 // Tavily is the preferred backend for agent-grade search (clean JSON, citations,
@@ -126,24 +145,40 @@ function decodeHTML(s: string): string {
 export const webSearchTool = tool(
   async ({ query, max_results }) => {
     const limit = Math.min(max_results ?? 5, 10);
-    const tavilyKey = process.env.TAVILY_API_KEY;
+    const tavilyKey = process.env.TAVILY_API_KEY?.trim();
+    const order = parseProviderOrder(getConfig().webSearchProviderOrder);
+    const tried: string[] = [];
+    let lastErr: unknown = null;
 
-    try {
-      const results = tavilyKey
-        ? await tavilySearch(query, limit, tavilyKey)
-        : await ddgSearch(query, limit);
-      return JSON.stringify({
-        query,
-        provider: tavilyKey ? "tavily" : "duckduckgo",
-        results,
-        total: results.length,
-      });
-    } catch (err) {
-      return JSON.stringify({
-        query,
-        error: errorMessage(err),
-      });
+    for (const provider of order) {
+      if (provider === "tavily" && !tavilyKey) {
+        tried.push("tavily:missing_api_key");
+        continue;
+      }
+      try {
+        const results = provider === "tavily"
+          ? await tavilySearch(query, limit, tavilyKey!)
+          : await ddgSearch(query, limit);
+        return JSON.stringify({
+          query,
+          provider,
+          provider_order: order,
+          tried,
+          results,
+          total: results.length,
+        });
+      } catch (err) {
+        tried.push(`${provider}:error`);
+        lastErr = err;
+      }
     }
+
+    return JSON.stringify({
+      query,
+      provider_order: order,
+      tried,
+      error: errorMessage(lastErr ?? new Error("no configured provider available")),
+    });
   },
   {
     name: "web_search",
