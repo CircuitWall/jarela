@@ -1,9 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertCircle, RotateCcw, Save, Settings2 } from "lucide-react";
+import { RotateCcw, Settings2 } from "lucide-react";
 import { useEnvSettings, type EnvSettingRow } from "@/hooks/useEnvSettings";
 import { ToolSettingInput } from "./ToolSettingInput";
+import { ToolSettingsActionRow } from "./ToolSettingsActionRow";
+import { ToolSettingsStatus } from "./ToolSettingsStatus";
 
 const TOOL_GROUPS: Array<{ title: string; vars: string[]; description: string }> = [
   {
@@ -71,22 +73,15 @@ function ToolVarField({
             enumValues={row.enumValues}
           />
         </div>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent text-white hover:bg-accent/90 disabled:opacity-50 text-[11px]"
-        >
-          <Save size={11} /> Save
-        </button>
-        <button
-          type="button"
-          onClick={onReset}
-          disabled={!row.overridden || saving}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 text-[11px]"
-        >
-          <RotateCcw size={11} /> Reset
-        </button>
+        <ToolSettingsActionRow
+          onSave={onSave}
+          saving={saving}
+          saveLabel="Save"
+          savingLabel="Saving..."
+          onReset={onReset}
+          resetLabel="Reset"
+          resetDisabled={!row.overridden}
+        />
       </div>
     </div>
   );
@@ -193,12 +188,7 @@ export function InternalToolConfigCard() {
         </div>
       ))}
 
-      {status && <p className="text-[11px] text-emerald-400">{status}</p>}
-      {error && (
-        <p className="text-[11px] text-rose-400 flex items-center gap-1">
-          <AlertCircle size={12} /> {error}
-        </p>
-      )}
+      <ToolSettingsStatus status={status} error={error} />
     </section>
   );
 }
