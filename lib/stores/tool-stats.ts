@@ -52,6 +52,7 @@ interface ToolFailureSampleDelta {
 
 const FAILURE_SAMPLE_MAX_CHARS = 300;
 const FAILURE_ARG_SHAPE_MAX_CHARS = 200;
+const FAILURE_SAMPLE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const UPSERT_SQL = `
   INSERT INTO tool_stats
@@ -114,6 +115,7 @@ export function recordToolUsage(
         stamp,
       );
     }
+    pruneToolFailureSamples(stamp);
     db.exec("COMMIT");
   } catch (err) {
     try { db.exec("ROLLBACK"); } catch { /* ignore rollback failure */ }
@@ -153,6 +155,15 @@ export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[
   return (toolName
     ? getDb().prepare(sql).all(toolName)
     : getDb().prepare(sql).all()) as unknown as ToolFailureSampleRow[];
+}
+
+export function pruneToolFailureSamples(referenceIso = now()): number {
+  const referenceMs = Date.parse(referenceIso);
+  const cutoff = new Date((Number.isFinite(referenceMs) ? referenceMs : Date.now()) - FAILURE_SAMPLE_TTL_MS).toISOString();
+  const result = getDb()
+    .prepare("DELETE FROM tool_failure_samples WHERE last_seen_at < ?")
+    .run(cutoff) as { changes: number };
+  return result.changes;
 }
 
 export function defaultToolStats(): ToolUsefulnessStats {
