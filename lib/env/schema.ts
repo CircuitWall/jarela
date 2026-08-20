@@ -91,6 +91,7 @@ export const ENV_DEFAULTS = {
   // tools
   voiceTimeoutMs: 60_000,
   imageTimeoutMs: 60_000,
+  webSearchProviderOrder: "tavily,duckduckgo",
   fetchToolMaxBytes: 2_000_000,
   mcpRegistryTimeoutMs: 15_000,
   execMaxOutputBytes: 8_000,
@@ -405,6 +406,17 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     requiresRestart: false,
     agentWritable: false,
     min: 1_000,
+  },
+  {
+    name: "JARELA_WEB_SEARCH_PROVIDER_ORDER",
+    type: "string",
+    default: ENV_DEFAULTS.webSearchProviderOrder,
+    description:
+      "Ordered providers for web_search fallback (comma-separated). Supported: tavily, duckduckgo. Example: 'duckduckgo,tavily'.",
+    category: "tools",
+    tier: "A",
+    requiresRestart: false,
+    agentWritable: true,
   },
   {
     name: "JARELA_FETCH_TOOL_MAX_BYTES",
