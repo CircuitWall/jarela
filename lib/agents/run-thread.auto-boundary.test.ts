@@ -6,6 +6,7 @@ import type { StreamChunk } from "@/lib/agents/base";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-auto-boundary-"));
 process.env.JARELA_DB_DIR = tmpRoot;
+process.env.JARELA_MAX_THREAD_MESSAGES = "4";
 
 const streamWithConfigMock = vi.fn();
 
@@ -17,6 +18,14 @@ vi.mock("@/lib/scheduler", () => ({
   startScheduler: () => {},
 }));
 
+vi.mock("@/lib/providers", () => ({
+  getProvider: () => ({
+    chat: async () => ({
+      stream: (async function* () { yield "AUTO-COMPACT-RECAP"; })(),
+    }),
+  }),
+}));
+
 vi.mock("@/lib/embeddings", () => ({
   embedOne: async () => null,
   cosine: () => 0,
@@ -26,7 +35,7 @@ vi.mock("@/lib/embeddings", () => ({
 const { prepareThreadRun } = await import("./run-thread");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
-const { addMessage, createThread, getThread } = await import("@/lib/stores/threads");
+const { addMessage, createThread, getMessages, getThread } = await import("@/lib/stores/threads");
 const { getDb } = await import("@/lib/db");
 
 afterAll(() => {
@@ -152,5 +161,43 @@ describe("prepareThreadRun auto context boundary", () => {
 
     const updated = getThread(thread.thread_id);
     expect(updated?.hot_since ?? null).toBeNull();
+  });
+
+  it("auto-compacts an oversized thread before persisting the next normal turn", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-oversized-thread",
+      name: "Oversized Thread Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-oversized-thread");
+    for (let i = 0; i < 5; i++) {
+      addMessage(thread.thread_id, i % 2 === 0 ? "user" : "assistant", `older turn ${i}`);
+    }
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "continue after retention guard",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const updated = getThread(thread.thread_id);
+    expect(updated?.warm_summary).toContain("AUTO-COMPACT-RECAP");
+    expect(updated?.hot_since).toBeTruthy();
+    expect(getMessages(thread.thread_id).map((m) => m.content)).toEqual([
+      "older turn 1",
+      "older turn 2",
+      "older turn 3",
+      "older turn 4",
+      "continue after retention guard",
+    ]);
   });
 });

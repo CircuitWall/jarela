@@ -86,6 +86,7 @@ describe("categorizeByVerb", () => {
       "memory_delete",
       "set_env_var",
       "update_agent_instruction",
+      "write_skill",
       "update_scheduled_task",
       "update_watcher",
     ];
