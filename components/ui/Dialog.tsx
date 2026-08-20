@@ -2,6 +2,7 @@
 
 import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 // Shared modal shell. Centralises Esc-to-close, body scroll lock, the
@@ -101,7 +102,7 @@ export function Dialog({
         " " +
         (align === "top" ? "my-2 sm:my-4" : "max-h-[90vh]"));
 
-  return (
+  return createPortal(
     <div
       className={overlayCls}
       role="presentation"
@@ -144,6 +145,7 @@ export function Dialog({
         </div>
         {footer}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
