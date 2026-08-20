@@ -14,18 +14,26 @@ type SearchProvider = "tavily" | "duckduckgo";
 
 const DEFAULT_PROVIDER_ORDER: SearchProvider[] = ["tavily", "duckduckgo"];
 
-function parseProviderOrder(raw: string): SearchProvider[] {
+function parseProviderOrder(raw: string): { order: SearchProvider[]; ignored: string[]; usedDefault: boolean } {
   const out: SearchProvider[] = [];
+  const ignored: string[] = [];
   const seen = new Set<SearchProvider>();
   for (const token of raw.split(",")) {
     const p = token.trim().toLowerCase();
+    if (!p) continue;
     if (p !== "tavily" && p !== "duckduckgo") continue;
     const provider = p as SearchProvider;
     if (seen.has(provider)) continue;
     seen.add(provider);
     out.push(provider);
   }
-  return out.length > 0 ? out : [...DEFAULT_PROVIDER_ORDER];
+  for (const token of raw.split(",")) {
+    const p = token.trim().toLowerCase();
+    if (!p) continue;
+    if (p !== "tavily" && p !== "duckduckgo") ignored.push(p);
+  }
+  if (out.length > 0) return { order: out, ignored, usedDefault: false };
+  return { order: [...DEFAULT_PROVIDER_ORDER], ignored, usedDefault: true };
 }
 
 // Tavily is the preferred backend for agent-grade search (clean JSON, citations,
@@ -146,7 +154,8 @@ export const webSearchTool = tool(
   async ({ query, max_results }) => {
     const limit = Math.min(max_results ?? 5, 10);
     const tavilyKey = process.env.TAVILY_API_KEY?.trim();
-    const order = parseProviderOrder(getConfig().webSearchProviderOrder);
+    const parsedOrder = parseProviderOrder(getConfig().webSearchProviderOrder);
+    const order = parsedOrder.order;
     const tried: string[] = [];
     let lastErr: unknown = null;
 
@@ -163,6 +172,8 @@ export const webSearchTool = tool(
           query,
           provider,
           provider_order: order,
+          ignored_providers: parsedOrder.ignored,
+          used_default_order: parsedOrder.usedDefault,
           tried,
           results,
           total: results.length,
@@ -176,6 +187,8 @@ export const webSearchTool = tool(
     return JSON.stringify({
       query,
       provider_order: order,
+      ignored_providers: parsedOrder.ignored,
+      used_default_order: parsedOrder.usedDefault,
       tried,
       error: errorMessage(lastErr ?? new Error("no configured provider available")),
     });
