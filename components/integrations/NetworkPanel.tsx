@@ -7,6 +7,7 @@ import { NetworkSection } from "./NetworkSection";
 import { AllowedSitesSection } from "./AllowedSitesSection";
 import { EnvAliasEditor } from "./EnvAliasEditor";
 import { NetworkEnvEditor } from "./NetworkEnvEditor";
+import { WebSearchConfigCard } from "./WebSearchConfigCard";
 import { errorMessage } from "@/lib/utils/error";
 
 // "Network & environment" hosts everything that's NOT a credential: HTTP
@@ -100,6 +101,7 @@ export function NetworkPanel() {
         )}
         <NetworkSection />
         <AllowedSitesSection />
+        <WebSearchConfigCard />
         <NetworkEnvEditor />
       </div>
     </div>
