@@ -70,6 +70,31 @@ describe("MessageBubble image attachments", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Close" })[0]);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("opens markdown images in the same viewport-sized preview dialog", () => {
+    const message: Message = {
+      id: "img-md-1",
+      role: "assistant",
+      content: "Here is one: ![diagram](/api/v1/files/diagram.png)",
+      created_at: "2026-08-15T12:00:00.000Z",
+      status: "confirmed",
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} showAvatar={false} />
+      </AppProvider>,
+    );
+
+    fireEvent.click(screen.getByAltText("diagram"));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toBeTruthy();
+    const preview = screen.getAllByAltText("diagram").at(-1)!;
+    expect(preview.className).toContain("h-full");
+    expect(preview.className).toContain("w-full");
+    expect(preview.className).toContain("object-contain");
+  });
 });
 
 describe("MessageBubble local file links", () => {

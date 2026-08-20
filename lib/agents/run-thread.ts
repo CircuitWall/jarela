@@ -279,6 +279,19 @@ function contentText(content: string | ContentPart[]): string {
     .join(" ");
 }
 
+function contentHasImage(content: string | ContentPart[]): boolean {
+  if (typeof content !== "string") return content.some((p) => p.type === "image" || p.type === "image_ref");
+  if (!content.startsWith("[")) return false;
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return Array.isArray(parsed) && parsed.some((p) => (
+      p && typeof p === "object" && "type" in p && ((p as { type?: unknown }).type === "image" || (p as { type?: unknown }).type === "image_ref")
+    ));
+  } catch {
+    return false;
+  }
+}
+
 export function snapshotThreadModelConfigName(thread_id: string): string | null {
   const thread = getThread(thread_id);
   if (!thread) return null;
@@ -365,6 +378,9 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
   }
 
+  const hasImageContext = contentHasImage(content)
+    || getMessagesPage(req.thread_id, agentCfg.history_limit ?? 50).messages.some((m) => contentHasImage(m.content));
+
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
   const defaultModelConfig = getDefaultModelConfig();
@@ -416,6 +432,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       })),
       message: trimmed,
       attachments: req.attachments,
+      hasImageContext,
       allowedTools,
       latestUsage: getLatestMessageUsageForThread(req.thread_id),
       latestObservation: getLatestRoutingObservation(req.thread_id),

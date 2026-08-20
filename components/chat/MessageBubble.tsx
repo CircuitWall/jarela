@@ -944,6 +944,7 @@ function parseContent(raw: string): string | ContentPart[] {
 function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: string }) {
   const [retryNonce, setRetryNonce] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [open, setOpen] = useState(false);
   const objectUrl = useMemo(() => (src instanceof Blob ? URL.createObjectURL(src) : null), [src]);
 
   useEffect(() => {
@@ -994,20 +995,24 @@ function ResilientMarkdownImage({ src, alt }: { src?: string | Blob; alt?: strin
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={effectiveSrc}
-      alt={alt ?? "image"}
-      loading="lazy"
-      className="rounded-lg border border-border/50"
-      onError={() => {
-        if (retryNonce === 0) {
-          setRetryNonce(1);
-          return;
-        }
-        setFailed(true);
-      }}
-    />
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={effectiveSrc}
+        alt={alt ?? "image"}
+        loading="lazy"
+        className="rounded-lg border border-border/50 cursor-zoom-in hover:border-fg-faint transition-colors"
+        onClick={() => setOpen(true)}
+        onError={() => {
+          if (retryNonce === 0) {
+            setRetryNonce(1);
+            return;
+          }
+          setFailed(true);
+        }}
+      />
+      <ImagePreviewDialog src={normalizedSrc} alt={alt ?? "image"} open={open} onClose={() => setOpen(false)} />
+    </>
   );
 }
 
@@ -1632,45 +1637,51 @@ function ClickableImage({ src }: { src: string }) {
           objectFit: "contain",
         }}
       />
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Image preview"
-        size="full"
-        align="center"
-        level="elevated"
-        padded={false}
-        fitViewport
-        footer={(
-          <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-surface-2/90">
-            <a
-              href={src}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-2.5 py-1.5 rounded-md border border-border/70 bg-surface-3 text-xs text-fg-muted hover:text-fg hover:border-border"
-            >
-              Open in new tab
-            </a>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="px-2.5 py-1.5 rounded-md border border-border/70 bg-surface-3 text-xs text-fg-muted hover:text-fg hover:border-border"
-            >
-              Close
-            </button>
-          </div>
-        )}
-      >
-        <div className="h-full bg-black/95 flex items-center justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={src}
-            alt="attached image"
-            className="max-w-full max-h-full object-contain"
-          />
-        </div>
-      </Dialog>
+      <ImagePreviewDialog src={src} alt="attached image" open={open} onClose={() => setOpen(false)} />
     </>
+  );
+}
+
+function ImagePreviewDialog({ src, alt, open, onClose }: { src: string; alt: string; open: boolean; onClose: () => void }) {
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Image preview"
+      size="full"
+      align="center"
+      level="elevated"
+      padded={false}
+      fitViewport
+      footer={(
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border bg-surface-2/90">
+          <a
+            href={src}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-2.5 py-1.5 rounded-md border border-border/70 bg-surface-3 text-xs text-fg-muted hover:text-fg hover:border-border"
+          >
+            Open in new tab
+          </a>
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-2.5 py-1.5 rounded-md border border-border/70 bg-surface-3 text-xs text-fg-muted hover:text-fg hover:border-border"
+          >
+            Close
+          </button>
+        </div>
+      )}
+    >
+      <div className="h-full w-full min-w-0 bg-black/95 flex items-center justify-center">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={alt}
+          className="block h-full w-full object-contain"
+        />
+      </div>
+    </Dialog>
   );
 }
 
