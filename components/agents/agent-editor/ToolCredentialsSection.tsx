@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 import type { Credential } from "@/api/types";
 import type { AgentEditorForm } from "./useAgentEditorForm";
 import { Section } from "./Section";
@@ -65,44 +66,51 @@ export function ToolCredentialsSection({ form, embedded = false }: { form: Agent
 
   const providersWithMultiple = allProviders.filter((p) => (credsByProvider.get(p) ?? []).length >= 2);
 
+  const providerHint = providersWithMultiple.length > 0
+    ? providersWithMultiple.length === 1
+      ? `${providersWithMultiple[0]} has multiple credentials. Pick one per tool below, or leave as <em>Default</em>.`
+      : `${formatProviderList(providersWithMultiple)} have multiple credentials each. Pick one per tool below, or leave as <em>Default</em>.`
+    : "Add another credential for any provider to switch between them per tool.";
+
   const body = (
     <div className="space-y-3">
-      {embedded && <p className="text-[11px] text-fg-subtle leading-snug font-medium">Tool credentials</p>}
-        <div className="text-[11px] text-fg-faint space-y-1">
-          <p>
-            Credentials are automatically matched to tools by integration. Tools use
-            the provider&apos;s default credential unless you override below.
-          </p>
-          {providersWithMultiple.length > 0 && (
-            <p>
-              {providersWithMultiple.length === 1
-                ? `${providersWithMultiple[0]} has multiple credentials. Pick one per tool below, or leave as <em>Default</em>.`
-                : `${formatProviderList(providersWithMultiple)} have multiple credentials each. Pick one per tool below, or leave as <em>Default</em>.`}
-            </p>
-          )}
-          {providersWithMultiple.length === 0 && (
-            <p>
-              Add another credential for any provider to switch between them per tool.
-            </p>
-          )}
-        </div>
-        <div className="space-y-1.5">
-          {matchedTools.map((mt) => (
-            <ToolCredentialRow
-              key={mt.name}
-              tool={mt}
-              options={credsByProvider.get(mt.provider) ?? []}
-              selectedId={form.toolCredentials[mt.name] ?? ""}
-              onChange={(id) => form.setToolCredentialFor(mt.name, id || null)}
-            />
-          ))}
-        </div>
+      <div className="text-[11px] text-fg-faint space-y-1">
+        <p>
+          Credentials are automatically matched to tools by integration. Tools use
+          the provider&apos;s default credential unless you override below.
+        </p>
+        <p>{providerHint}</p>
       </div>
+      <div className="space-y-1.5">
+        {matchedTools.map((mt) => (
+          <ToolCredentialRow
+            key={mt.name}
+            tool={mt}
+            options={credsByProvider.get(mt.provider) ?? []}
+            selectedId={form.toolCredentials[mt.name] ?? ""}
+            onChange={(id) => form.setToolCredentialFor(mt.name, id || null)}
+          />
+        ))}
+      </div>
+    </div>
   );
 
-  if (embedded) return body;
+  if (embedded) {
+    return (
+      <details className="group rounded-lg border border-border/60 bg-surface-2/40 px-2.5 py-2">
+        <summary className="flex cursor-pointer select-none items-center justify-between gap-2 text-[11px] font-medium text-fg-subtle marker:content-none">
+          <span>Tool credentials</span>
+          <span className="ml-auto text-[10px] font-normal text-fg-faint">
+            {matchedTools.length} matched {matchedTools.length === 1 ? "tool" : "tools"}
+          </span>
+          <ChevronDown size={13} className="text-fg-faint transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="mt-2.5">{body}</div>
+      </details>
+    );
+  }
 
-  return <Section step={4} title="Tool credentials">{body}</Section>;
+  return <Section step={4} title="Tool credentials" defaultCollapsed={true}>{body}</Section>;
 }
 
 function formatProviderList(providers: string[]): string {
