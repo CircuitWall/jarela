@@ -165,15 +165,26 @@ export function buildToolReliabilityContext(allowedTools: readonly string[]): st
 function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {
   return listToolFailureSamples()
     .filter((sample) => allowed.has(sample.tool_name) && sample.count >= 2)
-    .filter((sample) => sample.normalized_reason === "timeout" || sample.normalized_reason === "size_or_context")
+    .filter((sample) => sample.normalized_reason !== "other")
     .sort((a, b) => b.count - a.count)
     .slice(0, 3)
     .map((sample) => {
-      const hint = sample.normalized_reason === "timeout"
-        ? "split large changes into smaller batches, checkpoint progress, and avoid retrying the same huge call"
-        : "reduce payload size, narrow scope, or summarize before retrying";
+      const hint = failureReasonHint(sample.normalized_reason);
       return `- ${sample.tool_name}: repeated ${sample.normalized_reason} failures; ${hint}.`;
     });
+}
+
+function failureReasonHint(reason: string): string {
+  switch (reason) {
+    case "auth": return "verify the integration/credential setup before retrying";
+    case "permission": return "check scopes/permissions and avoid retry loops until access changes";
+    case "not_found": return "refresh ids/list sources first, or ask the user for the correct target";
+    case "validation": return "repair argument format locally before calling again";
+    case "timeout": return "split large changes into smaller batches, checkpoint progress, and avoid retrying the same huge call";
+    case "rate_limited": return "wait, reduce request volume, or switch credentials/providers before retrying";
+    case "size_or_context": return "reduce payload size, narrow scope, or summarize before retrying";
+    default: return "validate inputs and avoid blind retries";
+  }
 }
 
 function isProblematicTool(stats: ToolUsefulnessStats): boolean {

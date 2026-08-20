@@ -10,10 +10,12 @@ const {
   defaultToolStats,
   getToolStatsMap,
   listToolFailureSamples,
+  pruneToolFailureSamples,
   recordToolUsage,
   summarizeToolFailureSamples,
   summarizeToolUsage,
 } = await import("./tool-stats");
+const { getDb } = await import("@/lib/db");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -103,5 +105,25 @@ describe("tool usefulness telemetry", () => {
     expect(rows[0].sample_arg_shape).toContain("path");
     expect(rows[0].sample_arg_shape).not.toContain("raw-2.txt");
     expect(rows[0].sample_arg_shape).not.toContain("secret-2");
+  });
+
+  it("prunes stale failure samples by TTL", () => {
+    const old = "2026-01-01T00:00:00.000Z";
+    const current = "2026-02-15T00:00:00.000Z";
+    getDb().prepare(
+      `INSERT OR REPLACE INTO tool_failure_samples
+        (tool_name, normalized_reason, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run("stale_tool", "timeout", 2, "old", "{}", old, old);
+    getDb().prepare(
+      `INSERT OR REPLACE INTO tool_failure_samples
+        (tool_name, normalized_reason, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run("fresh_tool", "timeout", 2, "new", "{}", current, current);
+
+    expect(pruneToolFailureSamples(current)).toBeGreaterThanOrEqual(1);
+
+    expect(listToolFailureSamples("stale_tool")).toHaveLength(0);
+    expect(listToolFailureSamples("fresh_tool")).toHaveLength(1);
   });
 });

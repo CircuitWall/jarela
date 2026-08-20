@@ -169,6 +169,8 @@ describe("buildToolReliabilityContext", () => {
     expect(ctx).toContain("--- Tool reliability hints ---");
     expect(ctx).toContain("file_read: historically reliable");
     expect(ctx).toContain("documents_search: check document sources/indexing");
+    expect(ctx).toContain("documents_search: repeated not_found failures");
+    expect(ctx).toContain("refresh ids/list sources first");
     expect(ctx).not.toContain("source missing");
     expect(ctx).not.toContain("README.md");
   });
