@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-doc-tools-"));
 process.env.JARELA_DB_DIR = join(tmpRoot, "db");
 
-const { documentsAddLocalSource, documentsListSources } = await import("./documents");
+const { documentsAddLocalSource, documentsListSources, documentsSearch } = await import("./documents");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -57,5 +57,17 @@ describe("documents_add_local_source", () => {
     })) as { error?: string };
 
     expect(out.error).toBe("path is not a directory");
+  });
+
+  it("explains invalid source_id filters before searching", async () => {
+    const out = JSON.parse(await documentsSearch.invoke({
+      query: "hello",
+      source_id: "missing-source",
+    })) as { error?: string; error_code?: string; available_sources?: Array<{ id: string }>; recovery_hint?: string };
+
+    expect(out.error_code).toBe("source_not_found");
+    expect(out.error).toContain("missing-source");
+    expect(out.available_sources?.length).toBeGreaterThan(0);
+    expect(out.recovery_hint).toContain("documents_list_sources");
   });
 });

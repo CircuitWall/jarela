@@ -12,10 +12,57 @@ function agentIdFromConfig(config?: RunnableConfig): string | null {
   return getThread(threadId)?.agent_id ?? null;
 }
 
+function validateProposalPayload(kind: string, payload: Record<string, unknown>): string | null {
+  const hasString = (key: string) => typeof payload[key] === "string" && String(payload[key]).trim().length > 0;
+  const hasObject = (key: string) => !!payload[key] && typeof payload[key] === "object" && !Array.isArray(payload[key]);
+
+  if (kind === "install_mcp") {
+    if (hasString("registry_id")) return null;
+    if (hasString("name") && hasString("transport") && hasObject("spec")) return null;
+    return "install_mcp requires registry_id or name + transport + spec";
+  }
+  if (kind === "toggle_mcp") {
+    return hasString("name") && typeof payload.enabled === "boolean"
+      ? null
+      : "toggle_mcp requires name and enabled";
+  }
+  if (kind === "update_agent_tools") {
+    return hasString("agent_id") && Array.isArray(payload.tools)
+      ? null
+      : "update_agent_tools requires agent_id and tools[]";
+  }
+  if (kind === "update_agent") {
+    return hasString("agent_id") ? null : "update_agent requires agent_id";
+  }
+  if (kind === "start_oauth") {
+    return hasString("integration_id") ? null : "start_oauth requires integration_id";
+  }
+  if (kind === "set_provider_key") {
+    return hasString("name") && hasString("provider") && hasString("model_id")
+      ? null
+      : "set_provider_key requires name, provider, and model_id";
+  }
+  if (kind === "enable_integration") {
+    return hasString("id") ? null : "enable_integration requires id";
+  }
+  if (kind === "upsert_harness") {
+    return hasString("name") && hasObject("sections") ? null : "upsert_harness requires name and sections";
+  }
+  return null;
+}
+
 export const proposeConfigChangeTool = tool(
   async ({ kind, payload, reason }, config) => {
     const agentId = agentIdFromConfig(config);
     if (!agentId) return JSON.stringify({ error: "no agent context" });
+    const validationError = validateProposalPayload(kind, payload);
+    if (validationError) {
+      return JSON.stringify({
+        error: validationError,
+        error_code: "invalid_proposal_payload",
+        recovery_hint: "Call propose_config_change again with the required payload fields for this proposal kind.",
+      });
+    }
     const row = createPendingAction({ agent_id: agentId, kind, payload, reason });
     // Surface as a browser notification so the user notices even if not on this agent.
     publishNotification({
@@ -80,7 +127,7 @@ export const proposeConfigChangeTool = tool(
           "- upsert_harness: { id?: 'custom:<uuid>', name, description?, sections: { capabilities?: {enabled,body}, plan_first?: {enabled,body}, presentation?: {enabled,body}, citation?: {enabled,body}, self_config?: {enabled,body} } } " +
           "  — omit `id` to create; pass an existing custom:* id to edit. Built-in harnesses ('builtin:*') are read-only and rejected."
         ),
-      reason: z.string().describe("Short human-readable reason shown to the user (≤100 chars)"),
+      reason: z.string().min(1).max(100).describe("Short human-readable reason shown to the user (≤100 chars)"),
     }),
   },
 );

@@ -186,6 +186,12 @@ describe("ms_graph_get", () => {
     expect(JSON.parse(out as string).error).toContain("relative Graph path");
   });
 
+  it("rejects protocol-relative paths", async () => {
+    const { get } = await loadTools();
+    const out = await get.invoke({ path: "//attacker.example/me" });
+    expect(JSON.parse(out as string).error).toContain("relative Graph path");
+  });
+
   it("follows pagination when paginate=true", async () => {
     const { get } = await loadTools();
     queueGraph(
@@ -259,6 +265,12 @@ describe("ms_search", () => {
     const sent = JSON.parse(graphCalls[0].init.body as string);
     expect(sent.requests[0].entityTypes).toEqual(["person"]);
     expect(sent.requests[0].size).toBe(3);
+  });
+
+  it("rejects unsafe KQL characters before calling Microsoft Search", async () => {
+    const { search } = await loadTools();
+    await expect(search.invoke({ query: "subject:\"invoice\" OR {bad}" })).rejects.toThrow(/simple Microsoft Search query/);
+    expect(graphCalls).toHaveLength(0);
   });
 });
 

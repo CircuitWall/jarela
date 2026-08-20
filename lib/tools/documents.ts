@@ -24,6 +24,15 @@ import { errorMessage } from "@/lib/utils/error";
 
 export const documentsSearch = tool(
   async ({ query, limit, source_id }) => {
+    if (source_id && !getDocumentSource(source_id)) {
+      const available = listDocumentSources().map((s) => ({ id: s.id, label: s.label, path: s.path, enabled: s.enabled === 1 }));
+      return JSON.stringify({
+        error: `source_id ${JSON.stringify(source_id)} not found`,
+        error_code: "source_not_found",
+        available_sources: available,
+        recovery_hint: "Call documents_list_sources and use one of the returned ids, or omit source_id to search all indexed sources.",
+      });
+    }
     const hits = await searchDocuments(query, { limit, sourceId: source_id });
     return JSON.stringify({
       query,
