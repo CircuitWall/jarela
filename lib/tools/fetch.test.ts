@@ -3,6 +3,23 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// The SSRF guard (lib/utils/private-ip.ts) resolves every hostname via a
+// real dns.lookup(). Stub it to a fixed public address so these tests don't
+// depend on outbound DNS actually reaching example.com/example.org — some
+// sandboxes only allowlist a subset of real-world domains, which made the
+// redirect test flaky for reasons having nothing to do with the code under
+// test.
+vi.mock("node:dns", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:dns")>();
+  return {
+    ...actual,
+    promises: {
+      ...actual.promises,
+      lookup: vi.fn(async () => [{ address: "93.184.216.34", family: 4 }]),
+    },
+  };
+});
+
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-fetch-"));
 process.env.HOME = tmpRoot;
 process.env.USERPROFILE = tmpRoot;
