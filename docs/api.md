@@ -125,12 +125,31 @@ Query parameters:
 ## Skills
 
 Packaged built-in skills are always readable. User skills are layered on top
-from `JARELA_SKILLS_DIR` when configured and override built-ins with the same
-id. Writes still require `JARELA_SKILLS_DIR` so packaged skills remain
-read-only.
+from the repos in the `skill_repos` DB table (ADR-0074) and override built-ins
+with the same id. Repos are scanned in the order they were added — a later
+repo's skill overrides an earlier repo's (and built-ins) on id collision, so
+a team-shared repo can be layered under a personal one. Writes and deletes
+always target the one repo flagged `writable`, so the rest can be read-only
+clones; `POST /api/v1/skills` and friends 503 with "No writable skill repo is
+configured" until at least one repo exists (the first repo created becomes
+writable automatically unless `writable: false` is passed explicitly).
 
-- **Sources:** [`lib/skills/index.ts`](../lib/skills/index.ts), [`app/api/v1/skills/route.ts`](../app/api/v1/skills/route.ts), [`app/api/v1/skills/[id]/route.ts`](../app/api/v1/skills/[id]/route.ts)
-- **Agent equivalent:** `list_skills`, `read_skill`, and `write_skill` tools.
+### `GET /api/v1/skills/repos`
+
+List configured skill repos: `{ repos: [{ id, path, label, writable, enabled, created_at, updated_at }] }`.
+
+### `POST /api/v1/skills/repos`
+
+Add a repo. Body: `{ path, label?, writable? }`. `path` must already exist
+and be a directory; 409 if a repo for that path already exists.
+
+### `GET|PATCH|DELETE /api/v1/skills/repos/[id]`
+
+Fetch, update (`{ label?, enabled?, writable? }`), or remove one repo.
+Setting `writable: true` on one repo clears it on any other.
+
+- **Sources:** [`lib/skills/index.ts`](../lib/skills/index.ts), [`lib/stores/skill-repos.ts`](../lib/stores/skill-repos.ts), [`app/api/v1/skills/route.ts`](../app/api/v1/skills/route.ts), [`app/api/v1/skills/[id]/route.ts`](../app/api/v1/skills/[id]/route.ts), [`app/api/v1/skills/repos/route.ts`](../app/api/v1/skills/repos/route.ts), [`app/api/v1/skills/repos/[id]/route.ts`](../app/api/v1/skills/repos/[id]/route.ts)
+- **Agent equivalent:** `list_skills`, `read_skill`, and `write_skill` tools (repo management has no agent tool yet — API only).
 
 ---
 

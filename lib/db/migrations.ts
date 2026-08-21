@@ -272,6 +272,22 @@ export function runMigrations(db: DatabaseSync): void {
       UNIQUE(document_id, chunk_index)
     );
     CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
+    -- Skill repos (ADR-0074). A skill_repos row is a directory Jarela scans
+    -- for */SKILL.md (Claude-style) and *.md skill files, layered over the
+    -- packaged built-ins. Scan/override order is created_at ASC — a later
+    -- repo's skill wins over an earlier repo's (and over built-ins) on id
+    -- collision. At most one row has writable=1; write_skill/delete_skill
+    -- only ever target that repo, so the rest can be read-only clones.
+    CREATE TABLE IF NOT EXISTS skill_repos (
+      id          TEXT PRIMARY KEY,
+      path        TEXT NOT NULL,
+      label       TEXT,
+      writable    INTEGER NOT NULL DEFAULT 0,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      UNIQUE(path)
+    );
     -- Generic change-tracker primitive (ADR-0025). Lets any subsystem ask
     -- "has (scope, key) changed since we last looked?" by recording a
     -- fingerprint (e.g. content hash, mtime+size, etag) per key. Future

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { cachedJson, createdResponse, validateBody, errorResponse } from "@/lib/api/responses";
-import { listSkills, writeSkill, getSkillsDir } from "@/lib/skills";
+import { listSkills, writeSkill, getSkillsDir, getSkillsDirs } from "@/lib/skills";
 
 const createSchema = z.object({
   id: z
@@ -12,11 +12,11 @@ const createSchema = z.object({
 });
 
 export function GET() {
-  return cachedJson({ skills: listSkills(), skills_dir: getSkillsDir() }, 5);
+  return cachedJson({ skills: listSkills(), skills_dir: getSkillsDir(), skills_dirs: getSkillsDirs() }, 5);
 }
 
 export async function POST(req: NextRequest) {
-  if (!getSkillsDir()) return errorResponse("JARELA_SKILLS_DIR is not configured", 503);
+  if (!getSkillsDir()) return errorResponse("No writable skill repo is configured", 503);
   const parsed = await validateBody(req, createSchema);
   if (parsed instanceof Response) return parsed;
   try {
