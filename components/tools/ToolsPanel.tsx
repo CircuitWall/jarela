@@ -2,6 +2,7 @@
 import { useAppContext } from "@/contexts/AppContext";
 import { MCPPanel } from "@/components/mcp/MCPPanel";
 import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
+import { SkillsPanel } from "@/components/skills/SkillsPanel";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
 import { PackagesPanel } from "./PackagesPanel";
@@ -12,6 +13,7 @@ import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 //                   manifests, and drop-in `.cjs` files. One home for
 //                   everything that turns into a LangChain tool.
 //   - "Documents" — indexed knowledge sources the agent can search.
+//   - "Skills"    — markdown playbooks (repos) the agent reads/writes on demand.
 //   - "Memory"    — long-lived facts persisted across conversations.
 //   - "MCP"       — external Model Context Protocol servers.
 //   - "Bridges"   — mobile / messaging bridge pairings.
@@ -20,15 +22,17 @@ import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 type Sub =
   | "packages"
   | "documents"
+  | "skills"
   | "memory"
   | "mcp"
   | "bridges";
 
-const SUBS: Sub[] = ["packages", "documents", "memory", "mcp", "bridges"];
+const SUBS: Sub[] = ["packages", "documents", "skills", "memory", "mcp", "bridges"];
 
 const SUB_TITLES: Record<Sub, string> = {
   packages: "Packages",
   documents: "Documents",
+  skills: "Skills",
   memory: "Memory",
   mcp: "MCP servers",
   bridges: "Bridges",
@@ -64,6 +68,7 @@ export function ToolsPanel() {
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {active === "packages" && <PackagesPanel />}
         {active === "documents" && <DocumentsPanel />}
+        {active === "skills" && <SkillsPanel />}
         {active === "memory" && <MemoryPanel />}
         {active === "mcp" && <MCPPanel />}
         {active === "bridges" && <BridgesPanel />}

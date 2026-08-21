@@ -35,5 +35,5 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
   if (!getSkillsDir()) return errorResponse("No writable skill repo is configured", 503);
   const deleted = deleteSkill(id);
   if (!deleted) return notFoundResponse(`Skill "${id}" not found`);
-  return new NextResponse(null, { status: 204 });
+  return NextResponse.json({ deleted: true });
 }
