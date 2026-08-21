@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
 
 export async function PUT(req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getSkillsDir()) return errorResponse("JARELA_SKILLS_DIR is not configured", 503);
+  if (!getSkillsDir()) return errorResponse("No writable skill repo is configured", 503);
   const parsed = await validateBody(req, updateSchema);
   if (parsed instanceof Response) return parsed;
   try {
@@ -32,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
 
 export async function DELETE(_req: NextRequest, { params }: Params) {
   const { id } = await params;
-  if (!getSkillsDir()) return errorResponse("JARELA_SKILLS_DIR is not configured", 503);
+  if (!getSkillsDir()) return errorResponse("No writable skill repo is configured", 503);
   const deleted = deleteSkill(id);
   if (!deleted) return notFoundResponse(`Skill "${id}" not found`);
   return new NextResponse(null, { status: 204 });

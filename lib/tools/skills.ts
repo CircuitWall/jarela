@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getSkill, writeSkill, listSkills, getSkillsDir } from "@/lib/skills";
 import { registerLangChainPackage } from "./langchain-package";
 
-const NOT_CONFIGURED = JSON.stringify({ error: "JARELA_SKILLS_DIR is not configured; built-in skills are read-only" });
+const NOT_CONFIGURED = JSON.stringify({ error: "No writable skill repo is configured; built-in skills are read-only" });
 
 export const readSkillTool = tool(
   async ({ id }) => {

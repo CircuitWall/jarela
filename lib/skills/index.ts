@@ -1,9 +1,15 @@
-// Skills loader — reads packaged built-in skills plus user SKILL.md files from
-// JARELA_SKILLS_DIR.
+// Skills loader — reads packaged built-in skills plus user SKILL.md files
+// from the repos in the `skill_repos` table (lib/stores/skill-repos.ts,
+// ADR-0074).
 //
 // Supported layouts (both may coexist):
-//   skillsDir/skill-name/SKILL.md   ← Claude-style (directory per skill)
-//   skillsDir/skill-name.md         ← flat .md files
+//   repoPath/skill-name/SKILL.md   ← Claude-style (directory per skill)
+//   repoPath/skill-name.md         ← flat .md files
+//
+// Repos are scanned in created_at order; a later repo's skill wins over an
+// earlier repo's (and over built-ins) when ids collide. Writes and deletes
+// always target the one repo flagged `writable` in the DB, so the rest can
+// be read-only clones of shared skill sets.
 //
 // Writing always uses the Claude-style layout so output is compatible with
 // VS Code Copilot and any other tool that discovers skills by SKILL.md.
@@ -15,7 +21,7 @@
 import { readdirSync, readFileSync, mkdirSync, writeFileSync, rmSync, rmdirSync } from "node:fs";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { getConfig } from "@/lib/env/config";
+import { listEnabledSkillRepos, getWritableSkillRepo } from "@/lib/stores/skill-repos";
 
 export interface Skill {
   id: string;
@@ -28,8 +34,14 @@ export interface SkillWithContent extends Skill {
   content: string;
 }
 
+// All enabled skill repo paths, in override order (later wins on id collision).
+export function getSkillsDirs(): readonly string[] {
+  return listEnabledSkillRepos().map((r) => r.path);
+}
+
+// The writable skill repo's path, or "" if none is configured.
 export function getSkillsDir(): string {
-  return getConfig().skillsDir;
+  return getWritableSkillRepo()?.path ?? "";
 }
 
 export function getBuiltinSkillsDir(): string {
@@ -64,8 +76,7 @@ export function listSkills(): Skill[] {
     byId.set(skill.id, skill);
   }
 
-  const dir = getSkillsDir();
-  if (dir) {
+  for (const dir of getSkillsDirs()) {
     for (const skill of readSkillsFromDir(dir, "user")) {
       byId.set(skill.id, skill);
     }
@@ -112,8 +123,12 @@ function readSkillsFromDir(dir: string, source: Skill["source"]): Skill[] {
 export function getSkill(id: string): SkillWithContent | null {
   if (!sanitizeId(id)) return null;
 
-  const user = readSkillFromDir(getSkillsDir(), id, "user");
-  if (user) return user;
+  // Later directories override earlier ones, so search in reverse.
+  const dirs = getSkillsDirs();
+  for (let i = dirs.length - 1; i >= 0; i--) {
+    const user = readSkillFromDir(dirs[i], id, "user");
+    if (user) return user;
+  }
   return readSkillFromDir(getBuiltinSkillsDir(), id, "builtin");
 }
 
@@ -143,7 +158,7 @@ function readSkillFromDir(dir: string, id: string, source: Skill["source"]): Ski
 
 export function writeSkill(id: string, content: string): void {
   const dir = getSkillsDir();
-  if (!dir) throw new Error("JARELA_SKILLS_DIR is not configured");
+  if (!dir) throw new Error("No writable skill repo is configured");
   if (!sanitizeId(id)) throw new Error(`Invalid skill id: ${JSON.stringify(id)}`);
 
   const skillDir = path.join(dir, id);

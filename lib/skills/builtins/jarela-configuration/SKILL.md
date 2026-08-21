@@ -65,8 +65,10 @@ provider setup.
   domain workflows.
 - Built-in harnesses are read-only. Clone/create custom harnesses instead of
   editing packaged defaults.
-- Built-in skills are read-only. User skills are stored under
-  `JARELA_SKILLS_DIR` as `skill-id/SKILL.md`.
+- Built-in skills are read-only. User skills live in repos managed via
+  `GET/POST /api/v1/skills/repos` (and `.../repos/[id]` for PATCH/DELETE), each
+  storing `skill-id/SKILL.md`. Writes always target the one repo flagged
+  `writable`.
 
 ## Change Discipline
 

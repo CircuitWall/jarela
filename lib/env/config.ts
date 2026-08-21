@@ -85,7 +85,6 @@ export interface JarelaConfig {
   // anti-hallucination detector
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
   readonly hallucinationDetectorModel: string;
-  readonly skillsDir: string;
   readonly terminalMaxSessions: number;
   readonly terminalIdleTtlMs: number;
   readonly modelRouterMode: "off" | "heuristic";
@@ -179,7 +178,6 @@ export function getConfig(): JarelaConfig {
     hostname: (env.JARELA_HOSTNAME ?? env.HOSTNAME ?? ENV_DEFAULTS.hostname).trim() || ENV_DEFAULTS.hostname,
     dataDir,
     toolsDir: env.JARELA_TOOLS_DIR ? expandHome(env.JARELA_TOOLS_DIR) : join(dataDir, "tools"),
-    skillsDir: env.JARELA_SKILLS_DIR ? expandHome(env.JARELA_SKILLS_DIR) : "",
     httpRequestTimeoutMs: parsePositiveInt(env.JARELA_HTTP_REQUEST_TIMEOUT_MS, ENV_DEFAULTS.httpRequestTimeoutMs),
     sseConnectTimeoutMs: parsePositiveInt(env.JARELA_SSE_CONNECT_TIMEOUT_MS, ENV_DEFAULTS.sseConnectTimeoutMs),
     healthCheckTimeoutMs: parsePositiveInt(env.JARELA_HEALTH_CHECK_TIMEOUT_MS, ENV_DEFAULTS.healthCheckTimeoutMs),

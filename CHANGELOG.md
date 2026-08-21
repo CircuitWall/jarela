@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- No entries yet.
+### Changed
+
+- **Skill repos are now DB-backed, like MCP servers and document sources.** The old single-path `JARELA_SKILLS_DIR` env var is gone; skill repos are rows in a new `skill_repos` table managed via `GET/POST /api/v1/skills/repos` and `.../repos/[id]`, each with a `label`, `enabled` toggle, and `writable` flag. Multiple repos can be configured — later-added repos override earlier ones (and built-ins) on skill id collision — and no restart is needed to add or remove one. See ADR-0074.
 
 ## [1.27.4] - 2026-08-17
 
