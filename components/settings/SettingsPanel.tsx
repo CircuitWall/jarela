@@ -1,5 +1,5 @@
 "use client";
-import { Cpu, Globe, Key, Palette, ScrollText, ServerCog, ShieldCheck } from "lucide-react";
+import { Cpu, EyeOff, Globe, Key, Palette, ScrollText, ServerCog, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import { useAppContext } from "@/contexts/AppContext";
@@ -73,6 +73,9 @@ export function SettingsPanel() {
     dispatch({ type: "SET_SELECTION", tab: "settings", itemId: s });
 
   const visibleSubs = SUBS.filter((s) => isFullMode || !s.advancedOnly);
+  const hiddenSubs = SUBS.filter((s) => s.advancedOnly);
+  const activeVisible = visibleSubs.some((s) => s.id === active);
+  const activeSub = activeVisible ? active : "appearance";
 
   const needsAttention = (id: Sub): boolean =>
     (id === "credentials" && attention.credentials) ||
@@ -92,18 +95,35 @@ export function SettingsPanel() {
       <SubTabBar
         ariaLabel="Settings sub-section"
         tabs={tabItems}
-        active={active}
+        active={activeSub}
         onChange={setSub}
       />
+      {!isFullMode && (
+        <div className="border-b border-border bg-surface-2/60 px-4 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
+            <EyeOff size={12} className="text-fg-subtle" />
+            <span>
+              Basic view is hiding {hiddenSubs.length} advanced configuration {hiddenSubs.length === 1 ? "section" : "sections"}: {hiddenSubs.map((s) => s.label).join(", ")}.
+            </span>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "full" })}
+              className="ml-auto rounded border border-border bg-surface-3 px-2 py-0.5 text-[10px] font-medium text-fg-muted transition-colors hover:border-accent/50 hover:text-fg"
+            >
+              Show advanced
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex-1 min-h-0 overflow-hidden">
-        {active === "credentials" && <CredentialsListPanel />}
-        {active === "models" && <ModelsPanel />}
-        {active === "harness" && <HarnessPanel />}
-        {active === "privacy" && <PrivacySecurityPanel />}
-        {active === "appearance" && <AppearancePanel />}
-        {active === "networking" && <NetworkPanel />}
-        {active === "environment" && <EnvVarsPanel />}
-        {active === "logs" && <LogsPanel />}
+        {activeSub === "credentials" && <CredentialsListPanel />}
+        {activeSub === "models" && <ModelsPanel />}
+        {activeSub === "harness" && <HarnessPanel />}
+        {activeSub === "privacy" && <PrivacySecurityPanel />}
+        {activeSub === "appearance" && <AppearancePanel />}
+        {activeSub === "networking" && <NetworkPanel />}
+        {activeSub === "environment" && <EnvVarsPanel />}
+        {activeSub === "logs" && <LogsPanel />}
       </div>
     </div>
   );

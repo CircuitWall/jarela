@@ -15,7 +15,7 @@ import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
 import { CountdownRing } from "@/components/chat/CountdownRing";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { Dialog } from "@/components/ui/Dialog";
-import { MetaRow } from "@/components/ui/MetaRow";
+import { MetaDetailPanel, MetaRow } from "@/components/ui/MetaRow";
 import { useAppContext } from "@/contexts/AppContext";
 import { parseHref } from "@/lib/ui/navigate";
 import { formatRoutingDecisionSummary, formatRoutingDuration, humanizeRouteClass } from "@/lib/ui/routing-decision";
@@ -1249,48 +1249,51 @@ function ReferencesPanel({ sources }: { sources: ReadonlyArray<{ n: number; labe
   const [open, setOpen] = useState(false);
   if (sources.length === 0) return null;
   return (
-    <div className="mt-1.5">
-      <button
+    <div className="flex w-full min-w-0 flex-col items-start gap-0.5">
+      <MetaRow
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
-        aria-expanded={open}
+        expanded={open}
+        aria-label="toggle citation references"
+        fullWidth
       >
-        <CollapseChevron open={open} size={10} />
+        <CollapseChevron open={open} size={9} />
         <LinkIcon size={10} />
         <span>{sources.length} {sources.length === 1 ? "reference" : "references"}</span>
-      </button>
+      </MetaRow>
       {open && (
-        <ol className="mt-1 space-y-0.5 pl-4 list-none">
-          {sources.map((s) => {
-            const isAnchor = s.href.startsWith("#");
-            const isMemory = s.href.startsWith("memory://");
-            return (
-              <li key={s.n} className="text-[11px] flex items-start gap-1.5">
-                <span className="text-fg-faint tabular-nums shrink-0 w-5 text-right">[{s.n}]</span>
-                {isAnchor || isMemory ? (
-                  <a
-                    href={isAnchor ? s.href : "#"}
-                    onClick={isMemory ? (e) => e.preventDefault() : undefined}
-                    className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
-                    title={s.href}
-                  >
-                    {s.label}
-                  </a>
-                ) : (
-                  <a
-                    href={s.href}
-                    target={s.href.startsWith("http") ? "_blank" : undefined}
-                    rel={s.href.startsWith("http") ? "noopener noreferrer" : undefined}
-                    className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
-                    title={s.href}
-                  >
-                    {s.label}
-                  </a>
-                )}
-              </li>
-            );
-          })}
-        </ol>
+        <MetaDetailPanel className="w-full">
+          <ol className="m-0 space-y-0.5 pl-0 list-none">
+            {sources.map((s) => {
+              const isAnchor = s.href.startsWith("#");
+              const isMemory = s.href.startsWith("memory://");
+              return (
+                <li key={s.n} className="text-[11px] flex items-start gap-1.5">
+                  <span className="text-fg-faint tabular-nums shrink-0 w-5 text-right">[{s.n}]</span>
+                  {isAnchor || isMemory ? (
+                    <a
+                      href={isAnchor ? s.href : "#"}
+                      onClick={isMemory ? (e) => e.preventDefault() : undefined}
+                      className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
+                      title={s.href}
+                    >
+                      {s.label}
+                    </a>
+                  ) : (
+                    <a
+                      href={s.href}
+                      target={s.href.startsWith("http") ? "_blank" : undefined}
+                      rel={s.href.startsWith("http") ? "noopener noreferrer" : undefined}
+                      className="text-sky-700 dark:text-sky-400 hover:underline truncate inline-block max-w-full align-middle"
+                      title={s.href}
+                    >
+                      {s.label}
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+        </MetaDetailPanel>
       )}
     </div>
   );
@@ -1332,18 +1335,19 @@ function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ te
   };
 
   return (
-    <div className="mt-1.5">
-      <button
+    <div className="flex w-full min-w-0 flex-col items-start gap-0.5">
+      <MetaRow
+        accent={allCited ? "neutral" : "amber"}
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1 text-[11px] transition-colors ${allCited ? "text-fg-faint hover:text-fg-muted" : "text-warn hover:opacity-80"}`}
+        expanded={open}
         title={checkerModel ? `Citations checked by ${checkerModel}` : undefined}
-        aria-expanded={open}
+        fullWidth
       >
-        <CollapseChevron open={open} size={10} />
+        <CollapseChevron open={open} size={9} />
         <span>{trigger}</span>
-      </button>
+      </MetaRow>
       {open && (
-        <div className="mt-1 pl-4 space-y-2">
+        <MetaDetailPanel className="w-full space-y-2">
           {(["high", "med", "low"] as const).map((bucket) => {
             const list = buckets[bucket];
             if (list.length === 0) return null;
@@ -1367,7 +1371,7 @@ function CitationsSummary({ claims, checkerModel }: { claims: ReadonlyArray<{ te
               </ul>
             );
           })}
-        </div>
+        </MetaDetailPanel>
       )}
     </div>
   );
@@ -1388,20 +1392,20 @@ function RedactionShield({
   if (summary.length === 0) return null;
   const total = summary.reduce((acc, e) => acc + e.count, 0);
   return (
-    <div className="mt-1.5">
-      <button
-        type="button"
+    <div className="flex w-full min-w-0 flex-col items-start gap-0.5">
+      <MetaRow
+        accent="emerald"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400/85 hover:opacity-80 transition-colors"
         title="Sensitive values were replaced with placeholders before being sent to the LLM. Real values stayed on this device."
-        aria-expanded={open}
+        expanded={open}
+        fullWidth
       >
-        <CollapseChevron open={open} size={10} />
+        <CollapseChevron open={open} size={9} />
         <ShieldCheck size={11} />
         <span>{total} {total === 1 ? "value" : "values"} held back from LLM</span>
-      </button>
+      </MetaRow>
       {open && (
-        <div className="mt-1 pl-4">
+        <MetaDetailPanel className="w-full">
           <ul className="space-y-0.5">
             {summary.map((e, i) => (
               <li key={`${e.type_hint}-${i}`} className="text-[11px] text-fg-muted">
@@ -1414,7 +1418,7 @@ function RedactionShield({
           <div className="mt-1 text-[10px] text-fg-faint italic">
             Real values stay on this device. Add patterns at <span className="font-mono">~/.jarela/redaction-patterns.json</span>.
           </div>
-        </div>
+        </MetaDetailPanel>
       )}
     </div>
   );
@@ -1424,14 +1428,14 @@ function RoutingDecisionSummary({ decision }: { decision: RouteDecisionMetadata 
   const [open, setOpen] = useState(false);
   const summary = formatRoutingDecisionSummary(decision);
   return (
-    <div className="mt-1 flex flex-col items-start gap-0.5">
-      <MetaRow accent="sky" onClick={() => setOpen((v) => !v)} expanded={open} title={decision.reason}>
+    <div className="flex w-full min-w-0 flex-col items-start gap-0.5">
+      <MetaRow accent="sky" onClick={() => setOpen((v) => !v)} expanded={open} title={decision.reason} fullWidth>
         <CollapseChevron open={open} size={9} />
         <Zap size={10} />
-        <span className="truncate max-w-[24rem] text-left">{summary}</span>
+        <span className="truncate flex-1 min-w-0 text-left">{summary}</span>
       </MetaRow>
       {open && (
-        <div className="ml-2 mt-1 rounded border border-border/60 bg-surface-2/70 px-2.5 py-2 space-y-1 text-[11px] text-fg-muted">
+        <MetaDetailPanel className="w-full space-y-1 text-[11px]">
           <div>
             <span className="text-fg-faint">source:</span>{" "}
             <span className="font-mono">{decision.source}</span>
@@ -1474,7 +1478,7 @@ function RoutingDecisionSummary({ decision }: { decision: RouteDecisionMetadata 
             </div>
           )}
           <div className="italic text-fg-faint">{decision.reason}</div>
-        </div>
+        </MetaDetailPanel>
       )}
     </div>
   );
@@ -1484,31 +1488,35 @@ function RefsFooter({ refs }: { refs: ExtractedRef[] }) {
   const [open, setOpen] = useState(false);
   if (refs.length === 0) return null;
   return (
-    <div className="mt-1.5">
-      <button
+    <div className="flex w-full min-w-0 flex-col items-start gap-0.5">
+      <MetaRow
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg-muted transition-colors"
+        expanded={open}
+        aria-label="toggle message references"
+        fullWidth
       >
-        <CollapseChevron open={open} size={10} />
+        <CollapseChevron open={open} size={9} />
         <LinkIcon size={10} />
         <span>{refs.length} {refs.length === 1 ? "reference" : "references"}</span>
-      </button>
+      </MetaRow>
       {open && (
-        <ul className="mt-1 space-y-0.5 pl-4">
-          {refs.map((r, i) => (
-            <li key={`${i}-${r.url}`} className="text-[11px]">
-              <a
-                href={r.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
-                title={r.url}
-              >
-                {r.title || r.url}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <MetaDetailPanel className="w-full">
+          <ul className="m-0 space-y-0.5 pl-0">
+            {refs.map((r, i) => (
+              <li key={`${i}-${r.url}`} className="text-[11px]">
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sky-700 dark:text-sky-400 hover:text-sky-700 dark:hover:text-sky-300 hover:underline truncate inline-block max-w-full align-middle"
+                  title={r.url}
+                >
+                  {r.title || r.url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </MetaDetailPanel>
       )}
     </div>
   );
@@ -1932,6 +1940,13 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
     if (!citations?.sources?.length) return undefined;
     return new Map(citations.sources.map((s) => [s.n, { href: s.href, label: s.label }]));
   }, [citations]);
+  const hasAssistantMetadata = Boolean(
+    routingDecision
+    || (citations && Array.isArray(citations.sources) && citations.sources.length > 0)
+    || (citations && Array.isArray(citations.claims) && citations.claims.length > 0)
+    || (redactionSummary && redactionSummary.length > 0)
+    || refs.length > 0,
+  );
 
   // Format created_at for the hover timestamp. Streaming bubbles don't have
   // one — we show "now" so the hover affordance is still consistent.
@@ -2104,19 +2119,23 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
         )}
-        {routingDecision && (
-          <RoutingDecisionSummary decision={routingDecision} />
+        {hasAssistantMetadata && (
+          <div className="mt-1 flex w-full min-w-0 flex-col items-start gap-1">
+            {routingDecision && (
+              <RoutingDecisionSummary decision={routingDecision} />
+            )}
+            {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
+              <ReferencesPanel sources={citations.sources} />
+            )}
+            {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
+              <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />
+            )}
+            {redactionSummary && redactionSummary.length > 0 && (
+              <RedactionShield summary={redactionSummary} />
+            )}
+            {refs.length > 0 && <RefsFooter refs={refs} />}
+          </div>
         )}
-        {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
-          <ReferencesPanel sources={citations.sources} />
-        )}
-        {citations && Array.isArray(citations.claims) && citations.claims.length > 0 && (
-          <CitationsSummary claims={citations.claims} checkerModel={citations.checker_model ?? ""} />
-        )}
-        {redactionSummary && redactionSummary.length > 0 && (
-          <RedactionShield summary={redactionSummary} />
-        )}
-        {refs.length > 0 && <RefsFooter refs={refs} />}
       </div>
     </div>
   );

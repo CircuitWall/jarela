@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
-import { MetaRow } from "@/components/ui/MetaRow";
+import { MetaDetailPanel, MetaRow } from "@/components/ui/MetaRow";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
 
 // Distinct lucide glyph per internal tool family so the chat transcript
@@ -417,7 +417,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
       </MetaRow>
       <LiveTranscript steps={group.steps} />
       {open && (
-        <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
+        <MetaDetailPanel className="space-y-1.5">
           {hasVisibleArgs(group.args) ? (
             <DetailSection label="arguments" value={group.args} />
           ) : hasArgs ? (
@@ -439,7 +439,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
               value={group.result}
             />
           )}
-        </div>
+        </MetaDetailPanel>
       )}
     </div>
   );

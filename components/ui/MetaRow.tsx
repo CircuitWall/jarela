@@ -1,11 +1,12 @@
 "use client";
 import type { ReactNode } from "react";
 
-export type MetaRowAccent = "amber" | "sky" | "neutral";
+export type MetaRowAccent = "amber" | "emerald" | "sky" | "neutral";
 
 // Per-accent border + text + hover tint. Background and shape are shared.
 const ACCENT: Record<MetaRowAccent, string> = {
   amber:   "border-amber-400/20 text-amber-700/80 dark:text-amber-300/60 hover:bg-amber-400/8",
+  emerald: "border-emerald-400/20 text-emerald-700/80 dark:text-emerald-300/70 hover:bg-emerald-400/8",
   sky:     "border-sky-400/20 text-sky-700/80 dark:text-sky-300/60 hover:bg-sky-400/8",
   neutral: "border-border/40 text-fg-faint hover:bg-surface-3/40",
 };
@@ -52,4 +53,19 @@ export function MetaRow({
       {children}
     </button>
   );
+}
+
+export function MetaDetailPanel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const cls = [
+    "mt-0.5 rounded border border-border/40 bg-surface-2/35 px-2 py-1.5 text-[10px] text-fg-muted",
+    className ?? "",
+  ].filter(Boolean).join(" ");
+
+  return <div className={cls}>{children}</div>;
 }

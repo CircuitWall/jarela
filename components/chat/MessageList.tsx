@@ -7,7 +7,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
-import { MetaRow } from "@/components/ui/MetaRow";
+import { MetaDetailPanel, MetaRow } from "@/components/ui/MetaRow";
 import { Dialog } from "@/components/ui/Dialog";
 
 interface SystemNotice {
@@ -1155,9 +1155,9 @@ function ThinkingLine({ text }: { text: string }) {
         {!open && <span className="truncate italic opacity-60 flex-1 min-w-0 text-left">{tail}</span>}
       </MetaRow>
       {open && (
-        <pre className="w-full px-2 py-1.5 text-[10px] text-fg-muted whitespace-pre-wrap break-words font-mono bg-surface-2/40 rounded border border-border/40">
-          {text}
-        </pre>
+        <MetaDetailPanel className="w-full whitespace-pre-wrap break-words font-mono">
+          <pre className="m-0 whitespace-pre-wrap break-words font-mono">{text}</pre>
+        </MetaDetailPanel>
       )}
     </div>
   );

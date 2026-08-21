@@ -1,3 +1,4 @@
+import { EyeOff } from "lucide-react";
 import type { IntegrationStatus, ModelConfig } from "@/api/types";
 import type { AgentEditorForm } from "./useAgentEditorForm";
 import { Section } from "./Section";
@@ -88,13 +89,21 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
         </>
       )}
       <Divider />
-      {isFullMode && (
+      {isFullMode ? (
         <>
           <HarnessField form={form} />
           <Divider />
           <AntiHallucinationFields form={form} models={models} />
           <Divider />
           <CitationStrictnessField form={form} />
+          <Divider />
+        </>
+      ) : (
+        <>
+          <div className="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200/85">
+            <EyeOff size={13} className="mt-0.5 shrink-0" />
+            <span>Basic view hides harness binding, anti-hallucination tuning, and citation strictness controls.</span>
+          </div>
           <Divider />
         </>
       )}

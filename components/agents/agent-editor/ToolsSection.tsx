@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Search, X } from "lucide-react";
+import { EyeOff, Search, X } from "lucide-react";
 import type { AgentEditorForm } from "./useAgentEditorForm";
 import { Section } from "./Section";
 import { ToolCategoryBlock, ToolGroupBlock } from "./ToolSelection";
@@ -55,6 +55,12 @@ function ToolsBody({ form, advancedMode }: { form: AgentEditorForm; advancedMode
   return (
     <>
       <ToolsHeader form={form} />
+      {!advancedMode && (
+        <div className="mb-2 flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200/85">
+          <EyeOff size={13} className="mt-0.5 shrink-0" />
+          <span>Basic view shows category permissions. Advanced view exposes every individual tool function.</span>
+        </div>
+      )}
       <div className="mb-2">
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-2.5 text-fg-muted pointer-events-none" />

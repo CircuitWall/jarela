@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Upload, Plus, Trash2, Shield, MapPin, Globe, Check, Copy } from "lucide-react";
+import { Upload, Plus, Trash2, Shield, MapPin, Globe, Check, Copy, EyeOff } from "lucide-react";
 import { api } from "@/api/client";
 import type { UserProfile, AccessWhitelistEntry, TailscaleStatus } from "@/api/types";
 import { useLocationSharing } from "@/hooks/useLocationSharing";
@@ -118,44 +118,49 @@ export function ProfileEditor() {
 
       <div className="pt-4 border-t border-border">
         <div className="rounded-xl border border-border bg-surface-1/40 p-3 space-y-2.5">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
-          <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-surface-3 text-fg-faint">
-            {mode}
-          </span>
-        </div>
-        <p className="text-[11px] text-fg-faint leading-snug">
-          Choose how much configuration detail is shown in the app.
-          Essential hides technical panels and advanced model controls.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "essential" })}
-            aria-pressed={mode === "essential"}
-            className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-              mode === "essential"
-                ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
-                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
-            }`}
-          >
-            <div className="text-xs font-medium">Essential</div>
-            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Cleaner layout, fewer technical controls</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "full" })}
-            aria-pressed={mode === "full"}
-            className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-              mode === "full"
-                ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
-                : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
-            }`}
-          >
-            <div className="text-xs font-medium">Full</div>
-            <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
-          </button>
-        </div>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-fg">Experience mode</h3>
+            <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-surface-3 text-fg-faint">
+              {mode === "full" ? "advanced" : "basic"}
+            </span>
+          </div>
+          <p className="text-[11px] text-fg-faint leading-snug">
+            Choose how much configuration detail is shown in the app.
+          </p>
+          {mode !== "full" && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200/85">
+              <EyeOff size={13} className="mt-0.5 shrink-0" />
+              <span>Basic view hides technical panels, per-function tool controls, and advanced model tuning.</span>
+            </div>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "essential" })}
+              aria-pressed={mode === "essential"}
+              className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+                mode === "essential"
+                  ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
+                  : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+              }`}
+            >
+              <div className="text-xs font-medium">Basic</div>
+              <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Cleaner layout with advanced configs hidden</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "SET_EXPERIENCE_MODE", mode: "full" })}
+              aria-pressed={mode === "full"}
+              className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
+                mode === "full"
+                  ? "border-accent/60 bg-accent/15 text-fg shadow-sm"
+                  : "border-border bg-surface-3 text-fg-muted hover:text-fg hover:border-border-strong"
+              }`}
+            >
+              <div className="text-xs font-medium">Advanced</div>
+              <div className="text-[10px] text-fg-faint leading-tight mt-0.5">Per-function controls and full tuning</div>
+            </button>
+          </div>
         </div>
       </div>
 

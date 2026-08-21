@@ -1,5 +1,5 @@
 "use client";
-import { Monitor, Moon, Palette, Sun } from "lucide-react";
+import { EyeOff, Monitor, Moon, Palette, SlidersHorizontal, Sun } from "lucide-react";
 import { useTheme, type Theme } from "@/contexts/ThemeContext";
 import { useAppContext, type ExperienceMode } from "@/contexts/AppContext";
 
@@ -19,9 +19,10 @@ export function AppearancePanel() {
     { value: "system", label: "System", icon: <Monitor size={14} />, description: "Follow the OS-level light/dark preference." },
   ];
 
-  const modeOptions: { value: ExperienceMode; label: string; description: string }[] = [
-    { value: "essential", label: "Essential", description: "Day-to-day surfaces only. Hides Memory, Bridges, Harness, Logs, Defaults from the menu." },
-    { value: "full",      label: "Full",      description: "Everything visible: engine-room tabs, power-user settings, all advanced sub-tabs." },
+  const hiddenConfigHint = "Harnesses, Environment, Logs, per-function tool controls, and advanced agent tuning stay hidden until Advanced view is enabled.";
+  const modeOptions: { value: ExperienceMode; label: string; eyebrow: string; icon: React.ReactNode; description: string }[] = [
+    { value: "essential", label: "Basic", eyebrow: "guided", icon: <EyeOff size={14} />, description: "Day-to-day setup only. Advanced configuration is intentionally hidden." },
+    { value: "full",      label: "Advanced", eyebrow: "complete", icon: <SlidersHorizontal size={14} />, description: "Everything visible: engine-room tabs, power-user settings, all advanced sub-tabs." },
   ];
 
   function setMode(mode: ExperienceMode) {
@@ -66,6 +67,14 @@ export function AppearancePanel() {
 
         <section>
           <h3 className="text-[11px] uppercase tracking-wide text-fg-faint mb-2 px-1">Workspace mode</h3>
+          {!isFullMode && (
+            <div className="mb-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200/85">
+              <div className="flex items-start gap-2">
+                <EyeOff size={13} className="mt-0.5 shrink-0" />
+                <span>{hiddenConfigHint}</span>
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {modeOptions.map((o) => {
               const active = isFullMode ? o.value === "full" : o.value === "essential";
@@ -80,7 +89,13 @@ export function AppearancePanel() {
                       : "border-border bg-surface-2 text-fg-muted hover:bg-surface-3"
                   }`}
                 >
-                  <div className="text-sm font-medium text-fg mb-1">{o.label}</div>
+                  <div className="flex items-start gap-2 mb-1">
+                    <span className={active ? "text-accent" : "text-fg-subtle"}>{o.icon}</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-fg">{o.label}</div>
+                      <div className="text-[9px] uppercase tracking-wide text-fg-faint">{o.eyebrow}</div>
+                    </div>
+                  </div>
                   <p className="text-[11px] text-fg-faint leading-snug">{o.description}</p>
                 </button>
               );
