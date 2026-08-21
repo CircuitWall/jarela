@@ -31,6 +31,12 @@ import type {
   DocumentSettings,
   DocumentHit,
   DocumentReindexResult,
+  Skill,
+  SkillWithContent,
+  SkillListResponse,
+  SkillRepo,
+  SkillRepoIn,
+  SkillRepoPatch,
   MemoryItem,
   ModelConfig,
   ModelConfigIn,
@@ -793,6 +799,38 @@ export const api = {
     getSettings: () => request<DocumentSettings>("/documents/settings"),
     setSettings: (patch: DocumentSettings) =>
       request<DocumentSettings>("/documents/settings", { method: "PUT", body: JSON.stringify(patch) }),
+  },
+
+  // GETs pass `cache: "no-store"` — the server's short Cache-Control TTL
+  // (lib/api/responses.ts#cachedJson) is meant for panels that re-render on
+  // an interval, not for the write-then-reread cycle here: the Skills panel
+  // saves/deletes and immediately reloads the list, and a browser HTTP-cache
+  // hit within that TTL would show stale content right after a save.
+  skills: {
+    list: () => request<SkillListResponse>("/skills", { cache: "no-store" }),
+    get: (id: string) => request<SkillWithContent>(`/skills/${encodeURIComponent(id)}`, { cache: "no-store" }),
+    create: (data: { id: string; content: string }) =>
+      request<{ id: string }>("/skills", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, content: string) =>
+      request<{ id: string }>(`/skills/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify({ content }),
+      }),
+    delete: (id: string) =>
+      request<{ deleted: boolean }>(`/skills/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+    repos: {
+      list: () => request<{ repos: SkillRepo[] }>("/skills/repos", { cache: "no-store" }),
+      create: (data: SkillRepoIn) =>
+        request<SkillRepo>("/skills/repos", { method: "POST", body: JSON.stringify(data) }),
+      update: (id: string, patch: SkillRepoPatch) =>
+        request<SkillRepo>(`/skills/repos/${encodeURIComponent(id)}`, {
+          method: "PATCH",
+          body: JSON.stringify(patch),
+        }),
+      delete: (id: string) =>
+        request<{ deleted: boolean }>(`/skills/repos/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    },
   },
 
   // Filesystem browse — backs the folder-picker dialog in the Documents

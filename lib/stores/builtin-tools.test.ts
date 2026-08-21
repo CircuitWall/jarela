@@ -6,6 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-builtin-tools-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
+const { getDb } = await import("@/lib/db");
 const {
   isCategoryEnabled,
   disabledCategories,
@@ -58,5 +59,24 @@ describe("builtin tool category toggles", () => {
     const rows = listCategoryStates();
     const shell = rows.find((r) => r.category === "Shell");
     expect(shell?.enabled).toBe(false);
+  });
+
+  it("Skills can never be disabled — setCategoryEnabled(false) is a no-op", () => {
+    setCategoryEnabled("Skills", false);
+    expect(isCategoryEnabled("Skills")).toBe(true);
+    expect(disabledCategories().has("Skills")).toBe(false);
+  });
+
+  it("Skills stays enabled in listCategoryStates even with a stale disabled row", () => {
+    // Simulate a row written before Skills became always-on (setCategoryEnabled
+    // itself now refuses to write this) — direct SQL bypasses that guard.
+    getDb().prepare(
+      `INSERT INTO builtin_tool_categories (category, enabled, updated_at)
+       VALUES ('Skills', 0, '2020-01-01T00:00:00.000Z')
+       ON CONFLICT(category) DO UPDATE SET enabled=0`,
+    ).run();
+    const rows = listCategoryStates();
+    const skills = rows.find((r) => r.category === "Skills");
+    expect(skills?.enabled).toBe(true);
   });
 });

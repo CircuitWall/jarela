@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   KeyRound,
+  Lock,
   Package,
   Settings,
   Trash2,
@@ -92,7 +93,13 @@ const CATEGORY_BLURB: Record<string, string> = {
   Tasks: "Manage tasks and reminders on Microsoft To Do / iCloud Reminders.",
   Microsoft: "Microsoft Graph escape hatch + unified search + People resolver.",
   Config: "Read/write Jarela's own settings.",
+  Skills: "Read/write markdown playbooks agents load on demand.",
 };
+
+// Every agent can always list/read/write skills, regardless of its own tool
+// selection (lib/agents/run-thread.ts#SELF_CONFIG_TOOLS) — so unlike other
+// builtin categories, this one can't be turned off.
+const ALWAYS_ON_BUILTIN_CATEGORY = "Skills";
 
 const SECRET_MASK = "********";
 
@@ -404,12 +411,16 @@ export function UnifiedPackageList() {
               onToggleExpand={() =>
                 setExpanded((m) => ({ ...m, [row.id]: !m[row.id] }))
               }
-              onToggleEnabled={() => {
-                if (row.kind === "builtin") return toggleBuiltin(row);
-                if (row.kind === "default") return toggleDefault(row);
-                if (row.kind === "npm") return toggleNpm(row);
-                if (row.kind === "dropin") return toggleDropin(row);
-              }}
+              onToggleEnabled={
+                row.kind === "builtin" && row.category === ALWAYS_ON_BUILTIN_CATEGORY
+                  ? undefined
+                  : () => {
+                      if (row.kind === "builtin") return toggleBuiltin(row);
+                      if (row.kind === "default") return toggleDefault(row);
+                      if (row.kind === "npm") return toggleNpm(row);
+                      if (row.kind === "dropin") return toggleDropin(row);
+                    }
+              }
               onRemove={row.kind === "npm" ? () => removeManifest(row) : undefined}
               onConfigureCredentials={
                 row.kind === "default" && row.integrationId
@@ -558,7 +569,7 @@ function PackageListRow({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 pt-0.5">
-          {onToggleEnabled && (
+          {onToggleEnabled ? (
             <label className="text-[11px] text-fg-faint flex items-center gap-1 select-none">
               <input
                 type="checkbox"
@@ -568,7 +579,14 @@ function PackageListRow({
               />
               enabled
             </label>
-          )}
+          ) : row.kind === "builtin" && row.category === ALWAYS_ON_BUILTIN_CATEGORY ? (
+            <span
+              className="text-[11px] text-fg-faint flex items-center gap-1"
+              title="Every agent can always list/read/write skills — this category can't be turned off"
+            >
+              <Lock size={11} /> always on
+            </span>
+          ) : null}
           {onRemove && (
             <button
               type="button"

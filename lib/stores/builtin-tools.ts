@@ -20,7 +20,13 @@ interface Row {
 
 const now = () => new Date().toISOString();
 
+// Every agent can always list/read/write skills, regardless of its own tool
+// selection (lib/agents/run-thread.ts#SELF_CONFIG_TOOLS) — so unlike other
+// builtin categories, this one can never be disabled.
+const ALWAYS_ON: ReadonlySet<BuiltinCategory> = new Set(["Skills"]);
+
 export function isCategoryEnabled(category: BuiltinCategory): boolean {
+  if (ALWAYS_ON.has(category)) return true;
   const row = getDb()
     .prepare("SELECT enabled FROM builtin_tool_categories WHERE category=?")
     .get(category) as { enabled: number } | undefined;
@@ -31,7 +37,9 @@ export function disabledCategories(): Set<BuiltinCategory> {
   const rows = getDb()
     .prepare("SELECT category FROM builtin_tool_categories WHERE enabled=0")
     .all() as unknown as Array<{ category: string }>;
-  return new Set(rows.map((r) => r.category as BuiltinCategory));
+  const disabled = new Set(rows.map((r) => r.category as BuiltinCategory));
+  for (const c of ALWAYS_ON) disabled.delete(c);
+  return disabled;
 }
 
 export function listCategoryStates(): Array<{ category: string; enabled: boolean; updated_at: string | null }> {
@@ -40,12 +48,13 @@ export function listCategoryStates(): Array<{ category: string; enabled: boolean
     .all() as unknown as Row[];
   return rows.map((r) => ({
     category: r.category,
-    enabled: r.enabled === 1,
+    enabled: ALWAYS_ON.has(r.category as BuiltinCategory) ? true : r.enabled === 1,
     updated_at: r.updated_at,
   }));
 }
 
 export function setCategoryEnabled(category: BuiltinCategory, enabled: boolean): void {
+  if (ALWAYS_ON.has(category) && !enabled) return;
   getDb()
     .prepare(
       `INSERT INTO builtin_tool_categories (category, enabled, updated_at)

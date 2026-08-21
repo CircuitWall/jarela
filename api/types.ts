@@ -945,6 +945,47 @@ export interface DocumentSettings {
   } | null;
 }
 
+// Skills (ADR-0074). A skill repo is a directory Jarela scans for
+// */SKILL.md (Claude-style) and *.md skill files. At most one repo is
+// `writable` — write_skill/delete_skill only ever target it.
+export interface SkillRepo {
+  id: string;
+  path: string;
+  label: string | null;
+  writable: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SkillRepoIn {
+  path: string;
+  label?: string | null;
+  writable?: boolean;
+}
+
+export interface SkillRepoPatch {
+  label?: string | null;
+  enabled?: boolean;
+  writable?: boolean;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  source: "builtin" | "user";
+}
+
+export interface SkillWithContent extends Skill {
+  content: string;
+}
+
+export interface SkillListResponse {
+  skills: Skill[];
+  skills_dir: string;
+  skills_dirs: string[];
+}
 
 export interface PendingAction {
   id: string;
