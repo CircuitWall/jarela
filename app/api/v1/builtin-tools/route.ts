@@ -8,6 +8,7 @@ import {
 } from "@/lib/tools/registry";
 import {
   disabledCategories,
+  isCategoryEnabled,
   setCategoryEnabled,
 } from "@/lib/stores/builtin-tools";
 import { errorResponse, validateBody } from "@/lib/api/responses";
@@ -65,5 +66,9 @@ export async function PATCH(req: NextRequest) {
     return errorResponse(`unknown category: ${category}`);
   }
   setCategoryEnabled(category as BuiltinCategory, enabled);
-  return NextResponse.json({ category, enabled });
+  const actual = isCategoryEnabled(category as BuiltinCategory);
+  if (actual !== enabled) {
+    return errorResponse(`category "${category}" cannot be disabled`, 400);
+  }
+  return NextResponse.json({ category, enabled: actual });
 }

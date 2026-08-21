@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- No entries yet.
+### Added
+
+- **Skills get a Tools panel tab.** A new "Skills" sub-tab (Tools → Skills) manages skill repos (add/enable/disable/pick-writable/remove) and lets you write, edit, and delete skills directly in the UI — no API calls required. Built-in skills show a "Clone" affordance that copies their content into your writable repo so you can customize them (same id overrides the built-in; a different id keeps both).
+
+### Changed
+
+- **The `Skills` tool category can no longer be disabled.** Every agent can already list/read/write skills regardless of its own tool selection (`SELF_CONFIG_TOOLS`); the Packages tab's per-category toggle for `Skills` is now locked to "always on" to match, instead of offering a switch that only partially worked.
+
+### Fixed
+
+- **`DELETE /api/v1/skills/[id]` now returns `{ deleted: true }`** instead of a bare `204 No Content`, matching every other delete endpoint — needed for the new UI's client to parse the response.
+- **Skills panel no longer shows stale data right after a save.** `GET /api/v1/skills` and `GET /api/v1/skills/repos` carry a short browser cache TTL meant for polling-style panels; the client now fetches them with `cache: "no-store"` so a save/delete followed immediately by a reload reflects the change instead of a cached pre-mutation response.
 
 ## [1.28.2] - 2026-08-21
 
