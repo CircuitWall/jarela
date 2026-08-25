@@ -240,6 +240,116 @@ describe("claude_delegate — cwd resolution", () => {
   });
 });
 
+describe("claude_delegate — global launch profile", () => {
+  it("inherits omitted startup options from the Claude Code integration profile", async () => {
+    saveIntegration("claude-code", {
+      cli_path: "/opt/homebrew/bin/claude",
+      api_key: "sk-ant-profile",
+      default_model: "opus",
+      default_tools: "Read,Grep",
+      default_add_dirs: "/tmp/alpha, /tmp/beta",
+      default_permission_mode: "acceptEdits",
+      default_allow_unsafe: "true",
+      default_timeout_seconds: "123",
+      default_sync_memory: "false",
+      default_escalate_questions: "false",
+    });
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+    const args = state.calls[0]!.args;
+
+    expect(args[args.indexOf("--model") + 1]).toBe("opus");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Grep");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+    expect(args).not.toContain("--append-system-prompt");
+    expect(args.filter((arg) => arg === "--add-dir")).toHaveLength(2);
+    expect(args).toContain("/tmp/alpha");
+    expect(args).toContain("/tmp/beta");
+
+    const launch = out.launch as Record<string, unknown>;
+    expect(launch).toMatchObject({
+      cli_path: "/opt/homebrew/bin/claude",
+      cwd: projectRoot,
+      model: "opus",
+      tools: "Read,Grep",
+      allow_unsafe: true,
+      permission_mode_used: "acceptEdits",
+      timeout_seconds: 123,
+      sync_memory: false,
+      escalate_questions: false,
+    });
+    expect(JSON.stringify(out)).not.toContain("sk-ant-profile");
+  });
+
+  it("lets explicit tool inputs override the global launch profile", async () => {
+    saveIntegration("claude-code", {
+      default_model: "opus",
+      default_tools: "Read,Grep",
+      default_permission_mode: "bypassPermissions",
+      default_allow_unsafe: "true",
+      default_sync_memory: "false",
+      default_escalate_questions: "false",
+    });
+
+    const out = parse(await claudeDelegateTool.invoke({
+      task: "x",
+      cwd: projectRoot,
+      model: "sonnet",
+      tools: "Bash",
+      add_dirs: ["/tmp/override"],
+      permission_mode: "plan",
+      allow_unsafe: true,
+      escalate_questions: true,
+      sync_memory: false,
+    }));
+    const args = state.calls[0]!.args;
+
+    expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Bash");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("plan");
+    expect(args).toContain("--append-system-prompt");
+    expect(args).toContain("/tmp/override");
+
+    const launch = out.launch as Record<string, unknown>;
+    expect(launch).toMatchObject({
+      model: "sonnet",
+      tools: "Bash",
+      requested_permission_mode: "plan",
+      permission_mode_used: "plan",
+      sync_memory: false,
+      escalate_questions: true,
+    });
+  });
+
+  it("keeps mostly_safe read-only when the profile does not opt into unsafe execution", async () => {
+    saveIntegration("claude-code", {
+      default_permission_mode: "acceptEdits",
+      default_allow_unsafe: "false",
+      default_sync_memory: "false",
+    });
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+
+    expect(out.permission_mode_used).toBe("dontAsk");
+    expect((out.launch as Record<string, unknown>).requested_permission_mode).toBe("acceptEdits");
+    expect((out.launch as Record<string, unknown>).permission_mode_used).toBe("dontAsk");
+  });
+
+  it("can run in background by default from the global launch profile", async () => {
+    saveIntegration("claude-code", {
+      default_background: "true",
+      default_sync_memory: "false",
+    });
+
+    const started = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+
+    expect(started.status).toBe("running");
+    expect(typeof started.job_id).toBe("string");
+    expect((started.launch as Record<string, unknown>).background).toBe(true);
+    expect(((started.transcript as Record<string, unknown>).launch as Record<string, unknown>).background).toBe(true);
+  });
+});
+
 describe("claude_delegate — session persistence", () => {
   it("starts a fresh session on the first call, then resumes it on a follow-up", async () => {
     const first = parse(await claudeDelegateTool.invoke({ task: "start", cwd: projectRoot, sync_memory: false }));
@@ -388,6 +498,52 @@ function toolResultLine(toolUseId: string, content: unknown, isError = false): s
 }
 
 describe("claude_delegate — live progress (config.writer)", () => {
+  it("returns a transparent transcript with parent message, Claude steps, and extracted design questions", async () => {
+    state.script = [
+      assistantTextLine("I need to choose the storage shape"),
+      resultLine({
+        result: "## Design questions\n1. Should settings be stored globally or per workspace?\n2. Should old sessions be migrated automatically?\n\n## Progress so far\nRead the store code.",
+      }),
+    ];
+
+    const out = parse(await claudeDelegateTool.invoke({
+      task: "Add transparent delegation",
+      cwd: projectRoot,
+      sync_memory: false,
+    }));
+
+    expect(out.awaiting_answers).toBe(true);
+    const transcript = out.transcript as Record<string, unknown>;
+    expect(transcript.parent_message).toBe("Add transparent delegation");
+    expect(transcript.claude_steps).toEqual(["Claude: I need to choose the storage shape"]);
+    expect(transcript.design_questions).toEqual([
+      "Should settings be stored globally or per workspace?",
+      "Should old sessions be migrated automatically?",
+    ]);
+    expect(transcript.awaiting_user_answers).toBe(true);
+    expect(String(transcript.next_action)).toMatch(/Ask the user/);
+  });
+
+  it("includes the transparent transcript while a background delegation is running", async () => {
+    state.autoClose = false;
+    const started = parse(await claudeDelegateTool.invoke({
+      task: "Investigate before editing",
+      cwd: projectRoot,
+      background: true,
+      sync_memory: false,
+    }));
+    const child = state.children.at(-1) as FakeChild;
+    child.stdout.emit("data", Buffer.from(assistantTextLine("Checking nearby tests") + "\n"));
+
+    const status = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string }));
+
+    const transcript = status.transcript as Record<string, unknown>;
+    expect(transcript.parent_message).toBe("Investigate before editing");
+    expect(transcript.claude_steps).toEqual(["Claude: Checking nearby tests"]);
+    expect(status.project_key).toBe(started.project_key);
+    expect(status.session_id).toBe(started.session_id);
+  });
+
   it("reports each stream-json step via config.writer as it arrives (foreground)", async () => {
     state.script = [
       assistantTextLine("Looking at the code"),

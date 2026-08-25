@@ -34,7 +34,7 @@ import { withStreamDefault } from "./tool-metadata";
 import { resolveSafetyMode } from "./safety";
 import { resolveSubprocessEnv } from "./subprocess-env";
 import { gitDiffSummary } from "./git-probe";
-import { getClaudeCodeConfig } from "./claude-code-config";
+import { getClaudeCodeConfig, type ClaudeCodeSyncMemory } from "./claude-code-config";
 import { getSession, rememberSession } from "@/lib/stores/claude-delegate-sessions";
 import * as bridge from "./claude-memory-bridge";
 import * as jobs from "./claude-delegate-jobs";
@@ -131,6 +131,30 @@ interface RawClaudeResult {
   [k: string]: unknown;
 }
 
+interface DelegationTranscript {
+  parent_message: string;
+  claude_steps: string[];
+  design_questions: string[];
+  awaiting_user_answers: boolean;
+  next_action: string;
+  launch?: ClaudeLaunchDetails;
+}
+
+interface ClaudeLaunchDetails {
+  cli_path: string;
+  cwd: string;
+  model: string | null;
+  tools: string;
+  add_dirs: string[];
+  requested_permission_mode: string | null;
+  allow_unsafe: boolean;
+  permission_mode_used: string;
+  background: boolean;
+  timeout_seconds: number;
+  sync_memory: "in" | "out" | "both" | false;
+  escalate_questions: boolean;
+}
+
 function summarizeInput(toolName: string, input: unknown): string {
   if (!input || typeof input !== "object") return "";
   const i = input as Record<string, unknown>;
@@ -191,6 +215,31 @@ function summarizeToolResult(content: unknown): string {
       .join(" ");
   }
   return "";
+}
+
+function extractDesignQuestions(text: string): string[] {
+  const match = text.match(/(?:^|\n)##\s*Design questions\b([\s\S]*?)(?=\n##\s|\n#\s|$)/i);
+  const body = match?.[1]?.trim();
+  if (!body) return [];
+  return body
+    .split("\n")
+    .map((line) => line.trim().replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, ""))
+    .filter((line) => line.length > 0);
+}
+
+function buildDelegationTranscript(parentMessage: string, steps: string[], resultText?: string, launch?: ClaudeLaunchDetails): DelegationTranscript {
+  const designQuestions = extractDesignQuestions(resultText ?? "");
+  const awaitingUserAnswers = designQuestions.length > 0 || /(^|\n)##\s*Design questions\b/i.test(resultText ?? "");
+  return {
+    parent_message: parentMessage,
+    claude_steps: steps,
+    design_questions: designQuestions,
+    awaiting_user_answers: awaitingUserAnswers,
+    next_action: awaitingUserAnswers
+      ? "Ask the user these design questions, then call claude_delegate again with their answers in the task."
+      : "Show the user the visible Claude steps and verify the reported changes before claiming completion.",
+    ...(launch ? { launch } : {}),
+  };
 }
 
 // ── spawn (event-driven; supports both sync and background) ──────────────
@@ -373,6 +422,8 @@ interface FinalizeOpts {
   key: string;
   sessionId: string;
   resume: boolean;
+  parentMessage: string;
+  launch: ClaudeLaunchDetails;
   workspaceMissing: boolean;
   safetyMode: ReturnType<typeof resolveSafetyMode>;
   permissionMode: string;
@@ -400,6 +451,7 @@ async function finalizeRun(raw: RawClaudeResult, opts: FinalizeOpts) {
   const text = raw.result ?? "";
   const hasDesignQuestions = /(^|\n)##\s*Design questions\b/i.test(text);
   const permissionDenials = Array.isArray(raw.permission_denials) ? raw.permission_denials : [];
+  const steps = raw._steps ?? [];
 
   return {
     result: text || null,
@@ -408,7 +460,9 @@ async function finalizeRun(raw: RawClaudeResult, opts: FinalizeOpts) {
     resumed: opts.resume,
     ...(opts.workspaceMissing ? { workspace_missing: true } : {}),
     awaiting_answers: hasDesignQuestions,
-    steps: raw._steps ?? [],
+    steps,
+    transcript: buildDelegationTranscript(opts.parentMessage, steps, text, opts.launch),
+    launch: opts.launch,
     duration_ms: raw.duration_ms,
     cost_usd: raw.total_cost_usd,
     num_turns: raw.num_turns,
@@ -462,13 +516,25 @@ const delegateSchema = z.object({
 
 export const claudeDelegateTool = withStreamDefault(tool(
   async (input, config?: ToolConfig) => {
+    const claudeConfig = getClaudeCodeConfig();
+    const defaults = claudeConfig.launchDefaults;
     const {
-      task, cwd: rawCwd, feature, model, tools, add_dirs,
+      task, cwd: rawCwd, feature,
       permission_mode, allow_unsafe, escalate_questions, fresh,
       background, timeout_seconds, sync_memory,
     } = input;
 
-    const gate = resolveSafetyGate(permission_mode, allow_unsafe === true);
+    const model = input.model ?? defaults.model;
+    const tools = input.tools ?? defaults.tools;
+    const add_dirs = input.add_dirs ?? defaults.addDirs;
+    const resolvedPermissionMode = permission_mode ?? defaults.permissionMode;
+    const resolvedAllowUnsafe = allow_unsafe ?? defaults.allowUnsafe ?? false;
+    const resolvedBackground = background ?? defaults.background ?? false;
+    const resolvedTimeoutSeconds = timeout_seconds ?? defaults.timeoutSeconds ?? DEFAULT_TIMEOUT_S;
+    const resolvedSyncMemory = sync_memory ?? defaults.syncMemory;
+    const resolvedEscalateQuestions = escalate_questions ?? defaults.escalateQuestions ?? true;
+
+    const gate = resolveSafetyGate(resolvedPermissionMode, resolvedAllowUnsafe === true);
     if (gate.blocked) {
       return JSON.stringify({
         ok: false,
@@ -479,14 +545,28 @@ export const claudeDelegateTool = withStreamDefault(tool(
     }
 
     const workspaceRoot = currentWorkspace(config)?.root;
-    const claudeConfig = getClaudeCodeConfig();
     const { cwd, env } = resolveSubprocessEnv({ cwd: rawCwd, workspaceRoot, env: claudeConfig.env });
     const workspaceMissing = !rawCwd && !workspaceRoot;
 
     const key = projectKey(cwd, feature);
-    const timeoutMs = (timeout_seconds ?? DEFAULT_TIMEOUT_S) * 1000;
+    const timeoutMs = resolvedTimeoutSeconds * 1000;
     const toolsList = tools ?? "default";
-    const appendSystemPrompt = escalate_questions === false ? null : DESIGN_QA_PROMPT;
+    const appendSystemPrompt = resolvedEscalateQuestions ? DESIGN_QA_PROMPT : null;
+    const syncMode = normalizeSyncMode(resolvedSyncMemory as ClaudeCodeSyncMemory | undefined);
+    const launch: ClaudeLaunchDetails = {
+      cli_path: claudeConfig.bin,
+      cwd,
+      model: model ?? null,
+      tools: toolsList,
+      add_dirs: add_dirs ?? [],
+      requested_permission_mode: resolvedPermissionMode ?? null,
+      allow_unsafe: resolvedAllowUnsafe === true,
+      permission_mode_used: gate.permissionMode,
+      background: resolvedBackground === true,
+      timeout_seconds: resolvedTimeoutSeconds,
+      sync_memory: syncMode,
+      escalate_questions: resolvedEscalateQuestions,
+    };
 
     let sessionId: string;
     let resume = false;
@@ -498,7 +578,6 @@ export const claudeDelegateTool = withStreamDefault(tool(
       sessionId = crypto.randomUUID();
     }
 
-    const syncMode = normalizeSyncMode(sync_memory);
     let syncManifest: Set<string> | null = null;
     let preSyncReport: SyncReport | null = null;
     if (syncMode === "in" || syncMode === "both") {
@@ -518,16 +597,16 @@ export const claudeDelegateTool = withStreamDefault(tool(
       permissionMode: gate.permissionMode, toolsList, appendSystemPrompt,
     });
 
-    if (background) {
+    if (resolvedBackground) {
       const jobId = crypto.randomUUID();
-      const job = jobs.createJob(jobId, { projectKey: key, sessionId });
+      const job = jobs.createJob(jobId, { projectKey: key, sessionId, parentMessage: task, resumed: resume, launch });
       const child = spawnClaude({
         args: spawnArgs, cwd, env, timeoutMs,
         onStep: (s) => { jobs.appendStep(jobId, s); reportToolProgress(config, "claude_delegate", s); },
         async onDone(raw) {
           try {
             const shaped = await finalizeRun(raw, {
-              key, sessionId, resume, workspaceMissing,
+              key, sessionId, resume, parentMessage: task, launch, workspaceMissing,
               safetyMode: gate.safetyMode, permissionMode: gate.permissionMode,
               cwd, syncMode, syncManifest,
             });
@@ -544,7 +623,15 @@ export const claudeDelegateTool = withStreamDefault(tool(
       });
       if (child) job._child = child;
 
-      return JSON.stringify({ job_id: jobId, status: "running", project_key: key, session_id: sessionId, resumed: resume });
+      return JSON.stringify({
+        job_id: jobId,
+        status: "running",
+        project_key: key,
+        session_id: sessionId,
+        resumed: resume,
+        launch,
+        transcript: buildDelegationTranscript(task, [], "", launch),
+      });
     }
 
     const raw = await runClaude(
@@ -555,7 +642,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
       throw new Error(`claude reported error: ${raw.result ?? JSON.stringify(raw).slice(0, 500)}`);
     }
     const shaped = await finalizeRun(raw, {
-      key, sessionId, resume, workspaceMissing,
+      key, sessionId, resume, parentMessage: task, launch, workspaceMissing,
       safetyMode: gate.safetyMode, permissionMode: gate.permissionMode,
       cwd, syncMode, syncManifest,
     });
@@ -597,6 +684,11 @@ export const claudeDelegateStatusTool = tool(
       steps: job.steps,
       new_steps: newSteps,
       next_step_index: job.steps.length,
+      project_key: job.projectKey,
+      session_id: job.sessionId,
+      resumed: job.resumed,
+      launch: job.launch,
+      transcript: buildDelegationTranscript(job.parentMessage, job.steps, "", job.launch as ClaudeLaunchDetails),
     };
     if (job.status === "done") out.result = job.result;
     if (job.status === "error") out.error = job.error;
