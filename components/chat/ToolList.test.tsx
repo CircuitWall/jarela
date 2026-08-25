@@ -82,4 +82,92 @@ describe("ToolList — live progress (ADR-0073)", () => {
     render(<ToolList events={events} />);
     expect(screen.getByText("step 1")).toBeTruthy();
   });
+
+  it("renders persisted Claude transcript metadata, launch details, questions, and awaiting badge", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "c1",
+        phase: "call",
+        name: "claude_delegate",
+        payload: { task: "Add a feature" },
+      },
+      {
+        id: "c1",
+        phase: "result",
+        name: "claude_delegate",
+        payload: {
+          awaiting_answers: true,
+          transcript: {
+            parent_message: "Add a feature",
+            claude_steps: ["Claude: inspecting files", "→ Read: app/page.tsx"],
+            design_questions: ["Should this be global or workspace scoped?"],
+            awaiting_user_answers: true,
+            launch: {
+              model: "sonnet",
+              tools: "Read,Grep",
+              permission_mode_used: "dontAsk",
+              timeout_seconds: 600,
+              sync_memory: "both",
+            },
+          },
+        },
+      },
+    ];
+
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("asks")).toBeTruthy();
+    expect(screen.getByText("Asked Claude")).toBeTruthy();
+    expect(screen.getByText("Add a feature")).toBeTruthy();
+    expect(screen.getByText("Started")).toBeTruthy();
+    expect(screen.getByText("model sonnet · tools Read,Grep · permission dontAsk · 600s timeout · memory both")).toBeTruthy();
+    expect(screen.getByText("Claude: inspecting files")).toBeTruthy();
+    expect(screen.getByText("Read: app/page.tsx")).toBeTruthy();
+    expect(screen.getByText("Claude questions")).toBeTruthy();
+    expect(screen.getByText("Should this be global or workspace scoped?")).toBeTruthy();
+  });
+
+  it("renders the final nested transcript returned by claude_delegate_status", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "c1",
+        phase: "call",
+        name: "claude_delegate_status",
+        payload: { job_id: "job-1" },
+      },
+      {
+        id: "c1",
+        phase: "result",
+        name: "claude_delegate_status",
+        payload: {
+          status: "done",
+          result: {
+            awaiting_answers: true,
+            transcript: {
+              parent_message: "Continue with user answers",
+              claude_steps: ["Claude: resumed with answers"],
+              design_questions: ["Which migration strategy should I use?"],
+              awaiting_user_answers: true,
+              launch: {
+                model: "opus",
+                tools: "default",
+                permission_mode_used: "acceptEdits",
+                timeout_seconds: 900,
+                background: true,
+                sync_memory: false,
+              },
+            },
+          },
+        },
+      },
+    ];
+
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("asks")).toBeTruthy();
+    expect(screen.getByText("Continue with user answers")).toBeTruthy();
+    expect(screen.getByText("model opus · tools default · permission acceptEdits · 900s timeout · background · memory sync off")).toBeTruthy();
+    expect(screen.getByText("Claude: resumed with answers")).toBeTruthy();
+    expect(screen.getByText("Which migration strategy should I use?")).toBeTruthy();
+  });
 });

@@ -293,7 +293,9 @@ export function IntegrationCard({
             className="mt-1 w-full px-2 py-1.5 text-sm rounded border border-border bg-surface-3 text-fg"
           />
         </label>
-        {def.name === "gmail" ? (
+        {def.name === "claude-code" ? (
+          <ClaudeCodeFields def={def} values={values} setValues={setValues} status={status} />
+        ) : def.name === "gmail" ? (
           // Gmail ships a bundled Jarela OAuth client — most users only need
           // the Connect Gmail button below. The three BYO fields + GCP-setup
           // walkthrough live inside this collapsed disclosure so the default
@@ -401,6 +403,48 @@ export function IntegrationCard({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const CLAUDE_CONNECTION_FIELDS = new Set([
+  "cli_path",
+  "api_key",
+  "auth_token",
+  "base_url",
+  "default_opus_model",
+  "default_sonnet_model",
+  "default_haiku_model",
+]);
+
+function ClaudeCodeFields({
+  def,
+  values,
+  setValues,
+  status,
+}: {
+  def: IntegrationDefinition;
+  values: Record<string, string>;
+  setValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  status?: IntegrationStatus;
+}) {
+  const connection = def.fields.filter((f) => CLAUDE_CONNECTION_FIELDS.has(f.key));
+  const launch = def.fields.filter((f) => !CLAUDE_CONNECTION_FIELDS.has(f.key));
+  return (
+    <div className="space-y-2">
+      <div className="rounded border border-border/60 bg-surface-3/20 p-2 space-y-2">
+        <div className="text-[10px] uppercase tracking-wide text-fg-faint">Connection</div>
+        {connection.map((f) => renderField(f, values, setValues, status))}
+      </div>
+      <div className="rounded border border-border/60 bg-surface-3/20 p-2 space-y-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-fg-faint">Launch defaults</div>
+          <p className="mt-0.5 text-[11px] text-fg-faint leading-snug">
+            These defaults apply whenever an agent calls <code className="text-fg">claude_delegate</code> without an explicit override.
+          </p>
+        </div>
+        {launch.map((f) => renderField(f, values, setValues, status))}
       </div>
     </div>
   );
@@ -713,8 +757,19 @@ function ClaudeCodeSetupGuide() {
           If you save these fields, Jarela injects them into the Claude Code subprocess directly instead of depending on shell exports.
         </Step>
 
-        <Step n={4} title="Optional advanced runtime defaults">
-          You can also set optional Claude runtime env defaults in this card:
+        <Step n={4} title="Choose launch defaults">
+          The <strong>Launch defaults</strong> section controls how Jarela starts delegated Claude sessions when an agent does not pass an explicit override:
+          <ul className="list-disc ml-5 mt-1 space-y-0.5 text-fg-subtle">
+            <li><code className="text-fg">default_model</code> chooses the delegate model, such as <code className="text-fg">sonnet</code> or <code className="text-fg">opus</code>.</li>
+            <li><code className="text-fg">default_tools</code> chooses Claude&apos;s tool set, such as <code className="text-fg">default</code> or <code className="text-fg">Read,Grep,WebSearch</code>.</li>
+            <li><code className="text-fg">default_add_dirs</code> grants extra directories, separated by commas or new lines.</li>
+            <li><code className="text-fg">default_permission_mode</code>, <code className="text-fg">default_allow_unsafe</code>, and <code className="text-fg">default_background</code> set the default execution posture.</li>
+          </ul>
+          Jarela still applies its safety gate before spawning Claude, so safe mode blocks delegation and mostly-safe mode stays read-only unless unsafe execution is explicitly enabled.
+        </Step>
+
+        <Step n={5} title="Optional Claude model environment defaults">
+          You can also set optional Claude runtime env defaults in the <strong>Connection</strong> section:
           <ul className="list-disc ml-5 mt-1 space-y-0.5 text-fg-subtle">
             <li><code className="text-fg">base_url</code> &rarr; <code className="text-fg">ANTHROPIC_BASE_URL</code></li>
             <li><code className="text-fg">default_opus_model</code> &rarr; <code className="text-fg">ANTHROPIC_DEFAULT_OPUS_MODEL</code></li>
@@ -724,7 +779,7 @@ function ClaudeCodeSetupGuide() {
           Leave any of these blank if you do not need overrides.
         </Step>
 
-        <Step n={5} title="Save and test">
+        <Step n={6} title="Save and test">
           Click <strong>Save</strong>, then <strong>Test</strong>. The test checks that the Claude binary is runnable; when an API key is saved, it also validates the key against Anthropic.
         </Step>
       </div>

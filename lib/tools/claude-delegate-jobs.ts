@@ -19,6 +19,9 @@ export interface DelegateJob {
   error: string | null;
   projectKey: string;
   sessionId: string;
+  parentMessage: string;
+  resumed: boolean;
+  launch: unknown;
   _child: ChildProcess | null;
 }
 
@@ -33,7 +36,7 @@ function registry(): Map<string, DelegateJob> {
   return g[JOBS_SYM];
 }
 
-export function createJob(jobId: string, opts: { projectKey: string; sessionId: string }): DelegateJob {
+export function createJob(jobId: string, opts: { projectKey: string; sessionId: string; parentMessage: string; resumed: boolean; launch?: unknown }): DelegateJob {
   const job: DelegateJob = {
     status: "running",
     startedAt: Date.now(),
@@ -43,6 +46,9 @@ export function createJob(jobId: string, opts: { projectKey: string; sessionId: 
     error: null,
     projectKey: opts.projectKey,
     sessionId: opts.sessionId,
+    parentMessage: opts.parentMessage,
+    resumed: opts.resumed,
+    launch: opts.launch ?? {},
     _child: null,
   };
   registry().set(jobId, job);
