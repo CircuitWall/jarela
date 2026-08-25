@@ -369,6 +369,8 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
   const summary = renderArgsSummary(group.name, effectiveArgs);
   const summaryTitle = argsSummaryTitle(group.name, effectiveArgs);
   const hasArgs = hasVisibleArgs(effectiveArgs);
+  const claudeTranscript = claudeTranscriptFrom(group.name, effectiveArgs, group.result);
+  const transcriptSteps = group.steps.length > 0 ? group.steps : claudeTranscript?.steps ?? stepsFromResult(group.result);
   return (
     <div className="min-w-0 max-w-full">
       <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
@@ -408,14 +410,28 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
             read
           </Badge>
         )}
+        {claudeTranscript?.awaitingUserAnswers && (
+          <Badge
+            tone="warning"
+            className="uppercase tracking-wide"
+            title="Claude asked design questions and is waiting for the user"
+          >
+            asks
+          </Badge>
+        )}
         <StatusIndicator
           status={group.status}
           deadlineMs={group.deadlineMs}
           startedAt={startedAt}
-          stepCount={group.steps.length}
+          stepCount={transcriptSteps.length}
         />
       </MetaRow>
-      <LiveTranscript steps={group.steps} />
+      <LiveTranscript
+        steps={transcriptSteps}
+        parentMessage={claudeTranscript?.parentMessage}
+        designQuestions={claudeTranscript?.designQuestions}
+        launch={claudeTranscript?.launch}
+      />
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
           {hasVisibleArgs(group.args) ? (
@@ -496,19 +512,30 @@ function StepRow({ step }: { step: string }) {
 const TRANSCRIPT_COLLAPSED_MAX_PX = 112; // ~7 rows
 const TRANSCRIPT_EXPANDED_MAX_PX = 320;
 
-function LiveTranscript({ steps }: { steps: string[] }) {
+function LiveTranscript({
+  steps,
+  parentMessage,
+  designQuestions = [],
+  launch,
+}: {
+  steps: string[];
+  parentMessage?: string;
+  designQuestions?: string[];
+  launch?: Record<string, unknown> | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const hasMeta = !!parentMessage || !!launch || designQuestions.length > 0;
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     setOverflowing(el.scrollHeight > el.clientHeight);
-  }, [steps.length, expanded]);
+  }, [steps.length, expanded, hasMeta, designQuestions.length]);
 
-  if (steps.length === 0) return null;
+  if (steps.length === 0 && !hasMeta) return null;
   return (
     <div className="pl-[22px] -mt-0.5 min-w-0">
       <div
@@ -516,9 +543,21 @@ function LiveTranscript({ steps }: { steps: string[] }) {
         className="flex flex-col gap-0.5 overflow-y-auto rounded border border-border/30 bg-surface-2/20 px-1.5 py-1 transition-[max-height] duration-150 ease-out"
         style={{ maxHeight: expanded ? TRANSCRIPT_EXPANDED_MAX_PX : TRANSCRIPT_COLLAPSED_MAX_PX }}
       >
+        {parentMessage && <TranscriptMetaRow label="Asked Claude" value={parentMessage} />}
+        {launch && <TranscriptMetaRow label="Started" value={formatClaudeLaunchSummary(launch)} />}
         {steps.map((s, i) => (
           <StepRow key={i} step={s} />
         ))}
+        {designQuestions.length > 0 && (
+          <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/5 px-1.5 py-1 text-[10px] leading-[1.45] text-amber-800 dark:text-amber-200">
+            <div className="uppercase tracking-wide text-[9px] font-medium text-amber-700 dark:text-amber-300">Claude questions</div>
+            <ol className="mt-0.5 list-decimal list-inside space-y-0.5">
+              {designQuestions.map((question, i) => (
+                <li key={i} className="break-words whitespace-pre-wrap">{question}</li>
+              ))}
+            </ol>
+          </div>
+        )}
       </div>
       {overflowing && (
         <button
@@ -528,6 +567,15 @@ function LiveTranscript({ steps }: { steps: string[] }) {
           {expanded ? "show less" : "read more"}
         </button>
       )}
+    </div>
+  );
+}
+
+function TranscriptMetaRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 min-w-0 text-[10px] leading-[1.5]">
+      <span className="uppercase tracking-wide text-[9px] text-fg-faint">{label}</span>
+      <span className="min-w-0 truncate text-fg-muted" title={value}>{value}</span>
     </div>
   );
 }
@@ -825,6 +873,56 @@ function argsFromResult(toolName: string, result: unknown): Record<string, unkno
     if (typeof cwd === "string" && cwd.length > 0) out.cwd = cwd;
   }
   return Object.keys(out).length > 0 ? out : null;
+}
+
+function stepsFromResult(result: unknown): string[] {
+  const obj = coerceObject(result);
+  if (!obj) return [];
+  const nested = coerceObject(obj.result);
+  const transcript = coerceObject(nested?.transcript) ?? coerceObject(obj.transcript);
+  const steps = transcript?.claude_steps ?? obj.steps;
+  if (!Array.isArray(steps)) return [];
+  return steps.filter((step): step is string => typeof step === "string" && step.length > 0);
+}
+
+function claudeTranscriptFrom(toolName: string, args: unknown, result: unknown): {
+  parentMessage?: string;
+  steps: string[];
+  designQuestions: string[];
+  awaitingUserAnswers: boolean;
+  launch: Record<string, unknown> | null;
+} | null {
+  if (toolName !== "claude_delegate" && toolName !== "claude_delegate_status") return null;
+  const resultObj = coerceObject(result);
+  const nestedResult = coerceObject(resultObj?.result);
+  const transcript = coerceObject(nestedResult?.transcript) ?? coerceObject(resultObj?.transcript);
+  const argsObj = coerceObject(args);
+  const designQuestions = Array.isArray(transcript?.design_questions)
+    ? transcript.design_questions.filter((q): q is string => typeof q === "string" && q.length > 0)
+    : [];
+  return {
+    parentMessage: typeof transcript?.parent_message === "string"
+      ? transcript.parent_message
+      : typeof argsObj?.task === "string"
+        ? argsObj.task
+        : undefined,
+    steps: stepsFromResult(result),
+    designQuestions,
+    awaitingUserAnswers: transcript?.awaiting_user_answers === true || resultObj?.awaiting_answers === true || nestedResult?.awaiting_answers === true,
+    launch: coerceObject(transcript?.launch) ?? coerceObject(nestedResult?.launch) ?? coerceObject(resultObj?.launch),
+  };
+}
+
+function formatClaudeLaunchSummary(launch: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof launch.model === "string" && launch.model) parts.push(`model ${launch.model}`);
+  if (typeof launch.tools === "string" && launch.tools) parts.push(`tools ${launch.tools}`);
+  if (typeof launch.permission_mode_used === "string") parts.push(`permission ${launch.permission_mode_used}`);
+  if (typeof launch.timeout_seconds === "number") parts.push(`${launch.timeout_seconds}s timeout`);
+  if (launch.background === true) parts.push("background");
+  if (launch.sync_memory === false) parts.push("memory sync off");
+  else if (typeof launch.sync_memory === "string") parts.push(`memory ${launch.sync_memory}`);
+  return parts.length > 0 ? parts.join(" · ") : "default launch profile";
 }
 
 
