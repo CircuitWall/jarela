@@ -15,8 +15,9 @@
  * (https://developers.google.com/oauthplayground) — matches the Atlassian
  * paste-API-token UX. In-app OAuth flow is intentionally deferred.
  *
- * Scope-wise this integration is **drafts only**: there is deliberately no
- * `gmail_send` tool. Users promote drafts in Gmail itself.
+ * Scope-wise this integration supports drafts and direct sends via Gmail's
+ * compose scope. Agents should still prefer drafts unless the user explicitly
+ * asks to send now.
  */
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -43,6 +44,7 @@ const GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me";
 const gmailFetch = (auth: GmailAuth, path: string, init?: RequestInit) =>
   googleFetch(auth, "Gmail", GMAIL_BASE, path, init);
 const DRAFT_BODY_MAX_CHARS = 100_000;
+const SEND_BODY_MAX_CHARS = 100_000;
 
 function gmailAuthError(error: string): string {
   return JSON.stringify({
@@ -108,12 +110,13 @@ function header(headers: Header[] | undefined, name: string): string | null {
 }
 
 // Build an RFC 2822 message and base64url-encode it for the drafts API.
-function buildRawMessage(opts: {
+export function buildRawMessage(opts: {
   to: string[];
   cc?: string[];
   bcc?: string[];
   subject: string;
   body: string;
+  content_type?: "text" | "html";
   in_reply_to?: string | null;   // value of Message-Id header from the parent
   references?: string | null;
 }): string {
@@ -124,7 +127,9 @@ function buildRawMessage(opts: {
   lines.push(`Subject: ${encodeSubject(opts.subject)}`);
   if (opts.in_reply_to) lines.push(`In-Reply-To: ${opts.in_reply_to}`);
   if (opts.references) lines.push(`References: ${opts.references}`);
-  lines.push("Content-Type: text/plain; charset=\"UTF-8\"");
+  lines.push(opts.content_type === "html"
+    ? "Content-Type: text/html; charset=\"UTF-8\""
+    : "Content-Type: text/plain; charset=\"UTF-8\"");
   lines.push("MIME-Version: 1.0");
   lines.push("");
   lines.push(opts.body);
@@ -295,7 +300,7 @@ export const gmailModifyMessageTool = tool(
 );
 
 export const gmailCreateDraftTool = tool(
-  async ({ to, cc, bcc, subject, body, in_reply_to_id }) => {
+  async ({ to, cc, bcc, subject, body, content_type, in_reply_to_id }) => {
     const auth = resolveGmailAuthForTool();
     if ("error" in auth) return gmailAuthError(auth.error);
 
@@ -319,7 +324,7 @@ export const gmailCreateDraftTool = tool(
       references = prevRefs && in_reply_to ? `${prevRefs} ${in_reply_to}` : in_reply_to;
     }
 
-    const raw = buildRawMessage({ to, cc, bcc, subject, body, in_reply_to, references });
+    const raw = buildRawMessage({ to, cc, bcc, subject, body, content_type, in_reply_to, references });
     const data = await gmailFetch(auth, `/drafts`, {
       method: "POST",
       body: JSON.stringify({
@@ -337,8 +342,9 @@ export const gmailCreateDraftTool = tool(
   {
     name: "gmail_create_draft",
     description:
-      "Create a Gmail draft. **THIS INTEGRATION CANNOT SEND MAIL** — drafts only; the user promotes " +
-      "them manually in Gmail. When replying to an existing message, pass `in_reply_to_id` (the parent " +
+      "Create a Gmail draft. Prefer drafts unless the user explicitly asks to send immediately. " +
+      "`content_type` defaults to 'text'; pass 'html' if `body` contains HTML markup. " +
+      "When replying to an existing message, pass `in_reply_to_id` (the parent " +
       "message id from gmail_search/gmail_get_message) — the tool will set Message-Id/References/" +
       "threadId so the draft appears inside the right Gmail thread.",
     schema: z.object({
@@ -346,7 +352,56 @@ export const gmailCreateDraftTool = tool(
       cc: z.array(z.string()).optional(),
       bcc: z.array(z.string()).optional(),
       subject: z.string(),
-      body: z.string().max(DRAFT_BODY_MAX_CHARS).describe("Plain text body (use \\n for line breaks; max 100,000 characters)"),
+      body: z.string().max(DRAFT_BODY_MAX_CHARS).describe("Email body (max 100,000 characters)"),
+      content_type: z.enum(["text", "html"]).optional().describe("Body content type (default 'text')"),
+      in_reply_to_id: z.string().optional().describe("Gmail message id to reply to (for threading)"),
+    }),
+  },
+);
+
+export const gmailSendEmailTool = tool(
+  async ({ to, cc, bcc, subject, body, content_type, in_reply_to_id }) => {
+    const auth = resolveGmailAuthForTool();
+    if ("error" in auth) return gmailAuthError(auth.error);
+
+    let in_reply_to: string | null = null;
+    let references: string | null = null;
+    let threadId: string | null = null;
+    if (in_reply_to_id) {
+      const parent = await gmailFetch(
+        auth,
+        `/messages/${encodeURIComponent(in_reply_to_id)}?format=metadata&metadataHeaders=Message-Id&metadataHeaders=References`,
+      ) as { threadId?: string; payload?: { headers?: Header[] }; error?: string };
+      if (parent.error) {
+        return JSON.stringify({ error: `Failed to load parent for threading: ${parent.error}` });
+      }
+      threadId = parent.threadId ?? null;
+      in_reply_to = header(parent.payload?.headers, "Message-Id") ?? header(parent.payload?.headers, "Message-ID");
+      const prevRefs = header(parent.payload?.headers, "References");
+      references = prevRefs && in_reply_to ? `${prevRefs} ${in_reply_to}` : in_reply_to;
+    }
+
+    const raw = buildRawMessage({ to, cc, bcc, subject, body, content_type, in_reply_to, references });
+    const data = await gmailFetch(auth, `/messages/send`, {
+      method: "POST",
+      body: JSON.stringify({ raw, ...(threadId ? { threadId } : {}) }),
+    }) as { id?: string; threadId?: string; labelIds?: string[]; error?: string };
+    if (data.error) return JSON.stringify(data);
+    return JSON.stringify({ ok: true, message_id: data.id, thread_id: data.threadId, labels: data.labelIds ?? [] });
+  },
+  {
+    name: "gmail_send_email",
+    description:
+      "Send a Gmail email immediately. Only use when the user explicitly asks to send now; " +
+      "otherwise create a draft with gmail_create_draft. Supports text or HTML bodies via `content_type`. " +
+      "When replying, pass `in_reply_to_id` so Gmail threads the sent message correctly.",
+    schema: z.object({
+      to: z.array(z.string()).min(1).describe("Recipient email addresses"),
+      cc: z.array(z.string()).optional(),
+      bcc: z.array(z.string()).optional(),
+      subject: z.string(),
+      body: z.string().max(SEND_BODY_MAX_CHARS).describe("Email body (max 100,000 characters)"),
+      content_type: z.enum(["text", "html"]).optional().describe("Body content type (default 'text')"),
       in_reply_to_id: z.string().optional().describe("Gmail message id to reply to (for threading)"),
     }),
   },
@@ -379,5 +434,6 @@ registerLangChainPackage({
   tools: {
     read: [gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool],
     write: [gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool],
+    execute: [gmailSendEmailTool],
   },
 });

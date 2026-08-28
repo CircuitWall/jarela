@@ -17,6 +17,45 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
+describe("backfillMailSendTools", () => {
+  it("adds send tools to existing agents that already have draft tools", async () => {
+    const db = getDb();
+    const t = new Date().toISOString();
+    const tools = [
+      "gmail_search",
+      "gmail_create_draft",
+      "outlook_search",
+      "outlook_create_draft",
+    ];
+    db.prepare(
+      "INSERT OR REPLACE INTO agent_configs (id, name, identity, instructions, tools, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+    ).run(
+      "legacy-mail-agent",
+      "Legacy Mail Agent",
+      "mail helper",
+      "Drafts are created Ã¢â‚¬â€ never sent automatically.",
+      JSON.stringify(tools),
+      t,
+      t,
+    );
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+
+    const row = db.prepare("SELECT instructions, tools FROM agent_configs WHERE id='legacy-mail-agent'").get() as { instructions: string; tools: string };
+    const nextTools = JSON.parse(row.tools) as string[];
+    expect(nextTools).toContain("gmail_send_email");
+    expect(nextTools).toContain("outlook_send_email");
+    expect(row.instructions).toContain("send directly only when the user explicitly asks");
+
+    runMigrations(db);
+    const after = db.prepare("SELECT tools FROM agent_configs WHERE id='legacy-mail-agent'").get() as { tools: string };
+    const afterTools = JSON.parse(after.tools) as string[];
+    expect(afterTools.filter((tool) => tool === "gmail_send_email")).toHaveLength(1);
+    expect(afterTools.filter((tool) => tool === "outlook_send_email")).toHaveLength(1);
+  });
+});
+
 describe("migrateInlineApiKeysToCredentials", () => {
   it("lifts an inline api_key into a credential row and links the model", () => {
     // Boot the db (runs all ensures + seeders + the initial migration pass).

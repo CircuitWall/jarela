@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mail tools can send explicit Gmail and Outlook messages.** Adds
+  `gmail_send_email` and `outlook_send_email` for user-requested immediate
+  sends, keeps drafts as the default safer path, and lets Gmail drafts/sends
+  emit HTML bodies via `content_type: "html"`.
 - **Skills get a Tools panel tab.** A new "Skills" sub-tab (Tools → Skills) manages skill repos (add/enable/disable/pick-writable/remove) and lets you write, edit, and delete skills directly in the UI — no API calls required. Built-in skills show a "Clone" affordance that copies their content into your writable repo so you can customize them (same id overrides the built-in; a different id keeps both).
 
 ### Changed
