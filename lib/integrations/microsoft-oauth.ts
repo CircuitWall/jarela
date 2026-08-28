@@ -39,9 +39,8 @@ const TENANT = process.env.OUTLOOK_TENANT?.trim() || "common";
 //                       Google's access_type=offline).
 //   - User.Read       → used by the test endpoint to call /me.
 //   - Mail.ReadWrite  → search/read mail, create drafts, mark read,
-//                       move to folders (incl. DeletedItems). Does NOT
-//                       grant sending — matches our Gmail "drafts only"
-//                       stance via gmail.compose.
+//                       move to folders (incl. DeletedItems).
+//   - Mail.Send       → send mail when the user explicitly asks for it.
 //   - Calendars.ReadWrite → list/get/create/update/delete events on the
 //                           user's existing calendars.
 //   - Tasks.ReadWrite → list/get/create/update/complete/delete Microsoft
@@ -52,6 +51,7 @@ export const MICROSOFT_SCOPES = [
   "offline_access",
   "User.Read",
   "Mail.ReadWrite",
+  "Mail.Send",
   "Calendars.ReadWrite",
   "Tasks.ReadWrite",
   "People.Read",
@@ -142,7 +142,7 @@ export function resolveMicrosoftAuth(): MicrosoftAuth | { error: string } {
   return {
     error:
       "Microsoft account not connected. Open the gear menu → Integrations tab → " +
-      "Outlook card and click Connect Outlook to authorize Mail + Calendar access.",
+      "Outlook card and click Connect Outlook to authorize Mail, Mail.Send, Calendar, Tasks, and People access.",
   };
 }
 

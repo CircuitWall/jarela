@@ -382,6 +382,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureAgentConfigsToolCredentialsColumn(db);
   seedAgentConfigs(db);
   backfillDeveloperInteractiveTerminalTools(db);
+  backfillMailSendTools(db);
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
   migrateICloudPackageIds(db);
@@ -1078,6 +1079,41 @@ function backfillDeveloperInteractiveTerminalTools(db: DatabaseSync): void {
   );
 }
 
+function backfillMailSendTools(db: DatabaseSync): void {
+  const rows = db.prepare("SELECT id, instructions, tools FROM agent_configs").all() as Array<{ id: string; instructions: string; tools: string }>;
+  const update = db.prepare("UPDATE agent_configs SET instructions=?, tools=?, updated_at=? WHERE id=?");
+
+  for (const row of rows) {
+    let tools: string[] = [];
+    try {
+      const parsed = JSON.parse(row.tools);
+      if (Array.isArray(parsed)) {
+        tools = parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+      }
+    } catch {
+      continue;
+    }
+
+    const nextTools = [...tools];
+    if (nextTools.includes("gmail_create_draft") && !nextTools.includes("gmail_send_email")) {
+      nextTools.push("gmail_send_email");
+    }
+    if (nextTools.includes("outlook_create_draft") && !nextTools.includes("outlook_send_email")) {
+      nextTools.push("outlook_send_email");
+    }
+
+    const nextInstructions = row.instructions.includes("Drafts are created")
+      ? row.instructions.replace(
+          "Drafts are created Ã¢â‚¬â€ never sent automatically.",
+          "Create drafts by default; send directly only when the user explicitly asks you to send now.",
+        )
+      : row.instructions;
+
+    if (nextTools.length === tools.length && nextInstructions === row.instructions) continue;
+    update.run(nextInstructions, JSON.stringify(nextTools), now(), row.id);
+  }
+}
+
 interface BaseAgentProfile {
   id: string;
   name: string;
@@ -1188,14 +1224,16 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
     identity:
       "You help triage email and calendar. You summarize, draft, and surface what actually needs attention.",
     instructions:
-      "When asked about mail, search first, then read the specific message before drafting. Drafts are created Ã¢â‚¬â€ never sent automatically. For calendar requests, list the relevant window before creating events. If an integration is not configured, tell the user which one and stop.",
+      "When asked about mail, search first, then read the specific message before drafting or sending. Create drafts by default; send directly only when the user explicitly asks you to send now. For calendar requests, list the relevant window before creating events. If an integration is not configured, tell the user which one and stop.",
     tools: [
       "gmail_search",
       "gmail_get_message",
       "gmail_create_draft",
+      "gmail_send_email",
       "outlook_search",
       "outlook_get_message",
       "outlook_create_draft",
+      "outlook_send_email",
       "calendar_list_events",
       "calendar_create_event",
       "outlook_calendar_list_events",
