@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Idle + topic-shift context boundaries now behave like manual moves.** The
+  automatic boundary path now uses the same backend boundary transition as
+  `/new` and manual focus moves, kicks a warm-summary refresh, and surfaces
+  the pending boundary in chat while the summary catches up.
 - **Fast scroll-to-latest button appears reliably again.** The chat list now
   recomputes the button after content/layout changes and programmatic jumps,
   not only after a physical scroll event.

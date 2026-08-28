@@ -4,9 +4,8 @@ import {
   getMessages,
   getThread,
   pruneThreadMessages,
-  setThreadContextPin,
-  setThreadWarmSummary,
 } from "@/lib/stores/threads";
+import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
@@ -129,8 +128,14 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   const pinMs = Number.isFinite(lastMs) ? lastMs + 1 : Date.now();
   const newPin = new Date(pinMs).toISOString();
 
-  setThreadContextPin(thread.thread_id, newPin);
-  setThreadWarmSummary(thread.thread_id, summary, newPin, messageCount, contextChars);
+  moveThreadContextBoundary(thread.thread_id, newPin, {
+    warmSummary: {
+      summary,
+      before: newPin,
+      sourceMessages: messageCount,
+      sourceChars: contextChars,
+    },
+  });
 
   const pruned = pruneThreadMessages(thread.thread_id, keepLast);
   const updated = getThread(thread.thread_id);
