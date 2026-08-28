@@ -163,7 +163,7 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(updated?.hot_since ?? null).toBeNull();
   });
 
-  it("auto-compacts an oversized thread before persisting the next normal turn", async () => {
+  it("auto-compacts only after enough rows accumulate to leave headroom", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({
       id: "agent-oversized-thread",
@@ -174,7 +174,7 @@ describe("prepareThreadRun auto context boundary", () => {
       model_config_name: null,
     });
     const thread = createThread("agent-oversized-thread");
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 24; i++) {
       addMessage(thread.thread_id, i % 2 === 0 ? "user" : "assistant", `older turn ${i}`);
     }
 
@@ -193,10 +193,7 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(updated?.warm_summary).toContain("AUTO-COMPACT-RECAP");
     expect(updated?.hot_since).toBeTruthy();
     expect(getMessages(thread.thread_id).map((m) => m.content)).toEqual([
-      "older turn 1",
-      "older turn 2",
-      "older turn 3",
-      "older turn 4",
+      "older turn 23",
       "continue after retention guard",
     ]);
   });
