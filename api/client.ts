@@ -113,6 +113,25 @@ async function uploadImageAttachment(
   return res.json() as Promise<Extract<ContentPart, { type: "image_ref" }>>;
 }
 
+export async function uploadImageFile(
+  file: File,
+  signal?: AbortSignal,
+): Promise<Extract<ContentPart, { type: "image_ref" }>> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const res = await fetch(`${BASE}/attachments/images`, {
+    method: "POST",
+    body: form,
+    signal,
+  });
+  if (!res.ok) {
+    let body: { error?: string } = {};
+    try { body = (await res.json()) as { error?: string }; } catch { /* ignore */ }
+    throw new Error(`${res.status} ${body.error ?? res.statusText}`);
+  }
+  return res.json() as Promise<Extract<ContentPart, { type: "image_ref" }>>;
+}
+
 async function externalizeRunAttachmentsIfNeeded(
   payload: {
     message: string;

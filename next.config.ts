@@ -105,6 +105,12 @@ const nextConfig: NextConfig = {
     return config;
   },
   experimental: {
+    // Backstop for stale clients, service-worker-cached bundles, and direct
+    // API callers that still submit inline image blobs to /threads/:id/run.
+    // The current browser client preflights oversized images into image_ref
+    // uploads, but without this cap increase Next truncates legacy JSON at
+    // 10 MB before the route can parse it and spill attachments server-side.
+    proxyClientMaxBodySize: "64mb",
     // Keep server route bundles readable for supply-chain scanners and
     // incident-response review. This reduces false positives from
     // obfuscated/minified App Router route.js artifacts.
