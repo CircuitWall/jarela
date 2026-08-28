@@ -937,6 +937,7 @@ C4Context
     System_Ext(github, "GitHub API", "Repo / PR integrations")
     System_Ext(atlassian, "Atlassian Cloud", "Jira + Confluence — tools + document-RAG ingest (ADR-0024, ADR-0026)")
     SystemDb_Ext(sqlite, "SQLite (~/.jarela)", "LangGraph checkpoints, memory, settings, document chunks")
+    SystemDb_Ext(filestore, "File store (~/.jarela/files)", "Content-addressed attachment refs and generated binary artifacts")
     SystemDb_Ext(extdir, "~/.jarela/{providers,tools,packages}/", "Drop-in .cjs extension files + hot-loaded LangChain npm packages")
     System_Ext(browserext, "Jarela Browser Extension", "MV3 — element picker → loopback POST (ADR-0018)")
 
@@ -952,6 +953,7 @@ C4Context
     Rel(jarela, github, "HTTPS")
     Rel(jarela, atlassian, "HTTPS (tools + RAG indexer)")
     Rel(jarela, sqlite, "reads/writes")
+    Rel(jarela, filestore, "read/write attachment refs")
     Rel(jarela, extdir, "scans per request")
 ```
 

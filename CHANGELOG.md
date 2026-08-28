@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency baseline refreshed.** Next.js, React, LangChain packages,
+  provider SDKs, workspace tooling, and related runtime/test dependencies have
+  been updated within the current non-major compatibility band.
+
+### Documentation
+
+- **Architecture audit notes added.** The architecture docs now describe the
+  attachment file-store boundary and record whole-repo audit findings for state
+  ownership, route validation, extension capabilities, and secret surfaces.
+
 ## [1.29.1] - 2026-08-28
 
 ### Fixed

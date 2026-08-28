@@ -60,3 +60,19 @@ from it when creating commits, branches, or PRs.
   and `EventSource`; test under jsdom.
 - Event-driven hooks are eventually consistent; prefer deterministic asserts
   (`waitFor`) over synchronous assumptions.
+
+## Dependency upgrade workflow
+
+- Upgrade in batches with one clear failure domain: framework/tooling,
+  workspace packages, LangChain/provider SDKs, then high-risk native/runtime
+  packages.
+- Keep TypeScript and ESLint major jumps on their own branches. They affect
+  diagnostics and generated declarations broadly enough that they should not be
+  mixed with provider or UI changes.
+- After workspace dependency changes, run `npm run packages:build` and
+  `npm run packages:test`; package manifests can pass root tests while their
+  generated declarations drift.
+- After Next.js changes, read the matching guide under `node_modules/next/dist/docs/`,
+  then run `npm run build`, `npm run security:routes`, and `npm run test:package`.
+- After provider or LangChain changes, run the model-router, provider, MCP/tool,
+  and attachment tests before live smoke tests.

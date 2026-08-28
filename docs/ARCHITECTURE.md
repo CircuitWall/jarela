@@ -25,7 +25,7 @@ C4Container
       Container(proxy, "Proxy Dispatcher", "lib/proxy", "undici GlobalDispatcher; reads HTTP_PROXY env vars + encrypted proxy_config row; gates all outbound HTTP (ADR-0009)")
       Container(envsync, "Env Sync", "lib/env", "Probes user shell rc / Windows User-scope env on boot + on demand: writes credential vars into the encrypted store (ADR-0016, ADR-0034) and caches the full env for every spawned subprocess — exec, terminal, claude_delegate, MCP stdio children (ADR-0072)")
       ContainerDb(db, "SQLite", "@langchain/langgraph-checkpoint-sqlite + native sqlite", "Checkpoints, memory, settings, schedules, proposals, bridges — at ~/.jarela")
-      ContainerDb(filestore, "File Store", "lib/files + ~/.jarela/files/", "Binary artifacts produced by tools (generated images, voice clips); served by /api/v1/files/[name]")
+      ContainerDb(filestore, "File Store", "lib/files + ~/.jarela/files/", "Content-addressed image/file refs plus generated binary artifacts; served by /api/v1/files/[name]")
       ContainerDb(extdir, "Extension dirs", "filesystem (~/.jarela/{providers,tools}/)", "Drop-in .cjs files for external providers + tools, hot-loaded per request (ADR-0013)")
     }
 
@@ -51,6 +51,7 @@ C4Container
     Rel(agents, providers, "stream completion")
     Rel(agents, registry, "broadcast chunks")
     Rel(routes, registry, "subscribe (GET SSE) / submit (POST 202)")
+    Rel(routes, filestore, "POST /attachments/{images,files} + GET /files/[name]")
     Rel(routes, sched, "register / trigger")
     Rel(sched, agents, "run scheduled job")
     Rel(wa_user, whatsapp, "message")
@@ -59,7 +60,7 @@ C4Container
     Rel(agents, db, "checkpoint / memory (via crypto)")
     Rel(agents, crypto, "encrypt sensitive at rest")
     Rel(agents, embed, "embed memory writes")
-    Rel(agents, filestore, "write binary artifacts (image / voice tools)")
+    Rel(agents, filestore, "materialize attachment refs for provider calls")
     Rel(routes, filestore, "GET /api/v1/files/[name]")
     Rel(crypto, db, "store ciphertext")
     Rel(providers, anthropic, "HTTPS")
@@ -100,6 +101,26 @@ them — but they are load-bearing:
   shared between list and `[id]` route handlers.
 
 Both layers are pure-logic and 100% line-covered by Vitest.
+
+### Architecture audit snapshot
+
+The 2026-08 whole-repo audit found four areas that should shape future
+refactors and dependency upgrades:
+
+- **State ownership:** UI-only preferences still have direct `localStorage`
+  writers. Any new persistent state should go through `lib/stores` or an
+  explicit documented browser-cache exception.
+- **Route validation:** API routes mix direct zod `safeParse()` calls with the
+  shared `validateBody()` helper. New route handlers should use the helper so
+  error bodies stay consistent.
+- **Tool/plugin capability metadata:** built-in tools declare read/write/execute
+  capability tiers, while external `.cjs` tools still default to `execute`.
+  Extension-contract changes here should be handled with an ADR and deprecation
+  window.
+- **Secrets and external process boundaries:** credentials, MCP env, proxy
+  config, and hot-loaded plugins remain the highest-risk security surfaces.
+  Upgrades must preserve encryption/redaction and the single Next.js process
+  invariant.
 
 ## C4 — Component (Agent Runtime)
 
@@ -148,6 +169,7 @@ sequenceDiagram
     actor U as User
     participant UI as Web UI
     participant G as Origin Guard
+    participant ATT as /api/v1/attachments
     participant API as /api/v1/threads/:id/run
     participant PIN as /api/v1/threads/:id/context-pin
     participant AG as Agent Runtime
@@ -160,13 +182,19 @@ sequenceDiagram
     PIN-->>UI: { hot_since, warm_summary, ... }
     Note over UI: Card shows placeholder<br/>until next run recomputes summary
 
-    U->>UI: types message
+    U->>UI: types message + adds attachments
+    opt image / binary file attachment
+      UI->>ATT: POST multipart file
+      ATT->>DB: persist metadata in message refs later
+      ATT-->>UI: image_ref / file_ref
+    end
     UI->>G: POST /threads/:id/run (submit, hot_since)
     G->>G: check Origin / Sec-Fetch-Site
     G->>API: forward if same-origin
     API->>AG: startRun + invoke(threadId, msg, hot_since)
     AG->>DB: load checkpoint + thread.hot_since
     AG->>AG: buildHistoryWindow honours hot_since
+    AG->>ATT: materialize refs when provider needs bytes
     opt warm_summary_before ≠ hot_since
         AG->>LLM: summarise older messages
         LLM-->>AG: summary

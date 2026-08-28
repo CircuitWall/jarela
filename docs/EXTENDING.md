@@ -123,6 +123,26 @@ for the pattern.
 Reference contract: `lib/tools/types.ts` and `lib/tools/registry.ts`.
 Worked example: [`lib/tools/template.ts`](../lib/tools/template.ts).
 
+### Message content and attachments
+
+Tools and providers exchange message content through `ContentPart` from
+`@circuitwall/jarela/lib/tools/types`:
+
+- `text` carries plain user-visible text.
+- `image` is the legacy inline base64 image form. New persisted paths should
+  prefer `image_ref`.
+- `image_ref` points at a content-addressed file under `~/.jarela/files/`,
+  served by `GET /api/v1/files/[name]` and materialized to provider bytes only
+  when the active model call needs vision input.
+- `file` carries inline text file content. Keep this for small text-like files
+  whose contents should enter the prompt.
+- `file_ref` points at a binary file under `~/.jarela/files/`. Use this for
+  PDFs, audio, video, and other binary files so chat-run JSON stays small.
+
+External tools that produce large binary artifacts should write them through
+the file store and return a ref-shaped content part or a `/api/v1/files/[name]`
+URL. Do not embed large base64 blobs in normal chat/run payloads.
+
 ---
 
 ## Hot-loading a vanilla LangChain tool package
