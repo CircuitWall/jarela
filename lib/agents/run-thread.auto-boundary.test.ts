@@ -91,6 +91,7 @@ describe("prepareThreadRun auto context boundary", () => {
       instructions: "Be helpful.",
       tools: [],
       model_config_name: null,
+      history_window_hours: 3,
     });
     const thread = createThread("agent-boundary-shift");
     addMessage(thread.thread_id, "user", "Let's debug the OAuth callback mismatch error.");
@@ -147,7 +148,7 @@ describe("prepareThreadRun auto context boundary", () => {
     expect(updated?.hot_since ?? null).toBeNull();
   });
 
-  it("does not auto-move when subject shifts but idle is under 3h", async () => {
+  it("uses the agent history window as the idle threshold", async () => {
     upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
     upsertAgentConfig({
       id: "agent-boundary-recent",
@@ -156,11 +157,43 @@ describe("prepareThreadRun auto context boundary", () => {
       instructions: "Be helpful.",
       tools: [],
       model_config_name: null,
+      history_window_hours: 1,
     });
     const thread = createThread("agent-boundary-recent");
     addMessage(thread.thread_id, "user", "OAuth callback mismatch on localhost redirect.");
     addMessage(thread.thread_id, "assistant", "Let's verify callback URL and state handling.");
     ageThreadMessages(thread.thread_id, 1);
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const updated = getThread(thread.thread_id);
+    expect(updated?.hot_since).toBeTruthy();
+  });
+
+  it("does not auto-move when the agent disables the history time bound", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-boundary-unbounded",
+      name: "Boundary Unbounded Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+    });
+    const thread = createThread("agent-boundary-unbounded");
+    addMessage(thread.thread_id, "user", "OAuth callback mismatch on localhost redirect.");
+    addMessage(thread.thread_id, "assistant", "Let's verify callback URL and state handling.");
+    ageThreadMessages(thread.thread_id, 12);
 
     await prepareThreadRun({
       thread_id: thread.thread_id,
