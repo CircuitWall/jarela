@@ -5,9 +5,8 @@
  * Microsoft auth helpers from lib/integrations/microsoft-oauth.ts.
  *
  * Design parity with Gmail:
- *   - "drafts only" — we never expose send. Mail.ReadWrite gives us
- *     drafts and folder moves; we deliberately did NOT request Mail.Send.
- *   - same six-tool surface so the agent's mental model carries over.
+ *   - drafts for review by default, direct send only when the user asks.
+ *   - same mail-management surface so the agent's mental model carries over.
  *   - JSON outputs slimmed to fields the agent actually uses; full
  *     bodies are capped at 30KB to keep context manageable.
  */
@@ -90,6 +89,7 @@ function summarizeMessage(m: GraphMessage): Record<string, unknown> {
 
 const BODY_CAP = 30_000;
 const DRAFT_BODY_MAX_CHARS = 100_000;
+const SEND_BODY_MAX_CHARS = 100_000;
 
 // ── Tools ───────────────────────────────────────────────────────────────────
 
@@ -309,10 +309,58 @@ export const outlookTrashMessageTool = tool(
   },
 );
 
+export const outlookSendEmailTool = tool(
+  async ({ to, cc, bcc, subject, body, content_type, save_to_sent_items }) => {
+    const auth = resolveMicrosoftAuth();
+    if ("error" in auth) return JSON.stringify({ error: auth.error });
+    const message = {
+      subject: subject ?? "",
+      body: {
+        contentType: content_type === "html" ? "html" : "text",
+        content: body ?? "",
+      },
+      toRecipients: to.map((address) => ({ emailAddress: { address } })),
+      ccRecipients: (cc ?? []).map((address) => ({ emailAddress: { address } })),
+      bccRecipients: (bcc ?? []).map((address) => ({ emailAddress: { address } })),
+    };
+    const r = await graphFetch(
+      auth,
+      "/me/sendMail",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          message,
+          saveToSentItems: save_to_sent_items ?? true,
+        }),
+      },
+    ) as { ok?: boolean; error?: string };
+    if (r.error) return JSON.stringify({ error: r.error });
+    return JSON.stringify({ ok: true, sent: true, save_to_sent_items: save_to_sent_items ?? true });
+  },
+  {
+    name: "outlook_send_email",
+    description:
+      "Send an Outlook email immediately via Microsoft Graph. Only use when the user explicitly asks " +
+      "to send now; otherwise create a draft with outlook_create_draft. Supports text or HTML bodies " +
+      "via `content_type`. If this returns a 403 scope error, ask the user to reconnect Outlook so " +
+      "Mail.Send is granted.",
+    schema: z.object({
+      to: z.array(z.string().email()).min(1).describe("Primary recipient emails"),
+      cc: z.array(z.string().email()).optional().describe("CC recipient emails"),
+      bcc: z.array(z.string().email()).optional().describe("BCC recipient emails"),
+      subject: z.string().optional().describe("Subject line"),
+      body: z.string().max(SEND_BODY_MAX_CHARS).optional().describe("Email body (max 100,000 characters)"),
+      content_type: z.enum(["text", "html"]).optional().describe("Body content type (default 'text')"),
+      save_to_sent_items: z.boolean().optional().describe("Whether Graph should save the message to Sent Items (default true)"),
+    }),
+  },
+);
+
 registerLangChainPackage({
   category: "Mail",
   tools: {
     read: [outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool],
     write: [outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool],
+    execute: [outlookSendEmailTool],
   },
 });

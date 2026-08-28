@@ -114,6 +114,8 @@ describe("categorizeByVerb", () => {
       "browser_click",
       "browser_fill",
       "browser_scroll",
+      "gmail_send_email",
+      "outlook_send_email",
       "workspace_init",
       "workspace_close",
     ];
