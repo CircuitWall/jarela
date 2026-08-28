@@ -69,6 +69,9 @@ import { runtimeConfig } from "./runtime-config";
 const BASE = "/api/v1";
 
 const LIST_TTL_MS = 30_000;
+const RUN_BODY_PREFLIGHT_LIMIT_BYTES = 9_000_000;
+
+const textEncoder = new TextEncoder();
 
 interface ListCache<T> {
   data: T[] | null;
@@ -82,6 +85,52 @@ function emptyCache<T>(): ListCache<T> {
 
 function cloneRows<T>(rows: T[]): T[] {
   return rows.map((row) => ({ ...row }));
+}
+
+function estimateJsonBytes(value: unknown): number {
+  return textEncoder.encode(JSON.stringify(value)).byteLength;
+}
+
+function isInlineImagePart(part: ContentPart): part is Extract<ContentPart, { type: "image" }> {
+  return part.type === "image";
+}
+
+async function uploadImageAttachment(
+  part: Extract<ContentPart, { type: "image" }>,
+  signal: AbortSignal,
+): Promise<Extract<ContentPart, { type: "image_ref" }>> {
+  const res = await fetch(`${BASE}/attachments/images`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ media_type: part.media_type, data: part.data }),
+    signal,
+  });
+  if (!res.ok) {
+    let body: { error?: string } = {};
+    try { body = (await res.json()) as { error?: string }; } catch { /* ignore */ }
+    throw new Error(`${res.status} ${body.error ?? res.statusText}`);
+  }
+  return res.json() as Promise<Extract<ContentPart, { type: "image_ref" }>>;
+}
+
+async function externalizeRunAttachmentsIfNeeded(
+  payload: {
+    message: string;
+    stream_options?: StreamOptions;
+    attachments?: ContentPart[];
+    hot_since?: string | null;
+  },
+  signal: AbortSignal,
+): Promise<typeof payload> {
+  const attachments = payload.attachments;
+  if (!attachments?.some(isInlineImagePart)) return payload;
+  if (estimateJsonBytes(payload) < RUN_BODY_PREFLIGHT_LIMIT_BYTES) return payload;
+
+  const externalized: ContentPart[] = [];
+  for (const part of attachments) {
+    externalized.push(isInlineImagePart(part) ? await uploadImageAttachment(part, signal) : part);
+  }
+  return { ...payload, attachments: externalized };
 }
 
 const agentListCache: ListCache<AgentConfig> = emptyCache();
@@ -1029,11 +1078,12 @@ export async function submitRun(
     hot_since?: string | null;
   } = { message, stream_options, attachments };
   if (hot_since !== undefined) payload.hot_since = hot_since;
+  const runPayload = await externalizeRunAttachmentsIfNeeded(payload, signal);
 
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(runPayload),
     signal,
   });
   // 2xx = accepted (currently always 202); 409 = already running. We treat

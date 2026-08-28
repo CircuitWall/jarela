@@ -244,13 +244,10 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
     const imageItems = items.filter((i) => i.kind === "file" && i.type.startsWith("image/"));
     if (!imageItems.length) return;
     e.preventDefault();
-    imageItems.forEach((item) => {
-      const file = item.getAsFile();
-      if (!file) return;
-      fileToContentPart(file)
-        .then((part) => onAttachmentsChange([...attachments, part]))
-        .catch(console.error);
-    });
+    const files = imageItems.map((item) => item.getAsFile()).filter((file): file is File => !!file);
+    Promise.all(files.map(fileToContentPart))
+      .then((parts) => { onAttachmentsChange([...attachments, ...parts]); })
+      .catch(console.error);
   }
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
