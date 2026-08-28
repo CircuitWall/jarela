@@ -568,6 +568,13 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   // keeps visible content stable).
   const atBottomRef = useRef(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const hasScrollTarget = messages.length > 0 || !!streamingContent;
+
+  const syncScrollButton = useCallback((el: HTMLDivElement) => {
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+    atBottomRef.current = isAtBottom;
+    setShowScrollButton(!isAtBottom && hasScrollTarget);
+  }, [hasScrollTarget]);
 
   // Anchor for older-message pagination. When the user scrolls near the top
   // and we call onLoadMore, we snapshot the viewport (scrollHeight + scrollTop)
@@ -585,8 +592,16 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     // after a load-more prepend — the layout effect below owns scrollTop
     // until the anchor is consumed.
     if (prependAnchorRef.current) return;
-    if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    if (atBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }); // intentionally no deps — runs after every render
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || atBottomRef.current || prependAnchorRef.current) return;
+    syncScrollButton(el);
+  }, [messages.length, streamingContent, syncScrollButton]);
 
   // Keep the bottom pinned when the scroll container *itself* resizes —
   // not just when messages change. When the on-screen keyboard opens,
@@ -600,11 +615,12 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const ro = new ResizeObserver(() => {
       if (prependAnchorRef.current) return;
       if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+      syncScrollButton(el);
       updateBoundaryMask();
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [updateBoundaryMask]);
+  }, [syncScrollButton, updateBoundaryMask]);
 
   // Restore scroll position after older messages have been prepended.
   // useLayoutEffect runs synchronously after DOM mutations but before paint,
@@ -618,9 +634,10 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     if (delta > 0) {
       el.scrollTop = anchor.scrollTop + delta;
       atBottomRef.current = false;
+      setShowScrollButton(hasScrollTarget);
     }
     prependAnchorRef.current = null;
-  }, [messages, loadingMore]);
+  }, [messages, loadingMore, hasScrollTarget]);
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
@@ -630,9 +647,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       prependAnchorRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop };
       onLoadMore();
     }
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
-    atBottomRef.current = isAtBottom;
-    setShowScrollButton(!isAtBottom && messages.length > 0);
+    syncScrollButton(el);
     updateBoundaryMask();
   }
 
@@ -654,6 +669,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         const el = root.querySelector(`[data-message-id="${safe}"]`) as HTMLElement | null;
         if (!el) return;
         atBottomRef.current = false;
+        setShowScrollButton(hasScrollTarget);
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.classList.add("jarela-deep-link-flash");
         setTimeout(() => el.classList.remove("jarela-deep-link-flash"), 1600);
@@ -667,7 +683,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     scrollToHashTarget();
     window.addEventListener("hashchange", scrollToHashTarget);
     return () => window.removeEventListener("hashchange", scrollToHashTarget);
-  }, [messages.length]);
+  }, [messages.length, hasScrollTarget]);
 
   // Handle orientation changes and resizes to maintain scroll position
   useEffect(() => {
@@ -701,6 +717,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     const boundary = root.querySelector("[data-focus-boundary='1']") as HTMLElement | null;
     if (!boundary) return;
     atBottomRef.current = false;
+    setShowScrollButton(hasScrollTarget);
     boundary.scrollIntoView({ behavior: "smooth", block: "center" });
   }
 

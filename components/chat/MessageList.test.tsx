@@ -42,6 +42,27 @@ function installPointerCapture(button: HTMLButtonElement) {
 }
 
 describe("MessageList conversation focus", () => {
+  it("shows a fast scroll-to-latest button when scrolled away from bottom", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
+    ];
+    const { container } = render(<MessageList threadId="thread-1" messages={messages} />);
+    const scroller = container.querySelector(".panel-scrollbar") as HTMLDivElement;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 300 });
+    Object.defineProperty(scroller, "scrollTop", { configurable: true, writable: true, value: 120 });
+
+    fireEvent.scroll(scroller);
+
+    const button = screen.getByRole("button", { name: "Scroll to latest message" });
+    expect(button).toBeTruthy();
+
+    fireEvent.click(button);
+    expect(scroller.scrollTop).toBe(1000);
+    expect(screen.queryByRole("button", { name: "Scroll to latest message" })).toBeNull();
+  });
+
   it("groups live thinking, streamed text, and tools into one turn activity stack", () => {
     const { container } = render(
       <MessageList
