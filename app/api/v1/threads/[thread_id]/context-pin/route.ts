@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getThread, setThreadContextPin } from "@/lib/stores/threads";
-import { kickWarmSummaryRefresh } from "@/lib/agents/warm-summary-background";
+import { getThread } from "@/lib/stores/threads";
+import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -25,9 +25,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     );
   }
 
-  setThreadContextPin(thread_id, parsed.data.hot_since);
-  kickWarmSummaryRefresh(thread_id);
-  const updated = getThread(thread_id);
+  const updated = moveThreadContextBoundary(thread_id, parsed.data.hot_since, { refreshWarmSummary: true });
   return NextResponse.json({
     hot_since: updated?.hot_since ?? null,
     warm_summary: updated?.warm_summary ?? null,

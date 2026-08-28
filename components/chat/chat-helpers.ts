@@ -20,6 +20,7 @@ export interface ThreadMetaApplier {
   setWarmSummarySourceMessages: (v: number | null) => void;
   setWarmSummarySourceChars: (v: number | null) => void;
   setContextWindowTokens: (v: number | null) => void;
+  setWarmSummaryPending?: (v: boolean) => void;
 }
 
 export interface ThreadGetPayload {
@@ -97,13 +98,16 @@ export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
 }
 
 export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPayload): void {
-  meta.setHotSince(payload.hot_since ?? null);
+  const hotSince = payload.hot_since ?? null;
+  const summaryBefore = payload.warm_summary_before ?? null;
+  meta.setHotSince(hotSince);
   meta.setWarmSummary(payload.warm_summary ?? null);
-  meta.setWarmSummaryBefore(payload.warm_summary_before ?? null);
+  meta.setWarmSummaryBefore(summaryBefore);
   meta.setWarmSummaryComputedAt(payload.warm_summary_computed_at ?? null);
   meta.setWarmSummarySourceMessages(payload.warm_summary_source_messages ?? null);
   meta.setWarmSummarySourceChars(payload.warm_summary_source_chars ?? null);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
+  meta.setWarmSummaryPending?.(!!hotSince && summaryBefore !== hotSince);
 }
 
 export function makeQueuedId(prefix = "q"): string {

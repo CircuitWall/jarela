@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Message } from "@/api/types";
-import { appendUnique } from "./chat-helpers";
+import { appendUnique, applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
 
 const mkMsg = (id: string, role: "user" | "assistant", content: string, created_at: string, status?: "pending" | "confirmed"): Message => ({
   id,
@@ -72,5 +72,50 @@ describe("appendUnique — ordering", () => {
     ];
     const out = appendUnique(prev, incoming);
     expect(out.map((m) => m.id)).toEqual(["u1", "a1", "a2"]);
+  });
+});
+
+describe("applyThreadMeta", () => {
+  function recorder(): { meta: ThreadMetaApplier; calls: Record<string, unknown[]> } {
+    const calls: Record<string, unknown[]> = {};
+    const push = (key: string) => (value: unknown) => { calls[key] = [...(calls[key] ?? []), value]; };
+    return {
+      calls,
+      meta: {
+        setHotSince: push("hotSince") as (v: string | null) => void,
+        setWarmSummary: push("warmSummary") as (v: string | null) => void,
+        setWarmSummaryBefore: push("warmSummaryBefore") as (v: string | null) => void,
+        setWarmSummaryComputedAt: push("warmSummaryComputedAt") as (v: string | null) => void,
+        setWarmSummarySourceMessages: push("warmSummarySourceMessages") as (v: number | null) => void,
+        setWarmSummarySourceChars: push("warmSummarySourceChars") as (v: number | null) => void,
+        setContextWindowTokens: push("contextWindowTokens") as (v: number | null) => void,
+        setWarmSummaryPending: push("warmSummaryPending") as (v: boolean) => void,
+      },
+    };
+  }
+
+  it("marks an observed hot_since as pending until its matching summary arrives", () => {
+    const { meta, calls } = recorder();
+
+    applyThreadMeta(meta, {
+      hot_since: "2026-08-28T07:00:00.000Z",
+      warm_summary: null,
+      warm_summary_before: null,
+    });
+
+    expect(calls.hotSince).toEqual(["2026-08-28T07:00:00.000Z"]);
+    expect(calls.warmSummaryPending).toEqual([true]);
+  });
+
+  it("clears pending once the warm summary covers the current boundary", () => {
+    const { meta, calls } = recorder();
+
+    applyThreadMeta(meta, {
+      hot_since: "2026-08-28T07:00:00.000Z",
+      warm_summary: "summary",
+      warm_summary_before: "2026-08-28T07:00:00.000Z",
+    });
+
+    expect(calls.warmSummaryPending).toEqual([false]);
   });
 });
