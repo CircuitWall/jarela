@@ -24,15 +24,19 @@ function gradientFor(id: string): string {
 const MAX_VISIBLE = 4;
 
 export function Toaster() {
+  const { state } = useAppContext();
   const toasts = useToasts();
   const visible = toasts.slice(-MAX_VISIBLE);
+  const chatPlacement = state.activeTab === "chat";
 
   return (
     <div
       className="fixed z-50 flex flex-col-reverse gap-2 pointer-events-none w-[360px] max-w-[calc(100vw-2rem)]"
       style={{
         right: "max(1rem, calc(env(safe-area-inset-right) + 0.5rem))",
-        bottom: "max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))",
+        ...(chatPlacement
+          ? { top: "calc(var(--app-safe-top) + 4rem)" }
+          : { bottom: "max(1rem, calc(env(safe-area-inset-bottom) + 0.5rem))" }),
       }}
       aria-live="polite"
     >
