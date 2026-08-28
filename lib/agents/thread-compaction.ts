@@ -39,6 +39,10 @@ function maxSessionArchives(): number {
   return getConfig().maxSessionArchives;
 }
 
+export function autoCompactionKeepLast(cap: number): number {
+  return Math.max(1, cap - Math.max(20, Math.ceil(cap * 0.1)));
+}
+
 function pruneSessionArchives(agentId: string, keepLast: number): number {
   const prefix = `${agentId}/`;
   const all = listMemory("sessions", undefined, 10_000)
@@ -53,7 +57,7 @@ function pruneSessionArchives(agentId: string, keepLast: number): number {
   return removed;
 }
 
-export async function compactAgentThread(agentId: string): Promise<ThreadCompactionResult> {
+export async function compactAgentThread(agentId: string, keepLast = maxThreadMessages()): Promise<ThreadCompactionResult> {
   const agent = getAgentConfig(agentId);
   if (!agent) throw new Error("Agent not found");
 
@@ -128,7 +132,7 @@ export async function compactAgentThread(agentId: string): Promise<ThreadCompact
   setThreadContextPin(thread.thread_id, newPin);
   setThreadWarmSummary(thread.thread_id, summary, newPin, messageCount, contextChars);
 
-  const pruned = pruneThreadMessages(thread.thread_id, maxThreadMessages());
+  const pruned = pruneThreadMessages(thread.thread_id, keepLast);
   const updated = getThread(thread.thread_id);
 
   return {

@@ -3,7 +3,7 @@ import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { spillImageAttachments } from "@/lib/attachments/spill";
-import { compactAgentThread } from "@/lib/agents/thread-compaction";
+import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
@@ -116,12 +116,14 @@ function isAutoBoundaryEligibleCategory(category: string | null | undefined): bo
 
 async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
   const cap = getConfig().maxThreadMessages;
-  if (!Number.isFinite(cap) || cap <= 0 || messageCount < cap) return;
+  const keepLast = autoCompactionKeepLast(cap);
+  const triggerAt = cap + (cap - keepLast);
+  if (!Number.isFinite(cap) || cap <= 0 || messageCount < triggerAt) return;
   try {
-    const result = await compactAgentThread(agentId);
+    const result = await compactAgentThread(agentId, keepLast);
     if (result.compacted) {
       console.info(
-        `[thread-compaction:auto] thread=${threadId} messages=${messageCount} pruned=${result.pruned}`,
+        `[thread-compaction:auto] thread=${threadId} messages=${messageCount} keep_last=${keepLast} pruned=${result.pruned}`,
       );
     }
   } catch (err) {
