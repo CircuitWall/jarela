@@ -55,6 +55,15 @@ function ageThreadMessages(threadId: string, hoursAgo: number): void {
   getDb().prepare("UPDATE messages SET created_at=? WHERE thread_id=?").run(base, threadId);
 }
 
+async function waitForCondition(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  expect(predicate()).toBe(true);
+}
+
 describe("prepareThreadRun auto context boundary", () => {
   beforeEach(() => {
     streamWithConfigMock.mockReset();
@@ -101,6 +110,11 @@ describe("prepareThreadRun auto context boundary", () => {
 
     const updated = getThread(thread.thread_id);
     expect(updated?.hot_since).toBeTruthy();
+    await waitForCondition(() => {
+      const refreshed = getThread(thread.thread_id);
+      return !!refreshed?.warm_summary?.includes("AUTO-COMPACT-RECAP")
+        && refreshed.warm_summary_before === refreshed.hot_since;
+    });
   });
 
   it("does not auto-move when idle >= 3h but subject is the same", async () => {

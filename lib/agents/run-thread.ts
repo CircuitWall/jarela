@@ -4,7 +4,8 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
-import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, setThreadContextPin, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
+import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -371,7 +372,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   ) {
     autoHotSince = await maybeAutoContextBoundary(req.thread_id, trimmed);
     if (autoHotSince) {
-      setThreadContextPin(req.thread_id, autoHotSince);
+      moveThreadContextBoundary(req.thread_id, autoHotSince, { refreshWarmSummary: true });
     }
   }
 
@@ -482,7 +483,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // the history fetch and the cached-summary lookup both see the same pin.
   // `null` clears the pin; `undefined` leaves whatever's already on the row.
   if (req.hot_since !== undefined) {
-    setThreadContextPin(req.thread_id, req.hot_since);
+    moveThreadContextBoundary(req.thread_id, req.hot_since, { refreshWarmSummary: true });
   }
   const effectiveHotSince = req.hot_since !== undefined
     ? req.hot_since

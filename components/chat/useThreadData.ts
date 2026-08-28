@@ -54,7 +54,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const metaApplier: ThreadMetaApplier = {
     setHotSince, setWarmSummary, setWarmSummaryBefore,
     setWarmSummaryComputedAt, setWarmSummarySourceMessages,
-    setWarmSummarySourceChars, setContextWindowTokens,
+    setWarmSummarySourceChars, setContextWindowTokens, setWarmSummaryPending,
   };
 
   const addNotice = useCallback((text: string) => {
