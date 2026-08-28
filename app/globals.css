@@ -354,6 +354,7 @@ body {
  * touch/mobile environments, not based on viewport width. */
 :root {
   --app-safe-top: 0px;
+  --app-safe-bottom: env(safe-area-inset-bottom);
 }
 
 @media (hover: none) and (pointer: coarse) {

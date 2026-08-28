@@ -52,7 +52,7 @@ const SELF_CONFIG_TOOLS = [
   "restart_server",
 ] as const;
 
-const AUTO_BOUNDARY_IDLE_MS = 3 * 60 * 60 * 1000;
+const AUTO_BOUNDARY_FALLBACK_IDLE_MS = 3 * 60 * 60 * 1000;
 const AUTO_BOUNDARY_HISTORY_SAMPLES = 10;
 const AUTO_BOUNDARY_MIN_TOKENS = 4;
 const AUTO_BOUNDARY_EMBEDDING_SIMILARITY_THRESHOLD = 0.72;
@@ -115,6 +115,14 @@ function isAutoBoundaryEligibleCategory(category: string | null | undefined): bo
   return category == null || category === "bridge";
 }
 
+function autoBoundaryIdleMs(historyWindowHours: number | null | undefined): number | null {
+  if (historyWindowHours === 0) return null;
+  if (!Number.isFinite(historyWindowHours) || historyWindowHours === undefined || historyWindowHours === null || historyWindowHours < 0) {
+    return AUTO_BOUNDARY_FALLBACK_IDLE_MS;
+  }
+  return Math.max(1, Math.floor(historyWindowHours * 3600_000));
+}
+
 async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
   const cap = getConfig().maxThreadMessages;
   const keepLast = autoCompactionKeepLast(cap);
@@ -132,7 +140,10 @@ async function maybeAutoCompactOversizedThread(agentId: string, threadId: string
   }
 }
 
-async function maybeAutoContextBoundary(thread_id: string, incomingRaw: string): Promise<string | null> {
+async function maybeAutoContextBoundary(thread_id: string, incomingRaw: string, historyWindowHours: number): Promise<string | null> {
+  const boundaryIdleMs = autoBoundaryIdleMs(historyWindowHours);
+  if (boundaryIdleMs === null) return null;
+
   const page = getMessagesPage(thread_id, AUTO_BOUNDARY_HISTORY_SAMPLES);
   const nonError = page.messages.filter((m) => m.category !== "run_error");
   const latest = nonError[nonError.length - 1] ?? null;
@@ -141,7 +152,7 @@ async function maybeAutoContextBoundary(thread_id: string, incomingRaw: string):
   const lastMs = Date.parse(latest.created_at);
   if (!Number.isFinite(lastMs)) return null;
   const idleMs = Date.now() - lastMs;
-  if (idleMs < AUTO_BOUNDARY_IDLE_MS) return null;
+  if (idleMs < boundaryIdleMs) return null;
 
   const incoming = normalizeInboundForSubjectDetection(incomingRaw);
   const incomingTokens = subjectTokens(incoming);
@@ -370,7 +381,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     && !req._skip_persist_message
     && isAutoBoundaryEligibleCategory(req.user_category)
   ) {
-    autoHotSince = await maybeAutoContextBoundary(req.thread_id, trimmed);
+    autoHotSince = await maybeAutoContextBoundary(req.thread_id, trimmed, agentCfg.history_window_hours);
     if (autoHotSince) {
       moveThreadContextBoundary(req.thread_id, autoHotSince, { refreshWarmSummary: true });
     }
