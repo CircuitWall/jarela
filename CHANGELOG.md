@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fast scroll-to-latest button appears reliably again.** The chat list now
+  recomputes the button after content/layout changes and programmatic jumps,
+  not only after a physical scroll event.
 - **`DELETE /api/v1/skills/[id]` now returns `{ deleted: true }`** instead of a bare `204 No Content`, matching every other delete endpoint — needed for the new UI's client to parse the response.
 - **Skills panel no longer shows stale data right after a save.** `GET /api/v1/skills` and `GET /api/v1/skills/repos` carry a short browser cache TTL meant for polling-style panels; the client now fetches them with `cache: "no-store"` so a save/delete followed immediately by a reload reflects the change instead of a cached pre-mutation response.
 
