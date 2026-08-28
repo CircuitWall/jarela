@@ -45,16 +45,16 @@ function extForMime(media_type: string): string {
  * transcoded off HEIC/BMP/TIFF. Pass `shrink: { maxEdge: 0 }`-style
  * opts through if you need to override defaults.
  */
-export async function spillImagePart(
-  part: { type: "image"; media_type: string; data: string },
+export async function spillImageBuffer(
+  raw: Buffer,
+  media_type: string,
   opts?: { shrink?: ShrinkOpts },
 ): Promise<Extract<ContentPart, { type: "image_ref" }>> {
-  const raw = Buffer.from(part.data, "base64");
-  const shrunk = await shrinkImage(raw, part.media_type, opts?.shrink);
+  const shrunk = await shrinkImage(raw, media_type, opts?.shrink);
   const buf = shrunk.buf;
-  const media_type = shrunk.media_type;
+  const storedMediaType = shrunk.media_type;
   const sha256 = createHash("sha256").update(buf).digest("hex");
-  const name = `${sha256}.${extForMime(media_type)}`;
+  const name = `${sha256}.${extForMime(storedMediaType)}`;
   if (!isSafeFileName(name)) throw new Error(`spill: unsafe file name ${name}`);
   const abs = join(FILES_DIR, name);
 
@@ -71,7 +71,7 @@ export async function spillImagePart(
   }
   const ref: Extract<ContentPart, { type: "image_ref" }> = {
     type: "image_ref",
-    media_type,
+    media_type: storedMediaType,
     name,
     sha256,
     size: buf.length,
@@ -79,6 +79,13 @@ export async function spillImagePart(
   if (shrunk.width) ref.width = shrunk.width;
   if (shrunk.height) ref.height = shrunk.height;
   return ref;
+}
+
+export async function spillImagePart(
+  part: { type: "image"; media_type: string; data: string },
+  opts?: { shrink?: ShrinkOpts },
+): Promise<Extract<ContentPart, { type: "image_ref" }>> {
+  return spillImageBuffer(Buffer.from(part.data, "base64"), part.media_type, opts);
 }
 
 /**
