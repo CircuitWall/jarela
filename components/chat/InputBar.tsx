@@ -1,6 +1,7 @@
 "use client";
 import { Mic, Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
+import { uploadImageFile } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -54,15 +55,13 @@ function isIosStandalonePwa(): boolean {
 function fileToContentPart(file: File): Promise<ContentPart> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    if (file.type.startsWith("image/") || file.type === "application/pdf") {
+    if (file.type.startsWith("image/")) {
+      uploadImageFile(file).then(resolve, reject);
+    } else if (file.type === "application/pdf") {
       reader.onload = () => {
         const dataUrl = reader.result as string;
         const data = dataUrl.split(",")[1] ?? "";
-        if (file.type === "application/pdf") {
-          resolve({ type: "file", name: file.name, media_type: "application/pdf", data });
-        } else {
-          resolve({ type: "image", media_type: file.type, data });
-        }
+        resolve({ type: "file", name: file.name, media_type: "application/pdf", data });
       };
       reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
       reader.readAsDataURL(file);
@@ -281,6 +280,13 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={`data:${a.media_type};base64,${a.data}`}
+                  alt="attachment"
+                  className="h-14 w-14 object-cover rounded-lg border border-border"
+                />
+              ) : a.type === "image_ref" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={`/api/v1/files/${encodeURIComponent(a.name)}`}
                   alt="attachment"
                   className="h-14 w-14 object-cover rounded-lg border border-border"
                 />
