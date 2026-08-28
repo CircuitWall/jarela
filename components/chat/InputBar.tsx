@@ -28,6 +28,7 @@ interface Props {
 }
 
 const ACCEPT = "image/*,text/*,.ts,.tsx,.js,.jsx,.json,.md,.py,.go,.rs,.yaml,.yml,.toml,.sh,.sql,.pdf";
+const IMAGE_EXT_RE = /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
 
 // Registry of slash-commands. Keep in sync with handlers in ChatView.tsx.
 // To add: append here, then handle the literal in ChatView.handleSubmit.
@@ -55,7 +56,7 @@ function isIosStandalonePwa(): boolean {
 function fileToContentPart(file: File): Promise<ContentPart> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    if (file.type.startsWith("image/")) {
+    if (file.type.startsWith("image/") || IMAGE_EXT_RE.test(file.name)) {
       uploadImageFile(file).then(resolve, reject);
     } else if (file.type === "application/pdf") {
       uploadBinaryFile(file).then(resolve, reject);
