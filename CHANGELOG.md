@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.1] - 2026-08-28
+
+### Fixed
+
+- **Large chat attachments no longer break run submission.** Images and
+  binary files now upload to the local file store first and enter chat runs as
+  lightweight refs, avoiding oversized `/threads/:id/run` JSON bodies. HEIC
+  and HEIF images are detected by filename when browsers omit their MIME type.
+- **Fast scroll-to-latest controls remain reachable.** The chat safe-area
+  bottom token is now defined and chat toasts no longer cover bottom controls.
+- **Automatic context boundaries respect each agent's history window.**
+  Idle topic-shift detection now uses the agent's configured
+  `history_window_hours` instead of a hardcoded threshold.
+
 ## [1.29.0] - 2026-08-28
 
 ### Added
