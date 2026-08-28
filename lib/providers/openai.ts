@@ -90,6 +90,9 @@ function toOpenAIContent(
       // without the base64 payload, which lives on disk. See ADR-0065.
       return { type: "text", text: `[image attachment: ${part.media_type}]` };
     }
+    if (part.type === "file_ref") {
+      return { type: "text", text: `[File: ${part.filename} (${part.media_type})]` };
+    }
     // Files rendered as text for OpenAI
     return { type: "text", text: `[File: ${part.name}]\n${part.data}` };
   });

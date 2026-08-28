@@ -481,6 +481,9 @@ export function toAnthropicContent(
       }
       return [{ type: "text", text: `[File: ${part.name}]\n${part.data}` }];
     }
+    if (part.type === "file_ref") {
+      return [{ type: "text", text: `[File: ${part.filename} (${part.media_type})]` }];
+    }
     return [];
   });
 }

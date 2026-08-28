@@ -92,6 +92,8 @@ export async function toBaseMessages(
         } else {
           blocks.push({ type: "text", text: `[Attached file: ${part.name} (${part.media_type})]` });
         }
+      } else if (part.type === "file_ref") {
+        blocks.push({ type: "text", text: `[Attached file: ${part.filename} (${part.media_type})]` });
       }
     }
     // Cast through unknown — LangChain's strict block-union type rejects our

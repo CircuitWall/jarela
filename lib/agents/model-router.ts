@@ -58,7 +58,7 @@ const FACTUAL_RE = /\b(fact|factual|verify|accurate|accuracy|source|reference|re
 const COMPLEX_RE = /\b(why|root cause|trade-?off|strategy|design|architecture|plan|debug|diagnose|reason|step by step|deep dive|complex)\b/i;
 const FAST_MODEL_RE = /\b(mini|nano|haiku|flash)\b/i;
 const SLOW_MODEL_RE = /\b(opus|sonnet|max|pro|o1|o3|reasoner|gpt-5)\b/i;
-const FILEY_TYPES = new Set(["file", "image_ref", "image"]);
+const FILEY_TYPES = new Set(["file", "file_ref", "image_ref", "image"]);
 const RESEARCH_TOOLS = new Set(["web_search", "fetch_webpage", "documents", "file_read", "memory_read"]);
 // These model types don't accept chat/completion requests at all (e.g. an
 // embeddings endpoint rejects a normal turn), so they must never enter the
@@ -122,7 +122,7 @@ function filterCandidates(
   hasImageContext?: boolean,
 ): ModelConfig[] {
   const requiresVision = hasImageContext || (attachments ?? []).some((part) => part.type === "image" || part.type === "image_ref");
-  const requiresFiles = (attachments ?? []).some((part) => part.type === "file");
+  const requiresFiles = (attachments ?? []).some((part) => part.type === "file" || part.type === "file_ref");
   const requiresTools = (allowedTools ?? []).length > 0;
 
   return models.filter((model) => {

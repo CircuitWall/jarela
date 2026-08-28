@@ -38,7 +38,16 @@ export type ContentPart =
       height?: number;
       size?: number;
     }
-  | { type: "file"; name: string; media_type: string; data: string }; // text or base64
+  | { type: "file"; name: string; media_type: string; data: string } // text or base64
+  | {
+      type: "file_ref";
+      media_type: string;
+      /** Safe file-name segment served under /api/v1/files/[name]. */
+      name: string;
+      filename: string;
+      sha256?: string;
+      size?: number;
+    };
 
 export type MessageContent = string | ContentPart[];
 

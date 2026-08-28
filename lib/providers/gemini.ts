@@ -72,6 +72,10 @@ function contentToGeminiParts(content: string | ContentPart[]): GeminiPart[] {
       } else {
         parts.push({ text: `[File: ${p.name}]` });
       }
+      continue;
+    }
+    if (p.type === "file_ref") {
+      parts.push({ text: `[File: ${p.filename} (${p.media_type})]` });
     }
   }
   return parts.length > 0 ? parts : [{ text: "" }];

@@ -1,7 +1,7 @@
 "use client";
 import { Mic, Paperclip, Send, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
-import { uploadImageFile } from "@/api/client";
+import { uploadBinaryFile, uploadImageFile } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -58,13 +58,7 @@ function fileToContentPart(file: File): Promise<ContentPart> {
     if (file.type.startsWith("image/")) {
       uploadImageFile(file).then(resolve, reject);
     } else if (file.type === "application/pdf") {
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const data = dataUrl.split(",")[1] ?? "";
-        resolve({ type: "file", name: file.name, media_type: "application/pdf", data });
-      };
-      reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
-      reader.readAsDataURL(file);
+      uploadBinaryFile(file).then(resolve, reject);
     } else {
       reader.onload = () => resolve({ type: "file", name: file.name, media_type: file.type || "text/plain", data: reader.result as string });
       reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
@@ -76,6 +70,7 @@ function fileToContentPart(file: File): Promise<ContentPart> {
 function attachmentKey(a: ContentPart, i: number): string {
   if (a.type === "text") return `text:${i}:${a.text.length}`;
   if (a.type === "image_ref") return `image_ref:${a.media_type}:${a.name}`;
+  if (a.type === "file_ref") return `file_ref:${a.media_type}:${a.name}:${a.filename}`;
   const name = a.type === "file" ? a.name : "";
   return `${a.type}:${a.media_type}:${name}:${a.data.length}:${a.data.slice(0, 16)}`;
 }
@@ -293,7 +288,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
               ) : (
                 <div className="h-10 px-2.5 flex items-center gap-1.5 rounded-lg border border-border bg-surface-3 text-[11px] text-fg-muted max-w-[140px]">
                   <Paperclip size={11} className="shrink-0 text-fg-faint" />
-                  <span className="truncate">{(a as ContentPart & { name: string }).name}</span>
+                  <span className="truncate">{a.type === "file_ref" ? a.filename : (a as ContentPart & { name: string }).name}</span>
                 </div>
               )}
               <button

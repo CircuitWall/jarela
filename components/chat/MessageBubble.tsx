@@ -1560,6 +1560,20 @@ function ContentPartView({ part, isUser, onInAppLink, unverifiedLinks, sourceMan
     // Ref-based image — server-hosted at /api/v1/files/[name]. See ADR-0065.
     return <ClickableImage src={`/api/v1/files/${encodeURIComponent(part.name)}`} />;
   }
+  if (part.type === "file_ref") {
+    return (
+      <a
+        href={`/api/v1/files/${encodeURIComponent(part.name)}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-1.5 px-2.5 py-1.5 mt-1 rounded-lg border border-border/60 bg-surface-3/60 hover:bg-surface-3 hover:border-border text-[11px] text-fg-muted transition-colors"
+        title="Open in new tab"
+      >
+        <Paperclip size={11} className="text-fg-faint shrink-0" />
+        <span className="truncate max-w-[200px]">{part.filename}</span>
+      </a>
+    );
+  }
   // File attachment — render an inline player for audio/video so voice
   // notes and short clips from the WhatsApp bridge are usable in-bubble.
   // Other file types still fall through to a download/open-in-new-tab link.

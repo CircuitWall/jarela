@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { submitRun, uploadImageFile } from "./client";
+import { submitRun, uploadBinaryFile, uploadImageFile } from "./client";
 import type { ContentPart } from "./types";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -76,6 +76,27 @@ describe("uploadImageFile", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/attachments/images");
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(init.body).toBeInstanceOf(FormData);
+    expect(init.headers).toBeUndefined();
+  });
+});
+
+describe("uploadBinaryFile", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("uploads binary files as multipart form data", async () => {
+    const ref: ContentPart = { type: "file_ref", media_type: "application/pdf", name: "a.pdf", filename: "a.pdf", sha256: "a" };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(ref, { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File([new Uint8Array([1, 2, 3])], "a.pdf", { type: "application/pdf" });
+    await expect(uploadBinaryFile(file)).resolves.toEqual(ref);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/v1/attachments/files");
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.headers).toBeUndefined();
