@@ -12,7 +12,7 @@
 // compensating for — see ADR-0065.
 
 import { promises as fsp, statSync } from "node:fs";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { FILES_DIR, isSafeFileName } from "@/lib/files";
 import { shrinkImage, type ShrinkOpts } from "@/lib/attachments/shrink";
@@ -29,10 +29,44 @@ const MIME_EXT: Record<string, string> = {
   "image/heif": "heif",
   "image/bmp": "bmp",
   "image/tiff": "tiff",
+  "application/pdf": "pdf",
+  "application/json": "json",
+  "text/plain": "txt",
 };
 
 function extForMime(media_type: string): string {
   return MIME_EXT[media_type.toLowerCase()] ?? "bin";
+}
+
+function safeDisplayName(name: string): string {
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed.replace(/[\r\n\t]/g, " ").slice(0, 240) : "attachment";
+}
+
+function extForFile(media_type: string, filename?: string): string {
+  const fromMime = extForMime(media_type);
+  if (fromMime !== "bin") return fromMime;
+  const ext = filename ? extname(filename).slice(1).toLowerCase() : "";
+  return /^[a-z0-9]{1,12}$/.test(ext) ? ext : "bin";
+}
+
+async function writeContentAddressedFile(buf: Buffer, ext: string): Promise<{ name: string; sha256: string }> {
+  const sha256 = createHash("sha256").update(buf).digest("hex");
+  const name = `${sha256}.${ext}`;
+  if (!isSafeFileName(name)) throw new Error(`spill: unsafe file name ${name}`);
+  const abs = join(FILES_DIR, name);
+
+  let exists = false;
+  try {
+    const s = statSync(abs);
+    exists = s.isFile() && s.size === buf.length;
+  } catch {
+    exists = false;
+  }
+  if (!exists) {
+    await fsp.writeFile(abs, buf);
+  }
+  return { name, sha256 };
 }
 
 /**
@@ -53,22 +87,7 @@ export async function spillImageBuffer(
   const shrunk = await shrinkImage(raw, media_type, opts?.shrink);
   const buf = shrunk.buf;
   const storedMediaType = shrunk.media_type;
-  const sha256 = createHash("sha256").update(buf).digest("hex");
-  const name = `${sha256}.${extForMime(storedMediaType)}`;
-  if (!isSafeFileName(name)) throw new Error(`spill: unsafe file name ${name}`);
-  const abs = join(FILES_DIR, name);
-
-  // Content-addressed: identical bytes always land at the same name.
-  let exists = false;
-  try {
-    const s = statSync(abs);
-    exists = s.isFile() && s.size === buf.length;
-  } catch {
-    exists = false;
-  }
-  if (!exists) {
-    await fsp.writeFile(abs, buf);
-  }
+  const { name, sha256 } = await writeContentAddressedFile(buf, extForMime(storedMediaType));
   const ref: Extract<ContentPart, { type: "image_ref" }> = {
     type: "image_ref",
     media_type: storedMediaType,
@@ -86,6 +105,22 @@ export async function spillImagePart(
   opts?: { shrink?: ShrinkOpts },
 ): Promise<Extract<ContentPart, { type: "image_ref" }>> {
   return spillImageBuffer(Buffer.from(part.data, "base64"), part.media_type, opts);
+}
+
+export async function spillFileBuffer(
+  raw: Buffer,
+  media_type: string,
+  filename: string,
+): Promise<Extract<ContentPart, { type: "file_ref" }>> {
+  const { name, sha256 } = await writeContentAddressedFile(raw, extForFile(media_type, filename));
+  return {
+    type: "file_ref",
+    media_type,
+    name,
+    filename: safeDisplayName(filename),
+    sha256,
+    size: raw.length,
+  };
 }
 
 /**

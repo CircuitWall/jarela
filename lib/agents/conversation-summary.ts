@@ -12,6 +12,7 @@ export function transcriptText(raw: string): string {
         if (p.type === "image") return `[image attachment: ${p.media_type}]`;
         if (p.type === "image_ref") return `[image attachment: ${p.media_type}]`;
         if (p.type === "file") return `[file attachment: ${p.name} (${p.media_type})]`;
+        if (p.type === "file_ref") return `[file attachment: ${p.filename} (${p.media_type})]`;
         return "";
       })
       .filter(Boolean)

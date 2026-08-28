@@ -117,9 +117,24 @@ export async function uploadImageFile(
   file: File,
   signal?: AbortSignal,
 ): Promise<Extract<ContentPart, { type: "image_ref" }>> {
+  return uploadAttachmentFile(file, "/attachments/images", signal) as Promise<Extract<ContentPart, { type: "image_ref" }>>;
+}
+
+export async function uploadBinaryFile(
+  file: File,
+  signal?: AbortSignal,
+): Promise<Extract<ContentPart, { type: "file_ref" }>> {
+  return uploadAttachmentFile(file, "/attachments/files", signal) as Promise<Extract<ContentPart, { type: "file_ref" }>>;
+}
+
+async function uploadAttachmentFile(
+  file: File,
+  path: "/attachments/images" | "/attachments/files",
+  signal?: AbortSignal,
+): Promise<Extract<ContentPart, { type: "image_ref" | "file_ref" }>> {
   const form = new FormData();
   form.append("file", file, file.name);
-  const res = await fetch(`${BASE}/attachments/images`, {
+  const res = await fetch(`${BASE}${path}`, {
     method: "POST",
     body: form,
     signal,
@@ -129,7 +144,7 @@ export async function uploadImageFile(
     try { body = (await res.json()) as { error?: string }; } catch { /* ignore */ }
     throw new Error(`${res.status} ${body.error ?? res.statusText}`);
   }
-  return res.json() as Promise<Extract<ContentPart, { type: "image_ref" }>>;
+  return res.json() as Promise<Extract<ContentPart, { type: "image_ref" | "file_ref" }>>;
 }
 
 async function externalizeRunAttachmentsIfNeeded(

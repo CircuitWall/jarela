@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 const TMP_ROOT = mkdtempSync(join(tmpdir(), "jarela-spill-"));
 process.env.JARELA_DB_DIR = TMP_ROOT;
 
-const { spillImageAttachments, spillImagePart, readImageRef } = await import("./spill");
+const { spillFileBuffer, spillImageAttachments, spillImagePart, readImageRef } = await import("./spill");
 const { FILES_DIR } = await import("@/lib/files");
 
 const PNG_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
@@ -56,6 +56,24 @@ describe("spillImageAttachments", () => {
     expect(out[1]).toMatchObject({ type: "image_ref", media_type: "image/png", name: `${PNG_SHA}.png` });
     expect(out[2]).toEqual(parts[2]);
     expect(out[3]).toEqual(parts[3]);
+  });
+});
+
+describe("spillFileBuffer", () => {
+  it("writes a binary file and returns a lightweight ref", async () => {
+    const buf = Buffer.from("%PDF-fake");
+    const sha = createHash("sha256").update(buf).digest("hex");
+    const ref = await spillFileBuffer(buf, "application/pdf", "report.pdf");
+
+    expect(ref).toEqual({
+      type: "file_ref",
+      media_type: "application/pdf",
+      name: `${sha}.pdf`,
+      filename: "report.pdf",
+      sha256: sha,
+      size: buf.length,
+    });
+    expect(readFileSync(join(FILES_DIR, ref.name))).toEqual(buf);
   });
 });
 
