@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.3] - 2026-08-29
+
+### Fixed
+
+- **Gemini tool calls keep thought signatures.** Native Gemini responses now
+  preserve both `thoughtSignature` and `thought_signature` fields so follow-up
+  tool turns replay the required signature instead of failing with
+  `Function call is missing a thought_signature`.
+
 ## [1.29.2] - 2026-08-29
 
 ### Security
