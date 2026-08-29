@@ -93,12 +93,13 @@ async function ddgSearch(query: string, limit: number): Promise<SearchResult[]> 
     const parsed = parseDDGHtml(html, limit);
     if (parsed.length > 0) return parsed;
     if (res.status !== 202) return parsed; // genuine empty result on 200
-    // Backoff: 400, 900, 1600, 2500 ms — total max ≈ 5.4s
-    await new Promise((r) => setTimeout(r, 400 + attempt * 500));
+    // Backoff: 400, 900, 1400, 1900 ms — total max ≈ 4.6s
+    if (attempt < 4) await new Promise((r) => setTimeout(r, 400 + attempt * 500));
   }
-  // All retries returned 202 placeholder — surface as empty so caller can handle.
-  console.warn(`[web_search] DDG returned ${lastStatus} placeholder on all attempts for "${query}"`);
-  return [];
+  // All retries returned 202 placeholder. Surface this as a provider failure
+  // rather than an empty success, so the caller can fall through to another
+  // backend or show an actionable error.
+  throw new Error(`DuckDuckGo returned ${lastStatus} anomaly placeholder on all attempts`);
 }
 
 function parseDDGHtml(html: string, limit: number): SearchResult[] {
@@ -168,6 +169,10 @@ export const webSearchTool = tool(
         const results = provider === "tavily"
           ? await tavilySearch(query, limit, tavilyKey!)
           : await ddgSearch(query, limit);
+        if (results.length === 0) {
+          tried.push(`${provider}:empty`);
+          continue;
+        }
         return JSON.stringify({
           query,
           provider,
@@ -190,7 +195,9 @@ export const webSearchTool = tool(
       ignored_providers: parsedOrder.ignored,
       used_default_order: parsedOrder.usedDefault,
       tried,
-      error: errorMessage(lastErr ?? new Error("no configured provider available")),
+      results: [],
+      total: 0,
+      error: errorMessage(lastErr ?? new Error("no configured provider returned results")),
     });
   },
   {

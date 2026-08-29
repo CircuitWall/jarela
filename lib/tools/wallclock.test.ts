@@ -114,18 +114,18 @@ describe("wrapWithWallclock", () => {
 
   describe("activity resets the deadline (config.writer)", () => {
     it("does not abandon a call whose total runtime exceeds deadline_ms, as long as it keeps reporting progress", async () => {
-      // Total runtime ~90ms, well past the 50ms deadline — but each gap
-      // between writer() calls is under 50ms, so it should never fire.
+      // Total runtime ~600ms, past the 500ms deadline — but each gap
+      // between writer() calls is under 500ms, so it should never fire.
       const inner = makeReportingTool("reporter", [
-        { delayMs: 30, text: "step 1" },
-        { delayMs: 30, text: "step 2" },
-        { delayMs: 30 },
+        { delayMs: 200, text: "step 1" },
+        { delayMs: 200, text: "step 2" },
+        { delayMs: 200 },
       ]);
       const wrapped = wrapWithWallclock(inner);
       const writer = vi.fn();
       // stream: true — this test is about the activity-reset mechanism,
       // not the per-tool streaming default (covered separately below).
-      const out = await wrapped.invoke({ value: "x", deadline_ms: 50, stream: true }, { writer } as never);
+      const out = await wrapped.invoke({ value: "x", deadline_ms: 500, stream: true }, { writer } as never);
       expect(JSON.parse(out as string)).toEqual({ ok: true, value: "x" });
       expect(writer).toHaveBeenCalledTimes(2);
     });

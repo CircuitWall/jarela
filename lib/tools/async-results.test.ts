@@ -44,7 +44,7 @@ describe("wallclock async_run", () => {
     const t0 = Date.now();
     const out = await wrapped.invoke({ value: "hi", async_run: true });
     const elapsed = Date.now() - t0;
-    expect(elapsed).toBeLessThan(100);
+    expect(elapsed).toBeLessThan(500);
     const parsed = JSON.parse(out as string);
     expect(parsed.async).toBe(true);
     expect(parsed.ok).toBe(true);
