@@ -144,4 +144,25 @@ describe("JarelaChatModel — empty stream handling", () => {
     const meta = (tcChunk!.message as AIMessageChunk).additional_kwargs?.provider_tool_call_meta as Record<string, Record<string, unknown>>;
     expect(meta.fc_1).toEqual({ gemini_thought_signature: "sig-abc" });
   });
+
+  it("keeps provider_meta after stream aggregation into the final AIMessage", async () => {
+    const provider = makeProvider([
+      {
+        type: "tool_call_chunk",
+        index: 0,
+        id: "fc_1",
+        name: "read_skill",
+        args_delta: "{}",
+        provider_meta: { gemini_thought_signature: "sig-abc" },
+      },
+      { type: "stop", reason: "tool_use" },
+    ]);
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} })
+      .bindTools([makeTool(0)]) as JarelaChatModel;
+    const result = await model.invoke([new HumanMessage("load skill")]);
+
+    expect(result.tool_calls?.[0]?.id).toBe("fc_1");
+    const meta = result.additional_kwargs?.provider_tool_call_meta as Record<string, Record<string, unknown>> | undefined;
+    expect(meta?.fc_1).toEqual({ gemini_thought_signature: "sig-abc" });
+  });
 });

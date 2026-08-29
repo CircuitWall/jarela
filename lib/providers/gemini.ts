@@ -93,6 +93,12 @@ function parseJsonObject(v: string | undefined): Record<string, unknown> {
   }
 }
 
+function getGeminiThoughtSignature(part: Record<string, unknown>): string | undefined {
+  if (typeof part.thoughtSignature === "string") return part.thoughtSignature;
+  if (typeof part.thought_signature === "string") return part.thought_signature;
+  return undefined;
+}
+
 function providerMessagesToGemini(messages: ProviderMessage[]): {
   systemInstruction?: { parts: GeminiPart[] };
   contents: Array<{ role: "user" | "model"; parts: GeminiPart[] }>;
@@ -303,14 +309,14 @@ function extractGeminiInvokeResult(data: Record<string, unknown>): InvokeResult 
   let pendingThoughtSignature: string | undefined;
   for (const part of parts) {
     if (typeof part.text === "string") text += part.text;
-    if (part.thought === true && typeof part.thoughtSignature === "string") {
-      pendingThoughtSignature = part.thoughtSignature;
+    const partSig = getGeminiThoughtSignature(part);
+    if (part.thought === true && partSig) {
+      pendingThoughtSignature = partSig;
     }
     if (part.functionCall && typeof part.functionCall === "object") {
       const fc = part.functionCall as Record<string, unknown>;
       const name = typeof fc.name === "string" ? fc.name : "tool";
       const args = fc.args && typeof fc.args === "object" ? fc.args as Record<string, unknown> : {};
-      const partSig = typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
       const sig = partSig ?? pendingThoughtSignature;
       pendingThoughtSignature = undefined;
       tool_calls.push({
@@ -391,7 +397,7 @@ async function* geminiNativeStreamInvoke(
     if (um) lastUsageMetadata = um;
     for (const part of parts) {
       const isThought = part.thought === true;
-      const partSig = typeof part.thoughtSignature === "string" ? part.thoughtSignature : undefined;
+      const partSig = getGeminiThoughtSignature(part);
       if (typeof part.text === "string" && part.text) {
         if (isThought) {
           if (partSig) pendingThoughtSignature = partSig;
