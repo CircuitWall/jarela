@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.2] - 2026-08-29
+
+### Security
+
+- **Corporate identifiers are scrubbed from the public branch.** Current `main`
+  no longer carries the targeted internal fixture/provider references, and CI
+  now runs a dependency-free brand-term guard to catch future accidental leaks.
+
+### Fixed
+
+- **Model config comments use neutral auth wording.** The inline model params
+  merge path now documents custom-provider auth generically instead of naming an
+  internal provider pattern.
+
 ### Changed
 
 - **Dependency baseline refreshed.** Next.js, React, LangChain packages,
