@@ -105,6 +105,9 @@ jobs:
       - name: Scan for secrets
         run: node scripts/scan-secrets.mjs --all
 
+      - name: Scan for sensitive corporate terms
+        run: node scripts/scan-sensitive-terms.mjs --all
+
       # Dependency audit and version-pin checks only matter when
       # package.json / package-lock.json changed. Skip on source-only PRs to
       # avoid a full `npm ci` just to run `npm audit`.
