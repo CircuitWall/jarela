@@ -8,7 +8,7 @@ const now = () => new Date().toISOString();
 export interface ModelConfigRow {
   name: string; provider: string; model_id: string;
   params: string; is_default: number;
-  // ADR forthcoming — first-class credentials. NULL until the row is
+  // ADR forthcoming ??? first-class credentials. NULL until the row is
   // explicitly bound (or until the auto-migration in lib/db/migrations.ts
   // lifts an inline api_key into a credential row).
   credential_id?: string | null;
@@ -52,7 +52,7 @@ export function upsertModelConfig(
   // renders (api_key, base_url, extra_headers, temperature, max_tokens,
   // context_window_tokens), so a plain overwrite silently deletes any
   // other field a custom provider relies on (e.g. custom-provider.js's
-  // username/password auth auth) on every save.
+  // username/password auth) on every save.
   const mergedParams = { ...decodeInlineParams(existing), ...params };
   const db = getDb();
   if (is_default) db.prepare("UPDATE model_configs SET is_default=0").run();
