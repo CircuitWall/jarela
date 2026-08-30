@@ -30,6 +30,17 @@ describe("buildAdaptivePersonaContext", () => {
     const out = buildAdaptivePersonaContext(baseAgent({ adaptive_mbti: "ENFP" }), "hi");
     expect(out).toContain("--- Adaptive persona ---");
     expect(out).toContain("Preset: ENFP (Campaigner)");
+    expect(out).toContain("Behavior profile: exploratory, collaborative, flexible, evidence=balanced");
+    expect(out).toContain("Operating contract:");
+  });
+
+  it("makes INTJ-style adaptation operational, not just tonal", () => {
+    const out = buildAdaptivePersonaContext(baseAgent({ adaptive_mbti: "INTJ" }), "debug this failure");
+    expect(out).toContain("Behavior profile: directive, independent, linear, evidence=high");
+    expect(out).toContain("Give a clear recommendation early");
+    expect(out).toContain("Stay self-directed");
+    expect(out).toContain("Use ordered, stepwise structure");
+    expect(out).toContain("Prefer concrete evidence");
   });
 
   it("falls back to INTJ when adaptive_mbti is unknown or missing", () => {
@@ -47,6 +58,7 @@ describe("buildAdaptivePersonaContext", () => {
     const out = buildAdaptivePersonaContext(baseAgent(), "this is broken and doesn't work, frustrating");
     expect(out).toContain("Detected user signal: frustrated");
     expect(out).toContain("validate briefly and offer a clear recovery path");
+    expect(out).toContain("Do not over-explain the mistake");
   });
 
   it("detects 'rushed' mood from urgency words", () => {
@@ -91,5 +103,11 @@ describe("buildAdaptivePersonaContext", () => {
     expect(out).toMatch(/Target empathy: 80\/100 \(high\)/);
     expect(out).toMatch(/Target expressiveness: 20\/100 \(reserved\)/);
     expect(out).toMatch(/Target verbosity: 50\/100 \(balanced\)/);
+    expect(out).not.toContain("noticeably shape organization");
+  });
+
+  it("high strength explicitly tells the model to let the profile shape the response", () => {
+    const out = buildAdaptivePersonaContext(baseAgent({ adaptive_persona_strength: 95 }), "walk me through this");
+    expect(out).toContain("Let this adaptive profile noticeably shape organization and phrasing");
   });
 });
