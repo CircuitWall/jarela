@@ -11,6 +11,6 @@
     "start": "functions-framework --target=tokenProxy --port=8080"
   },
   "dependencies": {
-    "@google-cloud/functions-framework": "^3.4.0"
+    "@google-cloud/functions-framework": "^5.0.5"
   }
 }

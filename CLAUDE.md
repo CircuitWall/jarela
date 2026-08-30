@@ -53,9 +53,10 @@ MUST follow:
 - **Squash merge.** PR title becomes the commit on `main` and the release-notes
   entry, so the PR title MUST follow Conventional Commits (`type(scope)[!]: …`).
 - **Semver.** `MAJOR.MINOR.PATCH` in `package.json` is the source of truth.
-  Bump rule: any `feat!:` / `fix!:` / `BREAKING CHANGE:` → MAJOR; any `feat:` →
-  MINOR; otherwise PATCH. Pre-1.0 exception: breaking changes bump MINOR until
-  `1.0.0`.
+  Bump rule: any `feat!:` / `fix!:` / `BREAKING CHANGE:` → MAJOR; only genuinely
+  new capabilities use `feat:` and bump MINOR; adding, fixing, or completing an
+  existing feature is PATCH. Pre-1.0 exception: breaking changes bump MINOR
+  until `1.0.0`.
 - **Release = tag push.** Bump `package.json` + update `CHANGELOG.md` in a
   release PR. After merge, tag `main` with `vX.Y.Z` and push the tag — the
   release workflow handles bundles, GitHub Release, and npm publish via OIDC
