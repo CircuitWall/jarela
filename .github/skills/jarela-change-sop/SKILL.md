@@ -54,6 +54,8 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
 
 7. Open or update the PR.
    - Push topic branches to upstream `origin` unless the user explicitly says otherwise.
+   - Before creating a PR from an existing branch, confirm the intended scope when the branch has mixed commits, already-applied commits, no matching issue/PR, or a compare view that does not clearly describe the desired outcome.
+   - If only part of a branch should merge, ask whether to open a clean cherry-picked PR, update the existing branch, or leave it alone.
    - PR title must be the same Conventional Commit subject expected for the squash merge.
    - PR body should explain what changed and why, plus validation.
    - Use `Refs #<issue>` for partial fixes and `Closes #<issue>` only when merge should close the issue.
@@ -71,6 +73,7 @@ git status --short --branch
 npm run lint
 npm run typecheck
 npm test --workspace <workspace> -- <focused-test>
+git cherry -v origin/main <branch>
 gh pr view <pr> --repo CircuitWall/jarela --json state,mergedAt,url,title
 git branch --merged main
 git branch -d <branch>
