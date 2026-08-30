@@ -35,11 +35,13 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - API boundaries require `zod` schemas.
    - Network or external-resource tools must be capability-gated.
    - No telemetry, external analytics, or required cloud calls beyond providers the user explicitly configures.
+   - For UX changes, keep the Jarela logo in its established/original placement and preserve its breathing effect unless the user explicitly asks to change the brand treatment or motion behavior.
    - Open an ADR before changing persistence schema or directory layout, adding a provider, introducing a second process, or adding an online-only feature.
    - For Next.js changes, read the local Next docs under `node_modules/next/dist/docs/` before using changed framework APIs.
 
 5. Validate immediately after editing.
    - Run the cheapest behavior-scoped check first: failing test, focused package test, targeted typecheck, or lint for the touched slice.
+   - For non-trivial changes, run `npm run check:impact -- --base origin/main --head HEAD` and address or document any ripple-impact follow-ups it reports.
    - If that passes and risk remains, broaden validation in proportion to the blast radius.
    - Let pre-commit hooks run when committing; do not bypass with `--no-verify`.
    - Record commands and results for the PR body.
@@ -75,6 +77,7 @@ git status --short --branch
 npm run lint
 npm run typecheck
 npm test --workspace <workspace> -- <focused-test>
+npm run check:impact -- --base origin/main --head HEAD
 git commit --amend --no-edit
 git commit --fixup <commit>
 git rebase -i --autosquash <base>

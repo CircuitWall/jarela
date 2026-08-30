@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Change impact audits flag likely ripple effects.** A new
+  `check:impact` script compares staged changes or a git range and reports
+  follow-up surfaces such as scheduler behavior, agent instructions, skills,
+  persistence, API contracts, security-sensitive code, and release metadata.
+
 ## [1.29.5] - 2026-08-30
 
 ### Added
