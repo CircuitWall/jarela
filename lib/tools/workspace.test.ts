@@ -53,6 +53,12 @@ describe("workspace_init", () => {
     expect(readme.path).toBe("README.md");
     expect(String(readme.head)).toContain("Demo");
 
+    expect(out.recommended_next_steps).toEqual(expect.arrayContaining([
+      expect.stringContaining("Read required docs first with file_read"),
+      expect.stringContaining("Use file_grep with a glob filter"),
+      expect.stringContaining("Use local_exec for focused package scripts"),
+    ]));
+
     // Workspace was installed in the default slot.
     expect(currentWorkspace()?.root).toBe(projectRoot);
   });
@@ -156,6 +162,9 @@ describe("workspace_status / workspace_close", () => {
     const out = parse(await workspaceStatusTool.invoke({}));
     expect(out.active).toBe(true);
     expect(out.root).toBe(projectRoot);
+    expect(out.recommended_next_steps).toEqual(expect.arrayContaining([
+      expect.stringContaining("Use file_grep with a glob filter"),
+    ]));
   });
 
   it("close clears the workspace and falls back to $HOME for relative paths", async () => {
@@ -387,9 +396,12 @@ describe("workspace_init — probe opt-outs and edge cases", () => {
 });
 
 describe("workspace_init — required_reading", () => {
-  it("orders CLAUDE.md, AGENTS.md, CONTRIBUTING.md, README, and ADR index by priority", async () => {
+  it("orders repo instruction files, CONTRIBUTING.md, README, and ADR index by priority", async () => {
     writeFileSync(join(projectRoot, "CLAUDE.md"), "claude");
     writeFileSync(join(projectRoot, "AGENTS.md"), "agents");
+    mkdirSync(join(projectRoot, ".github", "instructions"), { recursive: true });
+    writeFileSync(join(projectRoot, ".github", "copilot-instructions.md"), "copilot");
+    writeFileSync(join(projectRoot, ".github", "instructions", "review.instructions.md"), "review");
     writeFileSync(join(projectRoot, "CONTRIBUTING.md"), "contributing");
     writeFileSync(join(projectRoot, "README.md"), "readme");
     mkdirSync(join(projectRoot, "docs", "adr"), { recursive: true });
@@ -400,12 +412,26 @@ describe("workspace_init — required_reading", () => {
     expect(rr.map((r) => r.path)).toEqual([
       "CLAUDE.md",
       "AGENTS.md",
+      ".github/copilot-instructions.md",
+      ".github/instructions/review.instructions.md",
       "CONTRIBUTING.md",
       "README.md",
       "docs/adr/README.md",
     ]);
     expect(rr.every((r) => typeof r.bytes === "number" && r.bytes >= 0)).toBe(true);
     expect(rr[0].reason).toMatch(/agent/i);
+  });
+
+  it("surfaces repo skill files and recommends loading relevant skills", async () => {
+    mkdirSync(join(projectRoot, ".github", "skills", "review"), { recursive: true });
+    writeFileSync(join(projectRoot, ".github", "skills", "review", "SKILL.md"), "# Review\n");
+
+    const out = parse(await workspaceInitTool.invoke({ path: projectRoot, include_tree: false, include_git: false }));
+    const conventions = out.conventions as { skill_files: string[] };
+    expect(conventions.skill_files).toEqual([".github/skills/review/SKILL.md"]);
+    expect(out.recommended_next_steps).toEqual(expect.arrayContaining([
+      expect.stringContaining("Repo skills detected: .github/skills/review/SKILL.md"),
+    ]));
   });
 
   it("returns an empty list when no convention files exist", async () => {
