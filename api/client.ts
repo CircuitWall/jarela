@@ -378,9 +378,12 @@ export const api = {
   },
 
   tools: {
-    list: (opts?: { force?: boolean; query?: string }) => {
+    list: (opts?: { force?: boolean; query?: string; includeDisabled?: boolean }) => {
       const q = opts?.query?.trim();
-      if (q) return request<ToolInfo[]>(`/tools?q=${encodeURIComponent(q)}`);
+      const params = new URLSearchParams();
+      if (q) params.set("q", q);
+      if (opts?.includeDisabled) params.set("include_disabled", "true");
+      if (params.size > 0) return request<ToolInfo[]>(`/tools?${params.toString()}`);
       return cachedList(toolListCache, () => request<ToolInfo[]>("/tools"), setToolListCache, opts?.force === true);
     },
   },

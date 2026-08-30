@@ -54,7 +54,7 @@ describe("tool registry", () => {
     expect(registeredCapability("missing")).toBeUndefined();
   });
 
-  it("maps Atlassian/JiraAlign/GitHub to the Work group", () => {
+  it("maps Basic and Work categories to their parent groups", () => {
     registerTools("Atlassian", "read", [mkTool("jira_x")]);
     registerTools("JiraAlign", "read", [mkTool("align_x")]);
     registerTools("GitHub", "read", [mkTool("gh_x")]);
@@ -63,7 +63,7 @@ describe("tool registry", () => {
     expect(registeredGroup("jira_x")).toBe("Work");
     expect(registeredGroup("align_x")).toBe("Work");
     expect(registeredGroup("gh_x")).toBe("Work");
-    expect(registeredGroup("file_x")).toBeNull();
+    expect(registeredGroup("file_x")).toBe("Basic");
   });
 
   it("throws on duplicate registration (collision is a bug)", () => {
@@ -117,7 +117,7 @@ describe("tool registry", () => {
     const required = [
       "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
       "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-      "Tasks", "Microsoft", "Config", "Agent",
+      "Tasks", "Microsoft", "Config", "Agent", "Skills",
     ];
     for (const cat of required) {
       expect(BUILTIN_CATEGORIES).toContain(cat);
@@ -138,11 +138,19 @@ describe("groupForCategory", () => {
     expect(groupForCategory("JiraAlign")).toBe("Work");
   });
 
-  it("returns null for non-Work built-in categories", () => {
-    expect(groupForCategory("Files")).toBeNull();
-    expect(groupForCategory("Web")).toBeNull();
-    expect(groupForCategory("Memory")).toBeNull();
-    expect(groupForCategory("Config")).toBeNull();
+  it("returns Basic for known Basic categories", () => {
+    expect(groupForCategory("Files")).toBe("Basic");
+    expect(groupForCategory("Web")).toBe("Basic");
+    expect(groupForCategory("Memory")).toBe("Basic");
+    expect(groupForCategory("Config")).toBe("Basic");
+    expect(groupForCategory("Schedule")).toBe("Basic");
+    expect(groupForCategory("Skills")).toBe("Basic");
+  });
+
+  it("returns null for ungrouped built-in categories", () => {
+    expect(groupForCategory("Images")).toBeNull();
+    expect(groupForCategory("Voice")).toBeNull();
+    expect(groupForCategory("Calendar")).toBeNull();
   });
 
   it("returns null for MCP", () => {

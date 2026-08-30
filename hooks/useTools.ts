@@ -13,12 +13,12 @@ export function useTools(): UnifiedHookResult<
     error,
     refresh,
   } = useListState<ToolInfo>({
-    loader: () => api.tools.list(),
+    loader: () => api.tools.list({ includeDisabled: true }),
     // Re-fetch when a new MCP server connects, an external tool file is added,
     // or any other event that changes the available tool set. Force-bypass the
     // client cache so we always get the post-mutation state.
     eventName: "jarela:tools-changed",
-    eventLoader: () => api.tools.list({ force: true }),
+    eventLoader: () => api.tools.list({ force: true, includeDisabled: true }),
     initialLoading: true,
   });
 

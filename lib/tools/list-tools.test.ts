@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,7 +11,9 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
+const { getDefaultAgentToolNames, getToolCategory } = await import("./index");
 const { listToolsTool } = await import("./list-tools");
+const { setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
 
 interface Result {
   tools: Array<{
@@ -21,11 +23,16 @@ interface Result {
     capability: string;
     source: string;
     group: string | null;
+    status: "enabled" | "disabled" | "unavailable";
+    status_reason: string | null;
+    permission: "enabled" | "disabled" | "unavailable";
+    permission_reason: string | null;
   }>;
   counts: {
     total: number;
     by_source: Record<string, number>;
     by_capability: Record<string, number>;
+    by_permission: Record<string, number>;
   };
 }
 
@@ -34,6 +41,10 @@ function parse(s: string): Result {
 }
 
 describe("list_tools", () => {
+  beforeEach(() => {
+    setCategoryEnabled("Memory", true);
+  });
+
   it("returns every built-in tool with category, capability, and source", async () => {
     const out = parse(await listToolsTool.invoke({}));
     expect(out.tools.length).toBeGreaterThan(0);
@@ -45,6 +56,8 @@ describe("list_tools", () => {
       expect(typeof t.description).toBe("string");
       expect(["read", "write", "execute"]).toContain(t.capability);
       expect(["builtin", "external", "mcp"]).toContain(t.source);
+      expect(["enabled", "disabled", "unavailable"]).toContain(t.status);
+      expect(["enabled", "disabled", "unavailable"]).toContain(t.permission);
     }
 
     // Sanity: list_tools itself is registered as builtin/Config/read.
@@ -53,6 +66,49 @@ describe("list_tools", () => {
     expect(self?.source).toBe("builtin");
     expect(self?.category).toBe("Config");
     expect(self?.capability).toBe("read");
+    expect(self?.permission).toBe("enabled");
+  });
+
+  it("can reveal globally disabled tools without granting execution permission", async () => {
+    setCategoryEnabled("Memory", false);
+
+    const defaultView = parse(await listToolsTool.invoke({ query: "memory_read" }));
+    expect(defaultView.tools).toEqual([]);
+
+    const fullView = parse(await listToolsTool.invoke({ query: "memory_read", include_disabled: true }));
+    expect(fullView.tools).toHaveLength(1);
+    expect(fullView.tools[0]).toMatchObject({
+      name: "memory_read",
+      status: "disabled",
+      status_reason: "category_disabled",
+      permission: "unavailable",
+      permission_reason: "category_disabled",
+    });
+  });
+
+  it("marks known non-Basic tools disabled for the current agent by default", async () => {
+    const out = parse(await listToolsTool.invoke({ query: "gmail_", include_disabled: true }));
+    const gmail = out.tools.find((tool) => tool.name.startsWith("gmail_"));
+    expect(gmail).toBeDefined();
+    expect(gmail?.permission).toBe("disabled");
+    expect(gmail?.permission_reason).toBe("agent_not_allowed");
+  });
+
+  it("defaults uncategorized incoming tools to Other", () => {
+    expect(getToolCategory("not_registered_anywhere")).toBe("Other");
+  });
+
+  it("defaults Basic category tools for every agent", () => {
+    const defaults = getDefaultAgentToolNames();
+    expect(defaults).toEqual(expect.arrayContaining([
+      "memory_read",
+      "file_read",
+      "web_search",
+      "schedule_task",
+      "read_skill",
+      "list_tools",
+      "local_exec",
+    ]));
   });
 
   it("filters by capability", async () => {

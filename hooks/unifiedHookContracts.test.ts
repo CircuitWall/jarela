@@ -101,7 +101,8 @@ describe("unified hook contracts", () => {
     });
 
     await waitFor(() => expect(result.current.state.tools).toEqual([{ name: "forced" }]));
-    expect(toolsListMock).toHaveBeenCalledWith({ force: true });
+    expect(toolsListMock).toHaveBeenNthCalledWith(1, { includeDisabled: true });
+    expect(toolsListMock).toHaveBeenNthCalledWith(2, { force: true, includeDisabled: true });
   });
 
   it("usePackages exposes state/commands and keeps flat compatibility fields", async () => {

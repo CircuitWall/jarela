@@ -15,6 +15,8 @@ afterAll(() => {
 const { applyAction } = await import("./proposals");
 const { listAllHarnesses, getHarness, createCustomHarness, deleteCustomHarness } = await import("@/lib/stores/harnesses");
 const { upsertAgentConfig, getAgentConfig } = await import("@/lib/stores/agent-configs");
+const { isCategoryEnabled, setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
+const { isDropinDisabled, setDropinDisabled } = await import("@/lib/stores/disabled-dropin-tools");
 const { DEFAULT_HARNESS_ID } = await import("./harness/types");
 
 function seedAgent(id: string) {
@@ -269,6 +271,37 @@ describe("applyAction(update_agent_tools)", () => {
       tools: ["documents_search"],
       added_tools: ["documents_search"],
     });
+  });
+});
+
+describe("applyAction(tool permission enablement)", () => {
+  it("enables a disabled built-in tool category", async () => {
+    setCategoryEnabled("Web", false);
+    expect(isCategoryEnabled("Web")).toBe(false);
+
+    const result = await applyAction("enable_tool_category", { category: "Web" });
+
+    expect(result.ok).toBe(true);
+    expect(isCategoryEnabled("Web")).toBe(true);
+    expect(result.detail).toEqual({ category: "Web", enabled: true });
+  });
+
+  it("rejects unknown built-in categories", async () => {
+    const result = await applyAction("enable_tool_category", { category: "NotARealCategory" });
+
+    expect(result.ok).toBe(false);
+    expect(String(result.detail)).toContain("unknown built-in category");
+  });
+
+  it("enables a disabled drop-in tool", async () => {
+    setDropinDisabled("custom_tool", true);
+    expect(isDropinDisabled("custom_tool")).toBe(true);
+
+    const result = await applyAction("enable_dropin_tool", { name: "custom_tool" });
+
+    expect(result.ok).toBe(true);
+    expect(isDropinDisabled("custom_tool")).toBe(false);
+    expect(result.detail).toEqual({ name: "custom_tool", enabled: true });
   });
 });
 

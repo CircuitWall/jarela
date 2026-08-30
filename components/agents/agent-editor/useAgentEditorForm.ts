@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
+import { isBasicToolCategory } from "@/lib/tools/categories";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { useAgentExternalData } from "./useAgentExternalData";
 import { useAgentToolHandlers } from "./useAgentToolHandlers";
@@ -60,6 +61,17 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [routerEnabled, setRouterEnabled] = useState<RouterEnabled>(agent?.router_enabled ?? null);
   const external = useAgentExternalData(agent?.id);
   const handlers = useAgentToolHandlers(tools, setSelectedTools);
+  useEffect(() => {
+    const defaults = tools
+      .filter((tool) => tool.status !== "disabled" && tool.status !== "unavailable" && isBasicToolCategory(tool.category))
+      .map((tool) => tool.name);
+    if (defaults.length === 0) return;
+    setSelectedTools((prev) => {
+      const next = new Set(prev);
+      for (const name of defaults) next.add(name);
+      return next.size === prev.length ? prev : [...next];
+    });
+  }, [tools]);
   const fields = {
     name, setName, icon, setIcon, identity, setIdentity, instructions, setInstructions,
     isDefault, setIsDefault, iconInputRef, handleIconFile: handleIconFileFor(setIcon),

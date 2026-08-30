@@ -25,6 +25,9 @@ import {
   type HarnessSectionKey,
 } from "@/lib/agents/harness/types";
 import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
+import { setCategoryEnabled } from "@/lib/stores/builtin-tools";
+import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
+import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/registry";
 
 export interface ApplyResult {
   ok: boolean;
@@ -44,6 +47,8 @@ export async function applyAction(
     case "install_mcp":        return await applyInstallMcp(payload);
     case "toggle_mcp":         return applyToggleMcp(payload);
     case "update_agent_tools": return applyUpdateAgentTools(payload);
+    case "enable_tool_category": return applyEnableToolCategory(payload);
+    case "enable_dropin_tool": return applyEnableDropinTool(payload);
     case "update_agent":       return applyUpdateAgent(payload);
     case "start_oauth":        return applyStartOauth(payload);
     case "set_provider_key":   return applySetProviderKey(payload, extras);
@@ -51,6 +56,23 @@ export async function applyAction(
     case "upsert_harness":     return applyUpsertHarness(payload);
     default:                   return { ok: false, detail: `unknown kind: ${kind}` };
   }
+}
+
+function applyEnableToolCategory(payload: unknown): ApplyResult {
+  const p = payload as { category?: string };
+  if (!p.category) return { ok: false, detail: "category required" };
+  if (!(BUILTIN_CATEGORIES as readonly string[]).includes(p.category)) {
+    return { ok: false, detail: `unknown built-in category: ${p.category}` };
+  }
+  setCategoryEnabled(p.category as BuiltinCategory, true);
+  return { ok: true, detail: { category: p.category, enabled: true } };
+}
+
+function applyEnableDropinTool(payload: unknown): ApplyResult {
+  const p = payload as { name?: string };
+  if (!p.name) return { ok: false, detail: "name required" };
+  setDropinDisabled(p.name, false);
+  return { ok: true, detail: { name: p.name, enabled: true } };
 }
 
 async function applyInstallMcp(payload: unknown): Promise<ApplyResult> {

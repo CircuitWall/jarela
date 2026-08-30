@@ -7,6 +7,8 @@ export type ActionKind =
   | "install_mcp"
   | "toggle_mcp"
   | "update_agent_tools"
+  | "enable_tool_category"
+  | "enable_dropin_tool"
   | "update_agent"
   // Added by ADR-0010 (agent-led setup).
   | "start_oauth"

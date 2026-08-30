@@ -31,6 +31,12 @@ function validateProposalPayload(kind: string, payload: Record<string, unknown>)
       ? null
       : "update_agent_tools requires agent_id and tools[]";
   }
+  if (kind === "enable_tool_category") {
+    return hasString("category") ? null : "enable_tool_category requires category";
+  }
+  if (kind === "enable_dropin_tool") {
+    return hasString("name") ? null : "enable_dropin_tool requires name";
+  }
   if (kind === "update_agent") {
     return hasString("agent_id") ? null : "update_agent requires agent_id";
   }
@@ -95,6 +101,8 @@ export const proposeConfigChangeTool = tool(
           "install_mcp",
           "toggle_mcp",
           "update_agent_tools",
+          "enable_tool_category",
+          "enable_dropin_tool",
           "update_agent",
           "start_oauth",
           "set_provider_key",
@@ -112,6 +120,8 @@ export const proposeConfigChangeTool = tool(
           "- toggle_mcp: { name: 'github', enabled: true }\n" +
           "- update_agent_tools: { agent_id: '<this-agent>', tools: ['web_search', 'memory_*'], mode?: 'add'|'replace' } " +
           "— default mode is 'add' and merges tools into the existing allowlist; use mode='replace' only when the user explicitly asks to replace the full tool list\n" +
+          "- enable_tool_category: { category: 'Web' } — only when list_tools shows a globally disabled built-in category is required\n" +
+          "- enable_dropin_tool: { name: 'custom_tool_name' } — only when list_tools shows a globally disabled drop-in tool is required\n" +
           "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, harness_id? } " +
           "  — use instructions_append to add standing rules without overwriting existing ones; " +
           "  use instructions_edits for deterministic transforms over the current saved instruction text " +

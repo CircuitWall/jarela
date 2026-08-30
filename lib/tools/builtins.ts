@@ -46,6 +46,7 @@ import "./mcp-servers-info";
 import "./extension-surfaces";
 import "./harness-info";
 import "./async-results-tool";
+import "./tool-telemetry-issue";
 import "./browser-control";
 import "./skills";
 import "./terminal";

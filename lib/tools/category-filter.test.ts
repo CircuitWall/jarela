@@ -8,7 +8,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-filter-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { getAllTools, executeTool } = await import("./index");
+const { getAllTools, executeTool, getAllToolCatalogAsync, applyAgentPermissionsToCatalog } = await import("./index");
 const { setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
 const { registeredCategory } = await import("./registry");
 
@@ -43,6 +43,18 @@ describe("built-in tool category filter (runtime layer)", () => {
       .filter((t) => registeredCategory(t.name) === "Memory")
       .map((t) => t.name);
     expect(after).toEqual([]);
+  });
+
+  it("catalog still exposes disabled-category tools as unavailable to agents", async () => {
+    setCategoryEnabled("Memory", false);
+    const catalog = await getAllToolCatalogAsync();
+    const permissions = applyAgentPermissionsToCatalog(catalog, { tools: JSON.stringify([]) });
+    const memory = permissions.filter((tool) => tool.category === "Memory");
+
+    expect(memory.length).toBeGreaterThan(0);
+    expect(memory.every((tool) => tool.status === "disabled")).toBe(true);
+    expect(memory.every((tool) => tool.status_reason === "category_disabled")).toBe(true);
+    expect(memory.every((tool) => tool.permission === "unavailable")).toBe(true);
   });
 
   it("getAllTools leaves tools of other categories untouched when one is disabled", () => {

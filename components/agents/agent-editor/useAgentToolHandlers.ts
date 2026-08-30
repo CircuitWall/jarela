@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ToolInfo } from "@/api/types";
+import { normalizeToolCategory } from "@/lib/tools/categories";
 import { permissionKindForTool, type ToolPermissionKind } from "./permissions";
 
 export interface GroupedTools {
@@ -22,26 +23,34 @@ export function useAgentToolHandlers(
     setSelectedTools((p) => p.includes(toolName) ? p.filter((n) => n !== toolName) : [...p, toolName]);
 
   const toggleAllTools = () =>
-    setSelectedTools((p) => p.length === tools.length ? [] : tools.map((t) => t.name));
+    setSelectedTools((p) => p.length === enabledTools(tools).length ? [] : enabledTools(tools).map((t) => t.name));
 
   const toggleCategory = (category: string, enable: boolean) => {
-    const names = allCategories.find(([c]) => c === category)?.[1].map((t) => t.name) ?? [];
+    const names = allCategories.find(([c]) => c === category)?.[1].filter(isSelectableTool).map((t) => t.name) ?? [];
     applyBulkSelection(names, enable, setSelectedTools);
   };
 
   const toggleCategoryPermission = (category: string, kind: ToolPermissionKind, enable: boolean) => {
     const cat = allCategories.find(([c]) => c === category)?.[1] ?? [];
-    const names = cat.filter((t) => permissionKindForTool(t.name, category) === kind).map((t) => t.name);
+    const names = cat.filter((t) => isSelectableTool(t) && permissionKindForTool(t.name, category) === kind).map((t) => t.name);
     applyBulkSelection(names, enable, setSelectedTools);
   };
 
   const toggleGroup = (group: string, enable: boolean) => {
     const names = (groupedTools.find((g) => g.group === group)?.categories ?? [])
-      .flatMap(([, ts]) => ts.map((t) => t.name));
+      .flatMap(([, ts]) => ts.filter(isSelectableTool).map((t) => t.name));
     applyBulkSelection(names, enable, setSelectedTools);
   };
 
   return { groupedTools, toggleTool, toggleAllTools, toggleCategory, toggleCategoryPermission, toggleGroup };
+}
+
+function enabledTools(tools: readonly ToolInfo[]): ToolInfo[] {
+  return tools.filter(isSelectableTool);
+}
+
+function isSelectableTool(tool: ToolInfo): boolean {
+  return tool.status !== "disabled" && tool.status !== "unavailable";
 }
 
 function applyBulkSelection(
@@ -70,11 +79,11 @@ const PINNED_CATEGORIES = [
   "Schedule", "Atlassian", "GitHub", "Mail", "Calendar", "Tasks", "Config", "Other",
 ];
 
-function buildGroupedTools(tools: ToolInfo[]) {
+export function buildGroupedTools(tools: ToolInfo[]) {
   const byCat = new Map<string, ToolInfo[]>();
   const catGroup = new Map<string, string | null>();
   for (const t of tools) {
-    const cat = t.category ?? "Other";
+    const cat = normalizeToolCategory(t.category);
     const arr = byCat.get(cat) ?? [];
     arr.push(t);
     byCat.set(cat, arr);
