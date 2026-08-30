@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.5] - 2026-08-30
+
+### Added
+
+- **Agent workflow SOP skills are built in.** New project skills document the
+  standard workflow for tool telemetry complaints, code changes, information
+  safety, issue replies, PR intent checks, branch cleanup, and focused commit
+  amendments.
+
+### Changed
+
+- **Adaptive persona guidance is more operational.** Persona settings now emit
+  explicit behavior profiles and operating-contract instructions so configured
+  agents can shape organization and phrasing more consistently.
+- **Tool telemetry complaints are less noisy.** Automatic telemetry issue filing
+  now gates on repeated failure patterns instead of surfacing one-off failures
+  as systemic tool complaints.
+- **Shell and file tool descriptions steer agents toward efficient built-ins.**
+  The tool catalog now nudges agents to use structured file/search/edit tools
+  before shell commands, and clarifies when to choose one-shot shell execution
+  versus persistent terminal sessions.
+- **Workspace setup now points agents at repo instructions and skills.**
+  `workspace_init` discovers Copilot instruction files and repo skill files,
+  adds instruction files to required reading, and returns recommended next
+  steps that steer agents toward the right project guidance and tool workflow.
+
+### Fixed
+
+- **iCloud Calendar updates no longer fail on LAST-MODIFIED timestamps.** Event
+  updates now patch `LAST-MODIFIED` as an iCalendar DATE-TIME value instead of a
+  plain string.
+- **Automatic retry no longer repeats state-changing tool calls.** Stall and
+  hallucination recovery now skips automatic retries after write-like tools have
+  already run, avoiding duplicate external side effects such as repeated issue
+  creation.
+
 ## [1.29.4] - 2026-08-30
 
 ### Added
