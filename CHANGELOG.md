@@ -7,12 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-08-31
+
 ### Added
 
 - **Change impact audits flag likely ripple effects.** A new
   `check:impact` script compares staged changes or a git range and reports
   follow-up surfaces such as scheduler behavior, agent instructions, skills,
   persistence, API contracts, security-sensitive code, and release metadata.
+- **Agent workflows can report structured checklist progress.** A new Basic
+  `workflow_progress` tool lets agents update reusable plan/action workflows,
+  while chat tool cards can expand into live checklists with per-item status.
+- **Version adoption status appears during agent startup.** Jarela now tracks
+  first-run and post-upgrade adoption state, identifies the default agent before
+  showing adoption work, and renders a compact checklist in the existing recent
+  agents slot without moving the logo or changing the breathing headline.
+
+### Changed
+
+- **Version adoption uses a structured two-phase workflow.** Adoption now starts
+  with `Fetch changes` and `Build todo list`, automatically enters Phase 2 after
+  the todo list is built, keeps progress on the agent picker, and shows a final
+  summary with a follow-up hint when action is still needed.
 
 ## [1.29.5] - 2026-08-30
 

@@ -5,6 +5,7 @@ export const BASIC_TOOL_CATEGORIES = [
   "Shell",
   "Schedule",
   "Config",
+  "Agent",
   "Skills",
   "Web",
 ] as const;

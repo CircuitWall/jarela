@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentConfig } from "@/api/types";
-import { api } from "@/api/client";
+import type { AgentConfig, SSEEventType, VersionAdoptionAction, VersionAdoptionChecklistStatus, VersionAdoptionState } from "@/api/types";
+import { api, submitRun, subscribeRun } from "@/api/client";
 import { Logo } from "@/components/ui/Logo";
 import { VersionTag } from "@/components/ui/VersionTag";
+import { WorkflowChecklist } from "@/components/ui/WorkflowChecklist";
 
 // Hash an agent id to a deterministic gradient so the same agent always
 // renders the same color, but the colors are spread across the agent set.
@@ -20,6 +21,39 @@ function gradientFor(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
   return GRADIENTS[Math.abs(h) % GRADIENTS.length];
+}
+
+function workflowAdoptionState(result: unknown): VersionAdoptionState | null {
+  const parsed = typeof result === "string" ? safeJson(result) : result;
+  if (!parsed || typeof parsed !== "object") return null;
+  const payload = parsed as { ok?: unknown; workflow_id?: unknown; state?: unknown };
+  if (payload.ok !== true || payload.workflow_id !== "version_adoption") return null;
+  const state = payload.state;
+  if (!state || typeof state !== "object") return null;
+  const maybe = state as Partial<VersionAdoptionState>;
+  if (typeof maybe.current_version !== "string" || !Array.isArray(maybe.checklist)) return null;
+  return maybe as VersionAdoptionState;
+}
+
+function safeJson(text: string): unknown {
+  try { return JSON.parse(text) as unknown; } catch { return null; }
+}
+
+function applyWorkflowProgressPreview(state: VersionAdoptionState, args: unknown): VersionAdoptionState {
+  if (!args || typeof args !== "object") return state;
+  const input = args as { workflow_id?: unknown; phase?: unknown; item_id?: unknown; status?: unknown };
+  if (input.workflow_id !== "version_adoption") return state;
+  const phase = input.phase === "impact_radius" || input.phase === "adoption" || input.phase === "complete"
+    ? input.phase
+    : state.phase;
+  const status: VersionAdoptionChecklistStatus | null = input.status === "pending" || input.status === "checking" || input.status === "done" || input.status === "needs_attention" || input.status === "skipped"
+    ? input.status
+    : null;
+  const itemId = typeof input.item_id === "string" ? input.item_id : null;
+  const checklist = itemId && status
+    ? state.checklist.map((item) => item.id === itemId ? { ...item, status } : item)
+    : state.checklist;
+  return { ...state, phase, checklist };
 }
 
 interface Props {
@@ -57,7 +91,14 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
   type StepStatus = "pending" | "active" | "done";
   type Step = { key: string; label: string; status: StepStatus };
   const [steps, setSteps] = useState<Step[]>([]);
+  const [adoption, setAdoption] = useState<VersionAdoptionState | null>(null);
+  const [adoptionBusy, setAdoptionBusy] = useState<VersionAdoptionAction | null>(null);
+  const [adoptionLiveLabel, setAdoptionLiveLabel] = useState<string | null>(null);
+  const adoptionRef = useRef<VersionAdoptionState | null>(null);
   const prefetchStartedRef = useRef(false);
+  const adoptionRunStartedRef = useRef<string | null>(null);
+  const adoptionAbortRef = useRef<AbortController | null>(null);
+  adoptionRef.current = adoption;
 
   const defaultAgent = useMemo(
     () => agents.find((a) => a.is_default) ?? null,
@@ -85,6 +126,117 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
   const markStep = useCallback((key: string, status: StepStatus) => {
     setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, status } : s)));
   }, []);
+
+  const handlePick = useCallback((id: string) => {
+    if (pickedId) return;
+    setPickedId(id);
+    onPickAgent(id);
+  }, [onPickAgent, pickedId]);
+
+  useEffect(() => {
+    if (!agentsLoaded || !defaultAgent) return;
+    let cancelled = false;
+    void api.lifecycle.adoption.get()
+      .then((state) => {
+        if (!cancelled) setAdoption(state);
+      })
+      .catch(() => {
+        if (!cancelled) setAdoption(null);
+      });
+    return () => { cancelled = true; };
+  }, [agentsLoaded, defaultAgent]);
+
+  useEffect(() => () => {
+    adoptionAbortRef.current?.abort();
+  }, []);
+
+  const adoptionRunStatus = adoption?.status;
+  const adoptionThreadId = adoption?.adoption_thread_id;
+  const adoptionPrompt = adoption?.adoption_prompt;
+  const adoptionDefaultAgentId = adoption?.default_agent_id;
+  const adoptionCurrentVersion = adoption?.current_version;
+
+  useEffect(() => {
+    const adoptionRunSnapshot = adoptionRef.current;
+    if (!agentsLoaded || !defaultAgent || !adoptionRunSnapshot) return;
+    const canAttach = adoptionRunStatus === "running" && adoptionThreadId && adoptionPrompt;
+    if (!canAttach) return;
+    if (adoptionDefaultAgentId !== defaultAgent.id) return;
+    const key = `${adoptionCurrentVersion}:${adoptionDefaultAgentId}:${adoptionThreadId}`;
+    if (adoptionRunStartedRef.current === key) return;
+    adoptionRunStartedRef.current = key;
+    const ctrl = new AbortController();
+    adoptionAbortRef.current = ctrl;
+    let cancelled = false;
+
+    void (async () => {
+      setAdoptionBusy("start");
+      setAdoptionLiveLabel("analyzing impact radius");
+      let completedByWorkflow = false;
+      try {
+        const started = adoptionRunSnapshot;
+        if (cancelled) return;
+        setAdoption(started);
+        if (!started.adoption_thread_id || !started.adoption_prompt) {
+          setAdoptionLiveLabel(null);
+          return;
+        }
+
+        await submitRun(
+          started.adoption_thread_id,
+          started.adoption_prompt,
+          ctrl.signal,
+          { filters: { include_tools: true, include_thinking: false } },
+        );
+        for await (const raw of subscribeRun(started.adoption_thread_id, ctrl.signal, { filters: { include_tools: true, include_thinking: false } })) {
+          if (cancelled) return;
+          let event: SSEEventType;
+          try { event = JSON.parse(raw) as SSEEventType; } catch { continue; }
+          if (event.type === "status") {
+            setAdoptionLiveLabel(event.label);
+          } else if (event.type === "tool_progress") {
+            if (event.name === "workflow_progress") setAdoptionLiveLabel(event.text);
+          } else if (event.type === "tool_call") {
+            if (event.name === "workflow_progress") {
+              setAdoption((prev) => prev ? applyWorkflowProgressPreview(prev, event.arguments) : prev);
+            }
+            setAdoptionLiveLabel(event.name === "workflow_progress" ? "updating workflow" : `checking ${event.name}`);
+          } else if (event.type === "tool_result") {
+            if (event.name === "workflow_progress") {
+              const next = workflowAdoptionState(event.result);
+              if (next) {
+                completedByWorkflow = next.status === "done" || next.phase === "complete";
+                setAdoption(next);
+                setAdoptionLiveLabel(null);
+              }
+            }
+          } else if (event.type === "done") {
+            if (completedByWorkflow) {
+              if (!cancelled) setAdoptionLiveLabel(null);
+            } else {
+              const doneState = await api.lifecycle.adoption.action("mark_done");
+              if (!cancelled) {
+                setAdoption(doneState);
+                setAdoptionLiveLabel(null);
+              }
+            }
+            break;
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setAdoption((prev) => prev ? { ...prev, status: "failed", error: "Version adoption run failed." } : prev);
+          setAdoptionLiveLabel(null);
+        }
+      } finally {
+        if (!cancelled) setAdoptionBusy(null);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [adoptionRunStatus, adoptionThreadId, adoptionPrompt, adoptionDefaultAgentId, adoptionCurrentVersion, agentsLoaded, defaultAgent]);
 
   // Prefetch agent profile, config, thread, and recent messages BEFORE
   // we let the chat view take over. The user stays on the boot screen
@@ -172,10 +324,24 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
         ? activeStep?.label ?? `opening ${focusAgent?.name ?? "agent"}`
         : "pick an agent to begin";
 
-  function handlePick(id: string) {
-    if (pickedId) return;
-    setPickedId(id);
-    onPickAgent(id);
+  async function handleAdoptionAction(action: VersionAdoptionAction) {
+    if (adoptionBusy) return;
+    if ((action === "start" || action === "retry") && adoption?.status === "running" && adoption.default_agent_id) {
+      handlePick(adoption.default_agent_id);
+      return;
+    }
+    setAdoptionBusy(action);
+    try {
+      const next = await api.lifecycle.adoption.action(action);
+      setAdoption(next);
+      if ((action === "start" || action === "retry") && next.default_agent_id) {
+        adoptionRunStartedRef.current = null;
+      }
+    } catch {
+      setAdoption((prev) => prev ? { ...prev, status: "failed", error: "Could not update adoption status." } : prev);
+    } finally {
+      setAdoptionBusy(null);
+    }
   }
 
   // The agent rendered in the centered tile. During `loading` and
@@ -186,6 +352,15 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
   // fades in or out.
   const tileAgent = focusAgent ?? defaultAgent;
   const tileClickable = phase === "pick" && tileAgent !== null;
+  const showAdoption =
+    phase === "pick" &&
+    adoption !== null &&
+    adoption.default_agent_id === defaultAgent?.id &&
+    (adoption.status === "pending" || adoption.status === "running" || adoption.status === "failed" || adoption.status === "done");
+  const adoptionTitle = adoption?.is_first_adoption
+    ? `Adopting ${adoption.current_version}`
+    : `Updated to ${adoption?.current_version ?? "new version"}`;
+  const adoptionNeedsAttention = adoption?.checklist.some((item) => item.status === "needs_attention") === true;
 
   return (
     <div
@@ -301,7 +476,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
             className={[
               "absolute inset-x-0 top-0 flex flex-col items-center gap-2",
               "transition-opacity duration-300",
-              phase === "pick" && recentAgents.length > 0
+              phase === "pick" && recentAgents.length > 0 && !showAdoption
                 ? "opacity-100"
                 : "opacity-0 pointer-events-none",
             ].join(" ")}
@@ -341,6 +516,49 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
               ))}
             </div>
           </div>
+
+          {showAdoption && adoption && (
+            <WorkflowChecklist
+              eyebrow="Version check"
+              title={adoptionTitle}
+              phaseLabel={adoption.phase === "impact_radius" ? "phase 1" : adoption.phase === "adoption" ? "phase 2" : adoption.status === "failed" ? "attention" : adoption.status}
+              summary={adoptionLiveLabel ?? adoption.summary}
+              items={adoption.checklist}
+              error={adoption.error}
+            >
+                {adoption.status === "done" && (
+                  <p className="mt-2 rounded-lg border border-border/50 bg-surface px-2 py-1 text-[10px] leading-snug text-fg-muted">
+                    {adoptionNeedsAttention
+                      ? "Summary ready. Open the agent from the main tile to review pending adoption actions."
+                      : "Summary ready. No pending adoption actions were flagged."}
+                  </p>
+                )}
+                <div className="mt-2 flex gap-1.5">
+                  {adoption.status === "running" ? (
+                    <span className="flex-1 rounded-lg border border-border/60 bg-surface px-2 py-1 text-center text-[10px] font-medium text-fg-muted">
+                      Running
+                    </span>
+                  ) : adoption.status === "done" ? null : (
+                    <button
+                      type="button"
+                      onClick={() => void handleAdoptionAction(adoption.status === "failed" ? "retry" : "start")}
+                      disabled={adoptionBusy !== null}
+                      className="flex-1 rounded-lg border border-accent/40 bg-accent/15 px-2 py-1 text-[10px] font-medium text-fg hover:bg-accent/20 disabled:opacity-60"
+                    >
+                      {adoptionBusy ? "Working" : adoption.status === "failed" ? "Retry" : "Adapt"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void handleAdoptionAction("dismiss")}
+                    disabled={adoptionBusy !== null}
+                    className="rounded-lg border border-border/60 bg-surface px-2 py-1 text-[10px] text-fg-muted hover:bg-surface-3 disabled:opacity-60"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+            </WorkflowChecklist>
+          )}
 
           {phase === "pick" &&
             !defaultAgent &&

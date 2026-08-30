@@ -63,8 +63,8 @@ export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 // one header in the Agent editor; everything else is a top-level category.
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
   Memory: "Basic", Documents: "Basic", Files: "Basic", Shell: "Basic", Web: "Basic",
-  Schedule: "Basic", Config: "Basic", Skills: "Basic",
-  Images: null, Voice: null, Mail: null, Calendar: null, Agent: null, Other: null,
+  Schedule: "Basic", Config: "Basic", Agent: "Basic", Skills: "Basic",
+  Images: null, Voice: null, Mail: null, Calendar: null, Other: null,
   Atlassian: "Work", JiraAlign: "Work", GitHub: "Work", Tasks: "Work", Microsoft: "Work",
 };
 

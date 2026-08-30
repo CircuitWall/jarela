@@ -63,6 +63,8 @@ import type {
   LangChainPackageManifestInput,
   LangChainPackageManifestRecord,
   LangChainPackagePendingInstall,
+  VersionAdoptionAction,
+  VersionAdoptionState,
 } from "./types";
 import { runtimeConfig } from "./runtime-config";
 
@@ -385,6 +387,18 @@ export const api = {
       if (opts?.includeDisabled) params.set("include_disabled", "true");
       if (params.size > 0) return request<ToolInfo[]>(`/tools?${params.toString()}`);
       return cachedList(toolListCache, () => request<ToolInfo[]>("/tools"), setToolListCache, opts?.force === true);
+    },
+  },
+
+  lifecycle: {
+    adoption: {
+      get: () => request<VersionAdoptionState>("/lifecycle/adoption", { cache: "no-store" }),
+      action: (action: VersionAdoptionAction) =>
+        request<VersionAdoptionState>("/lifecycle/adoption", {
+          method: "POST",
+          body: JSON.stringify({ action }),
+          cache: "no-store",
+        }),
     },
   },
 

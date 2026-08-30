@@ -170,4 +170,42 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByText("Claude: resumed with answers")).toBeTruthy();
     expect(screen.getByText("Which migration strategy should I use?")).toBeTruthy();
   });
+
+  it("renders workflow_progress as an expandable checklist", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "w1",
+        phase: "call",
+        name: "workflow_progress",
+        payload: { workflow_id: "version_adoption", phase: "impact_radius" },
+      },
+      {
+        id: "w1",
+        phase: "result",
+        name: "workflow_progress",
+        payload: {
+          ok: true,
+          workflow_id: "version_adoption",
+          state: {
+            phase: "impact_radius",
+            summary: "Fetching changes",
+            checklist: [
+              { id: "fetch-changes", label: "Fetch changes", status: "done" },
+              { id: "build-todo-list", label: "Build todo list", status: "checking" },
+            ],
+          },
+        },
+      },
+    ];
+
+    render(<ToolList events={events} />);
+    fireEvent.click(screen.getByText("workflow_progress"));
+
+    expect(screen.getByText("workflow")).toBeTruthy();
+    expect(screen.getAllByText("Fetching changes").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Fetch changes").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Build todo list").length).toBeGreaterThan(0);
+    expect(screen.getByLabelText("done")).toBeTruthy();
+    expect(screen.getByLabelText("checking")).toBeTruthy();
+  });
 });
