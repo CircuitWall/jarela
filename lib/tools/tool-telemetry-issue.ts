@@ -20,11 +20,16 @@ const AUTO_NAMESPACE = "tool-telemetry-issues";
 const AUTO_STATE_KEY = "auto-file";
 const AUTO_FINGERPRINT_SCOPE = "tool-telemetry-issues";
 const AUTO_FINGERPRINT_KEY = "last-filed";
+const AUTO_THRESHOLD_SCOPE = "internal-metric-thresholds";
+const TOOL_FAILURE_TOTAL_METRIC = "tool_failure_patterns_total";
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_MIN_FAILURE_COUNT = 2;
+const DEFAULT_AUTO_FAILURE_THRESHOLD = 500;
 
 interface TelemetryIssueInput {
   tool_names?: string[];
   min_calls?: number;
+  min_failure_count?: number;
   max_tools?: number;
   include_successful?: boolean;
   title?: string;
@@ -41,6 +46,7 @@ interface TelemetryToolRow {
 export function buildToolTelemetryComplaintIssue(input: TelemetryIssueInput = {}) {
   const requestedNames = normalizeNames(input.tool_names ?? []);
   const minCalls = Math.max(0, Math.floor(input.min_calls ?? 1));
+  const minFailureCount = Math.max(1, Math.floor(input.min_failure_count ?? DEFAULT_MIN_FAILURE_COUNT));
   const maxTools = Math.min(50, Math.max(1, Math.floor(input.max_tools ?? 10)));
   const statsMap = getToolStatsMap(requestedNames.length > 0 ? requestedNames : undefined);
   const failureSamples = listToolFailureSamples();
@@ -62,12 +68,12 @@ export function buildToolTelemetryComplaintIssue(input: TelemetryIssueInput = {}
       failures: failuresByTool.get(name) ?? [],
     }))
     .filter((row) => row.stats.call_count >= minCalls || row.failures.length > 0)
-    .filter((row) => input.include_successful === true || row.stats.error_count > 0 || row.stats.score < 0.85 || row.failures.length > 0)
+    .filter((row) => failureCount(row) >= minFailureCount)
     .sort(compareTelemetryRows)
     .slice(0, maxTools);
 
   const title = input.title?.trim() || defaultIssueTitle(rows);
-  const body = truncateBody(renderIssueBody(rows, { requestedNames, minCalls, includeSuccessful: input.include_successful === true }));
+  const body = truncateBody(renderIssueBody(rows, { requestedNames, minCalls, minFailureCount, includeSuccessful: input.include_successful === true }));
   const tools = rows.map((row) => row.name);
   return { title, body, tools, tool_count: rows.length, fingerprint: fingerprintIssue(title, body, tools) };
 }
@@ -137,6 +143,7 @@ export const reportToolTelemetryIssueTool = tool(
     schema: z.object({
       tool_names: z.array(z.string()).optional().describe("Optional tool names to report. Omit to include the worst tools by telemetry."),
       min_calls: z.number().int().min(0).max(1000).optional().describe("Minimum call count for tools without failure samples. Default 1."),
+      min_failure_count: z.number().int().min(1).max(100_000).optional().describe("Minimum recorded failure-pattern count required before a tool is included. Default 2."),
       max_tools: z.number().int().min(1).max(50).optional().describe("Maximum tools to include. Default 10."),
       include_successful: z.boolean().optional().describe("Include healthy/successful tools too. Default false."),
       title: z.string().min(1).max(120).optional().describe("Optional issue title override."),
@@ -151,18 +158,39 @@ export interface AutoToolTelemetryIssueResult {
   reason?: string;
   issue?: ReturnType<typeof buildToolTelemetryComplaintIssue>;
   github?: Awaited<ReturnType<typeof createToolTelemetryGitHubIssue>>;
+  metric?: InternalMetricThreshold;
 }
 
-export async function maybeAutoFileToolTelemetryIssue(nowDate = new Date()): Promise<AutoToolTelemetryIssueResult> {
+export interface InternalMetricThreshold {
+  metric: string;
+  value: number;
+  threshold: number;
+  bucket: number;
+  previous_bucket: number;
+}
+
+export async function maybeAutoFileToolTelemetryIssue(
+  nowDate = new Date(),
+  opts: { failureThreshold?: number; minFailureCount?: number } = {},
+): Promise<AutoToolTelemetryIssueResult> {
   if (!isCategoryEnabled("Config")) return { skipped: true, reason: "tool_category_disabled" };
   if (!githubTokenConfigured()) return { skipped: true, reason: "github_token_missing" };
   if (!autoTelemetryDue(nowDate)) return { skipped: true, reason: "not_due" };
 
-  const issue = buildToolTelemetryComplaintIssue({ max_tools: 20 });
+  const metric = currentToolFailureMetric(opts.failureThreshold ?? DEFAULT_AUTO_FAILURE_THRESHOLD);
+
+  if (metric.bucket < 1) return { skipped: true, reason: "threshold_not_met", metric };
+  if (metric.previous_bucket >= metric.bucket) return { skipped: true, reason: "threshold_already_reported", metric };
+
+  const issue = buildToolTelemetryComplaintIssue({
+    max_tools: 20,
+    min_failure_count: opts.minFailureCount ?? DEFAULT_MIN_FAILURE_COUNT,
+    title: `Tool telemetry complaint: ${metric.metric} crossed ${metric.bucket * metric.threshold}`,
+  });
   writeAutoTelemetryState({ last_checked_at: nowDate.toISOString(), next_run_at: new Date(nowDate.getTime() + AUTO_INTERVAL_MS).toISOString() });
-  if (issue.tool_count === 0) return { skipped: true, reason: "no_matching_telemetry", issue };
+  if (issue.tool_count === 0) return { skipped: true, reason: "no_matching_telemetry", issue, metric };
   if (getFingerprint(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY) === issue.fingerprint) {
-    return { skipped: true, reason: "already_filed", issue };
+    return { skipped: true, reason: "already_filed", issue, metric };
   }
 
   const github = await createToolTelemetryGitHubIssue({
@@ -170,8 +198,25 @@ export async function maybeAutoFileToolTelemetryIssue(nowDate = new Date()): Pro
     body: issue.body,
     labels: ["bug", "telemetry"],
   });
-  if (github.ok) recordSeen(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY, issue.fingerprint);
-  return { skipped: !github.ok, reason: github.ok ? undefined : "github_create_failed", issue, github };
+  if (github.ok) {
+    recordSeen(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY, issue.fingerprint);
+    recordSeen(AUTO_THRESHOLD_SCOPE, metric.metric, String(metric.bucket));
+  }
+  return { skipped: !github.ok, reason: github.ok ? undefined : "github_create_failed", issue, github, metric };
+}
+
+export function currentToolFailureMetric(threshold = DEFAULT_AUTO_FAILURE_THRESHOLD): InternalMetricThreshold {
+  const normalizedThreshold = Math.max(1, Math.floor(threshold));
+  const value = totalFailurePatternCount(listToolFailureSamples());
+  const bucket = Math.floor(value / normalizedThreshold);
+  const previous = Number.parseInt(getFingerprint(AUTO_THRESHOLD_SCOPE, TOOL_FAILURE_TOTAL_METRIC) ?? "0", 10);
+  return {
+    metric: TOOL_FAILURE_TOTAL_METRIC,
+    value,
+    threshold: normalizedThreshold,
+    bucket,
+    previous_bucket: Number.isFinite(previous) ? previous : 0,
+  };
 }
 
 function autoTelemetryDue(nowDate: Date): boolean {
@@ -209,6 +254,14 @@ function compareTelemetryRows(a: TelemetryToolRow, b: TelemetryToolRow): number 
   return a.name.localeCompare(b.name);
 }
 
+function failureCount(row: TelemetryToolRow): number {
+  return row.failures.reduce((sum, failure) => sum + failure.count, 0);
+}
+
+function totalFailurePatternCount(samples: readonly ToolFailureSampleRow[]): number {
+  return samples.reduce((sum, sample) => sum + sample.count, 0);
+}
+
 function telemetrySeverity(row: TelemetryToolRow): number {
   const calls = Math.max(1, row.stats.call_count);
   const errorRate = row.stats.error_count / calls;
@@ -223,7 +276,7 @@ function defaultIssueTitle(rows: readonly TelemetryToolRow[]): string {
 
 function renderIssueBody(
   rows: readonly TelemetryToolRow[],
-  opts: { requestedNames: readonly string[]; minCalls: number; includeSuccessful: boolean },
+  opts: { requestedNames: readonly string[]; minCalls: number; minFailureCount: number; includeSuccessful: boolean },
 ): string {
   const lines = [
     "## Summary",
@@ -234,6 +287,7 @@ function renderIssueBody(
     "",
     `- requested tools: ${opts.requestedNames.length > 0 ? opts.requestedNames.join(", ") : "worst tools by telemetry"}`,
     `- min_calls: ${opts.minCalls}`,
+    `- min_failure_count: ${opts.minFailureCount}`,
     `- include_successful: ${opts.includeSuccessful}`,
     "",
     "## Affected tools",
@@ -241,7 +295,7 @@ function renderIssueBody(
   ];
 
   if (rows.length === 0) {
-    lines.push("No matching tool failures or low-score telemetry were found.");
+    lines.push("No tools met the recorded failure-pattern sample threshold.");
     return lines.join("\n");
   }
 
@@ -253,6 +307,7 @@ function renderIssueBody(
     lines.push(`- usefulness rate: ${formatPercent(row.stats.usefulness_rate)}`);
     lines.push(`- score: ${formatPercent(row.stats.score)}`);
     lines.push(`- errors: ${row.stats.error_count}`);
+    lines.push(`- recorded failure-pattern count: ${failureCount(row)}`);
     lines.push(`- last called: ${row.stats.last_called_at ?? "never"}`);
     if (row.failures.length > 0) {
       lines.push("", "Failure scenarios:");

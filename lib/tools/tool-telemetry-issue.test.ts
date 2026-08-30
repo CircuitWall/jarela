@@ -35,6 +35,10 @@ describe("report_tool_telemetry_issue", () => {
       { id: "a", phase: "result", name: fileTool, payload: { error: "ENOENT missing secret-path.txt" } },
       { id: "b", phase: "call", name: webTool, payload: { query: "rate limit" } },
       { id: "b", phase: "result", name: webTool, payload: { error: "429 rate limited" } },
+      { id: "c", phase: "call", name: fileTool, payload: { path: "secret-path-2.txt", token: "hidden-again" } },
+      { id: "c", phase: "result", name: fileTool, payload: { error: "ENOENT missing secret-path-2.txt" } },
+      { id: "d", phase: "call", name: webTool, payload: { query: "rate limit again" } },
+      { id: "d", phase: "result", name: webTool, payload: { error: "429 rate limited again" } },
     ], "");
 
     const issue = buildToolTelemetryComplaintIssue({ tool_names: [fileTool, webTool] });
@@ -47,6 +51,30 @@ describe("report_tool_telemetry_issue", () => {
     expect(issue.body).toContain("Failure scenarios");
     expect(issue.body).toContain("rate_limited");
     expect(issue.body).not.toContain("hidden");
+  });
+
+  it("excludes tools without enough recorded failure-pattern samples", async () => {
+    const suffix = `${Date.now()}_threshold`;
+    const oneFailureTool = `one_failure_${suffix}`;
+    const twoFailureTool = `two_failures_${suffix}`;
+
+    recordToolUsage([
+      { id: "one", phase: "call", name: oneFailureTool, payload: { q: "x" } },
+      { id: "one", phase: "result", name: oneFailureTool, payload: { error: "validation failed" } },
+      { id: "two-a", phase: "call", name: twoFailureTool, payload: { q: "x" } },
+      { id: "two-a", phase: "result", name: twoFailureTool, payload: { error: "validation failed" } },
+      { id: "two-b", phase: "call", name: twoFailureTool, payload: { q: "y" } },
+      { id: "two-b", phase: "result", name: twoFailureTool, payload: { error: "validation failed again" } },
+    ], "");
+
+    const issue = buildToolTelemetryComplaintIssue({
+      tool_names: [oneFailureTool, twoFailureTool],
+      min_failure_count: 2,
+    });
+
+    expect(issue.tools).toEqual([twoFailureTool]);
+    expect(issue.body).toContain(`### ${twoFailureTool}`);
+    expect(issue.body).not.toContain(`### ${oneFailureTool}`);
   });
 
   it("drafts by default instead of creating a GitHub issue", async () => {
@@ -75,15 +103,28 @@ describe("report_tool_telemetry_issue", () => {
     recordToolUsage([
       { id: "auto", phase: "call", name: toolName, payload: { query: "boom" } },
       { id: "auto", phase: "result", name: toolName, payload: { error: "timeout while running" } },
+      { id: "auto-2", phase: "call", name: toolName, payload: { query: "boom again" } },
+      { id: "auto-2", phase: "result", name: toolName, payload: { error: "timeout while running again" } },
     ], "");
 
-    const first = await maybeAutoFileToolTelemetryIssue(new Date("2026-08-30T00:00:00.000Z"));
-    const second = await maybeAutoFileToolTelemetryIssue(new Date("2026-09-01T00:00:00.000Z"));
+    const first = await maybeAutoFileToolTelemetryIssue(new Date("2026-08-30T00:00:00.000Z"), { failureThreshold: 2, minFailureCount: 2 });
+    const second = await maybeAutoFileToolTelemetryIssue(new Date("2026-09-01T00:00:00.000Z"), { failureThreshold: 2, minFailureCount: 2 });
 
     expect(first.skipped).toBe(false);
     expect(first.github).toMatchObject({ ok: true, number: 123 });
-    expect(second).toMatchObject({ skipped: true, reason: "already_filed" });
+    expect(first.metric?.metric).toBe("tool_failure_patterns_total");
+    expect(second).toMatchObject({ skipped: true, reason: "threshold_already_reported" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(getFingerprint("tool-telemetry-issues", "last-filed")).toBe(first.issue?.fingerprint);
+  });
+
+  it("skips automatic filing until the internal metric threshold is crossed", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-01T00:00:00.000Z"), { failureThreshold: 100_000 });
+
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("threshold_not_met");
+    expect(result.metric?.metric).toBe("tool_failure_patterns_total");
   });
 });
