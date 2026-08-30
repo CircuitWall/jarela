@@ -434,6 +434,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
       />
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
+          <WorkflowProgressDetails group={group} />
           {hasVisibleArgs(group.args) ? (
             <DetailSection label="arguments" value={group.args} />
           ) : hasArgs ? (
@@ -458,6 +459,97 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
         </div>
       )}
     </div>
+  );
+}
+
+function WorkflowProgressDetails({ group }: { group: ToolCallGroup }) {
+  if (group.name !== "workflow_progress") return null;
+  const workflow = workflowProgressFrom(group.result) ?? workflowProgressPreviewFrom(group.args);
+  if (!workflow) return null;
+  return (
+    <div className="rounded border border-border/40 bg-surface/60 px-2 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] uppercase tracking-wide text-fg-faint">workflow</span>
+        <span className="text-[10px] uppercase tracking-wide text-fg-faint">{workflow.phase ?? workflow.workflow_id}</span>
+      </div>
+      {workflow.summary && (
+        <p className="mt-1 text-[11px] leading-snug text-fg-muted">{workflow.summary}</p>
+      )}
+      <div className="mt-1.5 flex flex-col gap-1">
+        {workflow.items.map((item) => (
+          <div key={item.id} className="flex items-center justify-between gap-2 rounded border border-border/30 bg-surface-2/40 px-1.5 py-1">
+            <span className="min-w-0 truncate text-[11px] text-fg-muted" title={item.label}>{item.label}</span>
+            <WorkflowItemStatusBadge status={item.status} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface WorkflowProgressView {
+  workflow_id: string;
+  phase: string | null;
+  summary: string | null;
+  items: Array<{ id: string; label: string; status: string }>;
+}
+
+function workflowProgressFrom(payload: unknown): WorkflowProgressView | null {
+  const obj = coerceObject(unwrapLangChainSerializable(payload));
+  if (!obj || typeof obj.workflow_id !== "string") return null;
+  const state = coerceObject(obj.state);
+  if (!state || !Array.isArray(state.checklist)) return null;
+  return {
+    workflow_id: String(obj.workflow_id),
+    phase: typeof state.phase === "string" ? state.phase : null,
+    summary: typeof state.summary === "string" ? state.summary : null,
+    items: state.checklist.flatMap((raw) => {
+      const item = coerceObject(raw);
+      if (!item || typeof item.id !== "string" || typeof item.label !== "string") return [];
+      return [{ id: item.id, label: item.label, status: typeof item.status === "string" ? item.status : "pending" }];
+    }),
+  };
+}
+
+function workflowProgressPreviewFrom(payload: unknown): WorkflowProgressView | null {
+  const obj = coerceObject(unwrapLangChainSerializable(payload));
+  if (!obj || typeof obj.workflow_id !== "string") return null;
+  const itemId = typeof obj.item_id === "string" ? obj.item_id : null;
+  const status = typeof obj.status === "string" ? obj.status : "checking";
+  return {
+    workflow_id: String(obj.workflow_id),
+    phase: typeof obj.phase === "string" ? obj.phase : null,
+    summary: typeof obj.detail === "string" ? obj.detail : null,
+    items: itemId ? [{ id: itemId, label: itemId.replace(/-/g, " "), status }] : [],
+  };
+}
+
+function WorkflowItemStatusBadge({ status }: { status: string }) {
+  if (status === "done") {
+    return (
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" aria-label="done">
+        <Check size={10} strokeWidth={3} />
+      </span>
+    );
+  }
+  if (status === "checking") {
+    return (
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-sky-500/40 bg-sky-500/10" aria-label="checking">
+        <span className="h-1.5 w-1.5 rounded-full bg-sky-500/80 animate-pulse" aria-hidden />
+      </span>
+    );
+  }
+  if (status === "needs_attention") {
+    return (
+      <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400" aria-label="needs attention">
+        <X size={10} strokeWidth={3} />
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border/60 bg-surface text-fg-faint" aria-label={status === "skipped" ? "skipped" : "pending"}>
+      <span className="h-1.5 w-1.5 rounded-sm border border-current" aria-hidden />
+    </span>
   );
 }
 

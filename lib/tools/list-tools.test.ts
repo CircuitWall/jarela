@@ -108,7 +108,9 @@ describe("list_tools", () => {
       "read_skill",
       "list_tools",
       "local_exec",
+      "workflow_progress",
     ]));
+    expect(getToolCategory("workflow_progress")).toBe("Agent");
   });
 
   it("filters by capability", async () => {

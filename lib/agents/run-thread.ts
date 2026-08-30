@@ -54,6 +54,7 @@ const SELF_CONFIG_TOOLS = [
   "list_skills",
   "read_skill",
   "write_skill",
+  "workflow_progress",
   "set_env_var",
   "restart_server",
 ] as const;

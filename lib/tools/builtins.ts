@@ -23,6 +23,7 @@ import "./watcher";
 import "./propose";
 import "./agent-instruction";
 import "./integrations";
+import "./workflow-progress";
 // Default LangChain packages (Atlassian, GitHub, Jira Align) ship with
 // Jarela but are runtime-toggleable: see ./default-packages.ts.
 import { registerDefaultPackages } from "./default-packages";

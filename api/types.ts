@@ -153,6 +153,39 @@ export interface ThreadSummary {
   message_count: number;
 }
 
+export type VersionAdoptionStatus = "idle" | "pending" | "running" | "done" | "failed" | "dismissed" | "blocked_no_default_agent";
+export type VersionAdoptionPhase = "impact_radius" | "adoption" | "complete" | null;
+export type VersionAdoptionChecklistStatus = "pending" | "checking" | "done" | "needs_attention" | "skipped";
+export type VersionAdoptionAction = "start" | "mark_done" | "dismiss" | "retry";
+
+export interface VersionAdoptionChecklistItem {
+  id: string;
+  label: string;
+  status: VersionAdoptionChecklistStatus;
+  reason: string;
+  affected_files: string[];
+  action?: "read_skill" | "review_permissions" | "review_schedule" | "review_watcher" | "read_instructions" | "review_tools" | "review_api" | "review_persistence" | "review_release";
+}
+
+export interface VersionAdoptionState {
+  current_version: string;
+  previous_version: string | null;
+  is_first_adoption: boolean;
+  status: VersionAdoptionStatus;
+  phase: VersionAdoptionPhase;
+  default_agent_id: string | null;
+  default_agent_name: string | null;
+  adoption_thread_id: string | null;
+  adoption_prompt: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  dismissed_at: string | null;
+  summary: string;
+  checklist: VersionAdoptionChecklistItem[];
+  stale_prompt_risks: string[];
+  error: string | null;
+}
+
 export interface PersistedToolEvent {
   id: string;
   phase: "call" | "result";
