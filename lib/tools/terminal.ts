@@ -65,7 +65,7 @@ export const terminalOpenTool = tool(
   },
   {
     name: "terminal_open",
-    description: "Open a persistent shell session. Returns a session_id to use with terminal_exec / terminal_send. Omit session_id to get a fresh one. Sessions persist across agent turns.",
+    description: "Open a persistent shell session for interactive programs, watchers, REPLs, or multi-step command sequences that need shared cwd/env/state. Returns a session_id to use with terminal_exec / terminal_send. Omit session_id to get a fresh one. Sessions persist across agent turns; close them with terminal_close when finished.",
     schema: z.object({
       session_id: z.string().optional().describe("Reuse an existing session, or omit to create a new one"),
       shell: z.string().optional().describe("Shell executable (default: $SHELL on Unix, powershell.exe on Windows)"),
@@ -118,7 +118,7 @@ export const terminalExecTool = withStreamDefault(tool(
   {
     name: "terminal_exec",
     description:
-      "Run a command in a persistent shell session. State (cwd, env exports, shell variables) persists between calls. Omit session_id to use the implicit per-thread session.",
+      "Run a command in a persistent shell session. Use for interactive/stateful workflows where cwd, env exports, shell variables, server/watch state, or prior commands must persist between calls. Prefer local_exec for independent one-shot commands, and prefer file_* tools for file discovery, reads, and edits. Omit session_id to use the implicit per-thread session.",
     schema: z.object({
       command: z.string().describe("Shell command to run"),
       session_id: z.string().optional().describe("Session from terminal_open, or omit for the implicit per-thread session"),
@@ -176,7 +176,7 @@ export const terminalReadTool = tool(
   },
   {
     name: "terminal_read",
-    description: "Read buffered stdout from a terminal session without sending a command. Useful to check what a background process has printed.",
+    description: "Read buffered stdout from a terminal session without sending a command. Use this to inspect output from a persistent background process instead of rerunning the command.",
     schema: z.object({
       session_id: z.string().optional().describe("Session id (default: implicit per-thread session)"),
       clear: z.boolean().optional().describe("Clear the buffer after reading (default false)"),

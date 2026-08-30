@@ -213,7 +213,7 @@ export const fileGlobTool = tool(
   {
     name: "file_glob",
     description:
-      "Find files by glob pattern under a directory. Supports *, **, ?, and {a,b} alternation. Skips node_modules/.git/dist/build/.next/coverage/etc by default. Returns POSIX-relative paths from the search root.",
+      "Find files by glob pattern under a directory. Prefer this over shelling out to rg --files/find/Get-ChildItem for file discovery. Supports *, **, ?, and {a,b} alternation. Skips node_modules/.git/dist/build/.next/coverage/etc by default. Returns POSIX-relative paths from the search root.",
     schema: globSchema,
   },
 );
@@ -379,7 +379,7 @@ export const fileGrepTool = tool(
   {
     name: "file_grep",
     description:
-      "Search file contents under a directory by regex (or literal substring with literal=true). Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
+      "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/shell_exec grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
     schema: grepSchema,
   },
 );
@@ -471,7 +471,7 @@ export const fileMultiEditTool = tool(
   {
     name: "file_multi_edit",
     description:
-      "Apply multiple anchored str_replace edits to one file atomically. Each edit's old_string must match EXACTLY ONCE in the (partially-edited) buffer at the time it's applied. All-or-nothing: if any edit fails, the file is not modified and per-edit status is returned. Prefer this over multiple file_edit round-trips when refactoring within a single file.",
+      "Apply multiple anchored str_replace edits to one file atomically. Each edit's old_string must match EXACTLY ONCE in the (partially-edited) buffer at the time it's applied. All-or-nothing: if any edit fails, the file is not modified and per-edit status is returned. Prefer this over multiple file_edit round-trips or shell rewrites when refactoring within a single file.",
     schema: multiEditSchema,
   },
 );
