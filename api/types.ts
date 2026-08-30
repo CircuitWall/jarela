@@ -476,6 +476,14 @@ export interface ToolInfo {
   category?: string;
   /** Safety class: read-only inspection, content mutation, or external/workflow execution. */
   capability?: "read" | "write" | "execute";
+  /** Global availability before per-agent permissions are applied. */
+  status?: "enabled" | "disabled" | "unavailable";
+  /** Machine-readable reason for the global status. */
+  status_reason?: string;
+  /** Whether the current agent may execute this tool. */
+  permission?: "enabled" | "disabled" | "unavailable";
+  /** Machine-readable reason for the per-agent permission state. */
+  permission_reason?: string;
   /**
    * Optional parent group rendered above the category in the Agent editor.
    * Currently used to collapse vendor-native categories (Atlassian, GitHub)
@@ -994,6 +1002,8 @@ export interface PendingAction {
     | "install_mcp"
     | "toggle_mcp"
     | "update_agent_tools"
+    | "enable_tool_category"
+    | "enable_dropin_tool"
     | "update_agent"
     | "start_oauth"
     | "set_provider_key"

@@ -13,6 +13,14 @@ export interface ToolPolicy {
 export interface AgentRunConfig {
   system_prompt: string;
   allowed_tools: string[];   // empty = all tools
+  tool_permission_map?: Array<{
+    name: string;
+    category: string;
+    capability: string;
+    source: string;
+    permission: "enabled" | "disabled" | "unavailable";
+    permission_reason?: string | null;
+  }>;
   model_config_name: string | null;
   route_decision?: RouteDecisionMetadata | null;
   /** Budget-derived output token ceiling for this turn. Applied as `max_tokens`

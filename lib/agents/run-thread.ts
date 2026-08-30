@@ -34,6 +34,12 @@ import {
   type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
 import { parseBridgePrompt } from "@/lib/bridges/message-role";
+import {
+  allowedToolNamesFromPermissionMap,
+  applyAgentPermissionsToCatalog,
+  getAllToolCatalogAsync,
+  getDefaultAgentToolNames,
+} from "@/lib/tools";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
@@ -65,8 +71,8 @@ const SUBJECT_STOP_WORDS = new Set([
   "and", "or", "but", "if", "then", "than", "so", "have", "has", "had", "can", "will",
 ]);
 
-function withSelfConfigTools(tools: string[]): string[] {
-  return Array.from(new Set([...tools, ...SELF_CONFIG_TOOLS]));
+function withDefaultTools(tools: string[], defaults: readonly string[]): string[] {
+  return Array.from(new Set([...tools, ...defaults, ...SELF_CONFIG_TOOLS]));
 }
 
 function normalizeInboundForSubjectDetection(raw: string): string {
@@ -351,7 +357,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (!agentCfg) {
     throw new RunThreadError(404, `Agent "${thread.agent_id}" not found`, "agent_not_found");
   }
-  const allowedTools = withSelfConfigTools(getAgentTools(agentCfg));
+  const toolPermissionMap = applyAgentPermissionsToCatalog(await getAllToolCatalogAsync(), agentCfg);
+  const allowedTools = withDefaultTools(allowedToolNamesFromPermissionMap(toolPermissionMap), []);
 
   if (!req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)) {
     await maybeAutoCompactOversizedThread(agentCfg.id, req.thread_id, thread.message_count);
@@ -585,6 +592,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     sourceManifest,
     deliveryChannel: req.delivery_channel ?? null,
     allowedTools,
+    toolPermissionMap,
   });
 
   const delegationDepth = req._delegation_depth ?? 0;
@@ -595,6 +603,14 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     agent_run_config: {
       system_prompt: systemPrompt,
       allowed_tools: allowedTools,
+      tool_permission_map: toolPermissionMap.map((entry) => ({
+        name: entry.name,
+        category: entry.category,
+        capability: entry.capability,
+        source: entry.source,
+        permission: entry.permission ?? "disabled",
+        permission_reason: entry.permission_reason ?? null,
+      })),
       model_config_name: modelConfigName,
       route_decision: routeDecision,
       output_reserve_tokens: historyWindow.budget.outputReserveTokens,
@@ -1399,7 +1415,7 @@ function lookupAllowedToolsForThread(thread_id: string): string[] {
   const thread = getThread(thread_id);
   if (!thread) return [];
   const agentCfg = getAgentConfig(thread.agent_id);
-  return withSelfConfigTools(getAgentTools(agentCfg));
+  return withDefaultTools(getAgentTools(agentCfg), getDefaultAgentToolNames());
 }
 
 export function looksLikeStall(text: string): boolean {

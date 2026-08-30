@@ -21,7 +21,7 @@ const { subscribe } = await import("@/lib/notifications/bus");
 // the callsites stay terse.
 function parse(s: unknown) { return JSON.parse(String(s)) as Record<string, unknown>; }
 
-type Kind = "install_mcp" | "toggle_mcp" | "update_agent_tools" | "update_agent" | "start_oauth" | "set_provider_key" | "enable_integration" | "upsert_harness";
+type Kind = "install_mcp" | "toggle_mcp" | "update_agent_tools" | "enable_tool_category" | "enable_dropin_tool" | "update_agent" | "start_oauth" | "set_provider_key" | "enable_integration" | "upsert_harness";
 
 // Capture the notification bus for the duration of each test so we can
 // assert the propose tool publishes the user-visible toast as a side effect.
@@ -117,6 +117,8 @@ describe("propose_config_change", () => {
       { kind: "install_mcp", payload: { name: "custom", transport: "stdio", spec: { command: "x" } } },
       { kind: "toggle_mcp", payload: { name: "github", enabled: true } },
       { kind: "update_agent_tools", payload: { agent_id: "agent-2", tools: ["web_search"] } },
+      { kind: "enable_tool_category", payload: { category: "Web" } },
+      { kind: "enable_dropin_tool", payload: { name: "custom_tool" } },
       { kind: "start_oauth", payload: { integration_id: "gmail" } },
       { kind: "enable_integration", payload: { id: "gmail" } },
       { kind: "set_provider_key", payload: { name: "anthropic-default", provider: "anthropic", model_id: "claude-opus-4-7" } },

@@ -31,18 +31,19 @@
 
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { wrapWithWallclock } from "./wallclock";
+import { isBasicToolCategory } from "./categories";
 
 export type ToolCategory =
   | "Memory" | "Documents" | "Files" | "Shell" | "Web" | "Images" | "Voice"
   | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar"
-  | "Tasks" | "Microsoft" | "Config" | "Agent" | "Skills" | "MCP";
+  | "Tasks" | "Microsoft" | "Config" | "Agent" | "Skills" | "MCP" | "Other";
 
 // Safety class. Orthogonal to ToolCategory. See ADR-0038 for definitions
 // and tie-breakers (network reads vs writes, drafts, etc.).
 export type Capability = "read" | "write" | "execute";
 
 // Optional parent grouping for the Agent editor sidebar.
-export type ToolGroup = "Work" | null;
+export type ToolGroup = "Basic" | "Work" | null;
 
 // Runtime tuple of every built-in category (i.e. every `ToolCategory`
 // except `"MCP"`). This is the single source of truth for anything that
@@ -61,8 +62,9 @@ export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 // Category → group mapping. "Work" collapses corporate-auth tools under
 // one header in the Agent editor; everything else is a top-level category.
 const CATEGORY_GROUPS: Record<Exclude<ToolCategory, "MCP">, ToolGroup> = {
-  Memory: null, Documents: null, Files: null, Shell: null, Web: null, Images: null, Voice: null,
-  Schedule: null, Config: null, Mail: null, Calendar: null, Agent: null, Skills: null,
+  Memory: "Basic", Documents: "Basic", Files: "Basic", Shell: "Basic", Web: "Basic",
+  Schedule: "Basic", Config: "Basic", Skills: "Basic",
+  Images: null, Voice: null, Mail: null, Calendar: null, Agent: null, Other: null,
   Atlassian: "Work", JiraAlign: "Work", GitHub: "Work", Tasks: "Work", Microsoft: "Work",
 };
 
@@ -148,6 +150,7 @@ export function registeredGroup(name: string): ToolGroup | undefined {
  * ("Work") without being registered as built-ins.
  */
 export function groupForCategory(cat: string): ToolGroup {
+  if (isBasicToolCategory(cat)) return "Basic";
   if (cat === "MCP") return null;
   if (cat in CATEGORY_GROUPS) return CATEGORY_GROUPS[cat as Exclude<ToolCategory, "MCP">];
   return null;

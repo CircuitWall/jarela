@@ -35,6 +35,11 @@ function approvalToastTarget(action: PendingAction): { href: string; hrefLabel: 
       const id = str("agent_id");
       return id ? { href: `?tab=agents&item=${encodeURIComponent(id)}`, hrefLabel: "Open agent →", title: "Agent updated" } : null;
     }
+    case "enable_tool_category":
+    case "enable_dropin_tool": {
+      const name = str("category") ?? str("name");
+      return name ? { href: `?tab=tools&item=${encodeURIComponent(name)}`, hrefLabel: "Open Tools →", title: "Tool permission enabled" } : null;
+    }
     case "upsert_harness": {
       // Prefer the harness id from the apply result (creates assign a fresh
       // custom:<uuid>); fall back to the payload id for edits.

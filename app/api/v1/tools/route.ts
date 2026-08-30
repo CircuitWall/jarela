@@ -8,7 +8,7 @@
  */
 
 import { NextResponse } from "next/server";
-import { getAllToolsAsync, getToolCategory, getToolCapability, getToolGroup, getToolSource, getToolCredentialsRequired } from "@/lib/tools";
+import { getAllToolCatalogAsync } from "@/lib/tools";
 import { cachedJson } from "@/lib/api/responses";
 import { defaultToolStats, getToolStatsMap, listToolFailureSamples } from "@/lib/stores/tool-stats";
 
@@ -18,6 +18,8 @@ interface ToolEnvelope {
   source: string;
   category: string;
   capability: string;
+  status: string;
+  status_reason: string | null;
   group: string | null;
   credentials_required: string[];
   stats: ReturnType<typeof defaultToolStats>;
@@ -30,7 +32,9 @@ export async function GET(req: Request) {
     // Use the async path so MCP-provided tools show up in the agent config UI.
     // Source ("builtin" | "external" | "mcp") is derived inside lib/tools so
     // callers can't conflate external tools with MCP tools.
-    const all = await getAllToolsAsync();
+    const includeDisabled = new URL(req.url).searchParams.get("include_disabled") === "true";
+    const catalog = await getAllToolCatalogAsync();
+    const all = includeDisabled ? catalog : catalog.filter((tool) => tool.status === "enabled");
     const stats = getToolStatsMap(all.map((t) => t.name));
     const failuresByTool = new Map<string, Array<{ normalized_reason: string; count: number; last_seen_at: string }>>();
     for (const sample of listToolFailureSamples()) {
@@ -45,13 +49,15 @@ export async function GET(req: Request) {
       }
     }
     const rows: ToolEnvelope[] = all.map((t) => ({
-        name: t.name,
-        description: t.description,
-        source: getToolSource(t.name),
-        category: getToolCategory(t.name),
-        capability: getToolCapability(t.name),
-        group: getToolGroup(t.name),
-        credentials_required: getToolCredentialsRequired(t.name),
+      name: t.name,
+      description: t.description,
+      source: t.source,
+      category: t.category,
+      capability: t.capability,
+      status: t.status,
+      status_reason: t.status_reason,
+      group: t.group,
+      credentials_required: t.credentials_required,
         stats: stats.get(t.name) ?? defaultToolStats(),
         failure_samples: failuresByTool.get(t.name) ?? [],
       }));

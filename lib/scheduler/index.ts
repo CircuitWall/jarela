@@ -6,6 +6,7 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
+import { maybeAutoFileToolTelemetryIssue } from "@/lib/tools/tool-telemetry-issue";
 import { isMasterKeyLocked, onMasterKeyUnlocked } from "@/lib/crypto/master-key";
 import { getConfig } from "@/lib/env/config";
 import {
@@ -147,6 +148,12 @@ async function tick(): Promise<void> {
       runAllHealthProbes().catch((err) => {
         console.error(
           "[scheduler] health probe sweep failed:",
+          errorMessage(err),
+        );
+      });
+      maybeAutoFileToolTelemetryIssue().catch((err) => {
+        console.error(
+          "[scheduler] tool telemetry issue filing failed:",
           errorMessage(err),
         );
       });

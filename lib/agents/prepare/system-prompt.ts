@@ -25,6 +25,7 @@ import { getToolStatsMap, listToolFailureSamples, type ToolUsefulnessStats } fro
 import type { StreamOptions } from "@/lib/agents/base";
 import type { SourceManifestEntry } from "@/lib/agents/citation-checker";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
+import type { ToolCatalogEntry } from "@/lib/tools";
 
 const APP_NAME = getAppName();
 
@@ -51,6 +52,9 @@ export interface SystemPromptContext {
   /** Tool names available to this run. Used to derive compact historical
    *  reliability hints from aggregate tool stats only. */
   allowedTools?: readonly string[];
+  /** Complete tool permission metadata for this agent. Metadata only;
+   *  executable tool handles are still limited by `allowedTools`. */
+  toolPermissionMap?: ReadonlyArray<ToolCatalogEntry>;
 }
 
 // Re-exported so callers that only need the sentinel don't have to import the
@@ -58,7 +62,7 @@ export interface SystemPromptContext {
 export { CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
-  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools } = ctx;
+  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools, toolPermissionMap } = ctx;
 
   const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
@@ -88,6 +92,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.self_config,
     buildMemoryContext(budget),
     buildDelegatesContext(delegateRosterLines),
+    buildToolPermissionContext(toolPermissionMap ?? []),
     buildExperienceContext(experienceMode),
   ];
 
@@ -162,6 +167,41 @@ export function buildToolReliabilityContext(allowedTools: readonly string[]): st
     lines.push(...failureHints);
   }
   return lines.join("\n");
+}
+
+export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCatalogEntry>): string {
+  if (permissionMap.length === 0) return "";
+  const ordered = [...permissionMap].sort(compareToolPermissionEntries);
+  const enabled = ordered.filter((tool) => tool.permission === "enabled");
+  const disabled = ordered.filter((tool) => tool.permission === "disabled");
+  const unavailable = ordered.filter((tool) => tool.permission === "unavailable");
+  const lines = [
+    "--- Tool permission map ---",
+    `You can execute ${enabled.length} tool(s). ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
+    "If a disabled or unavailable tool is needed, explain why and propose a permission/config change instead of pretending to use it.",
+    "This durable full tool list is intentionally placed in the cacheable system-prompt prefix.",
+  ];
+  for (const tool of ordered) lines.push(formatToolPermissionLine(tool));
+  return lines.join("\n");
+}
+
+function compareToolPermissionEntries(a: ToolCatalogEntry, b: ToolCatalogEntry): number {
+  const groupDiff = groupLabel(a).localeCompare(groupLabel(b));
+  if (groupDiff !== 0) return groupDiff;
+  const categoryDiff = a.category.localeCompare(b.category);
+  if (categoryDiff !== 0) return categoryDiff;
+  return a.name.localeCompare(b.name);
+}
+
+function groupLabel(tool: ToolCatalogEntry): string {
+  return tool.group ?? "Other";
+}
+
+function formatToolPermissionLine(tool: ToolCatalogEntry): string {
+  const permission = tool.permission ?? "disabled";
+  const reason = tool.permission_reason ?? tool.status_reason;
+  const statusSuffix = reason ? ` reason=${reason}` : "";
+  return `- ${groupLabel(tool)} > ${tool.category} > ${tool.name}: ${tool.capability}/${tool.source}/${permission}${statusSuffix}`;
 }
 
 function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {

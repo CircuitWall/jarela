@@ -41,6 +41,8 @@ import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
 import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
+import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
+import { isBasicToolCategory, normalizeToolCategory } from "./categories";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
@@ -88,6 +90,22 @@ function loadExternal() {
 }
 
 export type ToolSource = "builtin" | "external" | "mcp";
+export type ToolStatus = "enabled" | "disabled" | "unavailable";
+export type ToolPermissionState = "enabled" | "disabled" | "unavailable";
+
+export interface ToolCatalogEntry {
+  name: string;
+  description: string;
+  source: ToolSource;
+  category: ToolCategory;
+  capability: Capability;
+  group: ToolGroup;
+  credentials_required: string[];
+  status: ToolStatus;
+  status_reason: string | null;
+  permission?: ToolPermissionState;
+  permission_reason?: string | null;
+}
 
 // Resolve a tool's origin from its name. Used to label rows in the tools
 // API and to route metadata lookups. Returns "mcp" for any name that is
@@ -112,12 +130,12 @@ export function getToolCategory(name: string): ToolCategory {
   const builtin = registeredCategory(name);
   if (builtin) return builtin;
   const ext = loadExternal().categories.get(name);
-  if (ext) return ext;
+  if (ext) return normalizeToolCategory(ext) as ToolCategory;
+  if (getToolSource(name) === "external") return "Other";
   // MCP tools can declare a category in their tool annotations; fall back to
-  // "MCP" only when none is declared so they land in the generic MCP bucket.
+  // "Other" only when none is declared so every incoming tool has a category.
   const mcpCat = getMcpToolMeta(name)?.category;
-  if (mcpCat) return mcpCat as ToolCategory;
-  return getToolSource(name) === "mcp" ? "MCP" : "Config";
+  return normalizeToolCategory(mcpCat) as ToolCategory;
 }
 
 export function getToolGroup(name: string): ToolGroup {
@@ -143,6 +161,139 @@ export function getToolCredentialsRequired(name: string): string[] {
   const ext = loadExternal().credentialsRequired.get(name);
   if (ext?.length) return ext;
   return getMcpToolMeta(name)?.credentials_required ?? [];
+}
+
+export function getDefaultAgentToolNames(): string[] {
+  return getAllTools()
+    .filter((t) => isBasicToolCategory(getToolCategory(t.name)))
+    .map((t) => t.name);
+}
+
+export async function getDefaultAgentToolNamesAsync(): Promise<string[]> {
+  const tools = await getAllToolsAsync();
+  return tools
+    .filter((t) => isBasicToolCategory(getToolCategory(t.name)))
+    .map((t) => t.name);
+}
+
+export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
+  try {
+    await loadLangChainPackages();
+  } catch (err) {
+    console.error("[tools] LangChain package load failed while building catalog:", err);
+  }
+
+  const disabledBuiltinCategories = disabledCategories();
+  const external = loadExternal();
+  let mcpTools: StructuredToolInterface[] = [];
+  try {
+    mcpTools = await getMcpTools();
+  } catch (err) {
+    console.error("[tools] MCP load failed while building catalog:", err);
+  }
+
+  const entries = new Map<string, ToolCatalogEntry>();
+  for (const tool of allBuiltins()) {
+    const category = registeredCategory(tool.name);
+    if (!category) continue;
+    const disabled = disabledBuiltinCategories.has(category);
+    entries.set(tool.name, toCatalogEntry(tool, {
+      source: "builtin",
+      category,
+      capability: registeredCapability(tool.name) ?? "execute",
+      group: registeredGroup(tool.name) ?? groupForCategory(category),
+      status: disabled ? "disabled" : "enabled",
+      status_reason: disabled ? "category_disabled" : null,
+    }));
+  }
+  for (const tool of external.tools) {
+    const category = normalizeToolCategory(external.categories.get(tool.name)) as ToolCategory;
+    const disabled = isDropinDisabled(tool.name);
+    entries.set(tool.name, toCatalogEntry(tool, {
+      source: "external",
+      category,
+      capability: "execute",
+      group: groupForCategory(category),
+      credentials_required: external.credentialsRequired.get(tool.name) ?? [],
+      status: disabled ? "disabled" : "enabled",
+      status_reason: disabled ? "dropin_tool_disabled" : null,
+    }));
+  }
+  for (const tool of mcpTools) {
+    const category = normalizeToolCategory(getMcpToolMeta(tool.name)?.category) as ToolCategory;
+    entries.set(tool.name, toCatalogEntry(tool, {
+      source: "mcp",
+      category,
+      capability: "execute",
+      group: getMcpToolMeta(tool.name)?.group as ToolGroup | undefined ?? groupForCategory(category),
+      credentials_required: getMcpToolMeta(tool.name)?.credentials_required ?? [],
+      status: "enabled",
+      status_reason: null,
+    }));
+  }
+
+  return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function applyAgentPermissionsToCatalog(
+  catalog: readonly ToolCatalogEntry[],
+  cfg: Pick<AgentConfigRow, "tools"> | null | undefined,
+): ToolCatalogEntry[] {
+  const explicitlyAllowed = new Set(getAgentTools(cfg));
+  return catalog.map((entry) => {
+    if (entry.status !== "enabled") {
+      return {
+        ...entry,
+        permission: "unavailable" as const,
+        permission_reason: entry.status_reason ?? "tool_unavailable",
+      };
+    }
+    if (explicitlyAllowed.has(entry.name) || isBasicToolCategory(entry.category)) {
+      return {
+        ...entry,
+        permission: "enabled" as const,
+        permission_reason: isBasicToolCategory(entry.category) && !explicitlyAllowed.has(entry.name)
+          ? "basic_default"
+          : "agent_allowed",
+      };
+    }
+    return {
+      ...entry,
+      permission: "disabled" as const,
+      permission_reason: "agent_not_allowed",
+    };
+  });
+}
+
+export function allowedToolNamesFromPermissionMap(catalog: readonly ToolCatalogEntry[]): string[] {
+  return catalog
+    .filter((entry) => entry.permission === "enabled")
+    .map((entry) => entry.name);
+}
+
+function toCatalogEntry(
+  tool: StructuredToolInterface,
+  meta: {
+    source: ToolSource;
+    category: ToolCategory;
+    capability: Capability;
+    group: ToolGroup | undefined;
+    credentials_required?: string[];
+    status: ToolStatus;
+    status_reason: string | null;
+  },
+): ToolCatalogEntry {
+  return {
+    name: tool.name,
+    description: typeof tool.description === "string" ? tool.description : "",
+    source: meta.source,
+    category: meta.category,
+    capability: meta.capability,
+    group: meta.group ?? null,
+    credentials_required: meta.credentials_required ?? [],
+    status: meta.status,
+    status_reason: meta.status_reason,
+  };
 }
 
 function applyPolicy(

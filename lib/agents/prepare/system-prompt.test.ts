@@ -6,7 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { buildSystemPrompt, buildToolReliabilityContext } = await import("./system-prompt");
+const { CACHE_SPLIT_SENTINEL, buildSystemPrompt, buildToolPermissionContext, buildToolReliabilityContext } = await import("./system-prompt");
 const { recordToolUsage } = await import("@/lib/stores/tool-stats");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
@@ -144,6 +144,88 @@ describe("buildSystemPrompt self-configuration", () => {
     expect(prompt).toContain("third or later instance of the same workflow");
     expect(prompt).toContain("ask whether the user wants you to create or update a skill");
     expect(prompt).toContain("Do not persist a newly synthesized skill without user consent");
+  });
+});
+
+const permissionMapFixture = [
+  {
+    name: "file_read",
+    description: "read files",
+    source: "builtin",
+    category: "Files",
+    capability: "read",
+    group: "Basic",
+    credentials_required: [],
+    status: "enabled",
+    status_reason: null,
+    permission: "enabled",
+    permission_reason: "basic_default",
+  },
+  {
+    name: "gmail_send_email",
+    description: "send mail",
+    source: "builtin",
+    category: "Mail",
+    capability: "write",
+    group: null,
+    credentials_required: [],
+    status: "enabled",
+    status_reason: null,
+    permission: "disabled",
+    permission_reason: "agent_not_allowed",
+  },
+  {
+    name: "memory_read",
+    description: "read memory",
+    source: "builtin",
+    category: "Memory",
+    capability: "read",
+    group: "Basic",
+    credentials_required: [],
+    status: "disabled",
+    status_reason: "category_disabled",
+    permission: "unavailable",
+    permission_reason: "category_disabled",
+  },
+] satisfies import("@/lib/tools").ToolCatalogEntry[];
+
+describe("buildToolPermissionContext", () => {
+  it("renders the full deterministic tool permission list", () => {
+    const ctx = buildToolPermissionContext([
+      {
+        ...permissionMapFixture[2],
+      },
+      permissionMapFixture[1],
+      permissionMapFixture[0],
+    ]);
+
+    expect(ctx).toContain("--- Tool permission map ---");
+    expect(ctx).toContain("You can execute 1 tool(s)");
+    expect(ctx).toContain("This durable full tool list is intentionally placed in the cacheable system-prompt prefix.");
+    expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
+    expect(ctx).toContain("- Basic > Memory > memory_read: read/builtin/unavailable reason=category_disabled");
+    expect(ctx).toContain("- Other > Mail > gmail_send_email: write/builtin/disabled reason=agent_not_allowed");
+    expect(ctx).toContain("propose a permission/config change");
+    expect(ctx.indexOf("file_read")).toBeLessThan(ctx.indexOf("gmail_send_email"));
+  });
+
+  it("places the full permission map before the cache split sentinel", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "hi",
+      budget,
+      recallCtx: "dynamic recall",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      toolPermissionMap: permissionMapFixture,
+    });
+
+    expect(prompt.indexOf("--- Tool permission map ---")).toBeGreaterThanOrEqual(0);
+    expect(prompt.indexOf("--- Tool permission map ---")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt.indexOf("file_read: read/builtin/enabled")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt.indexOf("dynamic recall")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
   });
 });
 

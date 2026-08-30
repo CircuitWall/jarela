@@ -1,18 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, KeyRound } from "lucide-react";
+import { ChevronDown, ChevronRight, KeyRound, Lock } from "lucide-react";
 import type { ToolInfo } from "@/api/types";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { groupByProvider, OTHER_PROVIDER_KEY } from "@/components/tools/provider-grouping";
-import { permissionKindForTool, toolScoreClass, type ToolPermissionKind } from "./permissions";
+import { permissionKindForTool, toolScoreClass } from "./permissions";
 
 interface ToolGroupBlockProps {
   group: string;
   categories: Array<[string, ToolInfo[]]>;
-  advancedMode: boolean;
   selected: string[];
   onToggleTool: (name: string) => void;
   onToggleCategory: (category: string, enable: boolean) => void;
-  onToggleCategoryPermission: (category: string, kind: ToolPermissionKind, enable: boolean) => void;
   onToggleGroup: (group: string, enable: boolean) => void;
 }
 
@@ -21,12 +19,13 @@ interface ToolGroupBlockProps {
 // GitHub) under one collapsible. Header tri-state flips every tool in every
 // child category on/off; the per-category blocks remain individually toggleable.
 export function ToolGroupBlock({
-  group, categories, advancedMode, selected,
-  onToggleTool, onToggleCategory, onToggleCategoryPermission, onToggleGroup,
+  group, categories, selected,
+  onToggleTool, onToggleCategory, onToggleGroup,
 }: ToolGroupBlockProps) {
   const allTools = categories.flatMap(([, ts]) => ts);
-  const selectedInGroup = allTools.filter((t) => selected.includes(t.name)).length;
-  const allOn = selectedInGroup === allTools.length;
+  const selectableTools = allTools.filter(isSelectableTool);
+  const selectedInGroup = selectableTools.filter((t) => selected.includes(t.name)).length;
+  const allOn = selectedInGroup === selectableTools.length && selectableTools.length > 0;
   const someOn = selectedInGroup > 0 && !allOn;
   const [open, setOpen] = useState(false);
   const headerRef = useRef<HTMLInputElement>(null);
@@ -41,7 +40,7 @@ export function ToolGroupBlock({
       open={open}
       setOpen={setOpen}
       selectedCount={selectedInGroup}
-      totalCount={allTools.length}
+      totalCount={selectableTools.length}
       allOn={allOn}
       onToggleAll={(enable) => onToggleGroup(group, enable)}
       headerRef={headerRef}
@@ -52,11 +51,9 @@ export function ToolGroupBlock({
           key={category}
           category={category}
           tools={catTools}
-          advancedMode={advancedMode}
           selected={selected}
           onToggleTool={onToggleTool}
           onToggleCategory={onToggleCategory}
-          onToggleCategoryPermission={onToggleCategoryPermission}
         />
       ))}
     </ToolSelectionSection>
@@ -66,22 +63,21 @@ export function ToolGroupBlock({
 interface ToolCategoryBlockProps {
   category: string;
   tools: ToolInfo[];
-  advancedMode: boolean;
   selected: string[];
   onToggleTool: (name: string) => void;
   onToggleCategory: (category: string, enable: boolean) => void;
-  onToggleCategoryPermission: (category: string, kind: ToolPermissionKind, enable: boolean) => void;
 }
 
 // Collapsible per-category block with a tri-state header checkbox. The
 // header toggle flips the entire category on/off; individual tool checkboxes
 // stay available for fine-grained control.
 export function ToolCategoryBlock({
-  category, tools, advancedMode, selected,
-  onToggleTool, onToggleCategory, onToggleCategoryPermission,
+  category, tools, selected,
+  onToggleTool, onToggleCategory,
 }: ToolCategoryBlockProps) {
-  const selectedInCat = tools.filter((t) => selected.includes(t.name)).length;
-  const allOn = selectedInCat === tools.length;
+  const selectableTools = tools.filter(isSelectableTool);
+  const selectedInCat = selectableTools.filter((t) => selected.includes(t.name)).length;
+  const allOn = selectedInCat === selectableTools.length && selectableTools.length > 0;
   const someOn = selectedInCat > 0 && !allOn;
   const [open, setOpen] = useState(false);
   const headerRef = useRef<HTMLInputElement>(null);
@@ -96,21 +92,13 @@ export function ToolCategoryBlock({
       open={open}
       setOpen={setOpen}
       selectedCount={selectedInCat}
-      totalCount={tools.length}
+      totalCount={selectableTools.length}
       allOn={allOn}
       onToggleAll={(enable) => onToggleCategory(category, enable)}
       headerRef={headerRef}
       bodyClassName="space-y-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
     >
-      {advancedMode
-        ? <ProviderGroupedToolGrid tools={tools} selected={selected} onToggleTool={onToggleTool} />
-        : <NormalPermissionControls
-            category={category}
-            tools={tools}
-            selected={selected}
-            onToggle={(kind, enable) => onToggleCategoryPermission(category, kind, enable)}
-          />
-      }
+      <ProviderGroupedToolGrid tools={tools} selected={selected} onToggleTool={onToggleTool} />
     </ToolSelectionSection>
   );
 }
@@ -119,16 +107,34 @@ function ToolCheckbox({ tool, selected, onToggle }: { tool: ToolInfo; selected: 
   const isOn = selected.includes(tool.name);
   const creds = tool.credentials_required;
   const needsCreds = creds && creds.length > 0;
+  const permission = tool.capability ?? permissionKindForTool(tool.name, tool.category);
+  const unavailable = tool.status === "disabled" || tool.status === "unavailable";
+  const title = unavailable
+    ? `${tool.description}\nUnavailable: ${tool.status_reason ?? "disabled"}`
+    : tool.description;
   return (
     <label
-      className={`flex items-center gap-2 cursor-pointer rounded-lg border px-2 py-1.5 transition-colors ${
-        isOn ? "border-accent/40 bg-accent/10" : "border-border bg-surface-2/80 hover:bg-surface-3/70"
+      className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors ${
+        unavailable
+          ? "cursor-not-allowed border-border bg-surface-2/40 opacity-70"
+          : isOn ? "cursor-pointer border-accent/40 bg-accent/10" : "cursor-pointer border-border bg-surface-2/80 hover:bg-surface-3/70"
       }`}
-      title={tool.description}
+      title={title}
     >
-      <input type="checkbox" className="rounded border-border" checked={isOn} onChange={() => onToggle(tool.name)} />
+      <input
+        type="checkbox"
+        className="rounded border-border"
+        checked={isOn && !unavailable}
+        disabled={unavailable}
+        onChange={() => onToggle(tool.name)}
+      />
       <span className="min-w-0 flex-1 flex items-center gap-1.5">
         <span className="font-mono text-[11px] text-fg-muted truncate">{tool.name}</span>
+        {unavailable && (
+          <span className="shrink-0 text-fg-faint" title={tool.status_reason ?? "Unavailable"}>
+            <Lock size={10} />
+          </span>
+        )}
         {needsCreds && (
           <span
             className="shrink-0 text-amber-500/80"
@@ -139,6 +145,9 @@ function ToolCheckbox({ tool, selected, onToggle }: { tool: ToolInfo; selected: 
         )}
         <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] border ${toolScoreClass(tool.stats?.score ?? 1)}`}>
           {Math.round((tool.stats?.score ?? 1) * 100)}%
+        </span>
+        <span className="shrink-0 rounded border border-border bg-surface-3 px-1.5 py-0.5 text-[10px] text-fg-muted capitalize">
+          {permission}
         </span>
       </span>
     </label>
@@ -200,15 +209,16 @@ function ProviderToolBox({
   selected: string[];
   onToggleTool: (name: string) => void;
 }) {
-  const selectedInProv = tools.filter((t) => selected.includes(t.name)).length;
-  const allOn = selectedInProv === tools.length && tools.length > 0;
+  const selectable = tools.filter(isSelectableTool);
+  const selectedInProv = selectable.filter((t) => selected.includes(t.name)).length;
+  const allOn = selectedInProv === selectable.length && selectable.length > 0;
   const someOn = selectedInProv > 0 && !allOn;
   const headerRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     if (headerRef.current) headerRef.current.indeterminate = someOn;
   }, [someOn]);
   const toggleAll = (enable: boolean) => {
-    for (const t of tools) {
+    for (const t of selectable) {
       const isOn = selected.includes(t.name);
       if (enable !== isOn) onToggleTool(t.name);
     }
@@ -241,65 +251,8 @@ function ProviderToolBox({
   );
 }
 
-interface NormalPermissionControlsProps {
-  category: string;
-  tools: ToolInfo[];
-  selected: string[];
-  onToggle: (kind: ToolPermissionKind, enable: boolean) => void;
-}
-
-function NormalPermissionControls({ category, tools, selected, onToggle }: NormalPermissionControlsProps) {
-  const kinds: ToolPermissionKind[] = ["read", "write", "execute"];
-  return (
-    <div className="col-span-2 rounded-lg border border-border bg-surface-2/40 p-2.5 space-y-2.5">
-      <p className="text-[11px] text-fg-faint leading-snug">
-        Quick permissions for {category}. Advanced mode exposes individual functions.
-      </p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-        {kinds.map((kind) => (
-          <PermissionTile
-            key={kind}
-            kind={kind}
-            tools={tools}
-            category={category}
-            selected={selected}
-            onToggle={onToggle}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-interface PermissionTileProps {
-  kind: ToolPermissionKind;
-  tools: ToolInfo[];
-  category: string;
-  selected: string[];
-  onToggle: (kind: ToolPermissionKind, enable: boolean) => void;
-}
-
-function PermissionTile({ kind, tools, category, selected, onToggle }: PermissionTileProps) {
-  const names = tools.filter((t) => permissionKindForTool(t.name, category) === kind).map((t) => t.name);
-  const selectedCount = names.filter((n) => selected.includes(n)).length;
-  const checked = names.length > 0 && selectedCount === names.length;
-  return (
-    <label className={`flex items-center gap-2 cursor-pointer rounded-xl border px-2.5 py-2 transition-colors ${
-      checked ? "border-accent/50 bg-accent/10" : "border-border bg-surface-2 hover:bg-surface-3/70"
-    }`}>
-      <input
-        type="checkbox"
-        className="rounded border-border"
-        checked={checked}
-        disabled={names.length === 0}
-        onChange={(e) => onToggle(kind, e.target.checked)}
-      />
-      <span className="text-[11px] text-fg-subtle capitalize leading-tight">
-        <span className="font-medium">{kind}</span>{" "}
-        <span className="text-fg-faint">{selectedCount}/{names.length}</span>
-      </span>
-    </label>
-  );
+function isSelectableTool(tool: ToolInfo): boolean {
+  return tool.status !== "disabled" && tool.status !== "unavailable";
 }
 
 interface ToolSelectionSectionProps {
