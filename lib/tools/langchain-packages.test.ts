@@ -2,16 +2,18 @@ import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
+
+const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-langchain-pkgs-"));
+const originalEnv = process.env.JARELA_PACKAGES_DIR;
+process.env.JARELA_DB_DIR = join(tmpRoot, ".jarela-dbdir");
+
+const {
   loadLangChainPackages,
   reloadLangChainPackages,
   getPackagesDir,
   _resetLangChainPackages,
-} from "./langchain-packages";
-import { registeredNames, registeredCategory, registeredCapability, _resetRegistry } from "./registry";
-
-const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-langchain-pkgs-"));
-const originalEnv = process.env.JARELA_PACKAGES_DIR;
+} = await import("./langchain-packages");
+const { registeredNames, registeredCategory, registeredCapability, _resetRegistry } = await import("./registry");
 
 interface FakeToolSpec {
   packageDir: string;        // node_modules subdir name, e.g. "fake-tool"

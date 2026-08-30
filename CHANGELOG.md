@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.4] - 2026-08-30
+
+### Added
+
+- **Agents can see their full tool permission map.** The agent runtime now
+  builds a complete catalog of known tools, marks which ones are enabled,
+  disabled, or unavailable for the current agent, and includes the durable
+  permission map in the cacheable system-prompt prefix while still hard-limiting
+  executable tool handles to permitted tools only.
+- **Tool telemetry can file Jarela complaint issues.** A new
+  `report_tool_telemetry_issue` system tool summarizes success rates,
+  usefulness scores, failure counts, and sanitized failure scenarios across one
+  or more tools, then drafts or files an issue against `CircuitWall/jarela`.
+  The scheduler can auto-file when GitHub auth is configured and skips duplicate
+  telemetry fingerprints.
+
+### Changed
+
+- **Basic tool permissions are enabled automatically.** Memory, Documents,
+  Files, Shell, Schedule, Config, Skills, and Web tools now sit under a Basic
+  permission group and are dynamically available to all agents as new Basic
+  tools are added.
+- **Release CI now has a security gate.** Tag-driven releases run dependency
+  audits, npm signature checks, and the OAuth proxy audit before publishing
+  artifacts.
+
+### Fixed
+
+- **Semantic versioning guidance now treats existing-feature completion as a
+  patch.** The contribution docs reserve `feat:` / MINOR bumps for genuinely
+  new capabilities and classify adding, fixing, or completing existing feature
+  behavior as PATCH unless it is breaking.
+
 ## [1.29.3] - 2026-08-29
 
 ### Fixed
