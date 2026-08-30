@@ -21,9 +21,44 @@ permissions:
   id-token: write   # npm provenance
 
 jobs:
+  release-security:
+    name: Release security gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
+
+      - name: Audit runtime dependency CVEs
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit full dependency graph
+        run: npm audit --audit-level=moderate
+
+      - name: Verify npm package signatures
+        run: npm audit signatures
+
+      - name: Audit OAuth proxy dependencies
+        working-directory: proxy
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm audit --omit=dev --audit-level=high
+
   bundle:
     name: Bundle (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: release-security
     # Only the Jarela app release fans out to the multi-OS bundle / GitHub
     # Release / npm-publish / docker pipeline. Standalone workspace packages
     # are published by the per-package jobs at the bottom of this file.
@@ -453,6 +488,7 @@ jobs:
   publish-atlassian-langchain:
     name: Publish @circuitwall/atlassian-langchain
     runs-on: ubuntu-latest
+    needs: release-security
     if: startsWith(github.ref_name, 'atlassian-langchain-v')
     permissions:
       contents: read
@@ -487,6 +523,7 @@ jobs:
   publish-jira-align-langchain:
     name: Publish @circuitwall/jira-align-langchain
     runs-on: ubuntu-latest
+    needs: release-security
     if: startsWith(github.ref_name, 'jira-align-langchain-v')
     permissions:
       contents: read
@@ -521,6 +558,7 @@ jobs:
   publish-github-langchain:
     name: Publish @circuitwall/github-langchain
     runs-on: ubuntu-latest
+    needs: release-security
     if: startsWith(github.ref_name, 'github-langchain-v')
     permissions:
       contents: read
@@ -555,6 +593,7 @@ jobs:
   publish-ms-todo-langchain:
     name: Publish @circuitwall/ms-todo-langchain
     runs-on: ubuntu-latest
+    needs: release-security
     if: startsWith(github.ref_name, 'ms-todo-langchain-v')
     permissions:
       contents: read
@@ -589,6 +628,7 @@ jobs:
   publish-icloud-langchain:
     name: Publish @circuitwall/icloud-langchain
     runs-on: ubuntu-latest
+    needs: release-security
     if: startsWith(github.ref_name, 'icloud-langchain-v')
     permissions:
       contents: read

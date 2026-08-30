@@ -131,8 +131,12 @@ tag:
 | Bump   | Triggered by                                                                                                                                                                                                                                                  |
 |--------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | MAJOR  | Any `feat!:` / `fix!:` / `BREAKING CHANGE:` footer. Concretely: removed or renamed env var without fallback, renamed exported symbol, on-disk schema or path change without auto-migration, HTTP/WS contract change, removed public CLI flag.                  |
-| MINOR  | Any `feat:` commit — new user-visible behaviour, new tool, new provider, new integration.                                                                                                                                                                       |
-| PATCH  | Only `fix:`, `perf:`, `docs:`, `refactor:`, `chore:`, `test:`, `build:`, `ci:` — no new functionality, no schema change.                                                                                                                                        |
+| MINOR  | Any `feat:` commit that introduces a genuinely new user-facing capability, new tool, new provider, or new integration.                                                                                                                                          |
+| PATCH  | `fix:`, `perf:`, `docs:`, `refactor:`, `chore:`, `test:`, `build:`, `ci:`, plus adding, fixing, or completing behaviour inside an already-shipped feature. No breaking schema/API changes.                                                                      |
+
+Reserve `feat:` for net-new capabilities. If the work fills a gap, completes
+an incomplete flow, or improves/corrects behaviour in an existing feature, use
+a patch-level commit type such as `fix:` or `refactor:` unless it is breaking.
 
 **Pre-1.0 caveat.** Per semver §4, anything in `0.y.z` is unstable. While the
 project is in `0.x`, breaking changes bump MINOR (not MAJOR), and the strict
