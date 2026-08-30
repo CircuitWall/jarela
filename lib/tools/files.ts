@@ -277,7 +277,7 @@ export const fileReadTool = tool(
   {
     name: "file_read",
     description:
-      "Read a UTF-8 text file. Optional 1-based start_line/end_line slice. Output clipped at 64 KB — for large files always pass a line range and walk in chunks. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries (markdown headings, top-level functions/classes, config keys); feed those line numbers straight back into start_line/end_line on the next call to zoom in without grepping.",
+      "Read a UTF-8 text file. Prefer file_glob/file_grep to locate targets before reading; avoid shell cat/type/Get-Content for normal file inspection. Optional 1-based start_line/end_line slice. Output clipped at 64 KB — for large files always pass a line range and walk in chunks. When called without a line range on a recognised text file, the response also includes an `outline` array of {kind,name,line} entries (markdown headings, top-level functions/classes, config keys); feed those line numbers straight back into start_line/end_line on the next call to zoom in without grepping.",
     schema: readSchema,
   },
 );
@@ -326,7 +326,7 @@ export const fileWriteTool = tool(
   {
     name: "file_write",
     description:
-      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. Use file_edit for targeted in-place changes.",
+      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. Prefer file_edit or file_multi_edit for targeted changes to existing files; avoid shell heredocs/echo redirection for file writes.",
     schema: writeSchema,
   },
 );
@@ -383,7 +383,7 @@ export const fileEditTool = tool(
   {
     name: "file_edit",
     description:
-      "Replace a single exact-match substring inside a file. The old_string must appear exactly once — include enough surrounding context to disambiguate. Use this for in-place edits instead of shell heredocs.",
+      "Replace a single exact-match substring inside a file. The old_string must appear exactly once — include enough surrounding context to disambiguate. Use this for one in-place edit instead of shell heredocs; use file_multi_edit for several edits in the same file.",
     schema: editSchema,
   },
 );

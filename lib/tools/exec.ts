@@ -86,7 +86,7 @@ export const localExecTool = withStreamDefault(tool(
     runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
     name: "local_exec",
-    description: "Run a shell command in a throwaway session. Output is truncated to 8 KB. For multi-step stateful work, use terminal_exec instead.",
+    description: "Run a one-shot shell command in a throwaway session for builds, tests, git, package managers, and other commands that do not need persisted shell state. Output is truncated to 8 KB. Prefer file_glob/file_grep/file_read/file_edit/file_multi_edit for file discovery, inspection, and edits; prefer terminal_exec for multi-step stateful or interactive work.",
     schema: execSchema,
   },
 ), true);
@@ -96,7 +96,7 @@ export const shellExecTool = withStreamDefault(tool(
     runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
     name: "shell_exec",
-    description: "Backward-compatible alias for local_exec.",
+    description: "Backward-compatible alias for local_exec. Prefer local_exec in new plans so one-shot shell usage is explicit.",
     schema: execSchema,
   },
 ), true);

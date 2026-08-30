@@ -131,6 +131,17 @@ describe("list_tools", () => {
     expect(byCategory.tools.some((t) => t.category === "Skills")).toBe(true);
   });
 
+  it("surfaces efficiency guidance for shell and file tool selection", async () => {
+    const out = parse(await listToolsTool.invoke({ include_disabled: true }));
+    const descriptions = new Map(out.tools.map((t) => [t.name, t.description]));
+
+    expect(descriptions.get("file_grep")).toContain("Prefer this over local_exec/shell_exec");
+    expect(descriptions.get("file_multi_edit")).toContain("multiple file_edit round-trips");
+    expect(descriptions.get("local_exec")).toContain("one-shot shell command");
+    expect(descriptions.get("local_exec")).toContain("Prefer file_glob/file_grep/file_read/file_edit/file_multi_edit");
+    expect(descriptions.get("terminal_exec")).toContain("interactive/stateful workflows");
+  });
+
   it("returns empty list (not error) when filters match nothing", async () => {
     const out = parse(await listToolsTool.invoke({ source: "external", capability: "read" }));
     // The clean-tmpdir HOME has no JARELA_TOOLS_DIR, so external is empty
