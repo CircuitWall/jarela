@@ -957,6 +957,19 @@ async function* stallRetryStream(
     return;
   }
 
+  const writeLikeTools = [...new Set(toolNames.filter(isWriteLikeToolName))];
+  if (writeLikeTools.length > 0) {
+    yield {
+      type: "text_delta",
+      data: {
+        delta:
+          `\n\n*⚠️ Retry guard skipped automatic retry because state-changing tools already ran this turn: ${writeLikeTools.slice(0, 6).join(", ")}. Review the result before continuing to avoid duplicate side effects.*`,
+      },
+    };
+    if (doneChunk) yield doneChunk;
+    return;
+  }
+
   // Visible separator between the stalled prose and the retry continuation,
   // so the user can see something is being re-attempted.
   yield { type: "text_delta", data: { delta: "\n\n↻ " } };

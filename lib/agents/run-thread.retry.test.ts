@@ -198,4 +198,71 @@ describe("prepareThreadRun transient retry", () => {
       "restart_server",
     ]));
   });
+
+  it.each([
+    "jira_create_issue",
+    "github_create_issue",
+    "schedule_task",
+    "file_write",
+  ])("does not auto-retry after a %s tool loop", async (toolName) => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: `agent-write-loop-guard-${toolName}`,
+      name: `Write Loop Guard ${toolName}`,
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [toolName],
+      model_config_name: null,
+    });
+    const thread = createThread(`agent-write-loop-guard-${toolName}`);
+    const toolArgs = { title: "Repeated side effect", body: "Do it once" };
+
+    streamWithConfigMock.mockImplementationOnce(() => chunks(
+      {
+        type: "tool_call",
+        data: { id: "call-1", name: toolName, arguments: toolArgs },
+      },
+      { type: "tool_result", data: { id: "call-1", name: toolName, result: { id: "created-1" } } },
+      {
+        type: "tool_call",
+        data: { id: "call-2", name: toolName, arguments: toolArgs },
+      },
+      { type: "tool_result", data: { id: "call-2", name: toolName, result: { id: "created-2" } } },
+      {
+        type: "tool_call",
+        data: { id: "call-3", name: toolName, arguments: toolArgs },
+      },
+      { type: "tool_result", data: { id: "call-3", name: toolName, result: { id: "created-3" } } },
+      { type: "text_delta", data: { delta: "Creating it now." } },
+      {
+        type: "done",
+        data: {
+          message_id: "done-write-loop",
+          usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+          provider: "openai",
+          model_id: "gpt-4o-mini",
+          model_config_name: "default",
+        },
+      },
+    ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Create the external record once",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const collected = await collectStream(prepared.stream);
+    expect(collected.terminal).toBe("done");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(1);
+    expect(collected.usedTools).toEqual([toolName, toolName, toolName]);
+    expect(collected.assistantContent).toContain("Retry guard skipped automatic retry");
+    expect(collected.assistantContent).toContain(toolName);
+    expect(collected.assistantContent).not.toContain("↻ Auto-retry");
+  });
 });
