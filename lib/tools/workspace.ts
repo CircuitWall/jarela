@@ -300,11 +300,17 @@ async function readReadme(root: string): Promise<{ path: string; head: string; t
 async function detectConventionFiles(root: string): Promise<{
   claude_md: string | null;
   agents_md: string | null;
+  copilot_instructions_md: string | null;
+  instruction_files: string[];
+  skill_files: string[];
   contributing_md: string | null;
   adr_dir: string | null;
 }> {
   const claude = (await fileExists(path.join(root, "CLAUDE.md"))) ? "CLAUDE.md" : null;
   const agents = (await fileExists(path.join(root, "AGENTS.md"))) ? "AGENTS.md" : null;
+  const copilot = (await fileExists(path.join(root, ".github", "copilot-instructions.md"))) ? ".github/copilot-instructions.md" : null;
+  const instructionFiles = await listConventionFiles(root, ".github/instructions", (name) => name.endsWith(".instructions.md"));
+  const skillFiles = await listSkillFiles(root);
   const contributing = (await fileExists(path.join(root, "CONTRIBUTING.md"))) ? "CONTRIBUTING.md" : null;
   // ADR dir conventions: docs/adr, docs/decisions, adr
   let adrDir: string | null = null;
@@ -314,7 +320,50 @@ async function detectConventionFiles(root: string): Promise<{
       break;
     }
   }
-  return { claude_md: claude, agents_md: agents, contributing_md: contributing, adr_dir: adrDir };
+  return {
+    claude_md: claude,
+    agents_md: agents,
+    copilot_instructions_md: copilot,
+    instruction_files: instructionFiles,
+    skill_files: skillFiles,
+    contributing_md: contributing,
+    adr_dir: adrDir,
+  };
+}
+
+async function listConventionFiles(root: string, dirRel: string, accept: (name: string) => boolean): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(path.join(root, dirRel), { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isFile() && accept(entry.name))
+      .map((entry) => `${dirRel}/${entry.name}`)
+      .sort()
+      .slice(0, 50);
+  } catch {
+    return [];
+  }
+}
+
+async function listSkillFiles(root: string): Promise<string[]> {
+  const bases = [".github/skills", ".agents/skills", ".claude/skills"];
+  const found: string[] = [];
+  for (const base of bases) {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await fs.readdir(path.join(root, base), { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && await fileExists(path.join(root, base, entry.name, "SKILL.md"))) {
+        found.push(`${base}/${entry.name}/SKILL.md`);
+      } else if (entry.isFile() && entry.name.endsWith(".md")) {
+        found.push(`${base}/${entry.name}`);
+      }
+      if (found.length >= 50) return found.sort();
+    }
+  }
+  return found.sort();
 }
 
 // Build the prioritised required-reading list the agent MUST read before
@@ -348,12 +397,17 @@ async function buildRequiredReading(
 
   // Priority order:
   //   1. CLAUDE.md / AGENTS.md  — agent-specific operating instructions.
-  //   2. CONTRIBUTING.md         — contribution + commit + release rules.
-  //   3. README.md               — project overview & invariants.
-  //   4. Top-level ADR index    — architectural decisions if a docs/adr exists.
-  //   5. Caller-supplied extras  — project-specific must-reads.
+  //   2. Copilot instructions    — repo-local chat/code customizations.
+  //   3. CONTRIBUTING.md         — contribution + commit + release rules.
+  //   4. README.md               — project overview & invariants.
+  //   5. Top-level ADR index     — architectural decisions if a docs/adr exists.
+  //   6. Caller-supplied extras  — project-specific must-reads.
   await push(conventions.claude_md, "agent operating instructions");
   await push(conventions.agents_md, "agent operating instructions");
+  await push(conventions.copilot_instructions_md, "copilot repository instructions");
+  for (const rel of conventions.instruction_files) {
+    await push(rel, "copilot file instructions");
+  }
   await push(conventions.contributing_md, "contribution + commit + release rules");
   await push(readme?.path ?? null, "project overview");
 
@@ -377,6 +431,38 @@ async function buildRequiredReading(
   }
 
   return out;
+}
+
+function buildRecommendedNextSteps(input: {
+  requiredReading: readonly { path: string }[];
+  includeTree: boolean;
+  treeTruncated: boolean;
+  scripts: Record<string, string>;
+  makefileTargets: readonly string[];
+  skillFiles: readonly string[];
+  git: GitProbe;
+}): string[] {
+  const steps: string[] = [];
+  if (input.requiredReading.length > 0) {
+    steps.push(`Read required docs first with file_read: ${input.requiredReading.map((r) => r.path).join(", ")}.`);
+  }
+  if (!input.includeTree || input.treeTruncated) {
+    steps.push("Use file_glob to narrow file discovery before reading files.");
+  }
+  steps.push("Use file_grep with a glob filter for code search; prefer file_read line ranges from grep/outline results over shell cat/type/Get-Content.");
+  steps.push("Use file_edit for one targeted edit and file_multi_edit for multiple edits in the same file; avoid shell heredocs for file writes.");
+  if (input.skillFiles.length > 0) {
+    steps.push(`Repo skills detected: ${input.skillFiles.slice(0, 8).join(", ")}. Before specialized work, read the matching SKILL.md or use list_skills/read_skill when the skill appears in the system prompt.`);
+  } else {
+    steps.push("Check the system prompt's Available skills list and call read_skill for any skill that matches the task before acting.");
+  }
+  if (Object.keys(input.scripts).length > 0 || input.makefileTargets.length > 0) {
+    steps.push("Use local_exec for focused package scripts, make targets, git, and test commands; use terminal_exec only for persistent interactive sessions or watchers.");
+  }
+  if (input.git.is_repo) {
+    steps.push("Check git status before edits and before commits; do not overwrite unrelated user changes.");
+  }
+  return steps;
 }
 
 // --- init ---------------------------------------------------------------
@@ -503,6 +589,9 @@ export const workspaceInitTool = tool(
       include_git, include_tree, include_scripts, include_readme, max_tree_entries,
     });
 
+    const requiredReading = await buildRequiredReading(abs, probe.conventions, probe.readme, extra_required_reading);
+    const scripts = probe.pkg?.scripts ?? {};
+
     return JSON.stringify({
       ok: true,
       root: abs,
@@ -513,7 +602,7 @@ export const workspaceInitTool = tool(
         package_manager: probe.packageManager,
         framework_hints: detectFrameworks(probe.pkg),
         test_runner: detectTestRunner(probe.pkg),
-        scripts: probe.pkg?.scripts ?? {},
+        scripts,
         makefile_targets: probe.makefileTargets,
         has_dockerfile: probe.hasDockerfile,
         has_devcontainer: probe.hasDevcontainer,
@@ -521,13 +610,22 @@ export const workspaceInitTool = tool(
       tree: include_tree ? probe.tree : undefined,
       readme: probe.readme,
       conventions: probe.conventions,
-      required_reading: await buildRequiredReading(abs, probe.conventions, probe.readme, extra_required_reading),
+      required_reading: requiredReading,
+      recommended_next_steps: buildRecommendedNextSteps({
+        requiredReading,
+        includeTree: include_tree,
+        treeTruncated: probe.tree.truncated,
+        scripts,
+        makefileTargets: probe.makefileTargets,
+        skillFiles: probe.conventions.skill_files,
+        git: probe.git,
+      }),
     });
   },
   {
     name: "workspace_init",
     description:
-      "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading). After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task. CRITICAL: the response includes a `required_reading` array of workspace-relative documentation files (CLAUDE.md, AGENTS.md, CONTRIBUTING.md, README, ADR index, plus any caller-supplied extras). You MUST `file_read` every entry in `required_reading` before taking any other action (no edits, no shell commands, no further tool calls beyond file_read for those paths). These files define the project's contribution rules, commit format, release process, and architectural invariants — skipping them produces output that fails review.",
+      "Register a project directory as the active workspace for this thread and return its context bundle (git state, languages, scripts, tree, README head, convention files, required_reading, recommended_next_steps). After this call, file_*/local_exec calls with relative paths resolve against the workspace root instead of $HOME. Call this once at the start of any coding task. CRITICAL: the response includes a `required_reading` array of workspace-relative instruction files (CLAUDE.md, AGENTS.md, .github/copilot-instructions.md, .github/instructions/*.instructions.md, CONTRIBUTING.md, README, ADR index, plus caller-supplied extras). You MUST `file_read` every entry in `required_reading` before taking any other action (no edits, no shell commands, no further tool calls beyond file_read for those paths). Use `recommended_next_steps` to choose relevant repo skills and efficient file/search/shell tools instead of extra exploratory shell commands.",
     schema: initSchema,
   },
 );
@@ -542,6 +640,7 @@ export const workspaceStatusTool = tool(
     }
     // Re-probe git state cheaply — that's the only field that drifts.
     const git = await probeGit(ws.root).catch(() => ({ is_repo: false } as GitProbe));
+    const conventions = await detectConventionFiles(ws.root);
     return JSON.stringify({
       ok: true,
       active: true,
@@ -549,12 +648,22 @@ export const workspaceStatusTool = tool(
       scoped: ws.scoped,
       opened_at: ws.opened_at,
       git,
+      conventions,
+      recommended_next_steps: buildRecommendedNextSteps({
+        requiredReading: [],
+        includeTree: false,
+        treeTruncated: false,
+        scripts: {},
+        makefileTargets: [],
+        skillFiles: conventions.skill_files,
+        git,
+      }),
     });
   },
   {
     name: "workspace_status",
     description:
-      "Return the currently active workspace (if any) plus fresh git status. Cheap — no tree walk. Use to check 'am I where I think I am?' before destructive operations.",
+      "Return the currently active workspace (if any), fresh git status, and recommended next steps. Cheap — no tree walk. Use to check 'am I where I think I am?' before destructive operations, then prefer file_* tools for file work and local_exec only for focused commands.",
     schema: z.object({}).describe("No arguments."),
   },
 );
