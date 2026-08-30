@@ -47,6 +47,7 @@ import {
   icloudCalendarDeleteEventTool,
   icloudCalendarListCalendarsTool,
   icloudCalendarListEventsTool,
+  icloudCalendarUpdateEventTool,
   icloudMailCreateDraftTool,
   icloudMailDeleteMessageTool,
   icloudMailFlagMessageTool,
@@ -416,6 +417,38 @@ describe("icloud_calendar_create_event", () => {
     });
     expect(postedIcs).toContain("DTSTART;VALUE=DATE:20261225");
     expect(postedIcs).toContain("DTEND;VALUE=DATE:20261226");
+  });
+});
+
+describe("icloud_calendar_update_event", () => {
+  it("patches LAST-MODIFIED as a DATE-TIME property", async () => {
+    const ics =
+      "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n" +
+      "UID:ev-update\r\nSUMMARY:Old\r\nDTSTART:20260620T140000Z\r\nDTEND:20260620T143000Z\r\n" +
+      "END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let updatedIcs: string | null = null;
+    setDav({
+      fetchCalendarObjects: async () => [
+        { url: "https://x/ev-update.ics", data: ics, etag: "1" },
+      ],
+      updateCalendarObject: async ({
+        calendarObject,
+      }: {
+        calendarObject: { data?: string };
+      }) => {
+        updatedIcs = calendarObject.data ?? null;
+        return { ok: true } as unknown;
+      },
+    });
+    const out = await icloudCalendarUpdateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      uid: "ev-update",
+      summary: "New",
+    });
+
+    expect(JSON.parse(out as string)).toMatchObject({ updated: true, uid: "ev-update" });
+    expect(updatedIcs).toContain("SUMMARY:New");
+    expect(updatedIcs).toMatch(/LAST-MODIFIED:\d{8}T\d{6}Z/);
   });
 });
 

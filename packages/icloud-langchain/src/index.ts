@@ -1185,7 +1185,7 @@ function patchVEvent(
   if (patch.location !== undefined) setProp(ev, "location", patch.location);
   if (patch.start !== undefined) setTimeProp(ev, "dtstart", patch.start);
   if (patch.end !== undefined) setTimeProp(ev, "dtend", patch.end);
-  setProp(ev, "last-modified", formatIcalDate(new Date().toISOString(), false));
+  setTimeProp(ev, "last-modified", new Date().toISOString());
   return parsed.toString();
 }
 
