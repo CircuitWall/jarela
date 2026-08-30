@@ -46,6 +46,8 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
 
 6. Commit correctly.
    - Use a topic branch based on `origin/main`; never commit directly to `main`.
+   - Do not stack meaningless follow-up commits for the same focused topic. If a correction, test fix, wording tweak, or CI repair belongs to the current change, amend the previous commit or use an autosquash fixup before pushing for review.
+   - Create a new commit only when it represents a distinct reviewable concern that should remain separate after squash or merge.
    - Commit subjects must follow Conventional Commits: `type(scope): imperative description`.
    - Allowed types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
    - Scope is required, lowercase, and single-token.
@@ -73,6 +75,9 @@ git status --short --branch
 npm run lint
 npm run typecheck
 npm test --workspace <workspace> -- <focused-test>
+git commit --amend --no-edit
+git commit --fixup <commit>
+git rebase -i --autosquash <base>
 git cherry -v origin/main <branch>
 gh pr view <pr> --repo CircuitWall/jarela --json state,mergedAt,url,title
 git branch --merged main
