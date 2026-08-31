@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.30.4] - 2026-08-31
+
 ### Added
 
 - **Agents can invoke capped tools through a safe proxy.** New `invoke_tool`
