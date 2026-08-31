@@ -37,6 +37,7 @@ import {
 } from "./external";
 import { loadLangChainPackages } from "./langchain-packages";
 import { wrapWithWallclock } from "./wallclock";
+import { wrapToolForCredentialRouting } from "./wrap-credentials";
 import type { OpenAITool, ToolContext, ToolParamSchema } from "./types";
 import type { ToolPolicy } from "@/lib/agents/base";
 import { disabledCategories } from "@/lib/stores/builtin-tools";
@@ -545,7 +546,23 @@ export async function executeTool(
       t = extTool;
     }
   }
+  if (!t) {
+    let mcpTools: StructuredToolInterface[] = [];
+    try {
+      mcpTools = await getMcpTools();
+    } catch (err) {
+      throw new Error(`MCP tools are unavailable while resolving "${name}": ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const mcpTool = mcpTools.find((x) => x.name === name);
+    if (mcpTool) t = mcpTool;
+  }
   if (!t) throw new Error(`Unknown tool: ${name}`);
+  if (!registeredCategory(name)) {
+    t = wrapWithWallclock(t);
+  }
+  if (context.tool_credentials && Object.keys(context.tool_credentials).length > 0) {
+    t = wrapToolForCredentialRouting(t, context.tool_credentials);
+  }
 
   const config: RunnableConfig = context.thread_id
     ? { configurable: { thread_id: context.thread_id } }

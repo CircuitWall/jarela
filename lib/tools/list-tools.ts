@@ -9,9 +9,12 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import {
   applyAgentPermissionsToCatalog,
   applyProviderToolLimitToCatalog,
+  getAllToolsAsync,
   getAllToolCatalogAsync,
+  toOpenAITools,
   type ToolSource,
 } from "./index";
+import type { ToolParamSchema } from "./types";
 import type { Capability, ToolCategory } from "./registry";
 import { registerLangChainPackage } from "./langchain-package";
 import { getConfig } from "@/lib/env/config";
@@ -30,11 +33,13 @@ interface ToolSummary {
   status_reason: string | null;
   permission: "enabled" | "disabled" | "unavailable";
   permission_reason: string | null;
+  input_schema?: ToolParamSchema | null;
 }
 
 export const listToolsTool = tool(
-  async ({ query, category, capability, source, permission, scope, include_disabled }, config?: RunnableConfig) => {
+  async ({ query, category, capability, source, permission, scope, include_disabled, include_schema }, config?: RunnableConfig) => {
     const catalog = await getAllToolCatalogAsync();
+    const schemasByName = include_schema ? await loadInputSchemas() : new Map<string, ToolParamSchema>();
     const agentCfg = agentFromConfig(config);
     const permissionMap = applyAgentPermissionsToCatalog(catalog, agentCfg);
     const allowedNames = permissionMap
@@ -58,6 +63,7 @@ export const listToolsTool = tool(
       status_reason: t.status_reason,
       permission: t.permission ?? "disabled",
       permission_reason: t.permission_reason ?? null,
+      ...(include_schema ? { input_schema: schemasByName.get(t.name) ?? null } : {}),
     }));
 
     const q = typeof query === "string" ? query.trim().toLowerCase() : "";
@@ -94,7 +100,8 @@ export const listToolsTool = tool(
       "Use this when the user asks 'what can you do?', when picking between " +
       "tools for a task, or when troubleshooting whether a specific tool is " +
       "registered or disabled. Optional filters narrow by category, capability, source, or permission. " +
-      "Use scope='enabled' to list/search only executable tools, or scope='all' to include disabled/unavailable tools with flags.",
+      "Use scope='enabled' to list/search only executable tools, or scope='all' to include disabled/unavailable tools with flags. " +
+      "Set include_schema=true before calling invoke_tool so you can pass arguments matching the target tool schema.",
     schema: z.object({
       query: z
         .string()
@@ -124,9 +131,21 @@ export const listToolsTool = tool(
         .boolean()
         .optional()
         .describe("Deprecated compatibility flag. list_tools now always includes known tools with their permission status."),
+      include_schema: z
+        .boolean()
+        .optional()
+        .describe("When true, include each matched tool's JSON input schema when available. Use for preparing invoke_tool args."),
     }),
   },
 );
+
+async function loadInputSchemas(): Promise<Map<string, ToolParamSchema>> {
+  const tools = await getAllToolsAsync();
+  return new Map(toOpenAITools(tools).map((toolDef) => [
+    toolDef.function.name,
+    toolDef.function.parameters,
+  ]));
+}
 
 function toolSearchText(tool: ToolSummary): string {
   return [
