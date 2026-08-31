@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.30.1] - 2026-08-31
+
+### Fixed
+
+- **Large MCP toolsets no longer disappear behind the provider tool cap.**
+  The provider tool payload limit is now configurable via the advanced
+  `JARELA_PROVIDER_TOOL_LIMIT` setting, defaults to 512 tools, and marks
+  otherwise-enabled tools omitted by the cap with `provider_tool_limit` so
+  agents can suggest moving tools in/out or ask before raising the limit.
+- **Git probe tests are safe under Git hooks.** Git helper subprocesses now
+  ignore inherited repository environment variables so hook-invoked tests
+  operate on their requested working directory instead of the parent index.
+
 ## [1.30.0] - 2026-08-31
 
 ### Added
