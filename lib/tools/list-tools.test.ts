@@ -69,15 +69,12 @@ describe("list_tools", () => {
     expect(self?.permission).toBe("enabled");
   });
 
-  it("can reveal globally disabled tools without granting execution permission", async () => {
+  it("returns globally disabled tools without granting execution permission", async () => {
     setCategoryEnabled("Memory", false);
 
     const defaultView = parse(await listToolsTool.invoke({ query: "memory_read" }));
-    expect(defaultView.tools).toEqual([]);
-
-    const fullView = parse(await listToolsTool.invoke({ query: "memory_read", include_disabled: true }));
-    expect(fullView.tools).toHaveLength(1);
-    expect(fullView.tools[0]).toMatchObject({
+    expect(defaultView.tools).toHaveLength(1);
+    expect(defaultView.tools[0]).toMatchObject({
       name: "memory_read",
       status: "disabled",
       status_reason: "category_disabled",
@@ -87,11 +84,20 @@ describe("list_tools", () => {
   });
 
   it("marks known non-Basic tools disabled for the current agent by default", async () => {
-    const out = parse(await listToolsTool.invoke({ query: "gmail_", include_disabled: true }));
+    const out = parse(await listToolsTool.invoke({ query: "gmail_" }));
     const gmail = out.tools.find((tool) => tool.name.startsWith("gmail_"));
     expect(gmail).toBeDefined();
     expect(gmail?.permission).toBe("disabled");
     expect(gmail?.permission_reason).toBe("agent_not_allowed");
+  });
+
+  it("can list/search only enabled executable tools", async () => {
+    const out = parse(await listToolsTool.invoke({ query: "gmail_", scope: "enabled" }));
+    expect(out.tools).toEqual([]);
+
+    const enabled = parse(await listToolsTool.invoke({ query: "file_read", scope: "enabled" }));
+    expect(enabled.tools.map((tool) => tool.name)).toContain("file_read");
+    expect(enabled.tools.every((tool) => tool.permission === "enabled")).toBe(true);
   });
 
   it("defaults uncategorized incoming tools to Other", () => {
@@ -131,6 +137,33 @@ describe("list_tools", () => {
 
     const byCategory = parse(await listToolsTool.invoke({ query: "skills" }));
     expect(byCategory.tools.some((t) => t.category === "Skills")).toBe(true);
+  });
+
+  it("uses the current run permission map when reporting cap-omitted tools", async () => {
+    const out = parse(await listToolsTool.invoke(
+      { query: "file_read", scope: "all" },
+      {
+        configurable: {
+          agent_run_config: {
+            tool_permission_map: [
+              {
+                name: "file_read",
+                category: "Files",
+                capability: "read",
+                source: "builtin",
+                permission: "disabled",
+                permission_reason: "provider_tool_limit",
+              },
+            ],
+          },
+        },
+      },
+    ));
+
+    expect(out.tools.find((tool) => tool.name === "file_read")).toMatchObject({
+      permission: "disabled",
+      permission_reason: "provider_tool_limit",
+    });
   });
 
   it("surfaces efficiency guidance for shell and file tool selection", async () => {

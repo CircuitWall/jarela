@@ -421,7 +421,7 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     name: "JARELA_PROVIDER_TOOL_LIMIT",
     type: "int",
     default: ENV_DEFAULTS.providerToolLimit,
-    description: "Maximum number of tool definitions sent to the LLM provider in one agent turn. If an agent has more enabled tools than this, explicitly selected and self-configuration tools are prioritized; omitted tools appear with reason=provider_tool_limit. Raise this only if your provider accepts larger tool payloads.",
+    description: "Maximum number of tool definitions sent to the LLM provider in one agent turn, still clamped by provider hard limits such as OpenAI-compatible APIs' 128-tool maximum. If an agent has more enabled tools than the effective limit, explicitly selected and self-configuration tools are prioritized; omitted tools appear with reason=provider_tool_limit.",
     category: "tools",
     tier: "B",
     requiresRestart: false,

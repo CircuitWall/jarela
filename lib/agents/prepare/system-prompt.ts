@@ -177,18 +177,19 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const unavailable = ordered.filter((tool) => tool.permission === "unavailable");
   const capped = ordered.filter((tool) => tool.permission_reason === "provider_tool_limit");
   const lines = [
-    "--- Tool permission map ---",
-    `You can execute ${enabled.length} tool(s). ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
+    "--- Enabled tools ---",
+    `You can execute the ${enabled.length} tool(s) listed below. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
     "If a disabled or unavailable tool is needed, explain why and propose a permission/config change instead of pretending to use it.",
-    "This durable full tool list is intentionally placed in the cacheable system-prompt prefix.",
+    "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
+    "The full tool inventory is not embedded here; call list_tools with scope=\"enabled\" to search executable tools or scope=\"all\" to include disabled/unavailable tools with flags.",
   ];
   if (capped.length > 0) {
     lines.push(
       `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted from this turn with reason=provider_tool_limit.`,
-      "If one of those tools is needed, use the available self-configuration tools to propose moving less relevant tools out of this agent's tool list, or ask before raising JARELA_PROVIDER_TOOL_LIMIT.",
+      "Use list_tools with query plus scope=\"all\" to search omitted candidates. If a needed tool is omitted, propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
     );
   }
-  for (const tool of ordered) lines.push(formatToolPermissionLine(tool));
+  for (const tool of enabled) lines.push(formatToolPermissionLine(tool));
   return lines.join("\n");
 }
 

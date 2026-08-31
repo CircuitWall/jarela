@@ -190,7 +190,7 @@ const permissionMapFixture = [
 ] satisfies import("@/lib/tools").ToolCatalogEntry[];
 
 describe("buildToolPermissionContext", () => {
-  it("renders the full deterministic tool permission list", () => {
+  it("renders only the enabled deterministic tool permission list", () => {
     const ctx = buildToolPermissionContext([
       {
         ...permissionMapFixture[2],
@@ -199,17 +199,16 @@ describe("buildToolPermissionContext", () => {
       permissionMapFixture[0],
     ]);
 
-    expect(ctx).toContain("--- Tool permission map ---");
-    expect(ctx).toContain("You can execute 1 tool(s)");
-    expect(ctx).toContain("This durable full tool list is intentionally placed in the cacheable system-prompt prefix.");
+    expect(ctx).toContain("--- Enabled tools ---");
+    expect(ctx).toContain("You can execute the 1 tool(s) listed below");
+    expect(ctx).toContain("The full tool inventory is not embedded here");
     expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
-    expect(ctx).toContain("- Basic > Memory > memory_read: read/builtin/unavailable reason=category_disabled");
-    expect(ctx).toContain("- Other > Mail > gmail_send_email: write/builtin/disabled reason=agent_not_allowed");
+    expect(ctx).not.toContain("- Basic > Memory > memory_read");
+    expect(ctx).not.toContain("- Other > Mail > gmail_send_email");
     expect(ctx).toContain("propose a permission/config change");
-    expect(ctx.indexOf("file_read")).toBeLessThan(ctx.indexOf("gmail_send_email"));
   });
 
-  it("places the full permission map before the cache split sentinel", () => {
+  it("places the enabled tool list before the cache split sentinel", () => {
     const prompt = buildSystemPrompt({
       agentCfg: agentCfg(),
       trimmedMessage: "hi",
@@ -222,9 +221,10 @@ describe("buildToolPermissionContext", () => {
       toolPermissionMap: permissionMapFixture,
     });
 
-    expect(prompt.indexOf("--- Tool permission map ---")).toBeGreaterThanOrEqual(0);
-    expect(prompt.indexOf("--- Tool permission map ---")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt.indexOf("--- Enabled tools ---")).toBeGreaterThanOrEqual(0);
+    expect(prompt.indexOf("--- Enabled tools ---")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
     expect(prompt.indexOf("file_read: read/builtin/enabled")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt).not.toContain("gmail_send_email: write/builtin/disabled");
     expect(prompt.indexOf("dynamic recall")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
   });
 });

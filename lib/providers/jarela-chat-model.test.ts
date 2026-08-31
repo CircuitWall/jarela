@@ -7,9 +7,13 @@ import { JarelaChatModel } from "./jarela-chat-model";
 import { resetConfigCache } from "@/lib/env/config";
 import type { ModelProvider, OpenAITool, ProviderStreamEvent } from "./types";
 
-function makeProvider(events: ProviderStreamEvent[], onTools?: (tools: OpenAITool[]) => void): ModelProvider {
+function makeProvider(
+  events: ProviderStreamEvent[],
+  onTools?: (tools: OpenAITool[]) => void,
+  name = "test",
+): ModelProvider {
   return {
-    name: "test",
+    name,
     async chat() { throw new Error("unused"); },
     async *streamInvoke(_modelId, _messages, _params, tools) {
       onTools?.(tools);
@@ -136,6 +140,20 @@ describe("JarelaChatModel — empty stream handling", () => {
     await collectChunks(model);
 
     expect(seenTools.map((tool) => tool.function.name)).toEqual(["tool_0", "tool_1", "tool_2"]);
+  });
+
+  it("clamps OpenAI-compatible providers to their hard 128-tool maximum", async () => {
+    process.env.JARELA_PROVIDER_TOOL_LIMIT = "400";
+    resetConfigCache();
+    let seenTools: OpenAITool[] = [];
+    const provider = makeProvider([{ type: "text", delta: "ok" }], (tools) => { seenTools = tools; }, "openai");
+    const model = new JarelaChatModel({ provider, modelId: "gpt-5.4", params: {} })
+      .bindTools(Array.from({ length: 400 }, (_, index) => makeTool(index))) as JarelaChatModel;
+
+    await collectChunks(model);
+
+    expect(seenTools).toHaveLength(128);
+    expect(seenTools.at(-1)?.function.name).toBe("tool_127");
   });
 
   it("propagates tool_call_chunk provider_meta into additional_kwargs.provider_tool_call_meta", async () => {
