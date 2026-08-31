@@ -8,12 +8,14 @@ import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import {
   applyAgentPermissionsToCatalog,
+  applyProviderToolLimitToCatalog,
   getAllToolCatalogAsync,
   type ToolSource,
 } from "./index";
 import type { Capability, ToolCategory } from "./registry";
 import { registerLangChainPackage } from "./langchain-package";
-import { getAgentConfig } from "@/lib/stores/agent-configs";
+import { getConfig } from "@/lib/env/config";
+import { getAgentConfig, getAgentTools } from "@/lib/stores/agent-configs";
 import { getThread } from "@/lib/stores/threads";
 
 interface ToolSummary {
@@ -33,7 +35,17 @@ export const listToolsTool = tool(
   async ({ query, category, capability, source, include_disabled, permission }, config?: RunnableConfig) => {
     const catalog = await getAllToolCatalogAsync();
     const agentCfg = agentFromConfig(config);
-    const summaries: ToolSummary[] = applyAgentPermissionsToCatalog(catalog, agentCfg).map((t) => ({
+    const permissionMap = applyAgentPermissionsToCatalog(catalog, agentCfg);
+    const allowedNames = permissionMap
+      .filter((entry) => entry.permission === "enabled")
+      .map((entry) => entry.name);
+    const capped = applyProviderToolLimitToCatalog(
+      permissionMap,
+      allowedNames,
+      getConfig().providerToolLimit,
+      getAgentTools(agentCfg),
+    );
+    const summaries: ToolSummary[] = capped.toolPermissionMap.map((t) => ({
       name: t.name,
       description: t.description,
       category: t.category,

@@ -6,9 +6,17 @@ import { execFileSync } from "node:child_process";
 
 import { probeGit, gitDiffSummary } from "./git-probe";
 
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  return env;
+}
+
 function hasGit(): boolean {
   try {
-    execFileSync("git", ["--version"], { stdio: "ignore" });
+    execFileSync("git", ["--version"], { stdio: "ignore", env: cleanGitEnv() });
     return true;
   } catch {
     return false;
@@ -21,15 +29,17 @@ beforeEach(() => {
 });
 
 function gitInit(dir: string): void {
-  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore" });
+  const env = cleanGitEnv();
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore", env });
 }
 
 function commitAll(dir: string, message: string): void {
-  execFileSync("git", ["add", "."], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["commit", "-q", "-m", message], { cwd: dir, stdio: "ignore" });
+  const env = cleanGitEnv();
+  execFileSync("git", ["add", "."], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["commit", "-q", "-m", message], { cwd: dir, stdio: "ignore", env });
 }
 
 describe.runIf(hasGit())("probeGit", () => {
@@ -41,7 +51,7 @@ describe.runIf(hasGit())("probeGit", () => {
     gitInit(projectRoot);
     writeFileSync(join(projectRoot, "a.txt"), "hello");
     commitAll(projectRoot, "init");
-    execFileSync("git", ["remote", "add", "origin", "https://example.com/x.git"], { cwd: projectRoot, stdio: "ignore" });
+    execFileSync("git", ["remote", "add", "origin", "https://example.com/x.git"], { cwd: projectRoot, stdio: "ignore", env: cleanGitEnv() });
     writeFileSync(join(projectRoot, "new.txt"), "fresh");
 
     const out = await probeGit(projectRoot);

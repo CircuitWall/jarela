@@ -37,6 +37,7 @@ import { parseBridgePrompt } from "@/lib/bridges/message-role";
 import {
   allowedToolNamesFromPermissionMap,
   applyAgentPermissionsToCatalog,
+  applyProviderToolLimitToCatalog,
   getAllToolCatalogAsync,
   getDefaultAgentToolNames,
 } from "@/lib/tools";
@@ -358,8 +359,16 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (!agentCfg) {
     throw new RunThreadError(404, `Agent "${thread.agent_id}" not found`, "agent_not_found");
   }
-  const toolPermissionMap = applyAgentPermissionsToCatalog(await getAllToolCatalogAsync(), agentCfg);
-  const allowedTools = withDefaultTools(allowedToolNamesFromPermissionMap(toolPermissionMap), []);
+  const baseToolPermissionMap = applyAgentPermissionsToCatalog(await getAllToolCatalogAsync(), agentCfg);
+  const requestedAllowedTools = withDefaultTools(allowedToolNamesFromPermissionMap(baseToolPermissionMap), []);
+  const limitedTools = applyProviderToolLimitToCatalog(
+    baseToolPermissionMap,
+    requestedAllowedTools,
+    getConfig().providerToolLimit,
+    [...SELF_CONFIG_TOOLS, ...getAgentTools(agentCfg)],
+  );
+  const toolPermissionMap = limitedTools.toolPermissionMap;
+  const allowedTools = limitedTools.allowedToolNames;
 
   if (!req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)) {
     await maybeAutoCompactOversizedThread(agentCfg.id, req.thread_id, thread.message_count);

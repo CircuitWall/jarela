@@ -1,9 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect } from "vitest";
 import { HumanMessage, AIMessageChunk } from "@langchain/core/messages";
 import type { ChatGenerationChunk } from "@langchain/core/outputs";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { JarelaChatModel } from "./jarela-chat-model";
+import { resetConfigCache } from "@/lib/env/config";
 import type { ModelProvider, OpenAITool, ProviderStreamEvent } from "./types";
 
 function makeProvider(events: ProviderStreamEvent[], onTools?: (tools: OpenAITool[]) => void): ModelProvider {
@@ -25,6 +26,11 @@ function makeTool(index: number): DynamicStructuredTool {
     func: async () => "ok",
   });
 }
+
+afterEach(() => {
+  delete process.env.JARELA_PROVIDER_TOOL_LIMIT;
+  resetConfigCache();
+});
 
 async function collectChunks(
   model: JarelaChatModel,
@@ -106,17 +112,30 @@ describe("JarelaChatModel — empty stream handling", () => {
     expect(chunks.length).toBeGreaterThan(0);
   });
 
-  it("caps provider tool payloads at the OpenAI-compatible limit", async () => {
+  it("caps provider tool payloads at the runtime limit", async () => {
     let seenTools: OpenAITool[] = [];
     const provider = makeProvider([{ type: "text", delta: "ok" }], (tools) => { seenTools = tools; });
     const model = new JarelaChatModel({ provider, modelId: "m", params: {} })
-      .bindTools(Array.from({ length: 158 }, (_, index) => makeTool(index))) as JarelaChatModel;
+      .bindTools(Array.from({ length: 542 }, (_, index) => makeTool(index))) as JarelaChatModel;
 
     await collectChunks(model);
 
-    expect(seenTools).toHaveLength(128);
+    expect(seenTools).toHaveLength(512);
     expect(seenTools[0].function.name).toBe("tool_0");
-    expect(seenTools.at(-1)?.function.name).toBe("tool_127");
+    expect(seenTools.at(-1)?.function.name).toBe("tool_511");
+  });
+
+  it("honors JARELA_PROVIDER_TOOL_LIMIT", async () => {
+    process.env.JARELA_PROVIDER_TOOL_LIMIT = "3";
+    resetConfigCache();
+    let seenTools: OpenAITool[] = [];
+    const provider = makeProvider([{ type: "text", delta: "ok" }], (tools) => { seenTools = tools; });
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {} })
+      .bindTools(Array.from({ length: 5 }, (_, index) => makeTool(index))) as JarelaChatModel;
+
+    await collectChunks(model);
+
+    expect(seenTools.map((tool) => tool.function.name)).toEqual(["tool_0", "tool_1", "tool_2"]);
   });
 
   it("propagates tool_call_chunk provider_meta into additional_kwargs.provider_tool_call_meta", async () => {

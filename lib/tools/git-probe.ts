@@ -12,11 +12,19 @@ const execFileP = promisify(execFile);
 // provider or a huge repo.
 export const GIT_PROBE_TIMEOUT_MS = 8_000;
 
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  return env;
+}
+
 // For single-value output (branch name, short SHA, remote URL) — safe to
 // trim on both ends.
 async function safeGit(root: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await execFileP("git", args, { cwd: root, timeout: GIT_PROBE_TIMEOUT_MS });
+    const { stdout } = await execFileP("git", args, { cwd: root, timeout: GIT_PROBE_TIMEOUT_MS, env: cleanGitEnv() });
     return stdout.trim();
   } catch {
     return "";
@@ -29,7 +37,7 @@ async function safeGit(root: string, args: string[]): Promise<string> {
 // eat that space off line one. Only strip the trailing newline.
 async function safeGitRaw(root: string, args: string[]): Promise<string> {
   try {
-    const { stdout } = await execFileP("git", args, { cwd: root, timeout: GIT_PROBE_TIMEOUT_MS });
+    const { stdout } = await execFileP("git", args, { cwd: root, timeout: GIT_PROBE_TIMEOUT_MS, env: cleanGitEnv() });
     return stdout.replace(/\r?\n+$/, "");
   } catch {
     return "";
@@ -38,7 +46,7 @@ async function safeGitRaw(root: string, args: string[]): Promise<string> {
 
 async function isGitRepo(root: string): Promise<boolean> {
   try {
-    await execFileP("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, timeout: GIT_PROBE_TIMEOUT_MS });
+    await execFileP("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root, timeout: GIT_PROBE_TIMEOUT_MS, env: cleanGitEnv() });
     return true;
   } catch {
     return false;
