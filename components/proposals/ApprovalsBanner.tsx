@@ -1,10 +1,130 @@
 "use client";
 import { Check, ChevronDown, ChevronUp, ShieldAlert, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, PendingAction } from "@/api/types";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
+
+const PAYLOAD_PREVIEW_CHARS = 6_000;
+const PAYLOAD_EXPANDED_PREVIEW_CHARS = 20_000;
+const PAYLOAD_PREVIEW_MAX_DEPTH = 8;
+const PAYLOAD_PREVIEW_MAX_ENTRIES = 120;
+const PAYLOAD_PREVIEW_STRING_CHARS = 1_000;
+
+export interface PayloadPreviewResult {
+  text: string;
+  truncated: boolean;
+}
+
+export function formatPayloadPreview(
+  payload: unknown,
+  opts: {
+    maxChars?: number;
+    maxDepth?: number;
+    maxEntries?: number;
+    maxStringChars?: number;
+  } = {},
+): PayloadPreviewResult {
+  const maxChars = opts.maxChars ?? PAYLOAD_PREVIEW_CHARS;
+  const maxDepth = opts.maxDepth ?? PAYLOAD_PREVIEW_MAX_DEPTH;
+  const maxEntries = opts.maxEntries ?? PAYLOAD_PREVIEW_MAX_ENTRIES;
+  const maxStringChars = opts.maxStringChars ?? PAYLOAD_PREVIEW_STRING_CHARS;
+  const seen = new WeakSet<object>();
+  let out = "";
+  let truncated = false;
+
+  const append = (s: string) => {
+    if (out.length >= maxChars) {
+      truncated = true;
+      return false;
+    }
+    const room = maxChars - out.length;
+    if (s.length > room) {
+      out += s.slice(0, room);
+      truncated = true;
+      return false;
+    }
+    out += s;
+    return true;
+  };
+
+  const writeIndent = (level: number) => append("  ".repeat(level));
+  const writeString = (value: string) => {
+    if (value.length > maxStringChars) {
+      truncated = true;
+      return append(JSON.stringify(`${value.slice(0, maxStringChars)}… (${value.length - maxStringChars} more chars)`));
+    }
+    return append(JSON.stringify(value));
+  };
+
+  const writeValue = (value: unknown, depth: number): boolean => {
+    if (value === null || typeof value === "number" || typeof value === "boolean") {
+      return append(JSON.stringify(value));
+    }
+    if (typeof value === "string") return writeString(value);
+    if (typeof value === "undefined") return append(JSON.stringify("[undefined]"));
+    if (typeof value === "function" || typeof value === "symbol") return writeString(`[${typeof value}]`);
+    if (typeof value !== "object") return writeString(String(value));
+    if (seen.has(value)) {
+      truncated = true;
+      return writeString("[Circular]");
+    }
+    if (depth >= maxDepth) {
+      truncated = true;
+      return writeString("[Max depth reached]");
+    }
+
+    seen.add(value);
+    if (Array.isArray(value)) {
+      if (!append("[")) return false;
+      const count = Math.min(value.length, maxEntries);
+      for (let i = 0; i < count; i++) {
+        if (!append(i === 0 ? "\n" : ",\n")) return false;
+        if (!writeIndent(depth + 1)) return false;
+        if (!writeValue(value[i], depth + 1)) return false;
+      }
+      if (value.length > count) {
+        truncated = true;
+        if (!append(count === 0 ? "\n" : ",\n")) return false;
+        if (!writeIndent(depth + 1)) return false;
+        if (!writeString(`… ${value.length - count} more items`)) return false;
+      }
+      if (count > 0 || value.length > count) {
+        if (!append("\n")) return false;
+        if (!writeIndent(depth)) return false;
+      }
+      return append("]");
+    }
+
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (!append("{")) return false;
+    const count = Math.min(entries.length, maxEntries);
+    for (let i = 0; i < count; i++) {
+      const [key, val] = entries[i];
+      if (!append(i === 0 ? "\n" : ",\n")) return false;
+      if (!writeIndent(depth + 1)) return false;
+      if (!writeString(key) || !append(": ")) return false;
+      if (!writeValue(val, depth + 1)) return false;
+    }
+    if (entries.length > count) {
+      truncated = true;
+      if (!append(count === 0 ? "\n" : ",\n")) return false;
+      if (!writeIndent(depth + 1)) return false;
+      if (!writeString("…") || !append(": ") || !writeString(`${entries.length - count} more keys`)) return false;
+    }
+    if (count > 0 || entries.length > count) {
+      if (!append("\n")) return false;
+      if (!writeIndent(depth)) return false;
+    }
+    return append("}");
+  };
+
+  writeValue(payload, 0);
+  if (truncated && out.length < maxChars) out += "\n… preview truncated";
+  else if (truncated) out = `${out}\n… preview truncated`;
+  return { text: out, truncated };
+}
 
 // Compute the deep-link URL + label for a successfully-approved action so
 // the resulting toast lets the user jump to the row that just changed.
@@ -284,9 +404,7 @@ export function ApprovalsBanner({
                       <span className="font-mono uppercase tracking-wide text-[10px] text-amber-700 dark:text-amber-400/80">{a.kind}</span>
                       {a.reason && <span className="text-amber-100/90">{a.reason}</span>}
                     </div>
-                    <pre className="text-[11px] text-amber-800 dark:text-amber-200/70 font-mono whitespace-pre-wrap break-words bg-amber-950/40 rounded p-2 mb-2">
-                      {JSON.stringify(a.payload, null, 2)}
-                    </pre>
+                    <PayloadPreview payload={a.payload} />
                     <div className="flex gap-1.5 justify-end">
                       <button
                         onClick={() => deny(a)}
@@ -352,9 +470,7 @@ function SecretFormModal({
           )}
         </div>
         <div className="p-4 space-y-3">
-          <pre className="text-[11px] text-fg-subtle font-mono whitespace-pre-wrap break-words bg-surface rounded p-2 border border-border">
-            {JSON.stringify(state.action.payload, null, 2)}
-          </pre>
+          <PayloadPreview payload={state.action.payload} subtle />
           {state.fields.map((f) => (
             <div key={f.key} className="space-y-1">
               <label htmlFor={`sec-${f.key}`} className="text-xs font-medium text-fg-subtle">
@@ -400,6 +516,54 @@ function SecretFormModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PayloadPreview({ payload, subtle = false }: { payload: unknown; subtle?: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const preview = useMemo(
+    () => formatPayloadPreview(payload, {
+      maxChars: expanded ? PAYLOAD_EXPANDED_PREVIEW_CHARS : PAYLOAD_PREVIEW_CHARS,
+    }),
+    [expanded, payload],
+  );
+
+  async function copyFullPayload() {
+    await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  const preClass = subtle
+    ? "text-[11px] text-fg-subtle font-mono whitespace-pre-wrap break-words bg-surface rounded p-2 border border-border max-h-72 overflow-auto"
+    : "text-[11px] text-amber-800 dark:text-amber-200/70 font-mono whitespace-pre-wrap break-words bg-amber-950/40 rounded p-2 mb-2 max-h-56 overflow-auto";
+
+  return (
+    <div className={subtle ? "space-y-1" : "mb-2 space-y-1"}>
+      <pre className={preClass}>{preview.text}</pre>
+      {preview.truncated && (
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-fg-faint">
+          <span>
+            Large proposal payload truncated for chat performance.
+          </span>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="underline underline-offset-2 hover:text-fg"
+          >
+            {expanded ? "Show shorter preview" : "Show larger preview"}
+          </button>
+          <button
+            type="button"
+            onClick={() => { void copyFullPayload(); }}
+            className="underline underline-offset-2 hover:text-fg"
+          >
+            {copied ? "Copied" : "Copy full JSON"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
