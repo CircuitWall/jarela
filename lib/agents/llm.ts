@@ -254,6 +254,7 @@ async function* streamWithConfigImpl(
           thread_id: threadId,
           delegation_depth: runCfg?.delegation?.depth ?? 0,
           delegation_ancestors: runCfg?.delegation?.ancestors ?? [],
+          tool_permission_map: runCfg?.tool_permission_map,
         },
         // LangGraph counts EACH node visit (model call + each tool call) as a
         // step. File-organization, multi-search-and-fetch, and any task that

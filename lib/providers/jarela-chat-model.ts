@@ -16,7 +16,7 @@ import type { Runnable } from "@langchain/core/runnables";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
 import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/types";
 import { maskInvokeMessages } from "@/lib/redaction/mask-messages";
-import { getConfig } from "@/lib/env/config";
+import { getEffectiveProviderToolLimit } from "./tool-limit";
 
 interface Fields {
   provider: ModelProvider;
@@ -72,7 +72,7 @@ export class JarelaChatModel extends BaseChatModel {
       } catch {
         return [];
       }
-    }).slice(0, getConfig().providerToolLimit);
+    }).slice(0, getEffectiveProviderToolLimit(this._provider.name));
   }
 
   async _generate(

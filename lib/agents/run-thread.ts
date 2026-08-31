@@ -34,6 +34,7 @@ import {
   type SourceManifestEntry,
 } from "@/lib/agents/citation-checker";
 import { parseBridgePrompt } from "@/lib/bridges/message-role";
+import { getEffectiveProviderToolLimit } from "@/lib/providers/tool-limit";
 import {
   allowedToolNamesFromPermissionMap,
   applyAgentPermissionsToCatalog,
@@ -45,6 +46,7 @@ import {
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
 const SELF_CONFIG_TOOLS = [
+  "list_tools",
   "propose_config_change",
   "check_proposal",
   "read_agent_instruction",
@@ -361,14 +363,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   }
   const baseToolPermissionMap = applyAgentPermissionsToCatalog(await getAllToolCatalogAsync(), agentCfg);
   const requestedAllowedTools = withDefaultTools(allowedToolNamesFromPermissionMap(baseToolPermissionMap), []);
-  const limitedTools = applyProviderToolLimitToCatalog(
-    baseToolPermissionMap,
-    requestedAllowedTools,
-    getConfig().providerToolLimit,
-    [...SELF_CONFIG_TOOLS, ...getAgentTools(agentCfg)],
-  );
-  const toolPermissionMap = limitedTools.toolPermissionMap;
-  const allowedTools = limitedTools.allowedToolNames;
+  let toolPermissionMap = baseToolPermissionMap;
+  let allowedTools = requestedAllowedTools;
 
   if (!req._skip_persist_message && isAutoBoundaryEligibleCategory(req.user_category)) {
     await maybeAutoCompactOversizedThread(agentCfg.id, req.thread_id, thread.message_count);
@@ -496,6 +492,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     };
   }
   const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
+  const limitedTools = applyProviderToolLimitToCatalog(
+    baseToolPermissionMap,
+    requestedAllowedTools,
+    getEffectiveProviderToolLimit(modelCfg?.provider),
+    SELF_CONFIG_TOOLS,
+    {
+      candidateQuery: trimmed,
+      preferredToolNames: getAgentTools(agentCfg),
+    },
+  );
+  toolPermissionMap = limitedTools.toolPermissionMap;
+  allowedTools = limitedTools.allowedToolNames;
   const baseProviderParams = getModelParams(modelCfg);
 
   // ADR-0043 — per-agent override of context_tier_proportions. The agent's

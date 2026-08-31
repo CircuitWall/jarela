@@ -32,7 +32,7 @@ interface ToolSummary {
 }
 
 export const listToolsTool = tool(
-  async ({ query, category, capability, source, include_disabled, permission }, config?: RunnableConfig) => {
+  async ({ query, category, capability, source, permission, scope, include_disabled }, config?: RunnableConfig) => {
     const catalog = await getAllToolCatalogAsync();
     const agentCfg = agentFromConfig(config);
     const permissionMap = applyAgentPermissionsToCatalog(catalog, agentCfg);
@@ -45,7 +45,7 @@ export const listToolsTool = tool(
       getConfig().providerToolLimit,
       getAgentTools(agentCfg),
     );
-    const summaries: ToolSummary[] = capped.toolPermissionMap.map((t) => ({
+    const summaries: ToolSummary[] = applyRunPermissionOverlay(capped.toolPermissionMap, config).map((t) => ({
       name: t.name,
       description: t.description,
       category: t.category,
@@ -59,13 +59,14 @@ export const listToolsTool = tool(
     }));
 
     const q = typeof query === "string" ? query.trim().toLowerCase() : "";
+    const resolvedScope = scope ?? (include_disabled === false ? "enabled" : "all");
     const filtered = summaries.filter((s) =>
       (!q || toolSearchText(s).includes(q)) &&
       (!category || s.category === category) &&
       (!capability || s.capability === capability) &&
       (!source || s.source === source) &&
       (!permission || s.permission === permission) &&
-      (include_disabled === true || s.permission === "enabled"),
+      (resolvedScope !== "enabled" || s.permission === "enabled"),
     );
 
     const counts = {
@@ -91,7 +92,7 @@ export const listToolsTool = tool(
       "Use this when the user asks 'what can you do?', when picking between " +
       "tools for a task, or when troubleshooting whether a specific tool is " +
       "registered or disabled. Optional filters narrow by category, capability, source, or permission. " +
-      "Set include_disabled=true to see tools that exist but this agent cannot execute; ask the user before proposing permission changes.",
+      "Use scope='enabled' to list/search only executable tools, or scope='all' to include disabled/unavailable tools with flags.",
     schema: z.object({
       query: z
         .string()
@@ -109,6 +110,10 @@ export const listToolsTool = tool(
         .enum(["builtin", "external", "mcp"])
         .optional()
         .describe("Optional source filter — where the tool came from"),
+      scope: z
+        .enum(["enabled", "all"])
+        .optional()
+        .describe("Whether to list/search only enabled executable tools or all known tools with permission flags. Defaults to 'all'."),
       permission: z
         .enum(["enabled", "disabled", "unavailable"])
         .optional()
@@ -116,7 +121,7 @@ export const listToolsTool = tool(
       include_disabled: z
         .boolean()
         .optional()
-        .describe("When true, include known tools that are disabled for this agent or globally unavailable"),
+        .describe("Deprecated compatibility flag. list_tools now always includes known tools with their permission status."),
     }),
   },
 );
@@ -136,6 +141,43 @@ function toolSearchText(tool: ToolSummary): string {
   ]
     .join(" ")
     .toLowerCase();
+}
+
+function applyRunPermissionOverlay<T extends {
+  name: string;
+  permission?: ToolSummary["permission"];
+  permission_reason?: string | null;
+}>(
+  catalog: ReadonlyArray<T>,
+  config?: RunnableConfig,
+): ReadonlyArray<T> {
+  type PermissionOverlay = Array<{
+    name?: unknown;
+    permission?: unknown;
+    permission_reason?: unknown;
+  }>;
+  const runConfig = config?.configurable?.agent_run_config as { tool_permission_map?: PermissionOverlay } | undefined;
+  const runPermissionMap = (
+    config?.configurable?.tool_permission_map
+    ?? runConfig?.tool_permission_map
+  ) as PermissionOverlay | undefined;
+  if (!Array.isArray(runPermissionMap)) return catalog;
+  const byName = new Map<string, { permission: ToolSummary["permission"]; permission_reason: string | null }>();
+  for (const entry of runPermissionMap) {
+    if (
+      typeof entry.name === "string"
+      && (entry.permission === "enabled" || entry.permission === "disabled" || entry.permission === "unavailable")
+    ) {
+      byName.set(entry.name, {
+        permission: entry.permission,
+        permission_reason: typeof entry.permission_reason === "string" ? entry.permission_reason : null,
+      });
+    }
+  }
+  return catalog.map((entry) => {
+    const overlay = byName.get(entry.name);
+    return overlay ? { ...entry, ...overlay } : entry;
+  });
 }
 
 function agentFromConfig(config?: RunnableConfig) {

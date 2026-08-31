@@ -277,14 +277,21 @@ export interface ProviderToolLimitResult {
   omittedToolNames: string[];
 }
 
+export interface ProviderToolLimitOptions {
+  candidateQuery?: string;
+  preferredToolNames?: readonly string[];
+}
+
 export function applyProviderToolLimitToCatalog(
   catalog: readonly ToolCatalogEntry[],
   allowedToolNames: readonly string[],
   limit: number,
   priorityToolNames: readonly string[] = [],
+  options: ProviderToolLimitOptions = {},
 ): ProviderToolLimitResult {
   const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : allowedToolNames.length;
   const allowedSet = new Set(allowedToolNames);
+  const catalogByName = new Map(catalog.map((entry) => [entry.name, entry]));
   const permissionMap = catalog.map((entry) => {
     if (entry.status === "enabled" && allowedSet.has(entry.name) && entry.permission !== "enabled") {
       return {
@@ -313,7 +320,11 @@ export function applyProviderToolLimitToCatalog(
   };
 
   for (const name of priorityToolNames) add(name);
-  for (const name of allowedToolNames) add(name);
+  const remaining = allowedToolNames
+    .filter((name) => !selectedSet.has(name))
+    .map((name, index) => ({ name, index, score: scoreToolCandidate(catalogByName.get(name), options) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index);
+  for (const candidate of remaining) add(candidate.name);
 
   const omittedToolNames = allowedToolNames.filter((name) => !selectedSet.has(name));
   const omittedSet = new Set(omittedToolNames);
@@ -331,6 +342,51 @@ export function applyProviderToolLimitToCatalog(
       return entry;
     }),
   };
+}
+
+function scoreToolCandidate(
+  entry: ToolCatalogEntry | undefined,
+  options: ProviderToolLimitOptions,
+): number {
+  if (!entry) return 0;
+  const preferred = new Set(options.preferredToolNames ?? []);
+  let score = preferred.has(entry.name) ? 25 : 0;
+  const queryTokens = tokenizeForToolSelection(options.candidateQuery ?? "");
+  if (queryTokens.length === 0) return score;
+
+  const nameTokens = tokenizeForToolSelection(entry.name);
+  const categoryTokens = tokenizeForToolSelection(`${entry.category} ${entry.group ?? ""} ${entry.source}`);
+  const descriptionTokens = tokenizeForToolSelection(entry.description);
+  const nameTokenSet = new Set(nameTokens);
+  const categoryTokenSet = new Set(categoryTokens);
+  const descriptionTokenSet = new Set(descriptionTokens);
+
+  for (const token of queryTokens) {
+    if (entry.name.toLowerCase().includes(token)) score += 10;
+    if (nameTokenSet.has(token)) score += 8;
+    if (categoryTokenSet.has(token)) score += 4;
+    if (descriptionTokenSet.has(token)) score += 2;
+  }
+
+  return score;
+}
+
+const TOOL_SELECTION_STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "but", "if", "then", "than", "for", "to", "of", "in", "on", "at",
+  "by", "with", "from", "as", "is", "are", "was", "were", "be", "been", "being", "i", "me", "my",
+  "you", "your", "we", "our", "it", "its", "this", "that", "these", "those", "can", "could", "would",
+  "should", "will", "please", "help", "need", "want", "make", "get", "set", "use", "using",
+]);
+
+function tokenizeForToolSelection(text: string): string[] {
+  const seen = new Set<string>();
+  const tokens = text
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/g)
+    .filter((token) => token.length >= 2 && !TOOL_SELECTION_STOP_WORDS.has(token));
+  for (const token of tokens) seen.add(token);
+  return [...seen];
 }
 
 function toCatalogEntry(
