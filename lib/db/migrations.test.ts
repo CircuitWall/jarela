@@ -326,9 +326,11 @@ describe("backfillDeveloperInteractiveTerminalTools", () => {
       "terminal_read",
       "terminal_close",
       "terminal_list",
+      "terminal",
     ]));
-    expect(row.instructions).toContain("terminal_open + terminal_exec + terminal_read");
+    expect(row.instructions).toContain("terminal action='run'");
     expect(row.instructions).not.toContain("shell_exec (or local_exec for a single binary)");
+    expect(tools).not.toContain("shell_exec");
   });
 });
 
@@ -389,4 +391,3 @@ describe("router column migration", () => {
     expect(after.some((c) => c.name === "router_enabled")).toBe(true);
   });
 });
-

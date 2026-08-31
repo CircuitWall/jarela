@@ -35,7 +35,8 @@ function ToolsBody({ form, advancedMode }: { form: AgentEditorForm; advancedMode
                   (t) =>
                     t.name.toLowerCase().includes(query) ||
                     t.description?.toLowerCase().includes(query) ||
-                    t.category?.toLowerCase().includes(query),
+                    t.category?.toLowerCase().includes(query) ||
+                    t.mcp_server?.toLowerCase().includes(query),
                 ),
               ] as [string, typeof catTools],
           )

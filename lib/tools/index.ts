@@ -75,6 +75,15 @@ function builtinNames(): ReadonlySet<string> {
   return registeredNames();
 }
 
+const DEFAULT_EXCLUDED_BASIC_TOOLS = new Set([
+  "terminal_open",
+  "terminal_exec",
+  "terminal_send",
+  "terminal_read",
+  "terminal_close",
+  "terminal_list",
+]);
+
 // Backwards-compatible export. Callers that import this Set get its current
 // contents at the moment they read it (a fresh Set each access). Internal
 // code prefers `builtinNames()` directly; this stays for external consumers
@@ -100,6 +109,7 @@ export interface ToolCatalogEntry {
   category: ToolCategory;
   capability: Capability;
   group: ToolGroup;
+  mcp_server?: string | null;
   credentials_required: string[];
   status: ToolStatus;
   status_reason: string | null;
@@ -165,15 +175,19 @@ export function getToolCredentialsRequired(name: string): string[] {
 
 export function getDefaultAgentToolNames(): string[] {
   return getAllTools()
-    .filter((t) => isBasicToolCategory(getToolCategory(t.name)))
+    .filter((t) => isDefaultBasicTool(t.name, getToolCategory(t.name)))
     .map((t) => t.name);
 }
 
 export async function getDefaultAgentToolNamesAsync(): Promise<string[]> {
   const tools = await getAllToolsAsync();
   return tools
-    .filter((t) => isBasicToolCategory(getToolCategory(t.name)))
+    .filter((t) => isDefaultBasicTool(t.name, getToolCategory(t.name)))
     .map((t) => t.name);
+}
+
+function isDefaultBasicTool(name: string, category: string): boolean {
+  return isBasicToolCategory(category) && !DEFAULT_EXCLUDED_BASIC_TOOLS.has(name);
 }
 
 export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
@@ -220,13 +234,15 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
     }));
   }
   for (const tool of mcpTools) {
-    const category = normalizeToolCategory(getMcpToolMeta(tool.name)?.category) as ToolCategory;
+    const meta = getMcpToolMeta(tool.name);
+    const category = normalizeToolCategory(meta?.category) as ToolCategory;
     entries.set(tool.name, toCatalogEntry(tool, {
       source: "mcp",
       category,
       capability: "execute",
-      group: getMcpToolMeta(tool.name)?.group as ToolGroup | undefined ?? groupForCategory(category),
-      credentials_required: getMcpToolMeta(tool.name)?.credentials_required ?? [],
+      group: "MCP",
+      mcp_server: meta?.server_name ?? null,
+      credentials_required: meta?.credentials_required ?? [],
       status: "enabled",
       status_reason: null,
     }));
@@ -248,11 +264,11 @@ export function applyAgentPermissionsToCatalog(
         permission_reason: entry.status_reason ?? "tool_unavailable",
       };
     }
-    if (explicitlyAllowed.has(entry.name) || isBasicToolCategory(entry.category)) {
+    if (explicitlyAllowed.has(entry.name) || isDefaultBasicTool(entry.name, entry.category)) {
       return {
         ...entry,
         permission: "enabled" as const,
-        permission_reason: isBasicToolCategory(entry.category) && !explicitlyAllowed.has(entry.name)
+        permission_reason: isDefaultBasicTool(entry.name, entry.category) && !explicitlyAllowed.has(entry.name)
           ? "basic_default"
           : "agent_allowed",
       };
@@ -396,6 +412,7 @@ function toCatalogEntry(
     category: ToolCategory;
     capability: Capability;
     group: ToolGroup | undefined;
+    mcp_server?: string | null;
     credentials_required?: string[];
     status: ToolStatus;
     status_reason: string | null;
@@ -408,6 +425,7 @@ function toCatalogEntry(
     category: meta.category,
     capability: meta.capability,
     group: meta.group ?? null,
+    mcp_server: meta.mcp_server ?? null,
     credentials_required: meta.credentials_required ?? [],
     status: meta.status,
     status_reason: meta.status_reason,

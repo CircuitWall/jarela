@@ -23,6 +23,7 @@ interface Result {
     capability: string;
     source: string;
     group: string | null;
+    mcp_server: string | null;
     status: "enabled" | "disabled" | "unavailable";
     status_reason: string | null;
     permission: "enabled" | "disabled" | "unavailable";
@@ -114,7 +115,16 @@ describe("list_tools", () => {
       "read_skill",
       "list_tools",
       "local_exec",
+      "terminal",
       "workflow_progress",
+    ]));
+    expect(defaults).not.toEqual(expect.arrayContaining([
+      "terminal_open",
+      "terminal_exec",
+      "terminal_send",
+      "terminal_read",
+      "terminal_close",
+      "terminal_list",
     ]));
     expect(getToolCategory("workflow_progress")).toBe("Agent");
   });
@@ -170,11 +180,11 @@ describe("list_tools", () => {
     const out = parse(await listToolsTool.invoke({ include_disabled: true }));
     const descriptions = new Map(out.tools.map((t) => [t.name, t.description]));
 
-    expect(descriptions.get("file_grep")).toContain("Prefer this over local_exec/shell_exec");
+    expect(descriptions.get("file_grep")).toContain("Prefer this over local_exec/terminal");
     expect(descriptions.get("file_multi_edit")).toContain("multiple file_edit round-trips");
     expect(descriptions.get("local_exec")).toContain("one-shot shell command");
     expect(descriptions.get("local_exec")).toContain("Prefer file_glob/file_grep/file_read/file_edit/file_multi_edit");
-    expect(descriptions.get("terminal_exec")).toContain("interactive/stateful workflows");
+    expect(descriptions.get("terminal")).toContain("action='run' for simple one-shot shell work");
   });
 
   it("returns empty list (not error) when filters match nothing", async () => {

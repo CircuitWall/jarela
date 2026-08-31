@@ -73,7 +73,7 @@ interface ToolCategoryBlockProps {
 // stay available for fine-grained control.
 export function ToolCategoryBlock({
   category, tools, selected,
-  onToggleTool, onToggleCategory,
+  onToggleTool,
 }: ToolCategoryBlockProps) {
   const selectableTools = tools.filter(isSelectableTool);
   const selectedInCat = selectableTools.filter((t) => selected.includes(t.name)).length;
@@ -86,6 +86,13 @@ export function ToolCategoryBlock({
     if (headerRef.current) headerRef.current.indeterminate = someOn;
   }, [someOn]);
 
+  const toggleAll = (enable: boolean) => {
+    for (const t of selectableTools) {
+      const isOn = selected.includes(t.name);
+      if (enable !== isOn) onToggleTool(t.name);
+    }
+  };
+
   return (
     <ToolSelectionSection
       label={category}
@@ -94,7 +101,7 @@ export function ToolCategoryBlock({
       selectedCount={selectedInCat}
       totalCount={selectableTools.length}
       allOn={allOn}
-      onToggleAll={(enable) => onToggleCategory(category, enable)}
+      onToggleAll={toggleAll}
       headerRef={headerRef}
       bodyClassName="space-y-1.5 px-3 pb-2 pt-0.5 border-t border-border/60"
     >

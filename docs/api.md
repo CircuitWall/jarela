@@ -109,13 +109,15 @@ Read, update, or delete one agent config.
 ### `GET /api/v1/tools`
 
 Returns every tool in the agent's pool with `{ name, description, source,
-category, capability, group, stats }`. Source is `builtin | external | mcp`.
-Capability is `read | write | execute`.
+category, capability, group, mcp_server, stats }`. Source is
+`builtin | external | mcp`. Capability is `read | write | execute`.
+`mcp_server` is populated for MCP-sourced tools so clients can render
+`MCP -> server -> tools` permission hierarchies.
 
 Query parameters:
 
 - `q` — optional case-insensitive search across name, description, category,
-  capability, source, and group.
+  capability, source, group, and MCP server.
 
 - **Source:** [`app/api/v1/tools/route.ts`](../app/api/v1/tools/route.ts)
 - **Agent equivalent:** `list_tools` tool — same data, callable from inside an agent run, with the same `query` search behavior.

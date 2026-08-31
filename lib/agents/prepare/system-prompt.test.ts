@@ -187,6 +187,19 @@ const permissionMapFixture = [
     permission: "unavailable",
     permission_reason: "category_disabled",
   },
+  {
+    name: "web_search",
+    description: "search web",
+    source: "builtin",
+    category: "Web",
+    capability: "read",
+    group: "Basic",
+    credentials_required: [],
+    status: "enabled",
+    status_reason: null,
+    permission: "disabled",
+    permission_reason: "provider_tool_limit",
+  },
 ] satisfies import("@/lib/tools").ToolCatalogEntry[];
 
 describe("buildToolPermissionContext", () => {
@@ -197,15 +210,22 @@ describe("buildToolPermissionContext", () => {
       },
       permissionMapFixture[1],
       permissionMapFixture[0],
+      permissionMapFixture[3],
     ]);
 
     expect(ctx).toContain("--- Enabled tools ---");
-    expect(ctx).toContain("You can execute the 1 tool(s) listed below");
+    expect(ctx).toContain("You can execute the 1 tool(s) listed below. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
+    expect(ctx).toContain("If the needed capability is missing or ambiguous, search the catalog with list_tools");
+    expect(ctx).toContain("Cached Basic tool catalog:");
+    expect(ctx).toContain("- Files: file_read");
+    expect(ctx).toContain("- Memory: memory_read (unavailable/category_disabled)");
+    expect(ctx).toContain("- Web: web_search (disabled/provider_tool_limit)");
+    expect(ctx).toContain("If a needed tool is omitted by the cap, explain that it exists but is not executable in this turn");
     expect(ctx).toContain("The full tool inventory is not embedded here");
     expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
     expect(ctx).not.toContain("- Basic > Memory > memory_read");
     expect(ctx).not.toContain("- Other > Mail > gmail_send_email");
-    expect(ctx).toContain("propose a permission/config change");
+    expect(ctx).toContain("propose moving less relevant tools out of this agent's list");
   });
 
   it("places the enabled tool list before the cache split sentinel", () => {

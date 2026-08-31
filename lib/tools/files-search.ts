@@ -379,7 +379,7 @@ export const fileGrepTool = tool(
   {
     name: "file_grep",
     description:
-      "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/shell_exec grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
+      "Search file contents under a directory by regex (or literal substring with literal=true). Prefer this over local_exec/terminal grep, rg, Select-String, or Get-ChildItem pipelines for code search. Optional glob filter (e.g. '**/*.ts'). Returns POSIX-relative paths, 1-based line numbers, optional N-line context, AND an `enclosing` {kind,name,line} pointing at the surrounding function/class/heading when one can be derived (lets you often skip a follow-up file_read). Skips node_modules/.git/etc, binary files (NUL-byte heuristic), and files >1 MB.",
     schema: grepSchema,
   },
 );

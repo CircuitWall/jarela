@@ -43,7 +43,7 @@ export type ToolCategory =
 export type Capability = "read" | "write" | "execute";
 
 // Optional parent grouping for the Agent editor sidebar.
-export type ToolGroup = "Basic" | "Work" | null;
+export type ToolGroup = "Basic" | "Work" | "MCP" | null;
 
 // Runtime tuple of every built-in category (i.e. every `ToolCategory`
 // except `"MCP"`). This is the single source of truth for anything that

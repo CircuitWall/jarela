@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,8 @@ afterAll(() => {
 });
 
 const { localExecTool } = await import("./exec");
+const { terminalTool } = await import("./terminal");
+const { setWorkspace, _resetWorkspaceContext } = await import("./workspace-context");
 
 function parse(s: string) { return JSON.parse(s) as Record<string, unknown>; }
 
@@ -32,5 +34,55 @@ describe("local_exec timeout reporting", () => {
     const out = parse(await localExecTool.invoke({ command: "nonexistent_jarela_test_cmd_zz" }));
     expect(out.timed_out).toBeUndefined();
     expect(out.exit_code).not.toBe(124);
+  }, 15_000);
+});
+
+describe("terminal", () => {
+  afterAll(() => {
+    _resetWorkspaceContext();
+  });
+
+  it("runs a one-shot shell command without keeping a terminal session", async () => {
+    const command = process.platform === "win32"
+      ? "powershell -NoProfile -Command \"Write-Output terminal-run-ok\""
+      : "printf terminal-run-ok";
+    const out = parse(await terminalTool.invoke({ action: "run", command, session_id: "ignored-run-session" }));
+    const sessions = await terminalTool.invoke({ action: "list" });
+
+    expect(out.exit_code).toBe(0);
+    expect(String(out.stdout)).toContain("terminal-run-ok");
+    expect(out.session_id).toBeUndefined();
+    expect(sessions).not.toContain("ignored-run-session");
+  }, 15_000);
+
+  it("uses the active workspace for one-shot and persistent relative commands", async () => {
+    const workspaceRoot = mkdtempSync(join(tmpRoot, "workspace-"));
+    writeFileSync(join(workspaceRoot, "marker.txt"), "workspace-marker\n");
+    const config = { configurable: { thread_id: "workspace-terminal-test" } };
+    setWorkspace({ root: workspaceRoot, scoped: true, opened_at: Date.now() }, config);
+    const command = process.platform === "win32"
+      ? "powershell -NoProfile -Command \"Get-Content marker.txt\""
+      : "cat marker.txt";
+
+    const oneShot = parse(await terminalTool.invoke({ action: "run", command }, config));
+    const persistent = parse(await terminalTool.invoke({ action: "exec", command }, config));
+    await terminalTool.invoke({ action: "close" }, config);
+
+    expect(String(oneShot.stdout)).toContain("workspace-marker");
+    expect(String(persistent.stdout)).toContain("workspace-marker");
+  }, 15_000);
+
+  it("runs a command through the combined persistent terminal tool", async () => {
+    const command = process.platform === "win32"
+      ? "powershell -NoProfile -Command \"Write-Output terminal-ok\""
+      : "printf terminal-ok";
+    const out = parse(await terminalTool.invoke({ action: "exec", command, session_id: "terminal-test" }));
+
+    expect(out.exit_code).toBe(0);
+    expect(String(out.stdout)).toContain("terminal-ok");
+    expect(out.session_id).toBe("terminal-test");
+
+    const closed = parse(await terminalTool.invoke({ action: "close", session_id: "terminal-test" }));
+    expect(closed.ok).toBe(true);
   }, 15_000);
 });

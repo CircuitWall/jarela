@@ -523,6 +523,8 @@ export interface ToolInfo {
    * under a single "Work" header. `null` (or absent) means render flat.
    */
   group?: string | null;
+  /** MCP server name for MCP-sourced tools, used by the permissions panel hierarchy. */
+  mcp_server?: string | null;
   /**
    * Credential keys this tool requires before it can run. Declared by
    * external (.cjs) tools via `credentials_required: ["my_api_key"]` and by

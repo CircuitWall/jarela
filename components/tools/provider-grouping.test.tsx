@@ -50,7 +50,7 @@ describe("provider-grouping", () => {
 
   it("returns the OTHER bucket for unknown prefixes", () => {
     expect(providerForToolName("read_memory")).toBe(OTHER_PROVIDER_KEY);
-    expect(providerForToolName("shell_exec")).toBe(OTHER_PROVIDER_KEY);
+    expect(providerForToolName("terminal")).toBe(OTHER_PROVIDER_KEY);
   });
 
   it("labels providers and falls back to title-case", () => {
@@ -67,7 +67,7 @@ describe("provider-grouping", () => {
       "read_memory",
       "gmail_get_message",
       "icloud_mail_list_folders",
-      "shell_exec",
+      "terminal",
     ];
     const groups = groupByProvider(names, (n) => n);
     expect(groups.map((g) => g.provider)).toEqual([
@@ -77,7 +77,7 @@ describe("provider-grouping", () => {
       OTHER_PROVIDER_KEY,
     ]);
     expect(groups[0]?.items).toEqual(["gmail_search", "gmail_get_message"]);
-    expect(groups[3]?.items).toEqual(["read_memory", "shell_exec"]);
+    expect(groups[3]?.items).toEqual(["read_memory", "terminal"]);
   });
 
   it("returns a single Other group when nothing matches", () => {

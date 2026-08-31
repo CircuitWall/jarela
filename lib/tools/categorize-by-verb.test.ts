@@ -100,7 +100,7 @@ describe("categorizeByVerb", () => {
   describe("EXECUTE — workflow / external side-effects", () => {
     const cases = [
       "local_exec",
-      "shell_exec",
+      "terminal",
       "delegate_to_agent",
       "generate_image",
       "generate_voice",

@@ -1,7 +1,7 @@
-// local_exec and shell_exec — backward-compatible one-shot wrappers.
+// local_exec — backward-compatible one-shot wrapper.
 // Each call creates a throwaway terminal session, runs the command, and
 // closes the session immediately. State does NOT persist between calls.
-// For stateful multi-step work, use terminal_exec.
+// For stateful or interactive work, use terminal.
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
@@ -86,22 +86,12 @@ export const localExecTool = withStreamDefault(tool(
     runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
   {
     name: "local_exec",
-    description: "Run a one-shot shell command in a throwaway session for builds, tests, git, package managers, and other commands that do not need persisted shell state. Output is truncated to 8 KB. Prefer file_glob/file_grep/file_read/file_edit/file_multi_edit for file discovery, inspection, and edits; prefer terminal_exec for multi-step stateful or interactive work.",
-    schema: execSchema,
-  },
-), true);
-
-export const shellExecTool = withStreamDefault(tool(
-  async ({ command, cwd, env, timeout_ms, allow_unsafe }, config?: ToolConfig) =>
-    runLocalCommand(command, { cwd, env, timeout_ms, allow_unsafe, workspaceRoot: currentWorkspace(config)?.root }),
-  {
-    name: "shell_exec",
-    description: "Backward-compatible alias for local_exec. Prefer local_exec in new plans so one-shot shell usage is explicit.",
+    description: "Run a one-shot shell command in a throwaway session for builds, tests, git, package managers, and other commands that do not need persisted shell state. Output is truncated to 8 KB. Prefer file_glob/file_grep/file_read/file_edit/file_multi_edit for file discovery, inspection, and edits; prefer terminal for multi-step stateful or interactive work.",
     schema: execSchema,
   },
 ), true);
 
 registerLangChainPackage({
   category: "Shell",
-  tools: { execute: [localExecTool, shellExecTool] },
+  tools: { execute: [localExecTool] },
 });
