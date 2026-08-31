@@ -7,7 +7,7 @@
 // See ADR-0039 for the decomposition rationale.
 
 import os from "node:os";
-import { CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
+import { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { parseCitationStrictness } from "@/lib/stores/agent-configs";
 import { getUserProfile } from "@/lib/stores/user-profile";
@@ -59,7 +59,7 @@ export interface SystemPromptContext {
 
 // Re-exported so callers that only need the sentinel don't have to import the
 // full providers package. The canonical definition lives in anthropic.ts.
-export { CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
+export { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools, toolPermissionMap } = ctx;
@@ -72,11 +72,18 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const tierCtxByName = { hot: "", warm: warmSummaryCtx, facts: factsCtx } as const;
   const tierOrderCtx = budget.tierPriority.map((t) => tierCtxByName[t]).filter(Boolean);
 
-  // Stable prefix: agent persona, integration/doc/skill facts, all harness
-  // sections, and other content that rarely changes within a session. This
-  // block is cached by Anthropic's ephemeral prompt cache and read at ~10%
-  // the normal input rate on subsequent turns.
-  const stableParts: (string | null | undefined)[] = [
+  // Shared prefix: cross-agent static instructions and compact tool specs.
+  // This text is intentionally before agent identity/instructions and is split
+  // into its own provider cache block so multiple agents can reuse it.
+  const sharedStableParts: (string | null | undefined)[] = [
+    buildSharedToolCatalogContext(toolPermissionMap ?? []),
+  ];
+
+  // Agent-stable prefix: persona, integration/doc/skill facts, harness sections,
+  // and other content that rarely changes within this agent/session. Keep
+  // request-scored state (for example provider-cap tool selection) out of this
+  // block so Anthropic's ephemeral prompt cache survives across user turns.
+  const agentStableParts: (string | null | undefined)[] = [
     agentCfg.identity,
     agentCfg.instructions,
     buildDeliveryChannelContext(deliveryChannel),
@@ -92,15 +99,16 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     harnessParts.self_config,
     buildMemoryContext(budget),
     buildDelegatesContext(delegateRosterLines),
-    buildToolPermissionContext(toolPermissionMap ?? []),
     buildExperienceContext(experienceMode),
   ];
 
   // Dynamic suffix: content that changes on every turn (timestamp, per-turn
-  // recall, output budget derived from model params). Placed AFTER the sentinel
-  // so it never touches the stable cache breakpoint.
+  // recall, output budget derived from model params, provider-cap-selected
+  // tool state). Placed AFTER the sentinel so it never touches the stable cache
+  // breakpoint.
   const dynamicParts: (string | null | undefined)[] = [
     adaptivePersonaCtx,
+    buildToolPermissionContext(toolPermissionMap ?? []),
     buildToolReliabilityContext(allowedTools ?? []),
     buildSourceLinkContext(agentCfg, sourceManifest ?? []),
     buildTimeContext(),
@@ -109,9 +117,10 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     recallCtx,
   ];
 
-  const stable = stableParts.filter(Boolean).join("\n\n");
+  const sharedStable = sharedStableParts.filter(Boolean).join("\n\n");
+  const agentStable = agentStableParts.filter(Boolean).join("\n\n");
   const dynamic = dynamicParts.filter(Boolean).join("\n\n");
-  return `${stable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
+  return `${sharedStable}\n\n${CACHE_SHARED_SPLIT_SENTINEL}\n\n${agentStable}\n\n${CACHE_SPLIT_SENTINEL}\n\n${dynamic}`;
 }
 
 const TOOL_RECOVERY_HINTS: Record<string, string> = {
@@ -180,7 +189,7 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
     "--- Enabled tools ---",
     `You can execute the ${enabled.length} tool(s) listed below. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
     "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
-    "The Basic tool catalog is cached below as compact metadata only; a cached name is executable only when it also appears in the enabled list.",
+    "The shared cached Basic tool catalog is compact metadata only; a cached name is executable only when it also appears in the enabled list or list_tools shows it is enabled but provider-cap omitted.",
     "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
     "The full tool inventory is not embedded here; call list_tools with scope=\"enabled\" to search executable tools or scope=\"all\" to include disabled/unavailable tools with flags.",
   ];
@@ -190,12 +199,21 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
       "Use list_tools with query plus scope=\"all\" and include_schema=true to search omitted candidates. If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool with the exact target name and args. If invoke_tool is unavailable or the tool is disabled/unavailable for another reason, propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
     );
   }
-  const basicCatalog = buildBasicToolCatalogLines(ordered);
+  for (const tool of enabled) lines.push(formatToolPermissionLine(tool));
+  return lines.join("\n");
+}
+
+export function buildSharedToolCatalogContext(permissionMap: ReadonlyArray<ToolCatalogEntry>): string {
+  const basicCatalog = buildBasicToolCatalogLines(permissionMap);
+  const lines = [
+    "--- Shared tool discovery cache ---",
+    "This cross-agent block is intentionally static: it describes stable tool discovery workflow and compact Basic tool specs. Current per-agent/per-turn execution permission is listed later under Enabled tools.",
+    "Tool workflow: use a directly enabled tool when present; use list_tools with service/object/action keywords when missing or ambiguous; use list_tools include_schema=true before invoke_tool when you need target args; use invoke_tool only for tools that are permitted but not directly loaded.",
+  ];
   if (basicCatalog.length > 0) {
-    lines.push("Cached Basic tool catalog:");
+    lines.push("Cached Basic tool specs:");
     lines.push(...basicCatalog);
   }
-  for (const tool of enabled) lines.push(formatToolPermissionLine(tool));
   return lines.join("\n");
 }
 
@@ -222,11 +240,8 @@ function buildBasicToolCatalogLines(ordered: ReadonlyArray<ToolCatalogEntry>): s
   const byCategory = new Map<string, string[]>();
   for (const tool of ordered) {
     if (tool.group !== "Basic") continue;
-    const permission = tool.permission ?? "disabled";
-    const reason = tool.permission_reason ?? tool.status_reason;
-    const suffix = permission === "enabled" ? "" : ` (${permission}${reason ? `/${reason}` : ""})`;
     const names = byCategory.get(tool.category) ?? [];
-    names.push(`${tool.name}${suffix}`);
+    names.push(`${tool.name}(${tool.capability}/${tool.source})`);
     byCategory.set(tool.category, names);
   }
   return Array.from(byCategory.entries(), ([category, names]) => `- ${category}: ${names.join(", ")}`);

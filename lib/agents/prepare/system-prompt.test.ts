@@ -6,7 +6,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-system-prompt-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { CACHE_SPLIT_SENTINEL, buildSystemPrompt, buildToolPermissionContext, buildToolReliabilityContext } = await import("./system-prompt");
+const { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL, buildSystemPrompt, buildToolPermissionContext, buildSharedToolCatalogContext, buildToolReliabilityContext } = await import("./system-prompt");
 const { recordToolUsage } = await import("@/lib/stores/tool-stats");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
@@ -216,10 +216,10 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("--- Enabled tools ---");
     expect(ctx).toContain("You can execute the 1 tool(s) listed below. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
     expect(ctx).toContain("If the needed capability is missing or ambiguous, search the catalog with list_tools");
-    expect(ctx).toContain("Cached Basic tool catalog:");
-    expect(ctx).toContain("- Files: file_read");
-    expect(ctx).toContain("- Memory: memory_read (unavailable/category_disabled)");
-    expect(ctx).toContain("- Web: web_search (disabled/provider_tool_limit)");
+    expect(ctx).toContain("The shared cached Basic tool catalog is compact metadata only");
+    expect(ctx).not.toContain("Cached Basic tool specs:");
+    expect(ctx).not.toContain("- Memory: memory_read");
+    expect(ctx).not.toContain("- Web: web_search");
     expect(ctx).toContain("If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool");
     expect(ctx).toContain("The full tool inventory is not embedded here");
     expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
@@ -228,7 +228,20 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("If invoke_tool is unavailable or the tool is disabled/unavailable for another reason");
   });
 
-  it("places the enabled tool list before the cache split sentinel", () => {
+  it("renders permission-free shared Basic tool specs for cross-agent caching", () => {
+    const ctx = buildSharedToolCatalogContext(permissionMapFixture);
+
+    expect(ctx).toContain("--- Shared tool discovery cache ---");
+    expect(ctx).toContain("Cached Basic tool specs:");
+    expect(ctx).toContain("- Files: file_read(read/builtin)");
+    expect(ctx).toContain("- Memory: memory_read(read/builtin)");
+    expect(ctx).toContain("- Web: web_search(read/builtin)");
+    expect(ctx).not.toContain("provider_tool_limit");
+    expect(ctx).not.toContain("category_disabled");
+    expect(ctx).not.toContain("basic_default");
+  });
+
+  it("places per-turn tool permission state after the cache split sentinel", () => {
     const prompt = buildSystemPrompt({
       agentCfg: agentCfg(),
       trimmedMessage: "hi",
@@ -242,10 +255,69 @@ describe("buildToolPermissionContext", () => {
     });
 
     expect(prompt.indexOf("--- Enabled tools ---")).toBeGreaterThanOrEqual(0);
-    expect(prompt.indexOf("--- Enabled tools ---")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
-    expect(prompt.indexOf("file_read: read/builtin/enabled")).toBeLessThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt.indexOf("--- Enabled tools ---")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+    expect(prompt.indexOf("file_read: read/builtin/enabled")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
     expect(prompt).not.toContain("gmail_send_email: write/builtin/disabled");
     expect(prompt.indexOf("dynamic recall")).toBeGreaterThan(prompt.indexOf(CACHE_SPLIT_SENTINEL));
+  });
+
+  it("keeps the cached prefix stable when provider-cap tool state changes", () => {
+    const build = (toolPermissionMap: import("@/lib/tools").ToolCatalogEntry[]) => buildSystemPrompt({
+      agentCfg: agentCfg(),
+      trimmedMessage: "hi",
+      budget,
+      recallCtx: "dynamic recall",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      toolPermissionMap,
+    });
+    const first = build(permissionMapFixture);
+    const second = build(permissionMapFixture.map((tool) =>
+      tool.name === "file_read"
+        ? { ...tool, permission: "disabled", permission_reason: "provider_tool_limit" }
+        : tool,
+    ));
+
+    expect(first.slice(0, first.indexOf(CACHE_SPLIT_SENTINEL))).toBe(
+      second.slice(0, second.indexOf(CACHE_SPLIT_SENTINEL)),
+    );
+    expect(first.slice(first.indexOf(CACHE_SPLIT_SENTINEL))).not.toBe(
+      second.slice(second.indexOf(CACHE_SPLIT_SENTINEL)),
+    );
+  });
+
+  it("keeps the shared cached block stable across agents", () => {
+    const first = buildSystemPrompt({
+      agentCfg: agentCfg({ id: "agent-a", identity: "You are agent A.", instructions: "Use short replies." }),
+      trimmedMessage: "hi",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      toolPermissionMap: permissionMapFixture,
+    });
+    const second = buildSystemPrompt({
+      agentCfg: agentCfg({ id: "agent-b", identity: "You are agent B.", instructions: "Use detailed replies." }),
+      trimmedMessage: "hi",
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      toolPermissionMap: permissionMapFixture,
+    });
+
+    expect(first.slice(0, first.indexOf(CACHE_SHARED_SPLIT_SENTINEL))).toBe(
+      second.slice(0, second.indexOf(CACHE_SHARED_SPLIT_SENTINEL)),
+    );
+    expect(first.slice(first.indexOf(CACHE_SHARED_SPLIT_SENTINEL), first.indexOf(CACHE_SPLIT_SENTINEL))).not.toBe(
+      second.slice(second.indexOf(CACHE_SHARED_SPLIT_SENTINEL), second.indexOf(CACHE_SPLIT_SENTINEL)),
+    );
   });
 });
 

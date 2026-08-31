@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Anthropic prompt caching is more stable across tool-heavy turns.** Per-turn
+  tool permission state now stays after the dynamic cache split so request-scored
+  provider-cap changes do not invalidate the static system-prompt prefix.
+
 ## [1.30.4] - 2026-08-31
 
 ### Added

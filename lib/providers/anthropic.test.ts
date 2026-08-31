@@ -1,9 +1,12 @@
 import { describe, it, expect } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import {
+  CACHE_SHARED_SPLIT_SENTINEL,
+  CACHE_SPLIT_SENTINEL,
   withSystemCacheControl,
   withToolsCacheControl,
   withLastToolResultCacheControl,
+  buildAnthropicMessageBody,
 } from "./anthropic";
 
 describe("withSystemCacheControl", () => {
@@ -15,6 +18,20 @@ describe("withSystemCacheControl", () => {
 
   it("returns undefined for empty string so the system field is omitted", () => {
     expect(withSystemCacheControl("")).toBeUndefined();
+  });
+
+  it("caches shared and agent-stable system blocks separately", () => {
+    expect(withSystemCacheControl([
+      "shared tool specs",
+      CACHE_SHARED_SPLIT_SENTINEL,
+      "agent instructions",
+      CACHE_SPLIT_SENTINEL,
+      "dynamic turn data",
+    ].join("\n"))).toEqual([
+      { type: "text", text: "shared tool specs", cache_control: { type: "ephemeral", ttl: "1h" } },
+      { type: "text", text: "agent instructions", cache_control: { type: "ephemeral", ttl: "1h" } },
+      { type: "text", text: "dynamic turn data" },
+    ]);
   });
 });
 
@@ -42,6 +59,55 @@ describe("withToolsCacheControl", () => {
     const snapshot = JSON.stringify(tools);
     withToolsCacheControl(tools);
     expect(JSON.stringify(tools)).toBe(snapshot);
+  });
+});
+
+describe("buildAnthropicMessageBody cache budgeting", () => {
+  it("keeps shared system, tools, and tool-result caching within Anthropic's four-breakpoint limit", () => {
+    const body = buildAnthropicMessageBody(
+      "claude-sonnet-5",
+      [
+        {
+          role: "system",
+          content: [
+            "shared tool specs",
+            CACHE_SHARED_SPLIT_SENTINEL,
+            "agent instructions",
+            CACHE_SPLIT_SENTINEL,
+            "dynamic turn data",
+          ].join("\n"),
+        },
+        { role: "assistant", content: "prior answer" },
+        { role: "assistant", content: "tool call", tool_calls: [{ id: "tool-1", type: "function", function: { name: "echo", arguments: "{}" } }] },
+        { role: "tool", content: "tool result", tool_call_id: "tool-1" },
+        { role: "user", content: "next question" },
+      ],
+      {},
+      [{
+        type: "function",
+        function: {
+          name: "echo",
+          description: "Echo",
+          parameters: { type: "object", properties: {}, required: [] },
+        },
+      }],
+    );
+
+    const systemBreakpoints = Array.isArray(body.system)
+      ? body.system.filter((block) => block.cache_control).length
+      : 0;
+    const toolBreakpoints = (body.tools ?? [])
+      .filter((toolDef) => "cache_control" in toolDef && toolDef.cache_control)
+      .length;
+    const messageBreakpoints = body.messages.reduce((count, message) => {
+      if (typeof message.content === "string") return count;
+      return count + message.content.filter((block) => "cache_control" in block && block.cache_control).length;
+    }, 0);
+
+    expect(systemBreakpoints).toBe(2);
+    expect(toolBreakpoints).toBe(1);
+    expect(messageBreakpoints).toBe(1);
+    expect(systemBreakpoints + toolBreakpoints + messageBreakpoints).toBeLessThanOrEqual(4);
   });
 });
 
