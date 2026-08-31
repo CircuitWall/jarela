@@ -382,6 +382,7 @@ export function runMigrations(db: DatabaseSync): void {
   ensureAgentConfigsToolCredentialsColumn(db);
   seedAgentConfigs(db);
   backfillDeveloperInteractiveTerminalTools(db);
+  removeShellExecFromAgentTools(db);
   backfillMailSendTools(db);
   migrateInlineApiKeysToCredentials(db);
   migrateIntegrationsToCredentials(db);
@@ -1028,6 +1029,7 @@ function backfillDeveloperInteractiveTerminalTools(db: DatabaseSync): void {
   }
 
   const interactiveTools = [
+    "terminal",
     "terminal_open",
     "terminal_exec",
     "terminal_send",
@@ -1046,7 +1048,6 @@ function backfillDeveloperInteractiveTerminalTools(db: DatabaseSync): void {
     "file_copy",
     "file_delete",
     "local_exec",
-    "shell_exec",
     "web_fetch",
     "web_search",
     "github_search_issues",
@@ -1068,7 +1069,7 @@ function backfillDeveloperInteractiveTerminalTools(db: DatabaseSync): void {
   const nextInstructions = hasOldInstruction
     ? row.instructions.replace(
         "After every meaningful edit, run the project's build, lint, or test command via shell_exec (or local_exec for a single binary) and read the output before declaring success â€” never claim a fix without proof.",
-        "After every meaningful edit, run the project's build, lint, or test command via terminal_open + terminal_exec + terminal_read when you need an interactive shell, or shell_exec / local_exec for a simple one-shot command, and read the output before declaring success â€” never claim a fix without proof.",
+        "After every meaningful edit, run the project's build, lint, or test command via terminal action='run' or local_exec for a simple one-shot command, or terminal open/exec/read when you need an interactive shell, and read the output before declaring success â€” never claim a fix without proof.",
       )
     : row.instructions;
 
@@ -1077,6 +1078,23 @@ function backfillDeveloperInteractiveTerminalTools(db: DatabaseSync): void {
     JSON.stringify(nextTools),
     now(),
   );
+}
+
+function removeShellExecFromAgentTools(db: DatabaseSync): void {
+  const rows = db.prepare("SELECT id, tools FROM agent_configs WHERE tools LIKE '%shell_exec%'").all() as Array<{ id: string; tools: string }>;
+  if (rows.length === 0) return;
+  const update = db.prepare("UPDATE agent_configs SET tools=?, updated_at=? WHERE id=?");
+  for (const row of rows) {
+    let tools: unknown;
+    try { tools = JSON.parse(row.tools); } catch { continue; }
+    if (!Array.isArray(tools)) continue;
+    const next = Array.from(new Set(
+      tools
+        .filter((tool): tool is string => typeof tool === "string" && tool !== "shell_exec")
+        .concat(tools.includes("shell_exec") ? ["terminal"] : []),
+    ));
+    if (JSON.stringify(next) !== row.tools) update.run(JSON.stringify(next), now(), row.id);
+  }
 }
 
 function backfillMailSendTools(db: DatabaseSync): void {
@@ -1167,7 +1185,7 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
     identity:
       "You are a pragmatic software engineer working in the user's local repo with a real build/test harness.",
     instructions:
-      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via terminal_open + terminal_exec + terminal_read when you need an interactive shell, or shell_exec / local_exec for a simple one-shot command, and read the output before declaring success Ã¢â‚¬â€ never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
+      "Read before you write. Use file_list / file_read / file_stat to map the code, then file_edit for surgical changes and file_write only for new files. After every meaningful edit, run the project's build, lint, or test command via terminal action='run' or local_exec for a simple one-shot command, or terminal open/exec/read when you need an interactive shell, and read the output before declaring success Ã¢â‚¬â€ never claim a fix without proof. Use github_* to look up issues/PRs for context. Prefer the smallest change that solves the problem; never invent paths or APIs.",
     tools: [
       "file_read",
       "file_write",
@@ -1185,7 +1203,6 @@ const BASE_AGENT_PROFILES: BaseAgentProfile[] = [
       "terminal_close",
       "terminal_list",
       "local_exec",
-      "shell_exec",
       "web_fetch",
       "web_search",
       "github_search_issues",

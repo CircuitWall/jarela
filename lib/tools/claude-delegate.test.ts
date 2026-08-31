@@ -201,6 +201,17 @@ describe("claude_delegate — cwd resolution", () => {
     expect(out.workspace_missing).toBeUndefined();
   });
 
+  it("uses the thread-scoped workspace root when invoked with LangChain context", async () => {
+    const config = { configurable: { thread_id: "claude-workspace-thread" } };
+    setWorkspace({ root: projectRoot, scoped: true, opened_at: Date.now() }, config);
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", sync_memory: false }, config));
+
+    expect(state.calls[0]!.cwd).toBe(projectRoot);
+    expect((out.launch as Record<string, unknown>).cwd).toBe(projectRoot);
+    expect(out.workspace_missing).toBeUndefined();
+  });
+
   it("flags workspace_missing when neither cwd nor an active workspace is set", async () => {
     const out = parse(await claudeDelegateTool.invoke({ task: "x", sync_memory: false }));
     expect(out.workspace_missing).toBe(true);

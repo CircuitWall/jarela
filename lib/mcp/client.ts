@@ -30,6 +30,7 @@ export interface McpToolMeta {
   category?: string;
   group?: string;
   credentials_required?: string[];
+  server_name?: string;
 }
 const mcpToolMeta = new Map<string, McpToolMeta>();
 
@@ -134,6 +135,7 @@ export async function getMcpTools(): Promise<StructuredToolInterface[]> {
             credentials_required: Array.isArray(ann.credentials_required)
               ? ann.credentials_required.filter((c): c is string => typeof c === "string")
               : undefined,
+            server_name: row.name,
           });
         }
         subClients.push(client as unknown as { close: () => Promise<void> });

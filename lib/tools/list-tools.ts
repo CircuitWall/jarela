@@ -25,6 +25,7 @@ interface ToolSummary {
   capability: Capability;
   source: ToolSource;
   group: string | null;
+  mcp_server: string | null;
   status: "enabled" | "disabled" | "unavailable";
   status_reason: string | null;
   permission: "enabled" | "disabled" | "unavailable";
@@ -52,6 +53,7 @@ export const listToolsTool = tool(
       capability: t.capability,
       source: t.source,
       group: t.group,
+      mcp_server: t.mcp_server ?? null,
       status: t.status,
       status_reason: t.status_reason,
       permission: t.permission ?? "disabled",
@@ -134,6 +136,7 @@ function toolSearchText(tool: ToolSummary): string {
     tool.capability,
     tool.source,
     tool.group ?? "",
+    tool.mcp_server ?? "",
     tool.status,
     tool.status_reason ?? "",
     tool.permission,

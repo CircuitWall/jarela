@@ -116,7 +116,7 @@ Definitions (kept tight on purpose):
   editing a record: runs arbitrary code, ships a deliverable, triggers
   downstream automation, or transitions a workflow state. A non-power
   user thinks "this is doing something, not just editing". Examples:
-  `local_exec`, `shell_exec`, `restart_server`, `set_env_var`,
+  `local_exec`, `terminal`, `restart_server`, `set_env_var`,
   `generate_image`, `generate_voice`, `delegate_to_agent`,
   `jira_transitions`, `jira_align_transition_item`, `github_merge_pull`.
 

@@ -21,6 +21,7 @@ interface ToolEnvelope {
   status: string;
   status_reason: string | null;
   group: string | null;
+  mcp_server: string | null;
   credentials_required: string[];
   stats: ReturnType<typeof defaultToolStats>;
   failure_samples: Array<{ normalized_reason: string; count: number; last_seen_at: string }>;
@@ -57,6 +58,7 @@ export async function GET(req: Request) {
       status: t.status,
       status_reason: t.status_reason,
       group: t.group,
+      mcp_server: t.mcp_server ?? null,
       credentials_required: t.credentials_required,
         stats: stats.get(t.name) ?? defaultToolStats(),
         failure_samples: failuresByTool.get(t.name) ?? [],
@@ -80,7 +82,7 @@ export async function GET(req: Request) {
 }
 
 function toolSearchText(tool: ToolEnvelope): string {
-  return [tool.name, tool.description, tool.category, tool.capability, tool.source, tool.group ?? ""]
+  return [tool.name, tool.description, tool.category, tool.capability, tool.source, tool.group ?? "", tool.mcp_server ?? ""]
     .join(" ")
     .toLowerCase();
 }

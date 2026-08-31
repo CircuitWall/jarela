@@ -1,8 +1,9 @@
 // Per-thread workspace context for software-development agents.
 //
 // `workspace_init` registers a project root for the active thread; from
-// then on, every `file_*` and `local_exec` call with a relative path
-// resolves against that root instead of the user's HOME directory.
+// then on, `file_*`, `local_exec`, `terminal`, and `claude_delegate` calls
+// with relative paths run against that root instead of the user's HOME
+// directory.
 //
 // State lives on globalThis under a Symbol so multiple module instances
 // (Next.js route bundles, dev HMR) share the same map. Same idempotency

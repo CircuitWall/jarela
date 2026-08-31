@@ -10,7 +10,7 @@ import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { buildOutline, capOutline, shouldOutline } from "./file-outline";
 
 // Dedicated file tools. Agents previously had to drive every edit through
-// `local_exec` / `shell_exec`, which works for "create a new file with this
+// `local_exec` / `terminal`, which works for "create a new file with this
 // content" (echo / Set-Content) but is hostile to in-place edits: quoting
 // rules differ per shell, multi-line strings break under cmd.exe, and a
 // read-modify-write cycle needs two shell calls plus careful diff-by-hand.

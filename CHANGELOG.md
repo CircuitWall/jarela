@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Agents get clearer capped-tool recovery guidance.** The stable tool prompt
+  now keeps a compact cached catalog of Basic tools, tells agents to search
+  `list_tools` by service/object/action keywords when a needed capability is
+  missing or ambiguous, and distinguishes cached tool names from executable
+  tools in the current turn.
+- **Shell tools are combined for new agents.** A new unified `terminal` tool
+  handles one-shot shell commands plus persistent terminal
+  open/exec/send/read/close/list actions. The legacy `shell_exec` alias was
+  removed; use `terminal` with `action='run'` or `local_exec` for one-shot
+  commands.
+- **MCP permissions are grouped by server.** MCP tools now carry their source
+  server through the tool catalog and render in the agent editor as
+  `MCP -> server -> tools`.
+
 ## [1.30.2] - 2026-08-31
 
 ### Fixed

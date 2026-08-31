@@ -179,15 +179,21 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const lines = [
     "--- Enabled tools ---",
     `You can execute the ${enabled.length} tool(s) listed below. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
-    "If a disabled or unavailable tool is needed, explain why and propose a permission/config change instead of pretending to use it.",
+    "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the catalog with list_tools using service/object/action keywords before concluding it is unavailable.",
+    "The Basic tool catalog is cached below as compact metadata only; a cached name is executable only when it also appears in the enabled list.",
     "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
     "The full tool inventory is not embedded here; call list_tools with scope=\"enabled\" to search executable tools or scope=\"all\" to include disabled/unavailable tools with flags.",
   ];
   if (capped.length > 0) {
     lines.push(
       `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted from this turn with reason=provider_tool_limit.`,
-      "Use list_tools with query plus scope=\"all\" to search omitted candidates. If a needed tool is omitted, propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
+      "Use list_tools with query plus scope=\"all\" to search omitted candidates. If a needed tool is omitted by the cap, explain that it exists but is not executable in this turn, then propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
     );
+  }
+  const basicCatalog = buildBasicToolCatalogLines(ordered);
+  if (basicCatalog.length > 0) {
+    lines.push("Cached Basic tool catalog:");
+    lines.push(...basicCatalog);
   }
   for (const tool of enabled) lines.push(formatToolPermissionLine(tool));
   return lines.join("\n");
@@ -210,6 +216,20 @@ function formatToolPermissionLine(tool: ToolCatalogEntry): string {
   const reason = tool.permission_reason ?? tool.status_reason;
   const statusSuffix = reason ? ` reason=${reason}` : "";
   return `- ${groupLabel(tool)} > ${tool.category} > ${tool.name}: ${tool.capability}/${tool.source}/${permission}${statusSuffix}`;
+}
+
+function buildBasicToolCatalogLines(ordered: ReadonlyArray<ToolCatalogEntry>): string[] {
+  const byCategory = new Map<string, string[]>();
+  for (const tool of ordered) {
+    if (tool.group !== "Basic") continue;
+    const permission = tool.permission ?? "disabled";
+    const reason = tool.permission_reason ?? tool.status_reason;
+    const suffix = permission === "enabled" ? "" : ` (${permission}${reason ? `/${reason}` : ""})`;
+    const names = byCategory.get(tool.category) ?? [];
+    names.push(`${tool.name}${suffix}`);
+    byCategory.set(tool.category, names);
+  }
+  return Array.from(byCategory.entries(), ([category, names]) => `- ${category}: ${names.join(", ")}`);
 }
 
 function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {

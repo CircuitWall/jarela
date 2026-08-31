@@ -57,6 +57,17 @@ describe("built-in tool category filter (runtime layer)", () => {
     expect(memory.every((tool) => tool.permission === "unavailable")).toBe(true);
   });
 
+  it("keeps legacy terminal action tools registered but not Basic-default enabled", async () => {
+    const catalog = await getAllToolCatalogAsync();
+    const defaultPermissions = applyAgentPermissionsToCatalog(catalog, { tools: JSON.stringify([]) });
+    const explicitPermissions = applyAgentPermissionsToCatalog(catalog, { tools: JSON.stringify(["terminal_exec"]) });
+
+    expect(defaultPermissions.find((tool) => tool.name === "terminal")?.permission).toBe("enabled");
+    expect(defaultPermissions.find((tool) => tool.name === "terminal_exec")?.permission).toBe("disabled");
+    expect(defaultPermissions.find((tool) => tool.name === "terminal_exec")?.permission_reason).toBe("agent_not_allowed");
+    expect(explicitPermissions.find((tool) => tool.name === "terminal_exec")?.permission).toBe("enabled");
+  });
+
   it("getAllTools leaves tools of other categories untouched when one is disabled", () => {
     setCategoryEnabled("Memory", false);
     const tools = getAllTools();

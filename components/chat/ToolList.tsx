@@ -47,7 +47,7 @@ const INTERNAL_TOOL_ICONS: ReadonlyArray<readonly [string, LucideIcon]> = [
   ["memory", Brain],
   ["workspace", FolderTree],
   ["local_exec", Terminal],
-  ["shell_exec", Terminal],
+  ["terminal", Terminal],
   ["delegate_to_agent", Bot],
   ["generate_image", ImageIcon],
   ["generate_voice", Mic],
@@ -936,7 +936,7 @@ function isSearchResultLike(item: unknown): boolean {
 
 // Tools whose primary argument is a literal shell command line. Their
 // summary reads better as a prompt-style snippet than as `command: "..."`.
-const SHELL_TOOL_NAMES = new Set(["local_exec", "shell_exec"]);
+const SHELL_TOOL_NAMES = new Set(["local_exec", "terminal"]);
 
 // Per-tool well-known primary argument. When present, the per-card
 // summary renders just the quoted value (e.g. `web_search "world news

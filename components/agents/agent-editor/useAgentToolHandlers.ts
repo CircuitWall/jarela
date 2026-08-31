@@ -83,11 +83,11 @@ export function buildGroupedTools(tools: ToolInfo[]) {
   const byCat = new Map<string, ToolInfo[]>();
   const catGroup = new Map<string, string | null>();
   for (const t of tools) {
-    const cat = normalizeToolCategory(t.category);
+    const cat = t.source === "mcp" ? (t.mcp_server?.trim() || "Unknown MCP server") : normalizeToolCategory(t.category);
     const arr = byCat.get(cat) ?? [];
     arr.push(t);
     byCat.set(cat, arr);
-    if (!catGroup.has(cat)) catGroup.set(cat, t.group ?? null);
+    if (!catGroup.has(cat)) catGroup.set(cat, t.source === "mcp" ? "MCP" : t.group ?? null);
   }
 
   // Build a dynamic sort index: pinned first, unknown alphabetically, MCP last.
@@ -110,7 +110,7 @@ export function buildGroupedTools(tools: ToolInfo[]) {
     arr.push([cat, ts]);
     buckets.set(g, arr);
     const prev = groupOrder.get(g);
-    const here = orderOf(cat);
+    const here = g === "MCP" ? orderOf("MCP") : orderOf(cat);
     if (prev === undefined || here < prev) groupOrder.set(g, here);
   }
   for (const arr of buckets.values()) arr.sort((a, b) => orderOf(a[0]) - orderOf(b[0]));
