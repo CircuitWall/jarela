@@ -28,6 +28,14 @@ beforeEach(() => {
 
 function parse(s: string) { return JSON.parse(s) as Record<string, unknown>; }
 
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  return env;
+}
+
 describe("workspace_init", () => {
   it("registers the workspace and returns a context bundle", async () => {
     writeFileSync(join(projectRoot, "package.json"), JSON.stringify({
@@ -189,7 +197,7 @@ describe("workspace_status / workspace_close", () => {
 // environments without git rather than failing.
 function hasGit(): boolean {
   try {
-    execFileSync("git", ["--version"], { stdio: "ignore" });
+    execFileSync("git", ["--version"], { stdio: "ignore", env: cleanGitEnv() });
     return true;
   } catch {
     return false;
@@ -198,18 +206,21 @@ function hasGit(): boolean {
 
 describe.runIf(hasGit())("workspace_init — git probe", () => {
   function gitInit(dir: string): void {
-    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore" });
-    execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore" });
-    execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore" });
-    execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore" });
+    const env = cleanGitEnv();
+    execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore", env });
+    execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore", env });
+    execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore", env });
+    execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore", env });
   }
 
   it("reports is_repo=true with branch/head/remote/dirty for a real repo", async () => {
     gitInit(projectRoot);
     writeFileSync(join(projectRoot, "a.txt"), "hello");
-    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore" });
-    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: projectRoot, stdio: "ignore" });
-    execFileSync("git", ["remote", "add", "origin", "https://example.com/x.git"], { cwd: projectRoot, stdio: "ignore" });
+    let env = cleanGitEnv();
+    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore", env });
+    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: projectRoot, stdio: "ignore", env });
+    env = cleanGitEnv();
+    execFileSync("git", ["remote", "add", "origin", "https://example.com/x.git"], { cwd: projectRoot, stdio: "ignore", env });
 
     // Dirty + untracked
     writeFileSync(join(projectRoot, "a.txt"), "modified");
@@ -235,8 +246,9 @@ describe.runIf(hasGit())("workspace_init — git probe", () => {
   it("workspace_status re-probes git and reflects fresh state", async () => {
     gitInit(projectRoot);
     writeFileSync(join(projectRoot, "x.txt"), "v1");
-    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore" });
-    execFileSync("git", ["commit", "-q", "-m", "v1"], { cwd: projectRoot, stdio: "ignore" });
+    const env = cleanGitEnv();
+    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore", env });
+    execFileSync("git", ["commit", "-q", "-m", "v1"], { cwd: projectRoot, stdio: "ignore", env });
 
     await workspaceInitTool.invoke({ path: projectRoot, include_tree: false });
     // Mutate the tree AFTER init — status should pick it up.

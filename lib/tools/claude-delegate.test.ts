@@ -41,6 +41,14 @@ const state = vi.hoisted(() => ({
   autoClose: true,
 }));
 
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  return env;
+}
+
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const spawnFn = vi.fn((bin: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => {
@@ -104,10 +112,11 @@ async function waitForChild(precedingCount: number): Promise<FakeChild> {
 }
 
 function gitInit(dir: string): void {
-  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore" });
-  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore" });
+  const env = cleanGitEnv();
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore", env });
 }
 
 let projectRoot: string;
@@ -385,8 +394,9 @@ describe("claude_delegate — verify loop (changes)", () => {
   it("attaches a git diff summary reflecting the real workspace state", async () => {
     gitInit(projectRoot);
     writeFileSync(join(projectRoot, "a.txt"), "hello\n");
-    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore" });
-    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: projectRoot, stdio: "ignore" });
+    const env = cleanGitEnv();
+    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore", env });
+    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: projectRoot, stdio: "ignore", env });
     // Simulate Claude having created a new file during its run.
     writeFileSync(join(projectRoot, "new.txt"), "created by claude\n");
 

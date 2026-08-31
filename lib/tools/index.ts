@@ -271,6 +271,68 @@ export function allowedToolNamesFromPermissionMap(catalog: readonly ToolCatalogE
     .map((entry) => entry.name);
 }
 
+export interface ProviderToolLimitResult {
+  toolPermissionMap: ToolCatalogEntry[];
+  allowedToolNames: string[];
+  omittedToolNames: string[];
+}
+
+export function applyProviderToolLimitToCatalog(
+  catalog: readonly ToolCatalogEntry[],
+  allowedToolNames: readonly string[],
+  limit: number,
+  priorityToolNames: readonly string[] = [],
+): ProviderToolLimitResult {
+  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : allowedToolNames.length;
+  const allowedSet = new Set(allowedToolNames);
+  const permissionMap = catalog.map((entry) => {
+    if (entry.status === "enabled" && allowedSet.has(entry.name) && entry.permission !== "enabled") {
+      return {
+        ...entry,
+        permission: "enabled" as const,
+        permission_reason: "runtime_default",
+      };
+    }
+    return entry;
+  });
+
+  if (allowedToolNames.length <= normalizedLimit) {
+    return {
+      toolPermissionMap: permissionMap,
+      allowedToolNames: [...allowedToolNames],
+      omittedToolNames: [],
+    };
+  }
+
+  const selected: string[] = [];
+  const selectedSet = new Set<string>();
+  const add = (name: string) => {
+    if (!allowedSet.has(name) || selectedSet.has(name) || selected.length >= normalizedLimit) return;
+    selected.push(name);
+    selectedSet.add(name);
+  };
+
+  for (const name of priorityToolNames) add(name);
+  for (const name of allowedToolNames) add(name);
+
+  const omittedToolNames = allowedToolNames.filter((name) => !selectedSet.has(name));
+  const omittedSet = new Set(omittedToolNames);
+  return {
+    allowedToolNames: selected,
+    omittedToolNames,
+    toolPermissionMap: permissionMap.map((entry) => {
+      if (entry.permission === "enabled" && omittedSet.has(entry.name)) {
+        return {
+          ...entry,
+          permission: "disabled" as const,
+          permission_reason: "provider_tool_limit",
+        };
+      }
+      return entry;
+    }),
+  };
+}
+
 function toCatalogEntry(
   tool: StructuredToolInterface,
   meta: {

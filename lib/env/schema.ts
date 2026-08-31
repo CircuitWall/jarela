@@ -97,6 +97,7 @@ export const ENV_DEFAULTS = {
   execMaxOutputBytes: 8_000,
   filesMaxReadBytes: 64_000,
   filesMaxWriteBytes: 2_000_000,
+  providerToolLimit: 512,
   // lifecycle
   updateCheckTimeoutMs: 3_000,
   shutdownDrainMs: 10_000,
@@ -415,6 +416,18 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     tier: "A",
     requiresRestart: false,
     agentWritable: true,
+  },
+  {
+    name: "JARELA_PROVIDER_TOOL_LIMIT",
+    type: "int",
+    default: ENV_DEFAULTS.providerToolLimit,
+    description: "Maximum number of tool definitions sent to the LLM provider in one agent turn. If an agent has more enabled tools than this, explicitly selected and self-configuration tools are prioritized; omitted tools appear with reason=provider_tool_limit. Raise this only if your provider accepts larger tool payloads.",
+    category: "tools",
+    tier: "B",
+    requiresRestart: false,
+    agentWritable: true,
+    min: 1,
+    max: 2048,
   },
   {
     name: "JARELA_FETCH_TOOL_MAX_BYTES",

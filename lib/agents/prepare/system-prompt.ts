@@ -175,12 +175,19 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const enabled = ordered.filter((tool) => tool.permission === "enabled");
   const disabled = ordered.filter((tool) => tool.permission === "disabled");
   const unavailable = ordered.filter((tool) => tool.permission === "unavailable");
+  const capped = ordered.filter((tool) => tool.permission_reason === "provider_tool_limit");
   const lines = [
     "--- Tool permission map ---",
     `You can execute ${enabled.length} tool(s). ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
     "If a disabled or unavailable tool is needed, explain why and propose a permission/config change instead of pretending to use it.",
     "This durable full tool list is intentionally placed in the cacheable system-prompt prefix.",
   ];
+  if (capped.length > 0) {
+    lines.push(
+      `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted from this turn with reason=provider_tool_limit.`,
+      "If one of those tools is needed, use the available self-configuration tools to propose moving less relevant tools out of this agent's tool list, or ask before raising JARELA_PROVIDER_TOOL_LIMIT.",
+    );
+  }
   for (const tool of ordered) lines.push(formatToolPermissionLine(tool));
   return lines.join("\n");
 }

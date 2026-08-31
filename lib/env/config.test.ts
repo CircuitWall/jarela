@@ -15,6 +15,7 @@ const KEYS = [
   "JARELA_RECURSION_LIMIT",
   "JARELA_VOICE_TIMEOUT_MS",
   "JARELA_IMAGE_TIMEOUT_MS",
+  "JARELA_PROVIDER_TOOL_LIMIT",
   "JARELA_MODEL_ROUTER_MODE",
   "JARELA_MODEL_ROUTER_POLICY",
   "NEXT_PUBLIC_APP_NAME",
@@ -48,6 +49,7 @@ describe("getConfig", () => {
     expect(c.recursionLimit).toBe(200);
     expect(c.voiceTimeoutMs).toBe(60_000);
     expect(c.imageTimeoutMs).toBe(60_000);
+    expect(c.providerToolLimit).toBe(512);
     expect(c.modelRouterMode).toBe("off");
     expect(c.modelRouterPolicy).toBe("balanced");
     expect(c.dataDir).toBe("/tmp/jarela-test-data");
@@ -119,5 +121,11 @@ describe("getConfig", () => {
     const c = getConfig();
     expect(c.modelRouterMode).toBe("heuristic");
     expect(c.modelRouterPolicy).toBe("cheap");
+  });
+
+  it("honours JARELA_PROVIDER_TOOL_LIMIT", () => {
+    process.env.JARELA_PROVIDER_TOOL_LIMIT = "768";
+    resetConfigCache();
+    expect(getConfig().providerToolLimit).toBe(768);
   });
 });

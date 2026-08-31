@@ -8,7 +8,7 @@ import { join } from "node:path";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-filter-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { getAllTools, executeTool, getAllToolCatalogAsync, applyAgentPermissionsToCatalog } = await import("./index");
+const { getAllTools, executeTool, getAllToolCatalogAsync, applyAgentPermissionsToCatalog, applyProviderToolLimitToCatalog } = await import("./index");
 const { setCategoryEnabled } = await import("@/lib/stores/builtin-tools");
 const { registeredCategory } = await import("./registry");
 
@@ -89,5 +89,36 @@ describe("built-in tool category filter (runtime layer)", () => {
     expect(
       getAllTools().filter((t) => registeredCategory(t.name) === "Web").length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("provider tool limit", () => {
+  it("prioritizes explicitly selected tools and marks omitted tools", () => {
+    const catalog = ["default_a", "default_b", "selected_late", "config_tool"].map((name) => ({
+      name,
+      description: name,
+      source: "builtin" as const,
+      category: "Files" as const,
+      capability: "read" as const,
+      group: "Basic" as const,
+      credentials_required: [],
+      status: "enabled" as const,
+      status_reason: null,
+      permission: "enabled" as const,
+      permission_reason: "agent_allowed",
+    }));
+
+    const result = applyProviderToolLimitToCatalog(
+      catalog,
+      ["default_a", "default_b", "selected_late", "config_tool"],
+      2,
+      ["config_tool", "selected_late"],
+    );
+
+    expect(result.allowedToolNames).toEqual(["config_tool", "selected_late"]);
+    expect(result.omittedToolNames).toEqual(["default_a", "default_b"]);
+    expect(result.toolPermissionMap.find((tool) => tool.name === "default_a")?.permission).toBe("disabled");
+    expect(result.toolPermissionMap.find((tool) => tool.name === "default_a")?.permission_reason).toBe("provider_tool_limit");
+    expect(result.toolPermissionMap.find((tool) => tool.name === "selected_late")?.permission).toBe("enabled");
   });
 });
