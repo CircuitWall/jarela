@@ -179,7 +179,7 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const lines = [
     "--- Enabled tools ---",
     `You can execute the ${enabled.length} tool(s) listed below. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
-    "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the catalog with list_tools using service/object/action keywords before concluding it is unavailable.",
+    "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
     "The Basic tool catalog is cached below as compact metadata only; a cached name is executable only when it also appears in the enabled list.",
     "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
     "The full tool inventory is not embedded here; call list_tools with scope=\"enabled\" to search executable tools or scope=\"all\" to include disabled/unavailable tools with flags.",
@@ -187,7 +187,7 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   if (capped.length > 0) {
     lines.push(
       `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted from this turn with reason=provider_tool_limit.`,
-      "Use list_tools with query plus scope=\"all\" to search omitted candidates. If a needed tool is omitted by the cap, explain that it exists but is not executable in this turn, then propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
+      "Use list_tools with query plus scope=\"all\" and include_schema=true to search omitted candidates. If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool with the exact target name and args. If invoke_tool is unavailable or the tool is disabled/unavailable for another reason, propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
     );
   }
   const basicCatalog = buildBasicToolCatalogLines(ordered);

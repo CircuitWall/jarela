@@ -28,6 +28,11 @@ interface Result {
     status_reason: string | null;
     permission: "enabled" | "disabled" | "unavailable";
     permission_reason: string | null;
+    input_schema?: {
+      type: "object";
+      properties: Record<string, unknown>;
+      required: string[];
+    } | null;
   }>;
   counts: {
     total: number;
@@ -114,6 +119,7 @@ describe("list_tools", () => {
       "schedule_task",
       "read_skill",
       "list_tools",
+      "invoke_tool",
       "local_exec",
       "terminal",
       "workflow_progress",
@@ -147,6 +153,16 @@ describe("list_tools", () => {
 
     const byCategory = parse(await listToolsTool.invoke({ query: "skills" }));
     expect(byCategory.tools.some((t) => t.category === "Skills")).toBe(true);
+  });
+
+  it("can include target input schemas for invoke_tool planning", async () => {
+    const out = parse(await listToolsTool.invoke({ query: "list_tools", include_schema: true }));
+    const self = out.tools.find((tool) => tool.name === "list_tools");
+
+    expect(self?.input_schema).toBeDefined();
+    expect(self?.input_schema?.type).toBe("object");
+    expect(self?.input_schema?.properties).toHaveProperty("query");
+    expect(self?.input_schema?.properties).toHaveProperty("include_schema");
   });
 
   it("uses the current run permission map when reporting cap-omitted tools", async () => {

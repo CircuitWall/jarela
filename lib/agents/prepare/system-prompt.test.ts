@@ -220,12 +220,12 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("- Files: file_read");
     expect(ctx).toContain("- Memory: memory_read (unavailable/category_disabled)");
     expect(ctx).toContain("- Web: web_search (disabled/provider_tool_limit)");
-    expect(ctx).toContain("If a needed tool is omitted by the cap, explain that it exists but is not executable in this turn");
+    expect(ctx).toContain("If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool");
     expect(ctx).toContain("The full tool inventory is not embedded here");
     expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
     expect(ctx).not.toContain("- Basic > Memory > memory_read");
     expect(ctx).not.toContain("- Other > Mail > gmail_send_email");
-    expect(ctx).toContain("propose moving less relevant tools out of this agent's list");
+    expect(ctx).toContain("If invoke_tool is unavailable or the tool is disabled/unavailable for another reason");
   });
 
   it("places the enabled tool list before the cache split sentinel", () => {

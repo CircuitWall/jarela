@@ -42,6 +42,7 @@ import "./ms-graph";
 import "./delegate";
 import "./system_config";
 import "./list-tools";
+import "./invoke-tool";
 import "./providers-info";
 import "./mcp-servers-info";
 import "./extension-surfaces";

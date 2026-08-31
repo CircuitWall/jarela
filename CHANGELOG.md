@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agents can invoke capped tools through a safe proxy.** New `invoke_tool`
+  executes permitted built-in, external, and MCP tools by name after
+  `list_tools` discovery, without bypassing agent permissions or disabled tool
+  state. `list_tools` can now include target input schemas for proxy planning.
+
 ## [1.30.3] - 2026-08-31
 
 ### Changed

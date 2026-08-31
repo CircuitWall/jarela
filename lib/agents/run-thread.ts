@@ -47,6 +47,7 @@ export type { ThreadRunRequest } from "@/lib/agents/prepare";
 
 const SELF_CONFIG_TOOLS = [
   "list_tools",
+  "invoke_tool",
   "propose_config_change",
   "check_proposal",
   "read_agent_instruction",
