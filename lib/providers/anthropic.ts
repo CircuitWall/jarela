@@ -3,6 +3,7 @@ import type { ContentPart } from "@/lib/tools/types";
 import { resolveProviderApiKey } from "./credentials";
 // Sentinel exported to lib/agents/prepare/system-prompt.ts so both sides share
 // the same contract without a providers→agents dependency.
+export const CACHE_SHARED_SPLIT_SENTINEL = "<!-- jarela:agent-static -->";
 export const CACHE_SPLIT_SENTINEL = "<!-- jarela:dynamic -->";
 import type {
   ModelProvider,
@@ -66,17 +67,16 @@ export function appendServerTools(
 // Anthropic prompt-caching breakpoints. Within a multi-tool ReAct turn the
 // system prompt + tools are stable across every LLM call, and tool_results
 // only grow at the tail — exactly the prefix Anthropic's ephemeral cache is
-// built for. We mark three breakpoints (system, last tool, last tool_result)
-// so calls 2..N read the prefix at ~10% the input rate. The prefix below the
-// minimum cacheable size is silently ignored by the API at no extra cost,
-// so it is safe to mark unconditionally.
+// built for. The hard API limit is four cache breakpoints, so message-history
+// markers are budgeted after system/tool/tool_result markers are known.
 //
-// System-prompt split: buildSystemPrompt() inserts CACHE_SPLIT_SENTINEL
-// between the stable prefix (agent persona, harness sections, integrations)
-// and the dynamic suffix (current timestamp, per-turn recall, warm summaries).
-// withSystemCacheControl recognises the sentinel and emits two content blocks:
-// only the stable block carries cache_control so the timestamp change on every
-// turn does NOT invalidate the cache for the entire system prompt.
+// System-prompt splits:
+// - CACHE_SHARED_SPLIT_SENTINEL separates a cross-agent static prefix (tool
+//   discovery workflow/basic tool specs) from agent-specific stable text.
+// - CACHE_SPLIT_SENTINEL separates stable text from per-turn dynamic text.
+// withSystemCacheControl/splitSystemContent emit separate content blocks so
+// cross-agent static text can hit cache even when agent identity/instructions
+// differ, and per-turn data never invalidates stable breakpoints.
 const EPHEMERAL: Anthropic.CacheControlEphemeral = { type: "ephemeral" };
 // 1-hour TTL for the stable system-prompt prefix. Cost: 2× write vs 5-min TTL,
 // same 0.1× read. Break-even is ~2 reads per hour — any real chat session
@@ -105,7 +105,7 @@ function splitSystemContent(text: string, modelId: string): {
     const stable = text.slice(0, splitIdx).trimEnd();
     const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
     return {
-      systemParam: stable ? [{ type: "text", text: stable, cache_control: EPHEMERAL_1H }] : undefined,
+      systemParam: buildSystemCacheBlocks(stable),
       dynamicText: dynamic,
     };
   }
@@ -113,12 +113,28 @@ function splitSystemContent(text: string, modelId: string): {
   if (splitIdx !== -1) {
     const stable = text.slice(0, splitIdx).trimEnd();
     const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
-    const blocks: Anthropic.TextBlockParam[] = [];
-    if (stable) blocks.push({ type: "text", text: stable, cache_control: EPHEMERAL_1H });
+    const blocks: Anthropic.TextBlockParam[] = buildSystemCacheBlocks(stable) ?? [];
     if (dynamic) blocks.push({ type: "text", text: dynamic });
     return { systemParam: blocks.length > 0 ? blocks : undefined, dynamicText: "" };
   }
-  return { systemParam: [{ type: "text", text, cache_control: EPHEMERAL }], dynamicText: "" };
+  return { systemParam: buildSystemCacheBlocks(text, EPHEMERAL), dynamicText: "" };
+}
+
+function buildSystemCacheBlocks(
+  stableText: string,
+  cacheControl: Anthropic.CacheControlEphemeral = EPHEMERAL_1H,
+): Anthropic.TextBlockParam[] | undefined {
+  if (!stableText) return undefined;
+  const sharedIdx = stableText.indexOf(CACHE_SHARED_SPLIT_SENTINEL);
+  if (sharedIdx === -1) {
+    return [{ type: "text", text: stableText, cache_control: cacheControl }];
+  }
+  const shared = stableText.slice(0, sharedIdx).trimEnd();
+  const agentStable = stableText.slice(sharedIdx + CACHE_SHARED_SPLIT_SENTINEL.length).trimStart();
+  const blocks: Anthropic.TextBlockParam[] = [];
+  if (shared) blocks.push({ type: "text", text: shared, cache_control: cacheControl });
+  if (agentStable) blocks.push({ type: "text", text: agentStable, cache_control: cacheControl });
+  return blocks.length > 0 ? blocks : undefined;
 }
 
 export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[] | undefined {
@@ -129,12 +145,11 @@ export function withSystemCacheControl(text: string): Anthropic.TextBlockParam[]
   if (splitIdx !== -1) {
     const stable = text.slice(0, splitIdx).trimEnd();
     const dynamic = text.slice(splitIdx + CACHE_SPLIT_SENTINEL.length).trimStart();
-    const blocks: Anthropic.TextBlockParam[] = [];
-    if (stable) blocks.push({ type: "text", text: stable, cache_control: EPHEMERAL_1H });
+    const blocks: Anthropic.TextBlockParam[] = buildSystemCacheBlocks(stable) ?? [];
     if (dynamic) blocks.push({ type: "text", text: dynamic });
     return blocks.length > 0 ? blocks : undefined;
   }
-  return [{ type: "text", text, cache_control: EPHEMERAL }];
+  return buildSystemCacheBlocks(text, EPHEMERAL);
 }
 
 export function withToolsCacheControl(tools: Anthropic.Tool[]): Anthropic.Tool[] {
@@ -181,17 +196,20 @@ function injectMidConvSystem(
 //   prefix was written in turn N → HIT. asst_N → WRITE. From turn 2 onwards
 //   every turn has 1 cache hit for the conversation history.
 //
-// Budget: tools(1) + stable_sys(1) + these markers(2) = 4. The 4th slot
-// (withLastToolResultCacheControl, active only during multi-step ReAct turns)
-// would push us to 5, so cap at 1 assistant marker when tool_results are
-// present in the messages array.
+// Budget: callers may reserve slots for shared system, agent-stable system,
+// tools, and/or the latest tool_result before deciding how many assistant
+// history markers fit under Anthropic's four-breakpoint limit. Without an
+// override, preserve the old standalone behavior: two assistant markers, or
+// one when a tool_result marker is present.
 export function withLastAssistantMessageCacheControl(
   messages: Anthropic.MessageParam[],
+  maxMarkersOverride?: number,
 ): Anthropic.MessageParam[] {
   const hasToolResults = messages.some(
     (m) => typeof m.content !== "string" && m.content.some((b) => b.type === "tool_result"),
   );
-  const maxMarkers = hasToolResults ? 1 : 2;
+  const maxMarkers = maxMarkersOverride ?? (hasToolResults ? 1 : 2);
+  if (maxMarkers <= 0) return messages;
   const result = [...messages];
   let marked = 0;
   for (let i = result.length - 1; i >= 0 && marked < maxMarkers; i--) {
@@ -233,6 +251,45 @@ export function withLastToolResultCacheControl(
     }
   }
   return messages;
+}
+
+function countCacheBreakpointsInMessages(messages: Anthropic.MessageParam[]): number {
+  let count = 0;
+  for (const message of messages) {
+    if (typeof message.content === "string") continue;
+    for (const block of message.content) {
+      if ("cache_control" in block && block.cache_control) count++;
+    }
+  }
+  return count;
+}
+
+function countCacheBreakpointsInSystem(systemParam: Anthropic.TextBlockParam[] | undefined): number {
+  return (systemParam ?? []).filter((block) => block.cache_control).length;
+}
+
+function countCacheBreakpointsInTools(tools: Anthropic.Tool[]): number {
+  return tools.filter((toolDef) => "cache_control" in toolDef && toolDef.cache_control).length;
+}
+
+function withBudgetedMessageCacheControl(
+  messages: InvokeMessage[],
+  dynamicText: string,
+  systemParam: Anthropic.TextBlockParam[] | undefined,
+  anthropicTools: Anthropic.Tool[],
+): Anthropic.MessageParam[] {
+  const withToolResult = withLastToolResultCacheControl(
+    toAnthropicMessages(messages.filter((m) => m.role !== "system")),
+  );
+  const reserved =
+    countCacheBreakpointsInSystem(systemParam)
+    + countCacheBreakpointsInTools(anthropicTools)
+    + countCacheBreakpointsInMessages(withToolResult);
+  const assistantBudget = Math.max(0, 4 - reserved);
+  return withLastAssistantMessageCacheControl(
+    injectMidConvSystem(withToolResult, dynamicText),
+    assistantBudget,
+  );
 }
 
 interface AnthropicMessageStartEvent {
@@ -320,17 +377,10 @@ export const anthropicProvider: ModelProvider = {
     const systemMsg = messages.find((m) => m.role === "system");
     const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
     const { systemParam, dynamicText } = splitSystemContent(systemText, model_id);
-    const msgList = withLastAssistantMessageCacheControl(
-      injectMidConvSystem(
-        withLastToolResultCacheControl(
-          toAnthropicMessages(messages.filter((m) => m.role !== "system")),
-        ),
-        dynamicText,
-      ),
-    );
     const anthropicTools = withToolsCacheControl(
       appendServerTools(toAnthropicTools(tools), params),
     );
+    const msgList = withBudgetedMessageCacheControl(messages, dynamicText, systemParam, anthropicTools);
 
     const resp = await client.messages.create({
       model: model_id,
@@ -369,17 +419,10 @@ export const anthropicProvider: ModelProvider = {
       const systemMsg = messages.find((m) => m.role === "system");
       const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
       const { systemParam, dynamicText } = splitSystemContent(systemText, model_id);
-      const msgList = withLastAssistantMessageCacheControl(
-        injectMidConvSystem(
-          withLastToolResultCacheControl(
-            toAnthropicMessages(messages.filter((m) => m.role !== "system")),
-          ),
-          dynamicText,
-        ),
-      );
       const anthropicTools = withToolsCacheControl(
         appendServerTools(toAnthropicTools(tools), params),
       );
+      const msgList = withBudgetedMessageCacheControl(messages, dynamicText, systemParam, anthropicTools);
 
       const body: Anthropic.Messages.MessageStreamParams = {
         model: model_id,
@@ -545,17 +588,10 @@ export function buildAnthropicMessageBody(
   const systemMsg = messages.find((m) => m.role === "system");
   const systemText = typeof systemMsg?.content === "string" ? systemMsg.content : "";
   const { systemParam, dynamicText } = splitSystemContent(systemText, model_id);
-  const msgList = withLastAssistantMessageCacheControl(
-    injectMidConvSystem(
-      withLastToolResultCacheControl(
-        toAnthropicMessages(messages.filter((m) => m.role !== "system")),
-      ),
-      dynamicText,
-    ),
-  );
   const anthropicTools = withToolsCacheControl(
     appendServerTools(toAnthropicTools(tools), params),
   );
+  const msgList = withBudgetedMessageCacheControl(messages, dynamicText, systemParam, anthropicTools);
   const body: Anthropic.Messages.MessageCreateParams = {
     model: model_id,
     max_tokens: params.max_tokens ?? 4096,
