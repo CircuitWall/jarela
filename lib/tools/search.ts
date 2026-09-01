@@ -3,6 +3,7 @@ import { z } from "zod";
 import { registerLangChainPackage } from "./langchain-package";
 import { errorMessage } from "@/lib/utils/error";
 import { getConfig } from "@/lib/env/config";
+import { resolveGoogleApiKey } from "@/lib/utils/google-api";
 
 interface SearchResult {
   title: string;
@@ -10,9 +11,10 @@ interface SearchResult {
   snippet: string;
 }
 
-type SearchProvider = "tavily" | "duckduckgo";
+type SearchProvider = "tavily" | "google" | "duckduckgo";
 
-const DEFAULT_PROVIDER_ORDER: SearchProvider[] = ["tavily", "duckduckgo"];
+const SUPPORTED_PROVIDERS = new Set<string>(["tavily", "google", "duckduckgo"]);
+const DEFAULT_PROVIDER_ORDER: SearchProvider[] = ["tavily", "google", "duckduckgo"];
 
 function parseProviderOrder(raw: string): { order: SearchProvider[]; ignored: string[]; usedDefault: boolean } {
   const out: SearchProvider[] = [];
@@ -21,7 +23,7 @@ function parseProviderOrder(raw: string): { order: SearchProvider[]; ignored: st
   for (const token of raw.split(",")) {
     const p = token.trim().toLowerCase();
     if (!p) continue;
-    if (p !== "tavily" && p !== "duckduckgo") continue;
+    if (!SUPPORTED_PROVIDERS.has(p)) continue;
     const provider = p as SearchProvider;
     if (seen.has(provider)) continue;
     seen.add(provider);
@@ -30,10 +32,30 @@ function parseProviderOrder(raw: string): { order: SearchProvider[]; ignored: st
   for (const token of raw.split(",")) {
     const p = token.trim().toLowerCase();
     if (!p) continue;
-    if (p !== "tavily" && p !== "duckduckgo") ignored.push(p);
+    if (!SUPPORTED_PROVIDERS.has(p)) ignored.push(p);
   }
   if (out.length > 0) return { order: out, ignored, usedDefault: false };
   return { order: [...DEFAULT_PROVIDER_ORDER], ignored, usedDefault: true };
+}
+
+async function googleSearch(query: string, limit: number, apiKey: string, searchEngineId: string): Promise<SearchResult[]> {
+  const url = new URL("https://www.googleapis.com/customsearch/v1");
+  url.searchParams.set("key", apiKey);
+  url.searchParams.set("cx", searchEngineId);
+  url.searchParams.set("q", query);
+  url.searchParams.set("num", String(limit));
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Google Custom Search ${res.status}: ${await res.text()}`);
+  const data = (await res.json()) as { items?: Array<{ title?: string; link?: string; snippet?: string }> };
+  return (data.items ?? [])
+    .slice(0, limit)
+    .flatMap((result) => {
+      const title = result.title?.trim();
+      const url = result.link?.trim();
+      if (!title || !url) return [];
+      return [{ title, url, snippet: result.snippet?.trim() ?? "" }];
+    });
 }
 
 // Tavily is the preferred backend for agent-grade search (clean JSON, citations,
@@ -151,11 +173,23 @@ function decodeHTML(s: string): string {
     .replace(/&gt;/g, ">");
 }
 
+function resolveGoogleSearchApiKey(): string | null {
+  const fromEnv = (process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || "").trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return resolveGoogleApiKey();
+  } catch {
+    return null;
+  }
+}
+
 export const webSearchTool = tool(
   async ({ query, max_results }) => {
     const limit = Math.min(max_results ?? 5, 10);
     const tavilyKey = process.env.TAVILY_API_KEY?.trim();
-    const parsedOrder = parseProviderOrder(getConfig().webSearchProviderOrder);
+    const config = getConfig();
+    const parsedOrder = parseProviderOrder(config.webSearchProviderOrder);
+    const googleSearchEngineId = config.googleSearchEngineId;
     const order = parsedOrder.order;
     const tried: string[] = [];
     let lastErr: unknown = null;
@@ -165,10 +199,21 @@ export const webSearchTool = tool(
         tried.push("tavily:missing_api_key");
         continue;
       }
+      if (provider === "google" && !googleSearchEngineId) {
+        tried.push("google:missing_search_engine_id");
+        continue;
+      }
       try {
+        const googleApiKey = provider === "google" ? resolveGoogleSearchApiKey() : null;
+        if (provider === "google" && !googleApiKey) {
+          tried.push("google:missing_api_key");
+          continue;
+        }
         const results = provider === "tavily"
           ? await tavilySearch(query, limit, tavilyKey!)
-          : await ddgSearch(query, limit);
+          : provider === "google"
+            ? await googleSearch(query, limit, googleApiKey!, googleSearchEngineId)
+            : await ddgSearch(query, limit);
         if (results.length === 0) {
           tried.push(`${provider}:empty`);
           continue;

@@ -12,7 +12,7 @@ const TOOL_GROUPS: Array<{ title: string; vars: string[]; description: string }>
   {
     title: "Search & fetch",
     description: "Web search fallback order and fetch payload limits.",
-    vars: ["JARELA_WEB_SEARCH_PROVIDER_ORDER", "JARELA_FETCH_TOOL_MAX_BYTES"],
+    vars: ["JARELA_WEB_SEARCH_PROVIDER_ORDER", "JARELA_GOOGLE_SEARCH_ENGINE_ID", "JARELA_FETCH_TOOL_MAX_BYTES"],
   },
   {
     title: "Files & command execution",

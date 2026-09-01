@@ -91,7 +91,8 @@ export const ENV_DEFAULTS = {
   // tools
   voiceTimeoutMs: 60_000,
   imageTimeoutMs: 60_000,
-  webSearchProviderOrder: "tavily,duckduckgo",
+  webSearchProviderOrder: "tavily,google,duckduckgo",
+  googleSearchEngineId: "",
   fetchToolMaxBytes: 2_000_000,
   mcpRegistryTimeoutMs: 15_000,
   execMaxOutputBytes: 8_000,
@@ -411,11 +412,21 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     type: "string",
     default: ENV_DEFAULTS.webSearchProviderOrder,
     description:
-      "Ordered providers for web_search fallback (comma-separated). Supported: tavily, duckduckgo. Example: 'duckduckgo,tavily'.",
+      "Ordered providers for web_search fallback (comma-separated). Supported: tavily, google, duckduckgo. Example: 'google,tavily,duckduckgo'.",
     category: "tools",
     tier: "A",
     requiresRestart: false,
     agentWritable: true,
+  },
+  {
+    name: "JARELA_GOOGLE_SEARCH_ENGINE_ID",
+    type: "string",
+    default: ENV_DEFAULTS.googleSearchEngineId,
+    description: "Google Programmable Search Engine id (cx) used when web_search tries the google provider. GOOGLE_SEARCH_ENGINE_ID and GOOGLE_CSE_ID also work.",
+    category: "tools",
+    tier: "A",
+    requiresRestart: false,
+    agentWritable: false,
   },
   {
     name: "JARELA_PROVIDER_TOOL_LIMIT",
