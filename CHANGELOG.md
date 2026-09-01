@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   NO_REPLY" replies from scheduled tasks, watchers, and bridges are correctly
   suppressed instead of being persisted and surfaced to the user.
 
+### Security
+
+- **`browserslist` pinned to 4.28.7.** Addresses a high-severity unbounded
+  memory-growth advisory (GHSA-c83g-rgw3-j3cx) in the transitive dependency
+  pulled in via `autoprefixer`/`@serwist`/Babel tooling.
+
 ## [1.31.2] - 2026-09-01
 
 ### Fixed
