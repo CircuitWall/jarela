@@ -781,6 +781,12 @@ export const icloudCalendarCreateEventTool = tool(
     location,
     attendees,
     all_day,
+    rrule,
+    alerts,
+    travel_time,
+    url,
+    status,
+    availability,
   }) => {
     const client = await getDavClient();
     if ("error" in client) return err(client.error);
@@ -794,6 +800,12 @@ export const icloudCalendarCreateEventTool = tool(
       location,
       attendees,
       allDay: Boolean(all_day),
+      rrule,
+      alerts,
+      travelTime: travel_time,
+      url,
+      status,
+      availability,
     });
     try {
       await client.createCalendarObject({
@@ -811,7 +823,10 @@ export const icloudCalendarCreateEventTool = tool(
     description:
       "Create an event on an iCloud calendar. `start` and `end` are ISO " +
       "timestamps; pass `all_day: true` and date-only strings (YYYY-MM-DD) " +
-      "for all-day events.",
+      "for all-day events. Optional `rrule` sets recurrence specs " +
+      "(e.g. 'FREQ=WEEKLY;BYDAY=MO,FR'). Optional `alerts` sets primary & secondary " +
+      "reminders (e.g. ['15m', '1h'] or ['-PT15M', '-PT1H']). Optional `travel_time` " +
+      "sets Apple travel duration (e.g. '15m', '30m').",
     schema: z.object({
       calendar_url: z.string().url(),
       summary: z.string(),
@@ -821,12 +836,44 @@ export const icloudCalendarCreateEventTool = tool(
       location: z.string().optional(),
       attendees: z.array(z.string()).optional().describe("Attendee email addresses"),
       all_day: z.boolean().optional(),
+      rrule: z
+        .string()
+        .optional()
+        .describe("iCalendar RRULE recurrence rule string (e.g. 'FREQ=WEEKLY;BYDAY=MO,WE,FR' or 'FREQ=DAILY;COUNT=10')"),
+      alerts: z
+        .array(z.string())
+        .optional()
+        .describe("Alert / alarm triggers relative to event start, e.g. ['15m', '1h'] or ['-PT15M', '-PT1H'] for primary and secondary alerts"),
+      travel_time: z
+        .string()
+        .optional()
+        .describe("Travel duration before event start (e.g. '15m', '30m', '1h', 'PT15M'). Sets Apple X-APPLE-TRAVEL-DURATION."),
+      url: z.string().url().optional().describe("URL associated with event (e.g. video call link)"),
+      status: z.enum(["CONFIRMED", "TENTATIVE", "CANCELLED"]).optional(),
+      availability: z
+        .enum(["busy", "free"])
+        .optional()
+        .describe("Event availability / transparency ('busy' = OPAQUE, 'free' = TRANSPARENT)"),
     }),
   },
 );
 
 export const icloudCalendarUpdateEventTool = tool(
-  async ({ calendar_url, uid, summary, start, end, description, location }) => {
+  async ({
+    calendar_url,
+    uid,
+    summary,
+    start,
+    end,
+    description,
+    location,
+    rrule,
+    alerts,
+    travel_time,
+    url,
+    status,
+    availability,
+  }) => {
     const found = await findEvent(calendar_url, uid);
     if ("error" in found) return err(found.error);
     const client = await getDavClient();
@@ -838,6 +885,12 @@ export const icloudCalendarUpdateEventTool = tool(
         end,
         description,
         location,
+        rrule,
+        alerts,
+        travelTime: travel_time,
+        url,
+        status,
+        availability,
       });
       await client.updateCalendarObject({
         calendarObject: { ...found.object, data: updated },
@@ -851,8 +904,9 @@ export const icloudCalendarUpdateEventTool = tool(
     name: "icloud_calendar_update_event",
     description:
       "Patch fields on an existing event. Only the supplied fields are " +
-      "overwritten — others are preserved. Recurring-event instance edits " +
-      "are not supported in this release; the whole series is updated.",
+      "overwritten — others are preserved. Pass `rrule` to update recurrence, " +
+      "`alerts` for primary/secondary alerts, or `travel_time` for Apple travel time. " +
+      "Pass 'NONE' / empty array to remove recurrence, alerts, or travel time.",
     schema: z.object({
       calendar_url: z.string().url(),
       uid: z.string(),
@@ -861,6 +915,21 @@ export const icloudCalendarUpdateEventTool = tool(
       end: z.string().optional(),
       description: z.string().optional(),
       location: z.string().optional(),
+      rrule: z
+        .string()
+        .optional()
+        .describe("iCalendar RRULE recurrence rule string or 'NONE' to remove"),
+      alerts: z
+        .array(z.string())
+        .optional()
+        .describe("Update alert triggers (e.g. ['15m', '1h']). Pass [] or ['NONE'] to remove all alerts."),
+      travel_time: z
+        .string()
+        .optional()
+        .describe("Update travel duration (e.g. '15m', '30m') or 'NONE' to remove."),
+      url: z.string().optional().describe("Update URL associated with event, or 'NONE' / '' to remove."),
+      status: z.enum(["CONFIRMED", "TENTATIVE", "CANCELLED"]).optional(),
+      availability: z.enum(["busy", "free"]).optional(),
     }),
   },
 );
@@ -1023,6 +1092,34 @@ function summariseEvent(obj: DAVObject): Record<string, unknown> {
   const ev = parsed.getFirstSubcomponent("vevent");
   if (!ev) return { href: obj.url, no_vevent: true };
   const event = new ICAL.Event(ev);
+  const rruleVal = ev.getFirstPropertyValue("rrule");
+  const rruleStr = rruleVal ? rruleVal.toString() : null;
+
+  const urlVal = ev.getFirstPropertyValue("url");
+  const urlStr = urlVal ? urlVal.toString() : null;
+
+  const statusVal = ev.getFirstPropertyValue("status");
+  const statusStr = statusVal ? statusVal.toString() : null;
+
+  const transpVal = ev.getFirstPropertyValue("transp");
+  const availability = transpVal
+    ? transpVal.toString().toUpperCase() === "TRANSPARENT"
+      ? "free"
+      : "busy"
+    : null;
+
+  const travelProp = ev.getFirstProperty("x-apple-travel-duration");
+  const travelTime = travelProp ? travelProp.getFirstValue()?.toString() ?? null : null;
+
+  const valarms = ev.getAllSubcomponents("valarm");
+  const alerts: string[] = [];
+  for (const alarm of valarms) {
+    const trig = alarm.getFirstPropertyValue("trigger");
+    if (trig) {
+      alerts.push(trig.toString());
+    }
+  }
+
   return {
     href: obj.url,
     uid: event.uid ?? null,
@@ -1033,6 +1130,12 @@ function summariseEvent(obj: DAVObject): Record<string, unknown> {
     end: event.endDate ? event.endDate.toString() : null,
     organizer: event.organizer ?? null,
     is_recurring: event.isRecurring(),
+    rrule: rruleStr,
+    url: urlStr,
+    status: statusStr,
+    availability,
+    travel_time: travelTime,
+    alerts,
     attendees: (event.attendees ?? []).map((a) => a.getFirstValue?.() ?? null),
   };
 }
@@ -1119,6 +1222,12 @@ function buildVEvent(args: {
   location?: string;
   attendees?: string[];
   allDay: boolean;
+  rrule?: string;
+  alerts?: string[];
+  travelTime?: string;
+  url?: string;
+  status?: string;
+  availability?: "busy" | "free";
 }): string {
   const lines = [
     "BEGIN:VCALENDAR",
@@ -1137,6 +1246,33 @@ function buildVEvent(args: {
   ];
   if (args.description) lines.push(`DESCRIPTION:${escapeIcal(args.description)}`);
   if (args.location) lines.push(`LOCATION:${escapeIcal(args.location)}`);
+  if (args.url) lines.push(`URL:${escapeIcal(args.url)}`);
+  if (args.status) lines.push(`STATUS:${args.status.toUpperCase()}`);
+  if (args.availability) {
+    lines.push(`TRANSP:${args.availability === "free" ? "TRANSPARENT" : "OPAQUE"}`);
+  }
+  if (args.rrule) {
+    const cleanRrule = args.rrule.trim().replace(/^RRULE:/i, "");
+    if (cleanRrule && cleanRrule.toUpperCase() !== "NONE") {
+      lines.push(`RRULE:${cleanRrule}`);
+    }
+  }
+  if (args.travelTime) {
+    const dur = formatIcalDuration(args.travelTime);
+    if (dur) {
+      lines.push(`X-APPLE-TRAVEL-DURATION;VALUE=DURATION:${dur}`);
+    }
+  }
+  for (const alarmTrigger of args.alerts ?? []) {
+    const trigger = formatIcalTrigger(alarmTrigger);
+    if (trigger) {
+      lines.push("BEGIN:VALARM");
+      lines.push("ACTION:DISPLAY");
+      lines.push("DESCRIPTION:Reminder");
+      lines.push(`TRIGGER:${trigger}`);
+      lines.push("END:VALARM");
+    }
+  }
   for (const a of args.attendees ?? []) {
     lines.push(`ATTENDEE;CN=${escapeIcal(a)};RSVP=TRUE:mailto:${a}`);
   }
@@ -1174,6 +1310,12 @@ function patchVEvent(
     end?: string;
     description?: string;
     location?: string;
+    rrule?: string;
+    alerts?: string[];
+    travelTime?: string;
+    url?: string;
+    status?: string;
+    availability?: "busy" | "free";
   },
 ): string {
   const parsed = safeParseIcal(ics);
@@ -1185,6 +1327,36 @@ function patchVEvent(
   if (patch.location !== undefined) setProp(ev, "location", patch.location);
   if (patch.start !== undefined) setTimeProp(ev, "dtstart", patch.start);
   if (patch.end !== undefined) setTimeProp(ev, "dtend", patch.end);
+  if (patch.rrule !== undefined) setRruleProp(ev, patch.rrule);
+  if (patch.url !== undefined) {
+    if (!patch.url || patch.url.toUpperCase() === "NONE") {
+      removeProp(ev, "url");
+    } else {
+      setProp(ev, "url", patch.url);
+    }
+  }
+  if (patch.status !== undefined) {
+    if (!patch.status || patch.status.toUpperCase() === "NONE") {
+      removeProp(ev, "status");
+    } else {
+      setProp(ev, "status", patch.status.toUpperCase());
+    }
+  }
+  if (patch.availability !== undefined) {
+    if (patch.availability === "free") {
+      setProp(ev, "transp", "TRANSPARENT");
+    } else if (patch.availability === "busy") {
+      setProp(ev, "transp", "OPAQUE");
+    } else {
+      removeProp(ev, "transp");
+    }
+  }
+  if (patch.travelTime !== undefined) {
+    setTravelTimeProp(ev, patch.travelTime);
+  }
+  if (patch.alerts !== undefined) {
+    setAlertsProps(ev, patch.alerts);
+  }
   setTimeProp(ev, "last-modified", new Date().toISOString());
   return parsed.toString();
 }
@@ -1200,6 +1372,11 @@ function markVTodoCompleted(ics: string): string {
   return parsed.toString();
 }
 
+function removeProp(comp: ICAL.Component, name: string): void {
+  const existing = comp.getFirstProperty(name);
+  if (existing) comp.removeProperty(existing);
+}
+
 function setProp(comp: ICAL.Component, name: string, value: string): void {
   const existing = comp.getFirstProperty(name);
   if (existing) {
@@ -1209,6 +1386,105 @@ function setProp(comp: ICAL.Component, name: string, value: string): void {
     prop.setValue(value);
     comp.addProperty(prop);
   }
+}
+
+function setRruleProp(comp: ICAL.Component, rruleInput: string): void {
+  const clean = rruleInput.trim().replace(/^RRULE:/i, "");
+  if (!clean || clean.toUpperCase() === "NONE") {
+    comp.removeProperty("rrule");
+    return;
+  }
+  const recur = ICAL.Recur.fromString(clean);
+  const existing = comp.getFirstProperty("rrule");
+  if (existing) {
+    existing.setValue(recur);
+  } else {
+    const prop = new ICAL.Property("rrule", comp);
+    prop.setValue(recur);
+    comp.addProperty(prop);
+  }
+}
+
+function setTravelTimeProp(comp: ICAL.Component, travelTime: string): void {
+  const clean = travelTime.trim();
+  if (!clean || clean.toUpperCase() === "NONE") {
+    removeProp(comp, "x-apple-travel-duration");
+    return;
+  }
+  const dur = formatIcalDuration(clean);
+  if (!dur) return;
+  const existing = comp.getFirstProperty("x-apple-travel-duration");
+  if (existing) {
+    existing.setValue(dur);
+  } else {
+    const prop = new ICAL.Property("x-apple-travel-duration", comp);
+    prop.setParameter("value", "DURATION");
+    prop.setValue(dur);
+    comp.addProperty(prop);
+  }
+}
+
+function setAlertsProps(comp: ICAL.Component, alerts: string[]): void {
+  const existingAlarms = comp.getAllSubcomponents("valarm");
+  for (const alarm of existingAlarms) {
+    comp.removeSubcomponent(alarm);
+  }
+  if (alerts.length === 1 && (alerts[0].toUpperCase() === "NONE" || alerts[0] === "")) {
+    return;
+  }
+  for (const alertInput of alerts) {
+    const triggerStr = formatIcalTrigger(alertInput);
+    if (!triggerStr) continue;
+    const alarm = new ICAL.Component("valarm", comp);
+    const actionProp = new ICAL.Property("action", alarm);
+    actionProp.setValue("DISPLAY");
+    alarm.addProperty(actionProp);
+
+    const descProp = new ICAL.Property("description", alarm);
+    descProp.setValue("Reminder");
+    alarm.addProperty(descProp);
+
+    const triggerProp = new ICAL.Property("trigger", alarm);
+    try {
+      triggerProp.setValue(ICAL.Duration.fromString(triggerStr));
+    } catch {
+      triggerProp.setValue(triggerStr);
+    }
+    alarm.addProperty(triggerProp);
+
+    comp.addSubcomponent(alarm);
+  }
+}
+
+function formatIcalDuration(input: string): string | null {
+  if (!input) return null;
+  const s = input.trim();
+  if (!s || s.toUpperCase() === "NONE") return null;
+  if (/^P/i.test(s)) return s.toUpperCase();
+
+  const m = /^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)?$/i.exec(s);
+  if (m) {
+    const num = m[1];
+    const unit = (m[2] || "m").toLowerCase();
+    if (unit.startsWith("h")) return `PT${num}H`;
+    if (unit.startsWith("d")) return `P${num}D`;
+    return `PT${num}M`;
+  }
+  return s;
+}
+
+function formatIcalTrigger(input: string): string | null {
+  if (!input) return null;
+  const s = input.trim();
+  if (!s || s.toUpperCase() === "NONE") return null;
+
+  if (s.startsWith("-") || s.startsWith("+") || /^P/i.test(s)) {
+    return s.startsWith("-") ? s.toUpperCase() : `-${s.toUpperCase()}`;
+  }
+
+  const dur = formatIcalDuration(s);
+  if (!dur) return null;
+  return `-${dur}`;
 }
 
 function setTimeProp(comp: ICAL.Component, name: string, isoValue: string): void {

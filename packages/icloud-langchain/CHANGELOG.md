@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-01
+
+### Added
+
+- **Event recurrence, alerts, travel time, URL, status, and availability support for iCloud Calendar.**
+  - `icloud_calendar_create_event` and `icloud_calendar_update_event` accept:
+    - `rrule` (e.g. `'FREQ=WEEKLY;BYDAY=MO,FR'`)
+    - `alerts` for primary and secondary reminders (e.g. `['15m', '1h']` or `['-PT15M', '-PT1H']`)
+    - `travel_time` for Apple travel duration (e.g. `'15m'`, `'30m'`) setting `X-APPLE-TRAVEL-DURATION`
+    - `url` for meeting or video links
+    - `status` (`'CONFIRMED'`, `'TENTATIVE'`, `'CANCELLED'`)
+    - `availability` (`'busy'`, `'free'`)
+  - `icloud_calendar_list_events` and `icloud_calendar_get_event` return `rrule`, `alerts`, `travel_time`, `url`, `status`, and `availability` in event summaries.
+  - Passing `'NONE'` or `[]` on update removes properties or alarms.
+
 ## [0.1.1] - 2026-06-21
 
 ### Added

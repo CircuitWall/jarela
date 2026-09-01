@@ -342,11 +342,12 @@ describe("icloud_calendar_list_calendars", () => {
 });
 
 describe("icloud_calendar_list_events", () => {
-  it("parses iCalendar VEVENTs into a JSON summary", async () => {
+  it("parses iCalendar VEVENTs into a JSON summary with recurrence info", async () => {
     const ics =
       "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n" +
       "UID:ev-1\r\nSUMMARY:Standup\r\nLOCATION:Zoom\r\n" +
       "DTSTART:20260620T140000Z\r\nDTEND:20260620T143000Z\r\n" +
+      "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR\r\n" +
       "END:VEVENT\r\nEND:VCALENDAR\r\n";
     setDav({
       fetchCalendarObjects: async () => [
@@ -364,6 +365,8 @@ describe("icloud_calendar_list_events", () => {
       uid: "ev-1",
       summary: "Standup",
       location: "Zoom",
+      is_recurring: true,
+      rrule: "FREQ=WEEKLY;BYDAY=MO,WE,FR",
     });
   });
 });
@@ -418,6 +421,51 @@ describe("icloud_calendar_create_event", () => {
     expect(postedIcs).toContain("DTSTART;VALUE=DATE:20261225");
     expect(postedIcs).toContain("DTEND;VALUE=DATE:20261226");
   });
+
+  it("includes RRULE when rrule parameter is supplied", async () => {
+    let postedIcs: string | null = null;
+    setDav({
+      createCalendarObject: async ({ iCalString }: { iCalString: string }) => {
+        postedIcs = iCalString;
+        return { ok: true } as unknown;
+      },
+    });
+    await icloudCalendarCreateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      summary: "Weekly Sync",
+      start: "2026-06-20T10:00:00Z",
+      end: "2026-06-20T10:30:00Z",
+      rrule: "FREQ=WEEKLY;BYDAY=MO,WE",
+    });
+    expect(postedIcs).toContain("RRULE:FREQ=WEEKLY;BYDAY=MO,WE");
+  });
+
+  it("includes primary/secondary alerts and travel time when supplied", async () => {
+    let postedIcs: string | null = null;
+    setDav({
+      createCalendarObject: async ({ iCalString }: { iCalString: string }) => {
+        postedIcs = iCalString;
+        return { ok: true } as unknown;
+      },
+    });
+    await icloudCalendarCreateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      summary: "Dentist",
+      start: "2026-06-20T10:00:00Z",
+      end: "2026-06-20T11:00:00Z",
+      alerts: ["15m", "1h"],
+      travel_time: "30m",
+      url: "https://clinic.example.com",
+      status: "CONFIRMED",
+      availability: "busy",
+    });
+    expect(postedIcs).toContain("X-APPLE-TRAVEL-DURATION;VALUE=DURATION:PT30M");
+    expect(postedIcs).toContain("TRIGGER:-PT15M");
+    expect(postedIcs).toContain("TRIGGER:-PT1H");
+    expect(postedIcs).toContain("URL:https://clinic.example.com");
+    expect(postedIcs).toContain("STATUS:CONFIRMED");
+    expect(postedIcs).toContain("TRANSP:OPAQUE");
+  });
 });
 
 describe("icloud_calendar_update_event", () => {
@@ -449,6 +497,88 @@ describe("icloud_calendar_update_event", () => {
     expect(JSON.parse(out as string)).toMatchObject({ updated: true, uid: "ev-update" });
     expect(updatedIcs).toContain("SUMMARY:New");
     expect(updatedIcs).toMatch(/LAST-MODIFIED:\d{8}T\d{6}Z/);
+  });
+
+  it("updates and removes RRULE on existing event", async () => {
+    const ics =
+      "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n" +
+      "UID:ev-rrule\r\nSUMMARY:Recurring\r\nDTSTART:20260620T140000Z\r\nDTEND:20260620T143000Z\r\n" +
+      "RRULE:FREQ=DAILY\r\n" +
+      "END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let updatedIcs: string | null = null;
+    setDav({
+      fetchCalendarObjects: async () => [
+        { url: "https://x/ev-rrule.ics", data: ics, etag: "1" },
+      ],
+      updateCalendarObject: async ({
+        calendarObject,
+      }: {
+        calendarObject: { data?: string };
+      }) => {
+        updatedIcs = calendarObject.data ?? null;
+        return { ok: true } as unknown;
+      },
+    });
+
+    // Update rrule
+    await icloudCalendarUpdateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      uid: "ev-rrule",
+      rrule: "FREQ=WEEKLY;BYDAY=FR",
+    });
+    expect(updatedIcs).toContain("RRULE:FREQ=WEEKLY;BYDAY=FR");
+
+    // Remove rrule
+    await icloudCalendarUpdateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      uid: "ev-rrule",
+      rrule: "NONE",
+    });
+    expect(updatedIcs).not.toContain("RRULE:");
+  });
+
+  it("updates and removes alerts and travel time on existing event", async () => {
+    const ics =
+      "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\n" +
+      "UID:ev-extra\r\nSUMMARY:Existing\r\nDTSTART:20260620T140000Z\r\nDTEND:20260620T143000Z\r\n" +
+      "X-APPLE-TRAVEL-DURATION;VALUE=DURATION:PT15M\r\n" +
+      "BEGIN:VALARM\r\nACTION:DISPLAY\r\nTRIGGER:-PT15M\r\nEND:VALARM\r\n" +
+      "END:VEVENT\r\nEND:VCALENDAR\r\n";
+    let updatedIcs: string | null = null;
+    setDav({
+      fetchCalendarObjects: async () => [
+        { url: "https://x/ev-extra.ics", data: ics, etag: "1" },
+      ],
+      updateCalendarObject: async ({
+        calendarObject,
+      }: {
+        calendarObject: { data?: string };
+      }) => {
+        updatedIcs = calendarObject.data ?? null;
+        return { ok: true } as unknown;
+      },
+    });
+
+    // Update travel time & alerts
+    await icloudCalendarUpdateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      uid: "ev-extra",
+      travel_time: "45m",
+      alerts: ["30m", "2h"],
+    });
+    expect(updatedIcs).toContain("X-APPLE-TRAVEL-DURATION;VALUE=DURATION:PT45M");
+    expect(updatedIcs).toContain("TRIGGER:-PT30M");
+    expect(updatedIcs).toContain("TRIGGER:-PT2H");
+
+    // Remove travel time & alerts
+    await icloudCalendarUpdateEventTool.invoke({
+      calendar_url: "https://caldav.icloud.com/123/calendars/home/",
+      uid: "ev-extra",
+      travel_time: "NONE",
+      alerts: ["NONE"],
+    });
+    expect(updatedIcs).not.toContain("X-APPLE-TRAVEL-DURATION");
+    expect(updatedIcs).not.toContain("BEGIN:VALARM");
   });
 });
 

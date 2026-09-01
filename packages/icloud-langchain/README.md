@@ -113,10 +113,10 @@ other client.
   via CalDAV `REPORT calendar-query`.
 - `icloud_calendar_get_event` — full event including raw
   iCalendar source.
-- `icloud_calendar_create_event` — create a single event (or
-  all-day event with `all_day: true`).
+- `icloud_calendar_create_event` — create an event (supports
+  all-day with `all_day: true`, recurrence `rrule`, primary/secondary `alerts`, Apple `travel_time`, `url`, `status`, and `availability`).
 - `icloud_calendar_update_event` — patch summary / time /
-  location / description in place.
+  location / description / recurrence (`rrule`) / `alerts` / `travel_time` / `url` / `status` / `availability` in place.
 - `icloud_calendar_delete_event` — delete by UID.
 
 ### Reminders (3 + 1 lister)

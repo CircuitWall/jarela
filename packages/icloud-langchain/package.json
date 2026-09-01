@@ -1,6 +1,6 @@
 {
   "name": "@circuitwall/icloud-langchain",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "LangChain tools for iCloud Mail (IMAP) and iCloud Calendar / Reminders (CalDAV) — direct protocol calls, no MCP. Auth via Apple ID + app-specific password. Extracted from Jarela.",
   "license": "Apache-2.0",
   "author": "Andrew Ge Wu",
