@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.33.0] - 2026-09-01
+
+### Added
+
+- **iCloud Calendar event recurrence, alerts, travel time, and metadata.**
+  `icloud_calendar_create_event` and `icloud_calendar_update_event` now support
+  `rrule` recurrence rules, primary/secondary `alerts` (e.g. `['15m', '1h']`),
+  Apple travel time (`X-APPLE-TRAVEL-DURATION`), URL, status, and availability.
+  Event summaries return these fields for inspectability.
+
 ## [1.32.0] - 2026-09-01
 
 ### Added
