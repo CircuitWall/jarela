@@ -297,4 +297,43 @@ describe("MessageList conversation focus", () => {
     expect(messageNodes[1].compareDocumentPosition(boundary!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("recent 0 · warm 2")).toBeTruthy();
   });
+
+  it("disables Locate boundary line until a focus pin is set, then scrolls to it", () => {
+    const messages = [
+      mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
+      mkMessage("m2", "assistant", "newer", "2026-08-09T10:00:01.000Z"),
+    ];
+    const { rerender } = render(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /filters & focus/i }));
+    const button = screen.getByRole("button", { name: "Locate boundary line" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+
+    rerender(
+      <MessageList
+        threadId="thread-1"
+        messages={messages}
+        onSetContextPin={vi.fn()}
+        hotSince="2026-08-09T10:00:01.000Z"
+        warmSummary="Short cached summary"
+        warmSummaryBefore="2026-08-09T10:00:01.000Z"
+      />,
+    );
+
+    const enabledButton = screen.getByRole("button", { name: "Locate boundary line" }) as HTMLButtonElement;
+    expect(enabledButton.disabled).toBe(false);
+
+    const scrollIntoView = vi.fn();
+    const boundaryEl = document.querySelector("[data-focus-boundary='1']") as HTMLElement;
+    boundaryEl.scrollIntoView = scrollIntoView;
+
+    fireEvent.click(enabledButton);
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
 });
