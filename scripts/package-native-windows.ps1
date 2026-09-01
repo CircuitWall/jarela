@@ -119,7 +119,7 @@ $featureRefs
   [System.IO.File]::WriteAllText($wxsPath, $wxs, [System.Text.UTF8Encoding]::new($false))
 
   $msiPath = Join-Path $outFull "jarela-$Version-win.msi"
-  & $wix.Source build $wxsPath -o $msiPath
+  & $wix.Source build -acceptEula wix7 $wxsPath -o $msiPath
   if ($LASTEXITCODE -ne 0) { throw "wix build failed with exit code $LASTEXITCODE" }
   if (-not (Test-Path -LiteralPath $msiPath)) { throw "wix build did not create $msiPath" }
   Write-Host "native Windows package written to $msiPath"
