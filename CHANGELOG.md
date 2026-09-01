@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.32.0] - 2026-09-01
+
+### Added
+
+- **Background activity status in chat.** Scheduled tasks, watchers, and
+  bridge traffic run on non-preemptive foreground/background queue lanes with
+  source-aware expiry, so silent/no-change automation outcomes are now visible
+  as compact activity rows in the chat instead of being silently dropped.
+  Conversation history is scoped per source so background automation traffic
+  no longer blurs into direct-chat dialogue.
+
+### Fixed
+
+- **Silent-reply sentinel detected after preamble text.** The check for the
+  `NO_REPLY` silent-mode sentinel now matches anywhere in the trimmed
+  assistant reply instead of only at the very start, so compliant "preamble +
+  NO_REPLY" replies from scheduled tasks, watchers, and bridges are correctly
+  suppressed instead of being persisted and surfaced to the user.
+
 ## [1.31.2] - 2026-09-01
 
 ### Fixed
