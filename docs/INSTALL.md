@@ -1,18 +1,52 @@
 # Installing Jarela
 
-Three ways to install:
+Four ways to install:
 
 | Path | When | Result |
 |------|------|--------|
+| **Native package** (this file) | You want the OS package manager / installer UX | Jarela installed into the platform app location with a bundled runtime |
 | **Pre-built archive** (this file) | You don't have Node, or want the simplest install | A native autostart entry on macOS / Windows |
 | **`npm install -g @circuitwall/jarela`** | You have Node 22+ | A `jarela` CLI on your PATH |
 | **Docker** (Ubuntu / any Linux host) | You want a container, headless server, or NAS | A `jarela` container listening on `127.0.0.1:4312` |
 
-All three end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted under the platform default host data dir (`~/.jarela` on macOS/Linux, `%LOCALAPPDATA%\Jarela` on Windows) or in the `jarela-data` volume mounted at `/data`.
+All four end at the same place: a Next.js process on `http://127.0.0.1:4312`, with state persisted under the platform default host data dir (`~/.jarela` on macOS/Linux, `%LOCALAPPDATA%\Jarela` on Windows) or in the `jarela-data` volume mounted at `/data`.
 
 ---
 
-## Path 1 — Pre-built archive
+## Path 1 — Native package
+
+Download the package for your OS from the [latest release](../../releases/latest):
+
+- `jarela-<version>-win.msi` — Windows
+- `jarela-<version>-darwin.pkg` — macOS
+- `jarela-<version>-linux.deb` — Debian / Ubuntu
+- `jarela-<version>-linux.rpm` — Fedora / RHEL-family distributions
+
+The native packages install a pre-built Jarela bundle and a bundled Node runtime, so no separate Node install is required for this path. They are **unsigned**; your OS may warn you the first time you install or launch them.
+
+After installation, run:
+
+```sh
+jarela
+```
+
+To register autostart for your user account:
+
+```sh
+jarela install-service
+```
+
+Native package install locations:
+
+| OS      | App payload | Launcher |
+|---------|-------------|----------|
+| Windows | `%ProgramFiles%\Jarela` | Start menu shortcut + `jarela.cmd` in the install dir |
+| macOS   | `/Applications/Jarela` | `/usr/local/bin/jarela` |
+| Linux   | `/usr/lib/jarela` | `/usr/bin/jarela` |
+
+---
+
+## Path 2 — Pre-built archive
 
 Download the archive for your OS from the [latest release](../../releases/latest):
 
@@ -64,7 +98,7 @@ These warnings exist because we don't yet pay for an Apple Developer ID or an Au
 
 ---
 
-## Path 2 — npm (recommended)
+## Path 3 — npm (recommended)
 
 ```sh
 npm install -g @circuitwall/jarela
@@ -133,7 +167,7 @@ jarela uninstall-service
 
 ---
 
-## Path 3 — Docker (Ubuntu / Linux)
+## Path 4 — Docker (Ubuntu / Linux)
 
 A `Dockerfile` and `docker-compose.yml` ship at the repo root. The image is
 based on `node:22-bookworm-slim` (Debian) and runs as a non-root user.

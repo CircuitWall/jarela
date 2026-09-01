@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.0] - 2026-09-01
+
+### Added
+
+- **Releases now include native OS packages.** Tag builds publish unsigned
+  Windows `.msi`, macOS `.pkg`, Linux `.deb`, and Linux `.rpm` artifacts beside
+  the existing portable archives. Native packages install the pre-built Jarela
+  payload with a bundled Node runtime and expose a `jarela` launcher.
+
 ### Changed
 
 - **Anthropic prompt caching is more stable across tool-heavy turns.** Per-turn
