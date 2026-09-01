@@ -34,8 +34,11 @@ export function getModelConfig(name: string): ModelConfigRow | null {
 }
 
 export function getDefaultModelConfig(): ModelConfigRow | null {
-  const row = (getDb().prepare("SELECT * FROM model_configs WHERE is_default=1 LIMIT 1").get() as unknown as ModelConfigRow) ?? null;
-  return row ? decryptRow(row) : null;
+  const db = getDb();
+  const row = (db.prepare("SELECT * FROM model_configs WHERE is_default=1 LIMIT 1").get() as unknown as ModelConfigRow) ?? null;
+  if (row) return decryptRow(row);
+  const fallback = (db.prepare("SELECT * FROM model_configs ORDER BY name ASC LIMIT 1").get() as unknown as ModelConfigRow) ?? null;
+  return fallback ? decryptRow(fallback) : null;
 }
 
 export function upsertModelConfig(

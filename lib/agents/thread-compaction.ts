@@ -67,9 +67,9 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
     return { compacted: false, reason: "nothing to compact" };
   }
 
-  const cfg = agent.model_config_name
+  const cfg = (agent.model_config_name
     ? getModelConfig(agent.model_config_name)
-    : getDefaultModelConfig();
+    : null) ?? getDefaultModelConfig();
 
   if (!cfg) throw new Error("No model configured");
 

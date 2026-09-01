@@ -56,6 +56,14 @@ describe("upsertModelConfig params merge", () => {
 });
 
 describe("deleteModelConfig auto-promotes default", () => {
+  it("falls back to first available row when no row has is_default=1", () => {
+    upsertModelConfig("no-default-1", "anthropic", "claude-x", {}, false);
+    upsertModelConfig("no-default-2", "anthropic", "claude-y", {}, false);
+    expect(getDefaultModelConfig()).not.toBeNull();
+    deleteModelConfig("no-default-1");
+    deleteModelConfig("no-default-2");
+  });
+
   it("promotes the alphabetically-first remaining row when the default is deleted", () => {
     upsertModelConfig("zzz-alpha", "anthropic", "claude-x", {}, false);
     upsertModelConfig("zzz-beta", "anthropic", "claude-y", {}, true);

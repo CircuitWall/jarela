@@ -128,7 +128,7 @@ async function* streamWithConfigImpl(
   const runCfg = options?.agent_run_config;
 
   const cfgName = runCfg?.model_config_name ?? null;
-  const cfg = cfgName ? getModelConfig(cfgName) : getDefaultModelConfig();
+  const cfg = (cfgName ? getModelConfig(cfgName) : null) ?? getDefaultModelConfig();
 
   if (!cfg) {
     yield { type: "error", data: { message: "No model configured. Add a model in the Models panel.", code: "no_model" } };

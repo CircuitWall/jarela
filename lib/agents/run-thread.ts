@@ -441,15 +441,18 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   let modelConfigName = req._pinned_model_config_name
     ?? agentCfg.model_config_name
     ?? null;
+  if (modelConfigName && !getModelConfig(modelConfigName)) {
+    modelConfigName = null;
+  }
   let routeDecision: RouteDecisionMetadata | null = null;
-  if (req._pinned_model_config_name) {
+  if (req._pinned_model_config_name && modelConfigName === req._pinned_model_config_name) {
     routeDecision = {
       source: "pinned",
       model_config_name: req._pinned_model_config_name,
       reason: "queued run reused the model pinned at submission time",
       retry_count: req._retry_count ?? 0,
     };
-  } else if (agentCfg.model_config_name) {
+  } else if (agentCfg.model_config_name && modelConfigName === agentCfg.model_config_name) {
     routeDecision = {
       source: "agent_override",
       model_config_name: agentCfg.model_config_name,
