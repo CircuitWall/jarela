@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.2] - 2026-09-01
+
 ### Fixed
 
 - **Windows native release packaging accepts the WiX v7 CI EULA flag.** The
