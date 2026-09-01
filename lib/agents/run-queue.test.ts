@@ -1,7 +1,14 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { enqueueThreadRun, getQueueDepth, QueueFullError, __resetForTests } from "./run-queue";
+import { describe, it, expect, afterEach, vi } from "vitest";
+import {
+  enqueueThreadRun,
+  getQueueDepth,
+  QueueExpiredError,
+  QueueFullError,
+  __resetForTests,
+} from "./run-queue";
 
 afterEach(() => {
+  vi.useRealTimers();
   __resetForTests();
 });
 
@@ -50,6 +57,130 @@ describe("enqueueThreadRun", () => {
       "start:b", "end:b",
       "start:c", "end:c",
     ]);
+  });
+
+  it("runs waiting interactive jobs before waiting background jobs", async () => {
+    const events: string[] = [];
+    let releaseActive!: () => void;
+    const active = enqueueThreadRun("t1", "scheduler", async () => {
+      events.push("active:start");
+      await new Promise<void>((resolve) => {
+        releaseActive = resolve;
+      });
+      events.push("active:end");
+    });
+    const background = enqueueThreadRun("t1", "watcher", async () => {
+      events.push("background");
+    });
+    const interactive = enqueueThreadRun("t1", "bridge", async () => {
+      events.push("interactive");
+    });
+
+    await Promise.resolve();
+    releaseActive();
+    await Promise.all([active.result, background.result, interactive.result]);
+
+    expect(events).toEqual(["active:start", "active:end", "interactive", "background"]);
+    expect(background.position).toBe(1);
+    expect(interactive.position).toBe(1);
+  });
+
+  it("does not preempt an active background job", async () => {
+    const events: string[] = [];
+    let release!: () => void;
+    const background = enqueueThreadRun("t1", "scheduler", async () => {
+      events.push("background:start");
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      events.push("background:end");
+    });
+    const interactive = enqueueThreadRun("t1", "user", async () => {
+      events.push("interactive");
+    });
+
+    await Promise.resolve();
+    expect(events).toEqual(["background:start"]);
+    release();
+    await Promise.all([background.result, interactive.result]);
+    expect(events).toEqual(["background:start", "background:end", "interactive"]);
+  });
+
+  it("preserves FIFO order within each lane", async () => {
+    const events: string[] = [];
+    let release!: () => void;
+    const active = enqueueThreadRun("t1", "scheduler", async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const backgroundA = enqueueThreadRun("t1", "scheduler", async () => { events.push("background:a"); });
+    const interactiveA = enqueueThreadRun("t1", "user", async () => { events.push("interactive:a"); });
+    const backgroundB = enqueueThreadRun("t1", "trigger", async () => { events.push("background:b"); });
+    const interactiveB = enqueueThreadRun("t1", "delegate", async () => { events.push("interactive:b"); });
+
+    await Promise.resolve();
+    release();
+    await Promise.all([
+      active.result,
+      backgroundA.result,
+      interactiveA.result,
+      backgroundB.result,
+      interactiveB.result,
+    ]);
+
+    expect(events).toEqual([
+      "interactive:a",
+      "interactive:b",
+      "background:a",
+      "background:b",
+    ]);
+  });
+
+  it("allows callers to override the source lane", async () => {
+    const events: string[] = [];
+    let release!: () => void;
+    const active = enqueueThreadRun("t1", "user", async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const defaultInteractive = enqueueThreadRun("t1", "user", async () => {
+      events.push("default");
+    });
+    const overridden = enqueueThreadRun("t1", "scheduler", async () => {
+      events.push("override");
+    }, { lane: "interactive" });
+
+    await Promise.resolve();
+    release();
+    await Promise.all([active.result, defaultInteractive.result, overridden.result]);
+    expect(events).toEqual(["default", "override"]);
+  });
+
+  it("rejects an expired waiting job without running it", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    let release!: () => void;
+    let ran = false;
+    const active = enqueueThreadRun("t1", "user", async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const expired = enqueueThreadRun("t1", "user", async () => {
+      ran = true;
+    }, { expiresAt: 1_100 });
+    const after = enqueueThreadRun("t1", "user", async () => "after-expiry");
+
+    await Promise.resolve();
+    vi.setSystemTime(1_100);
+    release();
+
+    await active.result;
+    await expect(expired.result).rejects.toBeInstanceOf(QueueExpiredError);
+    await expect(after.result).resolves.toBe("after-expiry");
+    expect(ran).toBe(false);
   });
 
   it("different threads run in parallel", async () => {

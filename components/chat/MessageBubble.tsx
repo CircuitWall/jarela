@@ -8,7 +8,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
 import { AlertTriangle, Bot, Check, Clock, Copy, Eye, EyeOff, ExternalLink, FileText, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
-import type { AgentConfig, Message, RouteDecisionMetadata, UserProfile } from "@/api/types";
+import type { AgentConfig, AutomationActivityMetadata, Message, RouteDecisionMetadata, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
 import { ContextUsageBar } from "@/components/chat/ContextUsageBar";
@@ -311,6 +311,84 @@ const CATEGORY_BADGE: Record<string, { label: string; Icon: React.ElementType; c
   extension:      { label: "Extension", Icon: Zap,            cls: "text-indigo-400/90 border-indigo-500/30 bg-indigo-950/30" },
   synthetic:      { label: "System",    Icon: Bot,            cls: "text-fg-faint      border-border/40     bg-surface-2" },
 };
+
+const AUTOMATION_ACTIVITY_SOURCE = {
+  scheduled_task: { label: "Scheduled task", Icon: Clock },
+  watcher: { label: "Watcher", Icon: Eye },
+  bridge: { label: "Bridge", Icon: MessageCircle },
+} satisfies Record<AutomationActivityMetadata["source_kind"], { label: string; Icon: React.ElementType }>;
+
+const AUTOMATION_ACTIVITY_STATUS = {
+  queued: { copy: "Queued", cls: "border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300" },
+  checking: { copy: "Checking…", cls: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300" },
+  action: { copy: "Action taken", cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
+  no_action: { copy: "No action needed", cls: "border-border/50 bg-surface-2/60 text-fg-muted" },
+  needs_approval: { copy: "Needs approval", cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
+  failed: { copy: "Failed", cls: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+  cancelled: { copy: "Cancelled", cls: "border-slate-500/30 bg-slate-500/10 text-slate-600 dark:text-slate-300" },
+  expired: { copy: "Expired", cls: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300" },
+  complete: { copy: "Complete", cls: "border-border/50 bg-surface-2/60 text-fg-muted" },
+} as const;
+
+function AutomationActivityRow({ activity }: { activity: AutomationActivityMetadata }) {
+  const [open, setOpen] = useState(false);
+  const source = AUTOMATION_ACTIVITY_SOURCE[activity.source_kind];
+  const statusKey = activity.state === "complete"
+    ? (activity.disposition ?? "complete")
+    : activity.state;
+  const status = AUTOMATION_ACTIVITY_STATUS[statusKey];
+  const details = [
+    activity.detail ? { label: "Detail", value: activity.detail } : null,
+    activity.preview ? { label: "Preview", value: activity.preview } : null,
+    activity.error ? { label: "Error", value: activity.error } : null,
+  ].filter((item): item is { label: string; value: string } => item !== null);
+  const time = new Date(activity.last_at);
+  const timeLabel = Number.isNaN(time.getTime())
+    ? null
+    : time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const occurrenceLabel = activity.disposition === "no_action" && activity.occurrence_count > 1
+    ? `${activity.occurrence_count} checks`
+    : null;
+  const SourceIcon = source.Icon;
+
+  return (
+    <div className="mb-1.5 flex w-full justify-center px-9" role="status" aria-atomic="true">
+      <div className={`max-w-full rounded-md border px-2 py-1 text-[11px] ${status.cls}`}>
+        <div className="flex min-w-0 items-center justify-center gap-1.5">
+          <SourceIcon size={11} className="shrink-0" aria-hidden />
+          <span className="shrink-0 font-medium">{source.label}</span>
+          <span aria-hidden>·</span>
+          <span className="truncate font-medium" title={activity.label}>{activity.label}</span>
+          <span aria-hidden>·</span>
+          <span className="shrink-0">{status.copy}</span>
+          {occurrenceLabel ? <span className="shrink-0 opacity-70">· {occurrenceLabel}</span> : null}
+          {timeLabel ? <time dateTime={activity.last_at} className="shrink-0 opacity-60">· {timeLabel}</time> : null}
+          {details.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              className="ml-0.5 inline-flex shrink-0 items-center rounded p-0.5 hover:bg-black/5 dark:hover:bg-white/10"
+              aria-label={open ? "Hide automation activity details" : "Show automation activity details"}
+              aria-expanded={open}
+            >
+              <CollapseChevron open={open} size={10} />
+            </button>
+          ) : null}
+        </div>
+        {open ? (
+          <div className="mt-1.5 border-t border-current/15 pt-1.5">
+            {details.map(({ label, value }) => (
+              <div key={label} className="flex gap-1.5 whitespace-pre-wrap break-words">
+                <span className="shrink-0 font-medium opacity-70">{label}:</span>
+                <span className={label === "Error" ? "text-rose-700 dark:text-rose-300" : "text-fg-muted"}>{value}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function CategorySourceBadge({ category }: { category: string }) {
   const def = CATEGORY_BADGE[category];
@@ -1933,6 +2011,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const routingDecision = !isUser && "metadata" in message
     ? (message.metadata as { routing?: RouteDecisionMetadata } | null | undefined)?.routing ?? null
     : null;
+  const automationActivity = !isUser && "metadata" in message
+    ? message.metadata?.automation_activity ?? null
+    : null;
   const unverifiedLinks = useMemo<ReadonlySet<string> | undefined>(
     () => citations?.unverified_links?.length ? new Set(citations.unverified_links) : undefined,
     [citations],
@@ -1953,6 +2034,10 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const timeLabel = createdAt
     ? new Date(createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
     : null;
+
+  if (automationActivity) {
+    return <AutomationActivityRow activity={automationActivity} />;
+  }
 
   // Compact chip for `run_error` marker rows persisted by the run route
   // when a turn ended in error without producing any assistant content.

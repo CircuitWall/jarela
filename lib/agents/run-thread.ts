@@ -5,7 +5,7 @@ import type { ContentPart } from "@/lib/tools/types";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
-import { addMessage, getMessagesPage, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
+import { addMessage, getMessagesPage, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
 import { recordToolUsage } from "@/lib/stores/tool-stats";
@@ -151,12 +151,23 @@ async function maybeAutoCompactOversizedThread(agentId: string, threadId: string
   }
 }
 
-async function maybeAutoContextBoundary(thread_id: string, incomingRaw: string, historyWindowHours: number): Promise<string | null> {
+async function maybeAutoContextBoundary(
+  thread_id: string,
+  incomingRaw: string,
+  historyWindowHours: number,
+  scope: "foreground" | "bridge" | "all" | "none",
+  bridgeKey?: string,
+): Promise<string | null> {
   const boundaryIdleMs = autoBoundaryIdleMs(historyWindowHours);
   if (boundaryIdleMs === null) return null;
 
-  const page = getMessagesPage(thread_id, AUTO_BOUNDARY_HISTORY_SAMPLES);
-  const nonError = page.messages.filter((m) => m.category !== "run_error");
+  const nonError = getRecentMessagesWindow(
+    thread_id,
+    AUTO_BOUNDARY_HISTORY_SAMPLES,
+    undefined,
+    scope,
+    bridgeKey,
+  );
   const latest = nonError[nonError.length - 1] ?? null;
   if (!latest) return null;
 
@@ -390,19 +401,34 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const stored = typeof content === "string" ? content : JSON.stringify(content);
 
   let autoHotSince: string | null = null;
+  const autoBoundaryScope = req.context_profile?.history_scope
+    ?? (req.user_category === "bridge" ? "bridge" : "foreground");
   if (
     req.hot_since === undefined
     && !req._skip_persist_message
     && isAutoBoundaryEligibleCategory(req.user_category)
   ) {
-    autoHotSince = await maybeAutoContextBoundary(req.thread_id, trimmed, agentCfg.history_window_hours);
-    if (autoHotSince) {
+    autoHotSince = await maybeAutoContextBoundary(
+      req.thread_id,
+      trimmed,
+      agentCfg.history_window_hours,
+      autoBoundaryScope,
+      req.history_bridge_key ?? undefined,
+    );
+    if (autoHotSince && autoBoundaryScope !== "bridge") {
       moveThreadContextBoundary(req.thread_id, autoHotSince, { refreshWarmSummary: true });
     }
   }
 
   if (!req._skip_persist_message) {
-    addMessage(req.thread_id, "user", stored, undefined, req.user_category ?? null);
+    addMessage(
+      req.thread_id,
+      "user",
+      stored,
+      undefined,
+      req.user_category ?? null,
+      req.message_metadata ?? null,
+    );
     touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
   }
 
@@ -522,9 +548,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (req.hot_since !== undefined) {
     moveThreadContextBoundary(req.thread_id, req.hot_since, { refreshWarmSummary: true });
   }
-  const effectiveHotSince = req.hot_since !== undefined
-    ? req.hot_since
-    : (autoHotSince ?? thread.hot_since ?? null);
+  const effectiveHotSince = req.context_profile?.history_scope === "bridge"
+    ? null
+    : req.hot_since !== undefined
+      ? req.hot_since
+      : (autoHotSince ?? thread.hot_since ?? null);
 
   const historyWindow = await buildHistoryWindow(
     req.thread_id,
@@ -533,6 +561,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     trimmed,
     { providerName: modelCfg?.provider, modelId: modelCfg?.model_id },
     effectiveHotSince,
+    {
+      scope: req.context_profile?.history_scope,
+      includeWarm: req.context_profile?.include_warm,
+      bridgeKey: req.history_bridge_key ?? undefined,
+    },
   );
 
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
@@ -606,6 +639,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     recallCtx,
     warmSummaryCtx: effectiveWarmSummary,
     factsCtx: effectiveFacts,
+    backgroundActivityCtx: historyWindow.backgroundActivityCtx,
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
     sourceManifest,
@@ -1069,6 +1103,7 @@ export function persistAssistantMessage(
   contextSnapshot?: ContextUsageSnapshot | null,
   sourceManifest?: readonly SourceManifestEntry[] | null,
   routeDecision?: RouteDecisionMetadata | null,
+  messageMetadata?: Record<string, unknown> | null,
 ): void {
   const trimmed = content.trim();
   let final = trimmed;
@@ -1120,7 +1155,14 @@ export function persistAssistantMessage(
   // messages.content is the clean prose without the fence.
   const { body: persisted, refs: declaredRefs } = extractDeclaredReferences(withoutAutoplay);
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
-    const row = addMessage(thread_id, "assistant", persisted, sanitizedEvents, category);
+    const row = addMessage(
+      thread_id,
+      "assistant",
+      persisted,
+      sanitizedEvents,
+      category,
+      messageMetadata,
+    );
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted);
     }

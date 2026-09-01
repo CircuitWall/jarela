@@ -7,6 +7,12 @@ import { resolveRoute } from "./router";
 import { formatBridgePrompt } from "./message-role";
 import type { BridgeAdapter, InboundMessage } from "./types";
 import { errorMessage } from "@/lib/utils/error";
+import { QueueExpiredError } from "@/lib/agents/run-queue";
+import {
+  createAutomationActivity,
+  finalizeAutomationActivity,
+  updateAutomationActivity,
+} from "@/lib/stores/automation-activity";
 
 /**
  * Handle one inbound message from a bridge adapter:
@@ -55,6 +61,24 @@ export async function handleInboundMessage(
     const senderJid = msg.participant_jid ?? msg.remote_jid;
     const senderName = msg.sender_name ?? msg.push_name ?? senderJid;
     const silent = route.silent_mode === 1;
+    const willReply = !silent && msg.role === route.respond_to;
+    const activity = createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "bridge",
+      sourceId: `${adapter.bridge_id}:${msg.remote_jid}`,
+      label: `Message from ${senderName}`,
+      state: "checking",
+      detail: msg.text,
+    });
+    const publishActivity = () => {
+      publishNotification({
+        type: "automation_activity",
+        thread_id: thread.thread_id,
+        agent_id: agentId,
+        ts: Date.now(),
+      });
+    };
+    publishActivity();
     const promptText = formatBridgePrompt({
       bridge_id: adapter.bridge_id,
       chat_id: msg.remote_jid,
@@ -67,9 +91,13 @@ export async function handleInboundMessage(
       silent,
       event: msg.event,
     });
+    const bridgeConversation = {
+      key: `${adapter.bridge_id}:${msg.remote_jid}`,
+      bridge_id: adapter.bridge_id,
+      chat_id: msg.remote_jid,
+    };
     // Keep typing outside the queue so users still see "thinking" while
     // waiting behind other queued turns for the same thread.
-    const willReply = !silent && msg.role === route.respond_to;
     let typingActive = willReply;
     if (willReply) {
       void adapter.sendTyping(msg.remote_jid, true).catch(() => { /* best-effort */ });
@@ -82,27 +110,55 @@ export async function handleInboundMessage(
 
     let reply = "";
     let suppressAssistant = false;
+    let aborted = false;
     try {
       // Surface the bridge kind+name in the system prompt so the agent
       // knows it's answering on e.g. WhatsApp — fixes the "I don't have
       // access to WhatsApp" reply on bridge-delivered turns. Falls back
       // to bridge_id when the row was deleted between fetch and dispatch.
       const bridge = getBridge(adapter.bridge_id);
-      const result = await runAgentTurn({
-        thread_id: thread.thread_id,
-        queue_source: "bridge",
-        message: promptText,
-        attachments: msg.attachments,
-        user_category: "bridge",
-        assistant_category: "bridge",
-        silent,
-        delivery_channel: {
-          kind: bridge?.kind ?? "bridge",
-          name: bridge?.name ?? null,
-        },
-      });
+      let result: Awaited<ReturnType<typeof runAgentTurn>>;
+      try {
+        result = await runAgentTurn({
+          thread_id: thread.thread_id,
+          queue_source: "bridge",
+          message: promptText,
+          attachments: msg.attachments,
+          user_category: "bridge",
+          assistant_category: "bridge",
+          user_message_metadata: { bridge_conversation: bridgeConversation },
+          assistant_message_metadata: { bridge_conversation: bridgeConversation },
+          history_bridge_key: bridgeConversation.key,
+          silent,
+          queue_lane: willReply ? "interactive" : "background",
+          queue_expires_at: willReply ? undefined : Date.now() + 5 * 60_000,
+          on_queue_state: (state) => {
+            updateAutomationActivity(activity.msg_id, {
+              state: state === "queued" ? "queued" : "checking",
+            });
+            publishActivity();
+          },
+          delivery_channel: {
+            kind: bridge?.kind ?? "bridge",
+            name: bridge?.name ?? null,
+          },
+        });
+      } catch (err) {
+        if (err instanceof QueueExpiredError) {
+          finalizeAutomationActivity(activity.msg_id, { disposition: "expired" });
+          publishActivity();
+          return;
+        }
+        finalizeAutomationActivity(activity.msg_id, {
+          disposition: "failed",
+          error: errorMessage(err),
+        });
+        publishActivity();
+        throw err;
+      }
       reply = result.assistantContent.trim();
       suppressAssistant = result.skippedAssistant;
+      aborted = result.aborted;
     } finally {
       typingActive = false;
       clearInterval(typingTimer);
@@ -116,14 +172,26 @@ export async function handleInboundMessage(
     // dispatcher. The WhatsApp adapter also re-checks `route.silent_mode`
     // inside its own sendText as a belt-and-suspenders guard, so even a
     // tool that called adapter.sendText directly would be dropped.
+    let sendError: string | null = null;
     if (reply.length > 0 && willReply) {
       try {
         await adapter.sendText(msg.remote_jid, reply);
       } catch (sendErr) {
         const m = errorMessage(sendErr);
+        sendError = m;
         console.error(`[bridge ${adapter.bridge_id}] sendText failed:`, m);
       }
     }
+
+    finalizeAutomationActivity(activity.msg_id, aborted
+      ? { disposition: "cancelled" }
+      : sendError
+      ? { disposition: "failed", error: sendError }
+      : {
+          disposition: reply.length > 0 && !suppressAssistant ? "action" : "no_action",
+          preview: suppressAssistant ? undefined : reply.replace(/\s+/g, " ").slice(0, 120),
+        });
+    publishActivity();
 
     if (!silent || !suppressAssistant) {
       publishNotification({

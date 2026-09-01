@@ -143,7 +143,7 @@ describe("scheduledTaskHandler (ADR-0032)", () => {
     expect(firingForTaskId("nope")).toBeNull();
   });
 
-  it("markFired suppresses task_completed for silent prompt firings on success", async () => {
+  it("markFired publishes a silent refresh event for silent prompt firings", async () => {
     const t = createScheduledTask({
       agent_id: "a",
       prompt: "ping",
@@ -159,10 +159,11 @@ describe("scheduledTaskHandler (ADR-0032)", () => {
     try {
       scheduledTaskHandler.markFired(firing, { status: "done", preview: "ok", threadId: "th" });
     } finally { unsub(); }
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "task_completed", silent: true });
   });
 
-  it("markFired suppresses task_completed for silent script firings on success", async () => {
+  it("markFired publishes a silent refresh event for silent script firings", async () => {
     const t = createScheduledTask({
       agent_id: "a",
       kind: "cron",
@@ -179,7 +180,8 @@ describe("scheduledTaskHandler (ADR-0032)", () => {
     try {
       scheduledTaskHandler.markFired(firing, { status: "done", preview: "ok", threadId: "" });
     } finally { unsub(); }
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "task_completed", silent: true });
   });
 
   it("markFired still publishes for silent firings when an error occurred", async () => {

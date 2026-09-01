@@ -239,17 +239,18 @@ describe("watcherHandler (ADR-0027)", () => {
       return firings[0]!;
     }
 
-    it("suppresses task_completed for silent prompt firings on success", async () => {
+    it("publishes a silent refresh event for silent prompt firings", async () => {
       const fired = await firingForChange({ silent: true, scriptMode: false });
       const events: unknown[] = [];
       const unsub = subscribe((e) => { events.push(e); });
       try {
         watcherHandler.markFired(fired, { status: "done", preview: "ok", threadId: "th" });
       } finally { unsub(); }
-      expect(events).toHaveLength(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "task_completed", silent: true });
     });
 
-    it("suppresses task_completed for silent script firings on success", async () => {
+    it("publishes a silent refresh event for silent script firings", async () => {
       const fired = await firingForChange({ silent: true, scriptMode: true });
       expect(fired.meta?.silent).toBe(true);
       const events: unknown[] = [];
@@ -257,7 +258,8 @@ describe("watcherHandler (ADR-0027)", () => {
       try {
         watcherHandler.markFired(fired, { status: "done", preview: "ok", threadId: "" });
       } finally { unsub(); }
-      expect(events).toHaveLength(0);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: "task_completed", silent: true });
     });
 
     it("still publishes when a silent firing produced an error", async () => {

@@ -28,6 +28,11 @@ import { publish as publishNotification } from "@/lib/notifications/bus";
 import { truncateBytes } from "@/lib/utils/text";
 import type { TriggerFiring, TriggerHandler, TriggerOutcome } from "../types";
 import { errorMessage } from "@/lib/utils/error";
+import { getOrCreateAgentThread } from "@/lib/stores/threads";
+import {
+  createAutomationActivity,
+  finalizeAutomationActivity,
+} from "@/lib/stores/automation-activity";
 
 export const WATCHER_KIND = "watcher";
 
@@ -193,8 +198,45 @@ function buildFiring(watcher: WatcherRow, previous: string | null, current: stri
     prompt: buildFiringPrompt(watcher, previous, current),
     silent: watcher.silent === 1,
     category: "watcher",
-    meta: { label: watcher.label, tool_name: watcher.tool_name, reaction_kind: "agent_prompt", silent: watcher.silent === 1 },
+    meta: {
+      label: watcher.label,
+      tool_name: watcher.tool_name,
+      reaction_kind: "agent_prompt",
+      silent: watcher.silent === 1,
+      expiresAt: Date.now() + watcher.interval_seconds * 1000,
+    },
   };
+}
+
+function recordPollActivity(
+  watcher: WatcherRow,
+  disposition: "no_action" | "failed",
+  error?: string,
+): void {
+  const thread = getOrCreateAgentThread(watcher.agent_id);
+  const activity = createAutomationActivity({
+    threadId: thread.thread_id,
+    sourceKind: "watcher",
+    sourceId: watcher.id,
+    label: watcher.label,
+    detail: `Checked ${watcher.tool_name}`,
+  });
+  finalizeAutomationActivity(activity.msg_id, {
+    disposition,
+    ...(error ? { error } : {}),
+  });
+  publishNotification({
+    type: "task_completed",
+    task_id: watcher.id,
+    agent_id: watcher.agent_id,
+    prompt: `Watcher "${watcher.label}" checked ${watcher.tool_name}`,
+    thread_id: thread.thread_id,
+    status: disposition === "failed" ? "error" : "skipped",
+    preview: "",
+    error,
+    silent: watcher.silent === 1,
+    ts: Date.now(),
+  });
 }
 
 async function invokeWatcherTool(watcher: WatcherRow): Promise<string> {
@@ -231,10 +273,13 @@ async function pollDueWatchers(asOf: Date): Promise<TriggerFiring[]> {
       });
       if (changed) {
         firings.push(buildFiring(watcher, watcher.last_result, result));
+      } else {
+        recordPollActivity(watcher, "no_action");
       }
     } catch (err) {
       const msg = errorMessage(err);
       recordWatcherPollError(watcher.id, msg);
+      recordPollActivity(watcher, "failed", msg);
       // A polling error doesn't fire the agent; it's surfaced via
       // last_error on the row + UI. Logging only.
       console.error(`[watcher] poll ${watcher.id} (${watcher.tool_name}) failed:`, msg);
@@ -257,12 +302,11 @@ export const watcherHandler: TriggerHandler = {
     // ADR-0031 — script firings publish too; reuse `task_completed` with
     // a synthesised prompt and the watcher's agent_id from meta (script
     // firings have no thread, so threadId is empty).
-    // silent=true on the watcher suppresses the notification (in addition
-    // to the prompt-mode NO_REPLY semantic). Errors still surface.
+    // Silent watchers still publish a refresh event for the inline activity
+    // row; the client suppresses its toast/OS-notification layer.
     const silent = firing.mode === "prompt"
       ? firing.silent === true
       : firing.meta?.silent === true;
-    if (silent && !outcome.error) return;
     if (firing.mode === "prompt") {
       publishNotification({
         type: "task_completed",
@@ -273,6 +317,7 @@ export const watcherHandler: TriggerHandler = {
         status: outcome.status,
         preview: outcome.preview,
         error: outcome.error,
+        silent,
         ts: Date.now(),
       });
       return;
@@ -289,6 +334,7 @@ export const watcherHandler: TriggerHandler = {
       status: outcome.status === "skipped" ? "done" : outcome.status,
       preview: outcome.preview,
       error: outcome.error,
+      silent,
       ts: Date.now(),
     });
   },
@@ -309,11 +355,15 @@ export async function firingForWatcherIdNow(id: string): Promise<TriggerFiring |
     const firstRun = watcher.last_fingerprint === null;
     const changed = !firstRun && fp !== watcher.last_fingerprint;
     recordWatcherPoll({ id: watcher.id, fingerprint: fp, result, fired: changed });
-    if (!changed) return null;
+    if (!changed) {
+      recordPollActivity(watcher, "no_action");
+      return null;
+    }
     return buildFiring(watcher, watcher.last_result, result);
   } catch (err) {
     const msg = errorMessage(err);
     recordWatcherPollError(watcher.id, msg);
+    recordPollActivity(watcher, "failed", msg);
     throw err;
   }
 }

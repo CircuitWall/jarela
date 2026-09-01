@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { FULL_PROFILE, ONE_SHOT_PROFILE, TURN_PROFILES, resolveTurnProfile } from "./turn-profile";
+import {
+  BRIDGE_PROFILE,
+  FOREGROUND_PROFILE,
+  FULL_PROFILE,
+  ONE_SHOT_PROFILE,
+  TURN_PROFILES,
+  resolveTurnProfile,
+} from "./turn-profile";
 
 describe("turn-profile", () => {
-  it("user / bridge / delegate get the full profile", () => {
-    expect(TURN_PROFILES.user).toEqual(FULL_PROFILE);
-    expect(TURN_PROFILES.bridge).toEqual(FULL_PROFILE);
+  it("assigns source-specific conversational profiles", () => {
+    expect(TURN_PROFILES.user).toEqual(FOREGROUND_PROFILE);
+    expect(TURN_PROFILES.bridge).toEqual(BRIDGE_PROFILE);
     expect(TURN_PROFILES.delegate).toEqual(FULL_PROFILE);
   });
 
@@ -21,6 +28,7 @@ describe("turn-profile", () => {
     expect(ONE_SHOT_PROFILE.include_recall).toBe(false);
     expect(ONE_SHOT_PROFILE.include_hot).toBe(false);
     expect(ONE_SHOT_PROFILE.include_warm).toBe(false);
+    expect(ONE_SHOT_PROFILE.history_scope).toBe("none");
   });
 
   it("resolveTurnProfile falls back to the full profile when source is missing", () => {
@@ -30,7 +38,7 @@ describe("turn-profile", () => {
 
   it("resolveTurnProfile maps source to its registered profile", () => {
     expect(resolveTurnProfile("extension")).toEqual(ONE_SHOT_PROFILE);
-    expect(resolveTurnProfile("bridge")).toEqual(FULL_PROFILE);
+    expect(resolveTurnProfile("bridge")).toEqual(BRIDGE_PROFILE);
   });
 
   it("resolveTurnProfile applies partial overrides on top of the base", () => {
@@ -39,7 +47,7 @@ describe("turn-profile", () => {
       include_hot: true,
     });
     expect(resolveTurnProfile("user", { include_recall: false, include_facts: false })).toEqual({
-      ...FULL_PROFILE,
+      ...FOREGROUND_PROFILE,
       include_recall: false,
       include_facts: false,
     });

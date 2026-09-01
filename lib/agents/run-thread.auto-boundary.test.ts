@@ -35,7 +35,7 @@ vi.mock("@/lib/embeddings", () => ({
 const { prepareThreadRun } = await import("./run-thread");
 const { upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
-const { addMessage, createThread, getMessages, getThread } = await import("@/lib/stores/threads");
+const { addMessage, createThread, getMessages, getThread, setThreadContextPin } = await import("@/lib/stores/threads");
 const { getDb } = await import("@/lib/db");
 
 afterAll(() => {
@@ -146,6 +146,94 @@ describe("prepareThreadRun auto context boundary", () => {
 
     const updated = getThread(thread.thread_id);
     expect(updated?.hot_since ?? null).toBeNull();
+  });
+
+  it("ignores automation and bridge rows when detecting a foreground boundary", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-boundary-foreground-scope",
+      name: "Boundary Foreground Scope Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 3,
+    });
+    const thread = createThread("agent-boundary-foreground-scope");
+    addMessage(thread.thread_id, "user", "Let's debug the OAuth callback mismatch error.");
+    addMessage(thread.thread_id, "assistant", "Check your redirect URI and PKCE verifier.");
+    ageThreadMessages(thread.thread_id, 4);
+    addMessage(thread.thread_id, "assistant", "Recent scheduled result", undefined, null, {
+      automation_activity: { source_kind: "scheduled_task" },
+    });
+    addMessage(thread.thread_id, "user", "Recent bridge conversation", undefined, "bridge", {
+      bridge_conversation: { key: "bridge-1:chat-2" },
+    });
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+        history_scope: "foreground",
+      },
+    });
+
+    expect(getThread(thread.thread_id)?.hot_since).toBeTruthy();
+  });
+
+  it("keeps bridge auto-boundaries scoped without moving the foreground pin", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-boundary-bridge-scope",
+      name: "Boundary Bridge Scope Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 3,
+    });
+    const thread = createThread("agent-boundary-bridge-scope");
+    const foregroundPin = new Date(Date.now() - 2 * 3600_000).toISOString();
+    setThreadContextPin(thread.thread_id, foregroundPin);
+    const targetMetadata = {
+      bridge_conversation: { key: "bridge-1:chat-1" },
+    };
+    addMessage(thread.thread_id, "user", "Let's debug the OAuth callback mismatch error.", undefined, "bridge", targetMetadata);
+    addMessage(thread.thread_id, "assistant", "Check your redirect URI and PKCE verifier.", undefined, "bridge", targetMetadata);
+    ageThreadMessages(thread.thread_id, 4);
+    addMessage(thread.thread_id, "assistant", "Recent scheduled result", undefined, null, {
+      automation_activity: { source_kind: "scheduled_task" },
+    });
+    addMessage(thread.thread_id, "user", "Recent unrelated bridge chat", undefined, "bridge", {
+      bridge_conversation: { key: "bridge-1:chat-2" },
+    });
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Draft a Q3 hiring and marketing budget plan with milestones.",
+      user_category: "bridge",
+      message_metadata: targetMetadata,
+      history_bridge_key: "bridge-1:chat-1",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+        history_scope: "bridge",
+      },
+    });
+
+    expect(getThread(thread.thread_id)?.hot_since).toBe(foregroundPin);
+    const modelMessages = streamWithConfigMock.mock.calls.at(-1)?.[1] as Array<{ content: unknown }>;
+    expect(modelMessages.map((message) => message.content)).toEqual(expect.arrayContaining([
+      "Draft a Q3 hiring and marketing budget plan with milestones.",
+    ]));
+    expect(modelMessages.map((message) => message.content)).not.toContain("Recent unrelated bridge chat");
+    expect(modelMessages.map((message) => message.content)).not.toContain("Recent scheduled result");
   });
 
   it("uses the agent history window as the idle threshold", async () => {

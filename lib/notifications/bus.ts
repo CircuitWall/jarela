@@ -6,6 +6,12 @@ import { getConfig } from "@/lib/env/config";
 
 export type NotificationEvent =
   | {
+      type: "automation_activity";
+      thread_id: string;
+      agent_id: string;
+      ts: number;
+    }
+  | {
       type: "run_completed";
       thread_id: string;
       agent_id: string | null;
@@ -23,9 +29,10 @@ export type NotificationEvent =
       // chose not to surface a reply (NO_REPLY sentinel or empty). The chat
       // already stays quiet via messages.hidden; downstream notification
       // sinks can drop the ping too.
-      status: "done" | "error" | "skipped";
+      status: "done" | "error" | "skipped" | "expired" | "cancelled";
       preview: string;
       error?: string;
+      silent?: boolean;
       ts: number;
     }
   | {

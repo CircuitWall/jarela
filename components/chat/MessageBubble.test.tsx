@@ -133,3 +133,57 @@ describe("MessageBubble local file links", () => {
     expect(await screen.findByText("# Jarela")).toBeTruthy();
   });
 });
+
+describe("MessageBubble automation activity", () => {
+  it("renders a centered activity row and expands available details", () => {
+    const lastAt = "2026-08-16T12:34:00.000Z";
+    const message: Message = {
+      id: "activity-1",
+      role: "assistant",
+      content: "Inbox watcher: no action needed",
+      created_at: lastAt,
+      status: "confirmed",
+      metadata: {
+        automation_activity: {
+          version: 1,
+          source_kind: "watcher",
+          source_id: "watcher-1",
+          label: "Inbox watcher",
+          state: "complete",
+          disposition: "no_action",
+          occurrence_count: 3,
+          first_at: "2026-08-16T12:00:00.000Z",
+          last_at: lastAt,
+          detail: "Checked for new messages.",
+          preview: "No matching messages.",
+          error: "One mailbox was unavailable.",
+        },
+      },
+    };
+
+    render(
+      <AppProvider>
+        <MessageBubble message={message} />
+      </AppProvider>,
+    );
+
+    const row = screen.getByRole("status");
+    expect(row.textContent).toContain("Watcher");
+    expect(row.textContent).toContain("Inbox watcher");
+    expect(row.textContent).toContain("No action needed");
+    expect(row.textContent).toContain("3 checks");
+    expect(row.textContent).toContain(
+      new Date(lastAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }),
+    );
+    expect(screen.queryByText("Checked for new messages.")).toBeNull();
+    expect(screen.queryByLabelText("Copy message text")).toBeNull();
+
+    const disclosure = screen.getByRole("button", { name: "Show automation activity details" });
+    expect(disclosure.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(disclosure);
+    expect(screen.getByText("Checked for new messages.")).toBeTruthy();
+    expect(screen.getByText("No matching messages.")).toBeTruthy();
+    expect(screen.getByText("One mailbox was unavailable.")).toBeTruthy();
+    expect(disclosure.getAttribute("aria-expanded")).toBe("true");
+  });
+});

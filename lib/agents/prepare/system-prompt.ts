@@ -36,6 +36,7 @@ export interface SystemPromptContext {
   recallCtx: string;
   warmSummaryCtx: string;
   factsCtx: string;
+  backgroundActivityCtx?: string;
   experienceMode: "essential" | "full";
   delegateRosterLines: string[];
   /** Numbered source manifest the agent may cite via `[N]` markers. Built
@@ -62,7 +63,7 @@ export interface SystemPromptContext {
 export { CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } from "@/lib/providers/anthropic";
 
 export function buildSystemPrompt(ctx: SystemPromptContext): string {
-  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools, toolPermissionMap } = ctx;
+  const { agentCfg, trimmedMessage, budget, recallCtx, warmSummaryCtx, factsCtx, backgroundActivityCtx, experienceMode, delegateRosterLines, sourceManifest, deliveryChannel, allowedTools, toolPermissionMap } = ctx;
 
   const adaptivePersonaCtx = buildAdaptivePersonaContext(agentCfg, trimmedMessage);
   const harnessParts = resolveHarness(agentCfg);
@@ -87,6 +88,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
     agentCfg.identity,
     agentCfg.instructions,
     buildDeliveryChannelContext(deliveryChannel),
+    backgroundActivityCtx,
     buildUserContext(),
     buildIntegrationsContext(),
     buildDocumentsContext(),

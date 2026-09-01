@@ -290,6 +290,39 @@ export interface MessageMetadata {
   redaction_summary?: RedactionSummaryEntry[];
   /** Model-selection decision captured before the turn started. */
   routing?: RouteDecisionMetadata;
+  /** Lifecycle and outcome for a background interaction rendered inline in chat. */
+  automation_activity?: AutomationActivityMetadata;
+  /** Identifies the external bridge conversation that owns this turn. */
+  bridge_conversation?: {
+    key: string;
+    bridge_id: string;
+    chat_id: string;
+  };
+}
+
+export type AutomationActivitySource = "scheduled_task" | "watcher" | "bridge";
+export type AutomationActivityState = "queued" | "checking" | "complete";
+export type AutomationActivityDisposition =
+  | "action"
+  | "no_action"
+  | "needs_approval"
+  | "failed"
+  | "cancelled"
+  | "expired";
+
+export interface AutomationActivityMetadata {
+  version: 1;
+  source_kind: AutomationActivitySource;
+  source_id: string;
+  label: string;
+  state: AutomationActivityState;
+  disposition?: AutomationActivityDisposition;
+  occurrence_count: number;
+  first_at: string;
+  last_at: string;
+  detail?: string;
+  preview?: string;
+  error?: string;
 }
 
 export interface MessageUsage {
