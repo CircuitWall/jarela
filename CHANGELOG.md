@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows native release packaging accepts the WiX v7 CI EULA flag.** The
+  MSI packaging step now passes WiX's documented noninteractive EULA acceptance
+  option so tag releases can build Windows installers in GitHub Actions.
+
 ## [1.31.1] - 2026-09-01
 
 ### Changed
