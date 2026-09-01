@@ -1,10 +1,13 @@
 "use client";
 
-import { KeyRound, Loader2, RefreshCw } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Globe2, KeyRound, Loader2, RefreshCw, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { IntegrationDefinition, IntegrationStatus } from "@/api/types";
 import { AddCredentialDialog } from "@/components/credentials/AddCredentialDialog";
+import { ToolSettingsActionRow } from "@/components/tools/ToolSettingsActionRow";
+import { ToolSettingsStatus } from "@/components/tools/ToolSettingsStatus";
+import { useEnvSettings } from "@/hooks/useEnvSettings";
 import { errorMessage } from "@/lib/utils/error";
 import { StepShell } from "./StepShell";
 
@@ -22,6 +25,117 @@ const PROVIDER_ORDER = [
   "deepseek",
   "cohere",
 ] as const;
+
+const SEARCH_ORDER_VAR = "JARELA_WEB_SEARCH_PROVIDER_ORDER";
+const GOOGLE_SEARCH_ENGINE_VAR = "JARELA_GOOGLE_SEARCH_ENGINE_ID";
+
+function SearchEngineSetup() {
+  const { rows, error, setError, save: saveEnv } = useEnvSettings();
+  const [providerOrder, setProviderOrder] = useState("google,tavily,duckduckgo");
+  const [searchEngineId, setSearchEngineId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+
+  const orderRow = rows.find((row) => row.name === SEARCH_ORDER_VAR) ?? null;
+  const engineRow = rows.find((row) => row.name === GOOGLE_SEARCH_ENGINE_VAR) ?? null;
+
+  useEffect(() => {
+    if (orderRow) setProviderOrder((prev) => (prev.trim() ? prev : orderRow.current));
+    if (engineRow) setSearchEngineId((prev) => (prev.trim() ? prev : engineRow.current));
+  }, [engineRow, orderRow]);
+
+  async function saveGoogleFirst() {
+    setSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await saveEnv(SEARCH_ORDER_VAR, providerOrder.trim() || "google,tavily,duckduckgo");
+      await saveEnv(GOOGLE_SEARCH_ENGINE_VAR, searchEngineId.trim() || null);
+      setStatus(searchEngineId.trim()
+        ? "Search setup saved. Google will be tried before the fallback providers."
+        : "Provider order saved. Add a Google search engine id when you want Google results.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resetSearchEngine() {
+    setSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await saveEnv(SEARCH_ORDER_VAR, null);
+      await saveEnv(GOOGLE_SEARCH_ENGINE_VAR, null);
+      setProviderOrder(orderRow?.default ? String(orderRow.default) : "tavily,google,duckduckgo");
+      setSearchEngineId("");
+      setStatus("Search settings reset to defaults.");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-border bg-surface-3 px-3 py-3 text-xs text-fg-subtle">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/10 text-accent">
+          <Search size={16} />
+        </span>
+        <div className="min-w-0 flex-1 space-y-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-medium text-fg">Search engines</p>
+              {searchEngineId.trim() && (
+                <span className="rounded border border-emerald-600/40 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                  Google selected
+                </span>
+              )}
+            </div>
+            <p className="mt-1 leading-relaxed">
+              Choose which search engines agents try first, including Google Custom Search before Tavily or DuckDuckGo.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1.15fr]">
+            <label className="space-y-1">
+              <span className="block text-[11px] font-medium text-fg-muted">Provider order</span>
+              <input
+                value={providerOrder}
+                onChange={(event) => setProviderOrder(event.target.value)}
+                placeholder="google,tavily,duckduckgo"
+                className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-accent"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="block text-[11px] font-medium text-fg-muted">Google search engine id</span>
+              <input
+                value={searchEngineId}
+                onChange={(event) => setSearchEngineId(event.target.value)}
+                placeholder="Programmable Search Engine cx"
+                className="w-full rounded-lg border border-border bg-surface px-2 py-1.5 font-mono text-[12px] text-fg outline-none focus:border-accent"
+              />
+            </label>
+          </div>
+          <p className="leading-relaxed text-fg-faint">
+            Google also needs the Google API key from the Google provider card in Model providers. Create the search engine id at programmablesearchengine.google.com.
+          </p>
+          <ToolSettingsActionRow
+            onSave={() => { void saveGoogleFirst(); }}
+            saving={saving}
+            saveLabel="Save search setup"
+            savingLabel="Saving..."
+            onReset={() => { void resetSearchEngine(); }}
+            resetLabel="Reset search"
+            resetDisabled={!orderRow?.overridden && !engineRow?.overridden}
+          />
+          <ToolSettingsStatus status={status} error={error} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function StepCredentials({ definitions, integrations, onChanged }: StepCredentialsProps) {
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
@@ -118,6 +232,13 @@ export function StepCredentials({ definitions, integrations, onChanged }: StepCr
           </button>
         </div>
       )}
+
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">
+          <Globe2 size={12} /> Search
+        </div>
+        <SearchEngineSetup />
+      </div>
 
       <div className="space-y-2">
         <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-fg-faint">Model providers</div>

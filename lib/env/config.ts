@@ -50,6 +50,7 @@ export interface JarelaConfig {
   readonly voiceTimeoutMs: number;
   readonly imageTimeoutMs: number;
   readonly webSearchProviderOrder: string;
+  readonly googleSearchEngineId: string;
   readonly fetchToolMaxBytes: number;
   readonly mcpRegistryTimeoutMs: number;
   readonly execMaxOutputBytes: number;
@@ -206,6 +207,7 @@ export function getConfig(): JarelaConfig {
     voiceTimeoutMs: parsePositiveInt(env.JARELA_VOICE_TIMEOUT_MS, ENV_DEFAULTS.voiceTimeoutMs),
     imageTimeoutMs: parsePositiveInt(env.JARELA_IMAGE_TIMEOUT_MS, ENV_DEFAULTS.imageTimeoutMs),
     webSearchProviderOrder: (env.JARELA_WEB_SEARCH_PROVIDER_ORDER ?? ENV_DEFAULTS.webSearchProviderOrder).trim() || ENV_DEFAULTS.webSearchProviderOrder,
+    googleSearchEngineId: (env.JARELA_GOOGLE_SEARCH_ENGINE_ID ?? env.GOOGLE_SEARCH_ENGINE_ID ?? env.GOOGLE_CSE_ID ?? ENV_DEFAULTS.googleSearchEngineId).trim(),
     fetchToolMaxBytes: parsePositiveInt(env.JARELA_FETCH_TOOL_MAX_BYTES, ENV_DEFAULTS.fetchToolMaxBytes),
     mcpRegistryTimeoutMs: parsePositiveInt(env.JARELA_MCP_REGISTRY_TIMEOUT_MS, ENV_DEFAULTS.mcpRegistryTimeoutMs),
     execMaxOutputBytes: parsePositiveInt(env.JARELA_EXEC_MAX_OUTPUT_BYTES, ENV_DEFAULTS.execMaxOutputBytes),

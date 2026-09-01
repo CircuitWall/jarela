@@ -8,34 +8,46 @@ import { ToolSettingsStatus } from "./ToolSettingsStatus";
 import { ToolSettingsSection } from "./ToolSettingsSection";
 
 const VAR_NAME = "JARELA_WEB_SEARCH_PROVIDER_ORDER";
-const VALID = ["tavily", "duckduckgo"] as const;
+const GOOGLE_ENGINE_VAR = "JARELA_GOOGLE_SEARCH_ENGINE_ID";
+const VALID = ["tavily", "google", "duckduckgo"] as const;
 
 const PRESETS: Array<{ id: string; label: string; value: string; description: string }> = [
   {
     id: "tavily-first",
     label: "Tavily first",
-    value: "tavily,duckduckgo",
-    description: "Best quality when TAVILY_API_KEY is available; DDG as fallback.",
+    value: "tavily,google,duckduckgo",
+    description: "Best quality with Tavily; Google and DDG as fallback.",
+  },
+  {
+    id: "google-first",
+    label: "Google first",
+    value: "google,tavily,duckduckgo",
+    description: "Uses Google Custom Search when a key and search engine id are configured.",
   },
   {
     id: "ddg-first",
     label: "DuckDuckGo first",
-    value: "duckduckgo,tavily",
-    description: "No-key path first; Tavily only if DDG fails.",
+    value: "duckduckgo,google,tavily",
+    description: "No-key path first; Google or Tavily only if DDG fails.",
   },
 ];
 
 export function WebSearchConfigCard() {
   const { rows, error, setError, save: saveEnv } = useEnvSettings();
   const [value, setValue] = useState("");
+  const [googleEngineId, setGoogleEngineId] = useState("");
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const row = rows.find((e) => e.name === VAR_NAME) ?? null;
+  const googleEngineRow = rows.find((e) => e.name === GOOGLE_ENGINE_VAR) ?? null;
 
   useEffect(() => {
     if (!row) return;
     setValue((prev) => (prev.trim().length > 0 ? prev : row.current));
-  }, [row]);
+    if (googleEngineRow) {
+      setGoogleEngineId((prev) => (prev.trim().length > 0 ? prev : googleEngineRow.current));
+    }
+  }, [googleEngineRow, row]);
 
   const normalized = useMemo(() => {
     const out: string[] = [];
@@ -66,12 +78,27 @@ export function WebSearchConfigCard() {
     }
   }
 
+  async function saveGoogleEngine() {
+    setSaving(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await saveEnv(GOOGLE_ENGINE_VAR, googleEngineId.trim() || null);
+      setStatus(googleEngineId.trim() ? "Google search engine id saved." : "Google search engine id cleared.");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function resetToDefault() {
     setSaving(true);
     setError(null);
     setStatus(null);
     try {
       await saveEnv(VAR_NAME, null);
+      await saveEnv(GOOGLE_ENGINE_VAR, null);
       setStatus("Reset to default provider order.");
     } catch (e) {
       setError((e as Error).message);
@@ -83,11 +110,11 @@ export function WebSearchConfigCard() {
   return (
     <ToolSettingsSection
       title="Web search fallback"
-      description="Configure provider order for the built-in web_search tool. Supported providers: tavily, duckduckgo."
+      description="Configure provider order for the built-in web_search tool. Supported providers: tavily, google, duckduckgo."
       icon={<Globe2 size={14} className="text-accent" />}
     >
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         {PRESETS.map((p) => (
           <button
             key={p.id}
@@ -119,7 +146,7 @@ export function WebSearchConfigCard() {
             type="text"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder="tavily,duckduckgo"
+            placeholder="tavily,google,duckduckgo"
             className="flex-1 px-2 py-1 rounded border border-border bg-surface text-fg text-[12px] font-mono"
           />
           <ToolSettingsActionRow
@@ -140,6 +167,35 @@ export function WebSearchConfigCard() {
             Unknown provider(s): {invalid.join(", ")}. Allowed: {VALID.join(", ")}.
           </p>
         )}
+      </div>
+
+      <div className="mt-3 rounded-lg border border-border/60 bg-surface px-3 py-2.5">
+        <label className="text-[11px] text-fg-muted" htmlFor="google-search-engine-id">
+          Google Programmable Search Engine id
+        </label>
+        <input
+          id="google-search-engine-id"
+          type="text"
+          value={googleEngineId}
+          onChange={(e) => setGoogleEngineId(e.target.value)}
+          placeholder="cx value"
+          className="mt-1 w-full rounded border border-border bg-surface-2 px-2 py-1 text-[12px] font-mono text-fg"
+        />
+        <p className="mt-1 text-[11px] text-fg-faint">
+          Google search also needs the Google API key saved in Credentials or exposed as GOOGLE_API_KEY / GEMINI_API_KEY.
+        </p>
+        <ToolSettingsActionRow
+          onSave={() => { void saveGoogleEngine(); }}
+          saving={saving}
+          saveLabel="Save Google id"
+          savingLabel="Saving..."
+          onReset={() => {
+            setGoogleEngineId("");
+            void saveEnv(GOOGLE_ENGINE_VAR, null).then(() => setStatus("Google search engine id cleared.")).catch((e: Error) => setError(e.message));
+          }}
+          resetLabel="Clear"
+          resetDisabled={!googleEngineRow?.overridden && googleEngineId.trim().length === 0}
+        />
       </div>
 
       <ToolSettingsStatus status={status} error={error} />
