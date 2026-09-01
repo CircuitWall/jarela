@@ -1,6 +1,6 @@
 name: Release
 
-# ADR-0011: per-OS portable archives + npm package, fired on tag push.
+# ADR-0011 + ADR-0076: per-OS archives, native packages, npm, Docker.
 # CI (.github/workflows/ci.yml) still gates merges on lint/typecheck/build.
 # This workflow only runs on tags so a normal push never publishes.
 
@@ -129,7 +129,17 @@ jobs:
           cp package.json        "$dest/package.json"
           cp LICENSE             "$dest/LICENSE"
           cp README.md           "$dest/README.md"
-          cp scripts/install-to-system.sh "$dest/scripts/"
+          for script in \
+            first-run-prompt.mjs \
+            install-to-system.sh \
+            jarela-bin.mjs \
+            optimize-client-chunks.mjs \
+            service-install.mjs \
+            start-prod.mjs \
+            update.mjs
+          do
+            cp "scripts/$script" "$dest/scripts/"
+          done
           cp docs/INSTALL.md     "$dest/INSTALL.md"
           chmod +x "$dest/scripts/install-to-system.sh"
 
@@ -149,12 +159,18 @@ jobs:
           Copy-Item              -Force README.md    "$dest/README.md"
           Copy-Item -Force docs/INSTALL.md           "$dest/INSTALL.md"
           $winScripts = @(
+            'first-run-prompt.mjs',
             'install-to-system.ps1',
             'installed-launcher.ps1',
             'installed-launcher.vbs',
             'install-tailscale-serve.ps1',
+            'jarela-bin.mjs',
+            'optimize-client-chunks.mjs',
+            'service-install.mjs',
+            'start-prod.mjs',
             'uninstall-tailscale-serve.ps1',
-            'uninstall-from-system.ps1'
+            'uninstall-from-system.ps1',
+            'update.mjs'
           )
           foreach ($s in $winScripts) {
             Copy-Item -Force "scripts/$s" "$dest/scripts/$s"
@@ -177,11 +193,39 @@ jobs:
                            -DestinationPath "dist/${{ steps.meta.outputs.name }}.zip" `
                            -Force
 
+      - name: Install Linux native package tools
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      - name: Package native Linux installers
+        if: matrix.target == 'linux'
+        shell: bash
+        run: bash scripts/package-native-linux.sh "dist/${{ steps.meta.outputs.name }}" "${{ steps.meta.outputs.version }}" dist
+
+      - name: Package native macOS installer
+        if: matrix.target == 'darwin'
+        shell: bash
+        run: bash scripts/package-native-macos.sh "dist/${{ steps.meta.outputs.name }}" "${{ steps.meta.outputs.version }}" dist
+
+      - name: Install WiX
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 7.0.0
+          wix --version
+
+      - name: Package native Windows installer
+        if: matrix.target == 'win'
+        shell: pwsh
+        run: .\scripts\package-native-windows.ps1 -StagedDir "dist/${{ steps.meta.outputs.name }}" -Version "${{ steps.meta.outputs.version }}" -OutDir dist
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.meta.outputs.name }}
-          path: dist/${{ steps.meta.outputs.name }}.${{ matrix.archive }}
+          path: dist/${{ steps.meta.outputs.name }}*
           if-no-files-found: error
           retention-days: 7
 
@@ -202,6 +246,10 @@ jobs:
           files: |
             dist/jarela-*.tar.gz
             dist/jarela-*.zip
+            dist/jarela-*.pkg
+            dist/jarela-*.msi
+            dist/jarela-*.deb
+            dist/jarela-*.rpm
           draft: false
           generate_release_notes: true
           fail_on_unmatched_files: true
