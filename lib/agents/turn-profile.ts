@@ -33,6 +33,8 @@ export interface TurnContextProfile {
   include_facts: boolean;
   /** Paste the embedding-based recall block into the system prompt. */
   include_recall: boolean;
+  /** Which durable conversation rows may enter this turn's hot/warm history. */
+  history_scope?: "foreground" | "bridge" | "all" | "none";
 }
 
 export const FULL_PROFILE: TurnContextProfile = {
@@ -40,6 +42,20 @@ export const FULL_PROFILE: TurnContextProfile = {
   include_warm: true,
   include_facts: true,
   include_recall: true,
+  history_scope: "all",
+};
+
+export const FOREGROUND_PROFILE: TurnContextProfile = {
+  ...FULL_PROFILE,
+  history_scope: "foreground",
+};
+
+export const BRIDGE_PROFILE: TurnContextProfile = {
+  ...FULL_PROFILE,
+  // Bridge history is channel-scoped and intentionally skips the thread's
+  // foreground warm-summary cache.
+  include_warm: false,
+  history_scope: "bridge",
 };
 
 export const ONE_SHOT_PROFILE: TurnContextProfile = {
@@ -47,15 +63,16 @@ export const ONE_SHOT_PROFILE: TurnContextProfile = {
   include_warm: false,
   include_facts: false,
   include_recall: false,
+  history_scope: "none",
 };
 
 // Category → profile. Add new categories alongside `AgentTurnQueueSource`.
 // To change a category's behaviour, edit ONLY this table.
 export const TURN_PROFILES: Record<AgentTurnQueueSource, TurnContextProfile> = {
   // Normal chat needs the full thread context.
-  user:      FULL_PROFILE,
+  user:      FOREGROUND_PROFILE,
   // Bridge messages are conversational — keep the connection between turns.
-  bridge:    FULL_PROFILE,
+  bridge:    BRIDGE_PROFILE,
   // Delegate hand-offs need the parent's recent context so the child can
   // pick up the conversation thread.
   delegate:  FULL_PROFILE,

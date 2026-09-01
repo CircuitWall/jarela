@@ -61,8 +61,8 @@ export interface ScriptFiring extends TriggerFiringBase {
 export type TriggerFiring = PromptFiring | ScriptFiring;
 
 export interface TriggerOutcome {
-  /** done = run completed; skipped = NO_REPLY or empty (prompt only); error = run threw. */
-  status: "done" | "skipped" | "error";
+  /** Terminal execution state, including work discarded before it became stale. */
+  status: "done" | "skipped" | "error" | "expired" | "cancelled";
   /** Short preview of the result (assistant content for prompt, script-supplied for script). */
   preview: string;
   /** Thread id used for the run. Empty string for script firings or when the run failed before a thread was opened. */

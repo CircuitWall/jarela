@@ -30,19 +30,43 @@ export function useThreadCrossDeviceSync({
 }: Params) {
   useEffect(() => {
     if (!threadId) return;
+    let cancelled = false;
+    let replacementGeneration = 0;
+    let appendGeneration = 0;
+    let latestReplacement = Promise.resolve();
     function handler(e: Event) {
-      const detail = (e as CustomEvent<{ thread_id: string }>).detail;
+      const detail = (e as CustomEvent<{
+        thread_id: string;
+        replace_existing?: boolean;
+      }>).detail;
       if (!detail || detail.thread_id !== threadId) return;
       // The local run's own handleDone path already refetches — skip to
       // avoid double-fetching while a turn is mid-stream on this device.
       if (streamingRef.current) return;
       const cur = messagesRef.current ?? [];
-      const anchor = cur.length > 0 ? cur[cur.length - 1].created_at : undefined;
-      const fetchPromise = anchor
+      const replaceExisting = detail.replace_existing === true;
+      const generation = replaceExisting
+        ? ++replacementGeneration
+        : ++appendGeneration;
+      const anchor = !replaceExisting && cur.length > 0
+        ? cur[cur.length - 1].created_at
+        : undefined;
+      const fetchPromise = replaceExisting
+        ? api.threads.get(threadId, { limit: Math.max(50, cur.length) })
+        : anchor
         ? api.threads.get(threadId, { after: anchor })
         : api.threads.get(threadId);
-      fetchPromise.then((d) => {
-        if (anchor) {
+      const precedingReplacement = latestReplacement;
+      const refresh = fetchPromise.then(async (d) => {
+        if (!replaceExisting) await precedingReplacement;
+        const currentGeneration = replaceExisting
+          ? replacementGeneration
+          : appendGeneration;
+        if (cancelled || generation !== currentGeneration) return;
+        if (replaceExisting) {
+          setMessages(() => d.messages);
+          setHasMore(d.has_more);
+        } else if (anchor) {
           if (d.messages.length === 0) return;
           setMessages((prev) => appendUnique(prev, d.messages));
         } else {
@@ -51,9 +75,13 @@ export function useThreadCrossDeviceSync({
         }
         applyThreadMeta(applyMeta, d);
       }).catch(console.error);
+      if (replaceExisting) latestReplacement = refresh;
     }
     window.addEventListener("jarela:thread-updated", handler);
-    return () => window.removeEventListener("jarela:thread-updated", handler);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("jarela:thread-updated", handler);
+    };
     // applyMeta and setters are stable refs from useState/object literal in caller.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);

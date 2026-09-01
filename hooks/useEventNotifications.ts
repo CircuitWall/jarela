@@ -18,9 +18,10 @@ interface TaskCompleted {
   agent_id: string;
   prompt: string;
   thread_id: string;
-  status: "done" | "error" | "skipped";
+  status: "done" | "error" | "skipped" | "expired" | "cancelled";
   preview: string;
   error?: string;
+  silent?: boolean;
   ts: number;
 }
 
@@ -47,6 +48,13 @@ interface ThreadMessageAdded {
   ts: number;
 }
 
+interface AutomationActivity {
+  type: "automation_activity";
+  thread_id: string;
+  agent_id: string;
+  ts: number;
+}
+
 // Background health probe state-transition. Surfaced as a sticky toast
 // so the user can act on an expired token / unreachable vendor before
 // the next agent run hits the same failure mid-conversation.
@@ -61,7 +69,7 @@ interface HealthAlert {
 }
 
 type NotifEvent = RunCompleted | TaskCompleted | BridgeMessageReceived;
-type StreamEvent = NotifEvent | ThreadMessageAdded | HealthAlert;
+type StreamEvent = NotifEvent | ThreadMessageAdded | AutomationActivity | HealthAlert;
 
 interface AgentSummary {
   id: string;
@@ -156,6 +164,19 @@ export function useEventNotifications(options: Options): UnifiedHookResult<
         if (!ev.ts) return;
         setLastEventTs(ev.ts);
 
+        if (ev.type === "automation_activity") {
+          lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
+          saveLastTs(lastTsRef.current);
+          window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+            detail: {
+              thread_id: ev.thread_id,
+              agent_id: ev.agent_id,
+              replace_existing: true,
+            },
+          }));
+          return;
+        }
+
         // Page-capture push: re-fetch the affected thread AND drop a small
         // toast so the user can see *which* agent received the capture
         // without having to switch to the chat view first. The capture
@@ -223,10 +244,6 @@ export function useEventNotifications(options: Options): UnifiedHookResult<
           ev.type !== "task_completed" &&
           ev.type !== "bridge_message_received"
         ) return;
-        // Silent scheduled tasks that chose NO_REPLY publish status="skipped".
-        // Suppress the badge/toast/OS notification — they intentionally
-        // produced nothing for the user to see.
-        if (ev.type === "task_completed" && ev.status === "skipped") return;
         lastTsRef.current = Math.max(lastTsRef.current, ev.ts);
         saveLastTs(lastTsRef.current);
         // Broadcast a thread-updated event regardless of whether we'll
@@ -239,9 +256,22 @@ export function useEventNotifications(options: Options): UnifiedHookResult<
         const evThreadId = (ev as { thread_id?: string }).thread_id;
         if (evThreadId && typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
-            detail: { thread_id: evThreadId, agent_id: ev.agent_id ?? null },
+            detail: {
+              thread_id: evThreadId,
+              agent_id: ev.agent_id ?? null,
+              replace_existing: ev.type === "task_completed",
+            },
           }));
         }
+        // No-action checks still refresh the inline activity row, but do not
+        // create a toast, badge, or OS notification.
+        if (
+          ev.type === "task_completed"
+          && (
+            ev.status === "skipped"
+            || (ev.silent && ev.status !== "error" && ev.status !== "expired")
+          )
+        ) return;
         handleEvent(ev);
       };
 
@@ -362,6 +392,20 @@ function format(ev: NotifEvent, resolveName: (id: string | null) => string): {
           kind: "info", source: "run", sourceLabel: "Reply" };
   }
   if (ev.type === "task_completed") {
+    if (ev.status === "expired") {
+      return {
+        title: `${name} — background task expired`,
+        body: "The queued check became stale before it could start.",
+        kind: "error", source: "task", sourceLabel: "Scheduled task",
+      };
+    }
+    if (ev.status === "cancelled") {
+      return {
+        title: `${name} — background task cancelled`,
+        body: "The active check was stopped.",
+        kind: "info", source: "task", sourceLabel: "Scheduled task",
+      };
+    }
     if (ev.status === "error") {
       return {
         title: `${name} — scheduled task failed`,

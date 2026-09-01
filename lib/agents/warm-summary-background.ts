@@ -1,8 +1,9 @@
 import { getProvider } from "@/lib/providers";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { unwrapWarmSummary, wrapWarmSummary } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
-import { getMessages, getThread, setThreadWarmSummary } from "@/lib/stores/threads";
+import { getRecentMessagesWindow, getThread, setThreadWarmSummary } from "@/lib/stores/threads";
 
 const activeRefreshes = new Set<string>();
 
@@ -16,9 +17,10 @@ export function kickWarmSummaryRefresh(threadId: string): void {
   });
 }
 
-async function refreshWarmSummary(threadId: string): Promise<void> {
+export async function refreshWarmSummary(threadId: string): Promise<void> {
   const thread = getThread(threadId);
   if (!thread?.hot_since) return;
+  const boundary = thread.hot_since;
 
   const agent = getAgentConfig(thread.agent_id);
   if (!agent) return;
@@ -31,12 +33,13 @@ async function refreshWarmSummary(threadId: string): Promise<void> {
   const tier = getAgentTierProportions(agent);
   const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
 
-  const rows = getMessages(threadId).filter((m) => m.role === "user" || m.role === "assistant");
-  const warmRows = rows.filter((m) => m.created_at < thread.hot_since!);
+  const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
+    .filter((m) => m.role === "user" || m.role === "assistant");
+  const warmRows = rows.filter((m) => m.created_at < boundary);
   const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
 
   if (warmRows.length < 2 || sourceChars < 24) {
-    setThreadWarmSummary(threadId, "", thread.hot_since, warmRows.length, sourceChars);
+    persistIfCurrent(threadId, boundary, "", warmRows.length, sourceChars);
     return;
   }
 
@@ -66,5 +69,29 @@ async function refreshWarmSummary(threadId: string): Promise<void> {
     summary,
   ].join("\n");
 
-  setThreadWarmSummary(threadId, wrapped, thread.hot_since, warmRows.length, sourceChars);
+  persistIfCurrent(threadId, boundary, wrapped, warmRows.length, sourceChars);
+}
+
+function persistIfCurrent(
+  threadId: string,
+  boundary: string,
+  summary: string,
+  sourceMessages: number,
+  sourceChars: number,
+): void {
+  const latest = getThread(threadId);
+  if (!latest || latest.hot_since !== boundary) return;
+
+  if (latest.warm_summary && latest.warm_summary_before === boundary) {
+    const cached = unwrapWarmSummary(latest.warm_summary);
+    if (cached.scope === "foreground") return;
+  }
+
+  setThreadWarmSummary(
+    threadId,
+    summary ? wrapWarmSummary(summary, "foreground") : "",
+    boundary,
+    sourceMessages,
+    sourceChars,
+  );
 }

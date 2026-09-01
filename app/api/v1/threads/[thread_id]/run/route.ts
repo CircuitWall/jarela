@@ -111,10 +111,11 @@ export async function POST(req: NextRequest, { params }: Params) {
   const stream_options = parsed.stream_options as StreamOptions | undefined;
   const hot_since = parsed.hot_since;
 
-  // Per-thread FIFO queue (lib/agents/run-queue.ts). Every entry point
+  // Per-thread priority queue (lib/agents/run-queue.ts). Every entry point
   // that drives an agent on a thread goes through this — HTTP POST,
   // scheduler, watcher, trigger, bridge — so concurrent fires on the same
-  // thread_id serialise instead of racing the LangGraph checkpoint store.
+  // thread_id serialises instead of racing the LangGraph checkpoint store;
+  // interactive work runs before waiting background work without preemption.
   // If the queue is already at the soft cap, reject with 503 so the
   // caller can back off rather than pin yet more work in memory.
   const thread = getThread(thread_id);

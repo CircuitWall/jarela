@@ -98,6 +98,7 @@ describe("runAgentTurn", () => {
         include_warm: false,
         include_facts: false,
         include_recall: false,
+        history_scope: "none",
       },
       _pinned_model_config_name: "Gemini Chat",
       _skip_persist_message: undefined,
@@ -155,12 +156,42 @@ describe("runAgentTurn", () => {
     expect(out.assistantContent.trim()).toBe("");
   });
 
+  it("forwards background queue policy and can omit a synthetic prompt row", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "NO_REPLY",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+    });
+
+    await runAgentTurn({
+      thread_id: "t-policy",
+      queue_source: "trigger",
+      message: "Run check",
+      silent: true,
+      queue_lane: "background",
+      queue_expires_at: 12_345,
+      persist_user_message: false,
+    });
+
+    expect(enqueueThreadRunMock).toHaveBeenCalledWith(
+      "t-policy",
+      "trigger",
+      expect.any(Function),
+      { lane: "background", expiresAt: 12_345 },
+    );
+    expect(prepareThreadRunMock).toHaveBeenCalledWith(expect.objectContaining({
+      _skip_persist_message: true,
+    }));
+  });
+
   it("persists partial content with interrupt marker on user abort", async () => {
     collectStreamMock.mockResolvedValue({
       assistantContent: "I started writing but",
       usedTools: [],
       toolEvents: [],
       usage: null,
+      terminal: "error",
       aborted: true,
     });
 
@@ -176,12 +207,40 @@ describe("runAgentTurn", () => {
     expect(persistedContent).toContain("Interrupted by user");
   });
 
+  it("throws generic terminal stream errors without persisting partial output", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "Partial reply that must not escape",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+      terminal: "error",
+      errorMessage: "Provider connection failed",
+      errorCode: "provider_error",
+      errorProvider: "example",
+    });
+
+    await expect(runAgentTurn({
+      thread_id: "t-error",
+      queue_source: "trigger",
+      message: "Run check",
+    })).rejects.toMatchObject({
+      name: "AgentTurnStreamError",
+      message: "Provider connection failed",
+      code: "provider_error",
+      provider: "example",
+    });
+
+    expect(persistAssistantMessageMock).not.toHaveBeenCalled();
+    expect(finishRunMock).toHaveBeenCalledWith(expect.anything(), "error");
+  });
+
   it("persists bare interrupt marker when aborted before any tokens", async () => {
     collectStreamMock.mockResolvedValue({
       assistantContent: "",
       usedTools: [],
       toolEvents: [],
       usage: null,
+      terminal: "error",
       aborted: true,
     });
 
@@ -202,6 +261,7 @@ describe("runAgentTurn", () => {
       usedTools: [],
       toolEvents: [],
       usage: null,
+      terminal: "error",
       aborted: true,
     });
 

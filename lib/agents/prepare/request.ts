@@ -35,6 +35,10 @@ export interface ThreadRunRequest {
    * chat. Values in the wild: `"scheduled_task"`, `"bridge"`, `"delegation"`.
    */
   user_category?: string | null;
+  /** Metadata persisted on the inbound message row. */
+  message_metadata?: Record<string, unknown> | null;
+  /** Restrict bridge history to one bridge/chat conversation key. */
+  history_bridge_key?: string | null;
 
   /**
    * Delivery provenance for non-user callers. When set, the system prompt

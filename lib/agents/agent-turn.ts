@@ -3,7 +3,7 @@ import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigNam
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { collectStream } from "@/lib/agents/stream-collector";
-import { enqueueThreadRun } from "@/lib/agents/run-queue";
+import { enqueueThreadRun, type QueueLane } from "@/lib/agents/run-queue";
 import { startRun, finishRun, broadcast } from "@/lib/agents/run-registry";
 import { getThread } from "@/lib/stores/threads";
 import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
@@ -27,7 +27,18 @@ export interface RunAgentTurnRequest {
   attachments?: ContentPart[];
   user_category?: string | null;
   assistant_category?: string | null;
+  user_message_metadata?: Record<string, unknown> | null;
+  assistant_message_metadata?: Record<string, unknown> | null;
+  history_bridge_key?: string | null;
   silent?: boolean;
+  /** Queue policy for callers that distinguish foreground from background work. */
+  queue_lane?: QueueLane;
+  /** Epoch milliseconds after which this run is too stale to start. */
+  queue_expires_at?: number;
+  /** Synthetic one-shot prompts can remain visible only through activity rows. */
+  persist_user_message?: boolean;
+  /** Lifecycle hook used to update an automation activity row. */
+  on_queue_state?: (state: "queued" | "running") => void;
   /**
    * Provenance of the inbound message when delivered through a non-user
    * channel (bridge, trigger, watcher). Forwarded into the system prompt
@@ -65,6 +76,26 @@ export interface RunAgentTurnResult {
   preview: string;
   skippedAssistant: boolean;
   usage: AssistantUsageSnapshot | null;
+  aborted: boolean;
+}
+
+export class AgentTurnStreamError extends Error {
+  readonly code?: string;
+  readonly provider?: string;
+  readonly credentialId?: string;
+
+  constructor(details: {
+    message?: string;
+    code?: string;
+    provider?: string;
+    credentialId?: string;
+  }) {
+    super(details.message?.trim() || "Agent stream failed");
+    this.name = "AgentTurnStreamError";
+    this.code = details.code;
+    this.provider = details.provider;
+    this.credentialId = details.credentialId;
+  }
 }
 
 /**
@@ -78,6 +109,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
   const contextProfile = resolveTurnProfile(req.queue_source, req.context_profile_override);
   const thread = getThread(req.thread_id);
   const enqueued = enqueueThreadRun(req.thread_id, req.queue_source, async () => {
+    req.on_queue_state?.("running");
     // Register in the run-registry like the HTTP route does so the idle
     // and wall-clock watchdogs bound this execution. Without this, a
     // hung provider stream (bad creds, dead upstream, runaway tool loop)
@@ -92,12 +124,18 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         message: req.message,
         attachments: req.attachments,
         user_category: req.user_category ?? null,
+        message_metadata: req.user_message_metadata ?? null,
+        history_bridge_key: req.history_bridge_key ?? null,
         delivery_channel: req.delivery_channel ?? null,
         context_profile: contextProfile,
         disable_quality_gates: req.disable_quality_gates,
         signal: active.abort.signal,
         _pinned_model_config_name: pinnedModelConfigName,
-        _skip_persist_message: req.skip_persist_user_message,
+        _skip_persist_message: req.skip_persist_user_message
+          ? true
+          : req.persist_user_message === false
+            ? true
+            : undefined,
       });
 
       const startedAt = Date.now();
@@ -111,6 +149,14 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         retryCount: collected.routeDecision?.retry_count ?? prepared.route_decision?.retry_count ?? 0,
       });
       const trimmed = collected.assistantContent.trim();
+      if (collected.terminal === "error" && !collected.aborted) {
+        throw new AgentTurnStreamError({
+          message: collected.errorMessage,
+          code: collected.errorCode,
+          provider: collected.errorProvider,
+          credentialId: collected.errorCredentialId,
+        });
+      }
       // Silent-mode runners (bridges, watchers, schedulers) skip persistence
       // when the model emitted nothing meaningful — but if the run was
       // user-aborted, we still want a record so the next turn isn't blind to
@@ -133,6 +179,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           prepared.context_snapshot ?? null,
           prepared.source_manifest ?? null,
           routeDecision,
+          req.assistant_message_metadata ?? null,
         );
       }
 
@@ -141,17 +188,23 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         assistantContent: collected.assistantContent,
         skippedAssistant: skipSilent,
         usage: collected.usage ?? null,
+        aborted: collected.aborted === true,
       };
     } finally {
       finishRun(active, terminal);
     }
+  }, {
+    lane: req.queue_lane,
+    expiresAt: req.queue_expires_at,
   });
+  if (enqueued.position > 0) req.on_queue_state?.("queued");
 
   const done = await enqueued.result;
   return {
     assistantContent: done.assistantContent,
     skippedAssistant: done.skippedAssistant,
     usage: done.usage,
+    aborted: done.aborted,
     preview: done.skippedAssistant
       ? ""
       : done.assistantContent.replace(/\s+/g, " ").trim().slice(0, 120),

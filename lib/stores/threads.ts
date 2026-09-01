@@ -100,13 +100,26 @@ export function getRecentMessagesWindow(
   thread_id: string,
   limit: number,
   sinceISO?: string,
+  scope: "foreground" | "bridge" | "all" | "none" = "all",
+  bridgeKey?: string,
 ): MessageRow[] {
+  if (scope === "none") return [];
   const db = getDb();
   const params: (string | number)[] = [thread_id];
   // Exclude `run_error` marker rows from the LLM history window — they're
   // UI-only artefacts of failed turns and would poison the model's view
   // of the conversation ("assistant: 400 API_KEY_INVALID"). See ADR-0069.
-  let sql = MSG_COLS_SQL + " WHERE thread_id=? AND (category IS NULL OR category != 'run_error')";
+  let sql = MSG_COLS_SQL
+    + " WHERE thread_id=?"
+    + " AND (category IS NULL OR category != 'run_error')"
+    + ` AND (metadata IS NULL OR instr(metadata, '"automation_activity"') = 0)`;
+  if (scope === "foreground") {
+    sql += " AND (category IS NULL OR category NOT IN ('scheduled_task','watcher','bridge'))";
+  } else if (scope === "bridge") {
+    if (!bridgeKey) return [];
+    sql += " AND category='bridge' AND json_extract(metadata, '$.bridge_conversation.key')=?";
+    params.push(bridgeKey);
+  }
   if (sinceISO) {
     sql += " AND created_at >= ?";
     params.push(sinceISO);
@@ -177,7 +190,7 @@ export function addMessage(
   db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
   // Best-effort: embed the message so semantic recall can pull it back later.
   // Skip empty / very short content (greetings have no useful signal).
-  if (content.trim().length >= 12) {
+  if (content.trim().length >= 12 && !metadata?.automation_activity) {
     embedOne(content).then((vec) => {
       if (vec) {
         getDb().prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run(JSON.stringify(vec), msg_id);

@@ -120,8 +120,17 @@ export async function runTriggerTick(asOf: Date = new Date()): Promise<void> {
  * the underlying error if the run itself threw.
  */
 export async function runScheduledTaskFiringNow(taskId: string): Promise<void> {
-  const firing = firingForTaskId(taskId);
-  if (!firing) throw new Error(`scheduled task ${taskId} not found`);
+  const storedFiring = firingForTaskId(taskId);
+  if (!storedFiring) throw new Error(`scheduled task ${taskId} not found`);
+  // "Run now" is an explicit user action, so a cron occurrence that became
+  // stale while queued by the scheduler must not expire this manual run.
+  const firing: TriggerFiring = {
+    ...storedFiring,
+    meta: {
+      ...Object.fromEntries(Object.entries(storedFiring.meta ?? {}).filter(([key]) => key !== "expiresAt")),
+      queueLane: "interactive",
+    },
+  };
   // Route through runTriggerFiring so script-kind firings dispatch
   // through the script registry instead of the agent (ADR-0032).
   const outcome = await runTriggerFiring(firing);
@@ -138,9 +147,16 @@ export async function runScheduledTaskFiringNow(taskId: string): Promise<void> {
  * doesn't fabricate a turn out of an unchanged poll).
  */
 export async function runWatcherFiringNow(watcherId: string): Promise<void> {
-  const firing = await firingForWatcherIdNow(watcherId);
-  if (!firing) return;
-  if (firing.mode !== "prompt") return;
+  const storedFiring = await firingForWatcherIdNow(watcherId);
+  if (!storedFiring) return;
+  if (storedFiring.mode !== "prompt") return;
+  const firing = {
+    ...storedFiring,
+    meta: {
+      ...Object.fromEntries(Object.entries(storedFiring.meta ?? {}).filter(([key]) => key !== "expiresAt")),
+      queueLane: "interactive",
+    },
+  };
   const outcome = await runTriggerAgent(firing);
   await watcherHandler.markFired(firing, outcome);
   if (outcome.status === "error" && outcome.error) {

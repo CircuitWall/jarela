@@ -28,9 +28,14 @@ vi.mock("@/lib/embeddings", () => ({
   cosine: () => 0,
 }));
 
-const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin } =
+const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary } =
   await import("@/lib/stores/threads");
 const { buildHistoryWindow } = await import("./history-window");
+const { refreshWarmSummary } = await import("../warm-summary-background");
+const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
+const { upsertModelConfig } = await import("@/lib/stores/model-config");
+const { createAutomationActivity, finalizeAutomationActivity } =
+  await import("@/lib/stores/automation-activity");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 
 afterAll(() => {
@@ -113,8 +118,104 @@ function seedWarmThread(): string {
   for (let i = 0; i < 8; i++) {
     addMessage(t.thread_id, i % 2 === 0 ? "user" : "assistant", `msg ${i} ${long}`);
   }
+
   return t.thread_id;
 }
+
+describe("history source isolation", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("keeps foreground and bridge history in separate scopes", async () => {
+    const thread = createThread("scope-agent");
+    addMessage(thread.thread_id, "user", "foreground question");
+    addMessage(thread.thread_id, "assistant", "foreground answer");
+    addMessage(thread.thread_id, "user", "scheduled prompt", null, "scheduled_task");
+    addMessage(thread.thread_id, "assistant", "scheduled result", null, "scheduled_task");
+    const bridgeMetadata = {
+      bridge_conversation: {
+        key: "bridge-1:chat-1",
+        bridge_id: "bridge-1",
+        chat_id: "chat-1",
+      },
+    };
+    addMessage(thread.thread_id, "user", "bridge inbound", null, "bridge", bridgeMetadata);
+    addMessage(thread.thread_id, "assistant", "bridge reply", null, "bridge", bridgeMetadata);
+    addMessage(thread.thread_id, "user", "other bridge chat", null, "bridge", {
+      bridge_conversation: {
+        key: "bridge-1:chat-2",
+        bridge_id: "bridge-1",
+        chat_id: "chat-2",
+      },
+    });
+
+    const foreground = await buildHistoryWindow(
+      thread.thread_id,
+      agentCfg(),
+      providerParams,
+      "next",
+      modelInfo,
+      null,
+      { scope: "foreground", includeWarm: false },
+    );
+    const bridge = await buildHistoryWindow(
+      thread.thread_id,
+      agentCfg(),
+      providerParams,
+      "next",
+      modelInfo,
+      null,
+      { scope: "bridge", includeWarm: false, bridgeKey: "bridge-1:chat-1" },
+    );
+
+    expect(foreground.history.map((message) => message.content)).toEqual([
+      "foreground question",
+      "foreground answer",
+    ]);
+    expect(bridge.history.map((message) => message.content)).toEqual([
+      "bridge inbound",
+      "bridge reply",
+    ]);
+  });
+
+  it("adds only material background outcomes to foreground context", async () => {
+    const thread = createThread("ledger-agent");
+    addMessage(thread.thread_id, "user", "foreground question");
+    const action = createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "scheduled_task",
+      sourceId: "task-action",
+      label: "Mailbox cleanup",
+    });
+    finalizeAutomationActivity(action.msg_id, {
+      disposition: "action",
+      preview: "Archived 12 messages",
+    });
+    const noAction = createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "watcher",
+      sourceId: "watcher-noop",
+      label: "Release watcher",
+    });
+    finalizeAutomationActivity(noAction.msg_id, { disposition: "no_action" });
+
+    const result = await buildHistoryWindow(
+      thread.thread_id,
+      agentCfg(),
+      providerParams,
+      "next",
+      modelInfo,
+      null,
+      { scope: "foreground", includeWarm: false },
+    );
+
+    expect(result.backgroundActivityCtx).toContain("Mailbox cleanup");
+    expect(result.backgroundActivityCtx).toContain("Archived 12 messages");
+    expect(result.backgroundActivityCtx).not.toContain("Release watcher");
+    expect(result.history.map((message) => message.content)).toEqual(["foreground question"]);
+  });
+});
 
 describe("buildHistoryWindow warm-summary cache", () => {
   beforeEach(() => {
@@ -145,6 +246,121 @@ describe("buildHistoryWindow warm-summary cache", () => {
     const second = await buildHistoryWindow(thread_id, agentCfg(), providerParams, "follow up", modelInfo);
     expect(second.warmSummaryCtx).toContain("RECAP-A");
     expect(chatSpy).not.toHaveBeenCalled();
+  });
+
+  it("stores a foreground-scoped background summary without automation or bridge rows", async () => {
+    upsertModelConfig(
+      "background-summary-model",
+      "mock",
+      "test-model",
+      { context_window_tokens: 10_000, max_tokens: 1_000 },
+      true,
+    );
+    upsertAgentConfig({
+      id: "background-summary-agent",
+      name: "Background summary",
+      identity: "",
+      instructions: "",
+      tools: [],
+      model_config_name: "background-summary-model",
+    });
+    const thread = createThread("background-summary-agent");
+    addMessage(thread.thread_id, "user", "foreground question with enough detail");
+    addMessage(thread.thread_id, "assistant", "foreground answer with enough detail");
+    addMessage(thread.thread_id, "user", "AUTOMATION_SECRET", null, "scheduled_task");
+    addMessage(thread.thread_id, "assistant", "AUTOMATION_RESULT", null, "watcher");
+    createAutomationActivity({
+      threadId: thread.thread_id,
+      sourceKind: "scheduled_task",
+      sourceId: "background-summary-task",
+      label: "AUTOMATION_LEDGER_SECRET",
+    });
+    const bridgeMetadata = {
+      bridge_conversation: {
+        key: "bridge-1:chat-1",
+        bridge_id: "bridge-1",
+        chat_id: "chat-1",
+      },
+    };
+    addMessage(thread.thread_id, "user", "BRIDGE_SECRET", null, "bridge", bridgeMetadata);
+    addMessage(thread.thread_id, "assistant", "BRIDGE_RESULT", null, "bridge", bridgeMetadata);
+    const boundary = "2099-01-01T00:00:00.000Z";
+    setThreadContextPin(thread.thread_id, boundary);
+    chatReturns("BACKGROUND-RECAP");
+
+    await refreshWarmSummary(thread.thread_id);
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    const summaryRequest = JSON.stringify(chatSpy.mock.calls[0]);
+    expect(summaryRequest).toContain("foreground question");
+    expect(summaryRequest).toContain("foreground answer");
+    expect(summaryRequest).not.toContain("AUTOMATION_");
+    expect(summaryRequest).not.toContain("BRIDGE_");
+    const persisted = getThread(thread.thread_id);
+    expect(persisted?.warm_summary).toContain("<!-- jarela:warm-scope=foreground -->");
+    expect(persisted?.warm_summary_before).toBe(boundary);
+    expect(persisted?.warm_summary_source_messages).toBe(2);
+
+    const result = await buildHistoryWindow(
+      thread.thread_id,
+      agentCfg(),
+      providerParams,
+      "follow up",
+      modelInfo,
+      boundary,
+      { scope: "foreground" },
+    );
+    expect(result.warmSummaryCtx).toContain("BACKGROUND-RECAP");
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not overwrite a foreground summary completed during a background refresh", async () => {
+    upsertModelConfig(
+      "background-race-model",
+      "mock",
+      "test-model",
+      { context_window_tokens: 10_000, max_tokens: 1_000 },
+      true,
+    );
+    upsertAgentConfig({
+      id: "background-race-agent",
+      name: "Background race",
+      identity: "",
+      instructions: "",
+      tools: [],
+      model_config_name: "background-race-model",
+    });
+    const thread = createThread("background-race-agent");
+    addMessage(thread.thread_id, "user", "foreground question with enough detail");
+    addMessage(thread.thread_id, "assistant", "foreground answer with enough detail");
+    const boundary = "2099-01-01T00:00:00.000Z";
+    setThreadContextPin(thread.thread_id, boundary);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    chatSpy.mockImplementation(async () => {
+      async function* gen() {
+        await gate;
+        yield "STALE-BACKGROUND-RECAP";
+      }
+      return { stream: gen() };
+    });
+
+    const refresh = refreshWarmSummary(thread.thread_id);
+    await vi.waitFor(() => expect(chatSpy).toHaveBeenCalledTimes(1));
+    setThreadWarmSummary(
+      thread.thread_id,
+      "<!-- jarela:warm-scope=foreground -->\nFOREGROUND-WINS",
+      boundary,
+      2,
+      64,
+    );
+    release();
+    await refresh;
+
+    expect(getThread(thread.thread_id)?.warm_summary).toBe(
+      "<!-- jarela:warm-scope=foreground -->\nFOREGROUND-WINS",
+    );
   });
 
   it("caps an over-large explicit context window to the known model limit", async () => {

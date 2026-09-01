@@ -2,6 +2,7 @@ import {
   getDueTasks,
   markTaskRan,
   getScheduledTask,
+  computeNextRun,
   type ScheduledTaskRow,
 } from "@/lib/stores/scheduled-tasks";
 import { publish as publishNotification } from "@/lib/notifications/bus";
@@ -23,6 +24,9 @@ export const SCHEDULED_TASK_KIND = "scheduled_task";
  * unchanged.
  */
 function buildFiring(task: ScheduledTaskRow): TriggerFiring {
+  const expiresAt = task.kind === "cron"
+    ? computeNextRun("cron", task.schedule, new Date(task.next_run_at)).getTime()
+    : undefined;
   if (task.reaction_kind === "script" && task.reaction_script) {
     let userArgs: Record<string, unknown> = {};
     if (task.reaction_script_args) {
@@ -60,6 +64,8 @@ function buildFiring(task: ScheduledTaskRow): TriggerFiring {
         // Carry silent through so markFired can suppress the
         // task_completed notification when the user has muted this task.
         silent: task.silent === 1,
+        description: task.description ?? "Scheduled task",
+        ...(expiresAt === undefined ? {} : { expiresAt }),
       },
     };
   }
@@ -72,7 +78,14 @@ function buildFiring(task: ScheduledTaskRow): TriggerFiring {
     silent: task.silent === 1,
     // Preserves the existing message-channel filter behaviour (ADR-0022).
     category: "scheduled_task",
-    meta: { schedule: task.schedule, scheduleKind: task.kind, reaction_kind: "agent_prompt", silent: task.silent === 1 },
+    meta: {
+      schedule: task.schedule,
+      scheduleKind: task.kind,
+      reaction_kind: "agent_prompt",
+      silent: task.silent === 1,
+      description: task.description ?? "Scheduled task",
+      ...(expiresAt === undefined ? {} : { expiresAt }),
+    },
   };
 }
 
@@ -90,14 +103,11 @@ export const scheduledTaskHandler: TriggerHandler = {
     // regardless of which firing mode we ran.
     markTaskRan(firing.id, scheduleKind, schedule, outcome.error);
 
-    // ADR-0032 — silent=true on the task suppresses both NO_REPLY-style
-    // agent behaviour AND the task_completed notification. Errors still
-    // surface so the user sees failures even on muted tasks.
+    // Silent tasks still publish an event so open chats refresh their inline
+    // activity row; the client suppresses its toast/OS-notification layer.
     const silent = firing.mode === "prompt"
       ? firing.silent === true
       : firing.meta?.silent === true;
-    if (silent && !outcome.error) return;
-
     if (firing.mode === "prompt") {
       publishNotification({
         type: "task_completed",
@@ -108,6 +118,7 @@ export const scheduledTaskHandler: TriggerHandler = {
         status: outcome.status,
         preview: outcome.preview,
         error: outcome.error,
+        silent,
         ts: Date.now(),
       });
       return;
@@ -125,6 +136,7 @@ export const scheduledTaskHandler: TriggerHandler = {
       status: outcome.status === "skipped" ? "done" : outcome.status,
       preview: outcome.preview,
       error: outcome.error,
+      silent,
       ts: Date.now(),
     });
   },
