@@ -134,6 +134,55 @@ describe("runAgentTurn", () => {
     expect(out.preview).toBe("");
   });
 
+  it("suppresses NO_REPLY persistence when the model adds preamble prose", async () => {
+    // Regression: the silent-mode prompts explicitly allow the model to
+    // explain itself before the sentinel ("if nothing material, reply with
+    // exactly the single token NO_REPLY") — the compliant path most models
+    // actually take. An anchored-at-start regex previously missed this and
+    // leaked the preamble + literal "NO_REPLY" token as a visible reply.
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "Nothing material to report. NO_REPLY",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+    });
+
+    const out = await runAgentTurn({
+      thread_id: "t-preamble",
+      queue_source: "trigger",
+      message: "Check status",
+      user_category: "scheduled_task",
+      assistant_category: "scheduled_task",
+      silent: true,
+    });
+
+    expect(persistAssistantMessageMock).not.toHaveBeenCalled();
+    expect(out.skippedAssistant).toBe(true);
+    expect(out.preview).toBe("");
+  });
+
+  it("does not suppress ordinary material replies that happen to contain the words 'no reply'", async () => {
+    collectStreamMock.mockResolvedValue({
+      assistantContent: "The invoice total is $1,200 — no reply required from you.",
+      usedTools: [],
+      toolEvents: [],
+      usage: null,
+    });
+
+    const out = await runAgentTurn({
+      thread_id: "t-material",
+      queue_source: "trigger",
+      message: "Check status",
+      user_category: "scheduled_task",
+      assistant_category: "scheduled_task",
+      silent: true,
+    });
+
+    expect(persistAssistantMessageMock).toHaveBeenCalledTimes(1);
+    expect(out.skippedAssistant).toBe(false);
+    expect(out.preview).toContain("no reply required");
+  });
+
   it("suppresses empty assistant content in silent mode", async () => {
     collectStreamMock.mockResolvedValue({
       assistantContent: "   ",

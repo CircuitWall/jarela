@@ -9,7 +9,15 @@ import { getThread } from "@/lib/stores/threads";
 import { resolveTurnProfile, type TurnContextProfile } from "@/lib/agents/turn-profile";
 import type { DeliveryChannel } from "@/lib/agents/prepare/request";
 
-const NO_REPLY_RE = /^\s*NO[_ ]?REPLY\b/i;
+// Silent-mode prompts (bridge observer, trigger, page-capture) all instruct
+// the model to answer with the literal token "NO_REPLY" (underscore, no
+// space), but also explicitly allow prose before it ("if nothing material,
+// reply with exactly the single token NO_REPLY"). Anchoring this to the
+// start of the string misses that — and it's the compliant path most
+// models actually take — so match the sentinel anywhere in the trimmed
+// content instead. Require the underscore (or no separator) rather than a
+// bare space so this can't fire on ordinary prose like "got no reply yet".
+const NO_REPLY_RE = /\bNO_?REPLY\b/i;
 
 export type AgentTurnQueueSource =
   | "user"
