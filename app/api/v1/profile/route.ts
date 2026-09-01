@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getUserProfile, upsertUserProfile, setUserPreset, isUserPreset } from "@/lib/stores/user-profile";
+import { getUserProfile, upsertUserProfile, setUserPreset } from "@/lib/stores/user-profile";
 import { validateBody } from "@/lib/api/responses";
 
 const PutBody = z.object({
   name: z.string().optional(),
   icon: z.string().nullable().optional(),
   about: z.string().optional(),
-  preset: z.string().nullable().optional(),
+  // Validated at the boundary so an invalid preset rejects the request
+  // before any part of the profile is written.
+  preset: z.enum(["home", "work", "dev", "custom"], {
+    message: "preset must be one of: home, work, dev, custom, null",
+  }).nullable().optional(),
 });
 
 export function GET() {
@@ -21,23 +25,19 @@ export function GET() {
 export async function PUT(req: NextRequest) {
   const body = await validateBody(req, PutBody);
   if (body instanceof NextResponse) return body;
+  // Preset is an opt-in additional field; only touch the column when the
+  // caller explicitly sent it (so older clients that PUT name/icon/about
+  // don't accidentally clear a previously-chosen preset).
+  const hasPreset = "preset" in body;
+
   const existing = getUserProfile();
   const row = upsertUserProfile(
     body.name ?? existing?.name ?? "",
     "icon" in body ? (body.icon ?? null) : (existing?.icon ?? null),
     body.about ?? existing?.about ?? "",
   );
-  // Preset is an opt-in additional field; only touch the column when the
-  // caller explicitly sent it (so older clients that PUT name/icon/about
-  // don't accidentally clear a previously-chosen preset).
-  if ("preset" in body) {
-    if (body.preset === null) {
-      return NextResponse.json(setUserPreset(null));
-    }
-    if (typeof body.preset === "string" && isUserPreset(body.preset)) {
-      return NextResponse.json(setUserPreset(body.preset));
-    }
-    return NextResponse.json({ error: "preset must be one of: home, work, dev, custom, null" }, { status: 400 });
+  if (hasPreset) {
+    return NextResponse.json(setUserPreset(body.preset ?? null));
   }
   return NextResponse.json(row);
 }
