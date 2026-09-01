@@ -70,7 +70,6 @@ export const readAgentConfigTool = tool(
     return JSON.stringify({
       agent_id: cfg.id,
       name: cfg.name,
-      icon: cfg.icon,
       identity: cfg.identity,
       instruction_line_count: cfg.instructions ? cfg.instructions.split(/\r?\n/).length : 0,
       instruction_char_count: cfg.instructions.length,
@@ -98,7 +97,7 @@ export const readAgentConfigTool = tool(
   {
     name: "read_agent_config",
     description:
-      "Read this agent's non-secret runtime configuration: tools, model override, history window, harness, delegates, citation/router/voice settings, and instruction counts. This tool can only read the current agent.",
+      "Read this agent's non-secret functional runtime configuration: tools, model override, history window, harness, delegates, citation/router/voice settings, and instruction counts. Presentation-only fields such as icon/avatar are omitted. This tool can only read the current agent.",
     schema: z.object({
       agent_id: z.string().optional().describe("Optional. Must match the current agent id when provided."),
     }),

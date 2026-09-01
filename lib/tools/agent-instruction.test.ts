@@ -38,6 +38,7 @@ describe("agent instruction tools", () => {
     upsertAgentConfig({
       id: "agent-self-config",
       name: "Self Config",
+      icon: "data:image/png;base64," + "a".repeat(1024),
       identity: "reader",
       instructions: "private standing rule",
       tools: ["file_read", "list_tools"],
@@ -64,6 +65,8 @@ describe("agent instruction tools", () => {
     expect(out.router_policy).toBe("quality");
     expect(out.router_enabled).toBe(true);
     expect(out.instructions).toBeUndefined();
+    expect(out.icon).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain("data:image/png;base64");
   });
 
   it("updates instructions directly without proposals", async () => {
