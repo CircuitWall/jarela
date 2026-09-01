@@ -321,11 +321,23 @@ describe("confluence_get_page", () => {
         },
         _links: { webui: "/spaces/E/pages/p1" },
       },
+    }, {
+      status: 200,
+      body: {
+        id: "p1",
+        title: "Page",
+        body: {
+          view: { value: "<p>view body</p>" },
+        },
+      },
     });
     const out = await confluenceGetPageTool.invoke({ page_id: "p1" });
 
     expect(calls[0].url).toBe(
-      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=storage,view&include-version=true",
+      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=storage&include-version=true",
+    );
+    expect(calls[1].url).toBe(
+      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=view&include-version=true",
     );
     expect(JSON.parse(out)).toEqual({
       id: "p1",
