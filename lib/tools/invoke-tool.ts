@@ -172,6 +172,7 @@ export const invokeToolTool = tool(
     name: "invoke_tool",
     description:
       "Execute a permitted tool by name with JSON args. Use this after list_tools finds a tool that is enabled for this agent but was not directly loaded this turn, especially when permission_reason='provider_tool_limit'. " +
+      "Never use invoke_tool to call invoke_tool itself; call already-loaded tools directly instead of wrapping them. " +
       "This does not bypass permissions, disabled categories, unavailable MCP servers, disabled drop-in tools, or credential requirements. Call list_tools with include_schema=true when you need the target tool's argument schema.",
     schema: z.object({
       name: z.string().min(1).describe("Exact target tool name from list_tools."),

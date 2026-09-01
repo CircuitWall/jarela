@@ -72,7 +72,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   const tierCtxByName = { hot: "", warm: warmSummaryCtx, facts: factsCtx } as const;
   const tierOrderCtx = budget.tierPriority.map((t) => tierCtxByName[t]).filter(Boolean);
 
-  // Shared prefix: cross-agent static instructions and compact tool specs.
+  // Shared prefix: cross-agent static instructions and a compact full tool index.
   // This text is intentionally before agent identity/instructions and is split
   // into its own provider cache block so multiple agents can reuse it.
   const sharedStableParts: (string | null | undefined)[] = [
@@ -188,10 +188,10 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const lines = [
     "--- Enabled tools ---",
     `You can execute the ${enabled.length} tool(s) listed below. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
-    "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
-    "The shared cached Basic tool catalog is compact metadata only; a cached name is executable only when it also appears in the enabled list or list_tools shows it is enabled but provider-cap omitted.",
+    "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the full tool catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
+    "The shared cached full tool index is compact discovery metadata only; a cached name is executable only when it also appears in the enabled list or list_tools shows it is enabled but provider-cap omitted.",
     "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
-    "The full tool inventory is not embedded here; call list_tools with scope=\"enabled\" to search executable tools or scope=\"all\" to include disabled/unavailable tools with flags.",
+    "The full tool inventory is embedded above as a compact cached index; call list_tools with scope=\"enabled\" to search executable tools, scope=\"all\" to include disabled/unavailable tools with flags, or include_schema=true when exact argument schemas are needed.",
   ];
   if (capped.length > 0) {
     lines.push(
@@ -204,15 +204,16 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
 }
 
 export function buildSharedToolCatalogContext(permissionMap: ReadonlyArray<ToolCatalogEntry>): string {
-  const basicCatalog = buildBasicToolCatalogLines(permissionMap);
+  const toolIndex = buildCompactToolCatalogLines(permissionMap);
   const lines = [
     "--- Shared tool discovery cache ---",
-    "This cross-agent block is intentionally static: it describes stable tool discovery workflow and compact Basic tool specs. Current per-agent/per-turn execution permission is listed later under Enabled tools.",
-    "Tool workflow: use a directly enabled tool when present; use list_tools with service/object/action keywords when missing or ambiguous; use list_tools include_schema=true before invoke_tool when you need target args; use invoke_tool only for tools that are permitted but not directly loaded.",
+    "This cross-agent block is intentionally static: it describes stable full-catalog discovery workflow and a compact full tool index. The current per-agent/per-turn executable subset and omission counts are listed later under Enabled tools.",
+    "Full catalog workflow: list_tools is the authoritative spec lookup for every registered built-in, external, and MCP tool, including tools not directly loaded in this turn. Search it with service/object/action keywords; set scope=\"all\" to see disabled, unavailable, and provider-cap-omitted tools; set include_schema=true to get the target JSON argument schema.",
+    "Invoke proxy workflow: call enabled tools directly when they are loaded. Use invoke_tool only after list_tools identifies an exact target that is permitted for this agent but not directly loaded, especially permission_reason=\"provider_tool_limit\". Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
   ];
-  if (basicCatalog.length > 0) {
-    lines.push("Cached Basic tool specs:");
-    lines.push(...basicCatalog);
+  if (toolIndex.length > 0) {
+    lines.push("Cached full tool index:");
+    lines.push(...toolIndex);
   }
   return lines.join("\n");
 }
@@ -236,15 +237,22 @@ function formatToolPermissionLine(tool: ToolCatalogEntry): string {
   return `- ${groupLabel(tool)} > ${tool.category} > ${tool.name}: ${tool.capability}/${tool.source}/${permission}${statusSuffix}`;
 }
 
-function buildBasicToolCatalogLines(ordered: ReadonlyArray<ToolCatalogEntry>): string[] {
+function buildCompactToolCatalogLines(catalog: ReadonlyArray<ToolCatalogEntry>): string[] {
   const byCategory = new Map<string, string[]>();
-  for (const tool of ordered) {
-    if (tool.group !== "Basic") continue;
-    const names = byCategory.get(tool.category) ?? [];
-    names.push(`${tool.name}(${tool.capability}/${tool.source})`);
-    byCategory.set(tool.category, names);
+  for (const tool of [...catalog].sort(compareToolPermissionEntries)) {
+    const categoryPath = `${groupLabel(tool)} > ${tool.category}`;
+    const names = byCategory.get(categoryPath) ?? [];
+    names.push(formatCompactToolSpec(tool));
+    byCategory.set(categoryPath, names);
   }
-  return Array.from(byCategory.entries(), ([category, names]) => `- ${category}: ${names.join(", ")}`);
+  return Array.from(byCategory.entries(), ([categoryPath, names]) => `- ${categoryPath}: ${names.join(", ")}`);
+}
+
+function formatCompactToolSpec(tool: ToolCatalogEntry): string {
+  const source = tool.source === "mcp" && tool.mcp_server
+    ? `mcp:${tool.mcp_server}`
+    : tool.source;
+  return `${tool.name}(${tool.capability}/${source})`;
 }
 
 function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {

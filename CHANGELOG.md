@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`invoke_tool` guidance discourages recursive proxy calls.** The tool
+  description and system prompt now explicitly explain the `list_tools` full
+  catalog lookup plus `invoke_tool` proxy workflow, cache a compact full tool
+  index in the prompt so agents can discover tool names before calling
+  `list_tools`, tell agents not to call `invoke_tool` through itself, and
+  remind them to call already-loaded tools directly.
+
 ### Fixed
 
 - **Confluence page fetches use valid body-format requests.** `confluence_get_page`

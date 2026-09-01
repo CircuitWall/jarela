@@ -30,6 +30,11 @@ function parse(value: unknown): InvokeResult {
 }
 
 describe("invoke_tool", () => {
+  it("warns the model not to recursively wrap invoke_tool", () => {
+    expect(invokeToolTool.description).toContain("Never use invoke_tool to call invoke_tool itself");
+    expect(invokeToolTool.description).toContain("call already-loaded tools directly");
+  });
+
   it("rejects recursive self-invocation", async () => {
     const out = parse(await invokeToolTool.invoke({ name: "invoke_tool", args: {} }));
 
