@@ -66,4 +66,44 @@ describe("summarizeTranscript", () => {
     const out = await summarizeTranscript(provider, "model-x", {}, "alpha beta");
     expect(out).toBe("ok");
   });
+
+  // Silent-mode trigger/watcher/bridge prompts embed a "reply with NO_REPLY"
+  // instruction as real transcript content. A summarizer model can mistake
+  // that quoted instruction for its own directive and echo the bare
+  // sentinel back — this must never be persisted/rendered as a summary.
+  it("discards a bare NO_REPLY sentinel echoed by the summarizer", async () => {
+    const chat = vi.fn(async () => {
+      async function* gen() {
+        yield "NO_REPLY";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscript(provider, "model-x", {}, "transcript with [SILENT_TASK] directive");
+    expect(out).toBe("");
+  });
+
+  it("discards a bare NOREPLY variant with surrounding whitespace", async () => {
+    const chat = vi.fn(async () => {
+      async function* gen() {
+        yield "  NoReply  ";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscript(provider, "model-x", {}, "transcript");
+    expect(out).toBe("");
+  });
+
+  it("keeps a real summary that merely mentions NO_REPLY in prose", async () => {
+    const chat = vi.fn(async () => {
+      async function* gen() {
+        yield "## Context\nThe scheduled task replied with NO_REPLY because nothing changed.";
+      }
+      return { stream: gen() };
+    });
+    const provider = { chat } as unknown as Pick<ModelProvider, "chat">;
+    const out = await summarizeTranscript(provider, "model-x", {}, "transcript");
+    expect(out).toContain("NO_REPLY because nothing changed");
+  });
 });

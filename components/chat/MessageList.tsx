@@ -108,6 +108,11 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
 
   const hiddenCount = messages.length - visibleMessages.length;
   const effectiveHotSince = hotSince ?? null;
+  // The boundary divider only ever renders when a pin is set (see the
+  // `hasBoundary` computation below, which is gated on `effectiveHotSince`).
+  // Without this check "Locate boundary line" silently no-ops when there's
+  // no pin yet — clicking does nothing and looks like a broken button.
+  const hasContextPin = !!effectiveHotSince;
 
   function pickHotSinceFromPointerY(clientY: number): string | null {
     const root = scrollRef.current;
@@ -769,8 +774,9 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
                   <button
                     type="button"
                     onClick={scrollToBoundaryLine}
-                    className="control-tap ml-auto rounded-none border border-border/60 bg-surface-2/70 px-2 py-0.5 text-[10px] leading-4 text-fg-faint transition-colors hover:border-accent/40 hover:text-fg"
-                    title="Locate the focus boundary in the message list"
+                    disabled={!hasContextPin}
+                    className="control-tap ml-auto rounded-none border border-border/60 bg-surface-2/70 px-2 py-0.5 text-[10px] leading-4 text-fg-faint transition-colors hover:border-accent/40 hover:text-fg disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border/60 disabled:hover:text-fg-faint"
+                    title={hasContextPin ? "Locate the focus boundary in the message list" : "Set a focus boundary first (drag the divider or pin a message) to enable this"}
                   >
                     Locate boundary line
                   </button>
