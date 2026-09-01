@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Confluence page fetches use valid body-format requests.** `confluence_get_page`
+  now fetches storage and rendered view bodies with separate single-format
+  Confluence v2 requests instead of a comma-separated parameter that Cloud rejects.
+
 ## [1.31.0] - 2026-09-01
 
 ### Added

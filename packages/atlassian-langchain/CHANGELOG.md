@@ -4,6 +4,13 @@ All notable changes to `@circuitwall/atlassian-langchain` are documented here.
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `confluence_get_page` now fetches storage and rendered view bodies with
+  separate valid Confluence v2 `body-format` requests.
+
 ## [1.0.0] — 2026-06-13
 
 ### Changed

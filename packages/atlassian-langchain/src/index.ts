@@ -2174,24 +2174,33 @@ export const confluenceGetPageTool = tool(
   async ({ page_id }) => {
     const auth = resolveAuth();
     if ("error" in auth) return JSON.stringify({ error: auth.error });
-    const data = await atlassianFetch(
-      auth,
-      `/wiki/api/v2/pages/${encodeURIComponent(page_id)}?body-format=storage,view&include-version=true`,
-    ) as Record<string, unknown> & { error?: string };
-    if (data.error) return JSON.stringify(data);
-    const body = data.body as Record<string, Record<string, unknown> | undefined> | undefined;
-    const storageVal = body?.storage?.value as string | undefined;
-    const viewVal = body?.view?.value as string | undefined;
-    const links = data._links as Record<string, unknown> | undefined;
+    const encodedPageId = encodeURIComponent(page_id);
+    const [storageData, viewData] = await Promise.all([
+      atlassianFetch(
+        auth,
+        `/wiki/api/v2/pages/${encodedPageId}?body-format=storage&include-version=true`,
+      ) as Promise<Record<string, unknown> & { error?: string }>,
+      atlassianFetch(
+        auth,
+        `/wiki/api/v2/pages/${encodedPageId}?body-format=view&include-version=true`,
+      ) as Promise<Record<string, unknown> & { error?: string }>,
+    ]);
+    if (storageData.error) return JSON.stringify(storageData);
+    if (viewData.error) return JSON.stringify(viewData);
+    const storageBody = storageData.body as Record<string, Record<string, unknown> | undefined> | undefined;
+    const viewBody = viewData.body as Record<string, Record<string, unknown> | undefined> | undefined;
+    const storageVal = storageBody?.storage?.value as string | undefined;
+    const viewVal = viewBody?.view?.value as string | undefined;
+    const links = storageData._links as Record<string, unknown> | undefined;
     const webui = links?.webui as string | undefined;
     return JSON.stringify({
-      id: data.id,
-      title: data.title,
+      id: storageData.id,
+      title: storageData.title,
       url: webui ? `${auth.url}/wiki${webui}` : null,
-      space_id: data.spaceId ?? null,
-      parent_id: data.parentId ?? null,
-      status: data.status,
-      version: (data.version as Record<string, unknown> | undefined)?.number ?? null,
+      space_id: storageData.spaceId ?? null,
+      parent_id: storageData.parentId ?? null,
+      status: storageData.status,
+      version: (storageData.version as Record<string, unknown> | undefined)?.number ?? null,
       // body_storage round-trips into confluence_update_page; body_view is rendered HTML
       // for summarization. Each capped to 20KB to keep context lean.
       body_storage: storageVal ? storageVal.slice(0, 20_000) : null,
