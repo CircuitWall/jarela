@@ -77,7 +77,7 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // This text is intentionally before agent identity/instructions and is split
   // into its own provider cache block so multiple agents can reuse it.
   const sharedStableParts: (string | null | undefined)[] = [
-    buildSharedToolCatalogContext(toolPermissionMap ?? []),
+    buildSharedToolCatalogContext(),
   ];
 
   // Agent-stable prefix: persona, integration/doc/skill facts, harness sections,
@@ -192,9 +192,9 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
     "--- Enabled tools ---",
     `You can execute the ${enabled.length} tool(s) listed below directly, plus ${proxyOnly.length} further permitted tool(s) through invoke_tool. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
     "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the full tool catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
-    "The shared cached full tool index is compact discovery metadata only; a cached name is executable only when it also appears in the enabled list or list_tools shows it is enabled but provider-cap omitted.",
+    "The list below is only what is bound this turn, not the full inventory. Tools absent from it are usually still executable through invoke_tool.",
     "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
-    "The full tool inventory is embedded above as a compact cached index; call list_tools with scope=\"enabled\" to search executable tools, scope=\"all\" to include disabled/unavailable tools with flags, or include_schema=true when exact argument schemas are needed.",
+    "Call list_tools with scope=\"enabled\" to search executable tools, scope=\"all\" to include disabled/unavailable tools with flags, names=[…] for exact targets, or include_schema=true when exact argument schemas are needed.",
   ];
   if (proxyOnly.length > 0) {
     lines.push(
@@ -211,19 +211,14 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   return lines.join("\n");
 }
 
-export function buildSharedToolCatalogContext(permissionMap: ReadonlyArray<ToolCatalogEntry>): string {
-  const toolIndex = buildCompactToolCatalogLines(permissionMap);
-  const lines = [
+export function buildSharedToolCatalogContext(): string {
+  return [
     "--- Shared tool discovery cache ---",
-    "This cross-agent block is intentionally static: it describes stable full-catalog discovery workflow and a compact full tool index. The current per-agent/per-turn executable subset and omission counts are listed later under Enabled tools.",
-    "Full catalog workflow: list_tools is the authoritative spec lookup for every registered built-in, external, and MCP tool, including tools not directly loaded in this turn. Search it with service/object/action keywords; set scope=\"all\" to see disabled, unavailable, and provider-cap-omitted tools; set include_schema=true to get the target JSON argument schema.",
+    "This cross-agent block is intentionally static: it describes the stable full-catalog discovery workflow. The current per-agent/per-turn executable subset and omission counts are listed later under Enabled tools.",
+    "Full catalog workflow: list_tools is the authoritative inventory and spec lookup for every registered built-in, external, and MCP tool, including tools not directly loaded in this turn. No tool index is embedded in this prompt, so never conclude a capability is missing from the tools bound to this turn \u2014 search list_tools with service/object/action keywords first. Set scope=\"all\" to see disabled, unavailable, and provider-cap-omitted tools; set include_schema=true to get the target JSON argument schema.",
+    "Named targets: when a skill, harness, or instruction names an exact tool, look it up with list_tools names=[\"exact_name\"] include_schema=true rather than searching by keyword.",
     "Invoke proxy workflow: basic tools, the self-config tools, and this agent's pinned tools are bound directly each turn. Every other permitted tool is reached with invoke_tool, using the exact name from list_tools and passing arguments as args_json, a JSON object encoded as a string \u2014 expect permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\" on those. Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
-  ];
-  if (toolIndex.length > 0) {
-    lines.push("Cached full tool index:");
-    lines.push(...toolIndex);
-  }
-  return lines.join("\n");
+  ].join("\n");
 }
 
 function compareToolPermissionEntries(a: ToolCatalogEntry, b: ToolCatalogEntry): number {
@@ -245,23 +240,6 @@ function formatToolPermissionLine(tool: ToolCatalogEntry): string {
   return `- ${groupLabel(tool)} > ${tool.category} > ${tool.name}: ${tool.capability}/${tool.source}/${permission}${statusSuffix}`;
 }
 
-function buildCompactToolCatalogLines(catalog: ReadonlyArray<ToolCatalogEntry>): string[] {
-  const byCategory = new Map<string, string[]>();
-  for (const tool of [...catalog].sort(compareToolPermissionEntries)) {
-    const categoryPath = `${groupLabel(tool)} > ${tool.category}`;
-    const names = byCategory.get(categoryPath) ?? [];
-    names.push(formatCompactToolSpec(tool));
-    byCategory.set(categoryPath, names);
-  }
-  return Array.from(byCategory.entries(), ([categoryPath, names]) => `- ${categoryPath}: ${names.join(", ")}`);
-}
-
-function formatCompactToolSpec(tool: ToolCatalogEntry): string {
-  const source = tool.source === "mcp" && tool.mcp_server
-    ? `mcp:${tool.mcp_server}`
-    : tool.source;
-  return `${tool.name}(${tool.capability}/${source})`;
-}
 
 function buildFailurePatternHints(allowed: ReadonlySet<string>): string[] {
   return listToolFailureSamples()

@@ -216,57 +216,39 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("--- Enabled tools ---");
     expect(ctx).toContain("You can execute the 1 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
     expect(ctx).toContain("If the needed capability is missing or ambiguous, search the full tool catalog with list_tools");
-    expect(ctx).toContain("The shared cached full tool index is compact discovery metadata only");
+    expect(ctx).toContain("The list below is only what is bound this turn, not the full inventory");
     expect(ctx).not.toContain("Cached full tool index:");
     expect(ctx).not.toContain("- Memory: memory_read");
     expect(ctx).not.toContain("- Web: web_search");
     expect(ctx).toContain("If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool");
-    expect(ctx).toContain("The full tool inventory is embedded above as a compact cached index");
+    expect(ctx).toContain("names=[…] for exact targets");
     expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
     expect(ctx).not.toContain("- Basic > Memory > memory_read");
     expect(ctx).not.toContain("- Other > Mail > gmail_send_email");
     expect(ctx).toContain("If invoke_tool is unavailable or the tool is disabled/unavailable for another reason");
   });
 
-  it("renders a permission-free shared full tool index for cross-agent caching", () => {
-    const ctx = buildSharedToolCatalogContext([
-      ...permissionMapFixture,
-      {
-        name: "github_search_issues",
-        description: "search GitHub issues",
-        source: "mcp",
-        category: "GitHub",
-        capability: "execute",
-        group: "MCP",
-        mcp_server: "github",
-        credentials_required: [],
-        status: "enabled",
-        status_reason: null,
-        permission: "disabled",
-        permission_reason: "agent_not_allowed",
-      },
-    ]);
+  it("renders a static, tool-free shared discovery block for cross-agent caching", () => {
+    const ctx = buildSharedToolCatalogContext();
 
     expect(ctx).toContain("--- Shared tool discovery cache ---");
-    expect(ctx).toContain("Full catalog workflow: list_tools is the authoritative spec lookup");
+    expect(ctx).toContain("Full catalog workflow: list_tools is the authoritative inventory and spec lookup");
     expect(ctx).toContain("every registered built-in, external, and MCP tool");
     expect(ctx).toContain("scope=\"all\"");
     expect(ctx).toContain("include_schema=true");
+    expect(ctx).toContain("Named targets: when a skill, harness, or instruction names an exact tool");
+    expect(ctx).toContain("names=[\"exact_name\"]");
     expect(ctx).toContain("Invoke proxy workflow: basic tools, the self-config tools, and this agent's pinned tools are bound directly each turn");
     expect(ctx).toContain("permission_reason=\"proxy_only\"");
     expect(ctx).toContain("permission_reason=\"provider_tool_limit\"");
     expect(ctx).toContain("Do not use invoke_tool for invoke_tool itself");
-    expect(ctx).toContain("agent_not_allowed");
-    expect(ctx).toContain("compact full tool index");
-    expect(ctx).toContain("Cached full tool index:");
-    expect(ctx).toContain("- Basic > Files: file_read(read/builtin)");
-    expect(ctx).toContain("- Basic > Memory: memory_read(read/builtin)");
-    expect(ctx).toContain("- Basic > Web: web_search(read/builtin)");
-    expect(ctx).toContain("- Other > Mail: gmail_send_email(write/builtin)");
-    expect(ctx).toContain("- MCP > GitHub: github_search_issues(execute/mcp:github)");
-    expect(ctx).not.toContain("basic_default");
-    expect(ctx).not.toContain("memory_read (unavailable/category_disabled)");
-    expect(ctx).not.toContain("web_search (disabled/provider_tool_limit)");
+
+    // The inventory is no longer embedded; it is discovered through list_tools.
+    expect(ctx).not.toContain("Cached full tool index:");
+    expect(ctx).not.toContain("file_read");
+    expect(ctx).not.toContain("memory_read");
+    expect(ctx).not.toContain("gmail_send_email");
+    expect(ctx).not.toContain("github_search_issues");
   });
 
   it("places per-turn tool permission state after the cache split sentinel", () => {
