@@ -2,6 +2,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { tool } from "@langchain/core/tools";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { getConfig } from "@/lib/env/config";
+import { createKeyedCache } from "@/lib/cache/keyed-cache";
 import { getToolSecret, type ToolSecretSlot } from "@/lib/stores/tool-secrets";
 import { getToolConfig, type ToolConfigSlot } from "@/lib/stores/tool-config";
 import {
@@ -151,20 +152,27 @@ function wrapExternalTool(def: ExternalToolDef): StructuredToolInterface {
 // GET /api/v1/tools response share one filesystem scan instead of each
 // triggering a full readdirSync + require() sweep. 5 s covers the entire
 // request cycle while still picking up new tool files within seconds.
-let _externalCache: { result: ExternalToolsResult; ts: number } | null = null;
-const EXTERNAL_CACHE_TTL_MS = 5_000;
+// Keyed on the tools dir so pointing JARELA_TOOLS_DIR elsewhere takes effect
+// at once; `builtinNames` is process-stable and deliberately not part of it.
+let _builtinNamesForLoad: ReadonlySet<string> = new Set();
+
+const externalCache = createKeyedCache<ExternalToolsResult>({
+  ttlMs: 5_000,
+  key: () => getToolsDir(),
+  load: () => scanExternalTools(_builtinNamesForLoad),
+});
 
 /** @internal — reset the scan cache between tests. */
-export function _resetExternalCache(): void { _externalCache = null; }
+export function _resetExternalCache(): void { externalCache.invalidate(); }
 
 export function loadExternalTools(
   builtinNames: ReadonlySet<string>,
 ): ExternalToolsResult {
-  const now = Date.now();
-  if (_externalCache && now - _externalCache.ts < EXTERNAL_CACHE_TTL_MS) {
-    return _externalCache.result;
-  }
+  _builtinNamesForLoad = builtinNames;
+  return externalCache.get();
+}
 
+function scanExternalTools(builtinNames: ReadonlySet<string>): ExternalToolsResult {
   const tools: StructuredToolInterface[] = [];
   const categories = new Map<string, ToolCategory>();
   const files = new Map<string, string>();
@@ -192,7 +200,5 @@ export function loadExternalTools(
     if (def.integration) integrations.set(def.name, def.integration);
   }
 
-  const result = { tools, categories, files, secrets, configs, credentialsRequired, integrations, errors };
-  _externalCache = { result, ts: Date.now() };
-  return result;
+  return { tools, categories, files, secrets, configs, credentialsRequired, integrations, errors };
 }
