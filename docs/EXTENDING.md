@@ -115,6 +115,32 @@ tool policy), and surfaced through the `list_tools` agent tool.
 External (`.cjs`) and MCP tools default to `execute` until manifest-level
 overrides land. See [ADR-0038](../docs/adr/0038-tool-capability-tiers.md).
 
+**Declare the backing integration** when the tool needs credentials the
+operator configures in the Integrations panel:
+
+```ts
+registerLangChainPackage({
+  category: "Mail",
+  integrationId: "gmail",
+  tools: { read: [myTool] },
+});
+```
+
+`integrationId` defaults to `auth.integrationId` when the package uses the
+auth bridge, so packages wired that way need nothing extra. Agents are denied
+tools whose integration fails its probe (`permission_reason:
+"integration_unconfigured"`) or whose declared `credentials_required` keys
+resolve in neither `process.env` nor the env-sync allowlist
+(`credentials_missing`). The tool stays listed in `GET /api/v1/tools` either
+way so the operator can still find it and set it up — see
+[ADR-0078](adr/0078-tool-integration-declaration.md).
+
+**Only basic tools are bound to the model each turn.** Everything else an
+agent may run is reached through the `invoke_tool` proxy, so a new tool does
+not need to be in the agent's pinned list to be reachable — it needs a
+`description` good enough to be *found* by a `list_tools` keyword search.
+There is no tool index in the system prompt.
+
 **Description text matters.** The text in `description` is what the LLM
 sees. Multi-sentence is fine — tell it WHEN to call this tool, not just
 WHAT it does. Look at [`lib/tools/integrations.ts`](../lib/tools/integrations.ts)
