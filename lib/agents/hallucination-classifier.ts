@@ -71,7 +71,7 @@ export interface StallVerdict {
 // without helping accuracy.
 const PROMPT_TAIL_BUDGET = 1500;
 
-const SYSTEM_PROMPT = `You judge whether an agent turn STALLED.
+export const SYSTEM_PROMPT = `You judge whether an agent turn STALLED.
 
 A stalled turn is one where the assistant narrated future work — promised to write/edit/save/update something, said "I'll do X now" or "I'm doing X now" — but did not actually invoke a write-class tool to make the change. Read-only tools (file_read, web_search, list_dir) DO NOT count as fulfilling a write promise.
 

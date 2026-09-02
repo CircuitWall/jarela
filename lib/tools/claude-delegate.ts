@@ -41,7 +41,7 @@ import * as jobs from "./claude-delegate-jobs";
 
 const DEFAULT_TIMEOUT_S = 600;
 
-const DESIGN_QA_PROMPT = `
+export const DESIGN_QA_PROMPT = `
 PARENT-AGENT INTEGRATION CONTRACT
 
 You are running as a sub-agent inside a parent agent's loop. The parent
