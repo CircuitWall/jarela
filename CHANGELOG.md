@@ -7,14 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.34.0] - 2026-09-02
-
-### Added
-
-- **Web search can use Google Custom Search.** `web_search` now supports a
-  `google` provider between Tavily and DuckDuckGo, reusing the configured
-  Google API key plus a `JARELA_GOOGLE_SEARCH_ENGINE_ID` / `GOOGLE_CSE_ID`
-  Programmable Search Engine id.
+## [1.34.1] - 2026-09-02
 
 ### Fixed
 
@@ -25,6 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default model in the Models panel now re-fetches the full model list to
   keep default flags synchronized across all rows in client state without
   requiring a page reload.
+
+## [1.34.0] - 2026-09-02
+
+### Added
+
+- **Web search can use Google Custom Search.** `web_search` now supports a
+  `google` provider between Tavily and DuckDuckGo, reusing the configured
+  Google API key plus a `JARELA_GOOGLE_SEARCH_ENGINE_ID` / `GOOGLE_CSE_ID`
+  Programmable Search Engine id.
 
 ## [1.33.0] - 2026-09-01
 
