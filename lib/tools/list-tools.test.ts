@@ -106,6 +106,29 @@ describe("list_tools", () => {
     expect(enabled.tools.every((tool) => tool.permission === "enabled")).toBe(true);
   });
 
+  it("returns exactly the requested tools when names is given", async () => {
+    const out = parse(await listToolsTool.invoke({
+      names: ["memory_read", "file_read"],
+      include_schema: true,
+    }));
+
+    expect(out.tools.map((tool) => tool.name).sort()).toEqual(["file_read", "memory_read"]);
+    expect(out.tools.every((tool) => tool.input_schema)).toBe(true);
+  });
+
+  it("describes a named tool the agent cannot execute, so skills can point at one", async () => {
+    const out = parse(await listToolsTool.invoke({ names: ["gmail_search"], scope: "enabled" }));
+
+    // scope="enabled" would normally drop it; an exact lookup still describes it.
+    expect(out.tools).toHaveLength(1);
+    expect(out.tools[0]).toMatchObject({ name: "gmail_search", permission: "disabled" });
+  });
+
+  it("returns nothing for an unknown exact name instead of fuzzy matches", async () => {
+    const out = parse(await listToolsTool.invoke({ names: ["memory"] }));
+    expect(out.tools).toEqual([]);
+  });
+
   it("defaults uncategorized incoming tools to Other", () => {
     expect(getToolCategory("not_registered_anywhere")).toBe("Other");
   });

@@ -37,7 +37,7 @@ interface ToolSummary {
 }
 
 export const listToolsTool = tool(
-  async ({ query, category, capability, source, permission, scope, include_disabled, include_schema }, config?: RunnableConfig) => {
+  async ({ query, names, category, capability, source, permission, scope, include_disabled, include_schema }, config?: RunnableConfig) => {
     const catalog = await getAllToolCatalogAsync();
     const schemasByName = include_schema ? await loadInputSchemas() : new Map<string, ToolParamSchema>();
     const agentCfg = agentFromConfig(config);
@@ -67,15 +67,22 @@ export const listToolsTool = tool(
     }));
 
     const q = typeof query === "string" ? query.trim().toLowerCase() : "";
+    const exactNames = Array.isArray(names)
+      ? new Set(names.map((n) => n.trim()).filter((n) => n.length > 0))
+      : null;
     const resolvedScope = scope ?? (include_disabled === false ? "enabled" : "all");
-    const filtered = summaries.filter((s) =>
-      (!q || toolSearchText(s).includes(q)) &&
-      (!category || s.category === category) &&
-      (!capability || s.capability === capability) &&
-      (!source || s.source === source) &&
-      (!permission || s.permission === permission) &&
-      (resolvedScope !== "enabled" || s.permission === "enabled"),
-    );
+    // An exact-name lookup answers "describe this specific tool", so it must
+    // not be narrowed by scope or the other filters.
+    const filtered = exactNames
+      ? summaries.filter((s) => exactNames.has(s.name))
+      : summaries.filter((s) =>
+        (!q || toolSearchText(s).includes(q)) &&
+        (!category || s.category === category) &&
+        (!capability || s.capability === capability) &&
+        (!source || s.source === source) &&
+        (!permission || s.permission === permission) &&
+        (resolvedScope !== "enabled" || s.permission === "enabled"),
+      );
 
     const counts = {
       total: filtered.length,
@@ -101,12 +108,18 @@ export const listToolsTool = tool(
       "tools for a task, or when troubleshooting whether a specific tool is " +
       "registered or disabled. Optional filters narrow by category, capability, source, or permission. " +
       "Use scope='enabled' to list/search only executable tools, or scope='all' to include disabled/unavailable tools with flags. " +
+      "When a skill or instruction names an exact tool, pass names=['exact_name'] instead of a keyword query — it returns those tools only, ignoring every other filter. " +
+      "No tool index is embedded in the system prompt, so search here before concluding a capability does not exist. " +
       "Set include_schema=true before calling invoke_tool so you can pass arguments matching the target tool schema.",
     schema: z.object({
       query: z
         .string()
         .optional()
         .describe("Optional search query matched against name, description, category, capability, source, and group."),
+      names: z
+        .array(z.string())
+        .optional()
+        .describe("Exact tool names to describe. Overrides query and all other filters; use this when a skill names a tool."),
       category: z
         .string()
         .optional()
