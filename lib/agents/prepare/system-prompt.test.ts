@@ -214,7 +214,7 @@ describe("buildToolPermissionContext", () => {
     ]);
 
     expect(ctx).toContain("--- Enabled tools ---");
-    expect(ctx).toContain("You can execute the 1 tool(s) listed below. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
+    expect(ctx).toContain("You can execute the 1 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
     expect(ctx).toContain("If the needed capability is missing or ambiguous, search the full tool catalog with list_tools");
     expect(ctx).toContain("The shared cached full tool index is compact discovery metadata only");
     expect(ctx).not.toContain("Cached full tool index:");
@@ -252,7 +252,8 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("every registered built-in, external, and MCP tool");
     expect(ctx).toContain("scope=\"all\"");
     expect(ctx).toContain("include_schema=true");
-    expect(ctx).toContain("Invoke proxy workflow: call enabled tools directly");
+    expect(ctx).toContain("Invoke proxy workflow: only basic tools and the self-config tools are bound directly each turn");
+    expect(ctx).toContain("permission_reason=\"proxy_only\"");
     expect(ctx).toContain("permission_reason=\"provider_tool_limit\"");
     expect(ctx).toContain("Do not use invoke_tool for invoke_tool itself");
     expect(ctx).toContain("agent_not_allowed");

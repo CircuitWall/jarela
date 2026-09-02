@@ -187,14 +187,20 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const disabled = ordered.filter((tool) => tool.permission === "disabled");
   const unavailable = ordered.filter((tool) => tool.permission === "unavailable");
   const capped = ordered.filter((tool) => tool.permission_reason === "provider_tool_limit");
+  const proxyOnly = ordered.filter((tool) => tool.permission_reason === "proxy_only");
   const lines = [
     "--- Enabled tools ---",
-    `You can execute the ${enabled.length} tool(s) listed below. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
+    `You can execute the ${enabled.length} tool(s) listed below directly, plus ${proxyOnly.length} further permitted tool(s) through invoke_tool. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
     "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the full tool catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
     "The shared cached full tool index is compact discovery metadata only; a cached name is executable only when it also appears in the enabled list or list_tools shows it is enabled but provider-cap omitted.",
     "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
     "The full tool inventory is embedded above as a compact cached index; call list_tools with scope=\"enabled\" to search executable tools, scope=\"all\" to include disabled/unavailable tools with flags, or include_schema=true when exact argument schemas are needed.",
   ];
+  if (proxyOnly.length > 0) {
+    lines.push(
+      `${proxyOnly.length} permitted tool(s) are not bound this turn with reason=proxy_only. Call them with invoke_tool using the exact name from list_tools; do not assume they are unavailable.`,
+    );
+  }
   if (capped.length > 0) {
     lines.push(
       `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted from this turn with reason=provider_tool_limit.`,
@@ -211,7 +217,7 @@ export function buildSharedToolCatalogContext(permissionMap: ReadonlyArray<ToolC
     "--- Shared tool discovery cache ---",
     "This cross-agent block is intentionally static: it describes stable full-catalog discovery workflow and a compact full tool index. The current per-agent/per-turn executable subset and omission counts are listed later under Enabled tools.",
     "Full catalog workflow: list_tools is the authoritative spec lookup for every registered built-in, external, and MCP tool, including tools not directly loaded in this turn. Search it with service/object/action keywords; set scope=\"all\" to see disabled, unavailable, and provider-cap-omitted tools; set include_schema=true to get the target JSON argument schema.",
-    "Invoke proxy workflow: call enabled tools directly when they are loaded. Use invoke_tool only after list_tools identifies an exact target that is permitted for this agent but not directly loaded, especially permission_reason=\"provider_tool_limit\". Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
+    "Invoke proxy workflow: only basic tools and the self-config tools are bound directly each turn. Every other tool this agent is permitted to use is reached with invoke_tool, using the exact name from list_tools — expect permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\" on those. Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
   ];
   if (toolIndex.length > 0) {
     lines.push("Cached full tool index:");

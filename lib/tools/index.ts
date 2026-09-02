@@ -191,6 +191,34 @@ function isDefaultBasicTool(name: string, category: string): boolean {
   return isBasicToolCategory(category) && !DEFAULT_EXCLUDED_BASIC_TOOLS.has(name);
 }
 
+/**
+ * Tools bound directly to the model each turn. Everything else the agent is
+ * permitted to run stays reachable through the `invoke_tool` proxy, so the
+ * bound set stays small without shrinking what the agent may execute.
+ */
+export function isHotLoadTool(entry: Pick<ToolCatalogEntry, "name" | "category">): boolean {
+  return isDefaultBasicTool(entry.name, entry.category);
+}
+
+/**
+ * Mark permitted-but-not-bound tools so the prompt and `invoke_tool` can tell
+ * them apart from a genuine denial. `provider_tool_limit` already covers cap
+ * overflow, so it is left alone.
+ */
+export function markProxyOnlyTools(
+  catalog: readonly ToolCatalogEntry[],
+  boundToolNames: readonly string[],
+  permittedToolNames: readonly string[],
+): ToolCatalogEntry[] {
+  const bound = new Set(boundToolNames);
+  const permitted = new Set(permittedToolNames);
+  return catalog.map((entry) => {
+    if (entry.permission !== "enabled") return entry;
+    if (bound.has(entry.name) || !permitted.has(entry.name)) return entry;
+    return { ...entry, permission: "disabled" as const, permission_reason: "proxy_only" };
+  });
+}
+
 export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
   try {
     await loadLangChainPackages();

@@ -13,6 +13,18 @@ import { getThread } from "@/lib/stores/threads";
 
 type Permission = "enabled" | "disabled" | "unavailable";
 
+// Reasons that mean "permitted, just not bound to the model this turn".
+// Everything else — agent_not_allowed, category_disabled, dropin_tool_disabled
+// — is a real denial and still rejects.
+const PROXY_REACHABLE_REASONS: ReadonlySet<string> = new Set([
+  "provider_tool_limit",
+  "proxy_only",
+]);
+
+function isProxyReachable(reason: string | null | undefined): boolean {
+  return typeof reason === "string" && PROXY_REACHABLE_REASONS.has(reason);
+}
+
 interface RunPermissionEntry {
   name?: unknown;
   permission?: unknown;
@@ -107,7 +119,7 @@ async function resolveTargetPermission(
   }
 
   const runOverlay = runPermissionMapFromConfig(config).get(toolName);
-  if (runOverlay && runOverlay.permission !== "enabled" && runOverlay.reason !== "provider_tool_limit") {
+  if (runOverlay && runOverlay.permission !== "enabled" && !isProxyReachable(runOverlay.reason)) {
     return {
       ok: false,
       response: reject(

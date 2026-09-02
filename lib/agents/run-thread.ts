@@ -41,6 +41,9 @@ import {
   applyProviderToolLimitToCatalog,
   getAllToolCatalogAsync,
   getDefaultAgentToolNames,
+  isHotLoadTool,
+  markProxyOnlyTools,
+  type ToolCatalogEntry,
 } from "@/lib/tools";
 
 export type { ThreadRunRequest } from "@/lib/agents/prepare";
@@ -78,6 +81,22 @@ const SUBJECT_STOP_WORDS = new Set([
 
 function withDefaultTools(tools: string[], defaults: readonly string[]): string[] {
   return Array.from(new Set([...tools, ...defaults, ...SELF_CONFIG_TOOLS]));
+}
+
+const SELF_CONFIG_TOOL_SET: ReadonlySet<string> = new Set(SELF_CONFIG_TOOLS);
+
+// The agent may execute every name in `permitted`, but only basic and
+// self-config tools are bound to the model; the rest go through `invoke_tool`.
+function hotLoadToolNames(
+  catalog: readonly ToolCatalogEntry[],
+  permitted: readonly string[],
+): string[] {
+  const byName = new Map(catalog.map((entry) => [entry.name, entry]));
+  return permitted.filter((name) => {
+    if (SELF_CONFIG_TOOL_SET.has(name)) return true;
+    const entry = byName.get(name);
+    return entry ? isHotLoadTool(entry) : false;
+  });
 }
 
 function normalizeInboundForSubjectDetection(raw: string): string {
@@ -524,7 +543,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
   const limitedTools = applyProviderToolLimitToCatalog(
     baseToolPermissionMap,
-    requestedAllowedTools,
+    hotLoadToolNames(baseToolPermissionMap, requestedAllowedTools),
     getEffectiveProviderToolLimit(modelCfg?.provider),
     SELF_CONFIG_TOOLS,
     {
@@ -532,7 +551,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       preferredToolNames: getAgentTools(agentCfg),
     },
   );
-  toolPermissionMap = limitedTools.toolPermissionMap;
+  toolPermissionMap = markProxyOnlyTools(
+    limitedTools.toolPermissionMap,
+    limitedTools.allowedToolNames,
+    requestedAllowedTools,
+  );
   allowedTools = limitedTools.allowedToolNames;
   const baseProviderParams = getModelParams(modelCfg);
 
