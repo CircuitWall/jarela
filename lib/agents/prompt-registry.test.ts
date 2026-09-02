@@ -357,6 +357,59 @@ describe("assembled agent system prompt", () => {
   });
 });
 
+describe("prompt cache prefixes", () => {
+  // Provider prompt caching only pays off while the prefix is byte-identical.
+  // A stray timestamp or per-turn value in a cached block silently turns every
+  // turn into a full-price cache miss, which no other test would notice.
+  const catalogPromise = getAllToolCatalogAsync();
+
+  async function promptFor(agent: AgentConfigRow, message: string) {
+    const permissions = applyAgentPermissionsToCatalog(await catalogPromise, agent);
+    return buildSystemPrompt({
+      agentCfg: agent,
+      trimmedMessage: message,
+      budget,
+      recallCtx: "",
+      warmSummaryCtx: "",
+      factsCtx: "",
+      experienceMode: "full",
+      delegateRosterLines: [],
+      toolPermissionMap: permissions,
+      allowedTools: permissions.filter((t) => t.permission === "enabled").map((t) => t.name),
+    });
+  }
+
+  const sharedOf = (p: string) => p.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+  const stableOf = (p: string) => p.split(CACHE_SPLIT_SENTINEL)[0];
+
+  it("keeps both cached blocks identical across turns of one agent", async () => {
+    const agent = agentCfg({ id: "cache-agent" });
+    const first = await promptFor(agent, "what is the weather");
+    const second = await promptFor(agent, "now book me a flight");
+
+    expect(sharedOf(second)).toBe(sharedOf(first));
+    expect(stableOf(second)).toBe(stableOf(first));
+  });
+
+  it("keeps the shared block identical across different agents", async () => {
+    const a = await promptFor(agentCfg({ id: "cache-a" }), "hello");
+    const b = await promptFor(
+      agentCfg({ id: "cache-b", identity: "You are Bee.", instructions: "Be verbose." }),
+      "hello",
+    );
+
+    expect(sharedOf(b)).toBe(sharedOf(a));
+  });
+
+  it("keeps per-turn values out of the cached blocks", async () => {
+    const prompt = await promptFor(agentCfg({ id: "cache-c" }), "hello");
+    const cached = stableOf(prompt);
+
+    expect(cached).not.toContain("Current time:");
+    expect(cached).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+  });
+});
+
 describe("static prompts", () => {
   it("leaves no unresolved placeholders", () => {
     for (const p of staticPrompts) {
