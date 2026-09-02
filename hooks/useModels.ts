@@ -51,21 +51,21 @@ export function useModels(): UnifiedHookResult<
 
   const create = useCallback(async (name: string, data: ModelConfigIn) => {
     const m = await api.models.create(name, data);
-    setModels((p) => [...p, m]);
+    await refreshModels();
     return m;
-  }, [setModels]);
+  }, [refreshModels]);
 
   const update = useCallback(async (name: string, data: ModelConfigIn) => {
     const m = await api.models.update(name, data);
-    setModels((p) => p.map((x) => (x.name === name ? m : x)));
+    await refreshModels();
     return m;
-  }, [setModels]);
+  }, [refreshModels]);
 
   const remove = useCallback(async (name: string): Promise<void> => {
     await api.models.delete(name);
-    setModels((p) => p.filter((x) => x.name !== name));
+    await refreshModels();
     setAssignments((p) => p.filter((x) => x.model_config_name !== name));
-  }, [setAssignments, setModels]);
+  }, [refreshModels, setAssignments]);
 
   const assign = useCallback(async (agent_id: string, model_config_name: string, tool_policy?: ToolPolicy) => {
     const a = await api.tasks.assign(agent_id, model_config_name, tool_policy);
