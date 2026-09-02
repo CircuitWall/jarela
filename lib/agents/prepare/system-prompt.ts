@@ -198,7 +198,7 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   ];
   if (proxyOnly.length > 0) {
     lines.push(
-      `${proxyOnly.length} permitted tool(s) are not bound this turn with reason=proxy_only. Call them with invoke_tool using the exact name from list_tools; do not assume they are unavailable.`,
+      `${proxyOnly.length} permitted tool(s) are not bound this turn with reason=proxy_only. Call them with invoke_tool using the exact name from list_tools and args_json as a JSON object string; do not assume they are unavailable.`,
     );
   }
   if (capped.length > 0) {
@@ -217,7 +217,7 @@ export function buildSharedToolCatalogContext(permissionMap: ReadonlyArray<ToolC
     "--- Shared tool discovery cache ---",
     "This cross-agent block is intentionally static: it describes stable full-catalog discovery workflow and a compact full tool index. The current per-agent/per-turn executable subset and omission counts are listed later under Enabled tools.",
     "Full catalog workflow: list_tools is the authoritative spec lookup for every registered built-in, external, and MCP tool, including tools not directly loaded in this turn. Search it with service/object/action keywords; set scope=\"all\" to see disabled, unavailable, and provider-cap-omitted tools; set include_schema=true to get the target JSON argument schema.",
-    "Invoke proxy workflow: only basic tools and the self-config tools are bound directly each turn. Every other tool this agent is permitted to use is reached with invoke_tool, using the exact name from list_tools — expect permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\" on those. Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
+    "Invoke proxy workflow: basic tools, the self-config tools, and this agent's pinned tools are bound directly each turn. Every other permitted tool is reached with invoke_tool, using the exact name from list_tools and passing arguments as args_json, a JSON object encoded as a string \u2014 expect permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\" on those. Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
   ];
   if (toolIndex.length > 0) {
     lines.push("Cached full tool index:");

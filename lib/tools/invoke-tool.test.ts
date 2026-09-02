@@ -165,4 +165,49 @@ describe("invoke_tool", () => {
       error_code: "tool_not_allowed",
     });
   });
+
+  it("carries arguments through args_json for schema-restricted providers", async () => {
+    upsertAgentConfig({
+      id: "invoke-argsjson-agent",
+      name: "Invoke ArgsJson",
+      identity: "test",
+      instructions: "",
+      tools: [],
+    });
+    const thread = createThread("invoke-argsjson-agent");
+
+    const out = parse(await invokeToolTool.invoke(
+      { name: "list_tools", args_json: JSON.stringify({ query: "invoke_tool" }) },
+      { configurable: { thread_id: thread.thread_id } },
+    ));
+
+    expect(out).toMatchObject({ ok: true, tool: "list_tools", status: "done" });
+    expect(out.result).toMatchObject({
+      counts: expect.objectContaining({ total: expect.any(Number) }),
+    });
+  });
+
+  it("reports a usable error when args_json is not a JSON object", async () => {
+    upsertAgentConfig({
+      id: "invoke-badjson-agent",
+      name: "Invoke BadJson",
+      identity: "test",
+      instructions: "",
+      tools: [],
+    });
+    const thread = createThread("invoke-badjson-agent");
+
+    const out = parse(await invokeToolTool.invoke(
+      { name: "list_tools", args_json: "not json" },
+      { configurable: { thread_id: thread.thread_id } },
+    ));
+
+    expect(out).toMatchObject({ status: "rejected", error_code: "bad_args_json" });
+  });
+
+  it("exposes args_json as a plain string so provider schema sanitisers keep it", () => {
+    const schema = invokeToolTool.schema as { shape?: Record<string, unknown> };
+    expect(schema.shape).toHaveProperty("args_json");
+    expect(invokeToolTool.description).toContain("args_json");
+  });
 });
