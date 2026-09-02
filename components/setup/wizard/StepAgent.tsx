@@ -95,7 +95,7 @@ export function StepAgent({ agents, models, onChanged }: StepAgentProps) {
                   )}
                 </div>
                 <p className="truncate text-[11px] text-fg-faint">
-                  {a.model_config_name ?? "no model assigned"}
+                  {a.model_config_name ?? "automatic routing"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">

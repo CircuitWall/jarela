@@ -70,6 +70,8 @@ export function deleteModelConfig(name: string): boolean {
   const wasDefault = !!(db.prepare("SELECT is_default FROM model_configs WHERE name=?").get(name) as { is_default?: number } | undefined)?.is_default;
   const deleted = (db.prepare("DELETE FROM model_configs WHERE name=?").run(name) as { changes: number }).changes > 0;
   if (!deleted) return false;
+  // Automatically reset any agent pointing to this deleted model config to NULL (automatic / default model)
+  db.prepare("UPDATE agent_configs SET model_config_name = NULL WHERE model_config_name = ?").run(name);
   // Avoid the "no default" state: if the deleted row was the default and any
   // other rows remain, promote the alphabetically-first remaining row so
   // agents that fall back to the default keep working.

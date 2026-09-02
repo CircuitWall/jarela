@@ -389,6 +389,16 @@ export function runMigrations(db: DatabaseSync): void {
   migrateICloudPackageIds(db);
   ensureAgentRouterColumns(db);
   spillLegacyImageAttachments(db);
+  cleanOrphanModelAssignments(db);
+}
+
+function cleanOrphanModelAssignments(db: DatabaseSync): void {
+  db.prepare(`
+    UPDATE agent_configs
+    SET model_config_name = NULL
+    WHERE model_config_name IS NOT NULL
+      AND model_config_name NOT IN (SELECT name FROM model_configs)
+  `).run();
 }
 
 function ensureBridgeEventSubscriptionColumns(db: DatabaseSync): void {

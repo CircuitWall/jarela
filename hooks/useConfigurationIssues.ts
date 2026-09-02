@@ -86,18 +86,7 @@ export function useConfigurationIssues(): void {
 
       for (const a of agents) {
         const status = agentModelStatus(a, models);
-        if (status.state === "missing") {
-          pushIssue(
-            `agent-missing-model:${a.id}`,
-            "info",
-            `Agent "${a.name}" model is missing`,
-            status.fallback
-              ? `Bound model "${status.requested}" was deleted — runs fall back to default "${status.fallback.name}".`
-              : `Bound model "${status.requested}" was deleted and no default is set — runs will fail.`,
-            `?tab=agents&item=${encodeURIComponent(a.id)}`,
-            "Fix in Agents →",
-          );
-        } else if (status.state === "no-model") {
+        if (status.state === "no-model") {
           pushIssue(
             `agent-no-model:${a.id}`,
             "error",

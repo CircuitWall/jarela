@@ -15,16 +15,10 @@ export function AgentModelBadge({ status }: { status: AgentModelStatus }) {
   if (status.state === "no-agent") {
     label = "agent missing";
     tooltip = "The agent for this task was deleted. It will fail on the next run.";
-  } else if (status.state === "no-model") {
+  } else {
     label = "no model";
     tooltip =
       "Agent has no model assigned and no workspace default is set. Runs will fail with no_model — open the Models panel and add or default a model.";
-  } else if (status.fallback) {
-    label = `model "${status.requested}" missing`;
-    tooltip = `Configured model "${status.requested}" no longer exists; runs will silently fall back to the default model "${status.fallback.name}". Reassign the agent to a present model.`;
-  } else {
-    label = `model "${status.requested}" missing`;
-    tooltip = `Configured model "${status.requested}" no longer exists and there is no workspace default. Runs will fail with no_model.`;
   }
 
   return (

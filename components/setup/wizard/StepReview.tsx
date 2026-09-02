@@ -53,7 +53,7 @@ export function StepReview({ name, about, preset, models, agents, integrations }
         secondary={
           defaultAgent
             ? [
-                defaultAgent.model_config_name ?? "no model assigned",
+                defaultAgent.model_config_name ?? "automatic routing",
                 defaultAgent.voice_enabled ? "voice on" : undefined,
               ]
                 .filter(Boolean)
