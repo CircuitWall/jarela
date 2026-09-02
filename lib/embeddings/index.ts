@@ -5,6 +5,8 @@ import { getDb } from "@/lib/db";
 import { SENSITIVE_MEMORY_NAMESPACES } from "@/lib/crypto/sensitive";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
+import { createContentCache } from "@/lib/cache/keyed-cache";
+import { createHash } from "node:crypto";
 
 // Sensitive namespaces (ADR-0005) are never surfaced via recall: their
 // values are encrypted at rest, and credentials should not reach agent
@@ -78,12 +80,58 @@ function isChatModelId(id: string): boolean {
   return /^(gpt-|claude-|deepseek-chat|deepseek-reasoner)/.test(id);
 }
 
+// An embedding is a pure function of (model, text), so a hit can never be
+// stale. Worth caching because prepareThreadRun embeds on the critical path
+// of every turn — auto-boundary detection alone re-embeds an almost unchanged
+// baseline each time — and a warm round-trip is 200-800 ms.
+const EMBEDDING_CACHE_ENTRIES = 512;
+const embeddingCache = createContentCache<number[]>(EMBEDDING_CACHE_ENTRIES);
+
+function embeddingCacheKey(modelId: string, text: string): string {
+  return `${modelId}\u0000${createHash("sha1").update(text).digest("base64")}`;
+}
+
+/** @internal — test-only: drop memoised vectors between cases. */
+export function _resetEmbeddingCache(): void {
+  embeddingCache.clear();
+}
+
 export async function embed(texts: string[]): Promise<number[][] | null> {
   if (texts.length === 0) return [];
   const client = await resolveEmbeddingClient();
   if (!client) return null;
+
+  const keys = texts.map((t) => embeddingCacheKey(client.modelId, t));
+  const results = new Array<number[] | undefined>(texts.length);
+  const missIndexes: number[] = [];
+  for (let i = 0; i < texts.length; i++) {
+    const hit = embeddingCache.get(keys[i]);
+    if (hit) results[i] = hit;
+    else missIndexes.push(i);
+  }
+  if (missIndexes.length === 0) return results as number[][];
+
   try {
-    return await client.provider.embed!(client.modelId, texts, client.params);
+    // Only misses go over the wire; duplicates inside one batch collapse too.
+    const uniqueMissTexts: string[] = [];
+    const uniqueMissKeyToIndex = new Map<string, number>();
+    for (const i of missIndexes) {
+      if (!uniqueMissKeyToIndex.has(keys[i])) {
+        uniqueMissKeyToIndex.set(keys[i], uniqueMissTexts.length);
+        uniqueMissTexts.push(texts[i]);
+      }
+    }
+
+    const fetched = await client.provider.embed!(client.modelId, uniqueMissTexts, client.params);
+    if (!fetched) return null;
+
+    for (const i of missIndexes) {
+      const vector = fetched[uniqueMissKeyToIndex.get(keys[i]) as number];
+      if (!vector) return null;
+      results[i] = vector;
+      embeddingCache.set(keys[i], vector);
+    }
+    return results as number[][];
   } catch (err) {
     console.warn("[embeddings] failed:", errorMessage(err));
     return null;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { createKeyedCache } from "./keyed-cache";
+import { createKeyedCache, createContentCache } from "./keyed-cache";
 
 afterEach(() => vi.useRealTimers());
 
@@ -76,5 +76,47 @@ describe("createKeyedCache", () => {
     fail = false;
 
     expect(cache.get()).toBe("ok");
+  });
+});
+
+describe("createContentCache", () => {
+  it("returns stored values and reports misses as undefined", () => {
+    const cache = createContentCache<number>(4);
+    cache.set("a", 1);
+
+    expect(cache.get("a")).toBe(1);
+    expect(cache.get("absent")).toBeUndefined();
+  });
+
+  it("evicts the least recently used entry past the bound", () => {
+    const cache = createContentCache<number>(2);
+    cache.set("a", 1);
+    cache.set("b", 2);
+    cache.set("c", 3);
+
+    expect(cache.has("a")).toBe(false);
+    expect(cache.get("b")).toBe(2);
+    expect(cache.get("c")).toBe(3);
+    expect(cache.size).toBe(2);
+  });
+
+  it("counts a read as recent use, so a hot entry survives", () => {
+    const cache = createContentCache<number>(2);
+    cache.set("a", 1);
+    cache.set("b", 2);
+    cache.get("a"); // refresh "a" so "b" becomes the oldest
+    cache.set("c", 3);
+
+    expect(cache.has("a")).toBe(true);
+    expect(cache.has("b")).toBe(false);
+  });
+
+  it("overwrites without growing", () => {
+    const cache = createContentCache<number>(2);
+    cache.set("a", 1);
+    cache.set("a", 2);
+
+    expect(cache.get("a")).toBe(2);
+    expect(cache.size).toBe(1);
   });
 });
