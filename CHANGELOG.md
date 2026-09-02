@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.36.0] - 2026-09-02
+
+### Added
+
+- **Agents reach tools they are permitted to use but that are not loaded.**
+  Only basic-category tools, the self-config tools, and the agent's own pinned
+  tools are bound to the model each turn; everything else the agent may run is
+  reached through the `invoke_tool` proxy and marked
+  `permission_reason="proxy_only"`. Per-agent permissions, category toggles and
+  drop-in toggles all still hard-block, so this widens reach without widening
+  authority.
+- **Tools declare the integration that backs them.** `registerLangChainPackage`
+  takes an `integrationId` (defaulting to `auth.integrationId`), drop-in tools
+  declare `integration`, and MCP tools declare it in annotations. See
+  [ADR-0078](./docs/adr/0078-tool-integration-declaration.md).
+- **`list_tools` accepts exact names.** `names=["exact_name"]` returns just
+  those tools and ignores every other filter, so a skill can point at a tool
+  and get its description and argument schema in one call — including tools the
+  agent cannot currently execute.
+- **Prompt verification tooling.** `npm run prompts:dump` assembles every
+  prompt for review, `-- --changed` narrows to the ones a change touches, and
+  `lib/agents/prompt-registry.ts` is an inventory a new prompt must join or the
+  build fails. Procedure in `.github/skills/prompt-verification`.
+
+### Changed
+
+- **Unconfigured tools are hidden from agents but stay visible to you.** A tool
+  whose declared credentials are unresolved, or whose integration fails its
+  cached probe, is denied to the agent with `credentials_missing` or
+  `integration_unconfigured` instead of being offered and failing at call time.
+  It still appears in the Tools panel so it can be set up. Probe results are
+  cached in memory for five minutes; an unknown or transient result never hides
+  a tool.
+- **The full tool index is no longer embedded in the system prompt.** Discovery
+  goes through `list_tools` search instead. The prompt now carries an ordered
+  six-step tool usage SOP, and every `permission_reason` the permission layer
+  can emit is explained.
+
+### Fixed
+
+- **Gemini could not pass arguments through the proxy.** `invoke_tool` typed its
+  arguments as a free-form object, which `sanitizeGeminiSchema` reduces to an
+  object with no properties, leaving the model able to send only `{}`. Arguments
+  now travel in `args_json`, a plain string every provider preserves.
+- **The proxy could be switched off.** `list_tools` and `invoke_tool` live in the
+  `Config` category; disabling it left them executable but unbound, severing
+  access to every non-basic tool. Both are now exempt from category toggles.
+- **Contradictory tool counts.** Tools reachable through the proxy were counted
+  both as reachable and as "not enabled for this agent" in the same sentence.
+
+### Performance
+
+- **Repeated embeddings are reused.** `prepareThreadRun` embeds on the critical
+  path of every turn, and auto-boundary detection re-embedded a barely-changing
+  baseline each time at 200–800 ms per round-trip. Embeddings are now cached by
+  model and text — a mapping that cannot go stale — and only cache misses are
+  sent to the provider.
+- **Skill and drop-in scans share one keyed cache.** `listSkills()` re-read every
+  `SKILL.md` on every turn (1.85 ms of a 2.93 ms prompt assembly). Writes
+  invalidate immediately, so `write_skill` is still visible on the next turn.
+
+### Security
+
+- **Dependencies refreshed to their latest in-range releases** and six
+  `overrides` that upstream had made redundant were removed. `npm audit`
+  reports no production vulnerabilities.
+
 ## [1.35.0] - 2026-09-02
 
 ### Added
