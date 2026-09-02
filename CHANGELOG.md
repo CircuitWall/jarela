@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.34.2] - 2026-09-02
+
+### Fixed
+
+- **Action button loading feedback and toast notifications.** Added spinning
+  `Loader2` indicators and toast feedback to run, poll, pause, and delete
+  buttons across Scheduled Tasks, Watchers, Documents, Memory, MCP, Bridges,
+  and Skill Repos. Fixed non-awaited `runNow` handler in Scheduled Tasks.
+- **Automatic model fallback and database cleanup.** Orphaned `model_config_name`
+  references are automatically reset to `NULL` on startup and on model deletion,
+  allowing agents to cleanly fall back to the default model without warning toasts.
+
 ## [1.34.1] - 2026-09-02
 
 ### Fixed
