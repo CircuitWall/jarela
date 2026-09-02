@@ -350,6 +350,7 @@ export const outlookCalendarDeleteEventTool = tool(
 
 registerLangChainPackage({
   category: "Calendar",
+  integrationId: "outlook",
   tools: {
     read: [outlookCalendarListCalendarsTool, outlookCalendarListEventsTool, outlookCalendarGetEventTool],
     write: [outlookCalendarCreateEventTool, outlookCalendarUpdateEventTool, outlookCalendarDeleteEventTool],

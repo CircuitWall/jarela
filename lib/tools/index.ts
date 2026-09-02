@@ -24,6 +24,7 @@ import {
   registeredCategory,
   registeredCapability,
   registeredGroup,
+  registeredIntegration,
   groupForCategory,
   type Capability,
   type ToolCategory,
@@ -44,6 +45,8 @@ import { disabledCategories } from "@/lib/stores/builtin-tools";
 import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { isBasicToolCategory, normalizeToolCategory } from "./categories";
+import { getIntegrationReadiness } from "@/lib/health/probe-cache";
+import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
 export * from "./types";
 export { getToolsDir, type ExtensionLoadError } from "./external";
@@ -111,6 +114,7 @@ export interface ToolCatalogEntry {
   capability: Capability;
   group: ToolGroup;
   mcp_server?: string | null;
+  integration?: string | null;
   credentials_required: string[];
   status: ToolStatus;
   status_reason: string | null;
@@ -172,6 +176,40 @@ export function getToolCredentialsRequired(name: string): string[] {
   const ext = loadExternal().credentialsRequired.get(name);
   if (ext?.length) return ext;
   return getMcpToolMeta(name)?.credentials_required ?? [];
+}
+
+/** INTEGRATIONS key backing this tool, when it declares one. */
+export function getToolIntegration(name: string): string | null {
+  return registeredIntegration(name)
+    ?? loadExternal().integrations.get(name)
+    ?? getMcpToolMeta(name)?.integration
+    ?? null;
+}
+
+// A declared credential key counts as satisfied when it is present in the
+// process env or in the encrypted store's env-sync allowlist — the same two
+// sources the LangChain package loader checks for `requiredEnv`.
+function missingCredentialKeys(keys: readonly string[]): string[] {
+  if (keys.length === 0) return [];
+  let injected: Record<string, string> = {};
+  try {
+    injected = getInjectedSubprocessEnv();
+  } catch { /* master key locked — fall back to process env only */ }
+  return keys.filter((key) => {
+    const fromEnv = process.env[key];
+    if (fromEnv && fromEnv.trim() !== "") return false;
+    const fromStore = injected[key];
+    return !fromStore || fromStore.trim() === "";
+  });
+}
+
+// Hide tools the operator has not finished setting up, so the model never
+// sees a capability it cannot actually use. A probe that has not run yet
+// reports "unknown" and leaves the tool visible.
+function unconfiguredReason(entry: ToolCatalogEntry): string | null {
+  if (missingCredentialKeys(entry.credentials_required).length > 0) return "credentials_missing";
+  if (getIntegrationReadiness(entry.integration) === "unconfigured") return "integration_unconfigured";
+  return null;
 }
 
 export function getDefaultAgentToolNames(): string[] {
@@ -245,6 +283,7 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
       category,
       capability: registeredCapability(tool.name) ?? "execute",
       group: registeredGroup(tool.name) ?? groupForCategory(category),
+      integration: registeredIntegration(tool.name) ?? null,
       status: disabled ? "disabled" : "enabled",
       status_reason: disabled ? "category_disabled" : null,
     }));
@@ -257,6 +296,7 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
       category,
       capability: "execute",
       group: groupForCategory(category),
+      integration: external.integrations.get(tool.name) ?? null,
       credentials_required: external.credentialsRequired.get(tool.name) ?? [],
       status: disabled ? "disabled" : "enabled",
       status_reason: disabled ? "dropin_tool_disabled" : null,
@@ -271,13 +311,20 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
       capability: "execute",
       group: "MCP",
       mcp_server: meta?.server_name ?? null,
+      integration: meta?.integration ?? null,
       credentials_required: meta?.credentials_required ?? [],
       status: "enabled",
       status_reason: null,
     }));
   }
 
-  return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...entries.values()]
+    .map((entry) => {
+      if (entry.status !== "enabled") return entry;
+      const reason = unconfiguredReason(entry);
+      return reason ? { ...entry, status: "unavailable" as const, status_reason: reason } : entry;
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function applyAgentPermissionsToCatalog(
@@ -442,6 +489,7 @@ function toCatalogEntry(
     capability: Capability;
     group: ToolGroup | undefined;
     mcp_server?: string | null;
+    integration?: string | null;
     credentials_required?: string[];
     status: ToolStatus;
     status_reason: string | null;
@@ -455,6 +503,7 @@ function toCatalogEntry(
     capability: meta.capability,
     group: meta.group ?? null,
     mcp_server: meta.mcp_server ?? null,
+    integration: meta.integration ?? null,
     credentials_required: meta.credentials_required ?? [],
     status: meta.status,
     status_reason: meta.status_reason,

@@ -62,6 +62,13 @@ export interface LangChainPackageSpec<TAuth = unknown> {
   };
   /** Optional credential bridge for packages with `setAuthResolver()`. */
   auth?: AuthBridge<TAuth>;
+  /**
+   * INTEGRATIONS key backing these tools. Defaults to `auth.integrationId`.
+   * Set it explicitly for packages that read their own credentials instead of
+   * using the auth bridge, so the catalog can still hide the tools when the
+   * integration is unconfigured.
+   */
+  integrationId?: string;
 }
 
 export interface RegisteredPackage<TAuth> {
@@ -88,14 +95,15 @@ export function registerLangChainPackage<TAuth>(
   spec: LangChainPackageSpec<TAuth>,
 ): RegisteredPackage<TAuth> {
   const registered: string[] = [];
+  const packageIntegrationId = spec.integrationId ?? spec.auth?.integrationId;
   if (spec.tools.read && spec.tools.read.length > 0) {
-    for (const t of registerTools(spec.category, "read", spec.tools.read)) registered.push(t.name);
+    for (const t of registerTools(spec.category, "read", spec.tools.read, packageIntegrationId)) registered.push(t.name);
   }
   if (spec.tools.write && spec.tools.write.length > 0) {
-    for (const t of registerTools(spec.category, "write", spec.tools.write)) registered.push(t.name);
+    for (const t of registerTools(spec.category, "write", spec.tools.write, packageIntegrationId)) registered.push(t.name);
   }
   if (spec.tools.execute && spec.tools.execute.length > 0) {
-    for (const t of registerTools(spec.category, "execute", spec.tools.execute)) registered.push(t.name);
+    for (const t of registerTools(spec.category, "execute", spec.tools.execute, packageIntegrationId)) registered.push(t.name);
   }
 
   const unregister = (): void => {

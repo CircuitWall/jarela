@@ -32,6 +32,8 @@ export interface ExternalToolDef {
    * configure the credential before enabling the tool.
    */
   credentials_required?: string[];
+  /** INTEGRATIONS key backing this tool, so the catalog can hide it when unconfigured. */
+  integration?: string;
   // Optional per-tool secret slots. Surfaced in the Tools → Packages
   // panel as editable form fields; persisted (encrypted at rest) in the
   // `tool-secrets` memory namespace. Read at run time via `ctx.getSecret`.
@@ -70,6 +72,8 @@ export interface ExternalToolsResult {
   configs: Map<string, ToolConfigSlot[]>;
   // Credential keys required by each tool (empty if none declared).
   credentialsRequired: Map<string, string[]>;
+  // Backing integration id per tool, when declared.
+  integrations: Map<string, string>;
   errors: ExtensionLoadError[];
 }
 
@@ -120,6 +124,7 @@ function isValid(p: unknown): p is ExternalToolDef {
     if (!Array.isArray(o.credentials_required)) return false;
     if (!(o.credentials_required as unknown[]).every((c) => typeof c === "string")) return false;
   }
+  if (o.integration !== undefined && typeof o.integration !== "string") return false;
   return true;
 }
 
@@ -166,6 +171,7 @@ export function loadExternalTools(
   const secrets = new Map<string, ToolSecretSlot[]>();
   const configs = new Map<string, ToolConfigSlot[]>();
   const credentialsRequired = new Map<string, string[]>();
+  const integrations = new Map<string, string>();
 
   const { defs, errors } = scanCjsPlugins<ExternalToolDef>({
     dir: getToolsDir(),
@@ -183,9 +189,10 @@ export function loadExternalTools(
     secrets.set(def.name, def.secrets ?? []);
     configs.set(def.name, def.config ?? []);
     if (def.credentials_required?.length) credentialsRequired.set(def.name, def.credentials_required);
+    if (def.integration) integrations.set(def.name, def.integration);
   }
 
-  const result = { tools, categories, files, secrets, configs, credentialsRequired, errors };
+  const result = { tools, categories, files, secrets, configs, credentialsRequired, integrations, errors };
   _externalCache = { result, ts: Date.now() };
   return result;
 }

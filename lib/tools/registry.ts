@@ -73,6 +73,7 @@ interface RegistryEntry {
   category: BuiltinCategory;
   capability: Capability;
   group: ToolGroup;
+  integration?: string;
 }
 
 const REGISTRY = new Map<string, RegistryEntry>();
@@ -87,6 +88,7 @@ export function registerTools<T extends StructuredToolInterface>(
   category: BuiltinCategory,
   capability: Capability,
   tools: readonly T[],
+  integration?: string,
 ): readonly T[] {
   const group = CATEGORY_GROUPS[category];
   const wrapped: T[] = [];
@@ -98,7 +100,7 @@ export function registerTools<T extends StructuredToolInterface>(
     // single stuck call (network hang, fs on a wedged cloud-sync drive,
     // runaway shell) can't pin the turn — see lib/tools/wallclock.ts.
     const w = wrapWithWallclock(t);
-    REGISTRY.set(w.name, { tool: w, category, capability, group });
+    REGISTRY.set(w.name, { tool: w, category, capability, group, integration });
     wrapped.push(w);
   }
   return wrapped;
@@ -141,6 +143,11 @@ export function registeredCapability(name: string): Capability | undefined {
 /** @internal */
 export function registeredGroup(name: string): ToolGroup | undefined {
   return REGISTRY.get(name)?.group;
+}
+
+/** @internal — integration id backing this tool, when it has one. */
+export function registeredIntegration(name: string): string | undefined {
+  return REGISTRY.get(name)?.integration;
 }
 
 /**
