@@ -1,10 +1,11 @@
 "use client";
-import { FolderOpen, Pin, PinOff, Plus, Trash2 } from "lucide-react";
+import { FolderOpen, Loader2, Pin, PinOff, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "@/api/client";
 import type { SkillRepo } from "@/api/types";
 import { FolderPickerDialog } from "@/components/documents/FolderPickerDialog";
 import { errorMessage } from "@/lib/utils/error";
+import { pushToast } from "@/lib/ui/toasts";
 
 interface Props {
   repos: SkillRepo[];
@@ -24,6 +25,16 @@ export function SkillRepoSection({ repos, onChanged }: Props) {
     setError(null);
     try {
       await api.skills.repos.create({ path: trimmedPath, label: label.trim() || null });
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Skills",
+        title: "Skill repo added",
+        body: trimmedPath,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
       setPath("");
       setLabel("");
       onChanged();
@@ -47,7 +58,19 @@ export function SkillRepoSection({ repos, onChanged }: Props) {
 
   async function remove(repo: SkillRepo) {
     if (!confirm(`Remove skill repo "${repo.label ?? repo.path}"? Files on disk are left untouched.`)) return;
-    await withBusy(repo.id, () => api.skills.repos.delete(repo.id).then(() => undefined));
+    await withBusy(repo.id, async () => {
+      await api.skills.repos.delete(repo.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Skills",
+        title: "Skill repo removed",
+        body: repo.label ?? repo.path,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    });
   }
 
   return (
@@ -134,10 +157,10 @@ export function SkillRepoSection({ repos, onChanged }: Props) {
           <button
             onClick={() => void remove(r)}
             disabled={busy[r.id]}
-            title="Remove repo"
+            title={busy[r.id] ? "Processing…" : "Remove repo"}
             className="p-1 text-fg-faint hover:text-red-600 dark:hover:text-red-400 disabled:opacity-40"
           >
-            <Trash2 size={13} />
+            {busy[r.id] ? <Loader2 size={13} className="animate-spin text-red-600 dark:text-red-400" /> : <Trash2 size={13} />}
           </button>
         </div>
       ))}

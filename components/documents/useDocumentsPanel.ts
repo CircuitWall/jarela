@@ -5,6 +5,7 @@ import type { DocumentHit, DocumentSource, DocumentSourceKind, ModelConfig } fro
 import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import { isMailKind, summarizeRemote } from "./helpers";
 import { errorMessage } from "@/lib/utils/error";
+import { pushToast } from "@/lib/ui/toasts";
 
 export interface EmbeddingProbe {
   ok: boolean;
@@ -102,6 +103,17 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
           `Embedding degraded: ${result.stats.embed_failed} chunk${result.stats.embed_failed === 1 ? "" : "s"} failed to embed` +
           (result.stats.embed_error ? ` (${result.stats.embed_error})` : ""),
         );
+      } else {
+        pushToast({
+          kind: "info",
+          source: "system",
+          sourceLabel: "Documents",
+          title: "Source re-indexed",
+          body: `Re-scanned ${result.stats.scanned} files (${result.stats.added} added, ${result.stats.updated} updated).`,
+          agent_id: null,
+          thread_id: null,
+          ttl: 4000,
+        });
       }
       await load();
     } catch (e) {
@@ -118,11 +130,24 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
         ? "The upstream mailbox is untouched."
         : "The upstream content is untouched.";
     if (!confirm(`Stop indexing ${summary}? This deletes all chunks for this source. ${tail}`)) return;
+    setBusy((b) => ({ ...b, [id]: true }));
     try {
       await api.documents.deleteSource(id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Documents",
+        title: "Source removed",
+        body: `Stopped indexing "${summary}".`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
       await load();
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
+      setBusy((b) => ({ ...b, [id]: false }));
     }
   }
 

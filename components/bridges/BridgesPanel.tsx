@@ -5,6 +5,8 @@ import { api } from "@/api/client";
 import type { Bridge, BridgeLiveStatus } from "@/api/types";
 import { useBridges } from "@/hooks/useBridges";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { pushErrorToast } from "@/lib/ui/error-report";
+import { pushToast } from "@/lib/ui/toasts";
 import { ProviderLogo } from "@/components/models/ProviderLogo";
 import { BridgeEditor } from "./BridgeEditor";
 
@@ -46,12 +48,39 @@ export function BridgesPanel() {
   async function onDelete(b: Bridge) {
     if (!confirm(`Delete bridge "${b.name}"? This also removes its WhatsApp auth and all routes.`)) return;
     if (selectedId === b.id) setSelectedId(null);
-    await remove(b.id);
+    try {
+      await remove(b.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Bridges",
+        title: "Bridge deleted",
+        body: `"${b.name}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({ title: "Couldn't delete bridge", error: e, context: { panel: "bridges", action: "delete", bridge_id: b.id } });
+    }
   }
 
   async function onToggleEnabled(b: Bridge) {
-    await update(b.id, { enabled: !b.enabled });
-    // Status flips on next poll once Baileys opens the WS.
+    try {
+      await update(b.id, { enabled: !b.enabled });
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Bridges",
+        title: b.enabled ? "Bridge paused" : "Bridge enabled",
+        body: `"${b.name}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({ title: "Couldn't toggle bridge", error: e, context: { panel: "bridges", action: "toggle", bridge_id: b.id } });
+    }
   }
 
   if (selectedId) {
@@ -141,6 +170,9 @@ function BridgeRow({
   onToggleEnabled: () => void | Promise<void>;
   onDelete: () => void | Promise<void>;
 }) {
+  const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   return (
     <div data-deep-link-id={bridge.id} className="mb-2 rounded-lg border border-border bg-surface-2 hover:bg-surface-2/70 transition-colors">
       <div className="flex items-center gap-3 px-3 py-2.5">
@@ -159,21 +191,34 @@ function BridgeRow({
         </button>
 
         <label className="flex items-center gap-1.5 text-[11px] text-fg-subtle cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={bridge.enabled}
-            onChange={onToggleEnabled}
-            className="accent-accent"
-          />
+          {toggling ? <Loader2 size={12} className="animate-spin text-accent" /> : (
+            <input
+              type="checkbox"
+              checked={bridge.enabled}
+              onChange={async () => {
+                if (toggling) return;
+                setToggling(true);
+                try { await onToggleEnabled(); } finally { setToggling(false); }
+              }}
+              disabled={toggling}
+              className="accent-accent"
+            />
+          )}
           {bridge.enabled ? "On" : "Off"}
         </label>
 
         <button
-          onClick={(e) => { e.stopPropagation(); void onDelete(); }}
-          className="p-1.5 rounded text-fg-faint hover:text-rose-700 dark:hover:text-rose-400 hover:bg-surface-3"
-          title="Delete"
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (deleting) return;
+            setDeleting(true);
+            try { await onDelete(); } finally { setDeleting(false); }
+          }}
+          disabled={deleting}
+          className="p-1.5 rounded text-fg-faint hover:text-rose-700 dark:hover:text-rose-400 hover:bg-surface-3 transition-colors disabled:opacity-50"
+          title={deleting ? "Deleting…" : "Delete"}
         >
-          <Trash2 size={13} />
+          {deleting ? <Loader2 size={13} className="animate-spin text-rose-600 dark:text-rose-400" /> : <Trash2 size={13} />}
         </button>
       </div>
     </div>

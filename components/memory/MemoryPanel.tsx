@@ -1,5 +1,5 @@
 "use client";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MemoryItem } from "@/api/types";
 import { useMemory } from "@/hooks/useMemory";
@@ -8,6 +8,7 @@ import { MemoryEditor } from "./MemoryEditor";
 import { MemoryValuePreview } from "./MemoryValuePreview";
 import { Select } from "@/components/ui/Select";
 import { TextInput } from "@/components/ui/TextField";
+import { pushToast } from "@/lib/ui/toasts";
 
 function useDebounce<T>(value: T, ms: number): T {
   const [d, setD] = useState(value);
@@ -56,24 +57,77 @@ export function MemoryPanel() {
         {loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">Loading…</p>}
         {!loading && items.length === 0 && <p className="text-fg-faint text-sm text-center py-8">No memory items yet</p>}
         {items.map((item) => (
-          <div key={`${item.namespace}/${item.key}`} data-deep-link-id={`${item.namespace}/${item.key}`} onClick={() => setEditing(item)} className="flex items-start gap-2 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-[10px] uppercase tracking-wide text-fg-faint">{item.namespace}</span>
-                <span className="text-fg-faint">/</span>
-                <span className="text-xs font-medium text-fg truncate">{item.key}</span>
-              </div>
-              <MemoryValuePreview value={item.value} />
-            </div>
-            <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-              <button onClick={(e) => { e.stopPropagation(); remove(item.namespace, item.key); }} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete"><Trash2 size={13} /></button>
-            </div>
-          </div>
+          <MemoryRow
+            key={`${item.namespace}/${item.key}`}
+            item={item}
+            onEdit={() => setEditing(item)}
+            onRemove={async () => {
+              await remove(item.namespace, item.key);
+              pushToast({
+                kind: "info",
+                source: "system",
+                sourceLabel: "Memory",
+                title: "Memory item deleted",
+                body: `${item.namespace}/${item.key}`,
+                agent_id: null,
+                thread_id: null,
+                ttl: 3000,
+              });
+            }}
+          />
         ))}
       </div>
       {editing !== null && (
         <MemoryEditor item={editing === "new" ? undefined : editing} onSave={handleSave} onClose={() => { setEditing(null); refresh(); }} />
       )}
+    </div>
+  );
+}
+
+function MemoryRow({
+  item,
+  onEdit,
+  onRemove,
+}: {
+  item: MemoryItem;
+  onEdit: () => void;
+  onRemove: () => Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <div
+      data-deep-link-id={`${item.namespace}/${item.key}`}
+      onClick={onEdit}
+      className="flex items-start gap-2 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-[10px] uppercase tracking-wide text-fg-faint">{item.namespace}</span>
+          <span className="text-fg-faint">/</span>
+          <span className="text-xs font-medium text-fg truncate">{item.key}</span>
+        </div>
+        <MemoryValuePreview value={item.value} />
+      </div>
+      <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+        <button
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (deleting) return;
+            setDeleting(true);
+            try {
+              await onRemove();
+            } finally {
+              setDeleting(false);
+            }
+          }}
+          disabled={deleting}
+          className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+          title={deleting ? "Deleting…" : "Delete"}
+        >
+          {deleting ? <Loader2 size={13} className="animate-spin text-red-600 dark:text-red-400" /> : <Trash2 size={13} />}
+        </button>
+      </div>
     </div>
   );
 }

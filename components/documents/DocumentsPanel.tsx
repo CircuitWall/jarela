@@ -1,6 +1,6 @@
 "use client";
 import { AlertCircle, FolderSearch, RefreshCw } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useAppContext } from "@/contexts/AppContext";
 import { AddSourceForm } from "./AddSourceForm";
 import { EmbeddingModelSection } from "./EmbeddingModelSection";
@@ -12,6 +12,7 @@ export function DocumentsPanel() {
   const { dispatch } = useAppContext();
   const containerRef = useRef<HTMLDivElement>(null);
   const panel = useDocumentsPanel();
+  const [refreshing, setRefreshing] = useState(false);
 
   return (
     <div className="flex flex-col h-full">
@@ -19,11 +20,20 @@ export function DocumentsPanel() {
         <FolderSearch size={14} className="text-fg-subtle" />
         <h2 className="text-sm font-semibold text-fg mr-auto">Documents</h2>
         <button
-          onClick={() => void panel.load()}
-          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors"
+          onClick={async () => {
+            if (refreshing || panel.loading) return;
+            setRefreshing(true);
+            try {
+              await panel.load();
+            } finally {
+              setRefreshing(false);
+            }
+          }}
+          disabled={refreshing || panel.loading}
+          className="flex items-center gap-1 text-xs text-accent hover:text-accent-hover transition-colors disabled:opacity-50"
           title="Refresh source list"
         >
-          <RefreshCw size={13} /> Refresh
+          <RefreshCw size={13} className={refreshing || panel.loading ? "animate-spin" : ""} /> Refresh
         </button>
       </div>
 

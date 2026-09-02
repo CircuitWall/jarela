@@ -1,5 +1,5 @@
 "use client";
-import { Cloud, FolderOpen, RefreshCw, Trash2 } from "lucide-react";
+import { Cloud, FolderOpen, Loader2, RefreshCw, Trash2 } from "lucide-react";
 import type { DocumentSource, DocumentSourceKind } from "@/api/types";
 import { summarizeRemote } from "./helpers";
 
@@ -70,17 +70,18 @@ function SourceRow({ source: s, busy, onReindex, onRemove, onToggle }: RowProps)
         <button
           onClick={() => onReindex(s.id)}
           disabled={busy}
-          title="Re-scan now"
+          title={busy ? "Processing…" : "Re-scan now"}
           className="p-1 text-fg-subtle hover:text-fg disabled:opacity-40"
         >
           <RefreshCw size={13} className={busy ? "animate-spin" : ""} />
         </button>
         <button
           onClick={() => onRemove(s.id, summary, s.kind)}
-          title="Remove source"
-          className="p-1 text-fg-faint hover:text-red-600 dark:hover:text-red-400"
+          disabled={busy}
+          title={busy ? "Processing…" : "Remove source"}
+          className="p-1 text-fg-faint hover:text-red-600 dark:hover:text-red-400 disabled:opacity-40"
         >
-          <Trash2 size={13} />
+          {busy ? <Loader2 size={13} className="animate-spin text-red-600 dark:text-red-400" /> : <Trash2 size={13} />}
         </button>
       </div>
       <div className="text-[11px] text-fg-faint flex flex-wrap gap-x-3 gap-y-0.5">

@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle2, Clock, EyeOff, Loader2, Play, Power, Repeat, Save, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ModelConfig, ScheduledTask } from "@/api/types";
@@ -7,6 +7,7 @@ import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { formatRelative } from "@/lib/utils/time";
 import { humanizeCron } from "@/lib/utils/cron";
 import { pushErrorToast } from "@/lib/ui/error-report";
+import { pushToast } from "@/lib/ui/toasts";
 import { agentModelStatus } from "@/lib/agents/effective-model";
 import { AgentModelBadge } from "./AgentModelBadge";
 import { WatchersSection } from "./WatchersSection";
@@ -46,13 +47,42 @@ export function ScheduledTasksPanel() {
 
   async function cancel(task: ScheduledTask) {
     if (!confirm(`Cancel scheduled task?\n\n${task.prompt.slice(0, 200)}${task.prompt.length > 200 ? "…" : ""}`)) return;
-    await api.scheduledTasks.cancel(task.id);
-    void load();
+    try {
+      await api.scheduledTasks.cancel(task.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Scheduled Tasks",
+        title: "Task canceled",
+        body: `"${task.prompt.slice(0, 50)}${task.prompt.length > 50 ? "…" : ""}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't cancel scheduled task",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "task.cancel", task_id: task.id },
+      });
+    } finally {
+      void load();
+    }
   }
 
   async function runNow(task: ScheduledTask) {
     try {
       await api.scheduledTasks.runNow(task.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Scheduled Tasks",
+        title: "Task triggered",
+        body: `"${task.prompt.slice(0, 60)}${task.prompt.length > 60 ? "…" : ""}" is running now.`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 4000,
+      });
     } catch (e) {
       pushErrorToast({
         title: "Couldn't run scheduled task",
@@ -110,11 +140,13 @@ function TaskCard({
   agent?: AgentConfig;
   agents: Record<string, AgentConfig>;
   models: ModelConfig[];
-  onCancel: () => void;
-  onRunNow: () => void;
+  onCancel: () => Promise<void> | void;
+  onRunNow: () => Promise<void> | void;
   onChanged: () => void;
 }) {
   const [running, setRunning] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [editing, setEditing] = useState(false);
   const isCron = task.kind === "cron";
   const nextRun = formatRelative(task.next_run_at, { collapseSeconds: true });
@@ -171,33 +203,68 @@ function TaskCard({
         </div>
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
           <button
-            onClick={(e) => { e.stopPropagation(); void (async () => {
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (toggling) return;
+              setToggling(true);
               try {
                 await api.scheduledTasks.update(task.id, { enabled: !task.enabled });
+                pushToast({
+                  kind: "info",
+                  source: "system",
+                  sourceLabel: "Scheduled Tasks",
+                  title: task.enabled ? "Task paused" : "Task resumed",
+                  body: `"${task.prompt.slice(0, 50)}${task.prompt.length > 50 ? "…" : ""}"`,
+                  agent_id: null,
+                  thread_id: null,
+                  ttl: 3000,
+                });
                 onChanged();
               } catch (err) {
                 pushErrorToast({ title: "Couldn't toggle scheduled task", error: err, context: { panel: "scheduled-tasks", action: "task.toggle", task_id: task.id } });
+              } finally {
+                setToggling(false);
               }
-            })(); }}
-            className="p-1 text-fg-subtle hover:text-fg transition-colors"
-            title={task.enabled ? "Pause" : "Resume"}
+            }}
+            disabled={toggling || running || canceling}
+            className="p-1 text-fg-subtle hover:text-fg transition-colors disabled:opacity-50"
+            title={toggling ? "Saving…" : task.enabled ? "Pause" : "Resume"}
           >
-            <Power size={11} />
+            {toggling ? <Loader2 size={11} className="animate-spin text-fg-muted" /> : <Power size={11} />}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); if (running) return; setRunning(true); onRunNow(); void Promise.resolve().then(() => setRunning(false)); }}
-            disabled={running}
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (running) return;
+              setRunning(true);
+              try {
+                await onRunNow();
+              } finally {
+                setRunning(false);
+              }
+            }}
+            disabled={running || toggling || canceling}
             className="p-1 text-fg-subtle hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors disabled:opacity-50"
-            title="Run now"
+            title={running ? "Running task…" : "Run now"}
           >
-            <Play size={11} />
+            {running ? <Loader2 size={11} className="animate-spin text-emerald-600 dark:text-emerald-400" /> : <Play size={11} />}
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onCancel(); }}
-            className="p-1 text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors"
-            title="Cancel task"
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (canceling) return;
+              setCanceling(true);
+              try {
+                await onCancel();
+              } finally {
+                setCanceling(false);
+              }
+            }}
+            disabled={canceling || running || toggling}
+            className="p-1 text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 transition-colors disabled:opacity-50"
+            title={canceling ? "Canceling…" : "Cancel task"}
           >
-            <Trash2 size={11} />
+            {canceling ? <Loader2 size={11} className="animate-spin text-rose-600 dark:text-rose-400" /> : <Trash2 size={11} />}
           </button>
         </div>
       </div>

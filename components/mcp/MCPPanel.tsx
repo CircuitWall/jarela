@@ -1,10 +1,11 @@
 "use client";
-import { AlertCircle, CheckCircle2, ChevronLeft, ExternalLink, Plug, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ChevronLeft, ExternalLink, Loader2, Plug, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { pushErrorToast } from "@/lib/ui/error-report";
+import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
 
 // `editing` value when the user clicked New: starts on the picker step;
@@ -30,14 +31,44 @@ export function MCPPanel() {
   useEffect(() => { void load(); }, []);
 
   async function toggle(s: McpServer) {
-    await api.mcp.update(s.name, { enabled: !s.enabled });
-    void load();
+    try {
+      await api.mcp.update(s.name, { enabled: !s.enabled });
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "MCP Servers",
+        title: s.enabled ? "MCP server disabled" : "MCP server enabled",
+        body: `"${s.name}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({ title: "Couldn't toggle MCP server", error: e, context: { panel: "mcp", action: "toggle", name: s.name } });
+    } finally {
+      void load();
+    }
   }
 
   async function remove(name: string) {
     if (!confirm(`Remove MCP server "${name}"?`)) return;
-    await api.mcp.delete(name);
-    void load();
+    try {
+      await api.mcp.delete(name);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "MCP Servers",
+        title: "MCP server removed",
+        body: `"${name}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({ title: "Couldn't remove MCP server", error: e, context: { panel: "mcp", action: "delete", name } });
+    } finally {
+      void load();
+    }
   }
 
   return (
@@ -67,38 +98,13 @@ export function MCPPanel() {
             </div>
           )}
           {servers.map((s) => (
-            <div key={s.name} data-deep-link-id={s.name} onClick={() => setEditing({ mode: "form", existing: s })} className="flex items-center gap-3 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); toggle(s); }}
-                    className={s.enabled ? "text-emerald-700 dark:text-emerald-400" : "text-fg-faint hover:text-fg-subtle"}
-                    title={s.enabled ? "Disable" : "Enable"}
-                  >
-                    {s.enabled ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
-                  </button>
-                  <span className="text-sm font-medium text-fg">{s.name}</span>
-                  <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-surface-2 text-fg-subtle border-border">
-                    {s.transport}
-                  </span>
-                </div>
-                <p className="text-xs text-fg-faint truncate font-mono">
-                  {s.transport === "stdio"
-                    ? `${(s.spec as { command?: string }).command ?? "?"} ${((s.spec as { args?: string[] }).args ?? []).join(" ")}`
-                    : `${(s.spec as { url?: string }).url ?? "?"}`}
-                </p>
-                {s.last_error && (
-                  <p className="text-xs text-rose-700 dark:text-rose-400 mt-0.5 truncate" title={s.last_error}>
-                    error: {s.last_error}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
-                <button onClick={(e) => { e.stopPropagation(); remove(s.name); }} className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors" title="Delete">
-                  <Trash2 size={13} />
-                </button>
-              </div>
-            </div>
+            <McpServerRow
+              key={s.name}
+              server={s}
+              onSelect={() => setEditing({ mode: "form", existing: s })}
+              onToggle={toggle}
+              onRemove={remove}
+            />
           ))}
         </div>
       </div>
@@ -336,6 +342,84 @@ function substituteVars(node: unknown, values: Record<string, string>): Record<s
     }
     return n;
   }
+}
+
+function McpServerRow({
+  server: s,
+  onSelect,
+  onToggle,
+  onRemove,
+}: {
+  server: McpServer;
+  onSelect: () => void;
+  onToggle: (s: McpServer) => Promise<void>;
+  onRemove: (name: string) => Promise<void>;
+}) {
+  const [toggling, setToggling] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  return (
+    <div
+      data-deep-link-id={s.name}
+      onClick={onSelect}
+      className="flex items-center gap-3 py-2.5 border-b border-border/60 group cursor-pointer hover:bg-surface-3/30 transition-colors"
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <button
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (toggling) return;
+              setToggling(true);
+              try {
+                await onToggle(s);
+              } finally {
+                setToggling(false);
+              }
+            }}
+            disabled={toggling}
+            className={s.enabled ? "text-emerald-700 dark:text-emerald-400" : "text-fg-faint hover:text-fg-subtle"}
+            title={toggling ? "Saving…" : s.enabled ? "Disable" : "Enable"}
+          >
+            {toggling ? <Loader2 size={13} className="animate-spin text-fg-faint" /> : s.enabled ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />}
+          </button>
+          <span className="text-sm font-medium text-fg">{s.name}</span>
+          <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border bg-surface-2 text-fg-subtle border-border">
+            {s.transport}
+          </span>
+        </div>
+        <p className="text-xs text-fg-faint truncate font-mono">
+          {s.transport === "stdio"
+            ? `${(s.spec as { command?: string }).command ?? "?"} ${((s.spec as { args?: string[] }).args ?? []).join(" ")}`
+            : `${(s.spec as { url?: string }).url ?? "?"}`}
+        </p>
+        {s.last_error && (
+          <p className="text-xs text-rose-700 dark:text-rose-400 mt-0.5 truncate" title={s.last_error}>
+            error: {s.last_error}
+          </p>
+        )}
+      </div>
+      <div className="flex gap-1 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity shrink-0">
+        <button
+          onClick={async (e) => {
+            e.stopPropagation();
+            if (deleting) return;
+            setDeleting(true);
+            try {
+              await onRemove(s.name);
+            } finally {
+              setDeleting(false);
+            }
+          }}
+          disabled={deleting}
+          className="p-1 text-fg-subtle hover:text-red-700 dark:hover:text-red-400 transition-colors disabled:opacity-50"
+          title={deleting ? "Deleting…" : "Delete"}
+        >
+          {deleting ? <Loader2 size={13} className="animate-spin text-red-600 dark:text-red-400" /> : <Trash2 size={13} />}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // Browse-and-install picker backed by the official MCP registry. Search

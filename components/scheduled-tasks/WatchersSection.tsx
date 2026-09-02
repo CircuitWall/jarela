@@ -1,5 +1,5 @@
 "use client";
-import { AlertCircle, Bell, CheckCircle2, EyeOff, Play, Power, Trash2, Zap } from "lucide-react";
+import { AlertCircle, Bell, CheckCircle2, EyeOff, Loader2, Play, Power, Trash2, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ModelConfig, Watcher } from "@/api/types";
@@ -51,19 +51,51 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
 
   async function cancel(w: Watcher) {
     if (!confirm(`Cancel watcher "${w.label}"?`)) return;
-    await api.watchers.cancel(w.id);
-    void load();
+    try {
+      await api.watchers.cancel(w.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Watchers",
+        title: "Watcher canceled",
+        body: `"${w.label}"`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 3000,
+      });
+    } catch (e) {
+      pushErrorToast({
+        title: "Couldn't cancel watcher",
+        error: e,
+        context: { panel: "scheduled-tasks", action: "watcher.cancel", watcher_id: w.id },
+      });
+    } finally {
+      void load();
+    }
   }
+
   async function runNow(w: Watcher) {
-    try { await api.watchers.runNow(w.id); }
-    catch (e) {
+    try {
+      await api.watchers.runNow(w.id);
+      pushToast({
+        kind: "info",
+        source: "system",
+        sourceLabel: "Watchers",
+        title: "Watcher polled",
+        body: `Polled "${w.label}". Agent will fire if a diff is detected.`,
+        agent_id: null,
+        thread_id: null,
+        ttl: 4000,
+      });
+    } catch (e) {
       pushErrorToast({
         title: "Couldn't run watcher",
         error: e,
         context: { panel: "scheduled-tasks", action: "watcher.runNow", watcher_id: w.id, label: w.label },
       });
+    } finally {
+      void load();
     }
-    finally { void load(); }
   }
 
   const sorted = useMemo(
@@ -120,12 +152,14 @@ function WatcherCard({
   agent?: AgentConfig;
   agents: Record<string, AgentConfig>;
   models: ModelConfig[];
-  onCancel: () => void;
-  onRunNow: () => void;
+  onCancel: () => Promise<void> | void;
+  onRunNow: () => Promise<void> | void;
   onChanged: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [running, setRunning] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const nextRun = sharedFormatRelative(watcher.next_run_at, { collapseSeconds: true });
   const lastRun = watcher.last_run_at
     ? sharedFormatRelative(watcher.last_run_at, { collapseSeconds: true })
@@ -268,8 +302,20 @@ function WatcherCard({
           <div className="flex justify-end pt-1 gap-2">
             <button
               onClick={async () => {
+                if (toggling) return;
+                setToggling(true);
                 try {
                   await api.watchers.update(watcher.id, { enabled: !watcher.enabled });
+                  pushToast({
+                    kind: "info",
+                    source: "system",
+                    sourceLabel: "Watchers",
+                    title: watcher.enabled ? "Watcher paused" : "Watcher resumed",
+                    body: `"${watcher.label}"`,
+                    agent_id: null,
+                    thread_id: null,
+                    ttl: 3000,
+                  });
                   onChanged();
                 } catch (e) {
                   pushErrorToast({
@@ -277,30 +323,49 @@ function WatcherCard({
                     error: e,
                     context: { panel: "scheduled-tasks", action: "watcher.toggle", watcher_id: watcher.id, target_enabled: !watcher.enabled },
                   });
+                } finally {
+                  setToggling(false);
                 }
               }}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted"
+              disabled={toggling || running || canceling}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-fg hover:border-fg-muted disabled:opacity-50 transition-colors"
               title={watcher.enabled ? "Pause this watcher" : "Resume this watcher"}
             >
-              <Power size={11} /> {watcher.enabled ? "Pause" : "Resume"}
+              {toggling ? <Loader2 size={11} className="animate-spin text-fg-muted" /> : <Power size={11} />}
+              {toggling ? "Saving…" : watcher.enabled ? "Pause" : "Resume"}
             </button>
             <button
               onClick={async () => {
                 if (running) return;
                 setRunning(true);
-                try { await onRunNow(); } finally { setRunning(false); }
+                try {
+                  await onRunNow();
+                } finally {
+                  setRunning(false);
+                }
               }}
-              disabled={running}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50"
+              disabled={running || toggling || canceling}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-muted hover:text-emerald-700 dark:hover:text-emerald-400 hover:border-emerald-700 disabled:opacity-50 transition-colors"
               title="Poll the tool right now. If the result differs from the last poll, the agent fires."
             >
-              <Play size={11} /> {running ? "Polling…" : "Poll now"}
+              {running ? <Loader2 size={11} className="animate-spin text-emerald-600 dark:text-emerald-400" /> : <Play size={11} />}
+              {running ? "Polling…" : "Poll now"}
             </button>
             <button
-              onClick={onCancel}
-              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-700"
+              onClick={async () => {
+                if (canceling) return;
+                setCanceling(true);
+                try {
+                  await onCancel();
+                } finally {
+                  setCanceling(false);
+                }
+              }}
+              disabled={canceling || running || toggling}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border text-fg-subtle hover:text-rose-700 dark:hover:text-rose-400 hover:border-rose-700 disabled:opacity-50 transition-colors"
             >
-              <Trash2 size={11} /> Cancel watcher
+              {canceling ? <Loader2 size={11} className="animate-spin text-rose-600 dark:text-rose-400" /> : <Trash2 size={11} />}
+              {canceling ? "Canceling…" : "Cancel watcher"}
             </button>
           </div>
         </div>
