@@ -214,7 +214,9 @@ describe("buildToolPermissionContext", () => {
     ]);
 
     expect(ctx).toContain("--- Enabled tools ---");
-    expect(ctx).toContain("You can execute the 1 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
+    // web_search is provider-cap omitted: it counts as reachable through the
+    // proxy, not as denied. Counting it in both places contradicts itself.
+    expect(ctx).toContain("You can execute the 1 tool(s) listed below directly, plus 1 further permitted tool(s) through invoke_tool. 1 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
     expect(ctx).toContain("This list is only what is bound this turn, not the full inventory");
     expect(ctx).toContain("Follow the Tool usage SOP above");
     expect(ctx).not.toContain("Cached full tool index:");
