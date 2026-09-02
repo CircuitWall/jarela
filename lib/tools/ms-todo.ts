@@ -47,6 +47,7 @@ setAuthResolver(async () => {
 
 registerLangChainPackage({
   category: "Tasks",
+  integrationId: "outlook",
   tools: {
     read: msTodoReadTools,
     write: msTodoWriteTools,

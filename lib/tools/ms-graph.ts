@@ -310,6 +310,7 @@ const msPeopleResolveTool = tool(
 
 registerLangChainPackage({
   category: "Microsoft",
+  integrationId: "outlook",
   tools: {
     read: [msGraphGetTool, msSearchTool, msPeopleResolveTool],
   },

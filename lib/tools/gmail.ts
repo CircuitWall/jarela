@@ -431,6 +431,7 @@ export const gmailTrashMessageTool = tool(
 
 registerLangChainPackage({
   category: "Mail",
+  integrationId: "gmail",
   tools: {
     read: [gmailSearchTool, gmailGetMessageTool, gmailListLabelsTool],
     write: [gmailModifyMessageTool, gmailCreateDraftTool, gmailTrashMessageTool],

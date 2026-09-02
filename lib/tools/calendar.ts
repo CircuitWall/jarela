@@ -365,6 +365,7 @@ export const calendarDeleteEventTool = tool(
 
 registerLangChainPackage({
   category: "Calendar",
+  integrationId: "gmail",
   tools: {
     read: [calendarListCalendarsTool, calendarListEventsTool, calendarGetEventTool],
     write: [calendarCreateEventTool, calendarUpdateEventTool, calendarDeleteEventTool],
