@@ -292,8 +292,11 @@ on two orthogonal axes ([ADR-0038](./adr/0038-tool-capability-axis.md)):
 
 Files with mixed capabilities (memory, files, schedule, atlassian, github,
 gmail, outlook, calendar) declare every capability bucket in a single
-`registerLangChainPackage({ category, tools: { read?, write?, execute? } })`
-call. External (`JARELA_TOOLS_DIR`) and MCP tools default to `execute` until a
+`registerLangChainPackage({ category, integrationId?, tools: { read?, write?, execute? } })`
+call. `integrationId` names the INTEGRATIONS key backing the tools, so the
+permission layer can deny them when that integration is unconfigured
+([ADR-0078](adr/0078-tool-integration-declaration.md)). External
+(`JARELA_TOOLS_DIR`) and MCP tools default to `execute` until a
 manifest field overrides it. Consumers — a planned per-capability approval
 gate, UI badges, the ADR-0037 validator's citation rules — switch on the
 three values exhaustively. The `capability-coverage.test.ts` runtime check

@@ -215,33 +215,52 @@ describe("buildToolPermissionContext", () => {
 
     expect(ctx).toContain("--- Enabled tools ---");
     expect(ctx).toContain("You can execute the 1 tool(s) listed below directly, plus 0 further permitted tool(s) through invoke_tool. 2 known tool(s) are not enabled for this agent; 1 known tool(s) are globally unavailable.");
-    expect(ctx).toContain("If the needed capability is missing or ambiguous, search the full tool catalog with list_tools");
-    expect(ctx).toContain("The list below is only what is bound this turn, not the full inventory");
+    expect(ctx).toContain("This list is only what is bound this turn, not the full inventory");
+    expect(ctx).toContain("Follow the Tool usage SOP above");
     expect(ctx).not.toContain("Cached full tool index:");
     expect(ctx).not.toContain("- Memory: memory_read");
     expect(ctx).not.toContain("- Web: web_search");
-    expect(ctx).toContain("If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool");
-    expect(ctx).toContain("names=[…] for exact targets");
+    expect(ctx).toContain("reason=provider_tool_limit. Reach them with invoke_tool per SOP step 5");
     expect(ctx).toContain("- Basic > Files > file_read: read/builtin/enabled reason=basic_default");
     expect(ctx).not.toContain("- Basic > Memory > memory_read");
     expect(ctx).not.toContain("- Other > Mail > gmail_send_email");
-    expect(ctx).toContain("If invoke_tool is unavailable or the tool is disabled/unavailable for another reason");
+    expect(ctx).toContain("propose narrowing this agent's pinned tool list");
+
+    // The procedure lives in the cached block; the per-turn block must not
+    // restate it or the cache prefix stops being the stable part.
+    expect(ctx).not.toContain("1. Bound first");
+    expect(ctx).not.toContain("scope=\"enabled\" searches executable tools");
   });
 
-  it("renders a static, tool-free shared discovery block for cross-agent caching", () => {
+  it("renders the tool usage SOP as an ordered, tool-free static block", () => {
     const ctx = buildSharedToolCatalogContext();
 
-    expect(ctx).toContain("--- Shared tool discovery cache ---");
-    expect(ctx).toContain("Full catalog workflow: list_tools is the authoritative inventory and spec lookup");
-    expect(ctx).toContain("every registered built-in, external, and MCP tool");
+    expect(ctx).toContain("--- Tool usage SOP ---");
+    expect(ctx).toContain("1. Bound first.");
+    expect(ctx).toContain("2. Otherwise search.");
+    expect(ctx).toContain("3. Named target.");
+    expect(ctx).toContain("4. Read the schema.");
+    expect(ctx).toContain("5. Invoke through the proxy.");
+    expect(ctx).toContain("6. Stop and ask.");
+
+    expect(ctx).toContain("names=[\"exact_name\"]");
     expect(ctx).toContain("scope=\"all\"");
     expect(ctx).toContain("include_schema=true");
-    expect(ctx).toContain("Named targets: when a skill, harness, or instruction names an exact tool");
-    expect(ctx).toContain("names=[\"exact_name\"]");
-    expect(ctx).toContain("Invoke proxy workflow: basic tools, the self-config tools, and this agent's pinned tools are bound directly each turn");
+    expect(ctx).toContain("args_json");
     expect(ctx).toContain("permission_reason=\"proxy_only\"");
     expect(ctx).toContain("permission_reason=\"provider_tool_limit\"");
-    expect(ctx).toContain("Do not use invoke_tool for invoke_tool itself");
+
+    // Every denial reason the permission layer can emit must be explained,
+    // or the model cannot tell a permission decision from a setup gap.
+    for (const reason of [
+      "agent_not_allowed",
+      "category_disabled",
+      "dropin_tool_disabled",
+      "credentials_missing",
+      "integration_unconfigured",
+    ]) {
+      expect(ctx).toContain(reason);
+    }
 
     // The inventory is no longer embedded; it is discovered through list_tools.
     expect(ctx).not.toContain("Cached full tool index:");
