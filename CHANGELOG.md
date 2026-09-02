@@ -101,14 +101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`browserslist` pinned to 4.28.7.** Addresses a high-severity unbounded
   memory-growth advisory (GHSA-c83g-rgw3-j3cx) in the transitive dependency
   pulled in via `autoprefixer`/`@serwist`/Babel tooling.
-=======
-### Added
-
-- **Web search can use Google Custom Search.** `web_search` now supports a
-  `google` provider between Tavily and DuckDuckGo, reusing the configured
-  Google API key plus a `JARELA_GOOGLE_SEARCH_ENGINE_ID` / `GOOGLE_CSE_ID`
-  Programmable Search Engine id.
->>>>>>> 69b5f659 (feat(web): add google search provider)
 
 ## [1.31.2] - 2026-09-01
 
