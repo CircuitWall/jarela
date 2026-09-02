@@ -204,9 +204,10 @@ function missingCredentialKeys(keys: readonly string[]): string[] {
   });
 }
 
-// Hide tools the operator has not finished setting up, so the model never
-// sees a capability it cannot actually use. A probe that has not run yet
-// reports "unknown" and leaves the tool visible.
+// Hide tools the operator has not finished setting up from the *agent*, so the
+// model never sees a capability it cannot use. This is deliberately a
+// permission-layer decision, not a catalog status: the Tools panel must keep
+// listing them or an unconfigured integration becomes undiscoverable.
 function unconfiguredReason(entry: ToolCatalogEntry): string | null {
   if (missingCredentialKeys(entry.credentials_required).length > 0) return "credentials_missing";
   if (getIntegrationReadiness(entry.integration) === "unconfigured") return "integration_unconfigured";
@@ -319,13 +320,7 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
     }));
   }
 
-  return [...entries.values()]
-    .map((entry) => {
-      if (entry.status !== "enabled") return entry;
-      const reason = unconfiguredReason(entry);
-      return reason ? { ...entry, status: "unavailable" as const, status_reason: reason } : entry;
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return [...entries.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export function applyAgentPermissionsToCatalog(
@@ -339,6 +334,14 @@ export function applyAgentPermissionsToCatalog(
         ...entry,
         permission: "unavailable" as const,
         permission_reason: entry.status_reason ?? "tool_unavailable",
+      };
+    }
+    const unconfigured = unconfiguredReason(entry);
+    if (unconfigured) {
+      return {
+        ...entry,
+        permission: "unavailable" as const,
+        permission_reason: unconfigured,
       };
     }
     if (explicitlyAllowed.has(entry.name) || isDefaultBasicTool(entry.name, entry.category)) {

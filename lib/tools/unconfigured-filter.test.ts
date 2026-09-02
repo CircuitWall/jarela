@@ -26,13 +26,19 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { getAllToolCatalogAsync } = await import("./index");
+const { getAllToolCatalogAsync, applyAgentPermissionsToCatalog } = await import("./index");
 const { _resetExternalCache } = await import("./external");
 const { _setIntegrationReadiness, invalidateIntegrationReadiness } = await import("@/lib/health/probe-cache");
 
-async function entry(name: string) {
-  const catalog = await getAllToolCatalogAsync();
-  return catalog.find((t) => t.name === name);
+const agentCfg = { tools: JSON.stringify(["gmail_search", "needs_key_tool"]) };
+
+async function catalogEntry(name: string) {
+  return (await getAllToolCatalogAsync()).find((t) => t.name === name);
+}
+
+async function permissionEntry(name: string) {
+  const permissions = applyAgentPermissionsToCatalog(await getAllToolCatalogAsync(), agentCfg);
+  return permissions.find((t) => t.name === name);
 }
 
 describe("unconfigured tool filtering", () => {
@@ -42,41 +48,50 @@ describe("unconfigured tool filtering", () => {
     delete process.env.JARELA_TEST_MISSING_KEY;
   });
 
-  it("marks a drop-in tool unavailable when its declared credential is unset", async () => {
-    expect(await entry("needs_key_tool")).toMatchObject({
-      status: "unavailable",
-      status_reason: "credentials_missing",
+  it("keeps unconfigured tools listed in the catalog so they stay discoverable", async () => {
+    _setIntegrationReadiness("gmail", "unconfigured");
+
+    // status drives GET /api/v1/tools, which the operator browses in order to
+    // set the integration up in the first place.
+    expect(await catalogEntry("gmail_search")).toMatchObject({ status: "enabled" });
+    expect(await catalogEntry("needs_key_tool")).toMatchObject({ status: "enabled" });
+  });
+
+  it("denies a tool whose declared credential is unset", async () => {
+    expect(await permissionEntry("needs_key_tool")).toMatchObject({
+      permission: "unavailable",
+      permission_reason: "credentials_missing",
     });
   });
 
-  it("restores the tool once the credential is present in the environment", async () => {
+  it("grants the tool once the credential is present in the environment", async () => {
     process.env.JARELA_TEST_MISSING_KEY = "set";
     _resetExternalCache();
 
-    expect(await entry("needs_key_tool")).toMatchObject({ status: "enabled" });
+    expect(await permissionEntry("needs_key_tool")).toMatchObject({ permission: "enabled" });
   });
 
-  it("hides integration tools when the cached probe says unconfigured", async () => {
+  it("denies integration tools when the cached probe says unconfigured", async () => {
     _setIntegrationReadiness("gmail", "unconfigured");
 
-    expect(await entry("gmail_search")).toMatchObject({
-      status: "unavailable",
-      status_reason: "integration_unconfigured",
+    expect(await permissionEntry("gmail_search")).toMatchObject({
+      permission: "unavailable",
+      permission_reason: "integration_unconfigured",
     });
   });
 
-  it("keeps integration tools visible while the probe result is unknown", async () => {
-    expect(await entry("gmail_search")).toMatchObject({ status: "enabled" });
+  it("grants integration tools while the probe result is unknown", async () => {
+    expect(await permissionEntry("gmail_search")).toMatchObject({ permission: "enabled" });
   });
 
-  it("keeps integration tools visible once the probe reports ready", async () => {
+  it("grants integration tools once the probe reports ready", async () => {
     _setIntegrationReadiness("gmail", "ready");
 
-    expect(await entry("gmail_search")).toMatchObject({ status: "enabled" });
+    expect(await permissionEntry("gmail_search")).toMatchObject({ permission: "enabled" });
   });
 
   it("records the backing integration on built-in integration tools", async () => {
-    expect(await entry("gmail_search")).toMatchObject({ integration: "gmail" });
-    expect(await entry("memory_read")).toMatchObject({ integration: null });
+    expect(await catalogEntry("gmail_search")).toMatchObject({ integration: "gmail" });
+    expect(await catalogEntry("memory_read")).toMatchObject({ integration: null });
   });
 });
