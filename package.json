@@ -105,6 +105,7 @@
     "check:conventions": "node scripts/check-git-conventions.mjs --branch",
     "check:impact": "node scripts/check-change-impact.mjs",
     "pricing:snapshot": "node scripts/snapshot-pricing.mjs",
+    "prompts:dump": "node scripts/dump-prompts.mjs",
     "prepublishOnly": "node scripts/rewrite-workspace-deps.mjs",
     "test:package": "node scripts/check-npm-package.mjs",
     "test": "vitest run",
