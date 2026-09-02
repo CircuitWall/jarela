@@ -7,12 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.34.0] - 2026-09-02
+
 ### Added
 
 - **Web search can use Google Custom Search.** `web_search` now supports a
   `google` provider between Tavily and DuckDuckGo, reusing the configured
   Google API key plus a `JARELA_GOOGLE_SEARCH_ENGINE_ID` / `GOOGLE_CSE_ID`
   Programmable Search Engine id.
+
+### Fixed
+
+- **Default model fallback when assigned model is missing.** `streamWithConfig`
+  and thread execution now fall back to the workspace default model if an
+  agent's explicit `model_config_name` was deleted or is missing.
+- **Model list state synchronization on update.** Updating or changing the
+  default model in the Models panel now re-fetches the full model list to
+  keep default flags synchronized across all rows in client state without
+  requiring a page reload.
 
 ## [1.33.0] - 2026-09-01
 
