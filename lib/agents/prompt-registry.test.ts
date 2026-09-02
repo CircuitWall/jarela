@@ -16,7 +16,7 @@ const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-prompt-verify-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
 const { buildSystemPrompt, CACHE_SHARED_SPLIT_SENTINEL, CACHE_SPLIT_SENTINEL } = await import("./prepare/system-prompt");
-const { listStaticPrompts } = await import("./prompt-registry");
+const { listStaticPrompts, promptsAffectedBy, SYSTEM_PROMPT_SOURCE_PREFIXES } = await import("./prompt-registry");
 const { getAllToolCatalogAsync, applyAgentPermissionsToCatalog, markProxyOnlyTools } = await import("@/lib/tools");
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ContextBudget } from "@/lib/agents/context-budget";
@@ -164,6 +164,21 @@ if (process.env.JARELA_PROMPT_DUMP === "1") {
   for (const p of staticPrompts) {
     writeFileSync(join(outDir, `static.${p.id}.txt`), `# ${p.source}\n# ${p.purpose}\n\n${p.text}`, "utf8");
   }
+  // Lets scripts/dump-prompts.mjs map changed files to artifacts without
+  // importing TypeScript.
+  writeFileSync(
+    join(outDir, "SOURCE_MAP.json"),
+    JSON.stringify({
+      systemPromptSourcePrefixes: SYSTEM_PROMPT_SOURCE_PREFIXES,
+      systemPromptArtifacts: variants.map((v) => `system-prompt.${v.id}.txt`),
+      staticPrompts: staticPrompts.map((p) => ({
+        id: p.id,
+        source: p.source,
+        artifact: `static.${p.id}.txt`,
+      })),
+    }, null, 2),
+    "utf8",
+  );
   writeFileSync(
     join(outDir, "INDEX.md"),
     [
@@ -210,6 +225,27 @@ describe("prompt registry coverage", () => {
   it("keeps prompt ids unique", () => {
     const ids = staticPrompts.map((p) => p.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("maps a changed file back to the prompts it affects", () => {
+    // Editing any system-prompt builder changes every variant.
+    expect(promptsAffectedBy(["lib/agents/prepare/system-prompt.ts"]).systemPrompt).toBe(true);
+    expect(promptsAffectedBy(["lib/agents/harness/presets.ts"]).systemPrompt).toBe(true);
+    expect(promptsAffectedBy(["lib/tools/index.ts"]).systemPrompt).toBe(false);
+
+    // A standalone prompt only affects its own artifact.
+    const citation = promptsAffectedBy(["lib/agents/citation-checker.ts"]);
+    expect(citation.staticPromptIds).toContain("audit.citation-checker");
+    expect(citation.staticPromptIds).not.toContain("pricing.llm-extract");
+
+    // Windows paths must resolve too, or the narrowing silently returns nothing.
+    expect(promptsAffectedBy(["lib\\agents\\prepare\\system-prompt.ts"]).systemPrompt).toBe(true);
+  });
+
+  it("declares every system-prompt source prefix as a real path", () => {
+    for (const prefix of SYSTEM_PROMPT_SOURCE_PREFIXES) {
+      expect(prefix.startsWith("lib/"), `${prefix} must be repo-relative`).toBe(true);
+    }
   });
 });
 

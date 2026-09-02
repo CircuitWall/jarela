@@ -24,16 +24,30 @@ found so far was invisible in the builders and obvious in the output:
 
 Read the artifact.
 
+## When this activates
+
+Any change that alters text a model receives. That includes edits under
+`lib/agents/prepare/`, `lib/agents/harness/`, `lib/agents/adaptive-persona.ts`,
+and the standalone prompts listed in `lib/agents/prompt-registry.ts` — plus
+anything that changes a value the prompt renders, such as a new
+`permission_reason`. Reword one line and the procedure still applies: the bugs
+found so far were single-sentence contradictions.
+
 ## SOP
 
-1. **Assemble before judging.**
+1. **Assemble, narrowed to the change.**
    ```powershell
-   npm run prompts:dump      # writes .prompts/ (gitignored)
+   npm run prompts:dump -- --changed          # uncommitted work
+   npm run prompts:dump -- --since origin/main # whole branch
    ```
-   This renders four agent system-prompt variants (minimal, all-bound,
-   proxy-only + provider-cap, delivery-channel) plus every static prompt, and
-   writes `.prompts/INDEX.md`. Open the variant that exercises your change and
-   read it top to bottom.
+   Both render every prompt to `.prompts/` (gitignored) and then print only
+   the artifacts your change reaches. Read those top to bottom.
+
+   Editing any system-prompt builder lists **all four variants**, not just
+   one — the blocks compose, so a change to the shared prefix can contradict
+   the per-turn block. Never review a single variant when the tool lists four.
+
+   `npm run prompts:dump` with no flag dumps everything, for a full audit.
 
 2. **Register any new prompt.**
    Every build-time prompt belongs in `lib/agents/prompt-registry.ts` with an
@@ -93,7 +107,8 @@ tests are green; say which part is verified and which is not.
 ## Quick Checks
 
 ```powershell
-npm run prompts:dump
+npm run prompts:dump -- --changed
+npm run prompts:dump -- --since origin/main
 Get-Content .prompts/INDEX.md
 Select-String -Path .prompts/*.txt -Pattern 'undefined|NaN|\{\{'
 npx vitest run lib/agents/prompt-registry.test.ts
