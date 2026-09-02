@@ -184,13 +184,18 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   if (permissionMap.length === 0) return "";
   const ordered = [...permissionMap].sort(compareToolPermissionEntries);
   const enabled = ordered.filter((tool) => tool.permission === "enabled");
-  const disabled = ordered.filter((tool) => tool.permission === "disabled");
   const unavailable = ordered.filter((tool) => tool.permission === "unavailable");
   const capped = ordered.filter((tool) => tool.permission_reason === "provider_tool_limit");
   const proxyOnly = ordered.filter((tool) => tool.permission_reason === "proxy_only");
+  // proxy_only and provider_tool_limit are "permitted but unbound", not
+  // denials — counting them as denied contradicts the proxy sentence below.
+  const denied = ordered.filter((tool) =>
+    tool.permission === "disabled"
+    && tool.permission_reason !== "proxy_only"
+    && tool.permission_reason !== "provider_tool_limit");
   const lines = [
     "--- Enabled tools ---",
-    `You can execute the ${enabled.length} tool(s) listed below directly, plus ${proxyOnly.length} further permitted tool(s) through invoke_tool. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
+    `You can execute the ${enabled.length} tool(s) listed below directly, plus ${proxyOnly.length + capped.length} further permitted tool(s) through invoke_tool. ${denied.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
     "This list is only what is bound this turn, not the full inventory. Follow the Tool usage SOP above for anything not listed.",
   ];
   if (proxyOnly.length > 0) {

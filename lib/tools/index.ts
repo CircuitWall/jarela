@@ -533,6 +533,7 @@ function applyCategoryToggles(tools: StructuredToolInterface[]): StructuredToolI
   const disabled = disabledCategories();
   if (disabled.size === 0) return tools;
   return tools.filter((t) => {
+    if (isAlwaysOnTool(t.name)) return true;
     const cat = registeredCategory(t.name);
     if (!cat) return true; // not a built-in (or unregistered) → leave it
     return !disabled.has(cat);
