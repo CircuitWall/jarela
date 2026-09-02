@@ -329,7 +329,7 @@ export function mergeDeclaredReferences(
   return merged.map((e, i) => ({ ...e, n: i + 1 }));
 }
 
-const SYSTEM_PROMPT = `You audit an assistant turn and list its FACTUAL CLAIMS, sorted by impact (most load-bearing first).
+export const SYSTEM_PROMPT = `You audit an assistant turn and list its FACTUAL CLAIMS, sorted by impact (most load-bearing first).
 
 You will receive:
 - A numbered list of SOURCES the agent had available in this thread. Sources may be any of: a tool-visited file/URL, a memory item, or an earlier assistant turn in this thread.

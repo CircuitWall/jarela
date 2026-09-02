@@ -80,3 +80,6 @@ lint_output.txt
 
 # survey output
 .survey-long-functions.json
+
+# assembled prompts (npm run prompts:dump)
+.prompts/

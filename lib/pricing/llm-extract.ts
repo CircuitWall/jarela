@@ -11,7 +11,7 @@ export type LlmModelRate = {
   confidence: "high" | "medium" | "low";
 };
 
-const SYSTEM_PROMPT = `You extract LLM API pricing from a provider's pricing page.
+export const SYSTEM_PROMPT = `You extract LLM API pricing from a provider's pricing page.
 
 Output rules:
 - Reply with ONLY a JSON object: {"models":[{"model_id","input_per_1m_usd","output_per_1m_usd","inferred","confidence"}]}. No prose, no markdown fences.
