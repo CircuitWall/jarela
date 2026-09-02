@@ -1,3 +1,10 @@
+// Popup UI. Product strings come from lib/brand.mjs so a rebranded build
+// only regenerates that module.
+
+import { BRAND, applyBrand } from "./lib/brand.mjs";
+
+applyBrand();
+
 function getAgentSelect() {
   return document.getElementById("agent");
 }
@@ -155,9 +162,9 @@ document.getElementById("open-jarela").addEventListener("click", (event) => {
   // chrome.sidePanel.open() requires a user gesture AND must be invoked
   // synchronously — any await before it loses the gesture. We use the
   // pre-fetched windowId/tabId so no async work runs first.
-  setStatus("Opening Jarela…");
+  setStatus(`Opening ${BRAND.name}…`);
   if (cachedWindowId === null && cachedTabId === null) {
-    setStatus("Could not open Jarela: no active window yet, try again.", "err");
+    setStatus(`Could not open ${BRAND.name}: no active window yet, try again.`, "err");
     return;
   }
   let openPromise;
@@ -165,17 +172,17 @@ document.getElementById("open-jarela").addEventListener("click", (event) => {
     const opts = cachedWindowId !== null ? { windowId: cachedWindowId } : { tabId: cachedTabId };
     openPromise = chrome.sidePanel.open(opts);
   } catch (err) {
-    setStatus(`Could not open Jarela: ${err?.message ?? String(err)}`, "err");
+    setStatus(`Could not open ${BRAND.name}: ${err?.message ?? String(err)}`, "err");
     return;
   }
 
   Promise.resolve(openPromise)
     .then(() => {
-      setStatus("Opened Jarela.", "ok");
+      setStatus(`Opened ${BRAND.name}.`, "ok");
       window.close();
     })
     .catch((err) => {
-      setStatus(`Could not open Jarela: ${err?.message ?? String(err)}`, "err");
+      setStatus(`Could not open ${BRAND.name}: ${err?.message ?? String(err)}`, "err");
     });
 });
 
@@ -223,7 +230,7 @@ async function renderTargetCard() {
 
   const dot = TARGET_CARD.dot();
   dot.className = `target-dot ${healthy ? "ok" : "err"}`;
-  dot.title = healthy ? "Connected to Jarela" : "Not connected to Jarela";
+  dot.title = healthy ? `Connected to ${BRAND.name}` : `Not connected to ${BRAND.name}`;
 
   if (pin) {
     TARGET_CARD.host().textContent = `🎯 ${pin.host || "(unknown host)"}`;
@@ -245,7 +252,7 @@ async function renderTargetCard() {
     TARGET_CARD.host().textContent = "No active tab";
     TARGET_CARD.sub().textContent = healthy
       ? "Open an http/https page to start"
-      : "Jarela server not reachable";
+      : `${BRAND.name} server not reachable`;
     TARGET_CARD.pin().hidden = false;
     TARGET_CARD.pin().textContent = "Pin this tab";
     TARGET_CARD.unpin().hidden = true;

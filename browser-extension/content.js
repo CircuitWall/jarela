@@ -6,7 +6,7 @@
 // The picker is intentionally OBVIOUS:
 //   - A dark banner pinned to the top of the viewport explains the mode.
 //   - Hovered elements get a 2px dashed blue outline + soft tinted fill.
-//   - On click, the picked element flashes and a "Sent to Jarela" pill
+//   - On click, the picked element flashes and a "Sent to <app>" pill
 //     animates from the element bounding box toward the top-right corner
 //     where the toolbar icon sits, then the banner shows the result.
 //   - ESC cancels without sending.
@@ -19,13 +19,17 @@
   window.__jarelaPickerActive = true;
 
   const helpers = await import(chrome.runtime.getURL("lib/helpers.mjs"));
+  const { BRAND, applyBrand } = await import(chrome.runtime.getURL("lib/brand.mjs"));
+  // Stamps --brand-accent on the host page so the injected content.css
+  // picker chrome uses this build's accent.
+  applyBrand();
 
   const overlay = document.createElement("div");
   overlay.id = "__jarela-overlay";
 
   const banner = document.createElement("div");
   banner.id = "__jarela-banner";
-  banner.textContent = "Jarela picker — click an element to capture it. ESC to cancel.";
+  banner.textContent = `${BRAND.name} picker — click an element to capture it. ESC to cancel.`;
 
   document.documentElement.appendChild(overlay);
   document.documentElement.appendChild(banner);
@@ -72,7 +76,7 @@
     // Visual feedback BEFORE the network round-trip so it feels snappy.
     target.classList.add("jarela-flash-pulse");
     spawnSendPill(rect);
-    banner.textContent = "Sending to Jarela…";
+    banner.textContent = `Sending to ${BRAND.name}…`;
     banner.classList.add("jarela-sending");
 
     // Grab a screenshot of just this element. We hide the picker chrome
@@ -117,7 +121,7 @@
       const tail = b.truncated
         ? ` · truncated to 100KB (original ${b.originalBytes.toLocaleString()} bytes)`
         : "";
-      banner.textContent = `✓ Sent${where}${tail}. Open Jarela to ask a question.`;
+      banner.textContent = `✓ Sent${where}${tail}. Open ${BRAND.name} to ask a question.`;
       banner.classList.add("jarela-success");
     } else {
       const errMsg = res?.body?.error ?? `HTTP ${res?.status ?? "?"}`;

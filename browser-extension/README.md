@@ -8,6 +8,60 @@ then types their follow-up question in the Jarela web UI.
 See [ADR-0018](../docs/adr/0018-browser-extension-page-capture.md) for the
 design rationale and out-of-scope items.
 
+## Rebranding
+
+The extension is loaded as a folder of static files, so unlike the web app
+(which reads `NEXT_PUBLIC_APP_*` at build time) rebranding it needs a
+packaging step:
+
+```bash
+npm run build:extension -- --brand ./brand.json --out dist/my-extension
+```
+
+```jsonc
+// brand.json — every key is optional
+{
+  "name": "Acme Assistant",
+  "shortName": "Acme",
+  "description": "Browser companion for Acme Assistant: …",
+  "accentColor": "#7c3aed",       // picker outline / flash / send pill
+  "logo": "./brand/mark.png"      // toolbar icons regenerated from this
+}
+```
+
+The output is a ready-to-load extension folder with a templated
+`manifest.json` (name, description, toolbar title, command description), a
+regenerated `lib/brand.mjs`, and rebuilt icons. Test files and the icon
+generator are excluded.
+
+Run it **without** `--brand` and the output matches this in-tree extension —
+`browser-extension/lib/brand.test.mjs` asserts that, so the two can't drift.
+
+For upstream development just keep loading `browser-extension/` unpacked; no
+build step is involved.
+
+### How the strings flow
+
+All product strings come from [`lib/brand.mjs`](./lib/brand.mjs). Because MV3
+forbids inline `<script>`, static markup carries
+`data-brand-template="{name} …"` placeholders that `applyBrand()` fills in on
+load. `agent-overlay.js` is a classic content script that must register its
+message listeners synchronously, so it paints placeholders first and brands
+them once its dynamic `import()` resolves.
+
+Internal identifiers are deliberately **not** rebranded — `chrome.storage`
+keys (`jarelaConfig`), DOM ids (`#__jarela-overlay`), and CSS class/keyframe
+names stay `jarela*`. They aren't product names, and renaming them would
+orphan a user's stored config.
+
+### Attribution
+
+`UPSTREAM_NAME` / `UPSTREAM_URL` in `lib/brand.mjs` are never templated by the
+build, and a rebranded build shows a "Powered by Jarela" link on the options
+page. The upstream build itself shows nothing (the credit would be noise).
+
+See [ADR-0077](../docs/adr/0077-rebranding-overlay-contract.md).
+
 ## Load unpacked (Chrome / Edge / Brave / Arc)
 
 1. Make sure Jarela is running locally (`npm run dev` from the repo root,

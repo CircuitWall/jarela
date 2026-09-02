@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jarela</title>
+  <title data-brand-template="{name}"></title>
   <style>
     html, body {
       margin: 0;
@@ -35,11 +35,11 @@
   </style>
 </head>
 <body>
-  <iframe id="frame" title="Jarela"></iframe>
+  <iframe id="frame" data-brand-title-template="{name}"></iframe>
   <div id="fallback">
     <div>
-      <div>Unable to load Jarela in the side panel.</div>
-      <div><a id="open-link" target="_blank" rel="noreferrer">Open Jarela in a tab</a></div>
+      <div data-brand-template="Unable to load {name} in the side panel."></div>
+      <div><a id="open-link" target="_blank" rel="noreferrer" data-brand-template="Open {name} in a tab"></a></div>
     </div>
   </div>
   <script type="module" src="panel.js"></script>

@@ -2,6 +2,7 @@
 import { Bell, BellOff, BellRing, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { pushToast } from "@/lib/ui/toasts";
+import { getAppName, getAppIcons } from "@/lib/env/app-config";
 
 // Browsers (Chrome, Safari) require a user gesture for Notification.requestPermission().
 // Calling it from an SSE event handler — like we did originally — silently fails on
@@ -42,9 +43,9 @@ export function NotificationStatus() {
         // and so the OS notification center is "primed" — some macOS setups
         // hide the very first notification until the system center registers
         // the source.
-        new Notification("Jarela notifications enabled", {
+        new Notification(`${getAppName()} notifications enabled`, {
           body: "You'll see a ping when an agent finishes a turn while you're away.",
-          icon: "/icon-192.png",
+          icon: getAppIcons().icon192,
           tag: "jarela-enable",
         });
       }
@@ -55,9 +56,9 @@ export function NotificationStatus() {
 
   function testFire() {
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    new Notification("Jarela test", {
+    new Notification(`${getAppName()} test`, {
       body: "If you see this, notifications are wired correctly.",
-      icon: "/icon-192.png",
+      icon: getAppIcons().icon192,
       tag: "jarela-test",
     });
     setTestFired(true);

@@ -1,4 +1,7 @@
 import { STORAGE_KEY, SELECTED_AGENT_STORAGE_KEY, DEFAULT_CONFIG, parseConfig, appUrl } from "./lib/config.mjs";
+import { applyBrand } from "./lib/brand.mjs";
+
+applyBrand();
 
 const frame = document.getElementById("frame");
 const fallback = document.getElementById("fallback");

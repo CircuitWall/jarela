@@ -157,6 +157,7 @@ for what's public is `package.json#exports`:
 | `./lib/tools/types`          | `OpenAITool`, `ToolContext`, `InvokeMessage`, etc. — the tool authoring API  |
 | `./lib/tools/registry`       | `registerTools`, `ToolCategory`, `Capability`, `ToolGroup`, `BuiltinCategory`|
 | `./lib/mcp/registry`         | `RegistryEntry`, `RegistryVariable`, `applyVariables`                        |
+| `./lib/env/app-config`       | Brand overlay knobs — app name, logo, icons, accent color (ADR-0077)         |
 | `./package.json`             | Required by tools that read the package metadata                             |
 
 Anything reachable via the wildcard fallback (`./*`) is **not** part of the

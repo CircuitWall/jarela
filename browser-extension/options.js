@@ -15,6 +15,10 @@ import {
   healthUrl,
   appUrl,
 } from "./lib/config.mjs";
+import { BRAND, applyBrand, mountUpstreamCredit } from "./lib/brand.mjs";
+
+applyBrand();
+mountUpstreamCredit(document.getElementById("upstream-credit"));
 
 const HEALTH_TIMEOUT_MS = 2000;
 
@@ -100,14 +104,14 @@ async function runTest(cfg) {
   setStatus("checking", "Checking…", `Probing ${buildBase(cfg)}`);
   const result = await checkHealth(cfg);
   if (result.ok) {
-    setStatus("ok", "Connected", `Jarela responded at ${buildBase(cfg)}.`);
+    setStatus("ok", "Connected", `${BRAND.name} responded at ${buildBase(cfg)}.`);
   } else if (result.status) {
     setStatus("err", "Unhealthy", `${buildBase(cfg)} responded with HTTP ${result.status}.`);
   } else {
     setStatus(
       "err",
       "Not reachable",
-      `Could not reach ${buildBase(cfg)}. Is the Jarela server running there?`,
+      `Could not reach ${buildBase(cfg)}. Is the ${BRAND.name} server running there?`,
     );
   }
   return result.ok;
@@ -175,7 +179,7 @@ async function save() {
     const granted = await ensureHostPermission(cfg);
     if (!granted) {
       setFormError(
-        "Permission denied for that origin. The extension needs host access to reach Jarela.",
+        `Permission denied for that origin. The extension needs host access to reach ${BRAND.name}.`,
       );
       return;
     }

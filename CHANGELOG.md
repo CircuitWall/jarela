@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Official rebranding overlay contract.** Forks and white-label deployments
+  can rename the app, swap the logo/favicon/PWA icon set, and recolor the
+  accent through `NEXT_PUBLIC_APP_*` env vars, with no source edits to rebase
+  on each upstream release. The browser extension gains a matching packaging
+  step, `npm run build:extension -- --brand brand.json`. Rebranded builds keep
+  a "Powered by Jarela" credit linking upstream. See
+  [ADR-0077](./docs/adr/0077-rebranding-overlay-contract.md) and
+  `docs/EXTENDING.md` → Branding the app. Note the env vars are inlined at
+  build time, so a web-app overlay must run its own build; the prebuilt npm
+  artifact cannot be rebranded by configuration alone.
+
+### Changed
+
+- **`public/manifest.json` is now generated at `/manifest.webmanifest`.** The
+  PWA manifest follows the brand config. The static file is removed; the
+  `<link rel="manifest">` target changed accordingly.
+
+### Fixed
+
+- **PWA manifest was falling behind proxy auth.** The proxy matcher still
+  exempted the removed `manifest.json` path, so the new manifest route required
+  authentication and could break install prompts behind `tailscale serve`.
+
 ## [1.34.2] - 2026-09-02
 
 ### Fixed

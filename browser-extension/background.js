@@ -23,6 +23,7 @@ import {
   browserResultUrl,
   buildBase,
 } from "./lib/config.mjs";
+import { BRAND } from "./lib/brand.mjs";
 import { dispatchCommand } from "./lib/browser-control.mjs";
 import { gateCommand, setApproval } from "./lib/approvals.mjs";
 import {
@@ -75,7 +76,7 @@ async function ensureContextMenus() {
   try {
     await chrome.contextMenus.create({
       id: MENU_OPEN,
-      title: "Jarela: fill or rewrite…",
+      title: `${BRAND.name}: fill or rewrite…`,
       contexts: ["editable", "selection"],
     });
   } catch (err) {
@@ -168,8 +169,8 @@ async function applyHealthState(healthy) {
   const where = buildBase(currentConfig);
   await chrome.action.setTitle({
     title: healthy
-      ? `Capture an element to Jarela (${where})`
-      : `Jarela isn't reachable at ${where} — click to open settings`,
+      ? `Capture an element to ${BRAND.name} (${where})`
+      : `${BRAND.name} isn't reachable at ${where} — click to open settings`,
   });
   if (healthy && !wasHealthy) resumeBrowserPollLoop();
 }
@@ -387,7 +388,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Window-level focus change is the missing signal that v1 dropped on
-// the floor: when the user alt-tabs from Jarela's window back to
+// the floor: when the user alt-tabs from the app's window back to
 // their browser window, lastFocusedWindow flips and the live query
 // would have picked the wrong tab. Capture the active tab in the
 // newly focused window so the resolver has a stable target.
@@ -410,7 +411,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
       await clearPinnedTab(chrome.storage.local);
       const label = pin.title || pin.url || "the pinned tab";
       void notify(
-        "Jarela pin released",
+        `${BRAND.name} pin released`,
         `${label} was closed, so the agent is no longer locked to that tab. Pin a new one from the popup if you need it.`,
       );
     }
@@ -438,7 +439,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
     await clearPinnedTab(chrome.storage.local);
     const label = pin.title || pin.url || "the pinned tab";
     void notify(
-      "Jarela pin released",
+      `${BRAND.name} pin released`,
       `${label} navigated to a page the agent can't drive (${changeInfo.url}). Pin a different tab if you want the agent to continue.`,
     );
   } catch (err) {
@@ -1294,8 +1295,10 @@ async function promptForAction(tabId, frameId, state) {
   const presets = state.original ? REWRITE_PRESETS : [];
   const [{ result } = {}] = await chrome.scripting.executeScript({
     target: typeof frameId === "number" ? { tabId, frameIds: [frameId] } : { tabId },
-    args: [{ state, presets }],
-    func: ({ state, presets }) => new Promise((resolve) => {
+    // `func` is serialized into the page, so it cannot close over BRAND —
+    // the product name travels through `args` instead.
+    args: [{ state, presets, brandName: BRAND.name }],
+    func: ({ state, presets, brandName }) => new Promise((resolve) => {
       document.getElementById("jarela-action-menu")?.remove();
 
       const backdrop = document.createElement("div");
@@ -1331,7 +1334,7 @@ async function promptForAction(tabId, frameId, state) {
       const dot = document.createElement("div");
       dot.style.cssText = "width:8px;height:8px;border-radius:50%;background:#4f46e5;flex:0 0 auto;";
       const heading = document.createElement("div");
-      heading.textContent = "Jarela";
+      heading.textContent = brandName;
       heading.style.cssText = "font-size:13px;font-weight:600;color:#475569;letter-spacing:0.02em;text-transform:uppercase;";
       header.appendChild(dot);
       header.appendChild(heading);
@@ -1547,7 +1550,7 @@ chrome.commands?.onCommand.addListener((command, tab) => {
   });
 });
 
-// Toolbar click → enter picker mode in the active tab. If Jarela isn't
+// Toolbar click → enter picker mode in the active tab. If the app isn't
 // reachable, open the options page so the user can fix the port (and tell
 // them why — silence is bad UX when they asked something to happen).
 chrome.action.onClicked.addListener(async (tab) => {
@@ -1560,8 +1563,8 @@ chrome.action.onClicked.addListener(async (tab) => {
       await chrome.notifications.create({
         type: "basic",
         iconUrl: "icons/icon-128-disabled.png",
-        title: `Can't reach Jarela`,
-        message: `${buildBase(currentConfig)} didn't respond. Opening settings — confirm the host and port, or start the Jarela server.`,
+        title: `Can't reach ${BRAND.name}`,
+        message: `${buildBase(currentConfig)} didn't respond. Opening settings — confirm the host and port, or start the ${BRAND.name} server.`,
         priority: 1,
       });
     } catch { /* notifications optional */ }
@@ -1740,7 +1743,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // Browser-control long-poll loop                                        //
 // --------------------------------------------------------------------- //
 //
-// The Jarela agent enqueues browser commands (navigate, click, fill,
+// The agent enqueues browser commands (navigate, click, fill,
 // scroll, screenshot, extract) on the server queue at
 // /api/v1/extension/browser/poll. The SW long-polls (~25s) for the next
 // command, dispatches it through ./lib/browser-control.mjs into the

@@ -5,6 +5,7 @@ import type { AgentConfig, SSEEventType, VersionAdoptionAction, VersionAdoptionC
 import { api, submitRun, subscribeRun } from "@/api/client";
 import { Logo } from "@/components/ui/Logo";
 import { VersionTag } from "@/components/ui/VersionTag";
+import { PoweredBy } from "@/components/ui/PoweredBy";
 import { WorkflowChecklist } from "@/components/ui/WorkflowChecklist";
 
 // Hash an agent id to a deterministic gradient so the same agent always
@@ -570,10 +571,11 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
         </div>
       </div>
       <div
-        className="absolute inset-x-0 bottom-0 flex justify-center pointer-events-none"
+        className="absolute inset-x-0 bottom-0 flex items-center justify-center gap-2"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 0.75rem)" }}
       >
         <VersionTag />
+        <PoweredBy />
       </div>
     </div>
   );
