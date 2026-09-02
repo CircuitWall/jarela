@@ -107,4 +107,62 @@ describe("invoke_tool", () => {
       counts: expect.objectContaining({ total: expect.any(Number) }),
     });
   });
+
+  it("executes a permitted tool that was left unbound as proxy_only", async () => {
+    upsertAgentConfig({
+      id: "invoke-proxy-agent",
+      name: "Invoke Proxy",
+      identity: "test",
+      instructions: "",
+      tools: [],
+    });
+    const thread = createThread("invoke-proxy-agent");
+
+    const out = parse(await invokeToolTool.invoke(
+      { name: "list_tools", args: { query: "invoke_tool" } },
+      {
+        configurable: {
+          thread_id: thread.thread_id,
+          agent_run_config: {
+            tool_permission_map: [
+              { name: "list_tools", permission: "disabled", permission_reason: "proxy_only" },
+            ],
+          },
+        },
+      },
+    ));
+
+    expect(out).toMatchObject({ ok: true, tool: "list_tools", status: "done" });
+  });
+
+  it("still rejects a tool the agent is not permitted to use", async () => {
+    upsertAgentConfig({
+      id: "invoke-proxy-denied-agent",
+      name: "Invoke Proxy Denied",
+      identity: "test",
+      instructions: "",
+      tools: [],
+    });
+    const thread = createThread("invoke-proxy-denied-agent");
+
+    const out = parse(await invokeToolTool.invoke(
+      { name: "gmail_search", args: { query: "from:anyone" } },
+      {
+        configurable: {
+          thread_id: thread.thread_id,
+          agent_run_config: {
+            tool_permission_map: [
+              { name: "gmail_search", permission: "disabled", permission_reason: "agent_not_allowed" },
+            ],
+          },
+        },
+      },
+    ));
+
+    expect(out).toMatchObject({
+      ok: false,
+      status: "rejected",
+      error_code: "tool_not_allowed",
+    });
+  });
 });
