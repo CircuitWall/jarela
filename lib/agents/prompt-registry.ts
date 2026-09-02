@@ -78,3 +78,32 @@ export function listStaticPrompts(): StaticPrompt[] {
 
   return prompts;
 }
+
+/**
+ * Files whose text ends up inside the assembled agent system prompt. Editing
+ * any of them changes every system-prompt variant, so a review cannot stop at
+ * the one block that was edited.
+ */
+export const SYSTEM_PROMPT_SOURCE_PREFIXES = [
+  "lib/agents/prepare/",
+  "lib/agents/harness/",
+  "lib/agents/adaptive-persona.ts",
+] as const;
+
+/**
+ * Which assembled prompts a set of changed files can affect. Drives
+ * `npm run prompts:dump -- --changed`, so a prompt review narrows to the
+ * artifacts the change actually reaches.
+ */
+export function promptsAffectedBy(changedPaths: readonly string[]): {
+  systemPrompt: boolean;
+  staticPromptIds: string[];
+} {
+  const normalized = changedPaths.map((p) => p.replace(/\\/g, "/"));
+  const systemPrompt = normalized.some((p) =>
+    SYSTEM_PROMPT_SOURCE_PREFIXES.some((prefix) => p.startsWith(prefix)));
+  const staticPromptIds = listStaticPrompts()
+    .filter((prompt) => normalized.includes(prompt.source))
+    .map((prompt) => prompt.id);
+  return { systemPrompt, staticPromptIds };
+}
