@@ -54,7 +54,8 @@ try {
 
   const required = [
     "package/.next/standalone/server.js",
-    "package/.next/standalone/public/manifest.json",
+    // The PWA manifest is a route now (ADR-0077), not a static public/ file.
+    "package/.next/standalone/.next/server/app/manifest.webmanifest/route.js",
     "package/package.json",
     "package/scripts/jarela-bin.mjs",
     "package/scripts/update.mjs",
