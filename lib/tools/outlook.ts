@@ -358,6 +358,7 @@ export const outlookSendEmailTool = tool(
 
 registerLangChainPackage({
   category: "Mail",
+  integrationId: "outlook",
   tools: {
     read: [outlookSearchTool, outlookGetMessageTool, outlookListFoldersTool],
     write: [outlookModifyMessageTool, outlookCreateDraftTool, outlookTrashMessageTool],
