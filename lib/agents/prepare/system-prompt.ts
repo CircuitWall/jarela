@@ -191,20 +191,16 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
   const lines = [
     "--- Enabled tools ---",
     `You can execute the ${enabled.length} tool(s) listed below directly, plus ${proxyOnly.length} further permitted tool(s) through invoke_tool. ${disabled.length} known tool(s) are not enabled for this agent; ${unavailable.length} known tool(s) are globally unavailable.`,
-    "Use an enabled tool directly when the right tool is listed below. If the needed capability is missing or ambiguous, search the full tool catalog with list_tools using service/object/action keywords before concluding it is unavailable. Use list_tools include_schema=true when you need argument specs for invoke_tool.",
-    "The list below is only what is bound this turn, not the full inventory. Tools absent from it are usually still executable through invoke_tool.",
-    "When a provider tool cap is active, the executable tool subset is selected for this turn from the user's request and the agent's pinned tools.",
-    "Call list_tools with scope=\"enabled\" to search executable tools, scope=\"all\" to include disabled/unavailable tools with flags, names=[…] for exact targets, or include_schema=true when exact argument schemas are needed.",
+    "This list is only what is bound this turn, not the full inventory. Follow the Tool usage SOP above for anything not listed.",
   ];
   if (proxyOnly.length > 0) {
     lines.push(
-      `${proxyOnly.length} permitted tool(s) are not bound this turn with reason=proxy_only. Call them with invoke_tool using the exact name from list_tools and args_json as a JSON object string; do not assume they are unavailable.`,
+      `${proxyOnly.length} permitted tool(s) were left unbound with reason=proxy_only; reach them with invoke_tool per SOP step 5.`,
     );
   }
   if (capped.length > 0) {
     lines.push(
-      `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted from this turn with reason=provider_tool_limit.`,
-      "Use list_tools with query plus scope=\"all\" and include_schema=true to search omitted candidates. If a needed tool is omitted only by provider_tool_limit and invoke_tool is enabled, call invoke_tool with the exact target name and args. If invoke_tool is unavailable or the tool is disabled/unavailable for another reason, propose moving less relevant tools out of this agent's list or ask the user to retry with a narrower request/tool selection.",
+      `Provider tool cap is active: ${capped.length} otherwise-enabled tool(s) were omitted this turn with reason=provider_tool_limit. Reach them with invoke_tool per SOP step 5. If the cap keeps displacing tools you need, propose narrowing this agent's pinned tool list.`,
     );
   }
   for (const tool of enabled) lines.push(formatToolPermissionLine(tool));
@@ -213,11 +209,14 @@ export function buildToolPermissionContext(permissionMap: ReadonlyArray<ToolCata
 
 export function buildSharedToolCatalogContext(): string {
   return [
-    "--- Shared tool discovery cache ---",
-    "This cross-agent block is intentionally static: it describes the stable full-catalog discovery workflow. The current per-agent/per-turn executable subset and omission counts are listed later under Enabled tools.",
-    "Full catalog workflow: list_tools is the authoritative inventory and spec lookup for every registered built-in, external, and MCP tool, including tools not directly loaded in this turn. No tool index is embedded in this prompt, so never conclude a capability is missing from the tools bound to this turn \u2014 search list_tools with service/object/action keywords first. Set scope=\"all\" to see disabled, unavailable, and provider-cap-omitted tools; set include_schema=true to get the target JSON argument schema.",
-    "Named targets: when a skill, harness, or instruction names an exact tool, look it up with list_tools names=[\"exact_name\"] include_schema=true rather than searching by keyword.",
-    "Invoke proxy workflow: basic tools, the self-config tools, and this agent's pinned tools are bound directly each turn. Every other permitted tool is reached with invoke_tool, using the exact name from list_tools and passing arguments as args_json, a JSON object encoded as a string \u2014 expect permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\" on those. Do not use invoke_tool for invoke_tool itself or for tools marked agent_not_allowed, category_disabled, unavailable, missing credentials, or disabled drop-ins; propose or ask for configuration instead.",
+    "--- Tool usage SOP ---",
+    "Static cross-agent procedure. The per-turn bound list and counts appear later under \"Enabled tools\".",
+    "1. Bound first. If a tool listed under \"Enabled tools\" fits the task, call it directly.",
+    "2. Otherwise search. No tool index is embedded in this prompt, so never conclude a capability does not exist from the bound list alone. Call list_tools with service/object/action keywords: scope=\"enabled\" searches executable tools, scope=\"all\" also returns disabled, unavailable and cap-omitted tools with flags.",
+    "3. Named target. When a skill, harness or instruction names an exact tool, call list_tools names=[\"exact_name\"] include_schema=true instead of a keyword query. Exact lookup ignores every other filter, so it also describes tools you cannot currently execute.",
+    "4. Read the schema. Set include_schema=true before invoking anything that is not bound this turn, and match the returned JSON schema exactly.",
+    "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and args_json \u2014 a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. Never proxy invoke_tool through itself, and never wrap a tool that is already bound.",
+    "6. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up \u2014 propose a configuration change or tell the user what to configure.",
   ].join("\n");
 }
 
