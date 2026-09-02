@@ -45,6 +45,7 @@ import { disabledCategories } from "@/lib/stores/builtin-tools";
 import { isDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
 import { getAgentTools, type AgentConfigRow } from "@/lib/stores/agent-configs";
 import { isBasicToolCategory, normalizeToolCategory } from "./categories";
+import { isAlwaysOnTool } from "./always-on";
 import { getIntegrationReadiness } from "@/lib/health/probe-cache";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 
@@ -277,7 +278,7 @@ export async function getAllToolCatalogAsync(): Promise<ToolCatalogEntry[]> {
   for (const tool of allBuiltins()) {
     const category = registeredCategory(tool.name);
     if (!category) continue;
-    const disabled = disabledBuiltinCategories.has(category);
+    const disabled = disabledBuiltinCategories.has(category) && !isAlwaysOnTool(tool.name);
     entries.set(tool.name, toCatalogEntry(tool, {
       source: "builtin",
       category,
@@ -610,7 +611,7 @@ export async function executeTool(
   let t = allBuiltins().find((x) => x.name === name);
   if (t) {
     const cat = registeredCategory(name);
-    if (cat && disabledCategories().has(cat)) {
+    if (cat && disabledCategories().has(cat) && !isAlwaysOnTool(name)) {
       throw new Error(`Tool "${name}" is disabled (category ${cat} is turned off)`);
     }
   }

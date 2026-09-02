@@ -252,7 +252,7 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("every registered built-in, external, and MCP tool");
     expect(ctx).toContain("scope=\"all\"");
     expect(ctx).toContain("include_schema=true");
-    expect(ctx).toContain("Invoke proxy workflow: only basic tools and the self-config tools are bound directly each turn");
+    expect(ctx).toContain("Invoke proxy workflow: basic tools, the self-config tools, and this agent's pinned tools are bound directly each turn");
     expect(ctx).toContain("permission_reason=\"proxy_only\"");
     expect(ctx).toContain("permission_reason=\"provider_tool_limit\"");
     expect(ctx).toContain("Do not use invoke_tool for invoke_tool itself");

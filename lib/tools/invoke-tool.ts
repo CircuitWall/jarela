@@ -153,14 +153,43 @@ async function resolveTargetPermission(
   return { ok: true, entry };
 }
 
+// Models on schema-restricted providers can only fill `args_json`; models on
+// permissive ones may still send `args`. Accept either, preferring whichever
+// actually carries content.
+function resolveArgs(
+  args: Record<string, unknown> | undefined,
+  argsJson: string | undefined,
+): Record<string, unknown> {
+  if (args && Object.keys(args).length > 0) return args;
+  const trimmed = argsJson?.trim();
+  if (!trimmed) return args ?? {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("args_json must be a JSON object string, e.g. '{\"query\":\"hello\"}'");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("args_json must decode to a JSON object, not an array or scalar");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 export const invokeToolTool = tool(
-  async ({ name, args }, config?: RunnableConfig) => {
+  async ({ name, args, args_json }, config?: RunnableConfig) => {
     const toolName = name.trim();
     const permission = await resolveTargetPermission(toolName, config);
     if (!permission.ok) return permission.response;
 
+    let resolvedArgs: Record<string, unknown>;
     try {
-      const result = await executeTool(toolName, args ?? {}, {
+      resolvedArgs = resolveArgs(args, args_json);
+    } catch (err) {
+      return reject(toolName, err instanceof Error ? err.message : String(err), "bad_args_json");
+    }
+
+    try {
+      const result = await executeTool(toolName, resolvedArgs, {
         thread_id: getThreadId(config),
         tool_credentials: toolCredentialsFromConfig(config),
       });
@@ -183,15 +212,23 @@ export const invokeToolTool = tool(
   {
     name: "invoke_tool",
     description:
-      "Execute a permitted tool by name with JSON args. Use this after list_tools finds a tool that is enabled for this agent but was not directly loaded this turn, especially when permission_reason='provider_tool_limit'. " +
+      "Execute a permitted tool by name. Use this after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. " +
+      "Pass the target's arguments as args_json: a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. " +
       "Never use invoke_tool to call invoke_tool itself; call already-loaded tools directly instead of wrapping them. " +
       "This does not bypass permissions, disabled categories, unavailable MCP servers, disabled drop-in tools, or credential requirements. Call list_tools with include_schema=true when you need the target tool's argument schema.",
     schema: z.object({
       name: z.string().min(1).describe("Exact target tool name from list_tools."),
+      // A string carries arguments through every provider. Gemini strips
+      // `additionalProperties` from tool schemas, which turns a free-form
+      // object into one the model can only ever emit as `{}`.
+      args_json: z
+        .string()
+        .optional()
+        .describe("Target tool arguments as a JSON object string, matching its list_tools include_schema=true schema."),
       args: z
         .record(z.string(), z.unknown())
-        .default({})
-        .describe("JSON object arguments for the target tool, matching its list_tools include_schema=true schema."),
+        .optional()
+        .describe("Deprecated: use args_json. Structured form of the same arguments."),
     }),
   },
 );
