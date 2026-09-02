@@ -85,15 +85,20 @@ function withDefaultTools(tools: string[], defaults: readonly string[]): string[
 
 const SELF_CONFIG_TOOL_SET: ReadonlySet<string> = new Set(SELF_CONFIG_TOOLS);
 
-// The agent may execute every name in `permitted`, but only basic and
-// self-config tools are bound to the model; the rest go through `invoke_tool`.
+// The agent may execute every name in `permitted`, but only the tools it is
+// most likely to need are bound to the model: basic tools, self-config tools,
+// and whatever the operator pinned on the agent. The rest stay one
+// `invoke_tool` hop away, which keeps the bound set flat without making the
+// agent's own configured toolset pay a round-trip.
 function hotLoadToolNames(
   catalog: readonly ToolCatalogEntry[],
   permitted: readonly string[],
+  pinned: readonly string[],
 ): string[] {
   const byName = new Map(catalog.map((entry) => [entry.name, entry]));
+  const pinnedSet = new Set(pinned);
   return permitted.filter((name) => {
-    if (SELF_CONFIG_TOOL_SET.has(name)) return true;
+    if (SELF_CONFIG_TOOL_SET.has(name) || pinnedSet.has(name)) return true;
     const entry = byName.get(name);
     return entry ? isHotLoadTool(entry) : false;
   });
@@ -543,7 +548,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const modelCfg = modelConfigName ? getModelConfig(modelConfigName) : null;
   const limitedTools = applyProviderToolLimitToCatalog(
     baseToolPermissionMap,
-    hotLoadToolNames(baseToolPermissionMap, requestedAllowedTools),
+    hotLoadToolNames(baseToolPermissionMap, requestedAllowedTools, getAgentTools(agentCfg)),
     getEffectiveProviderToolLimit(modelCfg?.provider),
     SELF_CONFIG_TOOLS,
     {
