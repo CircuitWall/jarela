@@ -1,3 +1,18 @@
+/* Brand tokens.
+   `--brand-accent` (and its translucent companions) are stamped onto
+   <html> by lib/brand.mjs::applyBrand() from BRAND.accentColor, so a
+   rebranded build recolors the picker chrome without editing this file.
+   The fallbacks below keep the stylesheet standalone-correct if the
+   module hasn't loaded yet.
+
+   Class/keyframe/id names stay `jarela*` on purpose — they're internal
+   selectors, not product names (see lib/brand.mjs). */
+:root {
+  --brand-accent: #3b82f6;
+  --brand-accent-soft: color-mix(in srgb, var(--brand-accent) 15%, transparent);
+  --brand-accent-flash: color-mix(in srgb, var(--brand-accent) 35%, transparent);
+}
+
 /* Picker overlay — sits above page content; pointer-events none so the
    mouse passes through to the element underneath, which is what we
    actually want to pick. */
@@ -5,8 +20,8 @@
   position: absolute;
   pointer-events: none;
   z-index: 2147483646;
-  border: 2px dashed #3b82f6;
-  background: rgba(59, 130, 246, 0.15);
+  border: 2px dashed var(--brand-accent);
+  background: var(--brand-accent-soft);
   border-radius: 4px;
   box-sizing: border-box;
   transition: top 60ms linear, left 60ms linear, width 60ms linear, height 60ms linear;
@@ -41,19 +56,19 @@
 /* Picked-element flash on send. */
 .jarela-flash-pulse {
   animation: jarela-flash 600ms ease-in-out 2;
-  outline: 2px solid #3b82f6 !important;
+  outline: 2px solid var(--brand-accent) !important;
   outline-offset: 2px;
 }
 @keyframes jarela-flash {
   0%, 100% { background-color: transparent; }
-  50%      { background-color: rgba(59, 130, 246, 0.35); }
+  50%      { background-color: var(--brand-accent-flash); }
 }
 
 /* "✈ Sent" pill that flies toward the toolbar icon. */
 .jarela-send-pill {
   position: absolute;
   z-index: 2147483647;
-  background: #3b82f6;
+  background: var(--brand-accent);
   color: white;
   font: 600 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
   padding: 6px 12px;

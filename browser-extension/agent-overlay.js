@@ -1,4 +1,4 @@
-// Jarela agent overlay — injected on demand by background.js into any
+// Agent overlay — injected on demand by background.js into any
 // tab the agent wants to drive. Renders two pieces of UI inside a closed
 // Shadow DOM so page CSS can't restyle us:
 //
@@ -46,6 +46,26 @@
   ].join(";");
   document.documentElement.appendChild(hostEl);
   const shadow = hostEl.attachShadow({ mode: "closed" });
+
+  // Brand strings live in lib/brand.mjs so a rebranded build only has to
+  // regenerate that one module. This file is a CLASSIC content script, so
+  // the module arrives asynchronously — markup below paints
+  // `data-brand-template` placeholders synchronously (keeping the message
+  // listeners registered without delay) and `brandRoot` fills them in as
+  // soon as the import resolves. Late-created UI (the approval modal) calls
+  // brandRoot() again after it mounts.
+  let applyBrand = null;
+  const brandReady = import(chrome.runtime.getURL("lib/brand.mjs"))
+    .then((m) => {
+      applyBrand = m.applyBrand;
+      applyBrand(shadow);
+    })
+    .catch(() => { /* non-fatal: placeholders stay empty rather than wrong */ });
+
+  function brandRoot(root) {
+    if (applyBrand) applyBrand(root);
+    else brandReady.then(() => applyBrand?.(root));
+  }
 
   const STYLE = `
     .banner {
@@ -156,11 +176,12 @@
   banner.className = "banner";
   banner.innerHTML = `
     <span class="dot"></span>
-    <span class="label">Jarela agent</span>
+    <span class="label" data-brand-template="{name} agent"></span>
     <span class="action">is controlling this tab</span>
     <button class="stop">Stop</button>
   `;
   shadow.appendChild(banner);
+  brandRoot(banner);
 
   const actionLabel = banner.querySelector(".action");
   const stopBtn = banner.querySelector(".stop");
@@ -243,7 +264,7 @@
     backdrop.className = "modal-backdrop";
     backdrop.innerHTML = `
       <div class="modal" role="dialog" aria-modal="true">
-        <h2>Allow Jarela agent to control this tab?</h2>
+        <h2 data-brand-template="Allow {name} agent to control this tab?"></h2>
         <p>The agent wants to <strong data-act></strong> on
           <span class="host" data-host></span>.</p>
         <div class="actions">
@@ -253,6 +274,7 @@
         </div>
       </div>
     `;
+    brandRoot(backdrop);
     backdrop.querySelector("[data-host]").textContent = host;
     backdrop.querySelector("[data-act]").textContent = humanizeAction(action).replace(/^is\s+/, "");
     backdrop.addEventListener("click", (ev) => {

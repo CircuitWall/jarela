@@ -2,28 +2,32 @@ import type { Metadata, Viewport } from "next";
 import { AppProvider } from "@/contexts/AppContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ServiceWorkerRegistration } from "@/components/ui/ServiceWorkerRegistration";
-import { getAppName, getAppDescription } from "@/lib/env/app-config";
+import { getAppName, getAppDescription, getAppIcons, getAppAccentColor, getAppAccentHoverColor } from "@/lib/env/app-config";
 import "./globals.css";
+
+const brandIcons = getAppIcons();
 
 export const metadata: Metadata = {
   title: getAppName(),
   description: getAppDescription(),
-  manifest: "/manifest.json",
+  manifest: "/manifest.webmanifest",
   icons: {
     // SVG favicon is theme-aware (prefers-color-scheme inside the SVG),
     // so it flips between navy J (light UI) and sky J (dark UI) without
     // shipping two payloads. PNG/ICO fall through for older browsers.
+    // Paths come from the brand config so a rebranded overlay can point
+    // them at its own asset set (see docs/EXTENDING.md → Branding).
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
-      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+      { url: brandIcons.faviconSvg, type: "image/svg+xml" },
+      { url: brandIcons.faviconIco, sizes: "any" },
+      { url: brandIcons.icon192, type: "image/png", sizes: "192x192" },
+      { url: brandIcons.icon512, type: "image/png", sizes: "512x512" },
     ],
     // iOS reads ONE apple-touch-icon and ignores prefers-color-scheme,
     // so we hand it the dark navy variant (reads on any wallpaper). The
     // light-bg companion is shipped at /apple-touch-icon-light.png for
     // anyone who wants to opt in via a custom <link> tag.
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+    apple: [{ url: brandIcons.appleTouchIcon, sizes: "180x180" }],
   },
   // iOS standalone-mode PWA chrome. Safari ignores the manifest's
   // `theme_color` once the app is installed to the home screen and only
@@ -208,11 +212,23 @@ const iosViewportBootstrap = `(() => {
 })();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // Brand accent override. Emitted as a plain <style> after globals.css so
+  // it wins over the @theme defaults for every `bg-accent` / `text-accent`
+  // utility at once. Values are hex-validated in app-config, so nothing
+  // user-supplied reaches the stylesheet unescaped. Nothing is emitted
+  // unless the overlay actually set an accent.
+  const accent = getAppAccentColor();
+  const accentHover = getAppAccentHoverColor();
+  const accentCss = accent
+    ? `:root,[data-theme]{--color-accent:${accent};--color-accent-hover:${accentHover ?? accent};}`
+    : null;
+
   return (
     <html lang="en" data-theme="system" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
         <script dangerouslySetInnerHTML={{ __html: iosViewportBootstrap }} />
+        {accentCss && <style dangerouslySetInnerHTML={{ __html: accentCss }} />}
       </head>
       <body>
         <ThemeProvider>

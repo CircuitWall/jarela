@@ -52,7 +52,11 @@ function isPassivePoll(path: string): boolean {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|_next/data|favicon.ico|manifest.json|sw.js|workbox-.*|icon-.*).*)",
+    // `manifest.webmanifest` is the Next-generated manifest route (was the
+    // static `public/manifest.json` before ADR-0077). Browsers often fetch a
+    // manifest anonymously, so it has to stay outside the auth check or PWA
+    // install breaks behind `tailscale serve`.
+    "/((?!_next/static|_next/image|_next/data|favicon.ico|manifest.webmanifest|sw.js|workbox-.*|icon-.*).*)",
   ],
 };
 

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Jarela Page Capture — Settings</title>
+  <title data-brand-template="{name} Page Capture — Settings"></title>
   <style>
     :root {
       color-scheme: light dark;
@@ -116,12 +116,15 @@
     .status[data-state="ok"] .label { color: var(--ok); }
     .status[data-state="err"] .label { color: var(--err); }
     .error { color: var(--err); font-size: 12px; margin-top: 4px; min-height: 1em; }
+    .credit { margin-top: 20px; text-align: center; }
+    .credit .powered-by { color: var(--muted); font-size: 11px; text-decoration: none; }
+    .credit .powered-by:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <main>
-    <h1>Jarela Page Capture</h1>
-    <p class="sub">Tell the extension where your local Jarela server is listening.</p>
+    <h1 data-brand-template="{name} Page Capture"></h1>
+    <p class="sub" data-brand-template="Tell the extension where your local {name} server is listening."></p>
 
     <section class="card">
       <div class="field">
@@ -144,7 +147,7 @@
       <div class="actions">
         <button id="save" type="button">Save</button>
         <button id="test" type="button" class="secondary">Test connection</button>
-        <button id="open" type="button" class="secondary">Open Jarela</button>
+        <button id="open" type="button" class="secondary" data-brand-template="Open {name}"></button>
       </div>
       <div class="hint">
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400;">
@@ -155,7 +158,7 @@
       <div class="hint">
         <label style="display:inline-flex;align-items:center;gap:6px;font-weight:400;">
           <input id="autoOpen" type="checkbox" />
-          Open Jarela automatically after saving
+          <span data-brand-template="Open {name} automatically after saving"></span>
         </label>
       </div>
     </section>
@@ -168,6 +171,9 @@
       </div>
       <div id="detail" class="hint"></div>
     </section>
+
+    <!-- Non-removable upstream credit; populated by options.js. -->
+    <footer id="upstream-credit" class="credit"></footer>
   </main>
   <script src="options.js" type="module"></script>
 </body>

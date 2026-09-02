@@ -332,8 +332,12 @@ Seven extension surfaces, each documented in
   `propose_config_change` tool.
 - **Integration manifests** — agent-led setup recipes for external
   services (Atlassian, Gmail, GitHub, …).
-- **Brand overlays** — env-var driven (`NEXT_PUBLIC_APP_NAME` and
-  friends).
+- **Brand overlays** — rename the app, swap logo/icons, and recolor the
+  accent via `NEXT_PUBLIC_APP_*` env vars; rebrand the browser extension
+  with `npm run build:extension -- --brand brand.json`. The env vars are
+  inlined at build time, so a web-app overlay runs its own build (fork or
+  wrapper repo) rather than reconfiguring the prebuilt npm artifact.
+  Rebranded builds keep a "Powered by Jarela" credit (ADR-0077).
 - **HTTP API** — see [`docs/api.md`](./docs/api.md) for the stable
   contract; the agent introspection tools (`list_tools`,
   `list_providers`, `list_mcp_servers`, `describe_extension_surfaces`)

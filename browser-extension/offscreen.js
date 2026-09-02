@@ -1,3 +1,7 @@
+import { applyBrand } from "./lib/brand.mjs";
+
+applyBrand();
+
 // Offscreen document — sole job is to hold a long-lived port to the
 // background service worker so MV3 doesn't terminate it during the
 // brief gaps between long-poll iterations.

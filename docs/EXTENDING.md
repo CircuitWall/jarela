@@ -298,27 +298,126 @@ ADR: [0010](../docs/adr/0010-agent-led-setup-and-integration-manifests.md).
 
 ## Branding the app
 
-Jarela is published as `@circuitwall/jarela` on npm. Brand overlays (e.g.
-internal forks) consume the package and override identity strings via
-environment variables — no code change required.
+Jarela is published as `@circuitwall/jarela` on npm and licensed Apache-2.0.
+Brand overlays (internal forks, white-label deployments) override identity
+through configuration and assets — **no source edits**, so there is no rename
+diff to rebase on every upstream release.
 
-| Env var                          | Drives                         |
-|----------------------------------|--------------------------------|
-| `NEXT_PUBLIC_APP_NAME`           | UI title, page titles, PWA name |
-| `NEXT_PUBLIC_APP_DESCRIPTION`    | Meta description, install help |
-| `NEXT_PUBLIC_APP_ISSUE_URL`      | "Report a bug" link in footer  |
+### You need a build you control
 
-The data directory follows the brand: an overlay with `JARELA_DB_DIR=~/.foo`
-gets isolated state. There's a one-shot rename from `~/.langgui` → `~/.jarela`
-on first launch (kept around for in-place migration).
+Read this before planning a rollout. The web app's brand values are
+`NEXT_PUBLIC_*` env vars, which Next **inlines textually during `next build`**.
+They are not read at runtime.
 
-If you need richer overlay behaviour (e.g. injected CSS, alternate icon
-set, additional preflight steps), the current pattern is to consume the
-package's `.next/standalone` build and apply tree-level mutations during
-your own build pipeline. There is no sanctioned "code hook" for overlays
-yet — open an issue if you need one.
+The npm package ships a *prebuilt* `.next/standalone`, already carrying the
+Jarela name. So `npm i @circuitwall/jarela && jarela start` **cannot** be
+rebranded by setting env vars — the strings are baked in, and `jarela-bin.mjs`
+deliberately refuses to rebuild from inside `node_modules` (webpack excludes
+that path). Rebranding the web app therefore means running the build yourself:
 
-ADR: [0005](../docs/adr/0005-rebrand-jarela.md).
+- **Fork and rebase.** Clone the repo, add `.env.production` with your
+  `NEXT_PUBLIC_APP_*` values, drop your assets into `public/`, run
+  `npm run build`. Your diff against upstream is config and assets only, so
+  tracking each release stays cheap. This is the common case.
+- **Wrapper repo.** Keep only `brand.json`, `.env.production`, and logos in
+  your repo; have CI check out Jarela at a pinned tag, apply your env, build,
+  and publish the artifact. Cleaner ownership boundary, same build step.
+
+Runtime-switchable branding (no rebuild) is **not** supported — it would mean
+serving brand config from an API and fetching it on boot. See ADR-0077.
+
+The browser extension is the exception: its build is a packaging step over
+static files, so it needs no Next build.
+
+Accordingly the two surfaces differ: the web app reads build-time env vars,
+while the browser extension takes a `brand.json` packaging step (its MV3
+manifest and icons are static files).
+
+### Web app: `NEXT_PUBLIC_APP_*`
+
+Everything lives in [`lib/env/app-config.ts`](../lib/env/app-config.ts),
+exported as the public subpath `@circuitwall/jarela/lib/env/app-config`.
+
+| Env var                                    | Drives                                           |
+|--------------------------------------------|--------------------------------------------------|
+| `NEXT_PUBLIC_APP_NAME`                     | Page title, PWA `name`, notification titles       |
+| `NEXT_PUBLIC_APP_SHORT_NAME`               | PWA `short_name` (defaults to the app name)       |
+| `NEXT_PUBLIC_APP_DESCRIPTION`              | Meta description, PWA `description`               |
+| `NEXT_PUBLIC_APP_ISSUE_URL`                | "Report a bug" link — **your** tracker            |
+| `NEXT_PUBLIC_APP_LOGO_LIGHT`               | In-app wordmark on light surfaces                 |
+| `NEXT_PUBLIC_APP_LOGO_DARK`                | Wordmark on dark surfaces (defaults to the light one) |
+| `NEXT_PUBLIC_APP_ACCENT_COLOR`             | `--color-accent` (hex only)                       |
+| `NEXT_PUBLIC_APP_ACCENT_HOVER_COLOR`       | `--color-accent-hover` (defaults to accent −15% lightness) |
+| `NEXT_PUBLIC_APP_FAVICON_SVG` / `_ICO`     | Favicon                                           |
+| `NEXT_PUBLIC_APP_ICON_192` / `_512`        | PWA icons (`any` purpose)                         |
+| `NEXT_PUBLIC_APP_ICON_192_MASKABLE` / `_512_MASKABLE` | PWA icons (`maskable` purpose)         |
+| `NEXT_PUBLIC_APP_ICON_192_LIGHT` / `_512_LIGHT` (+ `_MASKABLE_LIGHT`) | Light-background icon variants |
+| `NEXT_PUBLIC_APP_APPLE_TOUCH_ICON`         | iOS home-screen icon                              |
+
+The simplest icon/logo swap is to **drop replacement files into `public/`
+under the same names** — then you need none of the asset env vars. Set them
+only when your assets live on other paths or a CDN.
+
+Two things to know:
+
+- These are inlined by Next at **build time**, so changing the brand means a
+  rebuild, not a restart.
+- The accent color must be a hex literal — 6-digit (`#7c3aed`) or 3-digit
+  (`#7c3`). It is injected into a `<style>` block, so anything else is
+  rejected and ignored.
+
+The data directory follows the brand too: `JARELA_DB_DIR=~/.foo` gets isolated
+state.
+
+### Browser extension: `brand.json` + `npm run build:extension`
+
+```bash
+npm run build:extension -- --brand ./brand.json --out dist/my-extension
+```
+
+```jsonc
+// brand.json — all keys optional
+{
+  "name": "Acme Assistant",
+  "shortName": "Acme",
+  "description": "Browser companion for Acme Assistant: …",
+  "accentColor": "#7c3aed",
+  "logo": "./brand/mark.png"   // toolbar icons are regenerated from this
+}
+```
+
+This emits a ready-to-load extension folder with a templated `manifest.json`
+(name, description, toolbar title, command description), a regenerated
+`lib/brand.mjs`, and rebuilt icons. Run without `--brand` and the output
+matches the in-tree Jarela extension (a test enforces this).
+
+See [`browser-extension/README.md`](../browser-extension/README.md#rebranding).
+
+### What you may not rebrand
+
+Rebranded builds keep a small **"Powered by Jarela"** link — on the web boot
+screen and the extension options page — pointing at the upstream repository.
+`UPSTREAM_NAME` / `UPSTREAM_URL` are plain constants, not env vars, and
+`build-extension.mjs` never templates them. The credit renders **only** once
+you have actually renamed the app; the upstream build shows nothing.
+
+This is separate from `NEXT_PUBLIC_APP_ISSUE_URL`, which is yours to redirect.
+Upstream-facing machinery (update checks, tool-telemetry issue drafts) also
+keeps pointing at `CircuitWall/jarela`.
+
+Internal identifiers stay `jarela*` on both surfaces — DOM ids, `chrome.storage`
+keys, CSS class/keyframe names, `globalThis` keys, DB tables. They are not
+product names, and renaming them orphans stored config.
+
+### Beyond the accent color
+
+If you need deeper visual changes than one accent color, the pattern is still
+to consume the package's `.next/standalone` build and apply tree-level
+mutations in your own pipeline. Blessing arbitrary CSS overrides would turn
+internal class names into a public API.
+
+ADR: [0077](../docs/adr/0077-rebranding-overlay-contract.md), building on
+[0005](../docs/adr/0005-rebrand-jarela.md).
 
 ---
 
