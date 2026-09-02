@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-09-02
+
 ### Added
 
 - **Official rebranding overlay contract.** Forks and white-label deployments
