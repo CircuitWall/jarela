@@ -186,6 +186,30 @@ export const INTEGRATIONS = {
       { key: "token", label: "Personal Access Token", placeholder: "ghp_… or github_pat_…", secret: true, required: true },
     ],
   },
+  linkedin_personal: {
+    label: "LinkedIn Personal",
+    category: "other" as IntegrationCategory,
+    description: "Used by LinkedIn personal profile and member post tools.",
+    fields: [
+      { key: "client_id", label: "LinkedIn app client ID", placeholder: "your-client-id", secret: false, required: false },
+      { key: "client_secret", label: "LinkedIn app client secret", placeholder: "your-client-secret", secret: true, required: false },
+      { key: "access_token", label: "OAuth access token", placeholder: "DL_…", secret: true, required: true },
+      { key: "version", label: "LinkedIn API version (optional)", placeholder: "202608", secret: false, required: false },
+      { key: "scopes", label: "OAuth scopes (optional, space-separated)", placeholder: "openid profile email w_member_social", secret: false, required: false },
+    ],
+  },
+  linkedin_enterprise: {
+    label: "LinkedIn Enterprise",
+    category: "other" as IntegrationCategory,
+    description: "Used by LinkedIn organization lookup, role, and page post tools.",
+    fields: [
+      { key: "client_id", label: "LinkedIn app client ID", placeholder: "your-client-id", secret: false, required: false },
+      { key: "client_secret", label: "LinkedIn app client secret", placeholder: "your-client-secret", secret: true, required: false },
+      { key: "access_token", label: "OAuth access token", placeholder: "DL_…", secret: true, required: true },
+      { key: "version", label: "LinkedIn API version (optional)", placeholder: "202608", secret: false, required: false },
+      { key: "scopes", label: "OAuth scopes (optional, space-separated)", placeholder: "r_organization_admin r_organization_social w_organization_social", secret: false, required: false },
+    ],
+  },
   outlook: {
     label: "Outlook + Calendar + To Do",
     category: "mail" as IntegrationCategory,

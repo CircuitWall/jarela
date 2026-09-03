@@ -29,7 +29,7 @@ describe("default LangChain packages", () => {
     for (const id of listDisabledPackages()) setPackageDisabled(id, false);
   });
 
-  it("ships the default descriptors (atlassian, github, icloud_*, jira_align)", () => {
+  it("ships the default descriptors", () => {
     const ids = listDefaultPackages().map((p) => p.id).sort();
     expect(ids).toEqual([
       "atlassian",
@@ -38,6 +38,8 @@ describe("default LangChain packages", () => {
       "icloud_mail",
       "icloud_tasks",
       "jira_align",
+      "linkedin_enterprise",
+      "linkedin_personal",
     ]);
   });
 

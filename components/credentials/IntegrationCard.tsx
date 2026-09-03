@@ -60,7 +60,7 @@ export function IntegrationCard({
   // Stop any in-flight OAuth polling on unmount.
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
-  async function connectOAuth(provider: "gmail" | "outlook") {
+  async function connectOAuth(provider: "gmail" | "outlook" | "linkedin-personal" | "linkedin-enterprise") {
     setError(null);
     setTestResult(null);
     // Strip ALL whitespace (incl. zero-width chars from password-manager
@@ -81,16 +81,31 @@ export function IntegrationCard({
     try {
       const startFn = provider === "gmail"
         ? api.integrations.gmailOauthStart
-        : api.integrations.outlookOauthStart;
+        : provider === "outlook"
+          ? api.integrations.outlookOauthStart
+          : provider === "linkedin-personal"
+            ? api.integrations.linkedinPersonalOauthStart
+            : api.integrations.linkedinEnterpriseOauthStart;
       const statusFn = provider === "gmail"
         ? api.integrations.gmailOauthStatus
-        : api.integrations.outlookOauthStatus;
-      const label = provider === "gmail" ? "Gmail" : "Outlook";
+        : provider === "outlook"
+          ? api.integrations.outlookOauthStatus
+          : provider === "linkedin-personal"
+            ? api.integrations.linkedinPersonalOauthStatus
+            : api.integrations.linkedinEnterpriseOauthStatus;
+      const label = provider === "gmail"
+        ? "Gmail"
+        : provider === "outlook"
+          ? "Outlook"
+          : provider === "linkedin-personal"
+            ? "LinkedIn Personal"
+            : "LinkedIn Enterprise";
 
       const r = await startFn({
         client_id: clientId && !isMaskedSecret(clientId) ? clientId : undefined,
         client_secret: clientSecret && !isMaskedSecret(clientSecret) ? clientSecret : undefined,
         credential_id: editingId ?? undefined,
+        scopes: (provider === "linkedin-personal" || provider === "linkedin-enterprise") ? values.scopes || undefined : undefined,
       });
       popupRef.current = window.open(r.authorize_url, `jarela-${provider}-oauth`, "width=560,height=720");
       if (!popupRef.current) {
@@ -201,8 +216,10 @@ export function IntegrationCard({
     try {
       const r = await api.integrations.test(def.name, editingId ?? undefined);
       if (r.ok) {
-        const detail = r.detail as { displayName?: string; email?: string; version?: string; auth?: string } | undefined;
-        const message = detail?.displayName
+        const detail = r.detail as { displayName?: string; email?: string; version?: string; auth?: string; warning?: string } | undefined;
+        const message = detail?.warning
+          ? detail.warning
+          : detail?.displayName
           ? `Connected as ${detail.displayName}`
           : detail?.email
             ? `Connected as ${detail.email}`
@@ -374,6 +391,17 @@ export function IntegrationCard({
             >
               {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
               {connecting ? "Waiting…" : "Connect Outlook"}
+            </button>
+          )}
+          {(def.name === "linkedin_personal" || def.name === "linkedin_enterprise") && (
+            <button
+              onClick={() => connectOAuth(def.name === "linkedin_personal" ? "linkedin-personal" : "linkedin-enterprise")}
+              disabled={connecting || (!!createNew && !editingId)}
+              title={createNew && !editingId ? "Save this credential first, then connect LinkedIn" : "Authorize LinkedIn access — opens a browser window"}
+              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-border text-fg-muted hover:bg-surface-3 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {connecting ? <Loader2 size={11} className="animate-spin" /> : <LinkIcon size={11} />}
+              {connecting ? "Waiting…" : "Connect LinkedIn"}
             </button>
           )}
           {editingId && !credential?.is_default && (

@@ -1,0 +1,17 @@
+{
+  "name": "@circuitwall/linkedin-enterprise-langchain",
+  "version": "1.0.0",
+  "description": "LangChain tools for LinkedIn organization pages.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js", "require": "./dist/index.cjs" }, "./package.json": "./package.json" },
+  "files": ["dist", "README.md"],
+  "publishConfig": { "access": "public", "registry": "https://registry.npmjs.org" },
+  "engines": { "node": ">=20" },
+  "scripts": { "build": "tsup", "clean": "rimraf dist", "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "peerDependencies": { "@langchain/core": ">=0.3.0", "zod": ">=3.23.0 <5" },
+  "devDependencies": { "@langchain/core": "^1.1.46", "rimraf": "^6.0.1", "tsup": "^8.3.5", "typescript": "^6.0.3", "zod": "^4.5.1" }
+}
