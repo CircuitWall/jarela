@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import path from "node:path";
 import { promises as fs } from "node:fs";
-import { cachedJson, createdResponse, validateBody, errorResponse } from "@/lib/api/responses";
+import { createdResponse, validateBody, errorResponse, noStoreJson } from "@/lib/api/responses";
 import { createSkillRepo, getSkillRepoByPath, listSkillRepos, type SkillRepoRow } from "@/lib/stores/skill-repos";
 
 const createSchema = z.object({
@@ -24,7 +24,7 @@ function rowResponse(row: SkillRepoRow) {
 }
 
 export function GET() {
-  return cachedJson({ repos: listSkillRepos().map(rowResponse) }, 5);
+  return noStoreJson({ repos: listSkillRepos().map(rowResponse) });
 }
 
 export async function POST(req: NextRequest) {
