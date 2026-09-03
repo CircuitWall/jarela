@@ -264,6 +264,9 @@ interface ToolCallGroup {
   // Internal — set on tool_result_get groups that got absorbed into the
   // matching async handoff card. Skipped during render.
   absorbed: boolean;
+  // True when the model reached the tool through the `invoke_tool`
+  // dispatcher, so `name`/`args` were rewritten to the real target.
+  viaInvokeTool: boolean;
   // Incremental status reported from inside the call via "progress" events
   // (ADR-0073). Empty for tools that never report progress — those render
   // the original synthetic wallclock progress bar unchanged.
@@ -285,6 +288,7 @@ function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
         status: "running",
         readByAgent: false,
         absorbed: false,
+        viaInvokeTool: false,
         steps: [],
       };
       map.set(ev.id, g);
@@ -293,12 +297,30 @@ function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
     if (!g.name && ev.name) g.name = ev.name;
     if (ev.phase === "call") {
       g.args = unwrapLangChainSerializable(ev.payload);
+      if (g.name === "invoke_tool") {
+        const target = readInvokeToolTarget(g.args);
+        if (target) {
+          g.name = target.name;
+          g.args = target.args;
+          g.viaInvokeTool = true;
+        }
+      }
       const d = readDeadlineMs(g.args);
       if (d) g.deadlineMs = d;
     } else if (ev.phase === "progress") {
       if (typeof ev.payload === "string" && ev.payload) g.steps.push(ev.payload);
     } else {
-      const payload = unwrapLangChainSerializable(ev.payload);
+      const raw = unwrapLangChainSerializable(ev.payload);
+      // History persisted before the call event carried args (or when the
+      // provider dropped it) still names the target in the result envelope.
+      if (!g.viaInvokeTool && g.name === "invoke_tool") {
+        const target = coerceObject(raw)?.tool;
+        if (typeof target === "string" && target.trim()) {
+          g.name = target.trim();
+          g.viaInvokeTool = true;
+        }
+      }
+      const payload = g.viaInvokeTool ? unwrapInvokeToolResult(raw) : raw;
       g.result = payload;
       if (isErrorPayload(payload)) g.status = "error";
       else if (isAsyncHandoffPayload(payload)) g.status = "async";
@@ -1208,6 +1230,31 @@ function readDeadlineMs(args: unknown): number | null {
   const raw = (args as Record<string, unknown>).deadline_ms;
   if (typeof raw === "number" && raw > 0 && Number.isFinite(raw)) return raw;
   return null;
+}
+
+// `invoke_tool` is a dispatcher (lib/tools/invoke-tool.ts): the tool the user
+// cares about is named in `name`, with its arguments in `args_json` (or the
+// deprecated `args`). Resolve it so the card carries the target's icon, label
+// and argument summary instead of an undifferentiated `invoke_tool` wrench.
+function readInvokeToolTarget(args: unknown): { name: string; args: unknown } | null {
+  const obj = coerceObject(args);
+  if (!obj) return null;
+  const name = typeof obj.name === "string" ? obj.name.trim() : "";
+  if (!name) return null;
+  const structured = coerceObject(obj.args);
+  if (structured && Object.keys(structured).length > 0) return { name, args: structured };
+  const fromJson = typeof obj.args_json === "string" ? coerceObject(obj.args_json) : null;
+  return { name, args: fromJson ?? structured ?? {} };
+}
+
+// The dispatcher wraps a successful target return in
+// `{ ok, tool, status, result }`. Peel it so result renderers see what the
+// target actually produced. Failures keep the envelope — `isErrorPayload`
+// reads `ok: false` / `error` off it.
+function unwrapInvokeToolResult(payload: unknown): unknown {
+  const obj = coerceObject(payload);
+  if (!obj || obj.ok !== true || typeof obj.tool !== "string" || !("result" in obj)) return payload;
+  return obj.result;
 }
 
 function isErrorPayload(payload: unknown): boolean {

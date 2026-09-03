@@ -21,7 +21,9 @@ export default defineConfig({
     // missing. Disable it in test workers; jsdom provides its own.
     // (`poolOptions.*.execArgv` was removed in Vitest 4 — this is the
     // top-level replacement per the migration guide.)
-    execArgv: ["--no-experimental-webstorage"],
+    // `node:sqlite` is still flagged experimental and every worker prints a
+    // warning on first import, drowning the reporter output.
+    execArgv: ["--no-experimental-webstorage", "--disable-warning=ExperimentalWarning"],
     include: [
       "lib/**/*.test.ts",
       "api/**/*.test.ts",

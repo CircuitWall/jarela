@@ -884,13 +884,14 @@ async function* stallRetryStream(
       yield chunk;
     } else if (chunk.type === "tool_call") {
       const data = chunk.data as { name?: unknown; arguments?: unknown } | undefined;
-      const name = typeof data?.name === "string" ? data.name : "";
+      const rawName = typeof data?.name === "string" ? data.name : "";
       const args = data?.arguments && typeof data.arguments === "object"
         ? (data.arguments as Record<string, unknown>)
         : {};
+      const name = unwrapInvokedToolName(rawName, args);
       if (name) {
         toolNames.push(name);
-        const sig = toolCallSignature(name, args);
+        const sig = toolCallSignature(rawName, args);
         const count = (signatureCounts.get(sig) ?? 0) + 1;
         signatureCounts.set(sig, count);
         if (count >= TOOL_LOOP_THRESHOLD && loopedToolName === null) {
@@ -1438,6 +1439,16 @@ export function isWriteLikeToolName(name: string): boolean {
   if (!name) return false;
   const segments = name.toLowerCase().split(/[._\-/]+/).filter(Boolean);
   return segments.some((s) => WRITE_VERB_SEGMENTS.has(s));
+}
+
+// `invoke_tool` is a dispatcher: the tool that actually ran is named in its
+// arguments. Reporting the wrapper to the retry heuristics makes every
+// proxied call look read-only and unnamed, so a turn that really did call
+// `memory_write` gets flagged as a stall and re-run from scratch.
+export function unwrapInvokedToolName(name: string, args: Record<string, unknown>): string {
+  if (name !== "invoke_tool") return name;
+  const target = args.name;
+  return typeof target === "string" && target.trim() ? target.trim() : name;
 }
 
 // Stable signature of a tool call so repeated identical calls collapse to

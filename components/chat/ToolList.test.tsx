@@ -243,4 +243,56 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByLabelText("done")).toBeTruthy();
     expect(screen.getByLabelText("checking")).toBeTruthy();
   });
+
+  it("renders an invoke_tool dispatch under the target tool's name, args and result", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "i1",
+        phase: "call",
+        name: "invoke_tool",
+        payload: { name: "web_search", args_json: JSON.stringify({ query: "m365 pricing" }) },
+      },
+      {
+        id: "i1",
+        phase: "result",
+        name: "invoke_tool",
+        payload: JSON.stringify({
+          ok: true,
+          tool: "web_search",
+          status: "done",
+          result: "Top hit: microsoft.com",
+        }),
+      },
+    ];
+
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("web_search")).toBeTruthy();
+    expect(screen.queryByText("invoke_tool")).toBeNull();
+    fireEvent.click(screen.getByText("web_search"));
+    expect(screen.getAllByText(/m365 pricing/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Top hit: microsoft\.com/)).toBeTruthy();
+  });
+
+  it("recovers the target tool name from a result-only invoke_tool group", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "i2",
+        phase: "result",
+        name: "invoke_tool",
+        payload: JSON.stringify({
+          ok: true,
+          tool: "web_search",
+          status: "done",
+          result: { query: "sek cny rate", results: [] },
+        }),
+      },
+    ];
+
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("web_search")).toBeTruthy();
+    expect(screen.queryByText("invoke_tool")).toBeNull();
+    expect(screen.getAllByText(/sek cny rate/).length).toBeGreaterThan(0);
+  });
 });

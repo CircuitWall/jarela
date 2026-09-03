@@ -105,6 +105,51 @@ export async function toBaseMessages(
   return out;
 }
 
+function parseToolArgs(raw: unknown): Record<string, unknown> {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  if (typeof raw !== "string" || !raw.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+// Aggregator providers whose streamed `tool_call_chunks` carry no `index`
+// never merge into a parsable `tool_calls` entry, so the turn would reach the
+// transcript with results but no call — losing every argument. Fall back to
+// the invalid and raw-fragment forms before giving up on a call id.
+function collectToolCalls(
+  chunk: AIMessageChunk,
+): Array<{ id: string; name: string; args: Record<string, unknown> }> {
+  const out = new Map<string, { id: string; name: string; args: Record<string, unknown> }>();
+  for (const tc of chunk.tool_calls ?? []) {
+    if (tc.id) out.set(tc.id, { id: tc.id, name: tc.name ?? "", args: tc.args ?? {} });
+  }
+  for (const tc of chunk.invalid_tool_calls ?? []) {
+    if (tc.id && !out.has(tc.id)) {
+      out.set(tc.id, { id: tc.id, name: tc.name ?? "", args: parseToolArgs(tc.args) });
+    }
+  }
+  // Raw fragments: same id can appear across several chunks, so join the
+  // argument text in arrival order before parsing.
+  const fragments = new Map<string, { name: string; args: string }>();
+  for (const tc of chunk.tool_call_chunks ?? []) {
+    if (!tc.id || out.has(tc.id)) continue;
+    const slot = fragments.get(tc.id) ?? { name: "", args: "" };
+    if (tc.name) slot.name = tc.name;
+    if (typeof tc.args === "string") slot.args += tc.args;
+    fragments.set(tc.id, slot);
+  }
+  for (const [id, slot] of fragments) {
+    out.set(id, { id, name: slot.name, args: parseToolArgs(slot.args) });
+  }
+  return [...out.values()];
+}
+
 export function streamWithConfig(
   threadId: string,
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
@@ -231,11 +276,10 @@ async function* streamWithConfigImpl(
 
   const flushPendingToolCalls = function* (): Iterable<StreamChunk> {
     if (!pendingAIChunk) return;
-    const calls = pendingAIChunk.tool_calls ?? [];
-    for (const tc of calls) {
-      if (!tc.id || announcedToolIds.has(tc.id)) continue;
+    for (const tc of collectToolCalls(pendingAIChunk)) {
+      if (announcedToolIds.has(tc.id)) continue;
       announcedToolIds.add(tc.id);
-      yield { type: "tool_call", data: { id: tc.id, name: tc.name ?? "", arguments: tc.args ?? {} } };
+      yield { type: "tool_call", data: { id: tc.id, name: tc.name, arguments: tc.args } };
     }
     pendingAIChunk = null;
   };

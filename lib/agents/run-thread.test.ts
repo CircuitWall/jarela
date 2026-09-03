@@ -5,6 +5,7 @@ import {
   toolCallSignature,
   looksLikeStall,
   isWriteLikeToolName,
+  unwrapInvokedToolName,
   withInterruptMarker,
   INTERRUPT_MARKER,
   shouldRetryTransientError,
@@ -173,6 +174,24 @@ describe("isWriteLikeToolName", () => {
   it("is case-insensitive", () => {
     expect(isWriteLikeToolName("FILE_WRITE")).toBe(true);
     expect(isWriteLikeToolName("File_Read")).toBe(false);
+  });
+});
+
+describe("unwrapInvokedToolName", () => {
+  it("returns the target name for invoke_tool dispatches", () => {
+    expect(unwrapInvokedToolName("invoke_tool", { name: "memory_write", args_json: "{}" }))
+      .toBe("memory_write");
+    expect(isWriteLikeToolName(unwrapInvokedToolName("invoke_tool", { name: "memory_write" })))
+      .toBe(true);
+  });
+
+  it("leaves direct tool calls untouched", () => {
+    expect(unwrapInvokedToolName("web_search", { query: "x" })).toBe("web_search");
+  });
+
+  it("falls back to the wrapper when the target name is missing or blank", () => {
+    expect(unwrapInvokedToolName("invoke_tool", {})).toBe("invoke_tool");
+    expect(unwrapInvokedToolName("invoke_tool", { name: "   " })).toBe("invoke_tool");
   });
 });
 
