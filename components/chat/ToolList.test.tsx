@@ -4,6 +4,41 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ToolList, type ToolEvent } from "./ToolList";
 
 describe("ToolList — live progress (ADR-0073)", () => {
+  it("shows oversized tool results as a preview with a file reference", () => {
+    const events: ToolEvent[] = [
+      { id: "c1", phase: "call", name: "web_fetch", payload: { url: "https://example.test" } },
+      {
+        id: "c1",
+        phase: "result",
+        name: "web_fetch",
+        payload: JSON.stringify({
+          ok: true,
+          tool: "web_fetch",
+          truncated: true,
+          bytes: 20000,
+          preview_bytes: 100,
+          preview: { title: "Example", text: "Short preview" },
+          result_ref: {
+            uri: "/api/v1/files/abc.json",
+            name: "abc.json",
+            mimeType: "application/json",
+            size: 20000,
+          },
+          total_count: 42,
+        }),
+      },
+    ];
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("preview")).toBeTruthy();
+    fireEvent.click(screen.getByText("web_fetch"));
+    expect(screen.getByText("19.5 KB stored out of context")).toBeTruthy();
+    expect(screen.getByText("42 items total")).toBeTruthy();
+    expect(screen.getByText("abc.json")).toBeTruthy();
+    expect(screen.getByText("application/json")).toBeTruthy();
+    expect(screen.getByText("Short preview")).toBeTruthy();
+  });
+
   it("shows the full step history inline, one row per step, while the call is running", () => {
     const events: ToolEvent[] = [
       { id: "c1", phase: "call", name: "claude_delegate", payload: { task: "x" } },

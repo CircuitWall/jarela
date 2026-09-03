@@ -7,6 +7,7 @@ import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
 import { maybeAutoFileToolTelemetryIssue } from "@/lib/tools/tool-telemetry-issue";
+import { runSpillFileGc } from "@/lib/attachments/spill-gc";
 import { isMasterKeyLocked, onMasterKeyUnlocked } from "@/lib/crypto/master-key";
 import { getConfig } from "@/lib/env/config";
 import {
@@ -30,6 +31,7 @@ const DOC_SWEEP_EVERY_TICKS = 20;
 // the vendor /me endpoints. The health runner itself dedups alerts so
 // repeated failures only re-fire on its own (longer) backoff.
 const HEALTH_SWEEP_EVERY_TICKS = 20;
+const FILE_GC_EVERY_TICKS = 120;
 
 interface SchedulerState {
   started: boolean;
@@ -37,6 +39,7 @@ interface SchedulerState {
   running: boolean;
   tickCount: number;
   healthTickCount: number;
+  fileGcTickCount: number;
   // Count of scheduled tasks deferred on the previous locked tick. Only
   // log the deferral when this transitions (0 → N, N → M) so a long
   // lock window doesn't spam the console every 30s.
@@ -48,6 +51,7 @@ const state = getOrCreateGlobal<SchedulerState>("__jarela_scheduler", () => ({
   running: false,
   tickCount: 0,
   healthTickCount: 0,
+  fileGcTickCount: 0,
   lastDeferredCount: 0,
 }));
 
@@ -156,6 +160,17 @@ async function tick(): Promise<void> {
           "[scheduler] tool telemetry issue filing failed:",
           errorMessage(err),
         );
+      });
+    }
+
+    state.fileGcTickCount = (state.fileGcTickCount + 1) % FILE_GC_EVERY_TICKS;
+    if (state.fileGcTickCount === 0) {
+      runSpillFileGc().then((r) => {
+        if (r.removed > 0) {
+          console.log(`[scheduler] spill file GC removed ${r.removed} file(s), ${r.removed_bytes} byte(s)`);
+        }
+      }).catch((err) => {
+        console.error("[scheduler] spill file GC failed:", errorMessage(err));
       });
     }
   } finally {

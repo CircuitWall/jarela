@@ -30,6 +30,7 @@ import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 import type { RouteDecisionMetadata } from "@/api/types";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { getConfig } from "@/lib/env/config";
+import { parseToolResultReferenceEnvelope } from "@/lib/tools/result-refs";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -58,6 +59,10 @@ function estimatePayloadBytes(payload: unknown): number {
   } catch {
     return 0;
   }
+}
+
+function spilledToolResultBytes(payload: unknown): number {
+  return parseToolResultReferenceEnvelope(payload)?.bytes ?? 0;
 }
 
 function persistRunErrorMarker(thread_id: string, src: RunErrorSource): void {
@@ -184,6 +189,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       let thinkingTokens: number | null = null;
       let toolResultCount = 0;
       let toolResultBytes = 0;
+      let toolResultBytesSpilled = 0;
       try {
         const startedAt = Date.now();
         broadcast(active, { type: "status", data: { phase: "thinking", label: "Thinking…" } });
@@ -217,6 +223,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           const resultEvents = collected.toolEvents.filter((ev) => ev.phase === "result");
           toolResultCount = resultEvents.length;
           toolResultBytes = resultEvents.reduce((sum, ev) => sum + estimatePayloadBytes(ev.payload), 0);
+          toolResultBytesSpilled = resultEvents.reduce((sum, ev) => sum + spilledToolResultBytes(ev.payload), 0);
         }
         const routeDecision = finalizeRouteDecision(collected.routeDecision ?? prepared.route_decision ?? null, {
           durationMs: Date.now() - startedAt,
@@ -313,6 +320,7 @@ export async function POST(req: NextRequest, { params }: Params) {
             + ` assistant_bytes=${assistantBytes}`
             + ` tool_results=${toolResultCount}`
             + ` tool_result_bytes=${toolResultBytes}`
+            + ` tool_result_bytes_spilled=${toolResultBytesSpilled}`
             + ` tools=${toolList}`
             + ` error_code=${terminalErrorCode ?? "-"}`,
           );

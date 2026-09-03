@@ -410,6 +410,15 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
             read
           </Badge>
         )}
+        {isToolResultRefEnvelope(group.result) && (
+          <Badge
+            tone="info"
+            className="uppercase tracking-wide"
+            title="large result is shown as a preview with a file reference"
+          >
+            preview
+          </Badge>
+        )}
         {claudeTranscript?.awaitingUserAnswers && (
           <Badge
             tone="warning"
@@ -444,11 +453,15 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
             />
           ) : null}
           {group.status !== "running" && group.status !== "async" && (
-            <DetailSection
-              label={group.status === "error" ? "error" : "result"}
-              value={group.result}
-              tone={group.status === "error" ? "error" : "default"}
-            />
+            isToolResultRefEnvelope(group.result) ? (
+              <ToolResultRefDetails value={group.result} />
+            ) : (
+              <DetailSection
+                label={group.status === "error" ? "error" : "result"}
+                value={group.result}
+                tone={group.status === "error" ? "error" : "default"}
+              />
+            )
           )}
           {group.status === "async" && (
             <DetailSection
@@ -458,6 +471,51 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function ToolResultRefDetails({ value }: { value: unknown }) {
+  const envelope = readToolResultRefEnvelope(value);
+  if (!envelope) return <DetailSection label="result" value={value} />;
+  const ref = coerceObject(envelope.result_ref);
+  const refName = typeof ref?.name === "string" ? ref.name : null;
+  const uri = typeof ref?.uri === "string" ? ref.uri : refName ? `/api/v1/files/${encodeURIComponent(refName)}` : null;
+  const mime = typeof ref?.mimeType === "string" ? ref.mimeType : null;
+  return (
+    <div className="min-w-0 rounded border border-sky-500/20 bg-sky-500/5 px-2 py-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge tone="info" bordered className="uppercase tracking-wide">preview</Badge>
+        <span className="text-[11px] text-fg-muted">
+          {formatBytes(envelope.bytes)} stored out of context
+        </span>
+        {typeof envelope.total_count === "number" && (
+          <span className="text-[11px] text-fg-faint">{envelope.total_count} items total</span>
+        )}
+      </div>
+      {refName && (
+        <div className="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[11px] font-mono text-fg-muted">
+          <span className="text-fg-faint">ref</span>
+          <span className="min-w-0 break-all">{refName}</span>
+          {mime && (
+            <>
+              <span className="text-fg-faint">type</span>
+              <span className="min-w-0 break-all">{mime}</span>
+            </>
+          )}
+          {uri && (
+            <>
+              <span className="text-fg-faint">file</span>
+              <a href={uri} target="_blank" rel="noreferrer noopener" className="min-w-0 break-all text-sky-500 hover:underline">
+                {uri}
+              </a>
+            </>
+          )}
+        </div>
+      )}
+      <div className="mt-1.5">
+        <DetailSection label="preview" value={envelope.preview} />
+      </div>
     </div>
   );
 }
@@ -1176,6 +1234,26 @@ function isErrorPayload(payload: unknown): boolean {
 function isAsyncHandoffPayload(payload: unknown): boolean {
   const obj = coerceObject(payload);
   return !!obj && obj.ok === true && obj.async === true && typeof obj.key === "string";
+}
+
+function isToolResultRefEnvelope(payload: unknown): boolean {
+  return readToolResultRefEnvelope(payload) !== null;
+}
+
+function readToolResultRefEnvelope(payload: unknown): Record<string, unknown> | null {
+  const obj = coerceObject(payload);
+  if (!obj || obj.ok !== true || obj.truncated !== true) return null;
+  if (typeof obj.bytes !== "number") return null;
+  const ref = coerceObject(obj.result_ref);
+  if (!ref || typeof ref.name !== "string") return null;
+  return obj;
+}
+
+function formatBytes(bytes: unknown): string {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes < 0) return "unknown size";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round((bytes / 1024) * 10) / 10} KB`;
+  return `${Math.round((bytes / (1024 * 1024)) * 10) / 10} MB`;
 }
 
 function readAsyncKey(payload: unknown): string | null {

@@ -1,4 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { tool } from "@langchain/core/tools";
 import { wrapWithWallclock, DEFAULT_MAX_DEADLINE_MS, getMaxDeadlineMs } from "./wallclock";
@@ -15,6 +18,9 @@ import {
   MAX_ENTRIES,
 } from "./async-results";
 import { toolResultGetTool, toolResultListTool } from "./async-results-tool";
+
+const TMP_ROOT = mkdtempSync(join(tmpdir(), "jarela-tool-results-"));
+process.env.JARELA_DB_DIR = TMP_ROOT;
 
 function makeSlowTool(name: string, delayMs: number, throws = false) {
   return tool(
@@ -37,6 +43,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void
 }
 
 beforeEach(() => { __resetStore(); });
+afterAll(() => rmSync(TMP_ROOT, { recursive: true, force: true }));
 
 describe("wallclock async_run", () => {
   it("returns immediately with a key when async_run is true", async () => {
@@ -171,6 +178,74 @@ describe("tool_result_get", () => {
     const { key } = JSON.parse(start as string);
     await toolResultGetTool.invoke({ key, consume: true });
     expect(getAsyncResult(key)).not.toBeNull();
+  });
+
+  it("reads a spilled result_ref in bounded ranges", async () => {
+    const payload = "abcdefghij".repeat(20);
+    process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32";
+    try {
+      const inner = tool(
+        async () => payload,
+        { name: "large-text", description: "test", schema: z.object({}).passthrough() },
+      );
+      const wrapped = wrapWithWallclock(inner);
+      const out = JSON.parse(await wrapped.invoke({}) as string);
+      expect(out.truncated).toBe(true);
+      const got = JSON.parse(await toolResultGetTool.invoke({ result_ref: { name: out.result_ref.name }, offset: 5, limit: 12 }) as string);
+      expect(got).toMatchObject({ ok: true, status: "done", offset: 5, limit: 12, done: false });
+      expect(got.result).toBe(payload.slice(5, 17));
+      expect(got.next_offset).toBe(17);
+    } finally {
+      delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+    }
+  });
+});
+
+describe("tool result offload", () => {
+  it("returns a disclosed preview plus result_ref for oversized sync results", async () => {
+    process.env.JARELA_TOOL_RESULT_MAX_BYTES = "64";
+    try {
+      const rows = Array.from({ length: 25 }, (_, i) => ({ id: i, value: `row-${i}` }));
+      const inner = tool(
+        async () => JSON.stringify(rows),
+        { name: "large-json", description: "test", schema: z.object({}).passthrough() },
+      );
+      const wrapped = wrapWithWallclock(inner);
+      const out = JSON.parse(await wrapped.invoke({}) as string);
+      expect(out.ok).toBe(true);
+      expect(out.truncated).toBe(true);
+      expect(out.tool).toBe("large-json");
+      expect(out.total_count).toBe(25);
+      expect(out.preview).toHaveLength(20);
+      expect(out.bytes).toBe(Buffer.byteLength(JSON.stringify(rows)));
+      expect(out.result_ref.name).toMatch(/^[a-f0-9]{64}\.json$/);
+      const { FILES_DIR } = await import("@/lib/files");
+      expect(existsSync(join(FILES_DIR, out.result_ref.name))).toBe(true);
+      expect(JSON.parse(readFileSync(join(FILES_DIR, out.result_ref.name), "utf8"))).toEqual(rows);
+    } finally {
+      delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+    }
+  });
+
+  it("stores the offload envelope instead of the raw oversized payload for async_run", async () => {
+    process.env.JARELA_TOOL_RESULT_MAX_BYTES = "64";
+    try {
+      const payload = "x".repeat(500);
+      const inner = tool(
+        async () => payload,
+        { name: "large-async", description: "test", schema: z.object({}).passthrough() },
+      );
+      const wrapped = wrapWithWallclock(inner);
+      const start = JSON.parse(await wrapped.invoke({ async_run: true }) as string);
+      await waitFor(() => getAsyncResult(start.key)?.status === "done");
+      const rec = getAsyncResult(start.key)!;
+      expect(rec.result).not.toBe(payload);
+      const got = JSON.parse(await toolResultGetTool.invoke({ key: start.key }) as string);
+      expect(got).toMatchObject({ ok: true, status: "done", truncated: true, tool: "large-async" });
+      expect(got.result_ref.name).toMatch(/^[a-f0-9]{64}\.txt$/);
+    } finally {
+      delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+    }
   });
 });
 

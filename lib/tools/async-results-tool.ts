@@ -1,4 +1,4 @@
-// Built-in tools that pair with the wallclock wrapper's `async_run` mode.
+// Built-in tools that pair with wallclock result references.
 //
 // `async_run: true` on any tool returns immediately with a key; the
 // agent later calls these tools to retrieve the result.
@@ -12,6 +12,7 @@ import {
   listAsyncResults,
   type AsyncResultRecord,
 } from "./async-results";
+import { parseToolResultReferenceEnvelope, readToolResultRef } from "./result-refs";
 
 function serialize(rec: AsyncResultRecord, includeResult: boolean): Record<string, unknown> {
   const out: Record<string, unknown> = {
@@ -22,7 +23,11 @@ function serialize(rec: AsyncResultRecord, includeResult: boolean): Record<strin
     finished_at: rec.finished_at,
     elapsed_ms: (rec.finished_at ?? Date.now()) - rec.started_at,
   };
-  if (includeResult && rec.status === "done") out.result = rec.result;
+  if (includeResult && rec.status === "done") {
+    const refEnvelope = parseToolResultReferenceEnvelope(rec.result);
+    if (refEnvelope) Object.assign(out, refEnvelope);
+    else out.result = rec.result;
+  }
   if (includeResult && rec.status === "error") out.error = rec.error;
   return out;
 }
@@ -40,7 +45,13 @@ async function waitForFinish(key: string, waitMs: number): Promise<AsyncResultRe
 }
 
 export const toolResultGetTool = tool(
-  async ({ key, wait_ms, consume }) => {
+  async ({ key, result_ref, offset, limit, wait_ms, consume }) => {
+    if (result_ref?.name) {
+      return JSON.stringify(await readToolResultRef({ name: result_ref.name, offset, limit }));
+    }
+    if (!key) {
+      return JSON.stringify({ ok: false, status: "unknown", error: "pass either key or result_ref.name" });
+    }
     let rec: AsyncResultRecord | null = getAsyncResult(key);
     if (!rec) {
       return JSON.stringify({
@@ -66,12 +77,13 @@ export const toolResultGetTool = tool(
     name: "tool_result_get",
     description:
       "Retrieve the result of a previously async-fired tool call by its key. " +
+      "Also reads spilled result_ref payloads by result_ref.name with offset/limit. " +
       "Pass `wait_ms` to short-poll up to that long for a pending call to finish. " +
       "Pass `consume: true` to delete the entry after reading a finished result. " +
       "Status will be 'pending' (still running), 'done' (success — `result` populated), " +
       "'error' (failed — `error` populated), or 'unknown' (no such key).",
     schema: z.object({
-      key: z.string().describe("The key returned by the original async tool call."),
+      key: z.string().optional().describe("The key returned by the original async tool call."),
       wait_ms: z
         .number()
         .int()
@@ -83,6 +95,11 @@ export const toolResultGetTool = tool(
         .boolean()
         .optional()
         .describe("If true and the call has finished, delete the entry after returning it. Default false."),
+      result_ref: z.object({
+        name: z.string().describe("The result_ref.name returned by a truncated tool result."),
+      }).optional().describe("Read a spilled tool result by reference instead of an async key."),
+      offset: z.number().int().min(0).optional().describe("Byte offset when reading a spilled result_ref."),
+      limit: z.number().int().min(1).max(1024 * 1024).optional().describe("Maximum bytes to read from a spilled result_ref."),
     }),
   },
 );

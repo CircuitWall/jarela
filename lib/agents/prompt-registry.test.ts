@@ -327,6 +327,15 @@ describe("assembled agent system prompt", () => {
     }
   });
 
+  it("explains oversized tool result references", () => {
+    for (const { id, prompt } of variants) {
+      expect(prompt, `${id}: prompt never explains truncated tool results`).toContain("truncated=true");
+      expect(prompt, `${id}: prompt never explains result_ref`).toContain("result_ref");
+      expect(prompt, `${id}: prompt never names the retrieval tool`).toContain("tool_result_get");
+      expect(prompt, `${id}: prompt never explains ranged reads`).toContain("offset/limit");
+    }
+  });
+
   it("names only tools that actually exist", async () => {
     const known = new Set((await getAllToolCatalogAsync()).map((t) => t.name));
     // Tool names the prompt tells the model to call, outside the bound list.

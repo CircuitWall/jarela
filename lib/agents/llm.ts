@@ -174,13 +174,8 @@ async function* streamWithConfigImpl(
   // results stay in state forever and get replayed to the LLM, eventually
   // blowing past the model's context window.
   //
-  // ADR-0065 (image_ref) removed the acute pathology this hack was catching
-  // — a single 1.2 MB base64 HumanMessage being replayed 238 times, blowing
-  // thread fb35423b's checkpoints to 893 MB. Post-refs the same thread would
-  // grow ~1 KB/turn instead of ~1.2 MB/turn, but the delete still bounds
-  // generic per-turn state growth (tool_call/tool_result bundles) which
-  // refs alone do not solve. Kept until a proper per-turn checkpoint scope
-  // is designed.
+  // ADR-0065 image refs and ADR-0079 tool-result refs shrink persisted
+  // payloads, but the delete still bounds LangGraph's in-flight reducer.
   try {
     await checkpointer.deleteThread(threadId);
   } catch (err) {
