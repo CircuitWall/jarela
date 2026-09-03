@@ -196,6 +196,7 @@ export const INTEGRATIONS = {
       { key: "access_token", label: "OAuth access token", placeholder: "DL_…", secret: true, required: true },
       { key: "version", label: "LinkedIn API version (optional)", placeholder: "202608", secret: false, required: false },
       { key: "scopes", label: "OAuth scopes (optional, space-separated)", placeholder: "openid profile email w_member_social", secret: false, required: false },
+      { key: "granted_scopes", label: "Granted OAuth scopes", placeholder: "", secret: false, required: false },
     ],
   },
   linkedin_enterprise: {
@@ -208,6 +209,7 @@ export const INTEGRATIONS = {
       { key: "access_token", label: "OAuth access token", placeholder: "DL_…", secret: true, required: true },
       { key: "version", label: "LinkedIn API version (optional)", placeholder: "202608", secret: false, required: false },
       { key: "scopes", label: "OAuth scopes (optional, space-separated)", placeholder: "r_organization_admin r_organization_social w_organization_social", secret: false, required: false },
+      { key: "granted_scopes", label: "Granted OAuth scopes", placeholder: "", secret: false, required: false },
     ],
   },
   outlook: {

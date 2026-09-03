@@ -660,6 +660,89 @@ describe("health probes", () => {
     });
   });
 
+  describe("linkedin", () => {
+    it("reports an unconfigured personal integration", async () => {
+      expect((await probeLinkedInPersonal()).status).toBe("unconfigured");
+    });
+    it("accepts a personal profile response", async () => {
+      saveIntegration("linkedin_personal", { access_token: "personal-token" });
+      mockFetch(() => jsonResponse({ name: "Test Member", email: "member@example.test" }));
+      const result = await probeLinkedInPersonal();
+      expect(result.status).toBe("ok");
+      expect(result.detail?.displayName).toBe("Test Member");
+    });
+    it("reports missing personal OIDC scope without calling LinkedIn", async () => {
+      saveIntegration("linkedin_personal", { access_token: "personal-token", scopes: "w_member_social" });
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await probeLinkedInPersonal();
+      expect(result.status).toBe("ok");
+      expect(result.detail?.warning).toMatch(/openid profile/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+    it("accepts saved granted scopes and profile-only access", async () => {
+      saveIntegration("linkedin_personal", { access_token: "personal-token", granted_scopes: "w_member_social" });
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      expect((await probeLinkedInPersonal()).detail?.warning).toMatch(/openid profile/i);
+
+      saveIntegration("linkedin_personal", { access_token: "personal-token", scopes: "profile" });
+      mockFetch(() => jsonResponse({ name: "Profile Member" }));
+      expect((await probeLinkedInPersonal()).status).toBe("ok");
+    });
+    it("distinguishes personal auth failure and profile denial", async () => {
+      saveIntegration("linkedin_personal", { access_token: "personal-token" });
+      mockFetch(() => new Response("unauthorized", { status: 401 }));
+      expect((await probeLinkedInPersonal()).status).toBe("auth_failed");
+      mockFetch(() => new Response("forbidden", { status: 403 }));
+      expect((await probeLinkedInPersonal()).detail?.warning).toMatch(/OpenID Connect/i);
+    });
+    it("maps personal transient and provider errors", async () => {
+      saveIntegration("linkedin_personal", { access_token: "personal-token" });
+      mockFetch(() => new Response("busy", { status: 429 }));
+      expect((await probeLinkedInPersonal()).status).toBe("transient");
+      mockFetch(() => new Response("broken", { status: 500 }));
+      expect((await probeLinkedInPersonal()).status).toBe("error");
+      mockFetch(() => { throw new Error("network down"); });
+      expect((await probeLinkedInPersonal()).status).toBe("transient");
+    });
+    it("accepts a profile response without a JSON body", async () => {
+      saveIntegration("linkedin_personal", { access_token: "personal-token" });
+      mockFetch(() => new Response("not-json", { status: 200 }));
+      const result = await probeLinkedInPersonal();
+      expect(result.status).toBe("ok");
+      expect(result.detail?.auth).toBe("oauth");
+    });
+    it("accepts enterprise ACL access", async () => {
+      saveIntegration("linkedin_enterprise", { access_token: "enterprise-token", version: "202608" });
+      mockFetch(() => jsonResponse({ elements: [] }));
+      expect((await probeLinkedInEnterprise()).status).toBe("ok");
+    });
+    it("uses the default enterprise API version", async () => {
+      saveIntegration("linkedin_enterprise", { access_token: "enterprise-token" });
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ elements: [] }));
+      vi.stubGlobal("fetch", fetchMock);
+      await probeLinkedInEnterprise();
+      expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: expect.objectContaining({ "Linkedin-Version": "202608" }) });
+    });
+    it("maps enterprise authorization and transient errors", async () => {
+      saveIntegration("linkedin_enterprise", { access_token: "enterprise-token" });
+      mockFetch(() => new Response("unauthorized", { status: 401 }));
+      expect((await probeLinkedInEnterprise()).status).toBe("auth_failed");
+      mockFetch(() => new Response("forbidden", { status: 403 }));
+      expect((await probeLinkedInEnterprise()).status).toBe("auth_failed");
+      mockFetch(() => new Response("busy", { status: 429 }));
+      expect((await probeLinkedInEnterprise()).status).toBe("transient");
+      mockFetch(() => new Response("broken", { status: 500 }));
+      expect((await probeLinkedInEnterprise()).status).toBe("error");
+      mockFetch(() => { throw new Error("network down"); });
+      expect((await probeLinkedInEnterprise()).status).toBe("transient");
+    });
+    it("reports an unconfigured enterprise integration", async () => {
+      expect((await probeLinkedInEnterprise()).status).toBe("unconfigured");
+    });
+  });
+
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();

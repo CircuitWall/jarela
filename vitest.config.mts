@@ -158,6 +158,10 @@ export default defineConfig({
         "lib/integrations/categories.ts",
         "lib/integrations/gmail-oauth.ts",
         "lib/integrations/microsoft-oauth.ts",
+        // OAuth authorization-code exchange and callback persistence are
+        // route/integration concerns; package and probe behavior is tested
+        // separately without adding a second SQLite-backed OAuth fixture.
+        "lib/integrations/linkedin-oauth.ts",
         "lib/bridges/whatsapp.ts",
         "lib/bridges/dispatcher.ts",
         "**/index.ts",
