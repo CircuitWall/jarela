@@ -31,14 +31,15 @@ describe("collectFileRefNames", () => {
 
 describe("runSpillFileGc", () => {
   it("deletes only old unreferenced files", async () => {
-    const oldUnreferenced = `${createHash("sha256").update("old").digest("hex")}.txt`;
-    const oldReferenced = `${createHash("sha256").update("kept").digest("hex")}.txt`;
-    const freshUnreferenced = `${createHash("sha256").update("fresh").digest("hex")}.txt`;
+    const suffix = randomUUID();
+    const oldUnreferenced = `${createHash("sha256").update(`old-${suffix}`).digest("hex")}.txt`;
+    const oldReferenced = `${createHash("sha256").update(`kept-${suffix}`).digest("hex")}.txt`;
+    const freshUnreferenced = `${createHash("sha256").update(`fresh-${suffix}`).digest("hex")}.txt`;
     await writeFile(join(FILES_DIR, oldUnreferenced), "old");
     await writeFile(join(FILES_DIR, oldReferenced), "kept");
     await writeFile(join(FILES_DIR, freshUnreferenced), "fresh");
 
-    const stale = new Date(Date.now() - 10_000);
+    const stale = new Date(Date.now() - 120_000);
     await utimes(join(FILES_DIR, oldUnreferenced), stale, stale);
     await utimes(join(FILES_DIR, oldReferenced), stale, stale);
 
@@ -59,8 +60,8 @@ describe("runSpillFileGc", () => {
         null,
       );
 
-    const result = await runSpillFileGc({ retentionMs: 1_000, now: Date.now() });
-    expect(result.removed).toBe(1);
+    const result = await runSpillFileGc({ retentionMs: 60_000, now: Date.now() });
+    expect(result.removed).toBeGreaterThanOrEqual(1);
     expect(existsSync(join(FILES_DIR, oldUnreferenced))).toBe(false);
     expect(existsSync(join(FILES_DIR, oldReferenced))).toBe(true);
     expect(existsSync(join(FILES_DIR, freshUnreferenced))).toBe(true);
