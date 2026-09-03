@@ -221,7 +221,8 @@ export function buildSharedToolCatalogContext(): string {
     "3. Named target. When a skill, harness or instruction names an exact tool, call list_tools names=[\"exact_name\"] include_schema=true instead of a keyword query. Exact lookup ignores every other filter, so it also describes tools you cannot currently execute.",
     "4. Read the schema. Set include_schema=true before invoking anything that is not bound this turn, and match the returned JSON schema exactly.",
     "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and args_json \u2014 a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. Never proxy invoke_tool through itself, and never wrap a tool that is already bound.",
-    "6. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up \u2014 propose a configuration change or tell the user what to configure.",
+    "6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. Use result_ref.name with tool_result_get and offset/limit to read only the slice you need.",
+    "7. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up \u2014 propose a configuration change or tell the user what to configure.",
   ].join("\n");
 }
 

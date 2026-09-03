@@ -1,4 +1,4 @@
-// Per-call wall-clock budgets for tools.
+// Per-call wall-clock budgets and result envelopes for tools.
 //
 // Every registered tool is wrapped with a Promise.race against a timer
 // the LLM controls via an injected `deadline_ms` schema field. When the
@@ -19,6 +19,9 @@
 // exec) should use the `deadline_ms` value themselves to drive their own
 // abort signal — the wallclock wrapper is the backstop, not the only
 // mechanism.
+//
+// Oversized successful results spill after the race resolves, so local
+// serialization/hash/write time can extend elapsed time past deadline_ms.
 
 import { z } from "zod";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
@@ -28,6 +31,7 @@ import {
   failAsyncCall,
 } from "./async-results";
 import { getStreamDefault } from "./tool-metadata";
+import { postProcessToolResult } from "./result-refs";
 
 const DEFAULT_DEADLINE_MS = 120_000;
 
@@ -204,7 +208,8 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
       // Cast: invoke accepts a typed input matching the original schema,
       // but the wrapper is generic over all tools.
       const work = (t as unknown as { invoke: (a: unknown, c?: unknown) => Promise<unknown> }).invoke(innerArgs, configForInner);
-      return await Promise.race([work, timeoutPromise]);
+      const result = await Promise.race([work, timeoutPromise]);
+      return postProcessToolResult(t.name, result);
     } finally {
       clearTimeout(timer);
     }
@@ -294,10 +299,7 @@ function runAsync<T extends StructuredToolInterface>(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      completeAsyncCall(
-        key,
-        typeof result === "string" ? result : JSON.stringify(result),
-      );
+      completeAsyncCall(key, await postProcessToolResult(t.name, result));
     } catch (err) {
       if (settled) return;
       settled = true;

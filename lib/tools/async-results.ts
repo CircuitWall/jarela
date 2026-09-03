@@ -5,13 +5,10 @@
 // background, and parks the eventual result here. The agent later
 // retrieves the result via the `tool_result_get` built-in.
 //
-// Scope is deliberately per-process, in-memory:
-//   - The data lives only as long as the Next.js server process. A
-//     restart wipes both the agent's in-context keys and these results
-//     simultaneously, so we can't end up with the LLM holding a key
-//     that survived the value.
-//   - No on-disk persistence means no schema migration, no PII spill,
-//     no risk of leaking long-running secrets between sessions.
+// Scope is deliberately per-process for the key map. Oversized payloads
+// are spilled by the wallclock result envelope, and the map stores only
+// the reference envelope so a background result slot cannot hold an
+// unbounded string.
 //
 // Memory hygiene:
 //   - TTL (DEFAULT_TTL_MS) caps how long a finished result hangs around
@@ -31,7 +28,7 @@ export interface AsyncResultRecord {
   status: AsyncStatus;
   started_at: number;
   finished_at: number | null;
-  /** Stringified tool result. Tools return JSON strings; we keep that. */
+  /** Stringified result or result-ref envelope. */
   result: string | null;
   /** Plain message when the underlying call threw. */
   error: string | null;

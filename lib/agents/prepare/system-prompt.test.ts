@@ -243,12 +243,15 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("3. Named target.");
     expect(ctx).toContain("4. Read the schema.");
     expect(ctx).toContain("5. Invoke through the proxy.");
-    expect(ctx).toContain("6. Stop and ask.");
+    expect(ctx).toContain("6. Read large results by reference.");
+    expect(ctx).toContain("7. Stop and ask.");
 
     expect(ctx).toContain("names=[\"exact_name\"]");
     expect(ctx).toContain("scope=\"all\"");
     expect(ctx).toContain("include_schema=true");
     expect(ctx).toContain("args_json");
+    expect(ctx).toContain("result_ref.name");
+    expect(ctx).toContain("offset/limit");
     expect(ctx).toContain("permission_reason=\"proxy_only\"");
     expect(ctx).toContain("permission_reason=\"provider_tool_limit\"");
 
