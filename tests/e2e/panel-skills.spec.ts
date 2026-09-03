@@ -33,7 +33,8 @@ test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
   try {
     await page.getByPlaceholder("Pick or paste an absolute path").fill(repoDir);
     await page.getByRole("button", { name: "Add", exact: true }).click();
-    await expect(page.getByText(repoDir)).toBeVisible({ timeout: 10_000 });
+    const repoRow = page.locator("span.font-mono", { hasText: repoDir });
+    await expect(repoRow).toBeVisible({ timeout: 10_000 });
 
     await expect(page.getByRole("button", { name: "New", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "New", exact: true }).click();
@@ -57,8 +58,8 @@ test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
 
     // Clean up the repo row too, so it doesn't linger (pointing at a
     // now-removed directory) for other tests sharing this E2E database.
-    await page.getByText(repoDir).locator("..").getByRole("button", { name: "Remove repo" }).click();
-    await expect(page.getByText(repoDir)).toHaveCount(0);
+    await repoRow.locator("..").getByRole("button", { name: "Remove repo" }).click();
+    await expect(repoRow).toHaveCount(0);
   } finally {
     rmSync(repoDir, { recursive: true, force: true });
   }
