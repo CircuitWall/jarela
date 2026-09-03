@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.36.1] - 2026-09-03
+
+### Fixed
+
+- **Large tool results no longer bloat the active agent turn.** Oversized tool
+  outputs are now stored as content-addressed file refs with a bounded preview,
+  and `tool_result_get` can read the full result back in byte ranges. The same
+  cap applies to direct tool calls and `async_run` results.
+- **Spilled files now have reference-aware cleanup.** The scheduler sweeps old
+  unreferenced files while preserving files still referenced by messages,
+  generated file links, image refs and tool-result refs.
+- **Large tool-result previews render cleanly in chat.** Tool cards show the
+  stored byte count, item count, ref metadata and bounded preview instead of
+  dumping the raw result-ref envelope.
+
 ## [1.36.0] - 2026-09-02
 
 ### Added
