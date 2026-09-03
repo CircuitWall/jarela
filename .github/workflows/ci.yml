@@ -1,10 +1,9 @@
 name: CI
 
 on:
-  # Run on PRs (against any base) and on the post-merge commit on main.
-  # We deliberately do NOT run on push to feature branches: that would
-  # double up with the pull_request run on every push. The main run keeps
-  # the README badge honest and acts as a final safety net after merge.
+  # Run full validation on PRs and a light sanity pass on post-merge main.
+  # Feature-branch pushes are intentionally excluded: the pull_request run
+  # already validates every update, and tag pushes are handled by release.yml.
   push:
     branches: ["main"]
   pull_request:
@@ -46,20 +45,22 @@ jobs:
 
   changes:
     # Detect whether the PR / push touched anything that could affect the
-    # built app. Several downstream jobs are gated on `app`; the others use
-    # finer-grained `deps`, `packages`, and `pkg_meta` outputs to skip steps
-    # that are irrelevant to the change (e.g. skip `npm audit` when no
-    # dependency files changed, skip `test:package` when packaging metadata
-    # is untouched).
+    # built app. PR jobs use this to avoid expensive retests for release
+    # metadata-only changes; push-to-main keeps only conventions + security
+    # scans because the merge was already gated by PR CI.
     name: Detect changed paths
     runs-on: ubuntu-latest
     outputs:
-      app:      ${{ steps.filter.outputs.app }}
-      deps:     ${{ steps.filter.outputs.deps }}
-      packages: ${{ steps.filter.outputs.packages }}
-      pkg_meta: ${{ steps.filter.outputs.pkg_meta }}
+      app:               ${{ steps.filter.outputs.app }}
+      deps:              ${{ steps.filter.outputs.deps }}
+      packages:          ${{ steps.filter.outputs.packages }}
+      pkg_meta:          ${{ steps.filter.outputs.pkg_meta }}
+      workflows:         ${{ steps.filter.outputs.workflows }}
+      release_meta_only: ${{ steps.release-meta.outputs.only }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -80,7 +81,6 @@ jobs:
               - 'playwright.config.ts'
               - 'package.json'
               - 'package-lock.json'
-              - '.github/workflows/ci.yml'
             deps:
               - 'package.json'
               - 'package-lock.json'
@@ -91,6 +91,47 @@ jobs:
               - 'packages/*/package.json'
               - 'scripts/rewrite-workspace-deps.mjs'
               - 'scripts/check-npm-package.mjs'
+            workflows:
+              - '.github/workflows/**'
+
+      - name: Detect release metadata-only change
+        id: release-meta
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            range="$BASE_SHA..$HEAD_SHA"
+          elif [[ "$BEFORE" =~ ^0+$ ]]; then
+            range="$HEAD_SHA^..$HEAD_SHA"
+          else
+            range="$BEFORE..$HEAD_SHA"
+          fi
+
+          node - "$range" <<'NODE'
+          const { execFileSync } = require('node:child_process');
+          const fs = require('node:fs');
+          const range = process.argv[2];
+          const allowed = new Set(['CHANGELOG.md', 'package.json', 'package-lock.json']);
+          const changed = execFileSync('git', ['diff', '--name-only', range], { encoding: 'utf8' })
+            .trim()
+            .split(/\r?\n/)
+            .filter(Boolean);
+          let only = changed.length > 0 && changed.every((file) => allowed.has(file));
+
+          for (const file of ['package.json', 'package-lock.json']) {
+            if (!only || !changed.includes(file)) continue;
+            const diff = execFileSync('git', ['diff', '-U0', range, '--', file], { encoding: 'utf8' });
+            for (const line of diff.split(/\r?\n/)) {
+              if (!/^[+-]/.test(line) || /^[+-]{3}/.test(line)) continue;
+              if (!/^[-+]\s*"version":\s*"[^"]+",?$/.test(line)) only = false;
+            }
+          }
+
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `only=${only ? 'true' : 'false'}\n`);
+          console.log(`release_meta_only=${only ? 'true' : 'false'} changed=${changed.join(',') || '(none)'}`);
+          NODE
 
   security:
     name: Security checks
@@ -112,26 +153,28 @@ jobs:
       # package.json / package-lock.json changed. Skip on source-only PRs to
       # avoid a full `npm ci` just to run `npm audit`.
       - name: Setup Node
-        if: needs.changes.outputs.deps == 'true'
+        if: needs.changes.outputs.deps == 'true' && needs.changes.outputs.release_meta_only != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
 
       - name: Install dependencies
-        if: needs.changes.outputs.deps == 'true'
+        if: needs.changes.outputs.deps == 'true' && needs.changes.outputs.release_meta_only != 'true'
         run: npm ci --no-audit --no-fund --registry=https://registry.npmjs.org/
 
       - name: Dependency audit and version gates
-        if: needs.changes.outputs.deps == 'true'
+        if: needs.changes.outputs.deps == 'true' && needs.changes.outputs.release_meta_only != 'true'
         run: npm run security:audit && npm run security:link-preview
 
   build:
     name: Lint, typecheck, build
     runs-on: ubuntu-latest
     needs: [changes]
-    # Runs in parallel with `security` — they share only `npm ci` and neither
-    # gates the other. Cuts ~25s off the critical path on a clean PR.
+    # Expensive validation runs once, on PRs that touch runtime/package/test
+    # surfaces. Skip docs-only, workflow-only, release-metadata-only, and
+    # post-merge main repeats; release.yml rebuilds tagged app releases.
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -203,10 +246,8 @@ jobs:
     name: Unit coverage (>=80%)
     runs-on: ubuntu-latest
     needs: [build, changes]
-    # Skip for doc-only / CHANGELOG-only PRs — unit tests can't fail if no
-    # app code changed. `build` still gate-checks lint/typecheck/compile
-    # regardless; this job just avoids a redundant npm ci + vitest run.
-    if: ${{ needs.changes.outputs.app == 'true' }}
+    # Skip for doc-only, release-metadata-only, and post-merge main runs.
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -235,12 +276,9 @@ jobs:
     name: Playwright E2E
     runs-on: ubuntu-latest
     needs: [build, changes]
-    # Skip the expensive browser suite when the change footprint can't
-    # affect runtime behaviour (docs, CHANGELOG, release workflow, etc.).
-    # `if` on `needs.changes.outputs.app == 'true'` keeps the job result
-    # as "skipped" rather than failing — branch protection treats skipped
-    # required checks as passing.
-    if: ${{ needs.changes.outputs.app == 'true' }}
+    # Skip the expensive browser suite when the change footprint can't affect
+    # runtime behaviour, and on post-merge main where PR CI already ran it.
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.app == 'true' && needs.changes.outputs.release_meta_only != 'true' }}
     timeout-minutes: 30
     env:
       JARELA_DB_DIR: /tmp/jarela-e2e
