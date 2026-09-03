@@ -44,7 +44,7 @@ Open an ADR first if the package is non-trivial. The general checklist:
    `README.md`, `CHANGELOG.md`.
 2. Inherit from the shared base configs (see existing packages for the
    pattern).
-3. Add the package's test glob to the root `vitest.config.ts` include
+3. Add the package's test glob to the root `vitest.config.mts` include
    array.
 4. Register the npm package name with the `@circuitwall` org's OIDC
    Trusted Publishing config on npmjs.com (one-time manual step per new
