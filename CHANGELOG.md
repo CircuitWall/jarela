@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.37.0] - 2026-09-03
+
+### Added
+
+- Added separate LinkedIn Personal and LinkedIn Enterprise integrations with
+  OAuth connection flows, encrypted credential persistence, configurable
+  scopes, organization access checks, and text-post tools.
+- Added connection probes and integration UI controls for both LinkedIn
+  integrations.
+- Added a repository integration-development skill with an official LinkedIn
+  credential acquisition guide and implementation checklist.
+
 ## [1.36.1] - 2026-09-03
 
 ### Fixed

@@ -36,7 +36,7 @@ import { isBasicToolCategory } from "./categories";
 export type ToolCategory =
   | "Memory" | "Documents" | "Files" | "Shell" | "Web" | "Images" | "Voice"
   | "Schedule" | "Atlassian" | "JiraAlign" | "GitHub" | "Mail" | "Calendar"
-  | "Tasks" | "Microsoft" | "Config" | "Agent" | "Skills" | "MCP" | "Other";
+  | "Tasks" | "Microsoft" | "Config" | "Agent" | "Skills" | "Other" | "MCP";
 
 // Safety class. Orthogonal to ToolCategory. See ADR-0038 for definitions
 // and tie-breakers (network reads vs writes, drafts, etc.).
@@ -54,7 +54,7 @@ export type ToolGroup = "Basic" | "Work" | "MCP" | null;
 export const BUILTIN_CATEGORIES = [
   "Memory", "Documents", "Files", "Shell", "Web", "Images", "Voice",
   "Schedule", "Atlassian", "JiraAlign", "GitHub", "Mail", "Calendar",
-  "Tasks", "Microsoft", "Config", "Agent", "Skills",
+  "Tasks", "Microsoft", "Config", "Agent", "Skills", "Other",
 ] as const satisfies readonly Exclude<ToolCategory, "MCP">[];
 
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];

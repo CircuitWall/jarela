@@ -23,6 +23,7 @@ export interface OAuthFlow {
   // to the token endpoint on /oauth/callback. Required for Google Desktop
   // clients; safely ignored by providers that don't enforce PKCE.
   codeVerifier?: string;
+  scopes?: string[];
   // When set, the callback writes the refresh token onto THIS specific
   // credential row instead of the provider's default. Used by the
   // credentials panel when re-authorizing a per-row credential.
@@ -37,6 +38,7 @@ export interface OAuthFlowStore {
     clientSecret: string;
     redirectUri: string;
     codeVerifier?: string;
+    scopes?: string[];
     credentialId?: string;
   }): {
     state: string;

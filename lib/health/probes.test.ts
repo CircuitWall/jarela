@@ -15,6 +15,7 @@ const {
   probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
   probeOutlook, probeICloud, probeAnthropic, probeOpenAI, probeDeepseek,
   probeCohere, probeGithubCopilot, probeClaudeCode, __testing,
+  probeLinkedInPersonal, probeLinkedInEnterprise,
   listProbes, probeLabel, probeCategory, isIntegrationProbe, runProbe,
 } = await import("./probes");
 
@@ -29,7 +30,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function wipe(): void {
-  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code"]) {
+  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code", "linkedin_personal", "linkedin_enterprise"]) {
     deleteIntegration(k);
   }
   clearStoredOAuthToken();
@@ -640,10 +641,29 @@ describe("health probes", () => {
     });
   });
 
+  describe("linkedin", () => {
+    it("reports missing OIDC profile scope without calling userinfo", async () => {
+      saveIntegration("linkedin_personal", { access_token: "token", scopes: "w_member_social" });
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await probeLinkedInPersonal();
+      expect(result.status).toBe("ok");
+      expect(result.detail?.warning).toMatch(/openid profile/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("probes the enterprise ACL endpoint", async () => {
+      saveIntegration("linkedin_enterprise", { access_token: "token", version: "202608" });
+      mockFetch(() => jsonResponse({ elements: [] }));
+      const result = await probeLinkedInEnterprise();
+      expect(result.status).toBe("ok");
+    });
+  });
+
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(13);
+      expect(names.length).toBe(15);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));
