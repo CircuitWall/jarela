@@ -59,7 +59,7 @@ demos), not just an issue editor.
   agent without touching the rest.
 - **Coverage**: tighten the gate so the new tool code is actually
   measured. Today `lib/tools/**` is excluded entirely
-  ([vitest.config.ts:31](../../vitest.config.ts#L31)).
+  ([vitest.config.mts:31](../../vitest.config.mts#L31)).
 
 ## Considered Options
 
@@ -171,7 +171,7 @@ Confluence v2 audit run live on 2026-05-28
   across `atlassian-agile.test.ts`, `atlassian-issue-extras.test.ts`,
   `atlassian-project-meta.test.ts`, `atlassian-confluence.test.ts`,
   and `jira-align.test.ts` for review-friendly file sizes.
-- [vitest.config.ts](../../vitest.config.ts) coverage exclude
+- [vitest.config.mts](../../vitest.config.mts) coverage exclude
   narrows from `lib/tools/**` to per-file: `lib/tools/atlassian.ts`
   and `lib/tools/jira-align.ts` are included in the gate; sibling
   files that hit live-network/SDK boundaries (e.g.
