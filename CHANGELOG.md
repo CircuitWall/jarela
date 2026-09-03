@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.37.0] - 2026-09-03
+## [1.37.0] - 2026-09-04
 
 ### Added
 
@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integrations.
 - Added a repository integration-development skill with an official LinkedIn
   credential acquisition guide and implementation checklist.
+
+### Fixed
+
+- **`invoke_tool` dispatches now resolve to the tool that actually ran.** Chat
+  tool cards show the target's name, arguments, and unwrapped result instead of
+  a generic `invoke_tool` entry, and the stall/loop retry heuristics no longer
+  treat a proxied write as an unnamed read-only call.
+- **Tool calls streamed without a chunk index are no longer dropped.** Calls are
+  recovered from `invalid_tool_calls` and raw `tool_call_chunks`, so turns from
+  aggregator providers reach the transcript with their arguments intact.
 
 ## [1.36.1] - 2026-09-03
 
