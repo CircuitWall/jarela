@@ -81,6 +81,23 @@ describe("MessageList conversation focus", () => {
     expect(container.querySelectorAll("[data-testid='live-turn-activity']")).toHaveLength(1);
   });
 
+  it("shows thinking dots while a run has produced nothing yet, and drops them once it has", () => {
+    const { rerender } = render(
+      <MessageList threadId="thread-1" messages={[]} streaming />,
+    );
+    expect(screen.getByTestId("thinking-dots")).toBeTruthy();
+
+    rerender(
+      <MessageList threadId="thread-1" messages={[]} streaming streamingContent="I found a match" />,
+    );
+    expect(screen.queryByTestId("thinking-dots")).toBeNull();
+  });
+
+  it("shows no thinking dots when no run is in flight", () => {
+    render(<MessageList threadId="thread-1" messages={[]} />);
+    expect(screen.queryByTestId("thinking-dots")).toBeNull();
+  });
+
   it("opens a confirmation dialog on drag release and only persists after confirm", async () => {
     const onSetContextPin = vi.fn();
     const messages = [
