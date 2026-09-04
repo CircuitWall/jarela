@@ -59,6 +59,10 @@ export interface ActiveRun {
   // Cumulative wall-clock time spent inside completed tool calls. Adds
   // on each tool_result; never decreases.
   tool_time_ms_done: number;
+  // User messages typed while this run was streaming (ADR-0080). Drained
+  // by the agent's preModelHook before the next model call, so steering
+  // reaches the model together with the tool results it should react to.
+  steering: string[];
 }
 
 const runs = new Map<string, ActiveRun>();
@@ -116,6 +120,7 @@ export function startRun(thread_id: string, agent_id: string | null): ActiveRun 
     inflight_tools: new Set<string>(),
     tool_started_at: new Map<string, number>(),
     tool_time_ms_done: 0,
+    steering: [],
   };
   runs.set(thread_id, run);
   // Wake any GET subscribers that attached before the run was registered.
@@ -313,6 +318,26 @@ export function abortRun(thread_id: string, reason = "user_interrupted"): boolea
     try { run.abort.abort(reason); } catch { /* */ }
   }
   return true;
+}
+
+// Queue a user message typed while `thread_id` is streaming (ADR-0080).
+// Returns false when there is nothing to steer, so the caller can fall back
+// to starting a fresh turn.
+export function pushSteering(thread_id: string, text: string): boolean {
+  const run = runs.get(thread_id);
+  if (!run || run.status !== "running" || run.abort.signal.aborted) return false;
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  run.steering.push(trimmed);
+  return true;
+}
+
+// Take everything queued so far, in arrival order. Deliberately not merged
+// into a summary — collapsing several messages loses the user's intent.
+export function drainSteering(thread_id: string): string[] {
+  const run = runs.get(thread_id);
+  if (!run || run.steering.length === 0) return [];
+  return run.steering.splice(0, run.steering.length);
 }
 
 // Abort every currently-running run. Used by the graceful-shutdown path so

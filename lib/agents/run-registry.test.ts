@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { startRun, finishRun, getRun, broadcast, waitForRun } from "./run-registry";
+import { startRun, finishRun, getRun, broadcast, waitForRun, pushSteering, drainSteering, abortRun } from "./run-registry";
 import { resetConfigCache } from "@/lib/env/config";
 import type { StreamChunk } from "./base";
 
@@ -341,6 +341,46 @@ describe("waitForRun", () => {
     // resolve against).
     const run = startRun(tid, null);
     await expect(waitForRun(tid, 0)).resolves.toBe(run);
+    finishRun(run, "done");
+  });
+});
+
+describe("steering queue (ADR-0080)", () => {
+  it("queues messages on the active run and drains them in arrival order", () => {
+    const tid = `t-steer-${Date.now()}`;
+    const run = startRun(tid, null);
+    expect(pushSteering(tid, "skip the tests")).toBe(true);
+    expect(pushSteering(tid, "and keep the API stable")).toBe(true);
+    expect(drainSteering(tid)).toEqual(["skip the tests", "and keep the API stable"]);
+    // Draining is destructive so the next model call doesn't see them twice.
+    expect(drainSteering(tid)).toEqual([]);
+    finishRun(run, "done");
+  });
+
+  it("trims and rejects blank messages", () => {
+    const tid = `t-steer-blank-${Date.now()}`;
+    const run = startRun(tid, null);
+    expect(pushSteering(tid, "   ")).toBe(false);
+    expect(pushSteering(tid, "  real  ")).toBe(true);
+    expect(drainSteering(tid)).toEqual(["real"]);
+    finishRun(run, "done");
+  });
+
+  it("refuses to steer when there is no run, or the run already ended", () => {
+    const tid = `t-steer-none-${Date.now()}`;
+    expect(pushSteering(tid, "hello")).toBe(false);
+    const run = startRun(tid, null);
+    finishRun(run, "done");
+    expect(pushSteering(tid, "hello")).toBe(false);
+  });
+
+  // Stop is the only interrupt, so a message racing the abort must fall back
+  // to starting a fresh turn rather than vanishing into a dying run.
+  it("refuses to steer a run that is already aborting", () => {
+    const tid = `t-steer-abort-${Date.now()}`;
+    const run = startRun(tid, null);
+    abortRun(tid);
+    expect(pushSteering(tid, "too late")).toBe(false);
     finishRun(run, "done");
   });
 });

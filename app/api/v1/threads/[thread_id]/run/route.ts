@@ -19,7 +19,7 @@ import {
   snapshotThreadModelConfigName,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, startRun, subscribe, abortRun, getRun, waitForRun } from "@/lib/agents/run-registry";
+import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, getRun, waitForRun } from "@/lib/agents/run-registry";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread, addMessage } from "@/lib/stores/threads";
@@ -401,6 +401,26 @@ export async function GET(req: NextRequest, { params }: Params) {
   }
 
   return attachStream(thread_id, stream_options);
+}
+
+const SteerBody = z.object({ message: z.string().min(1) });
+
+// PATCH steers the currently-running agent: the message is queued and the
+// agent's preModelHook delivers it before the next model call, alongside the
+// tool results it should react to (ADR-0080). 409 means there was nothing to
+// steer, and the caller should submit a normal run instead.
+export async function PATCH(req: NextRequest, { params }: Params) {
+  const { thread_id } = await params;
+  const body = await validateBody(req, SteerBody);
+  if (body instanceof NextResponse) return body;
+
+  if (!pushSteering(thread_id, body.message)) {
+    return NextResponse.json({ steered: false, reason: "no_active_run" }, { status: 409 });
+  }
+  // Persist only once the queue accepted it, so a 409 fallback to POST /run
+  // doesn't write the same message twice.
+  addMessage(thread_id, "user", body.message);
+  return NextResponse.json({ steered: true });
 }
 
 // DELETE aborts the currently-running agent for this thread. The agent stream

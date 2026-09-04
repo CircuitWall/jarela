@@ -540,6 +540,14 @@ export const api = {
     // any UI queue-drain hook (e.g. ChatView) still fires.
     abortRun: (thread_id: string) =>
       request<{ aborted: boolean }>(`/threads/${thread_id}/run`, { method: "DELETE" }),
+    // ADR-0080. Deliver a message typed mid-run to the agent that is already
+    // streaming, instead of aborting it. Resolves `{ steered: false }` when no
+    // run is active, in which case the caller should submit a normal run.
+    steerRun: (thread_id: string, message: string) =>
+      request<{ steered: boolean }>(`/threads/${thread_id}/run`, {
+        method: "PATCH",
+        body: JSON.stringify({ message }),
+      }).catch(() => ({ steered: false })),
     // ADR-0042. Move the explicit hot/warm context boundary on this thread.
     // Pass `null` to clear the pin and let the agent's default window apply.
     // Fire-and-forget from the chat — UI updates optimistically and the
