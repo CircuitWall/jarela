@@ -135,7 +135,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     const optId = `opt-${makeQueuedId("")}`;
     thread.setMessages((p) => [
       ...p,
-      { id: optId, role: "user", content: text, created_at: new Date().toISOString(), status: 'pending' },
+      { id: optId, role: "user", content: text, created_at: new Date().toISOString(), status: 'steering' },
     ]);
     const { steered } = await api.threads.steerRun(threadId, text);
     if (!steered) thread.setMessages((p) => p.filter((m) => m.id !== optId));
