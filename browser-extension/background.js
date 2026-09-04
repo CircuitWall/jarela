@@ -21,11 +21,13 @@ import {
   allowedSiteHostUrl,
   browserPollUrl,
   browserResultUrl,
+  browserProgressUrl,
   buildBase,
 } from "./lib/config.mjs";
 import { BRAND } from "./lib/brand.mjs";
 import { dispatchCommand } from "./lib/browser-control.mjs";
-import { gateCommand, setApproval } from "./lib/approvals.mjs";
+import { gateCommand, setApproval, syncApprovalsWithAllowedHosts } from "./lib/approvals.mjs";
+import { classifyCommandRisk } from "./lib/command-risk.mjs";
 import {
   resolveTargetTab as resolveTargetTabPure,
   getPinnedTab,
@@ -40,6 +42,7 @@ import {
   handleWindowFocused as handleWindowFocusedFg,
   handleTabRemoved as handleTabRemovedFg,
   seedForegroundTab,
+  recordSidePanelCurrentTab,
 } from "./lib/foreground-tab.mjs";
 
 const ALARM_NAME = "jarela-health";
@@ -209,12 +212,32 @@ async function refreshAllowedSites() {
     const res = await getJson(allowedSitesUrl(currentConfig));
     if (!res.ok || !Array.isArray(res.body?.sites)) return;
     allowedHosts.clear();
-    for (const s of res.body.sites) {
-      if (s && typeof s.hostname === "string") allowedHosts.add(s.hostname.toLowerCase());
+    const hosts = [];
+    for (const site of res.body.sites) {
+      if (site && typeof site.hostname === "string") {
+        const host = site.hostname.toLowerCase();
+        allowedHosts.add(host);
+        hosts.push(host);
+      }
     }
+    await syncApprovalsWithAllowedHosts(chrome.storage.local, hosts);
   } catch {
     // Server unreachable — keep the previous cache. The next health tick
     // will retry.
+  }
+}
+
+async function persistAllowedSite(host) {
+  if (typeof host !== "string" || host.trim().length === 0) return;
+  try {
+    const out = await postJson(allowedSitesUrl(currentConfig), { hostname: host });
+    if (out?.ok) {
+      allowedHosts.add(host.toLowerCase());
+      await syncApprovalsWithAllowedHosts(chrome.storage.local, Array.from(allowedHosts));
+    }
+  } catch {
+    // Local chrome.storage still contains the approval. The next heartbeat
+    // will retry list reconciliation once the server is reachable.
   }
 }
 
@@ -1698,6 +1721,29 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         sendResponse({ ok: true, status: 200, body: { foreground } });
         return;
       }
+      if (msg.type === "jarela-sidepanel-adopt-current-tab") {
+        const result = await recordSidePanelCurrentTab({
+          ...foregroundTrackerDeps,
+          getPinnedTab: () => getPinnedTab(chrome.storage.local),
+        });
+        sendResponse({ ok: true, status: 200, body: result });
+        return;
+      }
+      if (msg.type === "jarela-list-tabs") {
+        const result = await dispatchCommand(chromeDeps, { type: "tabs", include_unusable: true });
+        sendResponse({ ok: result.ok, status: result.ok ? 200 : 0, body: result.ok ? result.data : { error: result.error } });
+        return;
+      }
+      if (msg.type === "jarela-activate-tab") {
+        const tabId = Number(msg.payload?.tab_id);
+        if (!Number.isInteger(tabId) || tabId <= 0) {
+          sendResponse({ ok: false, status: 0, body: { error: "invalid tab id" } });
+          return;
+        }
+        const result = await dispatchCommand(chromeDeps, { type: "activate_tab", tab_id: tabId });
+        sendResponse({ ok: result.ok, status: result.ok ? 200 : 0, body: result.ok ? result.data : { error: result.error } });
+        return;
+      }
       if (msg.type === "jarela-pin-current-tab") {
         // Captures whatever tab the user currently considers "this tab"
         // when they click the popup. Uses the resolver so we pick the
@@ -1712,6 +1758,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
         const saved = await setPinnedTab(chrome.storage.local, resolved.tab);
+        sendResponse({ ok: true, status: 200, body: { pin: saved } });
+        return;
+      }
+      if (msg.type === "jarela-pin-tab") {
+        const tabId = Number(msg.payload?.tab_id);
+        if (!Number.isInteger(tabId) || tabId <= 0) {
+          sendResponse({ ok: false, status: 0, body: { error: "invalid tab id" } });
+          return;
+        }
+        const tab = await chrome.tabs.get(tabId);
+        if (!tab?.id || !isUsableUrl(tab.url)) {
+          sendResponse({ ok: false, status: 0, body: { error: "tab URL is not scriptable (chrome:// / blank / extension page)" } });
+          return;
+        }
+        const saved = await setPinnedTab(chrome.storage.local, tab);
         sendResponse({ ok: true, status: 200, body: { pin: saved } });
         return;
       }
@@ -1791,6 +1852,19 @@ async function postCommandResult(cmdId, outcome) {
     });
   } catch (err) {
     console.warn("[jarela] failed to POST browser-control result:", err);
+  }
+}
+
+async function postCommandProgress(cmdId, phase) {
+  if (!cmdId || !phase) return;
+  try {
+    await fetch(browserProgressUrl(currentConfig), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ cmd_id: cmdId, phase }),
+    });
+  } catch {
+    // Best-effort only. The final result path remains authoritative.
   }
 }
 
@@ -1881,12 +1955,19 @@ const chromeDeps = {
   // queryActiveTab kept for back-compat with tests; the dispatcher
   // prefers resolveTargetTab when present.
   queryActiveTab: (opts) => chrome.tabs.query(opts),
+  queryTabs: (opts) => chrome.tabs.query(opts),
   resolveTargetTab: () => resolveTargetTabPure(tabTargetDeps),
+  getPinnedTab: () => getPinnedTab(chrome.storage.local),
+  getForegroundTab: () => getForegroundTab(chrome.storage.local),
+  getLastFocusedWindow: () => chrome.windows.getLastFocused(),
   updateTab: (opts) => chrome.tabs.update(opts.tabId, { url: opts.url }),
+  activateTab: (tabId) => chrome.tabs.update(tabId, { active: true }),
+  focusWindow: (windowId) => chrome.windows.update(windowId, { focused: true }),
   executeScript: (opts) => chrome.scripting.executeScript(opts),
   captureVisibleTab: captureVisibleTabDep,
   waitTabLoaded,
   cropPngBase64: cropBase64Image,
+  reportProgress: (cmdId, phase) => postCommandProgress(cmdId, phase),
 };
 
 async function browserPollLoop() {
@@ -1908,6 +1989,7 @@ async function browserPollLoop() {
       browserPollConsecutiveErrors = 0;
       const cmd = r?.command;
       if (!cmd) continue;
+      void postCommandProgress(cmd.cmd_id, "picked");
       let outcome;
       try {
         outcome = await gateAndDispatch(cmd);
@@ -1982,7 +2064,7 @@ async function sendOverlay(tabId, msg) {
   }
 }
 
-function requestUserApproval(tabId, host, action) {
+function requestUserApproval(tabId, host, action, details = null) {
   const requestId = newRequestId();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -2000,6 +2082,7 @@ function requestUserApproval(tabId, host, action) {
         requestId,
         host,
         action,
+        details,
       })
       .catch((err) => {
         clearTimeout(timer);
@@ -2022,6 +2105,10 @@ function deriveCommandHost(tab, command) {
 }
 
 async function gateAndDispatch(cmd) {
+  if (cmd?.type === "tabs" || cmd?.type === "activate_tab") {
+    return dispatchCommand(chromeDeps, cmd);
+  }
+
   // Resolve the same way the dispatcher will, so the approval prompt
   // appears on the right tab (and references the right hostname) even
   // when the popup is focused or the user has pinned a tab.
@@ -2039,14 +2126,20 @@ async function gateAndDispatch(cmd) {
   }
 
   await ensureOverlayInjected(tab.id);
+  const risk = classifyCommandRisk(cmd, { host, url: tab.url });
+  await postCommandProgress(cmd.cmd_id, risk.force_prompt ? "approval_waiting_sensitive" : "approval_checking");
 
   const gate = await gateCommand({
     storage: chrome.storage.local,
     host,
     action: cmd.type,
-    prompt: ({ host: h, action }) => requestUserApproval(tab.id, h, action),
+    forcePrompt: risk.force_prompt,
+    promptDetails: risk,
+    prompt: ({ host: h, action, details }) => requestUserApproval(tab.id, h, action, details),
   });
   if (!gate.allow) return { ok: false, error: gate.reason };
+  if (gate.persisted === "always") await persistAllowedSite(host);
+  await postCommandProgress(cmd.cmd_id, "approved");
 
   await sendOverlay(tab.id, { type: "agent-overlay:show", action: cmd.type });
   try {

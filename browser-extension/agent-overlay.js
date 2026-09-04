@@ -143,6 +143,16 @@
       font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
     .modal .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    .modal .risk {
+      display: none;
+      margin: 0 0 14px;
+      padding: 9px 10px;
+      border-radius: 8px;
+      background: #fff4e5;
+      color: #7a4100;
+      border: 1px solid #ffd591;
+    }
+    .modal.sensitive .risk { display: block; }
     .modal button {
       all: unset;
       cursor: pointer;
@@ -160,6 +170,7 @@
       .modal .host { background: #243049; color: #b8c8ff; }
       .modal .btn-once { background: #243049; color: #b8c8ff; }
       .modal .btn-deny { background: #3a1d1d; color: #ff8a80; }
+      .modal .risk { background: #3a2a14; color: #ffd591; border-color: #6b4a18; }
     }
   `;
 
@@ -242,6 +253,7 @@
       case "navigate":  return "is navigating this tab";
       case "click":     return "is clicking on this page";
       case "fill":      return "is typing into a field";
+      case "fill_many": return "is filling multiple fields";
       case "scroll":    return "is scrolling this page";
       case "screenshot":return "is taking a screenshot";
       case "extract":   return "is reading from this page";
@@ -249,10 +261,23 @@
     }
   }
 
+  function approvalActionText(action) {
+    switch (action) {
+      case "navigate":   return "navigate this tab";
+      case "click":      return "click on this page";
+      case "fill":       return "type into a field";
+      case "fill_many":  return "fill multiple fields";
+      case "scroll":     return "scroll this page";
+      case "screenshot": return "take a screenshot";
+      case "extract":    return "read from this page";
+      default:            return "control this tab";
+    }
+  }
+
   // Approval modal
   let modalEl = null;
   let pendingModal = null;
-  function showApprovalModal({ host, action, requestId }) {
+  function showApprovalModal({ host, action, requestId, details }) {
     if (pendingModal && pendingModal.requestId !== requestId) {
       // Replace the prior request — only one prompt at a time.
       respondTo(pendingModal.requestId, "deny");
@@ -262,21 +287,28 @@
 
     const backdrop = document.createElement("div");
     backdrop.className = "modal-backdrop";
+    const sensitive = details?.level === "sensitive";
     backdrop.innerHTML = `
-      <div class="modal" role="dialog" aria-modal="true">
-        <h2 data-brand-template="Allow {name} agent to control this tab?"></h2>
+      <div class="modal ${sensitive ? "sensitive" : ""}" role="dialog" aria-modal="true">
+        <h2 data-brand-template="${sensitive ? "Review sensitive {name} browser action" : "Allow {name} agent to control this tab?"}"></h2>
         <p>The agent wants to <strong data-act></strong> on
           <span class="host" data-host></span>.</p>
+        <p class="risk"><strong>Extra confirmation required.</strong> <span data-risk></span></p>
         <div class="actions">
           <button class="btn-deny"   data-choice="deny">Deny</button>
           <button class="btn-once"   data-choice="once">Approve once</button>
-          <button class="btn-always" data-choice="always">Always allow on this site</button>
+          <button class="btn-always" data-choice="always" ${sensitive ? "hidden" : ""}>Always allow on this site</button>
         </div>
       </div>
     `;
     brandRoot(backdrop);
     backdrop.querySelector("[data-host]").textContent = host;
-    backdrop.querySelector("[data-act]").textContent = humanizeAction(action).replace(/^is\s+/, "");
+    backdrop.querySelector("[data-act]").textContent = approvalActionText(action);
+    const riskEl = backdrop.querySelector("[data-risk]");
+    if (riskEl) {
+      const reasons = Array.isArray(details?.reasons) ? details.reasons : [];
+      riskEl.textContent = reasons.length > 0 ? reasons.join(", ") : "This action may expose private page data.";
+    }
     backdrop.addEventListener("click", (ev) => {
       const t = ev.target;
       if (!(t instanceof Element)) return;
@@ -320,6 +352,7 @@
         host: String(msg.host || "this site"),
         action: msg.action,
         requestId: msg.requestId,
+        details: msg.details || null,
       });
     } else if (msg.type === "agent-overlay:cancel-approval") {
       if (modalEl) {

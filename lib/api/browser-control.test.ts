@@ -6,6 +6,11 @@ import {
   handleBrowserPoll,
   handleBrowserResult,
   handleBrowserStatus,
+  handleBrowserTabs,
+  handleBrowserActivate,
+  handleBrowserHistory,
+  handleBrowserProgress,
+  handleBrowserRetry,
   getExtensionStatus,
   _resetQueue,
   _resetExtensionStatus,
@@ -64,6 +69,24 @@ describe("enqueueCommand / pollNextCommand", () => {
     const picked = await pollP;
     expect(picked).not.toBeNull();
     expect(picked!.type).toBe("click");
+  });
+
+  it("accepts first-class browser tab and batch-fill command shapes", async () => {
+    enqueueCommand({ type: "tabs", include_unusable: true });
+    enqueueCommand({ type: "activate_tab", tab_id: 7 });
+    enqueueCommand({
+      type: "fill_many",
+      fields: [{ selector: "input[name=email]", value: "a@example.com" }],
+      submit_selector: "button[type=submit]",
+    });
+    expect((await pollNextCommand(500))?.type).toBe("tabs");
+    expect((await pollNextCommand(500))?.type).toBe("activate_tab");
+    const picked = await pollNextCommand(500);
+    expect(picked?.type).toBe("fill_many");
+    if (picked?.type === "fill_many") {
+      expect(picked.fields).toEqual([{ selector: "input[name=email]", value: "a@example.com" }]);
+      expect(picked.submit_selector).toBe("button[type=submit]");
+    }
   });
 
   it("resolves with null when no command arrives within the wait window", async () => {
@@ -138,6 +161,133 @@ describe("submitResult", () => {
     const result = await promise;
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/timed out/);
+  });
+
+  it("explains when a timed-out command was picked up by the extension", async () => {
+    const { promise } = enqueueCommand(
+      { type: "navigate", url: "https://example.com" },
+      { timeout_ms: 50 },
+    );
+    const picked = await pollNextCommand(500);
+    expect(picked?.type).toBe("navigate");
+    const result = await promise;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/extension picked it up/);
+      expect(result.error).toMatch(/approval prompt|stuck page load|blocked browser action/);
+    }
+  });
+});
+
+describe("browser app-facing handlers", () => {
+  it("enqueues a tabs command and returns the extension result", async () => {
+    const responseP = handleBrowserTabs(loopbackReq(
+      "/api/v1/extension/browser/tabs?include_unusable=true",
+      {},
+      "GET",
+    ));
+    const cmd = await pollNextCommand(500);
+    expect(cmd?.type).toBe("tabs");
+    if (cmd?.type === "tabs") expect(cmd.include_unusable).toBe(true);
+    submitResult({ cmd_id: cmd!.cmd_id, ok: true, data: { tabs: [{ tab_id: 7 }], total: 1 } });
+    const res = await responseP;
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ tabs: [{ tab_id: 7 }], total: 1 });
+  });
+
+  it("parses include_unusable=false as false", async () => {
+    const responseP = handleBrowserTabs(loopbackReq(
+      "/api/v1/extension/browser/tabs?include_unusable=false",
+      {},
+      "GET",
+    ));
+    const cmd = await pollNextCommand(500);
+    expect(cmd?.type).toBe("tabs");
+    if (cmd?.type === "tabs") expect(cmd.include_unusable).toBe(false);
+    submitResult({ cmd_id: cmd!.cmd_id, ok: true, data: { tabs: [], total: 0 } });
+    const res = await responseP;
+    expect(res.status).toBe(200);
+  });
+
+  it("enqueues an activate_tab command and returns the extension result", async () => {
+    const responseP = handleBrowserActivate(loopbackReq(
+      "/api/v1/extension/browser/activate",
+      { tab_id: 7 },
+    ));
+    const cmd = await pollNextCommand(500);
+    expect(cmd?.type).toBe("activate_tab");
+    if (cmd?.type === "activate_tab") expect(cmd.tab_id).toBe(7);
+    submitResult({ cmd_id: cmd!.cmd_id, ok: true, data: { tab_id: 7, focused: true } });
+    const res = await responseP;
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ tab_id: 7, focused: true });
+  });
+
+  it("rejects invalid activate requests", async () => {
+    const res = await handleBrowserActivate(loopbackReq(
+      "/api/v1/extension/browser/activate",
+      { tab_id: 0 },
+    ));
+    expect(res.status).toBe(400);
+  });
+
+  it("returns sanitized command history", async () => {
+    const { cmd_id } = enqueueCommand({ type: "fill", selector: "input[name=password]", value: "secret" });
+    submitResult({ cmd_id, ok: false, error: "no element matched" });
+    const res = await handleBrowserHistory(loopbackReq(
+      "/api/v1/extension/browser/history?limit=5",
+      {},
+      "GET",
+    ));
+    expect(res.status).toBe(200);
+    const body = await res.json() as { commands: Array<Record<string, unknown>> };
+    const row = body.commands.find((command) => command.cmd_id === cmd_id);
+    expect(row).toBeDefined();
+    expect(row?.retryable).toBe(false);
+    expect(JSON.stringify(row)).not.toContain("secret");
+  });
+
+  it("records progress phases for command history and timeout messages", async () => {
+    const { cmd_id, promise } = enqueueCommand(
+      { type: "navigate", url: "https://example.com" },
+      { timeout_ms: 50 },
+    );
+    await pollNextCommand(500);
+    const progress = await handleBrowserProgress(loopbackReq(
+      "/api/v1/extension/browser/progress",
+      { cmd_id, phase: "waiting_for_load" },
+    ));
+    expect(progress.status).toBe(200);
+    const result = await promise;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain("Last known phase: waiting_for_load");
+  });
+
+  it("retries retryable commands", async () => {
+    const original = enqueueCommand({ type: "snapshot", max_items: 10 });
+    submitResult({ cmd_id: original.cmd_id, ok: false, error: "tab crashed" });
+
+    const responseP = handleBrowserRetry(loopbackReq(
+      "/api/v1/extension/browser/retry",
+      { cmd_id: original.cmd_id },
+    ));
+    const retryCmd = await pollNextCommand(500);
+    expect(retryCmd?.type).toBe("snapshot");
+    if (retryCmd?.type === "snapshot") expect(retryCmd.max_items).toBe(10);
+    submitResult({ cmd_id: retryCmd!.cmd_id, ok: true, data: { ok: true } });
+    const res = await responseP;
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("refuses to retry non-retryable fill commands", async () => {
+    const original = enqueueCommand({ type: "fill", selector: "input", value: "secret" });
+    submitResult({ cmd_id: original.cmd_id, ok: false, error: "no element" });
+    const res = await handleBrowserRetry(loopbackReq(
+      "/api/v1/extension/browser/retry",
+      { cmd_id: original.cmd_id },
+    ));
+    expect(res.status).toBe(409);
   });
 });
 

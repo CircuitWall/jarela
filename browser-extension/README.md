@@ -98,25 +98,71 @@ Press **ESC** during the picker to cancel without sending.
 
 ## Agent-driven browser control
 
-When this extension is loaded, the agent can also drive your active tab
-through six tools registered in the Jarela toolbelt:
+When this extension is loaded, the agent can also drive your browser
+through tools registered in the Jarela toolbelt:
 
-| Tool                | Action                                                            |
-| ------------------- | ----------------------------------------------------------------- |
-| `browser_navigate`  | Open a URL (and optionally wait for a selector before resolving). |
-| `browser_click`     | Click a CSS selector.                                             |
-| `browser_fill`      | Type into an input / textarea / contenteditable, optionally submit. |
-| `browser_scroll`    | Scroll to `top`, `bottom`, or into-view of a selector.            |
-| `browser_screenshot`| Capture the viewport (or a selector); stored under `~/.jarela/files/`. |
-| `browser_extract`   | Return `text` / `html` / `outerHTML` of a selector (default: `<body>`). |
+| Tool                   | Action                                                            |
+| ---------------------- | ----------------------------------------------------------------- |
+| `browser_tabs`         | List open tabs, target markers, and URL/title metadata where permissions allow. |
+| `browser_activate_tab` | Focus a tab by id from `browser_tabs`.                            |
+| `browser_navigate`     | Open a URL (and optionally wait for a selector before resolving). |
+| `browser_snapshot`     | Return a structured page inventory of headings, landmarks, and controls. |
+| `browser_click`        | Click a selector, snapshot handle, or role/name locator.          |
+| `browser_fill`         | Type into one input / textarea / contenteditable, optionally submit. |
+| `browser_fill_many`    | Fill up to 25 fields in one browser round-trip, then optionally click a submit selector. |
+| `browser_scroll`       | Scroll to `top`, `bottom`, or into-view of a selector.            |
+| `browser_screenshot`   | Capture the viewport (or a selector); stored under `~/.jarela/files/`. |
+| `browser_extract`      | Return `text` / `html` / `outerHTML` of a selector (default: `<body>`). |
+
+For large pages, agents should use `browser_snapshot` to understand page
+structure, then `browser_extract` for the actual page text or HTML. Small
+extracts stay inline. Large or truncated extracts are reduced into a local
+file artifact and return `result_ref.name`, `result_ref.uri`, a short preview,
+and continuation metadata. Call `tool_result_get` with `result_ref.name` to
+read the artifact, then call `browser_extract` again with `offset` set to
+`next_offset` until `next_offset` is `null`. This keeps each tool result
+prompt-sized without losing the rest of the page.
+
+Screenshots are sidecars, not the primary reading channel. Use
+`browser_screenshot` alongside extracted text when layout, charts, canvas,
+or visual confirmation matter; use text/HTML extraction as the source of truth
+for reading long content.
+
+Complex pages can be expensive to rediscover. `browser_snapshot` now reuses a
+recent in-process page map by default and returns `data.cache.hit: true` when it
+did so. The snapshot includes a lightweight `fingerprint` so agents can tell
+whether two observations describe the same control structure. Pass
+`force_refresh: true` when the page has changed, after a long delay, or when a
+handle/name lookup looks stale. State-changing browser tools still request a
+fresh auto-snapshot after they act, so ordinary navigation and form workflows
+refresh the cache naturally.
 
 The service worker long-polls `/api/v1/extension/browser/poll` whenever
-the local Jarela server is reachable. Commands are scoped to the active
-tab of the focused window. There is no headless browser process — your
-tab IS the browser. If the extension is not loaded the agent's tool call
-times out with a clear error and no command is ever executed.
+the local Jarela server is reachable. Commands target the pinned tab when
+one is set, otherwise the last foreground tab the extension observed, then
+the active tab in the last-focused browser window. There is no headless
+browser process — your tab IS the browser. If the extension is not loaded
+the agent's tool call fails quickly with a clear error and no command is
+executed.
 
-### Per-site approval and on-tab overlay
+The popup now shows the current target plus a compact list of browser tabs.
+From there you can focus a tab or pin a scriptable `http(s)` tab as the
+agent's target without relying on repeated popup clicks. The Jarela app also
+shows extension status and tab inventory under **Tools → Browser**.
+
+When the Chrome side panel is opened, it adopts the currently active content
+tab as the foreground browser context so follow-up agent work targets the page
+the panel is sitting beside. An explicit pinned tab still wins; opening the side
+panel never overrides a deliberate pin. If the current tab is not scriptable,
+the extension falls back to the last-focused usable tab that is already part of
+the browser context.
+
+Tab URLs and titles are permission-sensitive browser metadata. The in-tree
+manifest keeps broad host access optional; when Chromium withholds metadata,
+Jarela shows the tab as metadata-unavailable instead of requesting wider
+permissions silently.
+
+### Per-site approval, sensitive actions, and on-tab overlay
 
 The agent never drives a page without an explicit opt-in. The first time
 a command targets a host you'll see a modal in the tab itself with three
@@ -128,11 +174,20 @@ buttons:
 - **Deny** — runs nothing now and remembers a deny so future commands
   for this host bounce silently.
 
-Decisions are persisted in `chrome.storage.local` under the
+Decisions are cached in `chrome.storage.local` under the
 `jarelaBrowserApprovals` key as a flat `{ hostname: "always" | "denied" }`
-map; clear them by clearing the extension's storage or via the
-*Sites the agent can use as you* settings page in Jarela (uses the same
-store).
+map. Choosing **Always allow on this site** also persists the host to Jarela's
+SQLite-backed *Sites the agent can use as you* list, so the approval survives
+extension restarts and appears in Settings. On each heartbeat the extension
+reconciles local `always` approvals from that persisted list; explicit local
+`denied` decisions stay denied until cleared.
+
+Some browser actions require extra confirmation even when the host is already
+approved. Jarela treats whole-page reads, screenshots, markup extraction,
+password/payment/auth-like fields, large batch form fills, and sensitive-looking
+hosts as higher risk. For those prompts the modal shows the reason and hides
+"Always allow on this site" so the user makes a fresh decision for that action.
+The prompt never displays raw form values.
 
 While a command is executing, a blue **"Jarela agent is controlling this
 tab"** banner is mounted at the top of the page with a pulsing indicator
@@ -140,6 +195,20 @@ and a **Stop** button. Pressing Stop persists a deny for the current host
 and bounces any follow-up commands already queued. A subtle blue frame
 outlines the viewport for the duration of the command. Both UI pieces
 live inside a closed Shadow DOM so page CSS can't restyle or hide them.
+
+Jarela also keeps a sanitized browser command ledger for the app UI under
+**Tools → Browser**. The ledger records command type, status, host when known,
+target tab id when returned, a short redacted summary, risk labels, and errors.
+It does **not** store raw page extracts, screenshot pixels, cookies, tokens,
+passwords, or full form values. Safe commands can be retried from the Browser
+panel; form-fill commands are intentionally not retryable because their values
+are not persisted.
+
+While a command is running, the extension posts sanitized progress phases such
+as `picked`, `approval_waiting_sensitive`, `waiting_for_load`,
+`waiting_for_selector`, and `snapshotting`. The Browser panel shows the latest
+phase, and timeout errors include it so a stuck command points to the actual
+recovery path instead of only saying that the extension timed out.
 
 ## Files
 

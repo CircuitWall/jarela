@@ -60,6 +60,54 @@ export function pageFillFn(selector, value, submit) {
   return { matched: true, tag: el.tagName };
 }
 
+export function pageFillManyFn(fields, submitSelector) {
+  function fillOne(selector, value) {
+    const el = document.querySelector(selector);
+    if (!el) return { selector, matched: false };
+    el.focus();
+    if (el.isContentEditable) {
+      el.textContent = value;
+    } else if ("value" in el) {
+      const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+      if (setter) setter.call(el, value);
+      else el.value = value;
+    } else {
+      return { selector, matched: false, reason: "element has no value property" };
+    }
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return { selector, matched: true, tag: el.tagName };
+  }
+
+  const results = [];
+  for (const field of Array.isArray(fields) ? fields : []) {
+    results.push(fillOne(field?.selector, field?.value ?? ""));
+  }
+
+  let submit = null;
+  if (submitSelector) {
+    const el = document.querySelector(submitSelector);
+    if (!el) {
+      submit = { selector: submitSelector, matched: false };
+    } else {
+      if (typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ block: "center", behavior: "instant" });
+      }
+      if (typeof el.click === "function") el.click();
+      submit = { selector: submitSelector, matched: true, tag: el.tagName };
+    }
+  }
+
+  const matched = results.filter((r) => r.matched).length;
+  return {
+    matched: matched > 0,
+    matched_count: matched,
+    total: results.length,
+    fields: results,
+    ...(submit ? { submit } : {}),
+  };
+}
+
 export function pageScrollFn(selector, to) {
   if (to === "top") {
     window.scrollTo({ top: 0, behavior: "instant" });
@@ -77,7 +125,7 @@ export function pageScrollFn(selector, to) {
   return { matched: true, scrolled: "into-view" };
 }
 
-export function pageExtractFn(selector, format, maxChars) {
+export function pageExtractFn(selector, format, maxChars, offset) {
   const el = selector ? document.querySelector(selector) : document.body;
   if (!el) return { matched: false };
   let raw = "";
@@ -85,13 +133,17 @@ export function pageExtractFn(selector, format, maxChars) {
   else if (format === "outerHTML") raw = el.outerHTML ?? "";
   else raw = (el.innerText ?? el.textContent ?? "").trim();
   const cap = typeof maxChars === "number" && maxChars > 0 ? maxChars : 100_000;
-  const truncated = raw.length > cap;
+  const start = typeof offset === "number" && offset > 0 ? Math.min(offset, raw.length) : 0;
+  const end = Math.min(raw.length, start + cap);
+  const truncated = end < raw.length;
   return {
     matched: true,
     format,
-    content: truncated ? raw.slice(0, cap) : raw,
+    content: raw.slice(start, end),
     truncated,
     original_length: raw.length,
+    offset: start,
+    next_offset: truncated ? end : null,
   };
 }
 
@@ -353,9 +405,19 @@ export function pageSnapshotFn(opts) {
     interactive.push(item);
   }
 
+  const fingerprint = hashSnapshot({
+    url: location.href,
+    title: document.title,
+    headings,
+    landmarks,
+    interactive: interactive.map((item) => ({ role: item.role, name: item.name, selector: item.selector, disabled: item.disabled === true })),
+    total_interactive: nodes.length,
+  });
+
   return {
     url: location.href,
     title: document.title,
+    fingerprint,
     viewport: { width: window.innerWidth, height: window.innerHeight, scroll_y: window.scrollY, doc_height: document.documentElement.scrollHeight },
     headings,
     landmarks,
@@ -363,6 +425,16 @@ export function pageSnapshotFn(opts) {
     truncated: nodes.length > interactive.length,
     total_interactive: nodes.length,
   };
+}
+
+function hashSnapshot(value) {
+  const raw = JSON.stringify(value);
+  let h = 2166136261;
+  for (let i = 0; i < raw.length; i += 1) {
+    h ^= raw.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
 }
 
 // --------------------------------------------------------------------- //
@@ -410,6 +482,92 @@ async function execInTabAsync(deps, tabId, func, args = []) {
   return out?.[0]?.result;
 }
 
+function tabHost(url) {
+  if (typeof url !== "string" || url.length === 0) return "";
+  try { return new URL(url).hostname; } catch { return ""; }
+}
+
+function isScriptableTabUrl(url) {
+  if (typeof url !== "string" || url.length === 0) return false;
+  try {
+    const u = new URL(url);
+    return !["chrome:", "chrome-extension:", "edge:", "about:", "devtools:", "view-source:"].includes(u.protocol);
+  } catch {
+    return false;
+  }
+}
+
+async function listTabs(deps, includeUnusable) {
+  if (typeof deps.queryTabs !== "function") {
+    return { ok: false, error: "tab inventory is unavailable in this extension build" };
+  }
+  const [tabs, pin, foreground, focusedWindow] = await Promise.all([
+    deps.queryTabs({}),
+    typeof deps.getPinnedTab === "function" ? deps.getPinnedTab() : null,
+    typeof deps.getForegroundTab === "function" ? deps.getForegroundTab() : null,
+    typeof deps.getLastFocusedWindow === "function" ? deps.getLastFocusedWindow().catch(() => null) : null,
+  ]);
+  const focusedWindowId = typeof focusedWindow?.id === "number" ? focusedWindow.id : null;
+  const pinnedTabId = typeof pin?.tabId === "number" ? pin.tabId : null;
+  const foregroundTabId = typeof foreground?.tabId === "number" ? foreground.tabId : null;
+  const summarized = (tabs || []).map((tab) => {
+    const url = typeof tab.url === "string" ? tab.url : typeof tab.pendingUrl === "string" ? tab.pendingUrl : "";
+    const usable = isScriptableTabUrl(url);
+    return {
+      tab_id: tab.id,
+      window_id: tab.windowId,
+      index: tab.index,
+      active: Boolean(tab.active),
+      focused_window: focusedWindowId !== null && tab.windowId === focusedWindowId,
+      pinned_target: pinnedTabId !== null && tab.id === pinnedTabId,
+      foreground: foregroundTabId !== null && tab.id === foregroundTabId,
+      title: typeof tab.title === "string" ? tab.title : "",
+      url,
+      host: tabHost(url),
+      status: typeof tab.status === "string" ? tab.status : "unknown",
+      usable,
+      ...(usable ? {} : { unusable_reason: url ? "unsupported URL" : "URL unavailable; grant host access or tabs permission for metadata" }),
+    };
+  }).filter((tab) => includeUnusable || tab.usable);
+  return {
+    ok: true,
+    data: {
+      tabs: summarized,
+      total: summarized.length,
+      current_tab_id: foregroundTabId ?? summarized.find((tab) => tab.active && tab.focused_window)?.tab_id ?? null,
+      foreground_tab_id: foregroundTabId,
+      pinned_tab_id: pinnedTabId,
+    },
+  };
+}
+
+async function activateTab(deps, tabId) {
+  if (typeof deps.activateTab !== "function") {
+    return { ok: false, error: "tab activation is unavailable in this extension build" };
+  }
+  const tab = await deps.activateTab(tabId);
+  if (!tab?.id) return { ok: false, error: `tab ${tabId} was not found` };
+  if (typeof deps.focusWindow === "function" && typeof tab.windowId === "number") {
+    await deps.focusWindow(tab.windowId);
+  }
+  return {
+    ok: true,
+    data: {
+      tab_id: tab.id,
+      window_id: tab.windowId,
+      title: typeof tab.title === "string" ? tab.title : "",
+      url: typeof tab.url === "string" ? tab.url : "",
+      host: tabHost(tab.url),
+      focused: true,
+    },
+  };
+}
+
+async function reportProgress(deps, command, phase) {
+  if (!command?.cmd_id || typeof deps.reportProgress !== "function") return;
+  try { await deps.reportProgress(command.cmd_id, phase); } catch { /* best-effort */ }
+}
+
 // Best-effort post-action snapshot. Used by navigate/click/fill when the
 // server flips `auto_snapshot: true` so the agent can chain the next
 // step without an explicit `browser_snapshot` round-trip. We wait for
@@ -449,6 +607,12 @@ export async function dispatchCommand(deps, command) {
   if (!command || typeof command !== "object") {
     return { ok: false, error: "invalid command" };
   }
+  if (command.type === "tabs") {
+    return listTabs(deps, command.include_unusable ?? false);
+  }
+  if (command.type === "activate_tab") {
+    return activateTab(deps, command.tab_id);
+  }
   const timeout = command.timeout_ms ?? DEFAULT_TIMEOUT_MS;
   // Surface a precise reason from the resolver when available — e.g.
   // "pinned tab navigated to chrome://settings/" tells the user exactly
@@ -472,11 +636,14 @@ export async function dispatchCommand(deps, command) {
   try {
     switch (command.type) {
       case "navigate": {
+        await reportProgress(deps, command, "navigating");
         await deps.updateTab({ tabId: tab.id, url: command.url });
         if (deps.waitTabLoaded) {
+          await reportProgress(deps, command, "waiting_for_load");
           await deps.waitTabLoaded(tab.id, timeout);
         }
         if (command.wait_for_selector) {
+          await reportProgress(deps, command, "waiting_for_selector");
           const found = await execInTabAsync(deps, tab.id, pageWaitForSelectorFn, [
             command.wait_for_selector,
             Math.min(timeout, 15_000),
@@ -485,6 +652,7 @@ export async function dispatchCommand(deps, command) {
             return { ok: false, error: `wait_for_selector \`${command.wait_for_selector}\` not found within ${timeout}ms` };
           }
         }
+        await reportProgress(deps, command, "snapshotting");
         const snapshot = await captureAutoSnapshot(deps, tab.id, command);
         return {
           ok: true,
@@ -492,6 +660,7 @@ export async function dispatchCommand(deps, command) {
         };
       }
       case "click": {
+        await reportProgress(deps, command, "clicking");
         const result = await execInTab(deps, tab.id, pageClickFn, [command.selector]);
         if (!result?.matched) {
           return { ok: false, error: `no element matched selector \`${command.selector}\`` };
@@ -500,6 +669,7 @@ export async function dispatchCommand(deps, command) {
         return { ok: true, data: { ...result, ...(snapshot ? { snapshot } : {}) } };
       }
       case "fill": {
+        await reportProgress(deps, command, "filling");
         const result = await execInTab(deps, tab.id, pageFillFn, [
           command.selector,
           command.value,
@@ -507,6 +677,29 @@ export async function dispatchCommand(deps, command) {
         ]);
         if (!result?.matched) {
           return { ok: false, error: `no fillable element matched selector \`${command.selector}\`` };
+        }
+        const snapshot = await captureAutoSnapshot(deps, tab.id, command);
+        return { ok: true, data: { ...result, ...(snapshot ? { snapshot } : {}) } };
+      }
+      case "fill_many": {
+        await reportProgress(deps, command, "filling_many");
+        const result = await execInTab(deps, tab.id, pageFillManyFn, [
+          command.fields,
+          command.submit_selector ?? null,
+        ]);
+        if (!result?.matched) {
+          return { ok: false, error: "no fillable elements matched the supplied fields" };
+        }
+        const failed = Array.isArray(result.fields) ? result.fields.filter((field) => !field.matched) : [];
+        if (failed.length > 0) {
+          return {
+            ok: false,
+            error: `${failed.length} of ${result.total ?? command.fields.length} fields did not match`,
+            data: result,
+          };
+        }
+        if (result.submit?.matched === false) {
+          return { ok: false, error: `no element matched submit_selector \`${command.submit_selector}\``, data: result };
         }
         const snapshot = await captureAutoSnapshot(deps, tab.id, command);
         return { ok: true, data: { ...result, ...(snapshot ? { snapshot } : {}) } };
@@ -519,10 +712,12 @@ export async function dispatchCommand(deps, command) {
         return { ok: true, data: result };
       }
       case "extract": {
+        await reportProgress(deps, command, "extracting");
         const result = await execInTab(deps, tab.id, pageExtractFn, [
           command.selector ?? null,
           command.format ?? "text",
           command.max_chars ?? null,
+          command.offset ?? 0,
         ]);
         if (!result?.matched) {
           return { ok: false, error: `no element matched selector \`${command.selector ?? ""}\`` };
@@ -530,12 +725,14 @@ export async function dispatchCommand(deps, command) {
         return { ok: true, data: result };
       }
       case "snapshot": {
+        await reportProgress(deps, command, "snapshotting");
         const result = await execInTab(deps, tab.id, pageSnapshotFn, [
           { max_items: command.max_items ?? 80, include_hidden: command.include_hidden ?? false },
         ]);
         return { ok: true, data: result };
       }
       case "screenshot": {
+        await reportProgress(deps, command, "screenshotting");
         // 1. If selector supplied, read element bounds to crop later.
         let bounds = null;
         if (command.selector) {

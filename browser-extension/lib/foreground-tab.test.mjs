@@ -9,6 +9,7 @@ import {
   handleWindowFocused,
   handleTabRemoved,
   seedForegroundTab,
+  recordSidePanelCurrentTab,
 } from "./foreground-tab.mjs";
 
 function makeStorage(initial = {}) {
@@ -199,6 +200,44 @@ describe("seedForegroundTab", () => {
       tabs: [{ id: 22, active: true, url: "chrome://settings/" }],
     });
     expect(await seedForegroundTab(deps)).toBe(false);
+  });
+});
+
+describe("recordSidePanelCurrentTab", () => {
+  it("records the active current-window tab when no pin exists", async () => {
+    const deps = makeDeps({
+      tabs: [{ id: 44, active: true, windowId: 1, url: "https://panel.test/" }],
+    });
+    deps.getPinnedTab = vi.fn().mockResolvedValue(null);
+    const result = await recordSidePanelCurrentTab(deps);
+    expect(result).toEqual({ recorded: true, tabId: 44 });
+    expect((await getForegroundTab(deps.storage)).tabId).toBe(44);
+  });
+
+  it("does not override an intentional pin", async () => {
+    const deps = makeDeps({
+      tabs: [{ id: 44, active: true, windowId: 1, url: "https://panel.test/" }],
+    });
+    deps.getPinnedTab = vi.fn().mockResolvedValue({ tabId: 7 });
+    const result = await recordSidePanelCurrentTab(deps);
+    expect(result).toEqual({ recorded: false, reason: "pinned" });
+    expect(await getForegroundTab(deps.storage)).toBeNull();
+  });
+
+  it("falls back to the last-focused window when currentWindow has no usable tab", async () => {
+    const storage = makeStorage();
+    const deps = {
+      storage,
+      getPinnedTab: vi.fn().mockResolvedValue(null),
+      queryTabs: vi.fn().mockImplementation(async (query) => {
+        if (query.currentWindow) return [{ id: 1, active: true, url: "chrome://settings/" }];
+        if (query.lastFocusedWindow) return [{ id: 45, active: true, url: "https://fallback-panel.test/" }];
+        return [];
+      }),
+    };
+    const result = await recordSidePanelCurrentTab(deps);
+    expect(result).toEqual({ recorded: true, tabId: 45 });
+    expect((await getForegroundTab(storage)).tabId).toBe(45);
   });
 });
 

@@ -135,6 +135,31 @@ export async function seedForegroundTab(deps) {
   return false;
 }
 
+export async function recordSidePanelCurrentTab(deps) {
+  try {
+    if (typeof deps.getPinnedTab === "function") {
+      const pin = await deps.getPinnedTab();
+      if (pin?.tabId) return { recorded: false, reason: "pinned" };
+    }
+    const queries = [
+      { active: true, currentWindow: true },
+      { active: true, lastFocusedWindow: true },
+    ];
+    for (const query of queries) {
+      const tabs = await deps.queryTabs(query);
+      for (const tab of tabs || []) {
+        if (await recordForegroundTab(deps.storage, tab)) {
+          return { recorded: true, tabId: tab.id };
+        }
+      }
+    }
+  } catch {
+    // The side panel is best-effort context. Normal tab activation/window
+    // focus events will still keep the foreground tracker fresh.
+  }
+  return { recorded: false, reason: "no usable current tab" };
+}
+
 /**
  * Called from chrome.tabs.onRemoved. If the tracked foreground tab
  * went away, clear the record so the resolver knows to look fresh.

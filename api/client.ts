@@ -13,6 +13,13 @@ import type {
   DashboardCurrencyInfo,
   DashboardMetrics,
   DashboardPricingRefreshResult,
+  BrowserActivateResponse,
+  BrowserHistoryResponse,
+  BrowserExtensionStatus,
+  BrowserTabsResponse,
+  ArtifactCleanupResponse,
+  ArtifactLifecycleResponse,
+  ArtifactLifecycleSettings,
   ContentPart,
   EnvAllowlistConfig,
   EnvSyncResult,
@@ -516,6 +523,54 @@ export const api = {
       invalidateToolListCache();
       return result;
     },
+  },
+
+  browser: {
+    status: () => request<BrowserExtensionStatus>("/extension/browser/status", { cache: "no-store" }),
+    tabs: (opts?: { includeUnusable?: boolean; timeoutMs?: number }) => {
+      const qs = new URLSearchParams();
+      qs.set("include_unusable", String(opts?.includeUnusable ?? true));
+      if (opts?.timeoutMs) qs.set("timeout_ms", String(opts.timeoutMs));
+      return request<BrowserTabsResponse>(`/extension/browser/tabs?${qs.toString()}`, {
+        cache: "no-store",
+        timeoutMs: opts?.timeoutMs ?? 12_000,
+      });
+    },
+    activateTab: (tabId: number, opts?: { timeoutMs?: number }) =>
+      request<BrowserActivateResponse>("/extension/browser/activate", {
+        method: "POST",
+        body: JSON.stringify({ tab_id: tabId, timeout_ms: opts?.timeoutMs }),
+        cache: "no-store",
+        timeoutMs: opts?.timeoutMs ?? 12_000,
+      }),
+    history: (opts?: { limit?: number }) => {
+      const qs = new URLSearchParams();
+      if (opts?.limit) qs.set("limit", String(opts.limit));
+      return request<BrowserHistoryResponse>(`/extension/browser/history${qs.size ? `?${qs.toString()}` : ""}`, { cache: "no-store" });
+    },
+    retry: (cmdId: string, opts?: { timeoutMs?: number }) =>
+      request<unknown>("/extension/browser/retry", {
+        method: "POST",
+        body: JSON.stringify({ cmd_id: cmdId, timeout_ms: opts?.timeoutMs }),
+        cache: "no-store",
+        timeoutMs: opts?.timeoutMs ?? 30_000,
+      }),
+  },
+
+  artifacts: {
+    lifecycle: () => request<ArtifactLifecycleResponse>("/artifacts/lifecycle", { cache: "no-store" }),
+    updateLifecycle: (patch: Partial<ArtifactLifecycleSettings>) =>
+      request<ArtifactLifecycleResponse>("/artifacts/lifecycle", {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+        cache: "no-store",
+      }),
+    cleanup: (opts?: { dryRun?: boolean }) =>
+      request<ArtifactCleanupResponse>("/artifacts/lifecycle", {
+        method: "POST",
+        body: JSON.stringify({ dry_run: opts?.dryRun ?? false }),
+        cache: "no-store",
+      }),
   },
 
   threads: {
