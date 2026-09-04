@@ -62,6 +62,14 @@ export interface RunAgentTurnRequest {
   skip_persist_user_message?: boolean;
 
   /**
+   * Extra user-role content appended to the in-memory history for this turn
+   * only, never persisted. Use it to frame a turn whose prompt is already in
+   * the transcript — e.g. the steering continuation, which needs to say "you
+   * finished before reading this" without writing another row.
+   */
+  history_append_message?: string;
+
+  /**
    * Per-call override of the context profile (see
    * `@/lib/agents/turn-profile`). When omitted, the profile is resolved
    * from `queue_source` via `TURN_PROFILES`. Provide partial overrides
@@ -144,6 +152,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           : req.persist_user_message === false
             ? true
             : undefined,
+        _history_append_message: req.history_append_message,
       });
 
       const startedAt = Date.now();
