@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.38.0] - 2026-09-04
+
+### Added
+
+- **In-progress agent turns now accept steering input.** Messages submitted
+  while a turn is running are routed into that turn and a queued steering
+  request is continued after the active model call completes.
+- **Chat run states have a unified visual language.** Message lifecycle
+  surfaces share a consistent treatment, including a blinking caret while text
+  streams.
+
+### Fixed
+
+- **Tool retry guards now use declared capabilities.** Retries correctly use
+  the tool's explicitly declared capability rather than inferred behavior.
+
 ## [1.37.0] - 2026-09-04
 
 ### Added
