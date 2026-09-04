@@ -23,8 +23,8 @@ from it when creating commits, branches, or PRs.
 - Keep the full subject at 72 characters or less.
 - Start the description with a real lowercase imperative verb, with no trailing
   period and no parenthesized asides.
-- PR titles must follow the same format because squash merge turns the PR title
-  into the commit on `main`.
+- PR titles must follow the same format, and so must every commit on the
+  branch: rebase merge replays them all onto `main` individually.
 - Do not carry lint warnings forward; fix warnings in touched workflows before
   committing.
 - Local hooks enforce branch and commit-message format. CI enforces pull request

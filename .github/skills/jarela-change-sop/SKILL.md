@@ -49,7 +49,7 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
 6. Commit correctly.
    - Use a topic branch based on `origin/main`; never commit directly to `main`.
    - Do not stack meaningless follow-up commits for the same focused topic. If a correction, test fix, wording tweak, or CI repair belongs to the current change, amend the previous commit or use an autosquash fixup before pushing for review.
-   - Create a new commit only when it represents a distinct reviewable concern that should remain separate after squash or merge.
+   - Create a new commit only when it represents a distinct reviewable concern that should remain separate on `main` after the rebase merge.
    - Commit subjects must follow Conventional Commits: `type(scope): imperative description`.
    - Allowed types: `feat`, `fix`, `docs`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`.
    - Scope is required, lowercase, and single-token.
@@ -60,7 +60,7 @@ Use this skill before modifying code, docs, tests, build scripts, GitHub workflo
    - Push topic branches to upstream `origin` unless the user explicitly says otherwise.
    - Before creating a PR from an existing branch, confirm the intended scope when the branch has mixed commits, already-applied commits, no matching issue/PR, or a compare view that does not clearly describe the desired outcome.
    - If only part of a branch should merge, ask whether to open a clean cherry-picked PR, update the existing branch, or leave it alone.
-   - PR title must be the same Conventional Commit subject expected for the squash merge.
+   - PR title must be a Conventional Commit subject, and so must every commit on the branch — rebase merge lands them all on `main`.
    - PR body should explain what changed and why, plus validation.
    - Use `Refs #<issue>` for partial fixes and `Closes #<issue>` only when merge should close the issue.
 
