@@ -1310,6 +1310,7 @@ const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInApp
       >
         {renderedText}
       </ReactMarkdown>
+      {streaming && <span className="jarela-stream-caret" aria-hidden="true" />}
     </div>
   );
 });
@@ -2169,6 +2170,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
                   <ContentPartView key={i} part={part} isUser={isUser} onInAppLink={handleInAppLink} unverifiedLinks={unverifiedLinks} sourceManifest={sourceManifest} threadId={threadId} />
                 ));
               })()}
+              {streaming && <span className="jarela-stream-caret" aria-hidden="true" />}
             </div>
           )}
           {!isUser && !streaming && "usage" in message && message.usage && (contextWindowTokens ?? message.usage.context_window_tokens) ? (

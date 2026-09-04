@@ -700,4 +700,24 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .jarela-countdown-spinner { animation: none; }
+  .jarela-stream-caret { animation: none; }
+}
+
+/* Streaming caret: the "text is still arriving" cue at the point of reading.
+ * Liveness and remaining budget for the run as a whole live in the header
+ * activity; this only marks the end of the growing text. */
+.jarela-stream-caret {
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 0.12em;
+  border-radius: 1px;
+  vertical-align: text-bottom;
+  background-color: currentColor;
+  opacity: 0.55;
+  animation: jarela-caret-blink 1.1s steps(2, start) infinite;
+}
+@keyframes jarela-caret-blink {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0; }
 }
