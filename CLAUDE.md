@@ -50,8 +50,10 @@ MUST follow:
 
 - **Trunk-based.** Never push to `main`; branch protection rejects it. Open a
   PR from a topic branch (`feat/…`, `fix/…`, `chore/…`, `docs/…`, `refactor/…`).
-- **Squash merge.** PR title becomes the commit on `main` and the release-notes
-  entry, so the PR title MUST follow Conventional Commits (`type(scope)[!]: …`).
+- **Rebase merge.** Squash and merge commits are disabled; rebase is the only
+  permitted method. Every commit on the PR lands on `main` separately, so each
+  commit subject MUST follow Conventional Commits (`type(scope)[!]: …`), not
+  just the PR title. The PR title is what the release notes list.
 - **Semver.** `MAJOR.MINOR.PATCH` in `package.json` is the source of truth.
   Bump rule: any `feat!:` / `fix!:` / `BREAKING CHANGE:` → MAJOR; only genuinely
   new capabilities use `feat:` and bump MINOR; adding, fixing, or completing an
