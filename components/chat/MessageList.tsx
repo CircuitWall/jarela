@@ -8,6 +8,7 @@ import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
 import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { MetaRow } from "@/components/ui/MetaRow";
+import { StatusDot } from "@/components/ui/StatusDot";
 import { Dialog } from "@/components/ui/Dialog";
 
 interface SystemNotice {
@@ -47,6 +48,8 @@ interface Props {
   warmSummarySourceMessages?: number | null;
   warmSummarySourceChars?: number | null;
   warmSummaryPending?: boolean;
+  /** An automatic compaction is summarising earlier messages right now. */
+  compactionPending?: boolean;
   onSetContextPin?: (hot_since: string | null) => void;
   streaming?: boolean;
   // Thread-level context window cap, forwarded to each MessageBubble so
@@ -58,7 +61,7 @@ interface Props {
   onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -787,6 +790,12 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         {hasMore && (
           <div className="text-center py-1.5 text-[11px] text-fg-faint select-none">
             {loadingMore ? "Loading earlier messages…" : "Scroll up for earlier messages"}
+          </div>
+        )}
+        {compactionPending && (
+          <div className="my-2 flex items-center justify-center gap-2 rounded-lg border border-border bg-surface-2/70 px-3 py-1.5 text-[11px] text-fg-faint select-none">
+            <StatusDot tone="accent" size="sm" pulse />
+            <span>Summarising earlier messages… this turn still sees the full history.</span>
           </div>
         )}
         {visibleMessages.length === 0 && !streamingContent && (

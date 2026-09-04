@@ -90,6 +90,8 @@ export async function buildHistoryWindow(
     scope?: "foreground" | "bridge" | "all" | "none";
     includeWarm?: boolean;
     bridgeKey?: string;
+    /** Drop the `history_window_hours` bound for this turn. */
+    ignoreTimeWindow?: boolean;
   } = {},
 ): Promise<ResolvedHistoryWindow> {
   const limit = agentCfg.history_limit ?? 50;
@@ -99,7 +101,7 @@ export async function buildHistoryWindow(
   // as they did before this ADR landed.
   const sinceISO = hotSince
     ? hotSince
-    : windowHours > 0
+    : windowHours > 0 && !options.ignoreTimeWindow
       ? new Date(Date.now() - windowHours * 3600_000).toISOString()
       : undefined;
   const scope = options.scope ?? "all";

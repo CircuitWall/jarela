@@ -18,6 +18,7 @@ import { getMessageUsageByIds } from "@/lib/stores/message-usage";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
+import { pendingCompactionBoundary } from "@/lib/agents/warm-summary-background";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   return NextResponse.json({
     ...thread,
     context_window_tokens: contextWindowTokens,
+    pending_hot_since: pendingCompactionBoundary(thread_id),
     // No server-side filtering: clients receive every message with its
     // `category` tag and apply the chat-panel filter toolbar on the
     // render side. Keeping the raw transcript over the wire means audit

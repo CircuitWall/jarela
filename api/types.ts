@@ -378,6 +378,10 @@ export interface ThreadDetail extends ThreadSummary {
   // readout. Null when the summary was produced before these columns existed.
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
+  // Boundary an automatic compaction is preparing right now. The pin only
+  // moves once its recap is stored, so this is the only signal the UI has
+  // that a compaction is in flight.
+  pending_hot_since?: string | null;
 }
 
 export interface ThreadContextPin {

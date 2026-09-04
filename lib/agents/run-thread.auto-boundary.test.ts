@@ -109,11 +109,15 @@ describe("prepareThreadRun auto context boundary", () => {
       },
     });
 
-    const updated = getThread(thread.thread_id);
-    expect(updated?.hot_since).toBeTruthy();
+    // The pin is deferred: the turn that detects the shift still runs on the
+    // full history, and the boundary only lands with its recap.
+    expect(getThread(thread.thread_id)?.hot_since ?? null).toBeNull();
+    const history = streamWithConfigMock.mock.calls[0][1] as Array<{ content: unknown }>;
+    expect(history.map((m) => String(m.content))).toContain("Let's debug the OAuth callback mismatch error.");
     await waitForCondition(() => {
       const refreshed = getThread(thread.thread_id);
-      return !!refreshed?.warm_summary?.includes("AUTO-COMPACT-RECAP")
+      return !!refreshed?.hot_since
+        && !!refreshed.warm_summary?.includes("AUTO-COMPACT-RECAP")
         && refreshed.warm_summary_before === refreshed.hot_since;
     });
   });
@@ -182,7 +186,7 @@ describe("prepareThreadRun auto context boundary", () => {
       },
     });
 
-    expect(getThread(thread.thread_id)?.hot_since).toBeTruthy();
+    await waitForCondition(() => !!getThread(thread.thread_id)?.hot_since);
   });
 
   it("keeps bridge auto-boundaries scoped without moving the foreground pin", async () => {
@@ -263,8 +267,7 @@ describe("prepareThreadRun auto context boundary", () => {
       },
     });
 
-    const updated = getThread(thread.thread_id);
-    expect(updated?.hot_since).toBeTruthy();
+    await waitForCondition(() => !!getThread(thread.thread_id)?.hot_since);
   });
 
   it("does not auto-move when the agent disables the history time bound", async () => {
