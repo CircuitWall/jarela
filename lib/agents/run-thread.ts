@@ -2,6 +2,7 @@ import { streamWithConfig } from "@/lib/agents/llm";
 import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/types";
+import { registeredCapability } from "@/lib/tools/registry";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
@@ -1437,6 +1438,12 @@ const WRITE_VERB_SEGMENTS = new Set([
 
 export function isWriteLikeToolName(name: string): boolean {
   if (!name) return false;
+  // Built-ins declare their safety class at registration (ADR-0038), so trust
+  // that over re-deriving it from the name — `propose_config_change` queues a
+  // pending action but has no CRUD verb in it. MCP/external tools aren't in
+  // the registry and still fall back to the verb scan.
+  const capability = registeredCapability(name);
+  if (capability) return capability !== "read";
   const segments = name.toLowerCase().split(/[._\-/]+/).filter(Boolean);
   return segments.some((s) => WRITE_VERB_SEGMENTS.has(s));
 }
