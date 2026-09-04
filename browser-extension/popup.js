@@ -212,6 +212,107 @@ function shortenUrl(url) {
   }
 }
 
+function tabLabel(tab) {
+  return tab?.title || tab?.host || shortenUrl(tab?.url) || `Tab ${tab?.tab_id ?? ""}`.trim();
+}
+
+function clearTabList(text) {
+  const list = document.getElementById("tab-list");
+  if (!list) return;
+  list.innerHTML = "";
+  const row = document.createElement("div");
+  row.className = "tab-row unusable";
+  const body = document.createElement("div");
+  const title = document.createElement("div");
+  title.className = "tab-title";
+  title.textContent = text;
+  body.appendChild(title);
+  row.appendChild(body);
+  list.appendChild(row);
+}
+
+function renderTabBadges(container, tab) {
+  const badges = [];
+  if (tab.foreground) badges.push(["current", "hot"]);
+  else if (tab.active && tab.focused_window) badges.push(["active", "hot"]);
+  if (tab.pinned_target) badges.push(["pinned", "pin"]);
+  if (!tab.usable) badges.push(["blocked", ""]);
+  for (const [label, cls] of badges) {
+    const badge = document.createElement("span");
+    badge.className = `tab-badge ${cls}`.trim();
+    badge.textContent = label;
+    container.appendChild(badge);
+  }
+}
+
+async function renderTabList() {
+  const list = document.getElementById("tab-list");
+  if (!list) return;
+  const res = await callBackground("jarela-list-tabs");
+  if (!res?.ok) {
+    clearTabList(`Could not list tabs: ${res?.body?.error ?? "unknown error"}`);
+    return;
+  }
+  const tabs = Array.isArray(res.body?.tabs) ? res.body.tabs : [];
+  if (tabs.length === 0) {
+    clearTabList("No browser tabs visible to the extension");
+    return;
+  }
+  list.innerHTML = "";
+  for (const tab of tabs) {
+    const row = document.createElement("div");
+    row.className = `tab-row ${tab.foreground || (tab.active && tab.focused_window) ? "current" : ""} ${tab.usable ? "" : "unusable"}`.trim();
+
+    const body = document.createElement("div");
+    body.className = "tab-body";
+    const title = document.createElement("div");
+    title.className = "tab-title";
+    title.textContent = tabLabel(tab);
+    title.title = tab.title || "";
+    const meta = document.createElement("div");
+    meta.className = "tab-meta";
+    meta.textContent = tab.host || shortenUrl(tab.url) || tab.unusable_reason || "metadata unavailable";
+    meta.title = tab.url || tab.unusable_reason || "";
+    const badges = document.createElement("div");
+    badges.className = "tab-badges";
+    renderTabBadges(badges, tab);
+    body.appendChild(title);
+    body.appendChild(meta);
+    body.appendChild(badges);
+
+    const buttons = document.createElement("div");
+    buttons.className = "tab-buttons";
+    const focus = document.createElement("button");
+    focus.type = "button";
+    focus.textContent = "Focus";
+    focus.disabled = !tab.tab_id;
+    focus.addEventListener("click", async () => {
+      setStatus(`Focusing ${tabLabel(tab)}…`);
+      const out = await callBackground("jarela-activate-tab", { tab_id: tab.tab_id });
+      if (out?.ok) setStatus("Focused tab.", "ok");
+      else setStatus(`Could not focus tab: ${out?.body?.error ?? "unknown error"}`, "err");
+      await renderTargetCard();
+    });
+    const pin = document.createElement("button");
+    pin.type = "button";
+    pin.textContent = tab.pinned_target ? "Pinned" : "Pin";
+    pin.disabled = !tab.usable || tab.pinned_target;
+    pin.addEventListener("click", async () => {
+      setStatus(`Pinning ${tabLabel(tab)}…`);
+      const out = await callBackground("jarela-pin-tab", { tab_id: tab.tab_id });
+      if (out?.ok) setStatus(`Pinned ${out.body?.pin?.host ?? "tab"}.`, "ok");
+      else setStatus(`Could not pin tab: ${out?.body?.error ?? "unknown error"}`, "err");
+      await renderTargetCard();
+    });
+    buttons.appendChild(focus);
+    buttons.appendChild(pin);
+
+    row.appendChild(body);
+    row.appendChild(buttons);
+    list.appendChild(row);
+  }
+}
+
 async function renderTargetCard() {
   // We render three independent pieces of state into the same card:
   //   - SW health drives the dot colour (server reachable or not).
@@ -257,6 +358,7 @@ async function renderTargetCard() {
     TARGET_CARD.pin().textContent = "Pin this tab";
     TARGET_CARD.unpin().hidden = true;
   }
+  await renderTabList();
 }
 
 document.getElementById("pin-tab").addEventListener("click", async () => {

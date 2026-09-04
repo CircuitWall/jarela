@@ -3,10 +3,13 @@ import {
   browserNavigateTool,
   browserClickTool,
   browserFillTool,
+  browserFillManyTool,
   browserScrollTool,
   browserScreenshotTool,
   browserExtractTool,
   browserSnapshotTool,
+  browserTabsTool,
+  browserActivateTabTool,
   resolveLocator,
   diffInteractive,
   _resetSnapshotCache,
@@ -19,16 +22,20 @@ import {
 } from "@/lib/api/browser-control";
 
 const writeBinaryFileMock = vi.fn<(name: string, data: Buffer) => string>();
+const writeTextFileMock = vi.fn<(name: string, data: string) => string>();
 
 vi.mock("@/lib/files", () => ({
   writeBinaryFile: (name: string, data: Buffer) => writeBinaryFileMock(name, data),
+  writeTextFile: (name: string, data: string) => writeTextFileMock(name, data),
 }));
 
 beforeEach(() => {
   _resetQueue();
   _resetSnapshotCache();
   writeBinaryFileMock.mockReset();
+  writeTextFileMock.mockReset();
   writeBinaryFileMock.mockImplementation((name) => `/tmp/${name}`);
+  writeTextFileMock.mockImplementation((name) => `/tmp/${name}`);
 });
 
 afterEach(() => {
@@ -56,7 +63,10 @@ describe("browser_navigate", () => {
     const p = browserNavigateTool.invoke({ url: "https://example.com" });
     const { parsed } = await driveTool(p, (cmd) => {
       expect(cmd.type).toBe("navigate");
-      if (cmd.type === "navigate") expect(cmd.url).toBe("https://example.com");
+      if (cmd.type === "navigate") {
+        expect(cmd.url).toBe("https://example.com");
+        expect(cmd.timeout_ms).toBe(90_000);
+      }
       return { ok: true, data: { url: "https://example.com", title: "Example" } };
     });
     expect(parsed.action).toBe("browser_navigate");
@@ -116,6 +126,43 @@ describe("browser_fill", () => {
   });
 });
 
+describe("browser_fill_many", () => {
+  it("enqueues a fill_many command with resolved selectors", async () => {
+    await seedSnapshotCache();
+    const p = browserFillManyTool.invoke({
+      fields: [
+        { handle: 0, value: "a@example.com" },
+        { role: "textbox", name: "Password", value: "secret" },
+      ],
+      submit_selector: "button[type=submit]",
+    });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("fill_many");
+      if (cmd.type === "fill_many") {
+        expect(cmd.fields).toEqual([
+          { selector: "input[name=email]", value: "a@example.com" },
+          { selector: "input[name=password]", value: "secret" },
+        ]);
+        expect(cmd.submit_selector).toBe("button[type=submit]");
+        expect(cmd.auto_snapshot).toBe(true);
+      }
+      return { ok: true, data: { matched: true, matched_count: 2, total: 2 } };
+    });
+    expect(parsed.action).toBe("browser_fill_many");
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("errors without dispatching when a field locator is invalid", async () => {
+    const out = await browserFillManyTool.invoke({ fields: [{ value: "x" }] });
+    const parsed = JSON.parse(out);
+    expect(parsed.action).toBe("browser_fill_many");
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/field 0/);
+    const cmd = await pollNextCommand(50);
+    expect(cmd).toBeNull();
+  });
+});
+
 describe("browser_scroll", () => {
   it("enqueues a scroll command with target", async () => {
     const p = browserScrollTool.invoke({ to: "bottom" });
@@ -167,17 +214,85 @@ describe("browser_screenshot", () => {
 
 describe("browser_extract", () => {
   it("requests the extension extract content and returns it", async () => {
-    const p = browserExtractTool.invoke({ selector: "main", format: "text" });
+    const p = browserExtractTool.invoke({ selector: "main", format: "text", max_chars: 1000, offset: 2000, output: "inline" });
     const { parsed } = await driveTool(p, (cmd) => {
       expect(cmd.type).toBe("extract");
       if (cmd.type === "extract") {
         expect(cmd.selector).toBe("main");
         expect(cmd.format).toBe("text");
+        expect(cmd.max_chars).toBe(1000);
+        expect(cmd.offset).toBe(2000);
       }
-      return { ok: true, data: { content: "Hello world." } };
+      return { ok: true, data: { content: "Hello world.", offset: 2000, next_offset: null } };
     });
     expect(parsed.ok).toBe(true);
-    expect(parsed.data).toEqual({ content: "Hello world." });
+    expect(parsed.data).toEqual({ content: "Hello world.", offset: 2000, next_offset: null });
+  });
+
+  it("reduces truncated extracts to a local text artifact with preview and continuation metadata", async () => {
+    const content = "x".repeat(20_000);
+    const p = browserExtractTool.invoke({ selector: "main", format: "text", max_chars: 20_000 });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("extract");
+      return { ok: true, data: { matched: true, format: "text", content, truncated: true, original_length: 40_000, offset: 0, next_offset: 20_000 } };
+    });
+    expect(parsed.ok).toBe(true);
+    expect(writeTextFileMock).toHaveBeenCalledTimes(1);
+    expect(writeTextFileMock.mock.calls[0][1]).toBe(content);
+    const data = parsed.data as {
+      content?: string;
+      content_ref: { name: string; uri: string; chars: number };
+      result_ref: { name: string; uri: string; chars: number; size: number };
+      preview: string;
+      next_offset: number;
+    };
+    expect(data.content).toBeUndefined();
+    expect(data.content_ref.name).toMatch(/^browser-extract-.+\.txt$/);
+    expect(data.result_ref).toEqual(data.content_ref);
+    expect(data.content_ref.uri).toContain(data.content_ref.name);
+    expect(data.content_ref.chars).toBe(content.length);
+    expect(data.result_ref.size).toBe(content.length);
+    expect(data.preview).toHaveLength(2000);
+    expect(data.next_offset).toBe(20_000);
+    expect(String((parsed as Record<string, unknown>).hint)).toMatch(/result_ref\.name/);
+    expect(String((parsed as Record<string, unknown>).hint)).toMatch(/offset=next_offset/);
+  });
+
+  it("honors output=file for small extracts", async () => {
+    const p = browserExtractTool.invoke({ format: "html", output: "file" });
+    const { parsed } = await driveTool(p, () => ({
+      ok: true,
+      data: { matched: true, format: "html", content: "<main>Hello</main>", truncated: false, original_length: 18, offset: 0, next_offset: null },
+    }));
+    expect(parsed.ok).toBe(true);
+    expect(writeTextFileMock).toHaveBeenCalledTimes(1);
+    const data = parsed.data as { content_ref: { name: string; mimeType: string } };
+    expect(data.content_ref.name).toMatch(/^browser-extract-.+\.html$/);
+    expect(data.content_ref.mimeType).toBe("text/html; charset=utf-8");
+  });
+});
+
+describe("browser_tabs / browser_activate_tab", () => {
+  it("enqueues a tab inventory command", async () => {
+    const p = browserTabsTool.invoke({});
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("tabs");
+      if (cmd.type === "tabs") expect(cmd.include_unusable).toBe(true);
+      return { ok: true, data: { tabs: [{ tab_id: 7, title: "Example" }], total: 1 } };
+    });
+    expect(parsed.action).toBe("browser_tabs");
+    expect(parsed.ok).toBe(true);
+  });
+
+  it("enqueues a tab activation command", async () => {
+    const p = browserActivateTabTool.invoke({ tab_id: 7 });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("activate_tab");
+      if (cmd.type === "activate_tab") expect(cmd.tab_id).toBe(7);
+      return { ok: true, data: { tab_id: 7, focused: true } };
+    });
+    expect(parsed.action).toBe("browser_activate_tab");
+    expect(parsed.ok).toBe(true);
   });
 });
 
@@ -341,6 +456,28 @@ describe("browser_snapshot", () => {
     await seedSnapshotCache();
     const r = resolveLocator({ handle: 0 });
     expect(r).toEqual({ ok: true, selector: "input[name=email]" });
+  });
+
+  it("reuses the cached page map by default", async () => {
+    await seedSnapshotCache();
+    const out = await browserSnapshotTool.invoke({});
+    const parsed = JSON.parse(out);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.data.cache.hit).toBe(true);
+    expect(parsed.data.interactive).toEqual(fakeSnapshot.interactive);
+    const cmd = await pollNextCommand(50);
+    expect(cmd).toBeNull();
+  });
+
+  it("force_refresh bypasses the cached page map", async () => {
+    await seedSnapshotCache();
+    const p = browserSnapshotTool.invoke({ force_refresh: true });
+    const { parsed } = await driveTool(p, (cmd) => {
+      expect(cmd.type).toBe("snapshot");
+      return { ok: true, data: { ...fakeSnapshot, fingerprint: "fresh" } };
+    });
+    expect(parsed.ok).toBe(true);
+    expect((parsed.data as Record<string, unknown>).cache).toBeUndefined();
   });
 });
 

@@ -14,6 +14,7 @@ const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".pdf": "application/pdf",
   ".txt": "text/plain; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
   ".json": "application/json",
 };
 

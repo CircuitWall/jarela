@@ -202,6 +202,26 @@ export function runMigrations(db: DatabaseSync): void {
       UNIQUE(bridge_id, remote_jid)
     );
     CREATE INDEX IF NOT EXISTS idx_bridge_ignores_bridge ON bridge_ignores(bridge_id);
+    CREATE TABLE IF NOT EXISTS browser_command_log (
+      cmd_id        TEXT PRIMARY KEY,
+      type          TEXT NOT NULL,
+      status        TEXT NOT NULL,
+      host          TEXT,
+      tab_id        INTEGER,
+      summary       TEXT NOT NULL,
+      retryable     INTEGER NOT NULL DEFAULT 0,
+      retry_payload TEXT,
+      risk_level    TEXT,
+      risk_reasons  TEXT NOT NULL DEFAULT '[]',
+      last_phase     TEXT,
+      last_progress_at TEXT,
+      error         TEXT,
+      created_at    TEXT NOT NULL,
+      updated_at    TEXT NOT NULL,
+      completed_at  TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_browser_command_log_created ON browser_command_log(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_browser_command_log_status ON browser_command_log(status, created_at DESC);
     -- HTTP/HTTPS proxy configuration (ADR-0009). Single-row table; the
     -- CHECK constraint enforces it. Non-secret fields are plaintext for
     -- diagnostics; password goes through lib/crypto/envelope.ts.

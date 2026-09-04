@@ -10,6 +10,7 @@ import { HarnessPanel } from "@/components/harness/HarnessPanel";
 import { LogsPanel } from "@/components/logs/LogsPanel";
 import { EnvVarsPanel } from "@/components/env/EnvVarsPanel";
 import { AppearancePanel } from "./AppearancePanel";
+import { ArtifactLifecyclePanel } from "./ArtifactLifecyclePanel";
 import { SecurityPanel } from "@/components/profile/SecurityPanel";
 import { RedactionPanel } from "@/components/profile/RedactionPanel";
 import { useSettingsAttention } from "@/hooks/useSettingsAttention";
@@ -119,6 +120,7 @@ function PrivacySecurityPanel() {
     <div className="h-full overflow-y-auto no-scrollbar max-w-lg mx-auto w-full px-4 py-3 space-y-3">
       <SecurityPanel />
       <RedactionPanel />
+      <ArtifactLifecyclePanel />
       <SystemControlCard />
     </div>
   );

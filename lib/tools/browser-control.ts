@@ -21,7 +21,7 @@ import {
   type BrowserCommandPayload,
   type BrowserResult,
 } from "@/lib/api/browser-control";
-import { writeBinaryFile } from "@/lib/files";
+import { writeBinaryFile, writeTextFile } from "@/lib/files";
 import { registerLangChainPackage } from "./langchain-package";
 import { withStreamDefault } from "./tool-metadata";
 
@@ -48,6 +48,64 @@ function stringifyResult(action: string, result: BrowserResult): string {
     return JSON.stringify({ action, ok: false, error: result.error });
   }
   return JSON.stringify({ action, ok: true, data: result.data });
+}
+
+const EXTRACT_INLINE_CHAR_LIMIT = 12_000;
+const EXTRACT_PREVIEW_CHAR_LIMIT = 2_000;
+const DEFAULT_NAVIGATE_TIMEOUT_MS = 90_000;
+
+type ExtractOutputMode = "auto" | "inline" | "file";
+
+interface BrowserExtractData {
+  matched?: boolean;
+  format?: string;
+  content?: string;
+  truncated?: boolean;
+  original_length?: number;
+  offset?: number;
+  next_offset?: number | null;
+  [k: string]: unknown;
+}
+
+function extensionForExtractFormat(format: string | undefined): "txt" | "html" {
+  return format === "html" || format === "outerHTML" ? "html" : "txt";
+}
+
+function maybeReduceExtractResult(result: BrowserResult, output: ExtractOutputMode): string {
+  if (!result.ok) return stringifyResult("browser_extract", result);
+  const data = (result.data ?? {}) as BrowserExtractData;
+  const content = typeof data.content === "string" ? data.content : "";
+  const shouldWrite = output === "file" || (output === "auto" && (content.length > EXTRACT_INLINE_CHAR_LIMIT || data.truncated === true));
+  if (!shouldWrite) return stringifyResult("browser_extract", result);
+
+  const ext = extensionForExtractFormat(data.format);
+  const name = `browser-extract-${randomUUID()}.${ext}`;
+  writeTextFile(name, content);
+  const { content: _content, ...rest } = data;
+  void _content;
+  const preview = content.slice(0, EXTRACT_PREVIEW_CHAR_LIMIT);
+  const ref = {
+    name,
+    uri: `/api/v1/files/${name}`,
+    mimeType: ext === "html" ? "text/html; charset=utf-8" : "text/plain; charset=utf-8",
+    size: Buffer.byteLength(content, "utf8"),
+    chars: content.length,
+  };
+  return JSON.stringify({
+    action: "browser_extract",
+    ok: true,
+    data: {
+      ...rest,
+      result_ref: ref,
+      content_ref: ref,
+      preview,
+      preview_chars: preview.length,
+    },
+    hint:
+      data.truncated === true
+        ? "The extract was reduced into a local file. Call tool_result_get with result_ref.name to read it, then call browser_extract again with offset=next_offset to continue the page."
+        : "The extract was reduced into a local file. Call tool_result_get with result_ref.name to read the full content.",
+  });
 }
 
 // --------------------------------------------------------------------- //
@@ -81,6 +139,8 @@ interface CachedSnapshot {
   at: number;
   tab_id?: number;
   url?: string;
+  fingerprint?: string;
+  raw?: Record<string, unknown>;
   items: SnapshotInteractive[];
 }
 
@@ -109,17 +169,40 @@ function asSnapshot(raw: unknown): CachedSnapshot | null {
     at: Date.now(),
     tab_id: typeof d.tab_id === "number" ? d.tab_id : undefined,
     url: typeof d.url === "string" ? d.url : undefined,
+    fingerprint: typeof d.fingerprint === "string" ? d.fingerprint : undefined,
+    raw: d as Record<string, unknown>,
     items,
   };
 }
 
-function getSnapshot(): CachedSnapshot | null {
+function getSnapshot(maxAgeMs = SNAPSHOT_TTL_MS): CachedSnapshot | null {
   if (!lastSnapshot) return null;
-  if (Date.now() - lastSnapshot.at > SNAPSHOT_TTL_MS) {
+  if (Date.now() - lastSnapshot.at > maxAgeMs) {
     lastSnapshot = null;
     return null;
   }
   return lastSnapshot;
+}
+
+function cachedSnapshotResult(maxAgeMs: number | undefined): string | null {
+  const snap = getSnapshot(maxAgeMs ?? SNAPSHOT_TTL_MS);
+  if (!snap) return null;
+  const ageMs = Date.now() - snap.at;
+  const raw = snap.raw ?? { url: snap.url, tab_id: snap.tab_id, interactive: snap.items };
+  return JSON.stringify({
+    action: "browser_snapshot",
+    ok: true,
+    data: {
+      ...raw,
+      cache: {
+        hit: true,
+        age_ms: ageMs,
+        max_age_ms: maxAgeMs ?? SNAPSHOT_TTL_MS,
+        fingerprint: snap.fingerprint ?? null,
+      },
+    },
+    hint: "Reused the recent page map. Pass force_refresh=true if the page changed or the cached controls look stale.",
+  });
 }
 
 /** @internal — test-only: clear the snapshot cache. */
@@ -280,7 +363,7 @@ export const browserNavigateTool = withStreamDefault(tool(
   async ({ url, wait_for_selector, timeout_ms }) => {
     const result = await run(
       { type: "navigate", url, wait_for_selector, auto_snapshot: true },
-      timeout_ms,
+      timeout_ms ?? DEFAULT_NAVIGATE_TIMEOUT_MS,
     );
     return formatActionResult("browser_navigate", result);
   },
@@ -289,6 +372,7 @@ export const browserNavigateTool = withStreamDefault(tool(
     description:
       "Drive the user's browser: navigate the active tab to `url`. The Jarela browser extension must be installed and connected. " +
       "Returns once the page reports loaded (or `wait_for_selector` resolves). The response includes a `diff` of the interactive controls on the new page — use the numeric `handle` from those entries (or `role`+`name`) on the next `browser_click`/`browser_fill` instead of calling `browser_snapshot` first. Fall back to `browser_screenshot` only when the visual layout itself matters. " +
+      "Uses a 90s default timeout so approval prompts and slow navigations have enough room; pass `timeout_ms` only when you intentionally want a different budget. " +
       "Use this only when the user has explicitly asked you to drive their browser — opening arbitrary URLs surprises users.",
     schema: z.object({
       url: z.string().url().describe("Absolute http(s) URL to navigate the active tab to."),
@@ -402,6 +486,52 @@ export const browserFillTool = withStreamDefault(tool(
 ), true);
 
 // --------------------------------------------------------------------- //
+// fill_many                                                             //
+// --------------------------------------------------------------------- //
+
+const LocatorField = z.object({
+  selector: z.string().min(1).max(2000).optional().describe("CSS selector for the field to fill."),
+  handle: z.number().int().min(0).optional().describe("Numeric `idx` from the most recent snapshot/diff."),
+  role: z.string().min(1).max(60).optional().describe("ARIA-like role. Pair with `name`."),
+  name: z.string().min(1).max(200).optional().describe("Accessible name of the field. Pair with `role`."),
+  value: z.string().max(50_000).describe("Text to type into the field. Replaces the existing value."),
+});
+
+export const browserFillManyTool = withStreamDefault(tool(
+  async ({ fields, submit_selector, timeout_ms }) => {
+    const resolved: Array<{ selector: string; value: string }> = [];
+    for (const [idx, field] of fields.entries()) {
+      const loc = resolveLocator(field);
+      if (!loc.ok) {
+        return JSON.stringify({
+          action: "browser_fill_many",
+          ok: false,
+          error: `field ${idx}: ${loc.error}`,
+        });
+      }
+      resolved.push({ selector: loc.selector, value: field.value });
+    }
+    const result = await run(
+      { type: "fill_many", fields: resolved, submit_selector, auto_snapshot: true },
+      timeout_ms,
+    );
+    return formatActionResult("browser_fill_many", result);
+  },
+  {
+    name: "browser_fill_many",
+    description:
+      "Fill multiple fields in the active tab in one browser round-trip. Use this for forms after a `browser_snapshot` or auto-snapshot diff. " +
+      "Each field uses EXACTLY ONE locator: `selector`, `handle`, or `role` + `name`; ambiguous role/name matches return an error instead of guessing. " +
+      "Raw values are sent only to the local browser extension and are not included in command history. Use `submit_selector` to click a submit button after all fields are filled.",
+    schema: z.object({
+      fields: z.array(LocatorField).min(1).max(25).describe("Fields to fill, in page order."),
+      submit_selector: z.string().min(1).max(2000).optional().describe("CSS selector for the submit button to click after all fields are filled."),
+      timeout_ms: TimeoutMs,
+    }),
+  },
+), true);
+
+// --------------------------------------------------------------------- //
 // scroll                                                                //
 // --------------------------------------------------------------------- //
 
@@ -491,18 +621,19 @@ export const browserScreenshotTool = withStreamDefault(tool(
 // --------------------------------------------------------------------- //
 
 export const browserExtractTool = withStreamDefault(tool(
-  async ({ selector, format, max_chars, timeout_ms }) => {
+  async ({ selector, format, max_chars, offset, output, timeout_ms }) => {
     const result = await run(
-      { type: "extract", selector, format: format ?? "text", max_chars },
+      { type: "extract", selector, format: format ?? "text", max_chars, offset },
       timeout_ms,
     );
-    return stringifyResult("browser_extract", result);
+    return maybeReduceExtractResult(result, output ?? "auto");
   },
   {
     name: "browser_extract",
     description:
       "Read text or HTML from the active tab. Without `selector` returns the whole body; with one returns the matching element. " +
-      "`format: text` strips markup (default), `html` returns innerHTML, `outerHTML` includes the element tag itself.",
+      "`format: text` strips markup (default), `html` returns innerHTML, `outerHTML` includes the element tag itself. " +
+      "For large pages, read in chunks: if `truncated` is true, call again with `offset` set to `next_offset` until it returns null.",
     schema: z.object({
       selector: z
         .string()
@@ -518,6 +649,16 @@ export const browserExtractTool = withStreamDefault(tool(
         .max(200_000)
         .optional()
         .describe("Cap the returned content at this many characters. Default is unbounded up to the extension's own page-size limit."),
+      offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe("Start reading at this character offset. Use `next_offset` from a truncated prior result to continue a large page."),
+      output: z
+        .enum(["auto", "inline", "file"])
+        .optional()
+        .describe("How to return extracted content. `auto` writes large/truncated content to a local file with preview metadata; `inline` returns content directly; `file` always writes a local file."),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -528,7 +669,11 @@ export const browserExtractTool = withStreamDefault(tool(
 // --------------------------------------------------------------------- //
 
 export const browserSnapshotTool = withStreamDefault(tool(
-  async ({ max_items, include_hidden, timeout_ms }) => {
+  async ({ max_items, include_hidden, force_refresh, max_age_ms, timeout_ms }) => {
+    if (!force_refresh && !include_hidden && !max_items) {
+      const cached = cachedSnapshotResult(max_age_ms);
+      if (cached) return cached;
+    }
     const result = await run(
       { type: "snapshot", max_items, include_hidden },
       timeout_ms,
@@ -543,6 +688,7 @@ export const browserSnapshotTool = withStreamDefault(tool(
     name: "browser_snapshot",
     description:
       "Return a compact, structured map of the active tab — URL, title, headings, landmarks, and a numbered list of every interactive control (links, buttons, inputs, selects, etc.) with `role`, accessible `name`, and a CSS `selector`. The numeric `idx` on each entry is a short-lived `handle` you can pass to `browser_click` / `browser_fill` instead of repeating the selector. " +
+      "Repeated calls reuse a recent same-process page map by default, which is cheaper than rediscovering complex pages every turn. Pass `force_refresh: true` when the page changed or the cached controls look stale. " +
       "You usually do NOT need to call this explicitly: `browser_navigate` / `browser_click` / `browser_fill` already return a fresh diff. Call this when you want the full inventory of the page (e.g. to plan a multi-step flow) or when the cached snapshot is stale (>5 minutes old).",
     schema: z.object({
       max_items: z
@@ -556,6 +702,58 @@ export const browserSnapshotTool = withStreamDefault(tool(
         .boolean()
         .optional()
         .describe("Include elements hidden by CSS / aria-hidden. Defaults to false."),
+      force_refresh: z
+        .boolean()
+        .optional()
+        .describe("Ignore the in-process snapshot cache and ask the extension to rediscover the page controls."),
+      max_age_ms: z
+        .number()
+        .int()
+        .positive()
+        .max(SNAPSHOT_TTL_MS)
+        .optional()
+        .describe("Maximum age of a reusable cached snapshot. Defaults to 5 minutes."),
+      timeout_ms: TimeoutMs,
+    }),
+  },
+), true);
+
+// --------------------------------------------------------------------- //
+// tabs                                                                  //
+// --------------------------------------------------------------------- //
+
+export const browserTabsTool = withStreamDefault(tool(
+  async ({ include_unusable, timeout_ms }) => {
+    const result = await run(
+      { type: "tabs", include_unusable: include_unusable ?? true },
+      timeout_ms,
+    );
+    return stringifyResult("browser_tabs", result);
+  },
+  {
+    name: "browser_tabs",
+    description:
+      "List browser tabs known to the Jarela extension, including tab id, window id, active/focused/pinned/foreground markers, title, URL/host when permissions allow, and whether the tab can be scripted. " +
+      "Use this before switching tabs or when the current target is uncertain. Tab ids are browser-session scoped and should not be treated as durable identifiers.",
+    schema: z.object({
+      include_unusable: z.boolean().optional().describe("Include chrome://, extension, blank, or metadata-unavailable tabs. Defaults to true."),
+      timeout_ms: TimeoutMs,
+    }),
+  },
+), true);
+
+export const browserActivateTabTool = withStreamDefault(tool(
+  async ({ tab_id, timeout_ms }) => {
+    const result = await run({ type: "activate_tab", tab_id }, timeout_ms);
+    return stringifyResult("browser_activate_tab", result);
+  },
+  {
+    name: "browser_activate_tab",
+    description:
+      "Focus a browser tab by `tab_id` from `browser_tabs`. This activates the tab and asks Chromium to focus its window. " +
+      "Use only when the user asked you to control browser focus or a workflow clearly needs a different open tab. This does not change the pinned target unless the user pins that tab separately.",
+    schema: z.object({
+      tab_id: z.number().int().positive().describe("Tab id returned by `browser_tabs` for this browser session."),
       timeout_ms: TimeoutMs,
     }),
   },
@@ -564,7 +762,7 @@ export const browserSnapshotTool = withStreamDefault(tool(
 registerLangChainPackage({
   category: "Web",
   tools: {
-    read: [browserScreenshotTool, browserExtractTool, browserSnapshotTool],
-    write: [browserNavigateTool, browserClickTool, browserFillTool, browserScrollTool],
+    read: [browserScreenshotTool, browserExtractTool, browserSnapshotTool, browserTabsTool],
+    write: [browserNavigateTool, browserClickTool, browserFillTool, browserFillManyTool, browserScrollTool, browserActivateTabTool],
   },
 });

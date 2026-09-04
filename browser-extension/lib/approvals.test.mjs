@@ -6,6 +6,7 @@ import {
   setApproval,
   clearApproval,
   getAllApprovals,
+  syncApprovalsWithAllowedHosts,
   gateCommand,
 } from "./approvals.mjs";
 
@@ -75,6 +76,29 @@ describe("approval CRUD", () => {
   });
 });
 
+describe("syncApprovalsWithAllowedHosts", () => {
+  it("mirrors persisted allowed-sites into local always approvals", async () => {
+    const s = makeStorage();
+    await syncApprovalsWithAllowedHosts(s, ["Example.com", "docs.example.com"]);
+    expect(await getAllApprovals(s)).toEqual({
+      "docs.example.com": "always",
+      "example.com": "always",
+    });
+  });
+
+  it("removes local always approvals that are no longer persisted", async () => {
+    const s = makeStorage({ [STORAGE_KEY]: { "old.test": "always", "keep.test": "always" } });
+    await syncApprovalsWithAllowedHosts(s, ["keep.test"]);
+    expect(await getAllApprovals(s)).toEqual({ "keep.test": "always" });
+  });
+
+  it("does not overwrite explicit local denies", async () => {
+    const s = makeStorage({ [STORAGE_KEY]: { "blocked.test": "denied" } });
+    await syncApprovalsWithAllowedHosts(s, ["blocked.test"]);
+    expect(await getAllApprovals(s)).toEqual({ "blocked.test": "denied" });
+  });
+});
+
 describe("gateCommand", () => {
   it("returns deny when host cannot be derived", async () => {
     const s = makeStorage();
@@ -90,6 +114,27 @@ describe("gateCommand", () => {
     const r = await gateCommand({ storage: s, host: "ok.test", action: "click", prompt });
     expect(r).toEqual({ allow: true });
     expect(prompt).not.toHaveBeenCalled();
+  });
+
+  it("prompts for forcePrompt even when host is always-approved", async () => {
+    const s = makeStorage({ [STORAGE_KEY]: { "ok.test": "always" } });
+    const prompt = vi.fn().mockResolvedValue("once");
+    const details = { level: "sensitive", reasons: ["reads the whole page"], force_prompt: true };
+    const r = await gateCommand({
+      storage: s,
+      host: "ok.test",
+      action: "extract",
+      prompt,
+      forcePrompt: true,
+      promptDetails: details,
+    });
+    expect(r).toEqual({ allow: true });
+    expect(prompt).toHaveBeenCalledWith({
+      host: "ok.test",
+      action: "extract",
+      details,
+      forcePrompt: true,
+    });
   });
 
   it("rejects silently when host is denied", async () => {

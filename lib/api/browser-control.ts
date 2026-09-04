@@ -19,6 +19,14 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { isLoopbackRequest } from "@/lib/auth/access";
+import {
+  completeBrowserCommandLog,
+  createBrowserCommandLog,
+  getBrowserCommandLog,
+  listBrowserCommandLogs,
+  markBrowserCommandRunning,
+  markBrowserCommandProgress,
+} from "@/lib/stores/browser-command-log";
 
 // Soft cap on the number of commands sitting in the queue at once.
 // A runaway LLM that fires hundreds of click() calls in one turn would
@@ -85,6 +93,18 @@ const FillCommandShape = z.object({
   submit: z.boolean().optional(),
   auto_snapshot: z.boolean().optional(),
 });
+const FillManyCommandShape = z.object({
+  type: z.literal("fill_many"),
+  fields: z
+    .array(z.object({
+      selector: z.string().min(1).max(2000),
+      value: z.string().max(50_000),
+    }))
+    .min(1)
+    .max(25),
+  submit_selector: z.string().min(1).max(2000).optional(),
+  auto_snapshot: z.boolean().optional(),
+});
 const ScrollCommandShape = z.object({
   type: z.literal("scroll"),
   selector: z.string().min(1).max(2000).optional(),
@@ -101,6 +121,7 @@ const ExtractCommandShape = z.object({
   selector: z.string().min(1).max(2000).optional(),
   format: ExtractFormat.default("text"),
   max_chars: z.number().int().positive().max(200_000).optional(),
+  offset: z.number().int().min(0).optional(),
 });
 
 const SnapshotCommandShape = z.object({
@@ -109,14 +130,53 @@ const SnapshotCommandShape = z.object({
   include_hidden: z.boolean().optional(),
 });
 
+const TabsCommandShape = z.object({
+  type: z.literal("tabs"),
+  include_unusable: z.boolean().optional(),
+});
+
+const ActivateTabCommandShape = z.object({
+  type: z.literal("activate_tab"),
+  tab_id: z.number().int().positive(),
+});
+
+const BooleanQueryShape = z.enum(["true", "false"]).transform((value) => value === "true");
+
+const BrowserTabsQueryShape = z.object({
+  include_unusable: BooleanQueryShape.optional(),
+  timeout_ms: z.coerce.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+});
+
+const BrowserActivateBodyShape = z.object({
+  tab_id: z.number().int().positive(),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+});
+
+const BrowserHistoryQueryShape = z.object({
+  limit: z.coerce.number().int().positive().max(200).optional(),
+});
+
+const BrowserRetryBodyShape = z.object({
+  cmd_id: z.string().min(1).max(128),
+  timeout_ms: z.number().int().positive().max(MAX_COMMAND_TIMEOUT_MS).optional(),
+});
+
+const BrowserProgressBodyShape = z.object({
+  cmd_id: z.string().min(1).max(128),
+  phase: z.string().min(1).max(80),
+});
+
 const CommandShape = z.discriminatedUnion("type", [
   NavigateCommandShape,
   ClickCommandShape,
   FillCommandShape,
+  FillManyCommandShape,
   ScrollCommandShape,
   ScreenshotCommandShape,
   ExtractCommandShape,
   SnapshotCommandShape,
+  TabsCommandShape,
+  ActivateTabCommandShape,
 ]);
 
 export type BrowserCommandPayload = z.infer<typeof CommandShape>;
@@ -154,6 +214,7 @@ interface PendingEntry {
   // it from the queue map at that point so a late /result POST can
   // still resolve the agent tool.
   picked: boolean;
+  pickedAt: number | null;
 }
 
 // Ordered list: FIFO dispatch order. Map keyed by cmd_id for O(1)
@@ -216,8 +277,27 @@ function dispatchToNextWaiter(): void {
   const e = findUnpicked();
   if (!e) return;
   e.picked = true;
+  e.pickedAt = Date.now();
+  try { markBrowserCommandRunning(e.command.cmd_id); } catch { /* best-effort */ }
   const waiter = pollWaiters.shift()!;
   waiter(e.command);
+}
+
+function timeoutMessage(entry: PendingEntry, requested: number): string {
+  if (!entry.picked) {
+    return (
+      `command timed out after ${requested}ms before the browser extension picked it up. ` +
+      `Open Chrome, click the Jarela toolbar icon to wake the extension, then retry.`
+    );
+  }
+  const pickedAgo = entry.pickedAt ? Date.now() - entry.pickedAt : requested;
+  const log = getBrowserCommandLog(entry.command.cmd_id);
+  const phase = log?.last_phase ? ` Last known phase: ${log.last_phase}.` : "";
+  return (
+    `command timed out after ${requested}ms; the browser extension picked it up ${Math.round(pickedAgo / 1000)}s ago but did not return a result. ` +
+    `Check the target tab for a Jarela approval prompt, a stuck page load, or a blocked browser action, then retry.` +
+    phase
+  );
 }
 
 function removeEntry(cmdId: string): void {
@@ -277,19 +357,23 @@ export function enqueueCommand(
     enqueued_at: Date.now(),
     ...payload,
   };
+  try { createBrowserCommandLog(cmd_id, payload); } catch (err) { console.warn("[jarela/browser] failed to log command enqueue:", err); }
   let resolveOuter!: (r: BrowserResult) => void;
   const promise = new Promise<BrowserResult>((res) => { resolveOuter = res; });
   const expiry = setTimeout(() => {
     if (byId.has(cmd_id)) {
+      const entry = byId.get(cmd_id)!;
+      const error = timeoutMessage(entry, requested);
       removeEntry(cmd_id);
+      try { completeBrowserCommandLog(cmd_id, { ok: false, error }); } catch { /* best-effort */ }
       resolveOuter({
         cmd_id,
         ok: false,
-        error: `command timed out after ${requested}ms. Is the Jarela browser extension installed and connected?`,
+        error,
       });
     }
   }, requested);
-  const entry: PendingEntry = { command, resolve: resolveOuter, expiry, picked: false };
+  const entry: PendingEntry = { command, resolve: resolveOuter, expiry, picked: false, pickedAt: null };
   queue.push(entry);
   byId.set(cmd_id, entry);
   // Wake any waiting poller.
@@ -306,6 +390,8 @@ export function pollNextCommand(waitMs: number = POLL_WAIT_MS): Promise<BrowserC
   const e = findUnpicked();
   if (e) {
     e.picked = true;
+    e.pickedAt = Date.now();
+    try { markBrowserCommandRunning(e.command.cmd_id); } catch { /* best-effort */ }
     return Promise.resolve(e.command);
   }
   return new Promise((resolve) => {
@@ -335,6 +421,7 @@ export function submitResult(result: BrowserResult): { matched: boolean } {
   if (!entry) return { matched: false };
   clearTimeout(entry.expiry);
   removeEntry(result.cmd_id);
+  try { completeBrowserCommandLog(result.cmd_id, result); } catch { /* best-effort */ }
   entry.resolve(result);
   return { matched: true };
 }
@@ -374,6 +461,23 @@ function badRequest(msg: string): Response {
     status: 400,
     headers: { "content-type": "application/json" },
   });
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function awaitBrowserCommand(
+  payload: BrowserCommandPayload,
+  timeout_ms: number | undefined,
+): Promise<Response> {
+  const { promise } = enqueueCommand(payload, { timeout_ms });
+  const result = await promise;
+  if (!result.ok) return jsonResponse({ error: result.error }, 503);
+  return jsonResponse(result.data ?? null);
 }
 
 export async function handleBrowserPoll(req: Request): Promise<Response> {
@@ -432,12 +536,81 @@ export async function handleBrowserResult(req: Request): Promise<Response> {
   });
 }
 
+export async function handleBrowserProgress(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return badRequest("Request body must be valid JSON");
+  }
+  const parsed = BrowserProgressBodyShape.safeParse(raw);
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "invalid progress body");
+  markBrowserCommandProgress(parsed.data.cmd_id, parsed.data.phase);
+  return jsonResponse({ ok: true });
+}
+
 export async function handleBrowserStatus(req: Request): Promise<Response> {
   if (!isLoopbackRequest(req)) return loopbackForbidden();
   return new Response(JSON.stringify(getExtensionStatus()), {
     status: 200,
     headers: { "content-type": "application/json" },
   });
+}
+
+export async function handleBrowserTabs(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  const url = new URL(req.url);
+  const parsed = BrowserTabsQueryShape.safeParse({
+    include_unusable: url.searchParams.get("include_unusable") ?? undefined,
+    timeout_ms: url.searchParams.get("timeout_ms") ?? undefined,
+  });
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "invalid tabs query");
+  const includeUnusable = parsed.data.include_unusable ?? true;
+  return awaitBrowserCommand(
+    { type: "tabs", include_unusable: includeUnusable },
+    parsed.data.timeout_ms ?? 10_000,
+  );
+}
+
+export async function handleBrowserActivate(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return badRequest("Request body must be valid JSON");
+  }
+  const parsed = BrowserActivateBodyShape.safeParse(raw);
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "invalid activate body");
+  return awaitBrowserCommand(
+    { type: "activate_tab", tab_id: parsed.data.tab_id },
+    parsed.data.timeout_ms ?? 10_000,
+  );
+}
+
+export async function handleBrowserHistory(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  const url = new URL(req.url);
+  const parsed = BrowserHistoryQueryShape.safeParse({ limit: url.searchParams.get("limit") ?? undefined });
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "invalid history query");
+  return jsonResponse({ commands: listBrowserCommandLogs(parsed.data.limit ?? 50) });
+}
+
+export async function handleBrowserRetry(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return badRequest("Request body must be valid JSON");
+  }
+  const parsed = BrowserRetryBodyShape.safeParse(raw);
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "invalid retry body");
+  const entry = getBrowserCommandLog(parsed.data.cmd_id);
+  if (!entry) return jsonResponse({ error: "unknown browser command" }, 404);
+  if (!entry.retryable || !entry.retry_payload) return jsonResponse({ error: "browser command is not retryable" }, 409);
+  return awaitBrowserCommand(entry.retry_payload, parsed.data.timeout_ms ?? 30_000);
 }
 
 /** @internal — exported for the agent-side tool layer; do not import elsewhere. */

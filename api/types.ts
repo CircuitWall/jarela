@@ -1222,6 +1222,122 @@ export interface BridgeLiveStatus {
   enabled: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Browser extension control
+// ---------------------------------------------------------------------------
+
+export interface BrowserExtensionStatus {
+  connected: boolean;
+  pollerWaiting: number;
+  lastSeenMs: number;
+  pendingCommands: number;
+  liveness_window_ms: number;
+}
+
+export interface BrowserTabInfo {
+  tab_id: number;
+  window_id: number;
+  index: number;
+  active: boolean;
+  focused_window: boolean;
+  pinned_target: boolean;
+  foreground: boolean;
+  title: string;
+  url: string;
+  host: string;
+  status: string;
+  usable: boolean;
+  unusable_reason?: string;
+}
+
+export interface BrowserTabsResponse {
+  tabs: BrowserTabInfo[];
+  total: number;
+  current_tab_id: number | null;
+  foreground_tab_id: number | null;
+  pinned_tab_id: number | null;
+}
+
+export interface BrowserActivateResponse {
+  tab_id: number;
+  window_id: number;
+  title: string;
+  url: string;
+  host: string;
+  focused: boolean;
+}
+
+export type BrowserCommandStatus = "queued" | "running" | "succeeded" | "failed";
+
+export interface BrowserCommandLogEntry {
+  cmd_id: string;
+  type: string;
+  status: BrowserCommandStatus;
+  host: string | null;
+  tab_id: number | null;
+  summary: string;
+  retryable: boolean;
+  retry_payload: Record<string, unknown> | null;
+  risk_level: string | null;
+  risk_reasons: string[];
+  last_phase: string | null;
+  last_progress_at: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface BrowserHistoryResponse {
+  commands: BrowserCommandLogEntry[];
+}
+
+export type ArtifactKind = "browser" | "generated" | "attachment" | "other";
+
+export interface ArtifactLifecycleSettings {
+  retention_days: number;
+  max_total_mb: number;
+  include_browser_artifacts: boolean;
+  include_generated_media: boolean;
+}
+
+export interface ArtifactFileInfo {
+  name: string;
+  kind: ArtifactKind;
+  media_type: string;
+  size: number;
+  created_at: string;
+  updated_at: string;
+  age_days: number;
+}
+
+export interface ArtifactInventory {
+  files: ArtifactFileInfo[];
+  total_files: number;
+  total_bytes: number;
+  browser_bytes: number;
+  generated_bytes: number;
+}
+
+export interface ArtifactCleanupResult {
+  deleted: ArtifactFileInfo[];
+  deleted_count: number;
+  deleted_bytes: number;
+  dry_run: boolean;
+  before: ArtifactInventory;
+  after: ArtifactInventory;
+}
+
+export interface ArtifactLifecycleResponse {
+  settings: ArtifactLifecycleSettings;
+  inventory: ArtifactInventory;
+}
+
+export interface ArtifactCleanupResponse {
+  settings: ArtifactLifecycleSettings;
+  result: ArtifactCleanupResult;
+}
+
 export interface BridgeRoute {
   id: string;
   bridge_id: string;

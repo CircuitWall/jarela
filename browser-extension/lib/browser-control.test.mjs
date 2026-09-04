@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { dispatchCommand, pageClickFn, pageFillFn, pageScrollFn, pageExtractFn, pageSnapshotFn, pageWaitForDomIdleFn } from "./browser-control.mjs";
+import { dispatchCommand, pageClickFn, pageFillFn, pageFillManyFn, pageScrollFn, pageExtractFn, pageSnapshotFn, pageWaitForDomIdleFn } from "./browser-control.mjs";
 
 // Provide DOM globals the page-functions touch when invoked in Node.
 // They run inside the page (via chrome.scripting.executeScript) in
@@ -30,7 +30,13 @@ function makeDeps(overrides = {}) {
   const calls = { executeScript: [], updateTab: [], captureVisibleTab: [] };
   const deps = {
     queryActiveTab: vi.fn().mockResolvedValue([{ id: 7, windowId: 1 }]),
+    queryTabs: vi.fn().mockResolvedValue([{ id: 7, windowId: 1, index: 0, active: true, url: "https://example.com", title: "Example", status: "complete" }]),
+    getPinnedTab: vi.fn().mockResolvedValue(null),
+    getForegroundTab: vi.fn().mockResolvedValue({ tabId: 7 }),
+    getLastFocusedWindow: vi.fn().mockResolvedValue({ id: 1, focused: true }),
     updateTab: vi.fn().mockImplementation((opts) => { calls.updateTab.push(opts); return Promise.resolve(); }),
+    activateTab: vi.fn().mockResolvedValue({ id: 7, windowId: 1, url: "https://example.com", title: "Example" }),
+    focusWindow: vi.fn().mockResolvedValue({ id: 1, focused: true }),
     executeScript: vi.fn().mockImplementation((opts) => {
       calls.executeScript.push(opts);
       // Default: return matched=true. Tests override to simulate misses.
@@ -57,6 +63,13 @@ describe("dispatchCommand — preconditions", () => {
     const r = await dispatchCommand(deps, { type: "weird" });
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/unknown command type/);
+  });
+
+  it("does not require an active tab to list tabs", async () => {
+    const { deps } = makeDeps({ queryActiveTab: vi.fn().mockResolvedValue([]) });
+    const r = await dispatchCommand(deps, { type: "tabs", include_unusable: true });
+    expect(r.ok).toBe(true);
+    expect(r.data.tabs[0].tab_id).toBe(7);
   });
 
   it("rejects falsy commands", async () => {
@@ -114,6 +127,43 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     expect(opts.args).toEqual(["input", "hi", true]);
   });
 
+  it("fill_many fills all fields in one page execution", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: true, matched_count: 2, total: 2, fields: [{ matched: true }, { matched: true }] } }]),
+    });
+    const r = await dispatchCommand(deps, {
+      type: "fill_many",
+      fields: [
+        { selector: "input[name=email]", value: "a@example.com" },
+        { selector: "input[name=name]", value: "A" },
+      ],
+      submit_selector: "button[type=submit]",
+    });
+    expect(r.ok).toBe(true);
+    const [opts] = deps.executeScript.mock.calls[0];
+    expect(opts.target).toEqual({ tabId: 7 });
+    expect(opts.args).toEqual([
+      [
+        { selector: "input[name=email]", value: "a@example.com" },
+        { selector: "input[name=name]", value: "A" },
+      ],
+      "button[type=submit]",
+    ]);
+  });
+
+  it("fill_many reports partial field misses", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: true, matched_count: 1, total: 2, fields: [{ matched: true }, { selector: "#missing", matched: false }] } }]),
+    });
+    const r = await dispatchCommand(deps, {
+      type: "fill_many",
+      fields: [{ selector: "#ok", value: "ok" }, { selector: "#missing", value: "missing" }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/1 of 2 fields/);
+    expect(r.data.fields[1].selector).toBe("#missing");
+  });
+
   it("scroll uses the dispatched arguments", async () => {
     const { deps } = makeDeps();
     await dispatchCommand(deps, { type: "scroll", to: "bottom" });
@@ -130,6 +180,15 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     expect(r.data).toEqual({ matched: true, content: "Hello.", format: "text" });
   });
 
+  it("extract passes offset for chunked reads", async () => {
+    const { deps } = makeDeps({
+      executeScript: vi.fn().mockResolvedValue([{ result: { matched: true, content: "llo", format: "text", offset: 2, next_offset: null } }]),
+    });
+    await dispatchCommand(deps, { type: "extract", selector: "main", format: "text", max_chars: 3, offset: 2 });
+    const [opts] = deps.executeScript.mock.calls[0];
+    expect(opts.args).toEqual(["main", "text", 3, 2]);
+  });
+
   it("snapshot routes to pageSnapshotFn with options", async () => {
     const fakeSnap = { url: "https://x", title: "x", interactive: [] };
     const { deps } = makeDeps({
@@ -140,6 +199,75 @@ describe("dispatchCommand — click / fill / scroll / extract", () => {
     expect(r.data).toEqual(fakeSnap);
     const [opts] = deps.executeScript.mock.calls[0];
     expect(opts.args).toEqual([{ max_items: 25, include_hidden: true }]);
+  });
+
+  it("page snapshot includes a stable fingerprint", () => {
+    const button = makeFakeElement({
+      tagName: "BUTTON",
+      textContent: "Save",
+      innerText: "Save",
+      getAttribute: (name) => name === "role" ? null : name === "aria-hidden" ? null : null,
+      previousElementSibling: null,
+      parentElement: null,
+    });
+    globalThis.location = { href: "https://example.com" };
+    globalThis.window = {
+      innerWidth: 1000,
+      innerHeight: 800,
+      scrollY: 0,
+      getComputedStyle: () => ({ visibility: "visible", display: "block", opacity: "1" }),
+    };
+    globalThis.document = {
+      title: "Example",
+      documentElement: { scrollHeight: 1000 },
+      getElementById: () => null,
+      querySelector: () => null,
+      querySelectorAll: (selector) => selector.includes("button") ? [button] : [],
+    };
+    const first = pageSnapshotFn({ max_items: 10 });
+    const second = pageSnapshotFn({ max_items: 10 });
+    expect(first.fingerprint).toMatch(/^[0-9a-f]{8}$/);
+    expect(second.fingerprint).toBe(first.fingerprint);
+  });
+});
+
+describe("dispatchCommand — tabs", () => {
+  it("returns tab inventory with target markers", async () => {
+    const { deps } = makeDeps({
+      queryTabs: vi.fn().mockResolvedValue([
+        { id: 7, windowId: 1, index: 0, active: true, url: "https://example.com", title: "Example", status: "complete" },
+        { id: 8, windowId: 1, index: 1, active: false, url: "chrome://settings", title: "Settings", status: "complete" },
+      ]),
+      getPinnedTab: vi.fn().mockResolvedValue({ tabId: 7 }),
+      getForegroundTab: vi.fn().mockResolvedValue({ tabId: 7 }),
+      getLastFocusedWindow: vi.fn().mockResolvedValue({ id: 1 }),
+    });
+    const r = await dispatchCommand(deps, { type: "tabs", include_unusable: true });
+    expect(r.ok).toBe(true);
+    expect(r.data.tabs).toHaveLength(2);
+    expect(r.data.tabs[0]).toMatchObject({ tab_id: 7, host: "example.com", active: true, focused_window: true, pinned_target: true, foreground: true, usable: true });
+    expect(r.data.tabs[1]).toMatchObject({ tab_id: 8, usable: false });
+  });
+
+  it("filters unusable tabs unless include_unusable is set", async () => {
+    const { deps } = makeDeps({
+      queryTabs: vi.fn().mockResolvedValue([
+        { id: 7, windowId: 1, index: 0, active: true, url: "https://example.com", title: "Example" },
+        { id: 8, windowId: 1, index: 1, active: false, url: "chrome://settings", title: "Settings" },
+      ]),
+    });
+    const r = await dispatchCommand(deps, { type: "tabs" });
+    expect(r.ok).toBe(true);
+    expect(r.data.tabs.map((tab) => tab.tab_id)).toEqual([7]);
+  });
+
+  it("activates the tab and focuses its window", async () => {
+    const { deps } = makeDeps();
+    const r = await dispatchCommand(deps, { type: "activate_tab", tab_id: 7 });
+    expect(r.ok).toBe(true);
+    expect(deps.activateTab).toHaveBeenCalledWith(7);
+    expect(deps.focusWindow).toHaveBeenCalledWith(1);
+    expect(r.data).toMatchObject({ tab_id: 7, window_id: 1, focused: true });
   });
 });
 
@@ -270,6 +398,37 @@ describe("pageFillFn (pure)", () => {
   });
 });
 
+describe("pageFillManyFn (pure)", () => {
+  it("fills each field and clicks the submit selector", () => {
+    const email = makeFakeElement({ tagName: "INPUT", value: "" });
+    const name = makeFakeElement({ tagName: "INPUT", value: "" });
+    const submit = makeFakeElement({ tagName: "BUTTON" });
+    globalThis.document = {
+      querySelector: (selector) => ({
+        "input[name=email]": email,
+        "input[name=name]": name,
+        "button[type=submit]": submit,
+      })[selector] ?? null,
+    };
+    const r = pageFillManyFn([
+      { selector: "input[name=email]", value: "a@example.com" },
+      { selector: "input[name=name]", value: "Ada" },
+    ], "button[type=submit]");
+    expect(r.matched).toBe(true);
+    expect(r.matched_count).toBe(2);
+    expect(email.value).toBe("a@example.com");
+    expect(name.value).toBe("Ada");
+    expect(submit._events.map((e) => e.type)).toContain("click");
+  });
+
+  it("does not include raw values in per-field results", () => {
+    const el = makeFakeElement({ tagName: "INPUT", value: "" });
+    globalThis.document = { querySelector: () => el };
+    const r = pageFillManyFn([{ selector: "input", value: "secret" }], null);
+    expect(JSON.stringify(r.fields)).not.toContain("secret");
+  });
+});
+
 describe("pageScrollFn (pure)", () => {
   it("scrolls to top via window.scrollTo", () => {
     let target = null;
@@ -318,6 +477,16 @@ describe("pageExtractFn (pure)", () => {
     expect(r.content).toBe("abcde");
     expect(r.truncated).toBe(true);
     expect(r.original_length).toBe(10);
+    expect(r.next_offset).toBe(5);
+  });
+
+  it("continues extraction from offset", () => {
+    const el = makeFakeElement({ innerText: "abcdefghij" });
+    globalThis.document = { querySelector: () => el, body: el };
+    const r = pageExtractFn(null, "text", 4, 4);
+    expect(r.content).toBe("efgh");
+    expect(r.offset).toBe(4);
+    expect(r.next_offset).toBe(8);
   });
 
   it("returns matched=false when selector matches nothing", () => {

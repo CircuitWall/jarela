@@ -22,6 +22,7 @@ describe("built-in skills", () => {
   it("lists packaged Jarela operating skills without any skill repo configured", () => {
     const skills = listSkills();
     expect(skills.map((s) => s.id)).toEqual(expect.arrayContaining([
+      "browser-navigation",
       "jarela-configuration",
       "jarela-integrations",
       "jarela-operations",
@@ -42,6 +43,18 @@ describe("built-in skills", () => {
     expect(skill?.content).toContain("set_env_var");
     expect(skill?.content).toContain("requiresRestart");
     expect(skill?.content).toContain("restart_server");
+  });
+
+  it("ships browser navigation guidance with memory hints", () => {
+    const skill = getSkill("browser-navigation");
+    expect(skill?.source).toBe("builtin");
+    expect(skill?.content).toContain("# Browser Navigation");
+    expect(skill?.content).toContain("browser_snapshot");
+    expect(skill?.content).toContain("browser_fill_many");
+    expect(skill?.content).toContain("Use `memory_write`");
+    expect(skill?.content).toContain("The `value` argument to `memory_write` is a string");
+    expect(skill?.content).toContain("namespace: `browser.navigation`");
+    expect(skill?.content).toContain("Never store secrets");
   });
 });
 

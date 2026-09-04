@@ -5,6 +5,7 @@ import { DocumentsPanel } from "@/components/documents/DocumentsPanel";
 import { SkillsPanel } from "@/components/skills/SkillsPanel";
 import { MemoryPanel } from "@/components/memory/MemoryPanel";
 import { BridgesPanel } from "@/components/bridges/BridgesPanel";
+import { BrowserPanel } from "@/components/tools/BrowserPanel";
 import { PackagesPanel } from "./PackagesPanel";
 import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 
@@ -17,20 +18,23 @@ import { SubTabBar, type SubTabItem } from "@/components/ui/SubTabBar";
 //   - "Memory"    — long-lived facts persisted across conversations.
 //   - "MCP"       — external Model Context Protocol servers.
 //   - "Bridges"   — mobile / messaging bridge pairings.
+//   - "Browser"   — the local Chromium extension as an agent runtime surface.
 // Credentials still flow through Settings → Credentials.
 
 type Sub =
   | "packages"
+  | "browser"
   | "documents"
   | "skills"
   | "memory"
   | "mcp"
   | "bridges";
 
-const SUBS: Sub[] = ["packages", "documents", "skills", "memory", "mcp", "bridges"];
+const SUBS: Sub[] = ["packages", "browser", "documents", "skills", "memory", "mcp", "bridges"];
 
 const SUB_TITLES: Record<Sub, string> = {
   packages: "Packages",
+  browser: "Browser",
   documents: "Documents",
   skills: "Skills",
   memory: "Memory",
@@ -67,6 +71,7 @@ export function ToolsPanel() {
       />
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
         {active === "packages" && <PackagesPanel />}
+        {active === "browser" && <BrowserPanel />}
         {active === "documents" && <DocumentsPanel />}
         {active === "skills" && <SkillsPanel />}
         {active === "memory" && <MemoryPanel />}

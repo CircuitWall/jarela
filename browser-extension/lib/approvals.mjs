@@ -69,6 +69,30 @@ export async function clearApproval(storage, host) {
   await storage.set({ [STORAGE_KEY]: all });
 }
 
+export async function syncApprovalsWithAllowedHosts(storage, hosts) {
+  const allowed = new Set(
+    (Array.isArray(hosts) ? hosts : [])
+      .map((host) => normalizeHost(host))
+      .filter(Boolean),
+  );
+  const all = await getAllApprovals(storage);
+  let changed = false;
+  for (const [host, state] of Object.entries(all)) {
+    if (state === "always" && !allowed.has(host)) {
+      delete all[host];
+      changed = true;
+    }
+  }
+  for (const host of allowed) {
+    if (all[host] !== "always" && all[host] !== "denied") {
+      all[host] = "always";
+      changed = true;
+    }
+  }
+  if (changed) await storage.set({ [STORAGE_KEY]: all });
+  return all;
+}
+
 // Decide whether a command should be dispatched. `prompt` is called only
 // when no persisted decision exists for the host and must resolve to one
 // of "once" | "always" | "deny"; anything else is treated as a soft
@@ -79,17 +103,17 @@ export async function clearApproval(storage, host) {
 //   { allow: false, reason }                     — reject with reason
 //   { allow: true, persisted: "always" }         — dispatch + remembered
 //   { allow: false, reason, persisted: "denied" }— reject + remembered
-export async function gateCommand({ storage, host, action, prompt }) {
+export async function gateCommand({ storage, host, action, prompt, forcePrompt = false, promptDetails = null }) {
   const h = normalizeHost(host);
   if (!h) return { allow: false, reason: "no active tab origin" };
   const current = await getApproval(storage, h);
-  if (current === "always") return { allow: true };
   if (current === "denied") {
     return { allow: false, reason: `agent control denied for ${h}` };
   }
+  if (current === "always" && !forcePrompt) return { allow: true };
   let choice;
   try {
-    choice = await prompt({ host: h, action });
+    choice = await prompt({ host: h, action, details: promptDetails, forcePrompt });
   } catch (err) {
     return { allow: false, reason: err instanceof Error ? err.message : String(err) };
   }

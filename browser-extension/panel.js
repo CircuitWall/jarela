@@ -19,10 +19,19 @@ async function currentAppUrl() {
 }
 
 async function render() {
+  try {
+    await chrome.runtime.sendMessage({ type: "jarela-sidepanel-adopt-current-tab" });
+  } catch {
+    // Best-effort: the normal foreground tracker still updates on tab/window events.
+  }
   const url = await currentAppUrl();
   frame.src = url;
   link.href = url;
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void render();
+});
 
 frame.addEventListener("error", () => {
   fallback.style.display = "flex";
