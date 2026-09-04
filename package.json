@@ -98,7 +98,7 @@
     "build": "npm run packages:build && next build --webpack && node scripts/postbuild.mjs",
     "build:extension": "node scripts/build-extension.mjs",
     "start": "node scripts/start-prod.mjs",
-    "lint": "eslint . && node scripts/check-integration-manifests.mjs",
+    "lint": "eslint . && node scripts/check-integration-manifests.mjs && node scripts/check-dockerfile-workspaces.mjs",
     "security:audit": "npm audit --omit=dev --audit-level=high",
     "security:secrets": "node scripts/scan-secrets.mjs --all",
     "security:terms": "node scripts/scan-sensitive-terms.mjs --all",
