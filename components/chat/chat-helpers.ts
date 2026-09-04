@@ -61,6 +61,12 @@ export interface ThreadGetPayload {
 // Since a single-machine install has ≤1ms clock skew, the ISO string
 // timestamps sort correctly and Array.sort's stability preserves the
 // relative order of same-timestamp confirmations.
+// A bubble the client created optimistically and the server has not yet
+// echoed back. All of these reconcile in place; only the label differs.
+export function isUnconfirmed(m: Message): boolean {
+  return m.status === 'pending' || m.status === 'sent' || m.status === 'steering';
+}
+
 export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
   if (incoming.length === 0) return prev;
   const result = [...prev];
@@ -76,11 +82,11 @@ export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
       continue;
     }
 
-    // Rule 2: confirm a matching optimistic user bubble in place. Both
-    // lifecycle states are unconfirmed, so either can be the match.
+    // Rule 2: confirm a matching optimistic user bubble in place. Every
+    // unconfirmed lifecycle state is a candidate.
     if (server.role === 'user') {
       const optIdx = result.findIndex(
-        (m) => (m.status === 'pending' || m.status === 'steering') && m.role === 'user' && m.content === server.content
+        (m) => isUnconfirmed(m) && m.role === 'user' && m.content === server.content
       );
       if (optIdx >= 0) {
         idxById.delete(result[optIdx].id);

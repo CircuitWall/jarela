@@ -2187,8 +2187,7 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}
             {message.status === 'steering' ? "Steering…" : "Sending…"}
           </span>
-        )}
-        {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
+        )}        {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
           <ToolList events={message.tool_events} />
         )}
         {routingDecision && (
