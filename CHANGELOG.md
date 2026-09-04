@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.39.1] - 2026-09-05
+
+### Fixed
+
+- **An automatic context boundary no longer wipes the turn that triggers it.**
+  The boundary used to pin `hot_since` to now and summarise afterwards, so that
+  turn saw neither the earlier messages nor a recap of them and the agent
+  answered as if the thread were new. The pin is now prepared and applied
+  together with its recap; a failed summary leaves the thread on its full
+  history, and a manual drag during the summarise wins. The triggering turn
+  also drops the `history_window_hours` bound, and the chat shows that earlier
+  messages are being summarised while it happens.
+- **The Docker image builds again.** `packages/linkedin-personal-langchain` and
+  `packages/linkedin-enterprise-langchain` were never copied into the builder
+  stage, so `next build` could not resolve them and the 1.38.0 and 1.39.0
+  container builds failed. A lint check now walks `packages/*` and fails on any
+  workspace missing from that copy list.
+
 ## [1.39.0] - 2026-09-04
 
 ### Added
