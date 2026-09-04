@@ -25,10 +25,9 @@ describe("appendUnique — ordering", () => {
   });
 
   it("reorders by created_at when an out-of-order server row arrives", () => {
-    // Steer race: user interrupts an in-flight reply, client queue drains
-    // optimistically BEFORE the server persists the interrupted assistant
-    // reply. Without a chronological sort the interrupted reply lands
-    // after the queued user bubble even though it happened earlier.
+    // Steer race: a user bubble is appended optimistically while the previous
+    // reply is still being persisted server-side. Without a chronological sort
+    // that reply lands after the user bubble even though it happened earlier.
     const prev: Message[] = [
       mkMsg("u1", "user", "first", "2026-08-01T10:00:00.000Z", "confirmed"),
       mkMsg("opt-2", "user", "steer", "2026-08-01T10:00:05.000Z", "pending"),

@@ -4,7 +4,7 @@ import { api } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
 import { useAppContext } from "@/contexts/AppContext";
-import { useTrackLoading } from "@/lib/ui/loading";
+import { useTrackLoading, useActivityWhile } from "@/lib/ui/loading";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
@@ -93,6 +93,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   useTrackLoading(thread.messagesLoading);
   useTrackLoading(agentConfigLoading);
 
+  useActivityWhile(thread.messagesLoading, "Loading chat history…");
+  useActivityWhile(agentConfigLoading, "Loading agent…");
+  useActivityWhile(profileLoading, "Loading profile…");
+
   // Actually fire a run for one message. Used by direct submit and by the
   // queue's drain after a previous run finishes.
   const launchRun = useCallback(async (text: string, atts: ContentPart[]) => {
@@ -122,6 +126,22 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, sse, state.experienceMode]);
+
+  // Hand a mid-run message to the agent that is already streaming (ADR-0080).
+  // Mirrors launchRun's optimistic bubble so the composer doesn't silently
+  // swallow the message while the run continues.
+  const steerRun = useCallback(async (text: string): Promise<boolean> => {
+    if (!threadId) return false;
+    const optId = `opt-${makeQueuedId("")}`;
+    thread.setMessages((p) => [
+      ...p,
+      { id: optId, role: "user", content: text, created_at: new Date().toISOString(), status: 'pending' },
+    ]);
+    const { steered } = await api.threads.steerRun(threadId, text);
+    if (!steered) thread.setMessages((p) => p.filter((m) => m.id !== optId));
+    return steered;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadId]);
 
   const queue = useChatQueue({ threadId, streaming: sse.streaming, compacting, launchRun });
   queueApiRef.current = queue;
@@ -164,7 +184,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     queuedMessages,
   } = useChatSubmitHandlers({
     agentId,
-    threadId,
+    steerRun,
     attachments,
     setAttachments,
     queue,
@@ -227,9 +247,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         placeholder={composerPlaceholder({
           compacting,
           sessionLoading: !!sessionLoading,
-          messagesLoading: thread.messagesLoading,
-          agentConfigLoading,
-          profileLoading,
+          streaming: sse.streaming,
         })}
       />
     </div>

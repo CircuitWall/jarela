@@ -46,17 +46,16 @@ export async function finalizeRunFromServer(p: FinalizeParams): Promise<void> {
   }
 }
 
+// The placeholder answers "what happens if I type right now?" — it is an
+// affordance label, not a status display. Pure load states report in the
+// header activity instead, since they don't change what a keystroke does.
 export function composerPlaceholder(s: {
   compacting: boolean;
   sessionLoading: boolean;
-  messagesLoading: boolean;
-  agentConfigLoading: boolean;
-  profileLoading: boolean;
+  streaming?: boolean;
 }): string | undefined {
   if (s.compacting) return "Compacting session… your messages will queue";
   if (s.sessionLoading) return "Loading session… your messages will queue";
-  if (s.messagesLoading) return "Loading chat history…";
-  if (s.agentConfigLoading) return "Loading agent…";
-  if (s.profileLoading) return "Loading profile…";
+  if (s.streaming) return "Steer the agent…";
   return undefined;
 }

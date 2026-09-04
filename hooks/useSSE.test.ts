@@ -22,7 +22,7 @@ vi.mock("@/api/client", () => ({
 }));
 
 vi.mock("@/lib/ui/loading", () => ({
-  pushActivity: () => ({ set: setActivityMock, clear: clearActivityMock }),
+  pushActivity: () => ({ set: setActivityMock, setInflightTools: () => {}, clear: clearActivityMock }),
 }));
 
 function streamDone(): AsyncIterable<string> {

@@ -54,12 +54,14 @@ function useRunActivity() {
   const onToolCall = useCallback((id: string, name: string) => {
     activeToolsRef.current.set(id, name);
     activityRef.current?.set(`Using ${name}…`);
+    activityRef.current?.setInflightTools(activeToolsRef.current.size);
   }, []);
 
   const onToolResult = useCallback((id: string) => {
     activeToolsRef.current.delete(id);
     const remaining = activeToolsRef.current.values().next().value as string | undefined;
     activityRef.current?.set(remaining ? `Using ${remaining}…` : "Thinking…");
+    activityRef.current?.setInflightTools(activeToolsRef.current.size);
   }, []);
 
   useEffect(() => close, [close]);

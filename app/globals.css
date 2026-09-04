@@ -681,7 +681,7 @@ body {
  *  3. a short, more saturated "spinner" arc that always rotates so
  *     there's obvious motion ("still alive") even when the drain arc
  *     is still nearly full at the start of a run.
- * See components/chat/CountdownRing.tsx. */
+ * See components/ui/CountdownRing.tsx. */
 .jarela-countdown-ring {
   display: inline-block;
   vertical-align: middle;
