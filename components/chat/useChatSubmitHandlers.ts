@@ -1,12 +1,13 @@
 import { useCallback, useMemo } from "react";
 import type { ContentPart } from "@/api/types";
 import type { AgentConfig } from "@/api/types";
-import { api } from "@/api/client";
 import { type ChatQueueApi } from "./useChatQueue";
 
 interface Params {
   agentId: string | null;
-  threadId: string | null;
+  // Hands a message to the run that is already streaming; resolves false when
+  // there was nothing to steer, so the caller falls back to queue-and-abort.
+  steerRun: (text: string) => Promise<boolean>;
   attachments: ContentPart[];
   setAttachments: React.Dispatch<React.SetStateAction<ContentPart[]>>;
   queue: ChatQueueApi;
@@ -20,7 +21,7 @@ interface Params {
 
 export function useChatSubmitHandlers({
   agentId,
-  threadId,
+  steerRun,
   attachments,
   setAttachments,
   queue,
@@ -48,13 +49,10 @@ export function useChatSubmitHandlers({
     const atts = attachments;
     setAttachments([]);
     if (queue.isReady()) { await launchRun(msg, atts); return; }
-    if (streaming && threadId && atts.length === 0) {
-      const { steered } = await api.threads.steerRun(threadId, msg);
-      if (steered) return;
-    }
+    if (streaming && atts.length === 0 && await steerRun(msg)) return;
     queue.prepend(msg, atts);
     if (streaming) stopStreaming();
-  }, [agentId, attachments, launchRun, onCompact, queue, setAttachments, stopStreaming, streaming, threadId]);
+  }, [agentId, attachments, launchRun, onCompact, queue, setAttachments, steerRun, stopStreaming, streaming]);
 
   // Ctrl/Cmd+Enter — explicit "queue this turn" path. Always appends; never
   // aborts. When idle and the queue is empty we just send normally.

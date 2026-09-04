@@ -50,13 +50,14 @@ export interface ThreadGetPayload {
 // All incoming rows are stamped status='confirmed'. The local pending bubbles
 // carry status='pending' until promoted here.
 //
-// The final step re-sorts by `created_at` ASC. This matters for the
-// steer-while-streaming race: when the user interrupts an in-flight reply,
-// the client-side queue drain optimistically appends the next user bubble
-// BEFORE the server has finished persisting the interrupted assistant
-// message. Without the sort, the interrupted reply (server timestamp T2)
-// gets appended AFTER the queued user bubble (client timestamp T3 ≈ later)
-// even though the true chronological order is [user, interrupted, user].
+// The final step re-sorts by `created_at` ASC. This matters whenever a user
+// bubble is appended optimistically while a reply is still in flight: the
+// client stamps it before the server has finished persisting the assistant
+// message. Both remaining paths do this — Stop (or an attachment submit)
+// followed by a queue drain, and steering, which the server persists mid-run.
+// Without the sort, the earlier assistant reply (server timestamp T2) lands
+// AFTER the user bubble (client timestamp T3 ≈ later) even though the true
+// order is [user, reply, user].
 // Since a single-machine install has ≤1ms clock skew, the ISO string
 // timestamps sort correctly and Array.sort's stability preserves the
 // relative order of same-timestamp confirmations.

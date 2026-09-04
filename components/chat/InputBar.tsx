@@ -34,7 +34,7 @@ const IMAGE_EXT_RE = /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tiff?|webp)$/i;
 // To add: append here, then handle the literal in ChatView.handleSubmit.
 const SLASH_COMMANDS: Array<{ name: string; description: string }> = [
   { name: "/new", description: "save session to memory and start fresh" },
-  { name: "/btw", description: "redirect: abort current run and send this instead" },
+  { name: "/btw", description: "redirect: steer the running agent with this" },
 ];
 
 // iOS standalone-PWA detection. Used to gate `focus({preventScroll:true})`,
@@ -391,7 +391,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
           <button
             onClick={onStop}
             className="glass-btn-stop shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors"
-            title="Stop (interrupt without sending)"
+            title="Stop (interrupt the run — typing steers instead)"
             aria-label="Stop"
           >
             <Square size={16} />
@@ -402,7 +402,7 @@ export function InputBar({ attachments, onAttachmentsChange, onSubmit, onQueue, 
           disabled={(!value.trim() && !attachments.length) || disabled}
           className="glass-btn-send shrink-0 h-11 w-11 flex items-center justify-center rounded-xl text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           title={streaming
-            ? "Steer — abort current and send this instead (⌘/Ctrl+Enter to queue)"
+            ? "Steer — the agent picks this up at its next step (⌘/Ctrl+Enter to queue for after)"
             : "Send (⌘/Ctrl+Enter to queue)"}
           aria-label={streaming ? "Steer" : "Send"}
         >

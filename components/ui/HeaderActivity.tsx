@@ -1,12 +1,13 @@
 "use client";
-import { useActivityLabel } from "@/lib/ui/loading";
+import { useActivity } from "@/lib/ui/loading";
+import { CountdownRing } from "./CountdownRing";
 
-// Inline "what is happening right now" text rendered next to the agent
-// dropdown. Replaces the old TopProgressBar: a single short label that
-// updates live as the run progresses (Sending… / Thinking… / Using <tool>…).
-// Returns null when nothing is in flight so the header stays calm.
+// The single live-status surface: "is the agent alive, and what step is it
+// on". Sticky next to the agent dropdown, so it stays readable at any scroll
+// position — the message list carries the detail (tool arguments, results),
+// this carries the summary. Returns null when nothing is in flight.
 export function HeaderActivity() {
-  const label = useActivityLabel();
+  const { label, inflightTools } = useActivity();
   if (!label) return null;
   return (
     <span
@@ -14,10 +15,7 @@ export function HeaderActivity() {
       aria-live="polite"
       className="ml-1 inline-flex items-center gap-1.5 text-xs text-fg-faint truncate max-w-[14rem]"
     >
-      <span className="relative inline-flex h-1.5 w-1.5 shrink-0">
-        <span className="absolute inset-0 rounded-full bg-accent/70 animate-ping" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
-      </span>
+      <CountdownRing inflightToolCount={inflightTools} />
       <span className="truncate">{label}</span>
     </span>
   );

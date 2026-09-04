@@ -42,11 +42,21 @@ export function useTrackLoading(active: boolean): void {
 // ---------------------------------------------------------------------------
 
 let activitySeq = 0;
-const activityStack: Array<{ id: number; label: string }> = [];
-const activityListeners = new Set<(label: string | null) => void>();
+const activityStack: Array<{ id: number; label: string; inflightTools: number }> = [];
+const activityListeners = new Set<(state: ActivityState) => void>();
 
-function currentActivity(): string | null {
-  return activityStack.length > 0 ? activityStack[activityStack.length - 1].label : null;
+export interface ActivityState {
+  label: string | null;
+  // Tools currently executing. The header ring pauses its drain while this
+  // is non-zero, mirroring the wall-clock accounting in run-registry.
+  inflightTools: number;
+}
+
+const IDLE: ActivityState = { label: null, inflightTools: 0 };
+
+function currentActivity(): ActivityState {
+  const top = activityStack[activityStack.length - 1];
+  return top ? { label: top.label, inflightTools: top.inflightTools } : IDLE;
 }
 
 function notifyActivity() {
@@ -59,16 +69,24 @@ function notifyActivity() {
 // mid-run) doesn't reorder layered activities. `clear` removes the slot.
 export function pushActivity(label: string): {
   set: (next: string) => void;
+  setInflightTools: (n: number) => void;
   clear: () => void;
 } {
   const id = ++activitySeq;
-  activityStack.push({ id, label });
+  activityStack.push({ id, label, inflightTools: 0 });
   notifyActivity();
   return {
     set(next: string) {
       const slot = activityStack.find((s) => s.id === id);
       if (slot && slot.label !== next) {
         slot.label = next;
+        notifyActivity();
+      }
+    },
+    setInflightTools(n: number) {
+      const slot = activityStack.find((s) => s.id === id);
+      if (slot && slot.inflightTools !== n) {
+        slot.inflightTools = n;
         notifyActivity();
       }
     },
@@ -82,13 +100,24 @@ export function pushActivity(label: string): {
   };
 }
 
-export function useActivityLabel(): string | null {
-  const [label, setLabel] = useState<string | null>(currentActivity());
+export function useActivity(): ActivityState {
+  const [state, setState] = useState<ActivityState>(currentActivity);
   useEffect(() => {
-    const fn = (v: string | null) => setLabel(v);
+    const fn = (v: ActivityState) => setState(v);
     activityListeners.add(fn);
-    setLabel(currentActivity());
+    setState(currentActivity());
     return () => { activityListeners.delete(fn); };
   }, []);
-  return label;
+  return state;
+}
+
+// Surface a labelled activity for as long as `active` holds. Lets load states
+// (history, agent config, profile) report in the header rather than squatting
+// in the composer placeholder, which should describe what typing will do.
+export function useActivityWhile(active: boolean, label: string): void {
+  useEffect(() => {
+    if (!active) return;
+    const slot = pushActivity(label);
+    return () => slot.clear();
+  }, [active, label]);
 }
