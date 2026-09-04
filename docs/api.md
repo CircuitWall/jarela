@@ -77,6 +77,18 @@ the GET on the same path.
 Subscribe to the in-flight run as a Server-Sent Events stream. Reconnects
 resume from the last seen sequence id.
 
+### `PATCH /api/v1/threads/[thread_id]/run`
+
+Steer the run that is already streaming (ADR-0080). Body: `{ "message": "…" }`.
+The message is queued and delivered before the agent's next model call,
+alongside the tool results it should react to — the run is not aborted.
+Returns `409 { "steered": false }` when no run is active, in which case submit a
+normal `POST` instead.
+
+### `DELETE /api/v1/threads/[thread_id]/run`
+
+Abort the in-flight run. This is the only interrupt; typing mid-run steers.
+
 - **Source:** [`app/api/v1/threads/[thread_id]/run/route.ts`](../app/api/v1/threads/[thread_id]/run/route.ts)
 - **Stream chunk types:** `text`, `thinking`, `tool_call`, `tool_result`, `tool_progress` (zero or more per call, live status from a still-running tool — ADR-0073), `usage`, `done` (see `lib/agents/base.ts` for the full union)
 

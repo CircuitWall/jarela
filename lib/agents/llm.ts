@@ -14,6 +14,7 @@ import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
+import { drainSteering } from "@/lib/agents/run-registry";
 import { readImageRef } from "@/lib/attachments/spill";
 import type { ContentPart } from "@/lib/tools/types";
 import type { StreamChunk, StreamOptions } from "./base";
@@ -235,7 +236,17 @@ async function* streamWithConfigImpl(
     }
   }
 
-  const agent = createReactAgent({ llm: model, tools, store, checkpointer });
+  // Runs before every model call inside the react loop — i.e. after ToolNode
+  // has appended its results and before the next request goes out. Draining
+  // steering here is what makes it arrive alongside the tool results it should
+  // react to, without splitting a tool_use/tool_result pair (ADR-0080).
+  const preModelHook = () => {
+    const steering = drainSteering(threadId);
+    if (steering.length === 0) return {};
+    return { messages: steering.map((text) => new HumanMessage(text)) };
+  };
+
+  const agent = createReactAgent({ llm: model, tools, store, checkpointer, preModelHook });
 
   // Track which AIMessageChunk-tool-call-chunks we've already announced (by id).
   // We emit a tool_call event once per id when both id+name are known and

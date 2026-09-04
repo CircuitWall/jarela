@@ -164,6 +164,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     queuedMessages,
   } = useChatSubmitHandlers({
     agentId,
+    threadId,
     attachments,
     setAttachments,
     queue,
