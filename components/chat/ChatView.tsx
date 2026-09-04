@@ -123,7 +123,12 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       // drain after the in-flight run's `done` resubmits cleanly.
       thread.setMessages((p) => p.filter((m) => m.id !== optId));
       queueApiRef.current?.prepend(text, atts);
+      return;
     }
+    // Accepted means the server persisted the user row, so "Sending…" is no
+    // longer true. Stay unconfirmed until the row is fetched back, otherwise
+    // reconciliation can't promote this bubble in place and would duplicate it.
+    thread.setMessages((p) => p.map((m) => (m.id === optId ? { ...m, status: 'sent' } : m)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, sse, state.experienceMode]);
 

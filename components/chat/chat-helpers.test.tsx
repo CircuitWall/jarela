@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Message } from "@/api/types";
 import { appendUnique, applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
 
-const mkMsg = (id: string, role: "user" | "assistant", content: string, created_at: string, status?: "pending" | "steering" | "confirmed"): Message => ({
+const mkMsg = (id: string, role: "user" | "assistant", content: string, created_at: string, status?: "pending" | "sent" | "steering" | "confirmed"): Message => ({
   id,
   role,
   content,
@@ -24,17 +24,22 @@ describe("appendUnique — ordering", () => {
     expect(out[1].status).toBe("confirmed");
   });
 
-  it("promotes a steering bubble in place too, not just a pending one", () => {
-    const prev: Message[] = [
-      mkMsg("opt-1", "user", "skip the tests", "2026-08-01T10:00:01.000Z", "steering"),
-    ];
-    const incoming: Message[] = [
-      mkMsg("s2", "user", "skip the tests", "2026-08-01T10:00:01.000Z"),
-    ];
-    const out = appendUnique(prev, incoming);
-    expect(out.map((m) => m.id)).toEqual(["s2"]);
-    expect(out[0].status).toBe("confirmed");
-  });
+  // Every unconfirmed state reconciles in place. If one were missed the
+  // server row would append alongside it and the bubble would appear twice.
+  it.each(["pending", "sent", "steering"] as const)(
+    "promotes a %s bubble in place rather than duplicating it",
+    (status) => {
+      const prev: Message[] = [
+        mkMsg("opt-1", "user", "skip the tests", "2026-08-01T10:00:01.000Z", status),
+      ];
+      const incoming: Message[] = [
+        mkMsg("s2", "user", "skip the tests", "2026-08-01T10:00:01.000Z"),
+      ];
+      const out = appendUnique(prev, incoming);
+      expect(out.map((m) => m.id)).toEqual(["s2"]);
+      expect(out[0].status).toBe("confirmed");
+    },
+  );
 
   it("reorders by created_at when an out-of-order server row arrives", () => {
     // Steer race: a user bubble is appended optimistically while the previous
