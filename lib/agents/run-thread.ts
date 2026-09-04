@@ -6,6 +6,7 @@ import { registeredCapability } from "@/lib/tools/registry";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
+import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 import { addMessage, getMessagesPage, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
@@ -426,6 +427,12 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const stored = typeof content === "string" ? content : JSON.stringify(content);
 
   let autoHotSince: string | null = null;
+  // Set when this turn proposed a boundary that hasn't been committed yet.
+  // The idle gate that triggers a proposal also means every earlier message
+  // is older than `history_window_hours`, so keeping the time bound here
+  // would hand the model an empty transcript — the exact gap the deferral
+  // exists to close.
+  let compactionPending = false;
   const autoBoundaryScope = req.context_profile?.history_scope
     ?? (req.user_category === "bridge" ? "bridge" : "foreground");
   if (
@@ -441,7 +448,12 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       req.history_bridge_key ?? undefined,
     );
     if (autoHotSince && autoBoundaryScope !== "bridge") {
-      moveThreadContextBoundary(req.thread_id, autoHotSince, { refreshWarmSummary: true });
+      // Deferred on purpose: the pin lands only once the recap that replaces
+      // the cut-off messages is stored, so THIS turn still runs on the old
+      // boundary instead of on an empty hot window with no summary.
+      kickBoundaryCompaction(req.thread_id, autoHotSince);
+      compactionPending = true;
+      autoHotSince = null;
     }
   }
 
@@ -597,6 +609,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       scope: req.context_profile?.history_scope,
       includeWarm: req.context_profile?.include_warm,
       bridgeKey: req.history_bridge_key ?? undefined,
+      ignoreTimeWindow: compactionPending,
     },
   );
 

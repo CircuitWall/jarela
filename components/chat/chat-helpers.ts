@@ -21,6 +21,7 @@ export interface ThreadMetaApplier {
   setWarmSummarySourceChars: (v: number | null) => void;
   setContextWindowTokens: (v: number | null) => void;
   setWarmSummaryPending?: (v: boolean) => void;
+  setCompactionPending?: (v: boolean) => void;
 }
 
 export interface ThreadGetPayload {
@@ -30,6 +31,7 @@ export interface ThreadGetPayload {
   warm_summary_computed_at?: string | null;
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
+  pending_hot_since?: string | null;
   context_window_tokens?: number | null;
 }
 
@@ -116,6 +118,7 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
   meta.setWarmSummarySourceChars(payload.warm_summary_source_chars ?? null);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
   meta.setWarmSummaryPending?.(!!hotSince && summaryBefore !== hotSince);
+  meta.setCompactionPending?.(!!payload.pending_hot_since);
 }
 
 export function makeQueuedId(prefix = "q"): string {
