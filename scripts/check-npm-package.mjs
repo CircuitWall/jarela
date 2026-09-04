@@ -63,12 +63,27 @@ try {
     "package/scripts/first-run-prompt.mjs",
     "package/scripts/start-prod.mjs",
     "package/scripts/run-workspace-script-if-present.mjs",
+    // The extension rebranding step (ADR-0077) is only reachable by an
+    // overlay if both the script and its source tree are published.
+    "package/scripts/build-extension.mjs",
+    "package/browser-extension/manifest.json",
+    "package/browser-extension/lib/brand.mjs",
+    "package/browser-extension/scripts/generate-icons.mjs",
   ];
 
   for (const entry of required) {
     if (!listing.includes(entry)) {
       throw new Error(`npm tarball is missing required entry: ${entry}`);
     }
+  }
+
+  const packedTests = listing.filter((entry) =>
+    entry.startsWith("package/browser-extension/") && entry.endsWith(".test.mjs"),
+  );
+  if (packedTests.length > 0) {
+    throw new Error(
+      `npm tarball ships browser-extension test files: ${packedTests.join(", ")}`,
+    );
   }
 
   if (!listing.some((entry) => entry.startsWith("package/.next/standalone/.next/static/"))) {
