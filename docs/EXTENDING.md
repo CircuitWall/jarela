@@ -401,6 +401,16 @@ state.
 npm run build:extension -- --brand ./brand.json --out dist/my-extension
 ```
 
+Unlike the web app, this works from the installed package too — the tarball
+ships `browser-extension/` and the build script, so an overlay consuming
+`@circuitwall/jarela` as a plain dependency can brand the extension without a
+checkout:
+
+```bash
+node node_modules/@circuitwall/jarela/scripts/build-extension.mjs \
+  --brand ./brand.json --out dist/my-extension
+```
+
 ```jsonc
 // brand.json — all keys optional
 {

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **The extension rebranding step is now reachable from the npm package.**
+  `browser-extension/` and `scripts/build-extension.mjs` were missing from
+  `files`, so an overlay consuming `@circuitwall/jarela` as a dependency could
+  not run the packaging step ADR-0077 defines — it had to vendor the extension
+  and hand-brand it, which is the fork the ADR set out to avoid.
+  `scripts/check-npm-package.mjs` now asserts both are packed.
+
 ## [1.38.0] - 2026-09-04
 
 ### Added
