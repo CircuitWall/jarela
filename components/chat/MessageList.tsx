@@ -1,6 +1,6 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Brain, ChevronRight, Clock, X, ArrowDown, Eye, EyeOff } from "lucide-react";
+import { Brain, ChevronRight, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
 import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
@@ -1181,7 +1181,7 @@ function QueuedBubble({
       <div className="shrink-0 w-7" />
       <div className="max-w-[75%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm leading-relaxed bg-accent/40 border border-accent/40 border-dashed text-fg relative">
         <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-accent/80 mb-1">
-          <Clock size={10} />
+          <Hourglass size={10} />
           <span>queued</span>
           {item.attachmentCount > 0 && (
             <span className="text-fg-muted/70 normal-case tracking-normal">

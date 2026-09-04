@@ -219,9 +219,11 @@ export interface Message {
   // legacy rows and on turns where no checker ran.
   metadata?: MessageMetadata | null;
   // Client-side only — never returned by the API. 'pending' = optimistic
-  // bubble not yet confirmed by the server. 'confirmed' = received from and
+  // bubble for a turn that is starting. 'steering' = optimistic bubble handed
+  // to a run that is already streaming (ADR-0080); it is not opening a turn,
+  // so it reads differently in the UI. 'confirmed' = received from and
   // reconciled with the server. Absent means the same as 'confirmed'.
-  status?: 'pending' | 'confirmed';
+  status?: 'pending' | 'steering' | 'confirmed';
 }
 
 export interface CitationClaim {

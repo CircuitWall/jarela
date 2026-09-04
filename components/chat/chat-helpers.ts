@@ -76,10 +76,11 @@ export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
       continue;
     }
 
-    // Rule 2: confirm a matching pending user bubble in place
+    // Rule 2: confirm a matching optimistic user bubble in place. Both
+    // lifecycle states are unconfirmed, so either can be the match.
     if (server.role === 'user') {
       const optIdx = result.findIndex(
-        (m) => m.status === 'pending' && m.role === 'user' && m.content === server.content
+        (m) => (m.status === 'pending' || m.status === 'steering') && m.role === 'user' && m.content === server.content
       );
       if (optIdx >= 0) {
         idxById.delete(result[optIdx].id);

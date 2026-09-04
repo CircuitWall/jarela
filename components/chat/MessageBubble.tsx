@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { AlertTriangle, Bot, Check, Clock, Copy, Eye, EyeOff, ExternalLink, FileText, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Bot, Check, Clock, Copy, CornerDownRight, Eye, EyeOff, ExternalLink, FileText, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, AutomationActivityMetadata, Message, RouteDecisionMetadata, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -2182,10 +2182,10 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
             </div>
           ) : null}
         </div>
-        {isUser && "status" in message && message.status === 'pending' && (
+        {isUser && "status" in message && (message.status === 'pending' || message.status === 'steering') && (
           <span className="flex items-center gap-1 text-xs opacity-50 px-1 self-end">
-            <Clock size={10} />
-            Sending…
+            {message.status === 'steering' ? <CornerDownRight size={10} /> : <Clock size={10} />}
+            {message.status === 'steering' ? "Steering…" : "Sending…"}
           </span>
         )}
         {!isUser && !streaming && showToolEvents && "tool_events" in message && Array.isArray(message.tool_events) && message.tool_events.length > 0 && (
