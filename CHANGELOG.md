@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-09-04
+
+### Added
+
+- **The browser extension is now a first-class runtime surface.** The agent can
+  inventory and focus tabs, fill forms in batches, reuse cached snapshots, and
+  extract pages in reduced or chunked form, and it reports progress phases while
+  a browser command runs. New UI: Tools → Browser status, history, and retry; a
+  popup tab switcher with focus and pin controls; side-panel adoption of the
+  current tab; and Settings → Privacy & security artifact lifecycle controls.
+  Sensitive actions raise a conservative approval prompt, allowed sites are
+  persisted and synced, and every command lands in a sanitized ledger
+  (metadata only — no page extracts, screenshots, cookies, tokens, or form
+  values). See ADR-0081 and the built-in browser navigation skill.
+- **A thinking indicator fills the gap before the first token.** Between run
+  start and the first delta the agent's slot showed nothing at all; it now shows
+  three bouncing dots that vanish as soon as real content arrives and hold still
+  under `prefers-reduced-motion`.
+
 ### Fixed
 
+- **The "Sending…" label now clears when the server accepts the run.** The
+  optimistic user bubble kept the label for the whole turn because it was tied
+  to `pending` and nothing cleared it until the persisted row came back. A
+  `sent` state sits between `pending` and `confirmed`, so the label goes while
+  the bubble stays unconfirmed and reconciliation still promotes it in place.
 - **The extension rebranding step is now reachable from the npm package.**
   `browser-extension/` and `scripts/build-extension.mjs` were missing from
   `files`, so an overlay consuming `@circuitwall/jarela` as a dependency could
