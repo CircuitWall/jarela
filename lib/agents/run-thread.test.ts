@@ -175,6 +175,27 @@ describe("isWriteLikeToolName", () => {
     expect(isWriteLikeToolName("FILE_WRITE")).toBe(true);
     expect(isWriteLikeToolName("File_Read")).toBe(false);
   });
+
+  describe("registry capability wins over the verb scan", () => {
+    // Regression: these three carry no CRUD verb, so the verb scan called them
+    // read-only and the retry guard re-ran turns that had already proposed a
+    // config change, shelled out, or delegated.
+    it.each(["propose_config_change", "local_exec", "delegate_to_agent"])(
+      "treats %s as state-changing from its declared capability",
+      (name) => {
+        expect(isWriteLikeToolName(name)).toBe(true);
+      },
+    );
+
+    it("keeps a declared read tool read-only", () => {
+      expect(isWriteLikeToolName("documents_search")).toBe(false);
+    });
+
+    it("falls back to the verb scan for tools outside the registry", () => {
+      expect(isWriteLikeToolName("mcp_notion_create_page")).toBe(true);
+      expect(isWriteLikeToolName("mcp_notion_search")).toBe(false);
+    });
+  });
 });
 
 describe("unwrapInvokedToolName", () => {
