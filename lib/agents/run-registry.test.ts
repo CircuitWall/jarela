@@ -374,6 +374,17 @@ describe("steering queue (ADR-0080)", () => {
     expect(pushSteering(tid, "hello")).toBe(false);
   });
 
+  // Steering queued during the final model call never reaches preModelHook,
+  // so the run route drains what's left AFTER the turn ends and delivers it
+  // as a continuation. That only works if the queue outlives finishRun.
+  it("keeps queued messages readable after the run finishes", () => {
+    const tid = `t-steer-after-${Date.now()}`;
+    const run = startRun(tid, null);
+    pushSteering(tid, "one more thing");
+    finishRun(run, "done");
+    expect(drainSteering(tid)).toEqual(["one more thing"]);
+  });
+
   // Stop is the only interrupt, so a message racing the abort must fall back
   // to starting a fresh turn rather than vanishing into a dying run.
   it("refuses to steer a run that is already aborting", () => {

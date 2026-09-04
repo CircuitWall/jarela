@@ -104,6 +104,20 @@ Multiple steering messages queued between two model calls are delivered in
 arrival order, preserving the user's original wording. They are not merged into
 a summary — merging loses intent.
 
+### Delivery guarantee
+
+`preModelHook` only runs on the way *into* a model call. Once the model stops
+emitting tool calls the graph goes straight to `END`, so anything queued during
+the final model call — the most likely moment to type, since that is when the
+answer is streaming — would never be drained. The queue must therefore be
+drained again after the turn ends, and whatever is left runs as a continuation
+turn against the transcript that now includes the completed reply.
+
+The queue is never silently discarded, with one deliberate exception: an
+aborted run drops it, because Stop is an explicit cancel. The steering message
+still stands in the transcript as an unanswered user message, which is the
+normal state after an interrupt.
+
 ### Consequences
 
 * Good, because in-flight tool work survives a mid-run message.

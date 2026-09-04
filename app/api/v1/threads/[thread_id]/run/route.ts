@@ -19,7 +19,8 @@ import {
   snapshotThreadModelConfigName,
   shouldEmitChunk,
 } from "@/lib/agents/run-thread";
-import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, getRun, waitForRun } from "@/lib/agents/run-registry";
+import { broadcast, finishRun, startRun, subscribe, abortRun, pushSteering, drainSteering, getRun, waitForRun } from "@/lib/agents/run-registry";
+import { runAgentTurn } from "@/lib/agents/agent-turn";
 import { enqueueThreadRun, QueueFullError, getQueueDepth } from "@/lib/agents/run-queue";
 import { collectStream } from "@/lib/agents/stream-collector";
 import { getThread, addMessage } from "@/lib/stores/threads";
@@ -267,6 +268,23 @@ export async function POST(req: NextRequest, { params }: Params) {
           ) {
             persistRunErrorMarker(thread_id, { ...collected, routeDecision });
           }
+          // Steering queued during the FINAL model call never reaches
+          // preModelHook — the react graph goes straight to END once the
+          // model stops emitting tool calls. Those messages are already in
+          // the transcript, so run a continuation rather than dropping them
+          // (ADR-0080). Skipped on abort: the user cancelled deliberately.
+          if (!collected.aborted) {
+            const undelivered = drainSteering(thread_id);
+            if (undelivered.length > 0) {
+              void runAgentTurn({
+                thread_id,
+                queue_source: "user",
+                message: undelivered.join("\n\n"),
+                skip_persist_user_message: true,
+                history_append_message: STEERING_CONTINUATION_PREFIX + undelivered.join("\n\n"),
+              }).catch((err) => console.error("[run] steering continuation failed", err));
+            }
+          }
         } catch (persistErr) {
           terminal = "error";
           broadcast(active, {
@@ -404,6 +422,11 @@ export async function GET(req: NextRequest, { params }: Params) {
 }
 
 const SteerBody = z.object({ message: z.string().min(1) });
+
+// The steering text is already the last user row in the transcript, so the
+// continuation only needs to explain why the agent is seeing it late.
+const STEERING_CONTINUATION_PREFIX =
+  "↪ You finished the previous reply before reading this. The user said, while you were still writing:\n\n";
 
 // PATCH steers the currently-running agent: the message is queued and the
 // agent's preModelHook delivers it before the next model call, alongside the
