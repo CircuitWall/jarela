@@ -898,6 +898,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         threadId={threadId ?? null}
         agentConfig={agentConfig ?? null}
         showStreamingAvatar={messages.length === 0 || messages[messages.length - 1].role !== "assistant"}
+        streaming={streaming}
       />
       {queuedMessages && queuedMessages.length > 0 && (
         <div className="flex flex-col gap-1 mt-2 mb-1">
@@ -1087,6 +1088,7 @@ function LiveTurnActivity({
   threadId,
   agentConfig,
   showStreamingAvatar,
+  streaming,
 }: {
   thinkingContent?: string;
   streamingContent?: string;
@@ -1095,12 +1097,17 @@ function LiveTurnActivity({
   threadId: string | null;
   agentConfig: AgentConfig | null;
   showStreamingAvatar: boolean;
+  streaming?: boolean;
 }) {
   const showThinking = !!thinkingContent && filters.thinking;
   const showTools = !!toolEvents && toolEvents.length > 0 && filters.tool_use;
-  if (!showThinking && !streamingContent && !showTools) return null;
+  // Until the first delta lands there is nothing else to render, and the
+  // conversation would otherwise sit empty while the model works.
+  const showDots = !!streaming && !showThinking && !streamingContent && !showTools;
+  if (!showThinking && !streamingContent && !showTools && !showDots) return null;
   return (
     <div data-testid="live-turn-activity" className="mt-1 flex w-full min-w-0 flex-col gap-1">
+      {showDots && <ThinkingDots />}
       {showThinking && <ThinkingLine text={thinkingContent} />}
       {streamingContent && (
         <StreamingBubble
@@ -1144,6 +1151,21 @@ const StreamingBubble = memo(function StreamingBubble({
     />
   );
 });
+
+function ThinkingDots() {
+  return (
+    <div
+      data-testid="thinking-dots"
+      role="status"
+      aria-label="Thinking"
+      className="flex items-center gap-1.5 px-1 py-1.5 text-fg-faint"
+    >
+      <span className="jarela-thinking-dot" />
+      <span className="jarela-thinking-dot" />
+      <span className="jarela-thinking-dot" />
+    </div>
+  );
+}
 
 function ThinkingLine({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
