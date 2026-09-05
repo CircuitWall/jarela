@@ -122,7 +122,11 @@ export async function buildHistoryWindow(
   // the result was never persisted, so the summariser tax was permanent.
   const cached = getThread(thread_id);
 
+  // A non-positive configured window is meaningless and would floor the hot
+  // budget at zero — i.e. call the model with no transcript at all. Treat it
+  // as unset and fall back to the known window for the model.
   const explicitContextWindow = typeof providerParams.context_window_tokens === "number"
+    && providerParams.context_window_tokens > 0
     ? providerParams.context_window_tokens
     : undefined;
   const knownContextWindow = resolveFallbackContextWindow(modelInfo);
@@ -249,6 +253,18 @@ export async function buildHistoryWindow(
     role: m.role as "user" | "assistant",
     content: parseContent(m.content),
   }));
+
+  // Should be unreachable: the budget floors at 1 token and
+  // takeRecentMessagesWithinBudget always keeps the newest row. If it ever
+  // fires, the model is about to answer with no transcript at all, so say so
+  // loudly rather than letting it look like the agent lost its memory.
+  if (allWindowMessages.length > 0 && history.length === 0) {
+    console.warn(
+      `[history-window] empty hot window thread=${thread_id} rows=${allWindowMessages.length}`
+      + ` hot_cap=${hotCap} ctx=${budget.contextWindowTokens} out_reserve=${budget.outputReserveTokens}`
+      + ` model=${modelInfo.providerName ?? "?"}/${modelInfo.modelId ?? "?"}`,
+    );
+  }
 
   // Re-measure hot AFTER any truncation so the recorded usage matches what
   // actually went into the prompt. Warm/facts are already finalised above.

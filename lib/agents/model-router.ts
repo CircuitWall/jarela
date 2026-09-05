@@ -67,7 +67,10 @@ const RESEARCH_TOOLS = new Set(["web_search", "fetch_webpage", "documents", "fil
 const NON_GENERATIVE_FUNCTIONALITY = new Set(["embeddings", "reranking", "moderation"]);
 
 export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelResult {
-  const routeClass = classifyTurn(options.message, options.attachments, options.allowedTools, options.hasImageContext);
+  const observedClass = classifyTurn(options.message, options.attachments, options.allowedTools, options.hasImageContext);
+  const previousClass = options.latestObservation?.route_class ?? null;
+  const routeClass = applyClassRatchet(observedClass, previousClass, options.message);
+  const held = routeClass !== observedClass;
   const routable = options.models.filter(
     (model) => !NON_GENERATIVE_FUNCTIONALITY.has(detectModelFunctionality(model.model_id)),
   );
@@ -85,14 +88,51 @@ export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelRe
     .sort((a, b) => b.score - a.score || a.model.name.localeCompare(b.model.name));
 
   const winner = scored[0]?.model ?? null;
+  const classLabel = held ? `${routeClass} (held from previous turn)` : routeClass;
   return {
     modelConfigName: winner?.name ?? null,
     routeClass,
     reason: winner
-      ? `class=${routeClass}; policy=${options.policy}; chose ${winner.name} from ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`
-      : `class=${routeClass}; no viable model after routing`,
+      ? `class=${classLabel}; policy=${options.policy}; chose ${winner.name} from ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`
+      : `class=${classLabel}; no viable model after routing`,
     candidates: candidates.map((model) => model.name),
   };
+}
+
+// How demanding each class is. `classifyTurn` reads only the current message,
+// so a terse follow-up inside a research thread ("i want the exact dimension
+// 1860x600") matches no keyword and lands in `simple-chat`.
+const CLASS_RANK: Record<ModelRouteClass, number> = {
+  "simple-chat": 0,
+  factual: 1,
+  "complex-reasoning": 2,
+  research: 3,
+  multimodal: 3,
+};
+
+// Below this, a message is treated as a follow-up rather than a fresh topic.
+const FOLLOW_UP_MAX_CHARS = 200;
+
+/**
+ * Escalate immediately, de-escalate reluctantly.
+ *
+ * Switching models mid-conversation throws away the provider prompt cache for
+ * the whole stable system-prompt prefix, so a downgrade has to earn itself. A
+ * short follow-up is continuation of the work in flight, not a new simple
+ * question, and keeps the class the conversation is already running at. A
+ * long standalone message is allowed to downgrade — that is a real topic change.
+ *
+ * `multimodal` is never inherited: it is driven by the attachments and image
+ * context of the turn itself, which `classifyTurn` already re-detects.
+ */
+export function applyClassRatchet(
+  observed: ModelRouteClass,
+  previous: ModelRouteClass | null | undefined,
+  message: string,
+): ModelRouteClass {
+  if (!previous || previous === "multimodal" || observed === "multimodal") return observed;
+  if (CLASS_RANK[observed] >= CLASS_RANK[previous]) return observed;
+  return (message ?? "").trim().length <= FOLLOW_UP_MAX_CHARS ? previous : observed;
 }
 
 export function classifyTurn(
