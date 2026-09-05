@@ -10,6 +10,16 @@
 // "the site jarela.com", not "https://jarela.com:443/". Approval applies
 // to all subpaths of the same hostname.
 //
+// The prompt exists to catch action the user cannot SEE. When the command
+// targets the tab they are looking at, the on-page overlay already narrates
+// every step and the Stop button is one click away, so a modal adds friction
+// without adding information. Approval is therefore reserved for work on
+// tabs that are out of view — see `decideGate` and ADR-0083.
+//
+// This map is local and authoritative. It is deliberately NOT reconciled
+// against the server's allowed-sites list: that list governs cookie
+// passthrough, which is a different and much stronger grant.
+//
 // All functions are pure: storage and prompt are injected so the gate is
 // trivially unit-testable without chrome.* globals.
 
@@ -69,51 +79,43 @@ export async function clearApproval(storage, host) {
   await storage.set({ [STORAGE_KEY]: all });
 }
 
-export async function syncApprovalsWithAllowedHosts(storage, hosts) {
-  const allowed = new Set(
-    (Array.isArray(hosts) ? hosts : [])
-      .map((host) => normalizeHost(host))
-      .filter(Boolean),
-  );
-  const all = await getAllApprovals(storage);
-  let changed = false;
-  for (const [host, state] of Object.entries(all)) {
-    if (state === "always" && !allowed.has(host)) {
-      delete all[host];
-      changed = true;
-    }
-  }
-  for (const host of allowed) {
-    if (all[host] !== "always" && all[host] !== "denied") {
-      all[host] = "always";
-      changed = true;
-    }
-  }
-  if (changed) await storage.set({ [STORAGE_KEY]: all });
-  return all;
+/**
+ * The whole approval policy, in one pure function.
+ *
+ *   denied            → always reject, focused or not.
+ *   target is focused → allow; the user is watching and can hit Stop.
+ *   always            → allow.
+ *   otherwise         → prompt.
+ */
+export function decideGate({ approval, targetFocused }) {
+  if (approval === "denied") return "deny";
+  if (targetFocused) return "allow";
+  if (approval === "always") return "allow";
+  return "prompt";
 }
 
 // Decide whether a command should be dispatched. `prompt` is called only
-// when no persisted decision exists for the host and must resolve to one
-// of "once" | "always" | "deny"; anything else is treated as a soft
-// dismiss (the command is rejected without persisting a decision).
+// when `decideGate` asks for it and must resolve to one of
+// "once" | "always" | "deny"; anything else is treated as a soft dismiss
+// (the command is rejected without persisting a decision).
 //
 // Returns one of:
 //   { allow: true }                              — dispatch the command
 //   { allow: false, reason }                     — reject with reason
 //   { allow: true, persisted: "always" }         — dispatch + remembered
 //   { allow: false, reason, persisted: "denied" }— reject + remembered
-export async function gateCommand({ storage, host, action, prompt, forcePrompt = false, promptDetails = null }) {
+export async function gateCommand({ storage, host, action, prompt, targetFocused = false, promptDetails = null }) {
   const h = normalizeHost(host);
   if (!h) return { allow: false, reason: "no active tab origin" };
   const current = await getApproval(storage, h);
-  if (current === "denied") {
+  const decision = decideGate({ approval: current, targetFocused });
+  if (decision === "deny") {
     return { allow: false, reason: `agent control denied for ${h}` };
   }
-  if (current === "always" && !forcePrompt) return { allow: true };
+  if (decision === "allow") return { allow: true };
   let choice;
   try {
-    choice = await prompt({ host: h, action, details: promptDetails, forcePrompt });
+    choice = await prompt({ host: h, action, details: promptDetails, targetFocused });
   } catch (err) {
     return { allow: false, reason: err instanceof Error ? err.message : String(err) };
   }

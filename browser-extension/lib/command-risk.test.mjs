@@ -6,14 +6,12 @@ describe("classifyCommandRisk", () => {
     expect(classifyCommandRisk({ type: "click", selector: "button.save" }, { host: "example.com" })).toEqual({
       level: "normal",
       reasons: [],
-      force_prompt: false,
     });
   });
 
   it("flags whole-page extracts", () => {
     const risk = classifyCommandRisk({ type: "extract", format: "text" }, { host: "example.com" });
     expect(risk.level).toBe("sensitive");
-    expect(risk.force_prompt).toBe(true);
     expect(risk.reasons).toContain("reads the whole page");
   });
 

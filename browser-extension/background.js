@@ -27,7 +27,7 @@ import {
 } from "./lib/config.mjs";
 import { BRAND } from "./lib/brand.mjs";
 import { dispatchCommand } from "./lib/browser-control.mjs";
-import { gateCommand, setApproval, syncApprovalsWithAllowedHosts } from "./lib/approvals.mjs";
+import { gateCommand, setApproval } from "./lib/approvals.mjs";
 import { classifyCommandRisk } from "./lib/command-risk.mjs";
 import {
   resolveTargetTab as resolveTargetTabPure,
@@ -217,32 +217,14 @@ async function refreshAllowedSites() {
     const res = await getJson(allowedSitesUrl(currentConfig));
     if (!res.ok || !Array.isArray(res.body?.sites)) return;
     allowedHosts.clear();
-    const hosts = [];
     for (const site of res.body.sites) {
       if (site && typeof site.hostname === "string") {
-        const host = site.hostname.toLowerCase();
-        allowedHosts.add(host);
-        hosts.push(host);
+        allowedHosts.add(site.hostname.toLowerCase());
       }
     }
-    await syncApprovalsWithAllowedHosts(chrome.storage.local, hosts);
   } catch {
     // Server unreachable — keep the previous cache. The next health tick
     // will retry.
-  }
-}
-
-async function persistAllowedSite(host) {
-  if (typeof host !== "string" || host.trim().length === 0) return;
-  try {
-    const out = await postJson(allowedSitesUrl(currentConfig), { hostname: host });
-    if (out?.ok) {
-      allowedHosts.add(host.toLowerCase());
-      await syncApprovalsWithAllowedHosts(chrome.storage.local, Array.from(allowedHosts));
-    }
-  } catch {
-    // Local chrome.storage still contains the approval. The next heartbeat
-    // will retry list reconciliation once the server is reachable.
   }
 }
 
@@ -2188,19 +2170,23 @@ async function gateAndDispatch(cmd) {
   }
 
   await ensureOverlayInjected(tab.id);
+  // The user is watching this tab only if it's both the tracked foreground
+  // tab and still the active one in its window. A pinned background target
+  // fails this, which is the point.
+  const foreground = await getForegroundTab(chrome.storage.local);
+  const targetFocused = !!foreground && foreground.tabId === tab.id && tab.active !== false;
   const risk = classifyCommandRisk(cmd, { host, url: tab.url });
-  await postCommandProgress(cmd.cmd_id, risk.force_prompt ? "approval_waiting_sensitive" : "approval_checking");
+  await postCommandProgress(cmd.cmd_id, targetFocused ? "approval_checking" : "approval_waiting_background");
 
   const gate = await gateCommand({
     storage: chrome.storage.local,
     host,
     action: cmd.type,
-    forcePrompt: risk.force_prompt,
+    targetFocused,
     promptDetails: risk,
     prompt: ({ host: h, action, details }) => requestUserApproval(tab.id, h, action, details),
   });
   if (!gate.allow) return { ok: false, error: gate.reason };
-  if (gate.persisted === "always") await persistAllowedSite(host);
   await postCommandProgress(cmd.cmd_id, "approved");
 
   await sendOverlay(tab.id, { type: "agent-overlay:show", action: cmd.type });

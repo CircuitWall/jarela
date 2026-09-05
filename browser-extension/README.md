@@ -180,30 +180,31 @@ See ADR-0082.
 
 ### Per-site approval, sensitive actions, and on-tab overlay
 
-The agent never drives a page without an explicit opt-in. The first time
-a command targets a host you'll see a modal in the tab itself with three
-buttons:
+The prompt exists to catch action you cannot **see**. When a command targets the
+tab you are looking at, it runs without a modal: the blue "Jarela agent is
+controlling this tab" banner narrates it live and **Stop** is one click away, so
+a dialog would add friction without adding information.
+
+A modal appears when the target is a tab you are *not* looking at — a pinned
+background tab, or a tab in another window. It shows three buttons:
 
 - **Approve once** — runs this single command.
 - **Always allow on this site** — remembers the decision and skips
-  future prompts for the same hostname.
-- **Deny** — runs nothing now and remembers a deny so future commands
-  for this host bounce silently.
+  future prompts for the same hostname, background tabs included.
+- **Deny** — runs nothing now and remembers a deny. A denied host stays
+  denied even on the focused tab, until you clear it.
 
-Decisions are cached in `chrome.storage.local` under the
-`jarelaBrowserApprovals` key as a flat `{ hostname: "always" | "denied" }`
-map. Choosing **Always allow on this site** also persists the host to Jarela's
-SQLite-backed *Sites the agent can use as you* list, so the approval survives
-extension restarts and appears in Settings. On each heartbeat the extension
-reconciles local `always` approvals from that persisted list; explicit local
-`denied` decisions stay denied until cleared.
+Decisions live in `chrome.storage.local` under the `jarelaBrowserApprovals` key
+as a flat `{ hostname: "always" | "denied" }` map, and that map is
+authoritative. Approving a site for page control does **not** enrol it in cookie
+passthrough: the *Sites the agent can use as you* list is a separate, stronger
+grant you add deliberately in Settings, and nothing reconciles one against the
+other.
 
-Some browser actions require extra confirmation even when the host is already
-approved. Jarela treats whole-page reads, screenshots, markup extraction,
-password/payment/auth-like fields, large batch form fills, and sensitive-looking
-hosts as higher risk. For those prompts the modal shows the reason and hides
-"Always allow on this site" so the user makes a fresh decision for that action.
-The prompt never displays raw form values.
+When a prompt does appear it explains why the action is notable — whole-page
+reads, screenshots, markup extraction, password/payment/auth-like fields, large
+batch form fills, sensitive-looking hosts. The prompt never displays raw form
+values.
 
 While a command is executing, a blue **"Jarela agent is controlling this
 tab"** banner is mounted at the top of the page with a pulsing indicator
@@ -221,7 +222,7 @@ panel; form-fill commands are intentionally not retryable because their values
 are not persisted.
 
 While a command is running, the extension posts sanitized progress phases such
-as `picked`, `approval_waiting_sensitive`, `waiting_for_load`,
+as `picked`, `approval_waiting_background`, `waiting_for_load`,
 `waiting_for_selector`, and `snapshotting`. The Browser panel shows the latest
 phase, and timeout errors include it so a stuck command points to the actual
 recovery path instead of only saying that the extension timed out.

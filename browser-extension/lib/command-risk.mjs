@@ -1,3 +1,7 @@
+// Describes WHY a command might deserve a second look. It no longer decides
+// WHETHER to prompt — that is `decideGate` in approvals.mjs, which keys on
+// whether the user can see the target tab (ADR-0083). These reasons are the
+// body of the prompt when one is shown.
 const SENSITIVE_HOST_RE = /(^|\.)(accounts|account|auth|login|signin|bank|bankid|checkout|pay|payment|billing|admin|mail|inbox|drive|docs|files|storage)\b/i;
 const SENSITIVE_FIELD_RE = /(pass(word)?|token|secret|key|otp|mfa|2fa|code|ssn|personnummer|card|cc|cvc|cvv|iban|account|routing|bank|amount|salary|email|phone|address)/i;
 const SENSITIVE_SELECTOR_RE = /(type=["']?password|autocomplete=["']?(cc-|one-time-code|current-password|new-password)|name=["']?.*(pass|token|secret|otp|card|cvv|cvc|iban|ssn|personnummer)|id=["']?.*(pass|token|secret|otp|card|cvv|cvc|iban|ssn|personnummer))/i;
@@ -38,8 +42,8 @@ export function classifyCommandRisk(command, context = {}) {
   }
 
   const unique = Array.from(new Set(reasons));
-  if (unique.length === 0) return { level: "normal", reasons: [], force_prompt: false };
-  return { level: "sensitive", reasons: unique, force_prompt: true };
+  if (unique.length === 0) return { level: "normal", reasons: [] };
+  return { level: "sensitive", reasons: unique };
 }
 
 function looksSensitiveValue(value) {
