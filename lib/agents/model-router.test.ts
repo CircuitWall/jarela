@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ModelConfig } from "@/api/types";
 import type { ContentPart } from "@/lib/tools/types";
-import { classifyTurn, finalizeRouteDecision, nextPolicyForRetry, routeTurnModel } from "./model-router";
+import { applyClassRatchet, classifyTurn, finalizeRouteDecision, nextPolicyForRetry, routeTurnModel } from "./model-router";
 
 function model(
   name: string,
@@ -197,5 +197,66 @@ describe("route decision helpers", () => {
     expect(nextPolicyForRetry("fast")).toBe("balanced");
     expect(nextPolicyForRetry("balanced")).toBe("quality");
     expect(nextPolicyForRetry("quality")).toBe("quality");
+  });
+});
+describe("applyClassRatchet", () => {
+  it("escalates immediately", () => {
+    expect(applyClassRatchet("research", "simple-chat", "compare these six fridges")).toBe("research");
+  });
+
+  it("holds the class for a terse follow-up so the model does not flip mid-task", () => {
+    expect(applyClassRatchet("simple-chat", "research", "i want the exact dimention 1860x600 to fit into the standard slot"))
+      .toBe("research");
+  });
+
+  it("lets a long standalone message downgrade", () => {
+    const essay = "thanks, that is done. ".repeat(20);
+    expect(applyClassRatchet("simple-chat", "research", essay)).toBe("simple-chat");
+  });
+
+  it("never inherits multimodal", () => {
+    expect(applyClassRatchet("simple-chat", "multimodal", "and the price?")).toBe("simple-chat");
+  });
+
+  it("is a no-op on the first turn", () => {
+    expect(applyClassRatchet("simple-chat", null, "hello")).toBe("simple-chat");
+  });
+});
+
+describe("routeTurnModel stickiness", () => {
+  const models = [
+    model("chat", "openai", "gpt-4o", { context_window_tokens: 128_000 }),
+    model("research", "openai", "gpt-5-mini", { context_window_tokens: 400_000 }),
+  ];
+
+  it("keeps the research model for a short follow-up in a research thread", () => {
+    const result = routeTurnModel({
+      models,
+      message: "i want the exact dimention 1860x600 to fit into the standard slot",
+      allowedTools: ["web_search", "fetch_webpage"],
+      policy: "balanced",
+      rateResolver,
+      latestObservation: {
+        source: "heuristic",
+        model_config_name: "research",
+        route_class: "research",
+        terminal: "done",
+        reason: "previous turn",
+      },
+    });
+    expect(result.routeClass).toBe("research");
+    expect(result.reason).toContain("held from previous turn");
+    expect(result.modelConfigName).toBe("research");
+  });
+
+  it("still downgrades when there is no previous research turn", () => {
+    const result = routeTurnModel({
+      models,
+      message: "i want the exact dimention 1860x600 to fit into the standard slot",
+      allowedTools: ["web_search", "fetch_webpage"],
+      policy: "balanced",
+      rateResolver,
+    });
+    expect(result.routeClass).toBe("simple-chat");
   });
 });
