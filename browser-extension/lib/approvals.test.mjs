@@ -6,7 +6,7 @@ import {
   setApproval,
   clearApproval,
   getAllApprovals,
-  syncApprovalsWithAllowedHosts,
+  decideGate,
   gateCommand,
 } from "./approvals.mjs";
 
@@ -76,26 +76,22 @@ describe("approval CRUD", () => {
   });
 });
 
-describe("syncApprovalsWithAllowedHosts", () => {
-  it("mirrors persisted allowed-sites into local always approvals", async () => {
-    const s = makeStorage();
-    await syncApprovalsWithAllowedHosts(s, ["Example.com", "docs.example.com"]);
-    expect(await getAllApprovals(s)).toEqual({
-      "docs.example.com": "always",
-      "example.com": "always",
-    });
+describe("decideGate", () => {
+  it("denies regardless of focus", () => {
+    expect(decideGate({ approval: "denied", targetFocused: true })).toBe("deny");
+    expect(decideGate({ approval: "denied", targetFocused: false })).toBe("deny");
   });
 
-  it("removes local always approvals that are no longer persisted", async () => {
-    const s = makeStorage({ [STORAGE_KEY]: { "old.test": "always", "keep.test": "always" } });
-    await syncApprovalsWithAllowedHosts(s, ["keep.test"]);
-    expect(await getAllApprovals(s)).toEqual({ "keep.test": "always" });
+  it("allows anything on the tab the user is looking at", () => {
+    expect(decideGate({ approval: undefined, targetFocused: true })).toBe("allow");
   });
 
-  it("does not overwrite explicit local denies", async () => {
-    const s = makeStorage({ [STORAGE_KEY]: { "blocked.test": "denied" } });
-    await syncApprovalsWithAllowedHosts(s, ["blocked.test"]);
-    expect(await getAllApprovals(s)).toEqual({ "blocked.test": "denied" });
+  it("prompts for an unknown host on a background tab", () => {
+    expect(decideGate({ approval: undefined, targetFocused: false })).toBe("prompt");
+  });
+
+  it("honours a persisted always on a background tab", () => {
+    expect(decideGate({ approval: "always", targetFocused: false })).toBe("allow");
   });
 });
 
@@ -116,16 +112,33 @@ describe("gateCommand", () => {
     expect(prompt).not.toHaveBeenCalled();
   });
 
-  it("prompts for forcePrompt even when host is always-approved", async () => {
-    const s = makeStorage({ [STORAGE_KEY]: { "ok.test": "always" } });
+  it("never prompts on the focused tab, even for a sensitive command", async () => {
+    const s = makeStorage();
+    const prompt = vi.fn();
+    const details = { level: "sensitive", reasons: ["reads the whole page"] };
+    const r = await gateCommand({
+      storage: s,
+      host: "mail.test",
+      action: "extract",
+      prompt,
+      targetFocused: true,
+      promptDetails: details,
+    });
+    expect(r).toEqual({ allow: true });
+    expect(prompt).not.toHaveBeenCalled();
+    expect(await getApproval(s, "mail.test")).toBeUndefined();
+  });
+
+  it("prompts on a background tab and passes the risk reasons through", async () => {
+    const s = makeStorage();
     const prompt = vi.fn().mockResolvedValue("once");
-    const details = { level: "sensitive", reasons: ["reads the whole page"], force_prompt: true };
+    const details = { level: "sensitive", reasons: ["reads the whole page"] };
     const r = await gateCommand({
       storage: s,
       host: "ok.test",
       action: "extract",
       prompt,
-      forcePrompt: true,
+      targetFocused: false,
       promptDetails: details,
     });
     expect(r).toEqual({ allow: true });
@@ -133,7 +146,7 @@ describe("gateCommand", () => {
       host: "ok.test",
       action: "extract",
       details,
-      forcePrompt: true,
+      targetFocused: false,
     });
   });
 
