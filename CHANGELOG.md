@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.39.2] - 2026-09-05
+
+### Added
+
+- **The agent knows which page you are looking at.** While the extension side
+  panel is open it reports the focused tab's URL, title and host to Jarela, so
+  "summarise this" resolves without pasting a link, and notes the agent wrote
+  about a site surface again when you return to it. Page content is never sent
+  — reading a page is still an explicit browser tool call. Closing the panel
+  retracts the record immediately, automation runs never see it, and the whole
+  thing is a global setting. See ADR-0082.
+
+### Fixed
+
+- **Browser approvals stick, and stop interrupting work you can watch.**
+  Choosing "Always allow" used to be erased within seconds by a background
+  reconcile against the cookie allow-list, and a risk classifier re-prompted on
+  every command for any host matching `mail`, `docs`, `drive`, `account` or
+  `admin` regardless of that choice. Approval is now asked only for work you
+  cannot see — a background or pinned tab — because on the tab you are
+  watching the overlay narrates the command and Stop is one click away.
+  Approving a site for page control also no longer enrols it in cookie
+  passthrough, which is a separate and much stronger grant. See ADR-0083.
+- **The model no longer changes mid-conversation on a short follow-up.** Route
+  classification reads only the current message, so a terse follow-up inside a
+  research thread scored as simple chat and flipped to a different model —
+  discarding the provider prompt cache for the whole stable prompt prefix.
+  Classification now escalates immediately but de-escalates only for a message
+  long enough to read as a new topic.
+- **A model config with a non-positive context window no longer empties the
+  transcript.** It was treated as an explicit setting, flooring the hot budget
+  at zero so the model answered with no history at all. An empty hot window is
+  now also logged loudly instead of looking like lost memory.
+
 ## [1.39.1] - 2026-09-05
 
 ### Fixed
