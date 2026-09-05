@@ -7,6 +7,7 @@ import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
+import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
 import { addMessage, getMessagesPage, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
 import { getMaskRunContext } from "@/lib/redaction/context";
@@ -19,6 +20,7 @@ import { getDefaultModelConfig, getModelConfig, getModelParams, listModelConfigs
 import {
   buildHistoryWindow,
   buildSystemPrompt,
+  buildSurroundingsContext,
   resolveExperienceMode,
   type ThreadRunRequest,
 } from "@/lib/agents/prepare";
@@ -615,6 +617,19 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const delegateRosterLines = buildDelegateRoster(agentCfg, allowedTools);
 
+  // Ambient surroundings (ADR-0082). Only foreground chat turns get it: a
+  // scheduled task or an extension fill firing while the user happens to be
+  // on some page must not have that page steer its answer.
+  const surroundingsPresence = isForegroundConversationTurn(req)
+    ? getForegroundTabPresence()
+    : null;
+  const surroundingsCtx = buildSurroundingsContext(surroundingsPresence);
+  // Recall query for the surroundings: host + title only. The URL's path is
+  // noise (ids, tracking params) that drags the embedding off-topic.
+  const surroundingsQuery = surroundingsPresence
+    ? [surroundingsPresence.host, surroundingsPresence.title].filter(Boolean).join(" ").trim()
+    : "";
+
   // First-response turns (no prior assistant message in the window) should
   // feel immediate; cap recall wait so we don't burn the full recall budget
   // before the model even starts streaming.
@@ -631,7 +646,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const rawRecallCtx = req.context_profile && req.context_profile.include_recall === false
     ? ""
     : await raceWithBudget(
-      buildRecallContext(req.thread_id, trimmed, oldestInWindow),
+      buildRecallContext(req.thread_id, trimmed, oldestInWindow, surroundingsQuery),
       recallWaitBudgetMs,
       "",
     );
@@ -685,6 +700,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     warmSummaryCtx: effectiveWarmSummary,
     factsCtx: effectiveFacts,
     backgroundActivityCtx: historyWindow.backgroundActivityCtx,
+    surroundingsCtx,
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
     sourceManifest,
@@ -1568,14 +1584,23 @@ async function buildRecallContext(
   current_thread_id: string,
   query: string,
   windowOldestContent: string | null,
+  surroundingsQuery = "",
 ): Promise<string> {
-  if (!query.trim()) return "";
+  const ambient = surroundingsQuery.trim();
+  if (!query.trim() && !ambient) return "";
   let hits: RecalledMemory[];
+  let ambientHits: RecalledMemory[] = [];
   try {
-    hits = await recall(query, 6);
+    // A second pass keyed on the page the user is on, so notes about a site
+    // surface when they return to it without having to name it.
+    [hits, ambientHits] = await Promise.all([
+      query.trim() ? recall(query, 6) : Promise.resolve([]),
+      ambient ? recall(ambient, 4) : Promise.resolve([]),
+    ]);
   } catch {
     return "";
   }
+  hits = mergeRecallHits(hits, ambientHits);
   if (hits.length === 0) return "";
 
   // Drop matches that already live in the in-prompt history window.
@@ -1619,6 +1644,35 @@ async function buildRecallContext(
 function truncate(s: string, max: number): string {
   const flat = s.replace(/\s+/g, " ").trim();
   return flat.length > max ? flat.slice(0, max) + "…" : flat;
+}
+
+/** Union of two recall passes, keeping the better score for a repeated hit. */
+function mergeRecallHits(
+  primary: readonly RecalledMemory[],
+  secondary: readonly RecalledMemory[],
+): RecalledMemory[] {
+  const byKey = new Map<string, RecalledMemory>();
+  for (const hit of [...primary, ...secondary]) {
+    const key = hit.source === "memory"
+      ? `memory:${hit.namespace}/${hit.key}`
+      : `message:${hit.thread_id}:${hit.content.slice(0, 120)}`;
+    const existing = byKey.get(key);
+    if (!existing || hit.score > existing.score) byKey.set(key, hit);
+  }
+  return [...byKey.values()].sort((a, b) => b.score - a.score).slice(0, 8);
+}
+
+/**
+ * True for turns the user is actually present for. Automation runners
+ * (scheduler, watcher, trigger, extension one-shots) are excluded from
+ * ambient surroundings: they fire on their own schedule, and whatever page
+ * the user happened to be on at that moment is not their subject.
+ */
+function isForegroundConversationTurn(req: ThreadRunRequest): boolean {
+  if (req._skip_persist_message) return false;
+  if (req.context_profile && req.context_profile.include_hot === false) return false;
+  const category = req.user_category ?? null;
+  return category === null;
 }
 
 export function shouldEmitChunk(

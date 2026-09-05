@@ -4,6 +4,7 @@ import {
   getForegroundTab,
   recordForegroundTab,
   clearForegroundTab,
+  buildForegroundPushPayload,
   handleTabActivated,
   handleTabUpdated,
   handleWindowFocused,
@@ -244,5 +245,36 @@ describe("recordSidePanelCurrentTab", () => {
 describe("storage key constant", () => {
   it("is the agreed-upon namespaced key", () => {
     expect(FOREGROUND_STORAGE_KEY).toBe("jarelaForegroundTab");
+  });
+});
+
+describe("buildForegroundPushPayload", () => {
+  it("returns null when there is no usable record", () => {
+    expect(buildForegroundPushPayload(null)).toBeNull();
+    expect(buildForegroundPushPayload({ url: "chrome://extensions" })).toBeNull();
+    expect(buildForegroundPushPayload({ url: "" })).toBeNull();
+  });
+
+  it("carries metadata only", () => {
+    const payload = buildForegroundPushPayload({
+      tabId: 12,
+      url: "https://example.com/a?b=c",
+      title: "Example",
+      host: "example.com",
+      recordedAt: 1700000000000,
+    });
+    expect(payload).toEqual({
+      url: "https://example.com/a?b=c",
+      title: "Example",
+      host: "example.com",
+      tab_id: 12,
+      recorded_at: 1700000000000,
+    });
+  });
+
+  it("derives a missing host from the url", () => {
+    const payload = buildForegroundPushPayload({ tabId: 1, url: "https://docs.example.org/x" });
+    expect(payload.host).toBe("docs.example.org");
+    expect(payload.title).toBe("");
   });
 });

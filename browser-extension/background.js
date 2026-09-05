@@ -22,6 +22,7 @@ import {
   browserPollUrl,
   browserResultUrl,
   browserProgressUrl,
+  browserForegroundUrl,
   buildBase,
 } from "./lib/config.mjs";
 import { BRAND } from "./lib/brand.mjs";
@@ -37,6 +38,7 @@ import {
 } from "./lib/tab-target.mjs";
 import {
   getForegroundTab,
+  buildForegroundPushPayload,
   handleTabActivated as handleTabActivatedFg,
   handleTabUpdated as handleTabUpdatedFg,
   handleWindowFocused as handleWindowFocusedFg,
@@ -50,6 +52,9 @@ const BROWSER_POLL_ALARM_NAME = "jarela-browser-poll";
 const HEALTH_INTERVAL_MIN = 0.25; // 15s
 const HEALTH_TIMEOUT_MS = 2000;
 const KEEPALIVE_PORT_NAME = "jarela-keepalive";
+const SIDEPANEL_PORT_NAME = "jarela-sidepanel";
+// Open side panels. Ambient surroundings are pushed only while > 0.
+let sidePanelPorts = 0;
 const OFFSCREEN_URL = "offscreen.html";
 const STORAGE_SELECTED_AGENT_ID = SELECTED_AGENT_STORAGE_KEY;
 const MENU_OPEN = "jarela-open";
@@ -367,6 +372,18 @@ async function ensureKeepAliveOffscreen() {
 }
 
 chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === SIDEPANEL_PORT_NAME) {
+    // The panel holds this port open for exactly as long as it is open, so
+    // ambient pushes start and stop with it (ADR-0082).
+    sidePanelPorts += 1;
+    scheduleForegroundPush();
+    port.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError;
+      sidePanelPorts = Math.max(0, sidePanelPorts - 1);
+      if (sidePanelPorts === 0) void retractForegroundTab();
+    });
+    return;
+  }
   if (port.name !== KEEPALIVE_PORT_NAME) return;
   // The mere existence of the port is what keeps the SW alive; we
   // don't need to send anything on it. On disconnect (SW recycle or
@@ -398,7 +415,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.tabs.onActivated.addListener((info) => {
   void applyHealthState(lastHealthy);
-  void handleTabActivatedFg(foregroundTrackerDeps, info);
+  void handleTabActivatedFg(foregroundTrackerDeps, info).then(scheduleForegroundPushIf);
   // The SW just woke for this event anyway; piggyback to resume the
   // long-poll loop so the server sees us within seconds, not whenever
   // the next revival alarm fires.
@@ -407,7 +424,7 @@ chrome.tabs.onActivated.addListener((info) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "complete") void applyHealthState(lastHealthy);
-  void handleTabUpdatedFg(foregroundTrackerDeps, tabId, changeInfo, tab);
+  void handleTabUpdatedFg(foregroundTrackerDeps, tabId, changeInfo, tab).then(scheduleForegroundPushIf);
 });
 
 // Window-level focus change is the missing signal that v1 dropped on
@@ -416,7 +433,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 // would have picked the wrong tab. Capture the active tab in the
 // newly focused window so the resolver has a stable target.
 chrome.windows.onFocusChanged.addListener((windowId) => {
-  void handleWindowFocusedFg(foregroundTrackerDeps, windowId);
+  void handleWindowFocusedFg(foregroundTrackerDeps, windowId).then(scheduleForegroundPushIf);
   resumeBrowserPollLoop();
 });
 
@@ -502,6 +519,50 @@ async function getJson(url) {
   let json;
   try { json = JSON.parse(text); } catch { json = { error: text }; }
   return { ok: res.ok, status: res.status, body: json };
+}
+
+// ---------------------------------------------------------------------------
+// Ambient surroundings — tell the app which page the user is on (ADR-0082).
+// ---------------------------------------------------------------------------
+//
+// Only while the side panel is open: that panel IS the live conversation, so
+// its lifetime is the user's consent window. URL/title/host only; page text
+// stays behind the explicit browser_extract / browser_snapshot commands.
+
+const FOREGROUND_PUSH_DEBOUNCE_MS = 500;
+let foregroundPushTimer = null;
+
+function scheduleForegroundPush() {
+  if (sidePanelPorts <= 0) return;
+  if (foregroundPushTimer) clearTimeout(foregroundPushTimer);
+  foregroundPushTimer = setTimeout(() => {
+    foregroundPushTimer = null;
+    void pushForegroundTab();
+  }, FOREGROUND_PUSH_DEBOUNCE_MS);
+}
+
+/** Listener-friendly wrapper: the tracker resolves true when it recorded. */
+function scheduleForegroundPushIf(recorded) {
+  if (recorded) scheduleForegroundPush();
+}
+
+async function pushForegroundTab() {
+  if (sidePanelPorts <= 0) return;
+  try {
+    const payload = buildForegroundPushPayload(await getForegroundTab(chrome.storage.local));
+    if (!payload) return;
+    await postJson(browserForegroundUrl(currentConfig), payload);
+  } catch {
+    // Server unreachable — the next tab event retries.
+  }
+}
+
+async function retractForegroundTab() {
+  try {
+    await fetch(browserForegroundUrl(currentConfig), { method: "DELETE" });
+  } catch {
+    // Server already gone; the app's presence record expires on its own.
+  }
 }
 
 async function listAgentsCompat() {
@@ -1726,6 +1787,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           ...foregroundTrackerDeps,
           getPinnedTab: () => getPinnedTab(chrome.storage.local),
         });
+        scheduleForegroundPush();
         sendResponse({ ok: true, status: 200, body: result });
         return;
       }

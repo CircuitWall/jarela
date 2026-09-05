@@ -162,6 +162,22 @@ manifest keeps broad host access optional; when Chromium withholds metadata,
 Jarela shows the tab as metadata-unavailable instead of requesting wider
 permissions silently.
 
+### Ambient surroundings (side panel only)
+
+While the side panel is open, the extension tells the app which page you are
+looking at, so you can say "summarise this" without pasting a URL, and so notes
+the agent already wrote about a site surface when you come back to it.
+
+What is sent: URL, title, host, tab id. **Never page content** — the agent still
+has to call `browser_extract` / `browser_snapshot`, with the usual approval
+prompt, to read anything. The push is debounced, goes only to your local Jarela
+over loopback, and the app holds it for at most 5 minutes in memory.
+
+The consent window is the panel itself: the panel holds a port open, and closing
+it retracts the record immediately. Nothing is pushed when the panel is closed.
+Automation runs (scheduled tasks, watchers, triggers, fill/rewrite) never see it.
+See ADR-0082.
+
 ### Per-site approval, sensitive actions, and on-tab overlay
 
 The agent never drives a page without an explicit opt-in. The first time

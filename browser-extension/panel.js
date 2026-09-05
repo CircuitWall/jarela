@@ -43,4 +43,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   void render();
 });
 
+// A port whose lifetime IS the panel's lifetime. The service worker uses it
+// to decide whether ambient surroundings may be pushed to the app; when the
+// panel closes the port disconnects and the push stops. Nothing is ever sent
+// over it — only connect/disconnect matter.
+chrome.runtime.connect({ name: "jarela-sidepanel" });
+
 void render();
