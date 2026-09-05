@@ -6,6 +6,7 @@ const NS = "app-settings";
 const EMBEDDING_MODEL_KEY = "embedding_model_config";
 const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
 const REDACTION_ENABLED_KEY = "redaction_enabled";
+const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
 const ARTIFACT_LIFECYCLE_KEY = "artifact_lifecycle";
 
 export interface ArtifactLifecycleSettings {
@@ -108,6 +109,25 @@ export function isRedactionEnabled(): boolean {
 
 export function setRedactionEnabled(enabled: boolean): void {
   writeJsonSetting(REDACTION_ENABLED_KEY, Boolean(enabled));
+}
+
+// Ambient surroundings toggle (ADR-0082). Default ON, same read shape as
+// redaction: only an explicit persisted `false` disables it. Guards whether
+// the server accepts foreground-tab pushes from the extension at all.
+export function isAmbientContextEnabled(): boolean {
+  const row = getDb()
+    .prepare("SELECT value FROM memory_store WHERE namespace=? AND key=?")
+    .get(NS, AMBIENT_CONTEXT_KEY) as { value?: string } | undefined;
+  if (!row?.value) return true;
+  try {
+    return JSON.parse(row.value) !== false;
+  } catch {
+    return true;
+  }
+}
+
+export function setAmbientContextEnabled(enabled: boolean): void {
+  writeJsonSetting(AMBIENT_CONTEXT_KEY, Boolean(enabled));
 }
 
 export function getArtifactLifecycleSettings(): ArtifactLifecycleSettings {

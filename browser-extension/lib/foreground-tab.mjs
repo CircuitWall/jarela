@@ -66,6 +66,22 @@ export async function recordForegroundTab(storage, tab) {
   return true;
 }
 
+/**
+ * Shape the ambient-surroundings push body (ADR-0082). Metadata only —
+ * never page content. Returns null when there is nothing worth reporting,
+ * so the caller can skip the request entirely.
+ */
+export function buildForegroundPushPayload(fg) {
+  if (!fg || typeof fg.url !== "string" || !isUsableUrl(fg.url)) return null;
+  return {
+    url: fg.url,
+    title: typeof fg.title === "string" ? fg.title : "",
+    host: typeof fg.host === "string" ? fg.host : deriveHost(fg.url),
+    ...(typeof fg.tabId === "number" && fg.tabId > 0 ? { tab_id: fg.tabId } : {}),
+    ...(typeof fg.recordedAt === "number" && fg.recordedAt > 0 ? { recorded_at: fg.recordedAt } : {}),
+  };
+}
+
 // --------------------------------------------------------------------- //
 // Event handlers — pure functions returning storage writes              //
 // --------------------------------------------------------------------- //

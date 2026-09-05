@@ -27,6 +27,8 @@ import {
   markBrowserCommandRunning,
   markBrowserCommandProgress,
 } from "@/lib/stores/browser-command-log";
+import { clearForegroundTabPresence, setForegroundTabPresence } from "@/lib/api/foreground-presence";
+import { isAmbientContextEnabled } from "@/lib/stores/app-settings";
 
 // Soft cap on the number of commands sitting in the queue at once.
 // A runaway LLM that fires hundreds of click() calls in one turn would
@@ -164,6 +166,14 @@ const BrowserRetryBodyShape = z.object({
 const BrowserProgressBodyShape = z.object({
   cmd_id: z.string().min(1).max(128),
   phase: z.string().min(1).max(80),
+});
+
+const BrowserForegroundBodyShape = z.object({
+  url: z.string().url().max(4000),
+  title: z.string().max(500).optional(),
+  host: z.string().max(300).optional(),
+  tab_id: z.number().int().positive().optional(),
+  recorded_at: z.number().int().nonnegative().optional(),
 });
 
 const CommandShape = z.discriminatedUnion("type", [
@@ -556,6 +566,47 @@ export async function handleBrowserStatus(req: Request): Promise<Response> {
     status: 200,
     headers: { "content-type": "application/json" },
   });
+}
+
+/**
+ * Ambient surroundings ingest (ADR-0082). The extension pushes the page the
+ * user is looking at while its side panel is open; DELETE retracts it when
+ * the panel closes. Metadata only — page content stays behind the explicit
+ * browser_snapshot / browser_extract tools.
+ */
+export async function handleBrowserForeground(req: Request): Promise<Response> {
+  if (!isLoopbackRequest(req)) return loopbackForbidden();
+  if (req.method === "DELETE") {
+    clearForegroundTabPresence();
+    return jsonResponse({ ok: true, cleared: true });
+  }
+  if (!isAmbientContextEnabled()) {
+    // Retract anything already held so turning the setting off takes effect
+    // immediately rather than at the next TTL expiry.
+    clearForegroundTabPresence();
+    return jsonResponse({ ok: true, accepted: false, reason: "ambient context disabled" });
+  }
+  let raw: unknown;
+  try {
+    raw = await req.json();
+  } catch {
+    return badRequest("Request body must be valid JSON");
+  }
+  const parsed = BrowserForegroundBodyShape.safeParse(raw);
+  if (!parsed.success) return badRequest(parsed.error.issues[0]?.message ?? "invalid foreground body");
+  const { url, title, host, tab_id, recorded_at } = parsed.data;
+  let derivedHost = host ?? "";
+  if (!derivedHost) {
+    try { derivedHost = new URL(url).hostname; } catch { derivedHost = ""; }
+  }
+  setForegroundTabPresence({
+    url,
+    title: title ?? "",
+    host: derivedHost,
+    tab_id: tab_id ?? null,
+    recorded_at: recorded_at ?? Date.now(),
+  });
+  return jsonResponse({ ok: true, accepted: true });
 }
 
 export async function handleBrowserTabs(req: Request): Promise<Response> {

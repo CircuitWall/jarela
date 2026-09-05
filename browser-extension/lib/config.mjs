@@ -89,6 +89,7 @@ export function allowedSiteHostUrl(cfg, hostname) {
 export function browserPollUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/poll`; }
 export function browserResultUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/result`; }
 export function browserProgressUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/progress`; }
+export function browserForegroundUrl(cfg) { return `${buildBase(cfg)}/api/v1/extension/browser/foreground`; }
 export function appUrl(cfg, opts) {
   const base = `${buildBase(cfg)}/`;
   const agentRaw = typeof opts?.agentId === "string" ? opts.agentId.trim() : "";
