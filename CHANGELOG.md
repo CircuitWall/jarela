@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.39.3] - 2026-09-06
+
+### Fixed
+
+- **Automatic model switches keep the current context.** The router now
+  measures how much hot conversation context the turn needs before choosing a
+  model, then evaluates candidates through the same context-budget calculator
+  used to build the prompt. A cheap or fast fallback can no longer win simply
+  by ignoring that it would force the history window to drop the thread the
+  user is continuing.
+- **User-authored bridge replies are attributed to the user, not the contact.**
+  Bridge messages now carry an explicit sender JID through the adapter
+  contract. WhatsApp `fromMe` replies in 1:1 chats are framed as coming from
+  the paired account (`You`) instead of inheriting the chat/contact name, so
+  the agent does not mistake the user's own reply for the other participant.
+
 ## [1.39.2] - 2026-09-05
 
 ### Added
