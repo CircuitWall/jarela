@@ -653,7 +653,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
     name: "claude_delegate",
     description:
       "Delegate a feature-scoped coding task to a local Claude Code CLI process with full tool access (Read, Write, Edit, Bash, Skill, WebSearch, etc.), running inside the active workspace (call workspace_init first). " +
-      "Sessions are keyed per project directory (and optional feature label) so the sub-agent accumulates long-term context across calls — its own CLAUDE.md and auto-memory load automatically. " +
+      "Claude runs with its normal local and project configuration, so enabled Claude plugins, skills, MCP servers, hooks, CLAUDE.md instructions, and auto-memory are available under Claude's own approval policies. Sessions are keyed per project directory (and optional feature label) so the sub-agent accumulates long-term context across calls. " +
       "Gated by JARELA_TOOL_SAFETY: under the default 'mostly_safe' tier, Claude can read/explore freely but every write/exec attempt is auto-denied (surfaced in permission_denials) unless you pass allow_unsafe: true; 'safe' refuses the call outright; 'bypass' honours whatever permission_mode you request. " +
       "Every call returns a git-diff summary in `changes` — after this call, inspect `changes` and read the modified files (or run tests/lint via local_exec) before reporting success to the user. Do not take Claude's own summary text on faith. " +
       "For long tasks, use background: true — returns a job_id immediately; poll with claude_delegate_status. When awaiting_answers is true, relay the '## Design questions' block to the user and call again with answers folded into the next task.",
@@ -707,7 +707,7 @@ export const claudeDelegateStatusTool = tool(
 );
 
 registerLangChainPackage({
-  category: "Agent",
+  category: "Other",
   tools: { execute: [claudeDelegateTool, claudeDelegateStatusTool] },
 });
 

@@ -206,6 +206,37 @@ describe("ToolList — live progress (ADR-0073)", () => {
     expect(screen.getByText("Which migration strategy should I use?")).toBeTruthy();
   });
 
+  it("renders a persisted Codex parent request, command, and reply as a delegate transcript", () => {
+    const events: ToolEvent[] = [
+      {
+        id: "c1",
+        phase: "call",
+        name: "codex_delegate",
+        payload: { task: "Review the current branch" },
+      },
+      {
+        id: "c1",
+        phase: "result",
+        name: "codex_delegate",
+        payload: {
+          ok: true,
+          transcript: {
+            provider: "Codex",
+            parent_message: "Review the current branch",
+            steps: ["→ git diff --check", "Codex: No issues found."],
+          },
+        },
+      },
+    ];
+
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("Asked Codex")).toBeTruthy();
+    expect(screen.getByText("Review the current branch")).toBeTruthy();
+    expect(screen.getByText("git diff --check")).toBeTruthy();
+    expect(screen.getByText("Codex: No issues found.")).toBeTruthy();
+  });
+
   it("renders workflow_progress as an expandable checklist", () => {
     const events: ToolEvent[] = [
       {

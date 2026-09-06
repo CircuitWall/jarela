@@ -32,10 +32,19 @@ import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
 import { getClaudeCodeConfig } from "@/lib/tools/claude-code-config";
+import { getCodexConfig, resolveCodexLaunch } from "@/lib/tools/codex-delegate";
 
 export const __testing = {
   spawnClaudeCodeVersion(bin: string, env: NodeJS.ProcessEnv) {
     return spawnSync(bin, ["--version"], {
+      encoding: "utf8",
+      timeout: 5_000,
+      env,
+    });
+  },
+  spawnCodexLoginStatus(bin: string, env: NodeJS.ProcessEnv) {
+    const launch = resolveCodexLaunch(bin, ["login", "status"]);
+    return spawnSync(launch.command, launch.args, {
       encoding: "utf8",
       timeout: 5_000,
       env,
@@ -499,6 +508,27 @@ export async function probeClaudeCode(): Promise<HealthResult> {
   }
 }
 
+export async function probeOpenAICodex(): Promise<HealthResult> {
+  const cfg = getCodexConfig();
+  try {
+    const status = __testing.spawnCodexLoginStatus(cfg.bin, { ...process.env, ...cfg.env });
+    if (status.error) {
+      const error = status.error as NodeJS.ErrnoException;
+      if (error.code === "ENOENT") {
+        return unconfigured(`Codex CLI not found at "${cfg.bin}". Install it or set the command in Credentials -> OpenAI Codex (ChatGPT).`);
+      }
+      return transient(describeError(error));
+    }
+    const output = `${status.stdout ?? ""}${status.stderr ?? ""}`.trim();
+    if ((status.status ?? 0) !== 0) {
+      return unconfigured(`Codex is not signed in. Run "codex login" and complete the ChatGPT browser sign-in.${output ? ` ${output.slice(0, 200)}` : ""}`);
+    }
+    return ok({ auth: "chatgpt-or-api-key", status: output || "Codex CLI ready", bin: cfg.bin });
+  } catch (error) {
+    return transient(describeError(error));
+  }
+}
+
 export async function probeLinkedInPersonal(): Promise<HealthResult> {
   const auth = resolvePackageAuth<LinkedInPersonalAuth>("linkedin_personal");
   if ("error" in auth) return unconfigured(auth.error);
@@ -556,6 +586,7 @@ export async function probeLinkedInEnterprise(): Promise<HealthResult> {
 export type ProbeName =
   | "atlassian" | "jira_align" | "github" | "google" | "gmail" | "outlook" | "icloud"
   | "anthropic" | "openai" | "deepseek" | "cohere" | "github-copilot" | "claude-code"
+  | "openai-codex"
   | "linkedin_personal" | "linkedin_enterprise";
 
 const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
@@ -572,6 +603,7 @@ const ALL_PROBES: Record<ProbeName, () => Promise<HealthResult>> = {
   cohere: probeCohere,
   "github-copilot": probeGithubCopilot,
   "claude-code": probeClaudeCode,
+  "openai-codex": probeOpenAICodex,
   linkedin_personal: probeLinkedInPersonal,
   linkedin_enterprise: probeLinkedInEnterprise,
 };
@@ -590,6 +622,7 @@ const PROBE_LABELS: Record<ProbeName, string> = {
   cohere: "Cohere",
   "github-copilot": "GitHub Copilot",
   "claude-code": "Claude Code",
+  "openai-codex": "OpenAI Codex (ChatGPT)",
   linkedin_personal: "LinkedIn Personal",
   linkedin_enterprise: "LinkedIn Enterprise",
 };
@@ -608,6 +641,7 @@ const PROBE_CATEGORY: Record<ProbeName, HealthCategory> = {
   cohere: "llm",
   "github-copilot": "llm",
   "claude-code": "integration",
+  "openai-codex": "integration",
   linkedin_personal: "integration",
   linkedin_enterprise: "integration",
 };

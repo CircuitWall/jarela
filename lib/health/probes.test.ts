@@ -14,7 +14,7 @@ const { storeOAuthToken, clearStoredOAuthToken } = await import("@/lib/providers
 const {
   probeAtlassian, probeJiraAlign, probeGithub, probeGoogle, probeGmail,
   probeOutlook, probeICloud, probeAnthropic, probeOpenAI, probeDeepseek,
-  probeCohere, probeGithubCopilot, probeClaudeCode, __testing,
+  probeCohere, probeGithubCopilot, probeClaudeCode, probeOpenAICodex, __testing,
   probeLinkedInPersonal, probeLinkedInEnterprise,
   listProbes, probeLabel, probeCategory, isIntegrationProbe, runProbe,
 } = await import("./probes");
@@ -30,7 +30,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function wipe(): void {
-  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code", "linkedin_personal", "linkedin_enterprise"]) {
+  for (const k of ["atlassian", "jira_align", "github", "google", "gmail", "outlook", "icloud", "anthropic", "openai", "deepseek", "cohere", "github-copilot", "claude-code", "openai-codex", "linkedin_personal", "linkedin_enterprise"]) {
     deleteIntegration(k);
   }
   clearStoredOAuthToken();
@@ -641,6 +641,28 @@ describe("health probes", () => {
     });
   });
 
+  describe("openai-codex", () => {
+    it("is unconfigured when the CLI cannot be found", async () => {
+      vi.spyOn(__testing, "spawnCodexLoginStatus").mockReturnValue({
+        error: Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }),
+      } as unknown as ReturnType<typeof __testing.spawnCodexLoginStatus>);
+      const result = await probeOpenAICodex();
+      expect(result.status).toBe("unconfigured");
+      expect(result.error).toMatch(/CLI not found/i);
+    });
+
+    it("reports ChatGPT login status from the local CLI", async () => {
+      saveIntegration("openai-codex", { cli_path: "codex" });
+      vi.spyOn(__testing, "spawnCodexLoginStatus").mockReturnValue({
+        status: 0,
+        stdout: "Logged in using ChatGPT\n",
+        stderr: "",
+      } as unknown as ReturnType<typeof __testing.spawnCodexLoginStatus>);
+      const result = await probeOpenAICodex();
+      expect(result).toMatchObject({ ok: true, status: "ok", detail: { auth: "chatgpt-or-api-key", status: "Logged in using ChatGPT" } });
+    });
+  });
+
   describe("linkedin", () => {
     it("reports missing OIDC profile scope without calling userinfo", async () => {
       saveIntegration("linkedin_personal", { access_token: "token", scopes: "w_member_social" });
@@ -746,7 +768,7 @@ describe("health probes", () => {
   describe("registry helpers", () => {
     it("lists every probe with a label and category", () => {
       const names = listProbes();
-      expect(names.length).toBe(15);
+      expect(names.length).toBe(16);
       for (const n of names) {
         expect(typeof probeLabel(n)).toBe("string");
         expect(["integration", "llm"]).toContain(probeCategory(n));
@@ -758,6 +780,7 @@ describe("health probes", () => {
       expect(isIntegrationProbe("cohere")).toBe(true);
       expect(isIntegrationProbe("github-copilot")).toBe(true);
       expect(isIntegrationProbe("claude-code")).toBe(true);
+      expect(isIntegrationProbe("openai-codex")).toBe(true);
       expect(isIntegrationProbe("nonsense")).toBe(false);
     });
     it("runProbe dispatches by name", async () => {

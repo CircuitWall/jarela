@@ -391,8 +391,8 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
   const summary = renderArgsSummary(group.name, effectiveArgs);
   const summaryTitle = argsSummaryTitle(group.name, effectiveArgs);
   const hasArgs = hasVisibleArgs(effectiveArgs);
-  const claudeTranscript = claudeTranscriptFrom(group.name, effectiveArgs, group.result);
-  const transcriptSteps = group.steps.length > 0 ? group.steps : claudeTranscript?.steps ?? stepsFromResult(group.result);
+  const delegateTranscript = delegateTranscriptFrom(group.name, effectiveArgs, group.result);
+  const transcriptSteps = group.steps.length > 0 ? group.steps : delegateTranscript?.steps ?? stepsFromResult(group.result);
   return (
     <div className="min-w-0 max-w-full">
       <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
@@ -441,7 +441,7 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
             preview
           </Badge>
         )}
-        {claudeTranscript?.awaitingUserAnswers && (
+        {delegateTranscript?.awaitingUserAnswers && (
           <Badge
             tone="warning"
             className="uppercase tracking-wide"
@@ -459,9 +459,10 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
       </MetaRow>
       <LiveTranscript
         steps={transcriptSteps}
-        parentMessage={claudeTranscript?.parentMessage}
-        designQuestions={claudeTranscript?.designQuestions}
-        launch={claudeTranscript?.launch}
+        parentMessage={delegateTranscript?.parentMessage}
+        provider={delegateTranscript?.provider}
+        designQuestions={delegateTranscript?.designQuestions}
+        launch={delegateTranscript?.launch}
       />
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
@@ -687,11 +688,13 @@ const TRANSCRIPT_EXPANDED_MAX_PX = 320;
 function LiveTranscript({
   steps,
   parentMessage,
+  provider = "Delegate",
   designQuestions = [],
   launch,
 }: {
   steps: string[];
   parentMessage?: string;
+  provider?: string;
   designQuestions?: string[];
   launch?: Record<string, unknown> | null;
 }) {
@@ -715,14 +718,14 @@ function LiveTranscript({
         className="flex flex-col gap-0.5 overflow-y-auto rounded border border-border/30 bg-surface-2/20 px-1.5 py-1 transition-[max-height] duration-150 ease-out"
         style={{ maxHeight: expanded ? TRANSCRIPT_EXPANDED_MAX_PX : TRANSCRIPT_COLLAPSED_MAX_PX }}
       >
-        {parentMessage && <TranscriptMetaRow label="Asked Claude" value={parentMessage} />}
+        {parentMessage && <TranscriptMetaRow label={`Asked ${provider}`} value={parentMessage} />}
         {launch && <TranscriptMetaRow label="Started" value={formatClaudeLaunchSummary(launch)} />}
         {steps.map((s, i) => (
           <StepRow key={i} step={s} />
         ))}
         {designQuestions.length > 0 && (
           <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/5 px-1.5 py-1 text-[10px] leading-[1.45] text-amber-800 dark:text-amber-200">
-            <div className="uppercase tracking-wide text-[9px] font-medium text-amber-700 dark:text-amber-300">Claude questions</div>
+            <div className="uppercase tracking-wide text-[9px] font-medium text-amber-700 dark:text-amber-300">{provider} questions</div>
             <ol className="mt-0.5 list-decimal list-inside space-y-0.5">
               {designQuestions.map((question, i) => (
                 <li key={i} className="break-words whitespace-pre-wrap">{question}</li>
@@ -1052,19 +1055,20 @@ function stepsFromResult(result: unknown): string[] {
   if (!obj) return [];
   const nested = coerceObject(obj.result);
   const transcript = coerceObject(nested?.transcript) ?? coerceObject(obj.transcript);
-  const steps = transcript?.claude_steps ?? obj.steps;
+  const steps = transcript?.claude_steps ?? transcript?.steps ?? obj.steps;
   if (!Array.isArray(steps)) return [];
   return steps.filter((step): step is string => typeof step === "string" && step.length > 0);
 }
 
-function claudeTranscriptFrom(toolName: string, args: unknown, result: unknown): {
+function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown): {
   parentMessage?: string;
+  provider: string;
   steps: string[];
   designQuestions: string[];
   awaitingUserAnswers: boolean;
   launch: Record<string, unknown> | null;
 } | null {
-  if (toolName !== "claude_delegate" && toolName !== "claude_delegate_status") return null;
+  if (toolName !== "claude_delegate" && toolName !== "claude_delegate_status" && toolName !== "codex_delegate") return null;
   const resultObj = coerceObject(result);
   const nestedResult = coerceObject(resultObj?.result);
   const transcript = coerceObject(nestedResult?.transcript) ?? coerceObject(resultObj?.transcript);
@@ -1073,6 +1077,7 @@ function claudeTranscriptFrom(toolName: string, args: unknown, result: unknown):
     ? transcript.design_questions.filter((q): q is string => typeof q === "string" && q.length > 0)
     : [];
   return {
+    provider: typeof transcript?.provider === "string" ? transcript.provider : toolName === "codex_delegate" ? "Codex" : "Claude",
     parentMessage: typeof transcript?.parent_message === "string"
       ? transcript.parent_message
       : typeof argsObj?.task === "string"

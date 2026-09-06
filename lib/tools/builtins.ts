@@ -53,3 +53,4 @@ import "./browser-control";
 import "./skills";
 import "./terminal";
 import "./claude-delegate";
+import "./codex-delegate";
