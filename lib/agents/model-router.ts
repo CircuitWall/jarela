@@ -3,6 +3,8 @@ import type { ContentPart } from "@/lib/tools/types";
 import { modelCapabilities } from "@/lib/providers/capabilities";
 import { detectModelFunctionality } from "@/lib/dashboard/classify";
 import type { ProviderRates } from "@/lib/stores/pricing";
+import { getKnownContextLength } from "@/lib/providers/known-context-windows";
+import { computeContextBudget, type ContextTierProportions } from "@/lib/agents/context-budget";
 
 export type ModelRouterPolicy = "cheap" | "fast" | "balanced" | "quality";
 export type ModelRouteClass = "simple-chat" | "factual" | "research" | "complex-reasoning" | "multimodal";
@@ -20,6 +22,8 @@ export interface RouteTurnModelOptions {
   attachments?: readonly ContentPart[];
   hasImageContext?: boolean;
   allowedTools?: readonly string[];
+  requiredHotContextTokens?: number | null;
+  contextTierProportions?: ContextTierProportions | null;
   policy: ModelRouterPolicy;
   latestUsage?: LatestUsageHint | null;
   latestObservation?: RouteDecisionMetadata | null;
@@ -79,7 +83,9 @@ export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelRe
   }
 
   const filtered = filterCandidates(routable, routeClass, options.attachments, options.allowedTools, options.hasImageContext);
-  const candidates = filtered.length > 0 ? filtered : routable;
+  const capabilityCandidates = filtered.length > 0 ? filtered : routable;
+  const contextFit = filterByHotContextBudget(capabilityCandidates, options.requiredHotContextTokens, options.contextTierProportions);
+  const candidates = contextFit.length > 0 ? contextFit : capabilityCandidates;
   const scored = candidates
     .map((model) => ({
       model,
@@ -93,7 +99,7 @@ export function routeTurnModel(options: RouteTurnModelOptions): RouteTurnModelRe
     modelConfigName: winner?.name ?? null,
     routeClass,
     reason: winner
-      ? `class=${classLabel}; policy=${options.policy}; chose ${winner.name} from ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`
+      ? `class=${classLabel}; policy=${options.policy}; chose ${winner.name} from ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}${contextFit.length > 0 ? `; hot_context_tokens=${Math.floor(options.requiredHotContextTokens ?? 0)}` : ""}`
       : `class=${classLabel}; no viable model after routing`,
     candidates: candidates.map((model) => model.name),
   };
@@ -175,6 +181,39 @@ function filterCandidates(
   });
 }
 
+function filterByHotContextBudget(
+  models: readonly ModelConfig[],
+  requiredHotContextTokens: number | null | undefined,
+  contextTierProportions: ContextTierProportions | null | undefined,
+): ModelConfig[] {
+  if (!requiredHotContextTokens || requiredHotContextTokens <= 0) return [];
+  return models.filter((model) => modelHotBudgetTokens(model, contextTierProportions) >= requiredHotContextTokens);
+}
+
+function modelContextWindowTokens(model: ModelConfig): number {
+  const explicit = typeof model.params.context_window_tokens === "number" && model.params.context_window_tokens > 0
+    ? model.params.context_window_tokens
+    : null;
+  const known = getKnownContextLength(model.provider, model.model_id);
+  return explicit && known ? Math.min(explicit, known) : explicit ?? known ?? 8_192;
+}
+
+function modelHotBudgetTokens(
+  model: ModelConfig,
+  contextTierProportions: ContextTierProportions | null | undefined,
+): number {
+  return computeContextBudget({
+    ...model.params,
+    context_window_tokens: modelContextWindowTokens(model),
+    context_tier_proportions: contextTierProportions ?? modelContextTierProportions(model),
+  }).tierBudgets.hot;
+}
+
+function modelContextTierProportions(model: ModelConfig): ContextTierProportions | undefined {
+  const raw = model.params.context_tier_proportions;
+  return raw && typeof raw === "object" ? raw as ContextTierProportions : undefined;
+}
+
 function scoreCandidate(
   model: ModelConfig,
   routeClass: ModelRouteClass,
@@ -187,9 +226,7 @@ function scoreCandidate(
   const estimatedCost = estimateTurnCost(routeClass, rates.inputPer1M, rates.outputPer1M);
   const cacheAffinity = latestCacheAffinity(model.name, options.latestUsage);
   const observationBias = latestObservationBias(model.name, options.latestObservation, options.policy);
-  const contextWindow = typeof model.params.context_window_tokens === "number"
-    ? model.params.context_window_tokens
-    : 8_192;
+  const contextWindow = modelContextWindowTokens(model);
   let score = 0;
 
   switch (routeClass) {

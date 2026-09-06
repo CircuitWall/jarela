@@ -162,6 +162,25 @@ function autoBoundaryIdleMs(historyWindowHours: number | null | undefined): numb
   return Math.max(1, Math.floor(historyWindowHours * 3600_000));
 }
 
+function estimateRequiredHotContextTokens(
+  thread_id: string,
+  agentCfg: { history_limit?: number | null; history_window_hours?: number | null },
+  hotSince: string | null,
+  scope: "foreground" | "bridge" | "all" | "none" | undefined,
+  bridgeKey: string | null | undefined,
+): number | null {
+  const limit = agentCfg.history_limit ?? 50;
+  const windowHours = agentCfg.history_window_hours ?? 8;
+  const sinceISO = hotSince
+    ? hotSince
+    : windowHours > 0
+      ? new Date(Date.now() - windowHours * 3600_000).toISOString()
+      : undefined;
+  const messages = getRecentMessagesWindow(thread_id, limit, sinceISO, scope ?? "all", bridgeKey ?? undefined);
+  const hotTokens = messages.reduce((acc, m) => acc + estimateTokens(transcriptText(m.content)), 0);
+  return hotTokens > 0 ? hotTokens : null;
+}
+
 async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
   const cap = getConfig().maxThreadMessages;
   const keepLast = autoCompactionKeepLast(cap);
@@ -474,6 +493,23 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const hasImageContext = contentHasImage(content)
     || getMessagesPage(req.thread_id, agentCfg.history_limit ?? 50).messages.some((m) => contentHasImage(m.content));
 
+  const agentTierProportions = getAgentTierProportions(agentCfg);
+
+  const effectiveHotSince = req.context_profile?.history_scope === "bridge"
+    ? null
+    : req.hot_since !== undefined
+      ? req.hot_since
+      : (autoHotSince ?? thread.hot_since ?? null);
+  const requiredHotContextTokens = req.context_profile?.include_hot === false
+    ? null
+    : estimateRequiredHotContextTokens(
+      req.thread_id,
+      agentCfg,
+      effectiveHotSince,
+      req.context_profile?.history_scope,
+      req.history_bridge_key,
+    );
+
   // Resolve model config + provider params (for both the live stream and
   // the warm-summary recursion inside buildHistoryWindow).
   const defaultModelConfig = getDefaultModelConfig();
@@ -530,6 +566,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       attachments: req.attachments,
       hasImageContext,
       allowedTools,
+      requiredHotContextTokens,
+      contextTierProportions: agentTierProportions,
       latestUsage: getLatestMessageUsageForThread(req.thread_id),
       latestObservation: getLatestRoutingObservation(req.thread_id),
       policy: routePolicy,
@@ -583,7 +621,6 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // value, when set, replaces the model's default for THIS run only; the
   // stream LLM call below still uses the unmodified params. Splitting them
   // keeps the override scoped to the budget computation.
-  const agentTierProportions = getAgentTierProportions(agentCfg);
   const providerParams = agentTierProportions
     ? { ...baseProviderParams, context_tier_proportions: agentTierProportions }
     : baseProviderParams;
@@ -594,12 +631,6 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   if (req.hot_since !== undefined) {
     moveThreadContextBoundary(req.thread_id, req.hot_since, { refreshWarmSummary: true });
   }
-  const effectiveHotSince = req.context_profile?.history_scope === "bridge"
-    ? null
-    : req.hot_since !== undefined
-      ? req.hot_since
-      : (autoHotSince ?? thread.hot_since ?? null);
-
   const historyWindow = await buildHistoryWindow(
     req.thread_id,
     agentCfg,
