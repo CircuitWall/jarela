@@ -33,6 +33,11 @@ export interface InboundMessage {
   push_name: string | null;
   /** Best-effort chat label (group subject for groups, contact/display name for DMs). */
   chat_name: string | null;
+  /**
+   * Authoritative sender JID for this message. For 1:1 fromMe messages this
+   * is the paired account, not the chat/contact JID.
+   */
+  sender_jid?: string | null;
   /** Best-effort sender display name for this specific inbound message. */
   sender_name: string | null;
   /** Plain text body (or media caption for messages whose payload is an image). */
@@ -49,10 +54,9 @@ export interface InboundMessage {
   /** Whether the chat is a group (informational only — routing is by JID either way). */
   is_group: boolean;
   /**
-   * Sender JID inside a group chat (Baileys `key.participant`, normalized).
-   * Null for 1:1 chats where the sender equals `remote_jid`. The dispatcher
-   * uses this to attribute group messages to specific members in the agent
-   * prompt so the LLM can tell two participants apart.
+    * Legacy group participant JID (Baileys `key.participant`, normalized).
+    * New adapters should set `sender_jid` for every message and may set this
+    * only for group compatibility.
    */
   participant_jid: string | null;
   /**
