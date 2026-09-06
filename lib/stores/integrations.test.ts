@@ -66,6 +66,7 @@ describe("integrations store (credentials-backed)", () => {
       },
     },
     { name: "google", value: { api_key: "AIza-roundtrip" } },
+    { name: "openai-codex", value: { cli_path: "codex" } },
     { name: "github", value: { token: "ghp_roundtrip" } },
     { name: "atlassian", value: { url: "https://r.atlassian.net", email: "r@r.io", api_token: "ATATT-roundtrip" } },
     { name: "jira_align", value: { url: "https://r.jiraalign.com", api_token: "eyJ-roundtrip" } },
