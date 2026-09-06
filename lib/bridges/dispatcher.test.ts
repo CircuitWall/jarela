@@ -69,6 +69,7 @@ function makeMessage(): InboundMessage {
     remote_jid: "chat@jid",
     push_name: "Alice",
     chat_name: "Family",
+    sender_jid: "bob@jid",
     sender_name: "Bob",
     text: "hello",
     attachments: undefined,
@@ -183,6 +184,30 @@ describe("handleInboundMessage silent observer mode", () => {
       type: "group_participants_update",
       subtype: "promote",
     });
+  });
+
+  it("uses explicit sender_jid for user-authored DM replies", async () => {
+    const adapter = makeAdapter();
+    const msg = makeMessage();
+    msg.remote_jid = "contact@jid";
+    msg.chat_name = "Contact";
+    msg.push_name = "Contact";
+    msg.sender_jid = "me@jid";
+    msg.sender_name = "You";
+    msg.participant_jid = null;
+    msg.is_group = false;
+    msg.role = "user";
+
+    await handleInboundMessage(adapter, msg);
+
+    const fmtArg = formatBridgePromptMock.mock.calls[0][0] as {
+      sender_id?: string;
+      sender_name?: string;
+      role?: string;
+    };
+    expect(fmtArg.role).toBe("user");
+    expect(fmtArg.sender_id).toBe("me@jid");
+    expect(fmtArg.sender_name).toBe("You");
   });
 
   it("prioritizes reply-eligible bridge messages as interactive", async () => {

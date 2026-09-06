@@ -359,14 +359,22 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
           ? normalizeUserJid(m.key.participant)
           : null;
         const chat_name = this.chats.get(remote_jid)?.name ?? m.pushName ?? null;
-        const sender_name = participant_jid
-          ? (this.chats.get(participant_jid)?.name ?? m.pushName ?? participant_jid)
-          : (m.pushName ?? chat_name);
+        const sender = resolveWhatsAppSender({
+          fromMe: m.key.fromMe === true,
+          isGroup: is_group,
+          remoteJid: remote_jid,
+          participantJid: participant_jid,
+          selfJid: this.selfJid,
+          pushName: m.pushName ?? null,
+          chatName: chat_name,
+          participantName: participant_jid ? this.chats.get(participant_jid)?.name ?? null : null,
+        });
         const inbound: InboundMessage = {
           remote_jid,
           push_name: m.pushName ?? null,
           chat_name,
-          sender_name,
+          sender_jid: sender.senderJid,
+          sender_name: sender.senderName,
           text,
           attachments: attachments.length ? attachments : undefined,
           message_id: m.key.id ?? null,
@@ -668,6 +676,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       remote_jid,
       push_name: null,
       chat_name: this.chats.get(remote_jid)?.name ?? null,
+      sender_jid: senderJid,
       sender_name: senderName,
       text,
       attachments: undefined,
@@ -1157,6 +1166,35 @@ function pickRoutableJid(primary: string, alt: string | undefined): string {
   if (isRoutable(primary)) return primary;
   if (isRoutable(alt)) return alt!;
   return primary;
+}
+
+export function resolveWhatsAppSender(input: {
+  fromMe: boolean;
+  isGroup: boolean;
+  remoteJid: string;
+  participantJid: string | null;
+  selfJid: string | null;
+  pushName: string | null;
+  chatName: string | null;
+  participantName: string | null;
+}): { senderJid: string; senderName: string } {
+  if (input.fromMe) {
+    return {
+      senderJid: input.selfJid ?? "me",
+      senderName: "You",
+    };
+  }
+  if (input.isGroup) {
+    const senderJid = input.participantJid ?? input.remoteJid;
+    return {
+      senderJid,
+      senderName: input.participantName ?? input.pushName ?? senderJid,
+    };
+  }
+  return {
+    senderJid: input.remoteJid,
+    senderName: input.pushName ?? input.chatName ?? input.remoteJid,
+  };
 }
 
 /**
