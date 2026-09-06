@@ -58,7 +58,7 @@ export async function handleInboundMessage(
     // Role framing (user / counterpart / agent) is shared across every
     // bridge adapter via `formatBridgePrompt` — see lib/bridges/message-role.ts.
     const chatName = msg.chat_name ?? msg.push_name ?? "unknown";
-    const senderJid = msg.participant_jid ?? msg.remote_jid;
+    const senderJid = msg.sender_jid ?? msg.participant_jid ?? msg.remote_jid;
     const senderName = msg.sender_name ?? msg.push_name ?? senderJid;
     const silent = route.silent_mode === 1;
     const willReply = !silent && msg.role === route.respond_to;
