@@ -707,7 +707,7 @@ export const claudeDelegateStatusTool = tool(
 );
 
 registerLangChainPackage({
-  category: "Agent",
+  category: "Other",
   tools: { execute: [claudeDelegateTool, claudeDelegateStatusTool] },
 });
 

@@ -130,6 +130,19 @@ export const INTEGRATIONS = {
       { key: "api_key", label: "API key", placeholder: "sk-… or sk-proj-…", secret: true, required: true },
     ],
   },
+  "openai-codex": {
+    label: "OpenAI Codex (ChatGPT)",
+    category: "infrastructure" as IntegrationCategory,
+    description:
+      "Used by codex_delegate to run the local Codex CLI. Sign in with ChatGPT using `codex login` " +
+      "to use your subscription, or save an OpenAI API key below for trusted automated runs.",
+    fields: [
+      { key: "cli_path", label: "Codex CLI command", placeholder: "codex", secret: false, required: true },
+      { key: "api_key", label: "OpenAI API key (optional)", placeholder: "sk-... or sk-proj-...", secret: true, required: false },
+      { key: "default_model", label: "Default model (optional)", placeholder: "gpt-5.6-codex", secret: false, required: false },
+      { key: "default_timeout_seconds", label: "Timeout seconds (optional)", placeholder: "600", secret: false, required: false },
+    ],
+  },
   deepseek: {
     label: "DeepSeek",
     category: "llm" as IntegrationCategory,

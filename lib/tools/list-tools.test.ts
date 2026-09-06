@@ -148,6 +148,9 @@ describe("list_tools", () => {
       "workflow_progress",
     ]));
     expect(defaults).not.toEqual(expect.arrayContaining([
+      "claude_delegate",
+      "claude_delegate_status",
+      "codex_delegate",
       "terminal_open",
       "terminal_exec",
       "terminal_send",
