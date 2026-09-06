@@ -173,6 +173,23 @@ describe("routeTurnModel", () => {
     });
     expect(result.modelConfigName).toBe("haiku");
   });
+
+  it("does not auto-switch to a model too small for the current context", () => {
+    const result = routeTurnModel({
+      models: [
+        model("cheap-small", "openai", "gpt-4", { context_window_tokens: 8_192 }),
+        model("wide-context", "openai", "gpt-4o", { context_window_tokens: 128_000 }),
+      ],
+      message: "ok continue",
+      allowedTools: ["memory_read"],
+      policy: "cheap",
+      requiredHotContextTokens: 20_000,
+      rateResolver,
+    });
+    expect(result.modelConfigName).toBe("wide-context");
+    expect(result.candidates).toEqual(["wide-context"]);
+    expect(result.reason).toContain("hot_context_tokens=20000");
+  });
 });
 
 describe("route decision helpers", () => {
