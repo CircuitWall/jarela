@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Silent bridge routes listen without treating every message as a reply.**
+  The bridge prompt now frames silent mode as observe-only context gathering:
+  the agent may use allowed non-chat tools or internal state according to its
+  instructions, but it must not draft or send chat text, and should emit
+  `NO_REPLY` unless there is an important internal note for the paired user.
+
 ## [1.39.3] - 2026-09-06
 
 ### Fixed

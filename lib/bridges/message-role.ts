@@ -180,14 +180,16 @@ function roleNote(
   if (silent) {
     // Observer mode overrides the per-role framing: the agent is forbidden
     // from speaking on the chat regardless of who sent the inbound message.
-    // It only reports internally to the paired user.
+    // It may still use the event as context and take non-chat actions that
+    // its normal instructions require.
     if (role === "agent") {
       return "The message below is your own prior output, surfaced again because the bridge adapter could not suppress its echo. Use it only as a record of what you previously said — do not respond to it.";
     }
     return (
-      "Silent / observer mode is enabled for this route. You are standing on the paired user's side and only monitoring the chat — you must NEVER write to the chat, draft a chat reply, or imitate a participant. " +
-      "Report only to the paired user, as a concise internal summary of important events, risks, or user-actionable changes (informational tone, not conversational). " +
-      "If nothing important happened, reply with exactly the single token NO_REPLY and nothing else."
+      "Silent / observer mode is enabled for this route. You are standing on the paired user's side and listening to the chat for context, memory, risk, or tasks that matter to the paired user's instructions. " +
+      "Do not write to the chat, draft a chat reply, imitate a participant, or answer the sender conversationally. " +
+      "Act only through allowed non-chat tools or internal state when your normal instructions require it. " +
+      "Most observed messages need no visible response: if there is no important internal note, risk, or user-actionable item for the paired user inside Jarela, reply with exactly the single token NO_REPLY and nothing else."
     );
   }
   switch (role) {

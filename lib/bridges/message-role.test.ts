@@ -62,6 +62,26 @@ describe("bridge prompt envelope", () => {
     expect(parsed?.body).toContain("changed the group subject");
   });
 
+  it("frames silent mode as listening without a chat reply", () => {
+    const raw = formatBridgePrompt({
+      bridge_id: "b1",
+      chat_id: "dm@jid",
+      chat_name: "Alice",
+      is_group: false,
+      role: "counterpart",
+      sender_id: "alice@jid",
+      sender_name: "Alice",
+      text: "I'll be there at 3.",
+      silent: true,
+    });
+
+    expect(raw).toContain("listening to the chat for context");
+    expect(raw).toContain("Act only through allowed non-chat tools");
+    expect(raw).toContain("Most observed messages need no visible response");
+    expect(raw).toContain("NO_REPLY");
+    expect(raw).not.toContain("Report only to the paired user");
+  });
+
   it("parses envelopes with prose preface before bracket headers", () => {
     const raw = [
       "The paired user themselves sent the message below.",
