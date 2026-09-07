@@ -95,23 +95,28 @@ export function useMessageFilters(agentId?: string | null): UnifiedHookResult<
   const [filters, setFilters] = useState<MessageFilters>(() =>
     agentId ? readCache(agentId) ?? DEFAULTS : DEFAULTS,
   );
+  const filtersRef = useRef(filters);
   // Guard against late-arriving GET responses overwriting a more-recent
   // user toggle. We bump this on every toggle; stale fetches are dropped.
   const seqRef = useRef(0);
 
   // Sync from server when the agent changes.
   useEffect(() => {
+    // Invalidate every prior request before displaying this agent's cached
+    // filters. Without this, an older agent's delayed GET can overwrite the
+    // newly selected Bridge Listener toolbar and make a toggle bounce back.
+    const mySeq = ++seqRef.current;
     if (!agentId) {
       // Agent switched to none — reset to defaults. setState in effect is
       // intentional here: agentId is the external key driving this state.
+      filtersRef.current = DEFAULTS;
       setFilters(DEFAULTS);
       return;
     }
     const cached = readCache(agentId);
-    if (cached) setFilters(cached);
-    else setFilters(DEFAULTS);
-
-    const mySeq = ++seqRef.current;
+    const initial = cached ?? DEFAULTS;
+    filtersRef.current = initial;
+    setFilters(initial);
     let cancelled = false;
 
     (async () => {
@@ -146,6 +151,7 @@ export function useMessageFilters(agentId?: string | null): UnifiedHookResult<
         const body = (await res.json()) as { filters: Partial<MessageFilters> };
         if (cancelled || mySeq !== seqRef.current) return;
         const merged = { ...DEFAULTS, ...body.filters };
+        filtersRef.current = merged;
         setFilters(merged);
         writeCache(agentId, merged);
       } catch {
@@ -160,31 +166,31 @@ export function useMessageFilters(agentId?: string | null): UnifiedHookResult<
 
   const toggle = useCallback(
     (key: MessageFilterKey) => {
-      setFilters((prev) => {
-        const next = { ...prev, [key]: !prev[key] };
-        if (agentId) {
-          writeCache(agentId, next);
-          seqRef.current++;
-          // Fire-and-forget; cache + state already reflect the new value.
-          // If the request fails we keep the optimistic state — next page
-          // load will reconcile from the server.
-          void fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/display-filters`, {
-            method: "PUT",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ filters: { [key]: next[key] } }),
-          }).catch(() => {});
-        }
-        return next;
-      });
+      const next = { ...filtersRef.current, [key]: !filtersRef.current[key] };
+      filtersRef.current = next;
+      setFilters(next);
+      if (!agentId) return;
+      writeCache(agentId, next);
+      seqRef.current++;
+      // Fire-and-forget; cache + state already reflect the new value.
+      // If the request fails we keep the optimistic state — next page
+      // load will reconcile from the server.
+      void fetch(`/api/v1/agents/${encodeURIComponent(agentId)}/display-filters`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filters: { [key]: next[key] } }),
+      }).catch(() => {});
     },
     [agentId],
   );
 
   const reset = useCallback(() => {
     if (!agentId) {
+      filtersRef.current = DEFAULTS;
       setFilters(DEFAULTS);
       return;
     }
+    filtersRef.current = DEFAULTS;
     setFilters(DEFAULTS);
     writeCache(agentId, DEFAULTS);
     seqRef.current++;
