@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.40.0] - 2026-09-07
+
+### Added
+
+- **Jarela agents can delegate coding work to Claude Code and OpenAI Codex.**
+  Delegation uses local CLI authentication and project configuration, keeps
+  Jarela as the only user-facing agent, and shows an inspectable inline
+  transcript of the delegated exchange. Codex supports the local ChatGPT
+  sign-in, configured plugins, skills, MCP servers, trusted profiles, and
+  extra writable directories. See ADR-0071.
+- **Long-term memory is structured, proactive, and tunable.** Agents can save
+  versioned facts with searchable subject/tags, confidence, provenance,
+  observed date, and expiry through `memory_upsert`. Recall uses those fields
+  for semantic retrieval, excludes expired records, and remains compatible
+  with existing free-form notes. The new Memory Organization skill documents
+  consolidation and retrieval practice; the Memory panel offers Important
+  only, Balanced, and Detailed proactive-memory policies. See ADR-0084.
+
 ### Fixed
 
 - **Silent bridge routes listen without treating every message as a reply.**
@@ -14,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the agent may use allowed non-chat tools or internal state according to its
   instructions, but it must not draft or send chat text, and should emit
   `NO_REPLY` unless there is an important internal note for the paired user.
+- **Per-agent chat filters no longer bounce back after switching agents.** A
+  delayed response from a previously selected agent can no longer overwrite
+  the active agent's filter state, including the Bridge Listener's filters.
 
 ## [1.39.3] - 2026-09-06
 
