@@ -26,8 +26,10 @@ describe("built-in skills", () => {
       "jarela-configuration",
       "jarela-integrations",
       "jarela-operations",
+      "memory-organization",
     ]));
     expect(skills.find((s) => s.id === "jarela-integrations")?.source).toBe("builtin");
+    expect(getSkill("memory-organization")?.content).toContain("memory_upsert");
   });
 
   it("reads packaged skill content", () => {

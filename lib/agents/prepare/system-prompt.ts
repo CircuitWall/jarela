@@ -20,6 +20,7 @@ import {
   formatContextBudgetSummary,
 } from "@/lib/agents/context-budget";
 import { getAppName } from "@/lib/env/app-config";
+import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { listSkills } from "@/lib/skills";
 import { getToolStatsMap, listToolFailureSamples, type ToolUsefulnessStats } from "@/lib/stores/tool-stats";
 import type { StreamOptions } from "@/lib/agents/base";
@@ -525,12 +526,19 @@ function buildOutputBudgetContext(budget: ContextBudget): string {
 }
 
 function buildMemoryContext(budget: ContextBudget): string {
+  const policy = getMemoryPolicy();
+  const writeGuidance = policy === "important"
+    ? "Store only explicit preferences, verified facts, durable decisions, constraints, and project context. Do not store inferred details, routine status, contacts, or transient tasks."
+    : policy === "detailed"
+      ? "Store relevant durable details, including recurring workflow context and task state, but never secrets or raw private transcripts. Prefer concise records over duplicates."
+      : "Store explicit preferences, verified facts, durable decisions, constraints, and project context. Store task details only when they will matter across sessions.";
   return [
     "--- Memory & recall ---",
     "You have long-term memory across sessions and a fresh recall pass on every turn.",
     `- Hot conversation history is budgeted by model context size: ${formatContextBudgetSummary(budget)}.`,
     '- A semantic search over all stored memory entries + past chat messages was run against the user\'s turn; matching items appear under "Relevant context" below.',
-    "- Use memory_write proactively when the user shares a fact, preference, or decision worth remembering. Use memory_read / memory_list to recall stored facts on demand.",
+    `- Active memory policy: ${policy}. ${writeGuidance}`,
+    "- Use memory_upsert proactively for structured records. Use namespace='facts', concise tags, confidence='explicit' for user-stated information, observed_at when the information was true, and expires_at for temporary facts. Keep memory_write only for legacy/free-form notes. Use memory_read / memory_list to recall stored facts on demand.",
     "- If you want detail from outside the recent window, the user can scroll up — but for facts you've stored explicitly, prefer recall over guessing.",
   ].join("\n");
 }

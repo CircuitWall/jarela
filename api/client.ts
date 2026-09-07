@@ -615,6 +615,11 @@ export const api = {
   },
 
   memory: {
+    getPolicy: () => request<{ policy: import("./types").MemoryPolicy }>("/memory/policy"),
+    setPolicy: (policy: import("./types").MemoryPolicy) =>
+      request<{ policy: import("./types").MemoryPolicy }>("/memory/policy", {
+        method: "PATCH", body: JSON.stringify({ policy }),
+      }),
     list: (namespace?: string, search?: string, limit = 50) => {
       const p = new URLSearchParams();
       if (namespace) p.set("namespace", namespace);

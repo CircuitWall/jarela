@@ -512,6 +512,8 @@ export interface StreamOptions {
   ui_experience_mode?: "essential" | "full" | "normal" | "advanced";
 }
 
+export type MemoryPolicy = "important" | "balanced" | "detailed";
+
 export interface UserProfile {
   id: string;
   name: string;

@@ -1,7 +1,8 @@
 "use client";
 import { Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MemoryItem } from "@/api/types";
+import { api } from "@/api/client";
+import type { MemoryItem, MemoryPolicy } from "@/api/types";
 import { useMemory } from "@/hooks/useMemory";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
 import { MemoryEditor } from "./MemoryEditor";
@@ -22,8 +23,18 @@ export function MemoryPanel() {
   const search = useDebounce(searchInput, 300);
   const { items, loading, create, update, remove, refresh } = useMemory(nsFilter || undefined, search || undefined);
   const [editing, setEditing] = useState<MemoryItem | null | "new">(null);
+  const [policy, setPolicy] = useState<MemoryPolicy>("balanced");
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("memory", "memory", containerRef);
+
+  useEffect(() => { api.memory.getPolicy().then((result) => setPolicy(result.policy)).catch(() => {}); }, []);
+
+  async function changePolicy(next: MemoryPolicy) {
+    const previous = policy;
+    setPolicy(next);
+    try { setPolicy((await api.memory.setPolicy(next)).policy); }
+    catch { setPolicy(previous); }
+  }
 
   const handleSave = useCallback(async (namespace: string, key: string, value: unknown) => {
     if (editing === "new") await create(namespace, key, value);
@@ -41,6 +52,14 @@ export function MemoryPanel() {
         </button>
       </div>
       <div className="px-4 py-2 space-y-2 border-b border-border">
+        <label className="flex items-center gap-2 text-[11px] text-fg-subtle">
+          <span className="shrink-0">Proactive memory</span>
+          <Select full={false} value={policy} onChange={(event) => void changePolicy(event.target.value as MemoryPolicy)}>
+            <option value="important">Important only</option>
+            <option value="balanced">Balanced</option>
+            <option value="detailed">Detailed</option>
+          </Select>
+        </label>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg-faint pointer-events-none" />
