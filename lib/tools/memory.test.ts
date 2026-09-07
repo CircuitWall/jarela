@@ -12,7 +12,7 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { memoryReadTool, memoryWriteTool, memoryDeleteTool, memoryListTool } =
+const { memoryReadTool, memoryWriteTool, memoryUpsertTool, memoryDeleteTool, memoryListTool } =
   await import("./memory");
 const { putMemory, getMemory, listMemory, deleteMemory } = await import("@/lib/stores/memory");
 
@@ -59,5 +59,40 @@ describe("memoryDeleteTool", () => {
     expect(memoryWriteTool.name).toBe("memory_write");
     expect(memoryListTool.name).toBe("memory_list");
     expect(memoryDeleteTool.name).toBe("memory_delete");
+    expect(memoryUpsertTool.name).toBe("memory_upsert");
+  });
+});
+
+describe("memoryUpsertTool", () => {
+  it("stores a versioned durable fact as a structured JSON record", async () => {
+    const output = await memoryUpsertTool.invoke({
+      namespace: "facts",
+      key: "user-research-preference",
+      record: {
+        version: 1,
+        kind: "preference",
+        subject: "User workflow",
+        content: "Research platform behavior before iterative fixes.",
+        tags: ["workflow", "research"],
+        confidence: "explicit",
+        source: "conversation",
+        observed_at: "2026-09-07T00:00:00.000Z",
+        expires_at: null,
+      },
+    });
+
+    expect(JSON.parse(output as string)).toMatchObject({ ok: true, kind: "preference" });
+    expect(JSON.parse(getMemory("facts", "user-research-preference")!.value)).toMatchObject({
+      version: 1,
+      subject: "User workflow",
+    });
+  });
+
+  it("rejects records without the versioned envelope", async () => {
+    await expect(memoryUpsertTool.invoke({
+      namespace: "facts",
+      key: "bad",
+      record: { content: "missing required structure" },
+    } as never)).rejects.toThrow();
   });
 });

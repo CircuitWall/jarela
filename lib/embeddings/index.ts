@@ -7,6 +7,9 @@ import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
 import { createContentCache } from "@/lib/cache/keyed-cache";
 import { createHash } from "node:crypto";
+import { memoryRecallText } from "@/lib/memory/record";
+import { getMemoryPolicy, type MemoryPolicy } from "@/lib/stores/app-settings";
+import { isStructuredMemoryEligible, parseStructuredMemory } from "@/lib/memory/record";
 
 // Sensitive namespaces (ADR-0005) are never surfaced via recall: their
 // values are encrypted at rest, and credentials should not reach agent
@@ -266,7 +269,7 @@ export interface RecalledMemory {
 // and chat message that has an embedding. Returns top-k by cosine. Falls back
 // to a recent-rows substring scan for entries that don't have an embedding yet
 // (write-then-immediate-query case where the async embed hasn't landed).
-export async function recall(query: string, limit = 5): Promise<RecalledMemory[]> {
+export async function recall(query: string, limit = 5, policy: MemoryPolicy = getMemoryPolicy()): Promise<RecalledMemory[]> {
   const qVec = await embedOne(query);
   const db = getDb();
   const scored: RecalledMemory[] = [];
@@ -288,9 +291,14 @@ export async function recall(query: string, limit = 5): Promise<RecalledMemory[]
     for (const r of memRows) {
       const v = parseEmbedding(r.embedding);
       if (!v) continue;
+      const structured = parseStructuredMemory(r.value);
+      if (structured && !isStructuredMemoryEligible(structured, policy)) continue;
+      if (!structured && policy === "important") continue;
+      const content = memoryRecallText(r.namespace, r.key, r.value);
+      if (content === null) continue;
       scored.push({
         source: "memory", namespace: r.namespace, key: r.key,
-        content: r.value, score: cosine(qVec, v), created_at: r.created_at,
+        content, score: cosine(qVec, v), created_at: r.created_at,
       });
     }
     for (const r of msgRows) {
@@ -319,9 +327,14 @@ export async function recall(query: string, limit = 5): Promise<RecalledMemory[]
     ).all() as Array<{ thread_id: string; role: string; content: string; created_at: string }>;
 
     for (const r of recentMem) {
-      const score = keywordOverlap(tokens, r.value);
+      const structured = parseStructuredMemory(r.value);
+      if (structured && !isStructuredMemoryEligible(structured, policy)) continue;
+      if (!structured && policy === "important") continue;
+      const content = memoryRecallText(r.namespace, r.key, r.value);
+      if (content === null) continue;
+      const score = keywordOverlap(tokens, content);
       if (score > 0) {
-        scored.push({ source: "memory", namespace: r.namespace, key: r.key, content: r.value, score: 0.26 + score * 0.1, created_at: r.created_at });
+        scored.push({ source: "memory", namespace: r.namespace, key: r.key, content, score: 0.26 + score * 0.1, created_at: r.created_at });
       }
     }
     for (const r of recentMsg) {

@@ -8,6 +8,10 @@ const IDLE_TIMEOUT_KEY = "screen_lock_idle_timeout_ms";
 const REDACTION_ENABLED_KEY = "redaction_enabled";
 const AMBIENT_CONTEXT_KEY = "ambient_context_enabled";
 const ARTIFACT_LIFECYCLE_KEY = "artifact_lifecycle";
+const MEMORY_POLICY_KEY = "memory_policy";
+
+export type MemoryPolicy = "important" | "balanced" | "detailed";
+export const DEFAULT_MEMORY_POLICY: MemoryPolicy = "balanced";
 
 export interface ArtifactLifecycleSettings {
   retention_days: number;
@@ -142,6 +146,18 @@ export function setArtifactLifecycleSettings(input: Partial<ArtifactLifecycleSet
   });
   writeJsonSetting(ARTIFACT_LIFECYCLE_KEY, next);
   return next;
+}
+
+export function getMemoryPolicy(): MemoryPolicy {
+  const value = readJsonSetting<unknown>(MEMORY_POLICY_KEY);
+  return value === "important" || value === "detailed" || value === "balanced"
+    ? value
+    : DEFAULT_MEMORY_POLICY;
+}
+
+export function setMemoryPolicy(value: MemoryPolicy): MemoryPolicy {
+  writeJsonSetting(MEMORY_POLICY_KEY, value);
+  return value;
 }
 
 function normalizeArtifactLifecycleSettings(input: Partial<ArtifactLifecycleSettings>): ArtifactLifecycleSettings {

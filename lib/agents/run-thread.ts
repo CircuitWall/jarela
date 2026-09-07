@@ -15,6 +15,7 @@ import { recordToolUsage } from "@/lib/stores/tool-stats";
 import { getAgentConfig, getAgentTierProportions, getAgentTools, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import { startScheduler } from "@/lib/scheduler";
 import { cosine, embedOne, recall, type RecalledMemory } from "@/lib/embeddings";
+import { getMemoryPolicy } from "@/lib/stores/app-settings";
 import { validateAssistantOutput } from "@/lib/agents/output-validator";
 import { getDefaultModelConfig, getModelConfig, getModelParams, listModelConfigs } from "@/lib/stores/model-config";
 import {
@@ -1619,14 +1620,16 @@ async function buildRecallContext(
 ): Promise<string> {
   const ambient = surroundingsQuery.trim();
   if (!query.trim() && !ambient) return "";
+  const memoryPolicy = getMemoryPolicy();
+  const limit = memoryPolicy === "important" ? 4 : memoryPolicy === "detailed" ? 12 : 8;
   let hits: RecalledMemory[];
   let ambientHits: RecalledMemory[] = [];
   try {
     // A second pass keyed on the page the user is on, so notes about a site
     // surface when they return to it without having to name it.
     [hits, ambientHits] = await Promise.all([
-      query.trim() ? recall(query, 6) : Promise.resolve([]),
-      ambient ? recall(ambient, 4) : Promise.resolve([]),
+      query.trim() ? recall(query, limit) : Promise.resolve([]),
+      ambient ? recall(ambient, Math.min(4, limit)) : Promise.resolve([]),
     ]);
   } catch {
     return "";

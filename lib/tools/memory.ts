@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
+import { StructuredMemoryRecordSchema } from "@/lib/memory/record";
 import { registerLangChainPackage } from "./langchain-package";
 
 export const memoryReadTool = tool(
@@ -32,6 +33,23 @@ export const memoryWriteTool = tool(
       namespace: z.string().describe("Memory namespace (e.g. 'user', 'facts', 'tasks')"),
       key: z.string().describe("Key within the namespace"),
       value: z.string().describe("Value to store (serialize objects to JSON before passing)"),
+    }),
+  },
+);
+
+export const memoryUpsertTool = tool(
+  async ({ namespace, key, record }) => {
+    const saved = putMemory(namespace, key, record);
+    return JSON.stringify({ ok: true, namespace: saved.namespace, key: saved.key, version: record.version, kind: record.kind });
+  },
+  {
+    name: "memory_upsert",
+    description:
+      "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts.",
+    schema: z.object({
+      namespace: z.string().describe("Memory namespace. Use 'facts' for proactively recalled durable knowledge."),
+      key: z.string().describe("Stable, descriptive key such as 'user-research-preference' or 'project-auth-decision'."),
+      record: StructuredMemoryRecordSchema.describe("Versioned memory envelope with subject, content, tags, confidence, source, and optional expiry."),
     }),
   },
 );
@@ -84,6 +102,6 @@ registerLangChainPackage({
   category: "Memory",
   tools: {
     read: [memoryReadTool, memoryListTool],
-    write: [memoryWriteTool, memoryDeleteTool],
+    write: [memoryWriteTool, memoryUpsertTool, memoryDeleteTool],
   },
 });

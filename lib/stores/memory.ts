@@ -2,6 +2,7 @@ import { getDb } from "@/lib/db";
 import { embedOne } from "@/lib/embeddings";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
+import { memorySearchText } from "@/lib/memory/record";
 
 const now = () => new Date().toISOString();
 
@@ -69,8 +70,9 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
   getDb()
     .prepare("INSERT OR REPLACE INTO memory_store (namespace,key,value,created_at,updated_at,embedding) VALUES (?,?,?,?,?,NULL)")
     .run(namespace, key, stored, created_at, t);
-  // Embed the value text (not the JSON wrapping) so recall matches the semantic content.
-  const text = typeof value === "string" ? value : json;
+  // Structured records embed their subject, tags, and content rather than
+  // JSON syntax, improving semantic recall while legacy values stay intact.
+  const text = memorySearchText(namespace, key, value);
   asyncEmbed(`${namespace}/${key}: ${text}`, (vec) => {
     getDb()
       .prepare("UPDATE memory_store SET embedding=? WHERE namespace=? AND key=?")
