@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-09-07
+
+### Added
+
+- **Structured memory records now carry a recall summary, search aliases, and
+  a soft-delete status.** `memory_upsert` accepts optional `summary` and
+  `aliases` fields to improve search recall, and `status="archived"` retires
+  a record from recall without deleting it. Every update snapshots the prior
+  record into a capped, dated `history` so revisions are never lost. Existing
+  records are upgraded automatically the first time they are read; no
+  database migration is required. See ADR-0084.
+
 ## [1.40.0] - 2026-09-07
 
 ### Added
