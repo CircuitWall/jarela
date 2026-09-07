@@ -64,12 +64,11 @@ describe("memoryDeleteTool", () => {
 });
 
 describe("memoryUpsertTool", () => {
-  it("stores a versioned durable fact as a structured JSON record", async () => {
+  it("stores a durable fact as a structured JSON record at the current schema version", async () => {
     const output = await memoryUpsertTool.invoke({
       namespace: "facts",
       key: "user-research-preference",
       record: {
-        version: 1,
         kind: "preference",
         subject: "User workflow",
         content: "Research platform behavior before iterative fixes.",
@@ -83,12 +82,77 @@ describe("memoryUpsertTool", () => {
 
     expect(JSON.parse(output as string)).toMatchObject({ ok: true, kind: "preference" });
     expect(JSON.parse(getMemory("facts", "user-research-preference")!.value)).toMatchObject({
-      version: 1,
+      version: 2,
       subject: "User workflow",
+      status: "active",
+      aliases: [],
+      summary: null,
     });
   });
 
-  it("rejects records without the versioned envelope", async () => {
+  it("keeps a dated revision history for structured memory updates", async () => {
+    const firstRecord = {
+      kind: "fact" as const,
+      subject: "Build policy",
+      content: "Use the local default toolchain for this repo.",
+      tags: ["build", "toolchain"],
+      confidence: "explicit" as const,
+      source: "conversation" as const,
+      observed_at: "2026-09-07T00:00:00.000Z",
+      expires_at: null,
+    };
+
+    await memoryUpsertTool.invoke({
+      namespace: "facts",
+      key: "build-policy",
+      record: firstRecord,
+    });
+
+    const firstPersisted = JSON.parse(getMemory("facts", "build-policy")!.value);
+    expect(firstPersisted.history).toEqual([]);
+
+    await memoryUpsertTool.invoke({
+      namespace: "facts",
+      key: "build-policy",
+      record: {
+        ...firstRecord,
+        content: "Use the local default toolchain for this repo, and prefer the repo's make task wrappers.",
+        tags: ["build", "toolchain", "workflow"],
+        observed_at: "2026-09-08T00:00:00.000Z",
+      },
+    });
+
+    const updatedPersisted = JSON.parse(getMemory("facts", "build-policy")!.value);
+    expect(updatedPersisted.history).toHaveLength(1);
+    expect(updatedPersisted.history[0].updated_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(updatedPersisted.history[0].record.content).toBe(firstRecord.content);
+    expect(updatedPersisted.history[0].record).not.toHaveProperty("history");
+    expect(updatedPersisted.content).toContain("prefer the repo's make task wrappers");
+  });
+
+  it("lazily upgrades a legacy v1 row and writes the migration back on read", async () => {
+    putMemory("facts", "legacy-fact", {
+      version: 1,
+      kind: "fact",
+      subject: "Legacy fact",
+      content: "Stored before the v2 schema shipped.",
+      tags: ["legacy"],
+      confidence: "verified",
+      source: "tool_result",
+      observed_at: null,
+      expires_at: null,
+    });
+
+    const migrated = JSON.parse(getMemory("facts", "legacy-fact")!.value);
+    expect(migrated).toMatchObject({ version: 2, status: "active", aliases: [], summary: null });
+
+    // Re-reading the raw row directly proves the upgrade was persisted,
+    // not just returned in-memory by parseStructuredMemory.
+    const rawRows = listMemory("facts", "legacy-fact", 1);
+    expect(JSON.parse(rawRows[0].value).version).toBe(2);
+  });
+
+  it("rejects records without the required structured fields", async () => {
     await expect(memoryUpsertTool.invoke({
       namespace: "facts",
       key: "bad",
