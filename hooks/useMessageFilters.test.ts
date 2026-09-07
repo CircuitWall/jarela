@@ -31,4 +31,24 @@ describe("useMessageFilters contract", () => {
       expect.objectContaining({ method: "PUT" }),
     );
   });
+
+  it("ignores a delayed prior-agent response after switching to Bridge Listener", async () => {
+    let resolveFirst!: (value: { ok: boolean; json: () => Promise<unknown> }) => void;
+    fetchMock
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ filters: { bridge: false } }) });
+
+    const { result, rerender } = renderHook(({ agentId }) => useMessageFilters(agentId), {
+      initialProps: { agentId: "agent-old" },
+    });
+    rerender({ agentId: "listener-a1bv" });
+
+    await act(async () => {});
+    expect(result.current.filters.bridge).toBe(false);
+
+    await act(async () => {
+      resolveFirst({ ok: true, json: async () => ({ filters: { bridge: true } }) });
+    });
+    expect(result.current.filters.bridge).toBe(false);
+  });
 });
