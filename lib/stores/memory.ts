@@ -2,7 +2,11 @@ import { getDb } from "@/lib/db";
 import { embedOne } from "@/lib/embeddings";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
-import { memorySearchText } from "@/lib/memory/record";
+import { isLegacyStructuredMemoryRaw, memorySearchText, parseStructuredMemory, type StructuredMemoryRecord } from "@/lib/memory/record";
+
+// Older writes' history entries won't grow past this before the oldest
+// snapshot is dropped, so a long-lived key can't bloat the row forever.
+const MAX_MEMORY_HISTORY_ENTRIES = 20;
 
 const now = () => new Date().toISOString();
 
@@ -43,13 +47,41 @@ export function listMemory(namespace?: string, search?: string, limit = 50): Mem
   // sensitive set, every row's value is plaintext anyway — skip the
   // per-row decryptRow allocation. The unfiltered case still has to
   // check each row since namespaces vary.
-  if (namespace && !isSensitiveMemoryNamespace(namespace)) return rows;
-  return rows.map(decryptRow);
+  const decrypted = namespace && !isSensitiveMemoryNamespace(namespace) ? rows : rows.map(decryptRow);
+  return decrypted.map(migrateRowIfNeeded);
 }
 
 export function getMemory(namespace: string, key: string): MemoryRow | null {
   const row = (getDb().prepare(MEM_COLS_SQL + " WHERE namespace=? AND key=?").get(namespace, key) as unknown as MemoryRow) ?? null;
-  return row ? decryptRow(row) : null;
+  return row ? migrateRowIfNeeded(decryptRow(row)) : null;
+}
+
+// Lazy schema migration: a legacy v1 row is upgraded to the current
+// structured schema the first time it's read, and the upgrade is written
+// straight back so later reads (and search text) hit the current shape.
+// Rows that aren't structured memory at all, or are already current, pass
+// through untouched — no startup batch job, no DB migration.
+function migrateRowIfNeeded(row: MemoryRow): MemoryRow {
+  let raw: unknown;
+  try { raw = JSON.parse(row.value); } catch { return row; }
+  if (!isLegacyStructuredMemoryRaw(raw)) return row;
+  const upgraded = parseStructuredMemory(row.value);
+  if (!upgraded) return row;
+  const json = JSON.stringify(upgraded);
+  const stored = isSensitiveMemoryNamespace(row.namespace) ? encrypt(json) : json;
+  getDb().prepare("UPDATE memory_store SET value=? WHERE namespace=? AND key=?").run(stored, row.namespace, row.key);
+  return { ...row, value: json };
+}
+
+function normalizeStructuredMemoryValue(value: unknown, previous: StructuredMemoryRecord | null, updatedAt: string): unknown {
+  const next = parseStructuredMemory(value);
+  if (!next) return value;
+  if (!previous) return { ...next, history: [] };
+  // Snapshot only the previous record's own fields — never its `history`
+  // — so revisions can't nest inside one another and the row stays flat.
+  const { history: previousHistory, ...previousSnapshot } = previous;
+  const history = [...previousHistory, { updated_at: updatedAt, record: previousSnapshot }].slice(-MAX_MEMORY_HISTORY_ENTRIES);
+  return { ...next, history };
 }
 
 export function putMemory(namespace: string, key: string, value: unknown): MemoryRow {
@@ -58,10 +90,13 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
   // upsert; reading the full row would force an unnecessary AES-GCM
   // decrypt of an existing sensitive value just to discard it.
   const existing = getDb()
-    .prepare("SELECT created_at FROM memory_store WHERE namespace=? AND key=?")
-    .get(namespace, key) as { created_at?: string } | undefined;
+    .prepare("SELECT created_at, value FROM memory_store WHERE namespace=? AND key=?")
+    .get(namespace, key) as { created_at?: string; value?: string } | undefined;
   const created_at = existing?.created_at ?? t;
-  const json = JSON.stringify(value);
+
+  const previous = existing?.value ? parseStructuredMemory(existing.value) : null;
+  const normalizedValue = normalizeStructuredMemoryValue(value, previous, t);
+  const json = JSON.stringify(normalizedValue);
   // Encrypt the value column at rest for sensitive namespaces (ADR-0005).
   // Embeddings (below) keep using the plaintext text so semantic recall
   // still works for non-sensitive namespaces; sensitive namespaces are
@@ -72,7 +107,7 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
     .run(namespace, key, stored, created_at, t);
   // Structured records embed their subject, tags, and content rather than
   // JSON syntax, improving semantic recall while legacy values stay intact.
-  const text = memorySearchText(namespace, key, value);
+  const text = memorySearchText(namespace, key, normalizedValue);
   asyncEmbed(`${namespace}/${key}: ${text}`, (vec) => {
     getDb()
       .prepare("UPDATE memory_store SET embedding=? WHERE namespace=? AND key=?")

@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
-import { StructuredMemoryRecordSchema } from "@/lib/memory/record";
+import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
 import { registerLangChainPackage } from "./langchain-package";
 
 export const memoryReadTool = tool(
@@ -39,17 +39,17 @@ export const memoryWriteTool = tool(
 
 export const memoryUpsertTool = tool(
   async ({ namespace, key, record }) => {
-    const saved = putMemory(namespace, key, record);
-    return JSON.stringify({ ok: true, namespace: saved.namespace, key: saved.key, version: record.version, kind: record.kind });
+    const saved = putMemory(namespace, key, { version: CURRENT_STRUCTURED_MEMORY_VERSION, ...record });
+    return JSON.stringify({ ok: true, namespace: saved.namespace, key: saved.key, kind: record.kind });
   },
   {
     name: "memory_upsert",
     description:
-      "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts.",
+      "Store a durable, structured memory record for proactive semantic recall. Use namespace='facts' for information that should surface in future conversations. Store explicit user preferences, verified facts, decisions, constraints, and reusable project context; do not store transient chat details or secrets. Use an expiry for temporary facts, and status='archived' to soft-retire a record instead of deleting it.",
     schema: z.object({
       namespace: z.string().describe("Memory namespace. Use 'facts' for proactively recalled durable knowledge."),
       key: z.string().describe("Stable, descriptive key such as 'user-research-preference' or 'project-auth-decision'."),
-      record: StructuredMemoryRecordSchema.describe("Versioned memory envelope with subject, content, tags, confidence, source, and optional expiry."),
+      record: StructuredMemoryInputSchema.describe("Memory fields: subject, content, tags, confidence, source, optional summary/aliases/expiry, and status."),
     }),
   },
 );

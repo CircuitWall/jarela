@@ -6,11 +6,11 @@ context, clean up accumulated memory, or tune how proactively Jarela remembers.
 ## Standard Record
 
 Use `memory_upsert` for durable knowledge. Store it under namespace `facts`
-with a stable, descriptive key. Every record follows this shape:
+with a stable, descriptive key. Every record follows this shape (the tool
+assigns the schema version and manages revision `history` for you):
 
 ```json
 {
-  "version": 1,
   "kind": "preference | fact | decision | constraint | project_context | contact | task",
   "subject": "short entity or topic name",
   "content": "concise standalone statement",
@@ -18,15 +18,24 @@ with a stable, descriptive key. Every record follows this shape:
   "confidence": "explicit | inferred | verified",
   "source": "conversation | tool_result | user_profile | import",
   "observed_at": "RFC 3339 timestamp or null",
-  "expires_at": "RFC 3339 timestamp or null"
+  "expires_at": "RFC 3339 timestamp or null",
+  "summary": "optional short recall line, or null",
+  "aliases": ["optional alternate names for search"],
+  "status": "active | archived"
 }
 ```
 
 Use `confidence="explicit"` for user-stated preferences, `verified` for tool
 or source-backed facts, and `inferred` only when the inference is useful and
 clearly reversible. Set `observed_at` when the fact became true; set
-`expires_at` for temporary status, deadlines, or access details. Never store
-secrets, access tokens, passwords, or raw private transcripts.
+`expires_at` for temporary status, deadlines, or access details. Set
+`status="archived"` to retire a record from recall without deleting its
+history. Never store secrets, access tokens, passwords, or raw private
+transcripts.
+
+Every update to an existing key keeps a dated snapshot of the prior record in
+its `history`, and older free-form or v1 entries are upgraded to the current
+schema automatically the first time they're read — no manual migration step.
 
 ## Retrieval And Consolidation
 
@@ -36,7 +45,8 @@ secrets, access tokens, passwords, or raw private transcripts.
 2. Before adding a record, inspect matching `facts` entries. Update the stable
    key instead of creating duplicates or contradictory copies.
 3. When memories overlap, keep the newest verified or explicit record; merge
-   non-conflicting tags and remove superseded entries with `memory_delete`.
+   non-conflicting tags. Set `status="archived"` on a superseded record if its
+   history is still worth keeping, or `memory_delete` it if not.
 4. Keep `content` independently understandable. Put searchable nouns in
    `subject` and `tags`, not only in prose.
 5. Do not turn every chat message into memory. Store information only when it
