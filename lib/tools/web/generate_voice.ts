@@ -12,7 +12,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { withStreamDefault } from "../tool-metadata";
+import { withStreamDefault } from "../support/tool-metadata";
 import { writeBinaryFile } from "@/lib/files";
 import { geminiTts, resolveGoogleApiKey } from "@/lib/voice/gemini";
 import { getThread } from "@/lib/stores/threads";

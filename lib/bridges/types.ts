@@ -11,7 +11,7 @@
  * a second channel doesn't require touching `dispatcher.ts` or `runtime.ts`.
  */
 
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { MessageRole } from "./message-role";
 
 export type BridgeStatus = "disconnected" | "pairing" | "connected" | "error";

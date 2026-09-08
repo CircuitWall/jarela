@@ -27,7 +27,7 @@ import { recall } from "@/lib/embeddings";
 import { listRecentMaterialAutomationActivities } from "@/lib/stores/automation-activity";
 import { getProvider } from "@/lib/providers";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 
 export interface ResolvedHistoryWindow {
   history: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>;

@@ -23,7 +23,7 @@ import {
 } from "@/lib/api/browser-control";
 import { writeBinaryFile, writeTextFile } from "@/lib/files";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { withStreamDefault } from "../tool-metadata";
+import { withStreamDefault } from "../support/tool-metadata";
 
 const TimeoutMs = z
   .number()

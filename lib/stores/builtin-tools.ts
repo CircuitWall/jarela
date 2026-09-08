@@ -10,7 +10,7 @@
 //   - executeTool (defense in depth, blocks stale agent configs)
 
 import { getDb } from "@/lib/db";
-import type { BuiltinCategory } from "@/lib/tools/registry";
+import type { BuiltinCategory } from "@/lib/tools/runtime/registry";
 
 interface Row {
   category: string;

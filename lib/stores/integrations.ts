@@ -26,7 +26,7 @@ import {
   updateCredential,
 } from "@/lib/stores/credentials";
 import { getIntegrationMeta, markFieldsAsUserTouched } from "@/lib/stores/integration_meta";
-import { getCurrentToolCredentialContext } from "@/lib/tools/credential-context";
+import { getCurrentToolCredentialContext } from "@/lib/tools/security/credential-context";
 
 export const SECRET_MASK = "********";
 const LEGACY_NAMESPACE = "integrations";

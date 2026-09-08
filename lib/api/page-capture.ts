@@ -13,7 +13,7 @@ import {
 } from "@/lib/stores/agent-configs";
 import { publish } from "@/lib/notifications/bus";
 import { runAgentTurn } from "@/lib/agents/agent-turn";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { spillImagePart } from "@/lib/attachments/spill";
 import { errorMessage } from "@/lib/utils/error";
 

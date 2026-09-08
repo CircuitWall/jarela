@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { createWatcher, listWatchers, type WatcherRow } from "@/lib/stores/watchers";
-import { registeredTools } from "@/lib/tools/registry";
+import { registeredTools } from "@/lib/tools/runtime/registry";
 import { startScheduler } from "@/lib/scheduler";
 import { createdResponse, errorResponse, validateBody } from "@/lib/api/responses";
 import { errorMessage } from "@/lib/utils/error";

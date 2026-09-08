@@ -24,7 +24,7 @@ import {
   clearWorkspace,
   type ToolConfig,
 } from "./workspace-context";
-import { probeGit, type GitProbe } from "../git-probe";
+import { probeGit, type GitProbe } from "../support/git-probe";
 
 // Probe budget. Keep generous enough for slow filesystems but short
 // enough that the agent isn't blocked for tens of seconds on a stalled

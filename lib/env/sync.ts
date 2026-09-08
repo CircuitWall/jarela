@@ -36,7 +36,7 @@ import {
 } from "@/lib/stores/integrations";
 import { getIntegrationMeta, setFieldSources, type FieldSource } from "@/lib/stores/integration_meta";
 import { putMemory } from "@/lib/stores/memory";
-import { setFullShellEnv } from "@/lib/tools/subprocess-env";
+import { setFullShellEnv } from "@/lib/tools/security/subprocess-env";
 
 const INTEGRATIONS_NS = "integrations";
 

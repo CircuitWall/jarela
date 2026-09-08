@@ -23,7 +23,7 @@ const {
   SECRET_MASK,
 } = await import("./integrations");
 const { createCredential, listCredentials, setDefaultCredential } = await import("./credentials");
-const { runWithToolCredentialContext } = await import("@/lib/tools/credential-context");
+const { runWithToolCredentialContext } = await import("@/lib/tools/security/credential-context");
 
 function wipeAll(): void {
   const db = getDb();

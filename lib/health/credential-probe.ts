@@ -17,7 +17,7 @@
 // separate change (ADR-0070 tracks the delta).
 
 import { isIntegrationProbe, runProbe, type HealthResult } from "./probes";
-import { runWithToolCredentialContext } from "@/lib/tools/credential-context";
+import { runWithToolCredentialContext } from "@/lib/tools/security/credential-context";
 
 // Same synthetic tool name that the /api/v1/integrations/[name]/test
 // route uses — the credential-context lookup keys off this string.

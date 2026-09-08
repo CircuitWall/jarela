@@ -34,7 +34,7 @@ import {
   removeBridgeAuthDir,
 } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundEvent, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { saveBridgeAttachment, shouldInline } from "./attachment-store";
 import { errorMessage } from "@/lib/utils/error";
 

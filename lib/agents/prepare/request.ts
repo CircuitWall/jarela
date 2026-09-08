@@ -1,4 +1,4 @@
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { TurnContextProfile } from "@/lib/agents/turn-profile";
 

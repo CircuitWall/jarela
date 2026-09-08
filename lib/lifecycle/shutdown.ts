@@ -135,7 +135,7 @@ async function runShutdown(): Promise<void> {
   // 4b. Stop the async-tool-results sweeper. Holds a setInterval that
   //     would otherwise keep the event loop alive past closeDb().
   try {
-    const { stopAsyncResults } = await import("@/lib/tools/async-results");
+    const { stopAsyncResults } = await import("@/lib/tools/support/async-results");
     stopAsyncResults();
   } catch (err) {
     console.error("[jarela] stopping async-results sweeper failed:", err);

@@ -161,7 +161,7 @@ describe("graphPaged @odata.nextLink follow", () => {
 
 async function loadTools() {
   await import("./ms-graph");
-  const { registeredTools } = await import("../registry");
+  const { registeredTools } = await import("../runtime/registry");
   const all = registeredTools();
   const byName = new Map(all.map((t) => [t.name, t] as const));
   const get = byName.get("ms_graph_get");

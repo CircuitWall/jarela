@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { resolveProviderApiKey } from "./credentials";
 import type {
   ModelProvider,

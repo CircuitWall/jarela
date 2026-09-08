@@ -11,7 +11,7 @@
  * CONTRIBUTING.md.
  */
 
-import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
+import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/runtime/types";
 export type { InvokeMessage, InvokeResult, OpenAITool };
 
 export interface ProviderMessage {

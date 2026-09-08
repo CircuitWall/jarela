@@ -14,8 +14,8 @@ import {
   toOpenAITools,
   type ToolSource,
 } from "../index";
-import type { ToolParamSchema } from "../types";
-import type { Capability, ToolCategory } from "../registry";
+import type { ToolParamSchema } from "../runtime/types";
+import type { Capability, ToolCategory } from "../runtime/registry";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { getConfig } from "@/lib/env/config";
 import { getAgentConfig, getAgentTools } from "@/lib/stores/agent-configs";

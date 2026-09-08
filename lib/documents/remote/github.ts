@@ -14,7 +14,7 @@
 // under the shared `on_demand_url` source row.
 
 import { githubFetch, type GitHubAuth } from "@circuitwall/github-langchain";
-import { resolvePackageAuth } from "@/lib/tools/auth-registry";
+import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,

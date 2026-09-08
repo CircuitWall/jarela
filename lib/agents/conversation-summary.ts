@@ -1,4 +1,4 @@
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { ModelProvider, ProviderMessage, ProviderParams } from "@/lib/providers/types";
 
 export function transcriptText(raw: string): string {

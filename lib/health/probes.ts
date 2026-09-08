@@ -9,7 +9,7 @@
 // (myself / labels.list / models?pageSize=1 / etc) so it can be polled
 // every few minutes without burning quota.
 
-import { resolvePackageAuth } from "@/lib/tools/auth-registry";
+import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import { spawnSync } from "node:child_process";
 import type { AtlassianAuth } from "@circuitwall/atlassian-langchain";
 import type { GitHubAuth } from "@circuitwall/github-langchain";

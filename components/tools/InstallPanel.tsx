@@ -9,7 +9,7 @@ import type {
   LangChainCatalogEntry,
   LangChainPackageInstallResponse,
 } from "@/api/types";
-import type { BuiltinCategory } from "@/lib/tools/registry";
+import type { BuiltinCategory } from "@/lib/tools/runtime/registry";
 
 // Kept as a local literal (not imported from `lib/tools/registry`) so this
 // client component doesn't pull the server-only tool registry into the

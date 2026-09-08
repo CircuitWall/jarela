@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import type { StreamOptions, StreamChunk } from "@/lib/agents/base";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import {
   prepareThreadRun,
   persistAssistantMessage,
@@ -31,7 +31,7 @@ import { resolveTurnProfile } from "@/lib/agents/turn-profile";
 import type { RouteDecisionMetadata } from "@/api/types";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";
 import { getConfig } from "@/lib/env/config";
-import { parseToolResultReferenceEnvelope } from "@/lib/tools/result-refs";
+import { parseToolResultReferenceEnvelope } from "@/lib/tools/support/result-refs";
 
 type Params = { params: Promise<{ thread_id: string }> };
 

@@ -16,7 +16,7 @@ import { extname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { FILES_DIR, isSafeFileName } from "@/lib/files";
 import { shrinkImage, type ShrinkOpts } from "@/lib/attachments/shrink";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 
 const MIME_EXT: Record<string, string> = {
   "image/png": "png",

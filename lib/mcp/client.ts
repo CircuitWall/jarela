@@ -7,7 +7,7 @@ import {
   type McpStdioSpec,
 } from "@/lib/stores/mcp-servers";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
-import { getFullShellEnv } from "@/lib/tools/subprocess-env";
+import { getFullShellEnv } from "@/lib/tools/security/subprocess-env";
 import { errorMessage } from "@/lib/utils/error";
 
 // Singleton MCP client manager. Connects to enabled servers on first access,

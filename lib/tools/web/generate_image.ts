@@ -16,7 +16,7 @@ import { writeBinaryFile } from "@/lib/files";
 import { getConfig } from "@/lib/env/config";
 import { resolveGoogleApiKey, timeoutSignal } from "@/lib/utils/google-api";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { withStreamDefault } from "../tool-metadata";
+import { withStreamDefault } from "../support/tool-metadata";
 
 const DEFAULT_MODEL = "gemini-2.5-flash-image";
 const ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models";

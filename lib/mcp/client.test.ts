@@ -6,7 +6,7 @@ vi.mock("@/lib/env/allowlist", () => ({
   getInjectedSubprocessEnv: vi.fn(() => ({})),
 }));
 
-vi.mock("@/lib/tools/subprocess-env", () => ({
+vi.mock("@/lib/tools/security/subprocess-env", () => ({
   getFullShellEnv: vi.fn(() => ({})),
 }));
 
@@ -34,7 +34,7 @@ vi.mock("@langchain/mcp-adapters", () => ({
 
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { listMcpServers } from "@/lib/stores/mcp-servers";
-import { getFullShellEnv } from "@/lib/tools/subprocess-env";
+import { getFullShellEnv } from "@/lib/tools/security/subprocess-env";
 
 const mockedGetInjected = vi.mocked(getInjectedSubprocessEnv);
 const mockedGetFullShellEnv = vi.mocked(getFullShellEnv);

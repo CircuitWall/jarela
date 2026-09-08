@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
-import { isBasicToolCategory } from "@/lib/tools/categories";
+import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
 import { useAgentExternalData } from "./useAgentExternalData";
 import { useAgentToolHandlers } from "./useAgentToolHandlers";

@@ -65,9 +65,9 @@ import {
   registerLangChainPackage,
   type RegisteredPackage,
 } from "./langchain-package";
-import { setPackageAuthResolver } from "../auth-registry";
+import { setPackageAuthResolver } from "../runtime/auth-registry";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
-import type { BuiltinCategory } from "../registry";
+import type { BuiltinCategory } from "../runtime/registry";
 
 export interface DefaultPackageDescriptor {
   /** Stable id used in the disable store and API surface. */

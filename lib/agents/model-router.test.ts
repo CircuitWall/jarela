@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ModelConfig } from "@/api/types";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { applyClassRatchet, classifyTurn, finalizeRouteDecision, nextPolicyForRetry, routeTurnModel } from "./model-router";
 
 function model(

@@ -2,8 +2,8 @@
 // The implementation is grouped under ./core to keep this compatibility
 // facade stable for existing imports.
 
-export * from "./types";
-export { getToolsDir, type ExtensionLoadError } from "./external";
+export * from "./runtime/types";
+export { getToolsDir, type ExtensionLoadError } from "./runtime/external";
 export {
   loadLangChainPackages,
   reloadLangChainPackages,
@@ -17,5 +17,5 @@ export {
   type Capability,
   type ToolCategory,
   type ToolGroup,
-} from "./registry";
+} from "./runtime/registry";
 export * from "./core";

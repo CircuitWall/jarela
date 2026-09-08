@@ -1,0 +1,653 @@
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+
+const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-claude-delegate-"));
+process.env.HOME = tmpRoot;
+process.env.USERPROFILE = tmpRoot;
+process.env.JARELA_DB_DIR = join(tmpRoot, ".jarela-dbdir");
+delete process.env.JARELA_ALLOW_SENSITIVE_FILES;
+
+afterAll(() => {
+  try { rmSync(tmpRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+});
+
+// Fake `claude` CLI child process: records every spawn call whose bin is
+// literally "claude" and, on the next microtask, emits the scripted
+// stream-json lines from `state.script` followed by a `close` event with
+// `state.exitCode`. Real `claude` spawns cost money and hit the network —
+// this is the injection seam instead (per ADR-0071's documented
+// test-convention deviation).
+//
+// This same `spawn` is also what `lib/env/sync.ts`'s one-time
+// `runEnvSyncOnce()` bootstrap uses (a `/bin/zsh -ic ...` probe, fired the
+// first time `getDb()` initializes) — non-"claude" calls are let through
+// with an immediate harmless close so that bootstrap doesn't hang, but are
+// NOT recorded in `state.calls`/`state.killSpies`, which stay claude-only.
+interface FakeChild extends EventEmitter {
+  stdout: EventEmitter;
+  stderr: EventEmitter;
+  kill: (signal?: string) => void;
+}
+const state = vi.hoisted(() => ({
+  calls: [] as Array<{ bin: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv }>,
+  killSpies: [] as Array<(signal?: string) => void>,
+  children: [] as unknown[],
+  script: [] as string[],
+  exitCode: 0 as number | null,
+  autoClose: true,
+}));
+
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.GIT_DIR;
+  delete env.GIT_WORK_TREE;
+  delete env.GIT_INDEX_FILE;
+  return env;
+}
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  const spawnFn = vi.fn((bin: string, args: string[], opts: { cwd: string; env: NodeJS.ProcessEnv }) => {
+    const isClaude = bin === "claude" || /(?:^|\/)claude$/.test(bin);
+    const child = new EventEmitter() as FakeChild;
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    const kill = vi.fn();
+    child.kill = kill;
+    if (isClaude) {
+      state.calls.push({ bin, args, cwd: opts.cwd, env: opts.env });
+      state.killSpies.push(kill);
+      state.children.push(child);
+    }
+    if (!isClaude || state.autoClose) {
+      queueMicrotask(() => {
+        const lines = isClaude ? state.script : [];
+        for (const line of lines) child.stdout.emit("data", Buffer.from(line + "\n"));
+        child.emit("close", isClaude ? state.exitCode : 0);
+      });
+    }
+    return child;
+  });
+  return { ...actual, spawn: spawnFn };
+});
+
+const { claudeDelegateTool, claudeDelegateStatusTool } = await import("./claude-delegate");
+const { _resetDelegateJobs } = await import("./claude-delegate-jobs");
+const { _resetWorkspaceContext, setWorkspace } = await import("../filesystem/workspace-context");
+const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
+
+function parse(s: string): Record<string, unknown> {
+  return JSON.parse(s) as Record<string, unknown>;
+}
+
+function resultLine(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    type: "result",
+    is_error: false,
+    result: "done",
+    duration_ms: 42,
+    total_cost_usd: 0.01,
+    num_turns: 1,
+    permission_denials: [],
+    ...overrides,
+  });
+}
+
+// Deterministic sync point for "has spawnClaude actually been called yet" —
+// LangChain's own invoke() ceremony (callback manager, tracing) inserts at
+// least one microtask before the underlying tool function runs, so reading
+// state.children immediately after calling .invoke() (without awaiting it)
+// is a race. Poll instead of guessing a delay, mirroring the existing
+// job-settle poll below.
+async function waitForChild(precedingCount: number): Promise<FakeChild> {
+  for (let i = 0; i < 50; i++) {
+    if (state.children.length > precedingCount) return state.children.at(-1) as FakeChild;
+    await new Promise((r) => setTimeout(r, 5));
+  }
+  throw new Error("spawnClaude was never called");
+}
+
+function gitInit(dir: string): void {
+  const env = cleanGitEnv();
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "user.email", "t@e.st"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "user.name", "test"], { cwd: dir, stdio: "ignore", env });
+  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: dir, stdio: "ignore", env });
+}
+
+let projectRoot: string;
+beforeEach(() => {
+  state.calls = [];
+  state.killSpies = [];
+  state.children = [];
+  state.script = [resultLine()];
+  state.exitCode = 0;
+  state.autoClose = true;
+  delete process.env.JARELA_TOOL_SAFETY;
+  delete process.env.JARELA_CLAUDE_BIN;
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.ANTHROPIC_AUTH_TOKEN;
+  delete process.env.ANTHROPIC_BASE_URL;
+  delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_SONNET_MODEL;
+  delete process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL;
+  deleteIntegration("claude-code");
+  _resetDelegateJobs();
+  _resetWorkspaceContext();
+  projectRoot = mkdtempSync(join(tmpRoot, "proj-"));
+});
+
+describe("claude_delegate — safety gate", () => {
+  it("refuses outright under JARELA_TOOL_SAFETY=safe, without spawning", async () => {
+    process.env.JARELA_TOOL_SAFETY = "safe";
+    const out = parse(await claudeDelegateTool.invoke({ task: "do a thing", cwd: projectRoot, sync_memory: false }));
+    expect(out.ok).toBe(false);
+    expect(out.code).toBe("SAFETY_BLOCKED");
+    expect(state.calls).toHaveLength(0);
+  });
+
+  it("forces --permission-mode dontAsk under mostly_safe (the default) without allow_unsafe", async () => {
+    const out = parse(await claudeDelegateTool.invoke({ task: "do a thing", cwd: projectRoot, sync_memory: false }));
+    expect(out.safety_mode).toBe("mostly_safe");
+    expect(out.permission_mode_used).toBe("dontAsk");
+    expect(state.calls[0]!.args).toContain("--permission-mode");
+    expect(state.calls[0]!.args[state.calls[0]!.args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+  });
+
+  it("honours a requested permission_mode when allow_unsafe=true under mostly_safe", async () => {
+    const out = parse(await claudeDelegateTool.invoke({
+      task: "do a thing", cwd: projectRoot, sync_memory: false,
+      allow_unsafe: true, permission_mode: "acceptEdits",
+    }));
+    expect(out.permission_mode_used).toBe("acceptEdits");
+    const args = state.calls[0]!.args;
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+  });
+
+  it("defaults to bypassPermissions when allow_unsafe=true but no permission_mode given", async () => {
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, allow_unsafe: true }));
+    expect(out.permission_mode_used).toBe("bypassPermissions");
+  });
+
+  it("honours the caller's permission_mode as-is under bypass, ignoring allow_unsafe", async () => {
+    process.env.JARELA_TOOL_SAFETY = "bypass";
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, permission_mode: "plan" }));
+    expect(out.safety_mode).toBe("bypass");
+    expect(out.permission_mode_used).toBe("plan");
+  });
+
+  it("surfaces permission_denials and a verify_hint when Claude's writes were denied", async () => {
+    state.script = [resultLine({ permission_denials: [{ tool_name: "Write", tool_input: { file_path: "x" } }] })];
+    const out = parse(await claudeDelegateTool.invoke({ task: "write a file", cwd: projectRoot, sync_memory: false }));
+    expect(out.permission_denials).toHaveLength(1);
+    expect(String(out.verify_hint)).toMatch(/allow_unsafe/);
+  });
+});
+
+describe("claude_delegate — cwd resolution", () => {
+  it("uses the explicit cwd param and passes it as the spawn cwd", async () => {
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
+    expect(state.calls[0]!.cwd).toBe(projectRoot);
+  });
+
+  it("falls back to the active workspace root when cwd is omitted", async () => {
+    setWorkspace({ root: projectRoot, scoped: false, opened_at: Date.now() });
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", sync_memory: false }));
+    expect(state.calls[0]!.cwd).toBe(projectRoot);
+    expect(out.workspace_missing).toBeUndefined();
+  });
+
+  it("uses the thread-scoped workspace root when invoked with LangChain context", async () => {
+    const config = { configurable: { thread_id: "claude-workspace-thread" } };
+    setWorkspace({ root: projectRoot, scoped: true, opened_at: Date.now() }, config);
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", sync_memory: false }, config));
+
+    expect(state.calls[0]!.cwd).toBe(projectRoot);
+    expect((out.launch as Record<string, unknown>).cwd).toBe(projectRoot);
+    expect(out.workspace_missing).toBeUndefined();
+  });
+
+  it("flags workspace_missing when neither cwd nor an active workspace is set", async () => {
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", sync_memory: false }));
+    expect(out.workspace_missing).toBe(true);
+  });
+
+  it("prefers UI-managed Claude Code settings over shell environment values", async () => {
+    saveIntegration("claude-code", {
+      cli_path: "/opt/homebrew/bin/claude",
+      api_key: "sk-ant-ui",
+      auth_token: "auth-ui",
+      base_url: "https://ui.anthropic.example",
+      default_opus_model: "claude-opus-ui",
+      default_sonnet_model: "claude-sonnet-ui",
+      default_haiku_model: "claude-haiku-ui",
+    });
+    process.env.JARELA_CLAUDE_BIN = "/usr/local/bin/claude";
+    process.env.ANTHROPIC_API_KEY = "sk-ant-env";
+    process.env.ANTHROPIC_AUTH_TOKEN = "auth-env";
+    process.env.ANTHROPIC_BASE_URL = "https://env.anthropic.example";
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = "claude-opus-env";
+    process.env.ANTHROPIC_DEFAULT_SONNET_MODEL = "claude-sonnet-env";
+    process.env.ANTHROPIC_DEFAULT_HAIKU_MODEL = "claude-haiku-env";
+
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
+    expect(state.calls[0]!.bin).toBe("/opt/homebrew/bin/claude");
+    expect(state.calls[0]!.env.ANTHROPIC_API_KEY).toBe("sk-ant-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_AUTH_TOKEN).toBe("auth-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_BASE_URL).toBe("https://ui.anthropic.example");
+    expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-opus-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-sonnet-ui");
+    expect(state.calls[0]!.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-haiku-ui");
+  });
+
+  it("does not inject env API key when UI selects auth_token-only mode", async () => {
+    saveIntegration("claude-code", {
+      cli_path: "/opt/homebrew/bin/claude",
+      auth_token: "auth-ui-only",
+    });
+    process.env.ANTHROPIC_API_KEY = "env_api_key_should_not_pass";
+    process.env.ANTHROPIC_AUTH_TOKEN = "auth-env-should-not-pass";
+
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false });
+
+    expect(state.calls[0]!.env.ANTHROPIC_AUTH_TOKEN).toBe("auth-ui-only");
+    expect(state.calls[0]!.env.ANTHROPIC_API_KEY).toBe("");
+  });
+});
+
+describe("claude_delegate — global launch profile", () => {
+  it("inherits omitted startup options from the Claude Code integration profile", async () => {
+    saveIntegration("claude-code", {
+      cli_path: "/opt/homebrew/bin/claude",
+      api_key: "sk-ant-profile",
+      default_model: "opus",
+      default_tools: "Read,Grep",
+      default_add_dirs: "/tmp/alpha, /tmp/beta",
+      default_permission_mode: "acceptEdits",
+      default_allow_unsafe: "true",
+      default_timeout_seconds: "123",
+      default_sync_memory: "false",
+      default_escalate_questions: "false",
+    });
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+    const args = state.calls[0]!.args;
+
+    expect(args[args.indexOf("--model") + 1]).toBe("opus");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Grep");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
+    expect(args).not.toContain("--append-system-prompt");
+    expect(args.filter((arg) => arg === "--add-dir")).toHaveLength(2);
+    expect(args).toContain("/tmp/alpha");
+    expect(args).toContain("/tmp/beta");
+
+    const launch = out.launch as Record<string, unknown>;
+    expect(launch).toMatchObject({
+      cli_path: "/opt/homebrew/bin/claude",
+      cwd: projectRoot,
+      model: "opus",
+      tools: "Read,Grep",
+      allow_unsafe: true,
+      permission_mode_used: "acceptEdits",
+      timeout_seconds: 123,
+      sync_memory: false,
+      escalate_questions: false,
+    });
+    expect(JSON.stringify(out)).not.toContain("sk-ant-profile");
+  });
+
+  it("lets explicit tool inputs override the global launch profile", async () => {
+    saveIntegration("claude-code", {
+      default_model: "opus",
+      default_tools: "Read,Grep",
+      default_permission_mode: "bypassPermissions",
+      default_allow_unsafe: "true",
+      default_sync_memory: "false",
+      default_escalate_questions: "false",
+    });
+
+    const out = parse(await claudeDelegateTool.invoke({
+      task: "x",
+      cwd: projectRoot,
+      model: "sonnet",
+      tools: "Bash",
+      add_dirs: ["/tmp/override"],
+      permission_mode: "plan",
+      allow_unsafe: true,
+      escalate_questions: true,
+      sync_memory: false,
+    }));
+    const args = state.calls[0]!.args;
+
+    expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
+    expect(args[args.indexOf("--tools") + 1]).toBe("Bash");
+    expect(args[args.indexOf("--permission-mode") + 1]).toBe("plan");
+    expect(args).toContain("--append-system-prompt");
+    expect(args).toContain("/tmp/override");
+
+    const launch = out.launch as Record<string, unknown>;
+    expect(launch).toMatchObject({
+      model: "sonnet",
+      tools: "Bash",
+      requested_permission_mode: "plan",
+      permission_mode_used: "plan",
+      sync_memory: false,
+      escalate_questions: true,
+    });
+  });
+
+  it("keeps mostly_safe read-only when the profile does not opt into unsafe execution", async () => {
+    saveIntegration("claude-code", {
+      default_permission_mode: "acceptEdits",
+      default_allow_unsafe: "false",
+      default_sync_memory: "false",
+    });
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+
+    expect(out.permission_mode_used).toBe("dontAsk");
+    expect((out.launch as Record<string, unknown>).requested_permission_mode).toBe("acceptEdits");
+    expect((out.launch as Record<string, unknown>).permission_mode_used).toBe("dontAsk");
+  });
+
+  it("can run in background by default from the global launch profile", async () => {
+    saveIntegration("claude-code", {
+      default_background: "true",
+      default_sync_memory: "false",
+    });
+
+    const started = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+
+    expect(started.status).toBe("running");
+    expect(typeof started.job_id).toBe("string");
+    expect((started.launch as Record<string, unknown>).background).toBe(true);
+    expect(((started.transcript as Record<string, unknown>).launch as Record<string, unknown>).background).toBe(true);
+  });
+});
+
+describe("claude_delegate — session persistence", () => {
+  it("starts a fresh session on the first call, then resumes it on a follow-up", async () => {
+    const first = parse(await claudeDelegateTool.invoke({ task: "start", cwd: projectRoot, sync_memory: false }));
+    expect(first.resumed).toBe(false);
+    const firstArgs = state.calls[0]!.args;
+    expect(firstArgs).toContain("--session-id");
+    expect(firstArgs).not.toContain("--resume");
+    const sessionId = first.session_id as string;
+
+    const second = parse(await claudeDelegateTool.invoke({ task: "continue", cwd: projectRoot, sync_memory: false }));
+    expect(second.resumed).toBe(true);
+    expect(second.session_id).toBe(sessionId);
+    const secondArgs = state.calls[1]!.args;
+    expect(secondArgs[secondArgs.indexOf("--resume") + 1]).toBe(sessionId);
+  });
+
+  it("fresh:true starts a new session even when one already exists", async () => {
+    const first = parse(await claudeDelegateTool.invoke({ task: "start", cwd: projectRoot, sync_memory: false }));
+    const second = parse(await claudeDelegateTool.invoke({ task: "start over", cwd: projectRoot, fresh: true, sync_memory: false }));
+    expect(second.session_id).not.toBe(first.session_id);
+    expect(second.resumed).toBe(false);
+  });
+
+  it("keeps feature-labelled sub-sessions independent from the project default", async () => {
+    const base = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }));
+    const feature = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, feature: "auth-rewrite", sync_memory: false }));
+    expect(feature.project_key).not.toBe(base.project_key);
+    expect(feature.resumed).toBe(false);
+  });
+});
+
+describe("claude_delegate — verify loop (changes)", () => {
+  it("attaches a git diff summary reflecting the real workspace state", async () => {
+    gitInit(projectRoot);
+    writeFileSync(join(projectRoot, "a.txt"), "hello\n");
+    const env = cleanGitEnv();
+    execFileSync("git", ["add", "."], { cwd: projectRoot, stdio: "ignore", env });
+    execFileSync("git", ["commit", "-q", "-m", "init"], { cwd: projectRoot, stdio: "ignore", env });
+    // Simulate Claude having created a new file during its run.
+    writeFileSync(join(projectRoot, "new.txt"), "created by claude\n");
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }));
+    const changes = out.changes as Record<string, unknown>;
+    expect(changes.is_repo).toBe(true);
+    expect(changes.dirty).toBe(true);
+    expect(changes.status_lines).toEqual(["?? new.txt"]);
+  });
+
+  it("reports is_repo=false for a non-git workspace", async () => {
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }));
+    expect((out.changes as Record<string, unknown>).is_repo).toBe(false);
+  });
+});
+
+describe("claude_delegate — memory sync", () => {
+  it("pushes Claude's own memory files into this project's claude-sync namespace by default", async () => {
+    state.script = [resultLine()];
+    // Claude writes a memory file as a side effect of the run — simulated
+    // by dropping the file where syncOut will look for it right after the
+    // (mocked) spawn closes.
+    const { claudeProjectDir } = await import("./claude-memory-bridge");
+    const dir = claudeProjectDir(projectRoot);
+    const { mkdirSync } = await import("node:fs");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "learned.md"),
+      "---\nname: learned\ndescription: something learned\nmetadata:\n  type: feedback\n---\n\nAlways branch off main.\n",
+    );
+
+    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
+    const sync = out.sync as { namespace: string; out?: { pushed: string[] } };
+    expect(sync.namespace).toMatch(/^claude-sync:/);
+    expect(sync.out?.pushed).toContain("learned");
+
+    const { listMemory } = await import("@/lib/stores/memory");
+    expect(listMemory(sync.namespace).some((r) => r.key === "learned")).toBe(true);
+  });
+});
+
+describe("claude_delegate — error surfacing", () => {
+  it("throws when the final result event has is_error=true", async () => {
+    state.script = [resultLine({ is_error: true, result: "boom" })];
+    await expect(claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false })).rejects.toThrow(/boom/);
+  });
+
+  it("throws a helpful error when the claude binary is missing", async () => {
+    state.autoClose = false;
+    // Override spawn for this one test to throw ENOENT synchronously.
+    const { spawn } = await import("node:child_process");
+    vi.mocked(spawn).mockImplementationOnce(() => {
+      const err = Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });
+      throw err;
+    });
+    await expect(claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false })).rejects.toThrow(/claude CLI not found/);
+  });
+});
+
+describe("claude_delegate — background mode + claude_delegate_status", () => {
+  it("returns a job_id immediately, then reflects done status once the spawn closes", async () => {
+    const started = parse(await claudeDelegateTool.invoke({ task: "long task", cwd: projectRoot, background: true, sync_memory: false }));
+    expect(started.status).toBe("running");
+    expect(typeof started.job_id).toBe("string");
+
+    // finalizeRun shells out to real `git` (unmocked) for the diff summary,
+    // so wait for the job to actually settle instead of a single microtask.
+    let status: Record<string, unknown> = {};
+    for (let i = 0; i < 50; i++) {
+      status = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string }));
+      if (status.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(status.status).toBe("done");
+    const result = status.result as Record<string, unknown>;
+    expect(result.session_id).toBe(started.session_id);
+  });
+
+  it("cancel kills the child and the job stays cancelled even if the process later reports done", async () => {
+    state.autoClose = false; // hold the process open — we cancel before it would close
+    const started = parse(await claudeDelegateTool.invoke({ task: "long task", cwd: projectRoot, background: true, sync_memory: false }));
+
+    const cancelled = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string, action: "cancel" }));
+    expect(cancelled.status).toBe("cancelled");
+    expect(state.killSpies.at(-1)).toHaveBeenCalledWith("SIGTERM");
+
+    const status = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string }));
+    expect(status.status).toBe("cancelled");
+  });
+
+  it("cancel on an unknown job_id throws", async () => {
+    await expect(claudeDelegateStatusTool.invoke({ job_id: "does-not-exist", action: "cancel" })).rejects.toThrow(/No running job/);
+  });
+});
+
+function assistantTextLine(text: string): string {
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text }] } });
+}
+
+function assistantToolUseLine(name: string, input: Record<string, unknown>, id = "tu_1"): string {
+  return JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } });
+}
+
+function toolResultLine(toolUseId: string, content: unknown, isError = false): string {
+  return JSON.stringify({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: toolUseId, content, is_error: isError }] },
+  });
+}
+
+describe("claude_delegate — live progress (config.writer)", () => {
+  it("returns a transparent transcript with parent message, Claude steps, and extracted design questions", async () => {
+    state.script = [
+      assistantTextLine("I need to choose the storage shape"),
+      resultLine({
+        result: "## Design questions\n1. Should settings be stored globally or per workspace?\n2. Should old sessions be migrated automatically?\n\n## Progress so far\nRead the store code.",
+      }),
+    ];
+
+    const out = parse(await claudeDelegateTool.invoke({
+      task: "Add transparent delegation",
+      cwd: projectRoot,
+      sync_memory: false,
+    }));
+
+    expect(out.awaiting_answers).toBe(true);
+    const transcript = out.transcript as Record<string, unknown>;
+    expect(transcript.parent_message).toBe("Add transparent delegation");
+    expect(transcript.claude_steps).toEqual(["Claude: I need to choose the storage shape"]);
+    expect(transcript.design_questions).toEqual([
+      "Should settings be stored globally or per workspace?",
+      "Should old sessions be migrated automatically?",
+    ]);
+    expect(transcript.awaiting_user_answers).toBe(true);
+    expect(String(transcript.next_action)).toMatch(/Ask the user/);
+  });
+
+  it("includes the transparent transcript while a background delegation is running", async () => {
+    state.autoClose = false;
+    const started = parse(await claudeDelegateTool.invoke({
+      task: "Investigate before editing",
+      cwd: projectRoot,
+      background: true,
+      sync_memory: false,
+    }));
+    const child = state.children.at(-1) as FakeChild;
+    child.stdout.emit("data", Buffer.from(assistantTextLine("Checking nearby tests") + "\n"));
+
+    const status = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string }));
+
+    const transcript = status.transcript as Record<string, unknown>;
+    expect(transcript.parent_message).toBe("Investigate before editing");
+    expect(transcript.claude_steps).toEqual(["Claude: Checking nearby tests"]);
+    expect(status.project_key).toBe(started.project_key);
+    expect(status.session_id).toBe(started.session_id);
+  });
+
+  it("reports each stream-json step via config.writer as it arrives (foreground)", async () => {
+    state.script = [
+      assistantTextLine("Looking at the code"),
+      assistantToolUseLine("Read", { file_path: "a.ts" }),
+      resultLine(),
+    ];
+    const writer = vi.fn();
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }, { writer } as never);
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "Claude: Looking at the code" });
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "→ Read: a.ts" });
+  });
+
+  it("reports steps for background jobs too, not just foreground", async () => {
+    state.script = [assistantTextLine("working in the background"), resultLine()];
+    const writer = vi.fn();
+    const started = parse(await claudeDelegateTool.invoke(
+      { task: "x", cwd: projectRoot, background: true, sync_memory: false },
+      { writer } as never,
+    ));
+    // Wait for the job to actually settle (mirrors the other background test).
+    let status: Record<string, unknown> = {};
+    for (let i = 0; i < 50; i++) {
+      status = parse(await claudeDelegateStatusTool.invoke({ job_id: started.job_id as string }));
+      if (status.status !== "running") break;
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "Claude: working in the background" });
+  });
+
+  it("reports tool_result events, labelled with the tool name from the matching tool_use id", async () => {
+    state.script = [
+      assistantToolUseLine("Bash", { command: "ls" }, "tu_1"),
+      toolResultLine("tu_1", "a.ts\nb.ts"),
+      resultLine(),
+    ];
+    const writer = vi.fn();
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }, { writer } as never);
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "✓ Bash: a.ts b.ts" });
+  });
+
+  it("marks a failed tool_result with the ✗ marker", async () => {
+    state.script = [
+      assistantToolUseLine("Bash", { command: "ls /nope" }, "tu_1"),
+      toolResultLine("tu_1", "No such file or directory", true),
+      resultLine(),
+    ];
+    const writer = vi.fn();
+    await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false }, { writer } as never);
+    expect(writer).toHaveBeenCalledWith({ id: "", name: "claude_delegate", text: "✗ Bash: No such file or directory" });
+  });
+});
+
+describe("claude_delegate — idle wall-clock (resets on subprocess activity)", () => {
+  it("does not kill a subprocess that keeps producing output, even past the original timeout_seconds", async () => {
+    state.autoClose = false;
+    const precedingCount = state.children.length;
+    const promise = claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, timeout_seconds: 0.05 });
+    const child = await waitForChild(precedingCount);
+
+    // Two activity bursts, 30ms apart — each resets the 50ms idle timer, so
+    // by 60ms total (past the ORIGINAL 50ms deadline) it must still be alive.
+    await new Promise((r) => setTimeout(r, 30));
+    child.stdout.emit("data", Buffer.from(assistantTextLine("still working") + "\n"));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(state.killSpies.at(-1)).not.toHaveBeenCalled();
+
+    // Now finish normally.
+    child.stdout.emit("data", Buffer.from(resultLine() + "\n"));
+    child.emit("close", 0);
+    await promise;
+    expect(state.killSpies.at(-1)).not.toHaveBeenCalled();
+  });
+
+  it("kills the subprocess after timeout_seconds of true silence", async () => {
+    state.autoClose = false;
+    const precedingCount = state.children.length;
+    const promise = claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, timeout_seconds: 0.03 });
+    const child = await waitForChild(precedingCount);
+
+    await new Promise((r) => setTimeout(r, 60));
+    expect(state.killSpies.at(-1)).toHaveBeenCalledWith("SIGTERM");
+
+    child.emit("close", null);
+    await expect(promise).rejects.toThrow(/exceeded.*timeout/);
+  });
+});

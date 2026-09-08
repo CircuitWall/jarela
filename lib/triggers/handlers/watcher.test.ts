@@ -8,7 +8,7 @@ import { z } from "zod";
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-watcher-handler-"));
 process.env.JARELA_DB_DIR = tmpRoot;
 
-const { registerTools, _resetRegistry } = await import("@/lib/tools/registry");
+const { registerTools, _resetRegistry } = await import("@/lib/tools/runtime/registry");
 const { createWatcher, listWatchers, deleteWatcher, getWatcher } = await import("@/lib/stores/watchers");
 const { watcherHandler } = await import("./watcher");
 const { registerScript } = await import("@/lib/triggers/scripts");

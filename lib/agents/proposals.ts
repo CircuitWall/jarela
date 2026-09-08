@@ -27,7 +27,7 @@ import {
 import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
 import { setCategoryEnabled } from "@/lib/stores/builtin-tools";
 import { setDropinDisabled } from "@/lib/stores/disabled-dropin-tools";
-import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/registry";
+import { BUILTIN_CATEGORIES, type BuiltinCategory } from "@/lib/tools/runtime/registry";
 
 export interface ApplyResult {
   ok: boolean;

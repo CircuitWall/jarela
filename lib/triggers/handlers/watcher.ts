@@ -23,7 +23,7 @@ import {
   recordWatcherPollError,
   type WatcherRow,
 } from "@/lib/stores/watchers";
-import { registeredTools } from "@/lib/tools/registry";
+import { registeredTools } from "@/lib/tools/runtime/registry";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 import { truncateBytes } from "@/lib/utils/text";
 import type { TriggerFiring, TriggerHandler, TriggerOutcome } from "../types";

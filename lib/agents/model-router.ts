@@ -1,5 +1,5 @@
 import type { ModelConfig } from "@/api/types";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { modelCapabilities } from "@/lib/providers/capabilities";
 import { detectModelFunctionality } from "@/lib/dashboard/classify";
 import type { ProviderRates } from "@/lib/stores/pricing";

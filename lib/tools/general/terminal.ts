@@ -1,0 +1,344 @@
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import { platform } from "node:os";
+import { TerminalSession, getSession, putSession, removeSession, listSessions, sessionCount, evictIdleSessions } from "@/lib/terminal";
+import { registerLangChainPackage } from "../packages/langchain-package";
+import { checkExecAllowed, resolveSafetyMode, type SafetyMode } from "../security/safety";
+import { getConfig } from "@/lib/env/config";
+import type { ToolConfig } from "../filesystem/workspace-context";
+import { currentWorkspace } from "../filesystem/workspace-context";
+import { withStreamDefault } from "../support/tool-metadata";
+
+// Evict idle sessions every 60 s. .unref() so this timer doesn't keep Node alive.
+setInterval(() => evictIdleSessions(getConfig().terminalIdleTtlMs), 60_000).unref();
+
+const DEFAULT_SHELL = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");
+const BLOCKED_PATTERNS = [
+  /\brm\s+-rf\s+\/\b/i,
+  /\bshutdown\b/i,
+  /\breboot\b/i,
+  /\bmkfs\b/i,
+  /:\s*\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;/,
+];
+
+function isBlocked(command: string): boolean {
+  return BLOCKED_PATTERNS.some((p) => p.test(command));
+}
+
+function checkCommand(command: string, allowUnsafe: boolean | undefined, mode: SafetyMode): string | null {
+  const gate = checkExecAllowed(command, { mode, allowUnsafe, blockedByPattern: isBlocked(command) });
+  return gate.allowed ? null : (gate.reason ?? "command blocked by safety policy");
+}
+
+function clip(text: string, max = getConfig().execMaxOutputBytes): { value: string; truncated: boolean } {
+  if (text.length <= max) return { value: text, truncated: false };
+  return { value: `${text.slice(0, max)}\n[output truncated]`, truncated: true };
+}
+
+function implicitSessionId(config?: ToolConfig): string {
+  const tid = config?.configurable?.thread_id;
+  return `thread:${typeof tid === "string" && tid ? tid : "_default"}`;
+}
+
+function getOrCreateSession(sessionId: string, opts: { cwd?: string; env?: Record<string, string>; shell?: string; workspaceRoot?: string }): TerminalSession {
+  const existing = getSession(sessionId);
+  if (existing) return existing;
+
+  const maxSessions = getConfig().terminalMaxSessions;
+  if (sessionCount() >= maxSessions) {
+    throw new Error(`Max concurrent terminal sessions (${maxSessions}) reached. Close an existing session first.`);
+  }
+
+  const session = new TerminalSession({ ...opts, sessionId });
+  putSession(session);
+  return session;
+}
+
+async function runOneShotTerminalCommand(
+  { command, cwd, env, timeout_ms, allow_unsafe }: { command: string; cwd?: string; env?: Record<string, string>; timeout_ms?: number; allow_unsafe?: boolean },
+  config?: ToolConfig,
+): Promise<string> {
+  if (!command.trim()) return JSON.stringify({ exit_code: 1, stderr: "command is required when action='run'" });
+
+  const mode = resolveSafetyMode();
+  const deny = checkCommand(command, allow_unsafe, mode);
+  if (deny) return JSON.stringify({ exit_code: 126, stderr: deny, safety_mode: mode });
+
+  const timeout = timeout_ms ?? 60_000;
+  const session = new TerminalSession({
+    sessionId: `terminal:throwaway:${Date.now()}`,
+    cwd,
+    env,
+    workspaceRoot: currentWorkspace(config)?.root,
+  });
+
+  try {
+    const result = await session.exec(command, timeout);
+    const stdout = clip(result.stdout);
+    const stderr = clip(result.stderr, 2_000);
+
+    if (result.timedOut) {
+      return JSON.stringify({
+        exit_code: 124,
+        stdout: stdout.value,
+        stderr: stderr.value,
+        truncated: stdout.truncated || stderr.truncated,
+        cwd: result.cwd,
+        timed_out: true,
+        timeout_ms: timeout,
+        error: `command timed out after ${Math.round(timeout / 1000)}s. Try a narrower scope or a larger timeout_ms.`,
+      });
+    }
+
+    return JSON.stringify({
+      exit_code: result.exitCode,
+      stdout: stdout.value,
+      stderr: stderr.value,
+      truncated: stdout.truncated || stderr.truncated,
+      cwd: result.cwd,
+    });
+  } finally {
+    session.close();
+  }
+}
+
+async function openTerminalSession(
+  { session_id, shell, cwd, env }: { session_id?: string; shell?: string; cwd?: string; env?: Record<string, string> },
+  config?: ToolConfig,
+): Promise<string> {
+  const sid = session_id ?? randomUUID();
+  const workspaceRoot = currentWorkspace(config)?.root;
+  try {
+    const session = getOrCreateSession(sid, { shell: shell ?? DEFAULT_SHELL, cwd, env, workspaceRoot });
+    return JSON.stringify({ session_id: session.sessionId, shell: session.shell, pid: session.pid });
+  } catch (err) {
+    return JSON.stringify({ error: String(err) });
+  }
+}
+
+async function execInTerminalSession(
+  { session_id, command, timeout_ms, allow_unsafe }: { session_id?: string; command: string; timeout_ms?: number; allow_unsafe?: boolean },
+  config?: ToolConfig,
+): Promise<string> {
+  const mode = resolveSafetyMode();
+  const deny = checkCommand(command, allow_unsafe, mode);
+  if (deny) return JSON.stringify({ exit_code: 126, stderr: deny, safety_mode: mode });
+
+  const sid = session_id ?? implicitSessionId(config);
+  const workspaceRoot = currentWorkspace(config)?.root;
+
+  let session: TerminalSession;
+  try {
+    session = getOrCreateSession(sid, { workspaceRoot });
+  } catch (err) {
+    return JSON.stringify({ error: String(err) });
+  }
+
+  const result = await session.exec(command, timeout_ms ?? 60_000);
+
+  if (result.timedOut) {
+    return JSON.stringify({
+      exit_code: 124,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      timed_out: true,
+      session_id: sid,
+      cwd: result.cwd,
+      error: `command timed out after ${Math.round((timeout_ms ?? 60_000) / 1000)}s`,
+    });
+  }
+
+  return JSON.stringify({
+    exit_code: result.exitCode,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    session_id: sid,
+    cwd: result.cwd,
+  });
+}
+
+async function sendToTerminalSession(
+  { session_id, input, wait_ms }: { session_id?: string; input: string; wait_ms?: number },
+  config?: ToolConfig,
+): Promise<string> {
+  const sid = session_id ?? implicitSessionId(config);
+  const session = getSession(sid);
+  if (!session) return JSON.stringify({ error: `No active session "${sid}"` });
+
+  try {
+    session.send(input);
+  } catch (err) {
+    return JSON.stringify({ error: String(err) });
+  }
+
+  if (wait_ms && wait_ms > 0) {
+    await new Promise((r) => setTimeout(r, wait_ms));
+  }
+
+  return JSON.stringify({ output: session.readBuffer() });
+}
+
+async function readTerminalSession(
+  { session_id, clear, wait_ms }: { session_id?: string; clear?: boolean; wait_ms?: number },
+  config?: ToolConfig,
+): Promise<string> {
+  const sid = session_id ?? implicitSessionId(config);
+  const session = getSession(sid);
+  if (!session) return JSON.stringify({ error: `No active session "${sid}"` });
+
+  if (wait_ms && wait_ms > 0) {
+    await new Promise((r) => setTimeout(r, wait_ms));
+  }
+
+  return JSON.stringify({ output: session.readBuffer(clear ?? false), session_id: sid });
+}
+
+function closeTerminalSession({ session_id }: { session_id?: string }, config?: ToolConfig): string {
+  const sid = session_id ?? implicitSessionId(config);
+  removeSession(sid);
+  return JSON.stringify({ ok: true, session_id: sid });
+}
+
+const terminalSchema = z.object({
+  action: z.enum(["run", "open", "exec", "send", "read", "close", "list"]).describe("Terminal operation to perform. Use run for a one-shot throwaway command and exec for a persistent session command."),
+  session_id: z.string().optional().describe("Session id. Omit for the implicit per-thread session where supported."),
+  command: z.string().optional().describe("Command to run when action='run' or action='exec'."),
+  input: z.string().optional().describe("Raw stdin bytes to send when action='send'."),
+  shell: z.string().optional().describe("Shell executable for action='open'."),
+  cwd: z.string().optional().describe("Starting working directory for action='open' or one-shot action='run'."),
+  env: z.record(z.string(), z.string()).optional().describe("Additional environment variables for action='open' or one-shot action='run'."),
+  timeout_ms: z.number().optional().describe("Kill timeout in ms for action='run' or action='exec' (default 60000)."),
+  wait_ms: z.number().optional().describe("Milliseconds to wait before reading output for action='send' or action='read'."),
+  clear: z.boolean().optional().describe("Clear buffered output after action='read'."),
+  allow_unsafe: z.boolean().optional().describe("Bypass safety block for a single action='exec' call."),
+});
+
+export const terminalTool = withStreamDefault(tool(
+  async (input, config?: ToolConfig) => {
+    switch (input.action) {
+      case "run":
+        if (!input.command) return JSON.stringify({ exit_code: 1, stderr: "command is required when action='run'" });
+        return runOneShotTerminalCommand({ ...input, command: input.command }, config);
+      case "open":
+        return openTerminalSession(input, config);
+      case "exec":
+        if (!input.command) return JSON.stringify({ exit_code: 1, stderr: "command is required when action='exec'" });
+        return execInTerminalSession({ ...input, command: input.command }, config);
+      case "send":
+        if (input.input === undefined) return JSON.stringify({ error: "input is required when action='send'" });
+        return sendToTerminalSession({ ...input, input: input.input }, config);
+      case "read":
+        return readTerminalSession(input, config);
+      case "close":
+        return closeTerminalSession(input, config);
+      case "list":
+        return JSON.stringify(listSessions());
+    }
+  },
+  {
+    name: "terminal",
+    description:
+      "Run shell commands and manage persistent shell sessions through one tool. Actions: run a one-shot throwaway command; open a session; exec a command in a persistent session; send raw stdin; read buffered output; close a session; list sessions. Use action='run' for simple one-shot shell work, action='exec' for stateful workflows where cwd/env/shell variables/server state must persist. Prefer file_* tools for file discovery, reads, and edits.",
+    schema: terminalSchema,
+  },
+), true);
+
+// ── terminal_open ─────────────────────────────────────────────────────────────
+
+export const terminalOpenTool = tool(
+  async ({ session_id, shell, cwd, env }, config?: ToolConfig) =>
+    openTerminalSession({ session_id, shell, cwd, env: env as Record<string, string> | undefined }, config),
+  {
+    name: "terminal_open",
+    description: "Open a persistent shell session for interactive programs, watchers, REPLs, or multi-step command sequences that need shared cwd/env/state. Returns a session_id to use with terminal_exec / terminal_send. Omit session_id to get a fresh one. Sessions persist across agent turns; close them with terminal_close when finished.",
+    schema: z.object({
+      session_id: z.string().optional().describe("Reuse an existing session, or omit to create a new one"),
+      shell: z.string().optional().describe("Shell executable (default: $SHELL on Unix, powershell.exe on Windows)"),
+      cwd: z.string().optional().describe("Starting working directory"),
+      env: z.record(z.string(), z.string()).optional().describe("Additional env vars for this session"),
+    }),
+  },
+);
+
+// ── terminal_exec ─────────────────────────────────────────────────────────────
+
+export const terminalExecTool = withStreamDefault(tool(
+  async ({ session_id, command, timeout_ms, allow_unsafe }, config?: ToolConfig) =>
+    execInTerminalSession({ session_id, command, timeout_ms, allow_unsafe }, config),
+  {
+    name: "terminal_exec",
+    description:
+      "Run a command in a persistent shell session. Use for interactive/stateful workflows where cwd, env exports, shell variables, server/watch state, or prior commands must persist between calls. Prefer local_exec for independent one-shot commands, and prefer file_* tools for file discovery, reads, and edits. Omit session_id to use the implicit per-thread session.",
+    schema: z.object({
+      command: z.string().describe("Shell command to run"),
+      session_id: z.string().optional().describe("Session from terminal_open, or omit for the implicit per-thread session"),
+      timeout_ms: z.number().optional().describe("Kill timeout in ms (default 60000)"),
+      allow_unsafe: z.boolean().optional().describe("Bypass safety block for a single call"),
+    }),
+  },
+), true);
+
+// ── terminal_send ─────────────────────────────────────────────────────────────
+
+export const terminalSendTool = tool(
+  async ({ session_id, input, wait_ms }, config?: ToolConfig) =>
+    sendToTerminalSession({ session_id, input, wait_ms }, config),
+  {
+    name: "terminal_send",
+    description:
+      "Send raw bytes to an interactive process's stdin (e.g. answer a REPL prompt, send Ctrl-C via '\\x03'). Returns buffered stdout after wait_ms.",
+    schema: z.object({
+      input: z.string().describe("Raw input to send to stdin"),
+      session_id: z.string().optional().describe("Session id (default: implicit per-thread session)"),
+      wait_ms: z.number().optional().describe("Milliseconds to wait for output before returning (default 0)"),
+    }),
+  },
+);
+
+// ── terminal_read ─────────────────────────────────────────────────────────────
+
+export const terminalReadTool = tool(
+  async ({ session_id, clear, wait_ms }, config?: ToolConfig) =>
+    readTerminalSession({ session_id, clear, wait_ms }, config),
+  {
+    name: "terminal_read",
+    description: "Read buffered stdout from a terminal session without sending a command. Use this to inspect output from a persistent background process instead of rerunning the command.",
+    schema: z.object({
+      session_id: z.string().optional().describe("Session id (default: implicit per-thread session)"),
+      clear: z.boolean().optional().describe("Clear the buffer after reading (default false)"),
+      wait_ms: z.number().optional().describe("Wait this many ms before reading (default 0)"),
+    }),
+  },
+);
+
+// ── terminal_close ────────────────────────────────────────────────────────────
+
+export const terminalCloseTool = tool(
+  async ({ session_id }, config?: ToolConfig) => closeTerminalSession({ session_id }, config),
+  {
+    name: "terminal_close",
+    description: "Kill a terminal session and free its resources. The implicit per-thread session is closed if no session_id is given.",
+    schema: z.object({
+      session_id: z.string().optional().describe("Session to close (default: implicit per-thread session)"),
+    }),
+  },
+);
+
+// ── terminal_list ─────────────────────────────────────────────────────────────
+
+export const terminalListTool = tool(
+  async () => JSON.stringify(listSessions()),
+  {
+    name: "terminal_list",
+    description: "List all open terminal sessions with their shell, idle time, and PID.",
+    schema: z.object({}),
+  },
+);
+
+registerLangChainPackage({
+  category: "Shell",
+  tools: {
+    execute: [terminalTool, terminalOpenTool, terminalExecTool, terminalSendTool, terminalReadTool, terminalCloseTool, terminalListTool],
+  },
+});

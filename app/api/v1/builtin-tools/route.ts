@@ -5,7 +5,7 @@ import {
   registeredCategory,
   BUILTIN_CATEGORIES,
   type BuiltinCategory,
-} from "@/lib/tools/registry";
+} from "@/lib/tools/runtime/registry";
 import {
   disabledCategories,
   isCategoryEnabled,

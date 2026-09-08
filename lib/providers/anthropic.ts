@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { resolveProviderApiKey } from "./credentials";
 // Sentinel exported to lib/agents/prepare/system-prompt.ts so both sides share
 // the same contract without a providers→agents dependency.
