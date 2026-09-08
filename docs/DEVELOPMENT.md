@@ -47,6 +47,49 @@ from it when creating commits, branches, or PRs.
 - Keep hook tests in `hooks/`, not `components/`
 - Use `.tsx` only if JSX is required by the test
 
+## Tool directory standard
+
+Keep `lib/tools/` as a small public entrypoint, not a dumping ground for every
+tool and helper. New tool code belongs in the narrowest domain folder below:
+
+```text
+lib/tools/
+  index.ts                  # stable public facade
+  communications/           # Gmail, Outlook, Calendar, Microsoft Graph, To Do
+  delegation/               # agent, Claude Code, and Codex delegation
+  filesystem/               # files, file search, outlines, workspace context
+  general/                  # standalone built-in tools without a narrower domain
+  packages/                 # LangChain package loading, manifests, install, allowlist
+  runtime/                  # registry, catalog, built-in registration, public tool types
+  security/                 # safety gates, subprocess environment, credential context
+  support/                  # async results, result references, wallclock, Git helpers
+  system/                   # tool listing, proposals, skills, MCP and system tools
+  web/                      # browser, fetch, search, shopping, media generation
+  core/                     # catalog/runtime aggregation facade
+```
+
+### Placement rules
+
+- Put a new agent-callable tool beside the closest existing domain. Use
+  `general/` only when no more specific domain applies.
+- Put a tool's tests beside its implementation in the same domain folder.
+- Put registration and discovery logic in `runtime/`; do not put it in a tool
+  implementation folder.
+- Put reusable cross-domain mechanics in `support/` or `security/`, not in a
+  domain tool file.
+- Add built-in side-effect imports to `runtime/builtins.ts`, grouped in the
+  same domain order as the folders above.
+- Keep `lib/tools/index.ts` as the compatibility/public facade. Update it only
+  when a public export or shared type needs to be exposed.
+- Do not create one-line re-export stubs in the old root location. Update
+  internal imports to the real domain path instead.
+- Preserve public package subpaths such as `@circuitwall/jarela/lib/tools/types`
+  by updating their `package.json#exports` target when an implementation moves.
+
+When adding a new folder, keep its direct file count readable. Split a domain
+again when it starts mixing unrelated responsibilities, rather than allowing
+another large flat directory to form.
+
 ## Safe migration pattern
 
 1. Add `state` + `commands` without removing old flat fields.

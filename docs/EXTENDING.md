@@ -77,14 +77,18 @@ ADR: [0013](../docs/adr/0013-external-providers-and-tools.md).
 
 ## Adding a built-in tool
 
-Built-in tools register themselves at module load. Adding one is two
-files:
+Built-in tools register themselves at module load. Choose the narrowest domain
+folder under [`lib/tools/`](../lib/tools/) first. For example, a Gmail tool
+belongs in `lib/tools/communications/`, a filesystem tool in
+`lib/tools/filesystem/`, and a new uncategorized local tool in
+`lib/tools/general/`. Adding one is two files: the implementation and its
+colocated test.
 
-1. Create `lib/tools/<name>.ts`:
+1. Create `lib/tools/<domain>/<name>.ts`:
    ```ts
    import { tool } from "@langchain/core/tools";
    import { z } from "zod";
-   import { registerLangChainPackage } from "./langchain-package";
+    import { registerLangChainPackage } from "../packages/langchain-package";
 
    export const myTool = tool(
      async ({ foo }) => JSON.stringify({ result: foo.toUpperCase() }),
@@ -100,7 +104,12 @@ files:
      tools: { read: [myTool] },
    });
    ```
-2. Add `import "./<name>";` to `lib/tools/builtins.ts`.
+2. Add `import "../<domain>/<name>";` to
+    `lib/tools/runtime/builtins.ts`, keeping imports grouped by domain.
+
+3. Add `<name>.test.ts` beside the implementation. Tests should import the
+  implementation from the same folder; do not add a root-level forwarding
+  file just to preserve an old internal path.
 
 That's it — no central array, no parallel category map. The new tool is
 visible in `GET /api/v1/tools`, callable by every agent (subject to its
@@ -143,11 +152,12 @@ There is no tool index in the system prompt.
 
 **Description text matters.** The text in `description` is what the LLM
 sees. Multi-sentence is fine — tell it WHEN to call this tool, not just
-WHAT it does. Look at [`lib/tools/integrations.ts`](../lib/tools/integrations.ts)
+WHAT it does. Look at [`lib/tools/system/integrations.ts`](../lib/tools/system/integrations.ts)
 for the pattern.
 
-Reference contract: `lib/tools/types.ts` and `lib/tools/registry.ts`.
-Worked example: [`lib/tools/template.ts`](../lib/tools/template.ts).
+Reference contract: [`lib/tools/runtime/types.ts`](../lib/tools/runtime/types.ts)
+and [`lib/tools/runtime/registry.ts`](../lib/tools/runtime/registry.ts).
+Worked example: [`lib/tools/runtime/template.ts`](../lib/tools/runtime/template.ts).
 
 ### Message content and attachments
 
@@ -201,7 +211,7 @@ returned tool under a Jarela category + capability.
      `node_modules`).
    - `export` — named export. Default `"default"`.
    - `category` — Jarela category (`"Web"`, `"Mail"`, … — same vocabulary
-     as built-in tools, see [`registry.ts`](../lib/tools/registry.ts)).
+      as built-in tools, see [`registry.ts`](../lib/tools/runtime/registry.ts)).
    - `capability` — `"read"` / `"write"` / `"execute"`. Default
      `"execute"` (conservative).
    - `args` — constructor arguments, passed as a single object.
@@ -214,7 +224,7 @@ Inspect the loader state any time with `GET /api/v1/packages`, which
 returns the resolved `packagesDir`, registered tool names, skipped
 manifests (with reasons, e.g. `requiredEnv` unset), and per-manifest
 errors. Both endpoints are thin wrappers around
-[`lib/tools/langchain-packages.ts`](../lib/tools/langchain-packages.ts).
+[`lib/tools/packages/langchain-packages.ts`](../lib/tools/packages/langchain-packages.ts).
 
 **Installing a package via API.** `POST /api/v1/packages/install`
 with `{ "spec": "<npm-spec>", "version": "<optional>" }` runs
