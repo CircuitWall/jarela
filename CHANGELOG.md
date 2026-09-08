@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.1] - 2026-09-08
+
+### Fixed
+
+- **E2E boot and panel checks are more reliable.** The boot picker now keeps
+  its primary tile above recent-agent entries, shared SQLite-backed tests run
+  without worker races, and the Memory namespace assertion targets the
+  correct control.
+
 ## [1.41.0] - 2026-09-07
 
 ### Added
