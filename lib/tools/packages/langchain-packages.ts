@@ -34,7 +34,7 @@
  *     "requiredEnv": ["TAVILY_API_KEY"]   // optional; skips if any unset
  *   }
  */
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
@@ -48,6 +48,7 @@ import { errorMessage } from "@/lib/utils/error";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
 import { BUILTIN_CATEGORIES } from "../runtime/registry";
+import { getDataDir } from "@/lib/db/data-dir";
 
 // Re-exported for convenience so callers already importing from
 // `langchain-packages` don't have to add a second import. The single
@@ -88,7 +89,10 @@ export function getPackagesDir(): string {
   if (raw && raw.trim().length > 0) {
     return raw.startsWith("~") ? raw.replace(/^~/, homedir()) : raw;
   }
-  return join(homedir(), ".jarela", "packages");
+  const dataDir = getDataDir();
+  const packagesDir = join(dataDir, "packages");
+  mkdirSync(packagesDir, { recursive: true });
+  return packagesDir;
 }
 
 export function getManifestsDir(): string {

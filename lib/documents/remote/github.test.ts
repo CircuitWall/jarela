@@ -26,6 +26,9 @@ vi.mock("./upsert", () => ({
 }));
 
 const { githubFetch } = await import("@circuitwall/github-langchain");
+const { _setOptionalPackageForTests, _clearOptionalPackageTestOverrides } = await import(
+  "@/lib/tools/packages/optional-package",
+);
 const { upsertRemoteDocument } = await import("./upsert");
 const {
   runGithubIndexer,
@@ -38,7 +41,10 @@ const { createDocumentSource, listDocumentSources, deleteDocumentSource, getDocu
 const ghMock = githubFetch as unknown as ReturnType<typeof vi.fn>;
 const upsertMock = upsertRemoteDocument as unknown as ReturnType<typeof vi.fn>;
 
+_setOptionalPackageForTests("@circuitwall/github-langchain", { githubFetch });
+
 afterAll(() => {
+  _clearOptionalPackageTestOverrides();
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 

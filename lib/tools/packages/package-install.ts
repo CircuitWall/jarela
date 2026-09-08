@@ -43,6 +43,7 @@ import {
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { getPackagesDir, reloadLangChainPackages } from "./langchain-packages";
+import { reloadDefaultPackages } from "./default-packages";
 import { isPackageAllowed, type PackageAllowDecision } from "./package-allowlist";
 
 export interface IntrospectedTool {
@@ -131,6 +132,18 @@ export async function approvePackageInstall(id: string): Promise<PackageInstallR
   return result;
 }
 
+/** Remove an operator-installed package and refresh any saved manifests. */
+export async function removePackage(spec: string): Promise<void> {
+  const packageName = stripVersion(spec.trim());
+  if (!packageName) throw new Error("spec is required");
+  await runNpm(
+    ["uninstall", "--no-fund", "--no-audit", "--legacy-peer-deps", "--save", packageName],
+    getPackagesDir(),
+  );
+  await reloadLangChainPackages();
+  reloadDefaultPackages();
+}
+
 export function listPendingInstalls(): PendingInstall[] {
   const dir = pendingDir();
   if (!existsSync(dir)) return [];
@@ -214,6 +227,7 @@ async function runInstall(spec: string, version: string | null): Promise<Package
   // resolve (e.g. saved by the UI before the package was installed) now
   // registers successfully and the stale error clears from loadResult.
   await reloadLangChainPackages();
+  reloadDefaultPackages();
 
   return {
     spec,

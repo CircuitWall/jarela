@@ -15,17 +15,18 @@
  * `MICROSOFT_SCOPES` alongside Mail/Calendar; existing connections must
  * reconnect once to pick it up.
  */
-import {
-  msTodoReadTools,
-  msTodoWriteTools,
-  setAuthResolver,
-} from "@circuitwall/ms-todo-langchain";
+import { optionalFunction, optionalTools } from "../packages/optional-package";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import {
   getMicrosoftAccessToken,
   resolveMicrosoftAuth,
   type MicrosoftAuth,
 } from "@/lib/integrations/microsoft-oauth";
+
+const msTodoReadTools = optionalTools<StructuredToolInterface>("@circuitwall/ms-todo-langchain", "msTodoReadTools");
+const msTodoWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/ms-todo-langchain", "msTodoWriteTools");
+const setAuthResolver = optionalFunction<(resolver: () => unknown) => void>("@circuitwall/ms-todo-langchain", "setAuthResolver", () => undefined);
 
 // Exposed for the integrations test endpoint, matching the gmail/outlook
 // `_resolveXxxAuth` probe convention.

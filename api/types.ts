@@ -1605,6 +1605,7 @@ export interface DefaultLangChainPackageInfo {
   toolCounts: { read: number; write: number; execute: number };
   description: string;
   enabled: boolean;
+  installed: boolean;
 }
 
 export interface LangChainPackageManifestInput {

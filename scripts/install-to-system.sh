@@ -26,12 +26,14 @@ set -euo pipefail
 
 INSTALL_DIR="$HOME/Library/Application Support/Jarela"
 SKIP_BUILD=0
+SKIP_OPTIONAL_PACKAGES=0
 NO_START=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --install-dir) INSTALL_DIR="$2"; shift 2 ;;
     --skip-build)  SKIP_BUILD=1; shift ;;
+    --skip-optional-packages) SKIP_OPTIONAL_PACKAGES=1; shift ;;
     --no-start)    NO_START=1; shift ;;
     -h|--help)
       sed -n '2,16p' "$0"
@@ -94,6 +96,20 @@ PUBLIC_SRC="$REPO_ROOT/public"
 SERVER_JS="$STANDALONE/server.js"
 
 [[ -f "$SERVER_JS" ]] || { echo "Standalone build missing at $SERVER_JS — re-run without --skip-build" >&2; exit 1; }
+
+if [[ $SKIP_OPTIONAL_PACKAGES -eq 0 ]]; then
+  step "Installing optional integration packages"
+  OPTIONAL_PACKAGES_DIR="$HOME/.jarela/packages"
+  mkdir -p "$OPTIONAL_PACKAGES_DIR"
+  npm install --prefix "$OPTIONAL_PACKAGES_DIR" --no-save --no-fund --no-audit --legacy-peer-deps \
+    "$REPO_ROOT/packages/atlassian-langchain" \
+    "$REPO_ROOT/packages/github-langchain" \
+    "$REPO_ROOT/packages/icloud-langchain" \
+    "$REPO_ROOT/packages/jira-align-langchain" \
+    "$REPO_ROOT/packages/linkedin-enterprise-langchain" \
+    "$REPO_ROOT/packages/linkedin-personal-langchain" \
+    "$REPO_ROOT/packages/ms-todo-langchain"
+fi
 
 # ── 3. Clear install dir contents in place ────────────────────────────────
 step "Clearing install dir contents at $INSTALL_DIR"

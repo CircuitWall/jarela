@@ -4,6 +4,7 @@ import { errorResponse, validateBody } from "@/lib/api/responses";
 import {
   beginInstall,
   listPendingInstalls,
+  removePackage,
 } from "@/lib/tools/packages/package-install";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -55,6 +56,17 @@ export async function POST(req: NextRequest) {
       );
     }
     return NextResponse.json({ status: "installed", ...outcome.result });
+  } catch (err) {
+    return errorResponse(errorMessage(err), 500);
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const parsed = await validateBody(req, InstallSchema.pick({ spec: true }));
+  if (parsed instanceof NextResponse) return parsed;
+  try {
+    await removePackage(parsed.spec);
+    return NextResponse.json({ status: "removed", spec: parsed.spec });
   } catch (err) {
     return errorResponse(errorMessage(err), 500);
   }

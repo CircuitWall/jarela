@@ -7,7 +7,7 @@
 // Incremental: uses `last_cursor` to avoid re-fetching pages whose
 // `lastmodified` is older than the previous run's high-water mark.
 
-import { atlassianFetch, type AtlassianAuth } from "@circuitwall/atlassian-langchain";
+import { optionalFunction } from "@/lib/tools/packages/optional-package";
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import {
   parseSourceConfig,
@@ -16,6 +16,13 @@ import {
 } from "@/lib/stores/document-sources";
 import { htmlToText } from "./flatten";
 import { upsertRemoteDocument, type UpsertResult } from "./upsert";
+
+interface AtlassianAuth { url: string; email: string; apiToken: string }
+const atlassianFetch = optionalFunction<(auth: AtlassianAuth, path: string, init?: RequestInit) => Promise<unknown>>(
+  "@circuitwall/atlassian-langchain",
+  "atlassianFetch",
+  () => { throw new Error("Atlassian package is not installed."); },
+);
 
 const PAGE_LIMIT = 25;
 const MAX_PAGES_PER_RUN = 200;

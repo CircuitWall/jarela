@@ -12,54 +12,39 @@
  * can flip a package off without restarting the process. Re-enabling
  * after a disable invokes `register()` again on the same descriptor.
  */
-import {
-  atlassianReadTools,
-  atlassianWriteTools,
-  atlassianExecuteTools,
-  setAuthResolver as setAtlassianAuthResolver,
-  resolveAtlassianAuthFromEnv,
-  type AtlassianAuth,
-} from "@circuitwall/atlassian-langchain";
-import {
-  githubReadTools,
-  githubWriteTools,
-  githubExecuteTools,
-  setAuthResolver as setGithubAuthResolver,
-  resolveGithubAuthFromEnv,
-  type GitHubAuth,
-} from "@circuitwall/github-langchain";
-import {
-  jiraAlignReadTools,
-  jiraAlignWriteTools,
-  jiraAlignExecuteTools,
-  setAuthResolver as setJiraAlignAuthResolver,
-  resolveJiraAlignAuthFromEnv,
-  type JiraAlignAuth,
-} from "@circuitwall/jira-align-langchain";
-import {
-  icloudReadTools,
-  icloudWriteTools,
-  icloudExecuteTools,
-  setAuthResolver as setICloudAuthResolver,
-  resolveICloudAuthFromEnv,
-  type ICloudAuth,
-} from "@circuitwall/icloud-langchain";
-import {
-  linkedinPersonalReadTools,
-  linkedinPersonalWriteTools,
-  linkedinPersonalExecuteTools,
-  setAuthResolver as setLinkedInPersonalAuthResolver,
-  resolveLinkedInPersonalAuthFromEnv,
-  type LinkedInPersonalAuth,
-} from "@circuitwall/linkedin-personal-langchain";
-import {
-  linkedinEnterpriseReadTools,
-  linkedinEnterpriseWriteTools,
-  linkedinEnterpriseExecuteTools,
-  setAuthResolver as setLinkedInEnterpriseAuthResolver,
-  resolveLinkedInEnterpriseAuthFromEnv,
-  type LinkedInEnterpriseAuth,
-} from "@circuitwall/linkedin-enterprise-langchain";
+import { isOptionalPackageInstalled, optionalFunction, optionalTools } from "./optional-package";
+import type { StructuredToolInterface } from "@langchain/core/tools";
+
+const atlassianReadTools = optionalTools<StructuredToolInterface>("@circuitwall/atlassian-langchain", "atlassianReadTools");
+const atlassianWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/atlassian-langchain", "atlassianWriteTools");
+const atlassianExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/atlassian-langchain", "atlassianExecuteTools");
+const setAtlassianAuthResolver = optionalFunction("@circuitwall/atlassian-langchain", "setAuthResolver", () => undefined);
+const resolveAtlassianAuthFromEnv = optionalFunction("@circuitwall/atlassian-langchain", "resolveAtlassianAuthFromEnv", () => ({ error: "Atlassian package is not installed." }));
+const githubReadTools = optionalTools<StructuredToolInterface>("@circuitwall/github-langchain", "githubReadTools");
+const githubWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/github-langchain", "githubWriteTools");
+const githubExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/github-langchain", "githubExecuteTools");
+const setGithubAuthResolver = optionalFunction("@circuitwall/github-langchain", "setAuthResolver", () => undefined);
+const resolveGithubAuthFromEnv = optionalFunction("@circuitwall/github-langchain", "resolveGithubAuthFromEnv", () => ({ error: "GitHub package is not installed." }));
+const jiraAlignReadTools = optionalTools<StructuredToolInterface>("@circuitwall/jira-align-langchain", "jiraAlignReadTools");
+const jiraAlignWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/jira-align-langchain", "jiraAlignWriteTools");
+const jiraAlignExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/jira-align-langchain", "jiraAlignExecuteTools");
+const setJiraAlignAuthResolver = optionalFunction("@circuitwall/jira-align-langchain", "setAuthResolver", () => undefined);
+const resolveJiraAlignAuthFromEnv = optionalFunction("@circuitwall/jira-align-langchain", "resolveJiraAlignAuthFromEnv", () => ({ error: "Jira Align package is not installed." }));
+const icloudReadTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudReadTools");
+const icloudWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudWriteTools");
+const icloudExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/icloud-langchain", "icloudExecuteTools");
+const setICloudAuthResolver = optionalFunction("@circuitwall/icloud-langchain", "setAuthResolver", () => undefined);
+const resolveICloudAuthFromEnv = optionalFunction("@circuitwall/icloud-langchain", "resolveICloudAuthFromEnv", () => ({ error: "iCloud package is not installed." }));
+const linkedinPersonalReadTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-personal-langchain", "linkedinPersonalReadTools");
+const linkedinPersonalWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-personal-langchain", "linkedinPersonalWriteTools");
+const linkedinPersonalExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-personal-langchain", "linkedinPersonalExecuteTools");
+const setLinkedInPersonalAuthResolver = optionalFunction("@circuitwall/linkedin-personal-langchain", "setAuthResolver", () => undefined);
+const resolveLinkedInPersonalAuthFromEnv = optionalFunction("@circuitwall/linkedin-personal-langchain", "resolveLinkedInPersonalAuthFromEnv", () => ({ error: "LinkedIn Personal package is not installed." }));
+const linkedinEnterpriseReadTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-enterprise-langchain", "linkedinEnterpriseReadTools");
+const linkedinEnterpriseWriteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-enterprise-langchain", "linkedinEnterpriseWriteTools");
+const linkedinEnterpriseExecuteTools = optionalTools<StructuredToolInterface>("@circuitwall/linkedin-enterprise-langchain", "linkedinEnterpriseExecuteTools");
+const setLinkedInEnterpriseAuthResolver = optionalFunction("@circuitwall/linkedin-enterprise-langchain", "setAuthResolver", () => undefined);
+const resolveLinkedInEnterpriseAuthFromEnv = optionalFunction("@circuitwall/linkedin-enterprise-langchain", "resolveLinkedInEnterpriseAuthFromEnv", () => ({ error: "LinkedIn Enterprise package is not installed." }));
 
 import {
   registerLangChainPackage,
@@ -105,7 +90,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
     },
     description: "Jira issues + Confluence pages: search, read, comment, update.",
     register: () =>
-      registerLangChainPackage<AtlassianAuth>({
+      registerLangChainPackage({
         category: "Atlassian",
         tools: {
           read: atlassianReadTools,
@@ -116,7 +101,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
           integrationId: "atlassian",
           setAuthResolver: setAtlassianAuthResolver,
           resolveAuthFromEnv: resolveAtlassianAuthFromEnv,
-          mapStoreFields: (raw): AtlassianAuth | null =>
+          mapStoreFields: (raw) =>
             raw.url && raw.email && raw.api_token
               ? {
                   url: raw.url.replace(/\/+$/, ""),
@@ -143,7 +128,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
     },
     description: "Issues, pull requests, commits, code search via the GitHub REST API.",
     register: () =>
-      registerLangChainPackage<GitHubAuth>({
+      registerLangChainPackage({
         category: "GitHub",
         tools: {
           read: githubReadTools,
@@ -154,7 +139,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
           integrationId: "github",
           setAuthResolver: setGithubAuthResolver,
           resolveAuthFromEnv: resolveGithubAuthFromEnv,
-          mapStoreFields: (raw): GitHubAuth | null =>
+          mapStoreFields: (raw) =>
             raw.token ? { token: raw.token } : null,
           notConfiguredError:
             "GitHub not configured. Open Settings → Credentials and add a Personal Access Token. " +
@@ -176,7 +161,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
     },
     description: "Jira Align portfolio-level reads/writes for roadmaps and initiatives.",
     register: () =>
-      registerLangChainPackage<JiraAlignAuth>({
+      registerLangChainPackage({
         category: "JiraAlign",
         tools: {
           read: jiraAlignReadTools,
@@ -187,7 +172,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
           integrationId: "jira_align",
           setAuthResolver: setJiraAlignAuthResolver,
           resolveAuthFromEnv: resolveJiraAlignAuthFromEnv,
-          mapStoreFields: (raw): JiraAlignAuth | null =>
+          mapStoreFields: (raw) =>
             raw.url && raw.api_token
               ? {
                   url: raw.url.replace(/\/+$/, ""),
@@ -209,7 +194,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
     npmPackage: "@circuitwall/linkedin-personal-langchain",
     toolCounts: { read: linkedinPersonalReadTools.length, write: linkedinPersonalWriteTools.length, execute: linkedinPersonalExecuteTools.length },
     description: "Authenticated member profile and text publishing.",
-    register: () => registerLangChainPackage<LinkedInPersonalAuth>({
+    register: () => registerLangChainPackage({
       category: "Other",
       tools: { read: linkedinPersonalReadTools, write: linkedinPersonalWriteTools, execute: linkedinPersonalExecuteTools },
       auth: {
@@ -229,7 +214,7 @@ const DESCRIPTORS: readonly DefaultPackageDescriptor[] = [
     npmPackage: "@circuitwall/linkedin-enterprise-langchain",
     toolCounts: { read: linkedinEnterpriseReadTools.length, write: linkedinEnterpriseWriteTools.length, execute: linkedinEnterpriseExecuteTools.length },
     description: "Organization discovery, page posts, and text publishing.",
-    register: () => registerLangChainPackage<LinkedInEnterpriseAuth>({
+    register: () => registerLangChainPackage({
       category: "Other",
       tools: { read: linkedinEnterpriseReadTools, write: linkedinEnterpriseWriteTools, execute: linkedinEnterpriseExecuteTools },
       auth: {
@@ -271,7 +256,7 @@ function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
     integrationId: "icloud",
     setAuthResolver: setICloudAuthResolver,
     resolveAuthFromEnv: resolveICloudAuthFromEnv,
-    mapStoreFields: (raw: Record<string, string>): ICloudAuth | null =>
+    mapStoreFields: (raw: Record<string, string>) =>
       raw.apple_id && raw.app_password
         ? { appleId: raw.apple_id, appPassword: raw.app_password }
         : null,
@@ -301,7 +286,7 @@ function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
         "iCloud Mail (IMAP): list folders and messages, read message bodies, draft, " +
         "move, flag, and trash mail. Drafts only — cannot send mail.",
       register: () =>
-        registerLangChainPackage<ICloudAuth>({
+        registerLangChainPackage({
           category: "Mail",
           tools: mail,
           auth: icloudAuth,
@@ -321,7 +306,7 @@ function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
       description:
         "iCloud Calendar (CalDAV): list calendars and events, and create / update / delete events.",
       register: () =>
-        registerLangChainPackage<ICloudAuth>({
+        registerLangChainPackage({
           category: "Calendar",
           tools: calendar,
           auth: icloudAuth,
@@ -342,7 +327,7 @@ function buildICloudDescriptors(): readonly DefaultPackageDescriptor[] {
         "iCloud Reminders (VTODO): list reminder lists and reminders, create new " +
         "reminders, and mark them complete.",
       register: () =>
-        registerLangChainPackage<ICloudAuth>({
+        registerLangChainPackage({
           category: "Tasks",
           tools: reminders,
           auth: icloudAuth,
@@ -372,6 +357,7 @@ export interface DefaultPackageInfo {
   toolCounts: { read: number; write: number; execute: number };
   description: string;
   enabled: boolean;
+  installed: boolean;
 }
 
 export function listDefaultPackages(): DefaultPackageInfo[] {
@@ -384,6 +370,7 @@ export function listDefaultPackages(): DefaultPackageInfo[] {
     toolCounts: d.toolCounts,
     description: d.description,
     enabled: !isPackageDisabled(d.id),
+    installed: isOptionalPackageInstalled(d.npmPackage),
   }));
 }
 
@@ -408,6 +395,12 @@ export function setDefaultPackageEnabled(id: string, enabled: boolean): boolean 
     }
   }
   return true;
+}
+
+/** Re-read optional package modules after an install or uninstall. */
+export function reloadDefaultPackages(): void {
+  _resetDefaultPackages();
+  registerDefaultPackages();
 }
 
 function registerOne(descriptor: DefaultPackageDescriptor): void {

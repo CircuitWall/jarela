@@ -49,7 +49,9 @@ const EMPTY_FORM: ManifestFormState = {
 export function InstallPanel() {
   const {
     pending,
+    manifests,
     install,
+    remove,
     approveInstall,
     denyInstall,
     createManifest,
@@ -62,6 +64,7 @@ export function InstallPanel() {
   const [installVersion, setInstallVersion] = useState("");
   const [installing, setInstalling] = useState(false);
   const [installNotice, setInstallNotice] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [form, setForm] = useState<ManifestFormState>(EMPTY_FORM);
   const [savingManifest, setSavingManifest] = useState(false);
   const [catalog, setCatalog] = useState<LangChainCatalogEntry[]>([]);
@@ -139,6 +142,27 @@ export function InstallPanel() {
     }
   }
 
+  async function handleInstallDefault(spec: string) {
+    setInstalling(true);
+    setInstallNotice(null);
+    try {
+      const res = await install(spec);
+      if (res.status === "pending") {
+        setInstallNotice(`Publisher "${res.publisher}" requires approval below.`);
+      } else {
+        setInstallNotice(`Installed ${res.resolvedPackage}@${res.installedVersion ?? "?"}.`);
+      }
+    } catch (e) {
+      pushErrorToast({
+        title: "Install failed",
+        error: e,
+        context: { panel: "packages", action: "install-default", spec },
+      });
+    } finally {
+      setInstalling(false);
+    }
+  }
+
   async function handleApprove(id: string) {
     try {
       await approveInstall(id);
@@ -207,6 +231,22 @@ export function InstallPanel() {
     }
   }
 
+  async function handleRemove(spec: string) {
+    setRemoving(spec);
+    try {
+      await remove(spec);
+      setInstallNotice(`Removed ${spec}.`);
+    } catch (e) {
+      pushErrorToast({
+        title: "Remove failed",
+        error: e,
+        context: { panel: "packages", action: "remove", spec },
+      });
+    } finally {
+      setRemoving(null);
+    }
+  }
+
   return (
     <section className="rounded-lg border border-border bg-surface-2">
       <button
@@ -240,6 +280,36 @@ export function InstallPanel() {
             <p className="text-[11px] text-fg-faint font-mono">
               {loadResult.packagesDir}
             </p>
+          )}
+
+          {loadResult?.defaults && loadResult.defaults.length > 0 && (
+            <section className="space-y-2">
+              <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
+                Optional integrations
+              </h4>
+              <p className="text-xs text-fg-faint">
+                Install only the integrations you use. They load immediately after installation and can be removed here later.
+              </p>
+              <ul className="space-y-1.5">
+                {loadResult.defaults.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-3 py-2">
+                    <span className="min-w-0 flex-1 text-xs text-fg">{item.label}</span>
+                    <code className="hidden text-[10px] text-fg-faint md:block">{item.npmPackage}</code>
+                    <button
+                      type="button"
+                      onClick={() => void (item.installed
+                        ? handleRemove(item.npmPackage)
+                        : handleInstallDefault(item.npmPackage))}
+                      disabled={installing || removing === item.npmPackage}
+                      className="rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50"
+                      aria-label={`${item.installed ? "Remove" : "Install"} ${item.label}`}
+                    >
+                      {removing === item.npmPackage ? "Removing…" : item.installed ? "Remove" : "Install"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
           )}
 
           <section className="space-y-2">
@@ -342,6 +412,30 @@ export function InstallPanel() {
             </form>
             {installNotice && <p className="text-xs text-fg-muted">{installNotice}</p>}
           </section>
+
+          {manifests.length > 0 && (
+            <section className="space-y-2">
+              <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wide">
+                Installed packages
+              </h4>
+              <ul className="space-y-1.5">
+                {manifests.map((record) => (
+                  <li key={record.name} className="flex items-center gap-2 rounded-md border border-border bg-surface-1 px-3 py-2">
+                    <code className="min-w-0 flex-1 truncate text-xs text-fg">{record.manifest.package}</code>
+                    <button
+                      type="button"
+                      onClick={() => void handleRemove(record.manifest.package)}
+                      disabled={removing === record.manifest.package}
+                      className="rounded-md border border-border px-2 py-1 text-xs text-fg-muted hover:bg-surface-3 hover:text-fg disabled:opacity-50"
+                      aria-label={`Remove ${record.manifest.package}`}
+                    >
+                      {removing === record.manifest.package ? "Removing…" : "Remove"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {pending.length > 0 && (
             <section className="space-y-2">

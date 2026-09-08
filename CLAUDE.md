@@ -9,7 +9,7 @@ Project-specific instructions. Inherits from `~/.claude/CLAUDE.md`.
 - **Agents:** LangGraph (`@langchain/langgraph` + sqlite checkpoint)
 - **Providers:** Anthropic, OpenAI, Google GenAI, Cohere
 - **Tools:** MCP via `@langchain/mcp-adapters` + built-ins under `lib/tools/`
-- **Persistence:** SQLite at `~/.jarela` (configurable via `JARELA_DB_DIR`)
+- **Persistence:** SQLite at the platform data directory (`%LOCALAPPDATA%\Jarela` on Windows, `~/.jarela` on macOS/Linux; configurable via `JARELA_DB_DIR`)
 - **Validation:** zod
 - **Streaming:** ws + undici
 - **PWA:** next-pwa

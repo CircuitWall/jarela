@@ -22,6 +22,7 @@ export function usePackages(): UnifiedHookResult<
   {
     refresh: () => Promise<void>;
     install: (spec: string, version?: string) => Promise<LangChainPackageInstallResponse>;
+    remove: (spec: string) => Promise<void>;
     approveInstall: (id: string) => Promise<LangChainPackageInstallResponse>;
     denyInstall: (id: string) => Promise<void>;
     createManifest: (data: LangChainPackageManifestInput) => Promise<void>;
@@ -72,6 +73,11 @@ export function usePackages(): UnifiedHookResult<
     return res;
   }, [refresh]);
 
+  const remove = useCallback(async (spec: string) => {
+    await api.packages.remove(spec);
+    await refresh();
+  }, [refresh]);
+
   const approveInstall = useCallback(async (id: string) => {
     const res = await api.packages.approveInstall(id);
     await refresh();
@@ -102,8 +108,12 @@ export function usePackages(): UnifiedHookResult<
   }, [refresh]);
 
   const reload = useCallback(async () => {
-    const res = await api.packages.reload();
-    setSnapshot((prev) => ({ ...prev, loadResult: res }));
+    const loadResult = await api.packages.reload();
+    const [manifests, pending] = await Promise.all([
+      api.packages.listManifests(),
+      api.packages.listPending(),
+    ]);
+    setSnapshot({ loadResult, manifests, pending });
   }, []);
 
   const setDefaultEnabled = useCallback(async (id: string, enabled: boolean) => {
@@ -126,6 +136,7 @@ export function usePackages(): UnifiedHookResult<
   const commands = {
     refresh,
     install,
+    remove,
     approveInstall,
     denyInstall,
     createManifest,
