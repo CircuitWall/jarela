@@ -2,7 +2,7 @@ import { makeOpenAICompatProvider } from "./openai";
 import { resolveProviderApiKey } from "./credentials";
 import { readSSELines } from "./streaming";
 import { ProviderAuthError, isAuthHttpStatus } from "./errors";
-import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/types";
+import type { ContentPart, InvokeMessage, InvokeResult, OpenAITool } from "@/lib/tools/runtime/types";
 import type { ModelProvider, ProviderMessage, ProviderParams, ProviderStreamEvent, ProviderStreamResult } from "./types";
 
 // Google Gemini via its OpenAI-compatible endpoint.

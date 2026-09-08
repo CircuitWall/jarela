@@ -6,11 +6,11 @@ import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
-import { gitDiffSummary } from "../git-probe";
+import { gitDiffSummary } from "../support/git-probe";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { resolveSafetyMode } from "../safety";
-import { resolveSubprocessEnv } from "../subprocess-env";
-import { withStreamDefault } from "../tool-metadata";
+import { resolveSafetyMode } from "../security/safety";
+import { resolveSubprocessEnv } from "../security/subprocess-env";
+import { withStreamDefault } from "../support/tool-metadata";
 import { currentWorkspace, reportToolProgress, type ToolConfig } from "../filesystem/workspace-context";
 
 const INTEGRATION_ID = "openai-codex";

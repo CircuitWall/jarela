@@ -10,7 +10,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 // REST wrapper. We don't care which integration row is configured; we
 // only want to verify the indexer dispatches correctly to the right
 // endpoints with the right shapes.
-vi.mock("@/lib/tools/auth-registry", () => ({
+vi.mock("@/lib/tools/runtime/auth-registry", () => ({
   resolvePackageAuth: vi.fn(() => ({ token: "stub" })),
 }));
 vi.mock("@circuitwall/github-langchain", () => ({

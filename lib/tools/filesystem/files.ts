@@ -4,7 +4,7 @@ import path from "node:path";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
-import { checkFsAllowed, resolveSafetyMode } from "../safety";
+import { checkFsAllowed, resolveSafetyMode } from "../security/safety";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { buildOutline, capOutline, shouldOutline } from "./file-outline";

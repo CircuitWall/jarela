@@ -22,7 +22,7 @@
  */
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { getIntegrationRaw } from "@/lib/stores/integrations";
-import { registerTools, unregisterTools, type BuiltinCategory } from "../registry";
+import { registerTools, unregisterTools, type BuiltinCategory } from "../runtime/registry";
 
 /**
  * Bridge between a package's `setAuthResolver()` hook and Jarela's

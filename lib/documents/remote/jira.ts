@@ -9,7 +9,7 @@
 // graph as the issue body so the same retrieval query can surface either.
 
 import { atlassianFetch, type AtlassianAuth } from "@circuitwall/atlassian-langchain";
-import { resolvePackageAuth } from "@/lib/tools/auth-registry";
+import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,

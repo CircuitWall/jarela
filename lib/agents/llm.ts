@@ -16,14 +16,14 @@ import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { drainSteering } from "@/lib/agents/run-registry";
 import { readImageRef } from "@/lib/attachments/spill";
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
 import { withMaskRun, getMaskRunContext } from "@/lib/redaction/context";
 import { StreamRehydrator } from "@/lib/redaction/stream-rehydrate";
 import { wrapToolsForRehydrate } from "@/lib/redaction/wrap-tools";
-import { wrapToolsForCredentialRouting } from "@/lib/tools/wrap-credentials";
+import { wrapToolsForCredentialRouting } from "@/lib/tools/security/wrap-credentials";
 import { errorMessage } from "@/lib/utils/error";
 import { modelCapabilities } from "@/lib/providers/capabilities";
 

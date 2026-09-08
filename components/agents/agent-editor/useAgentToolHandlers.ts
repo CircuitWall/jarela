@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { ToolInfo } from "@/api/types";
-import { normalizeToolCategory } from "@/lib/tools/categories";
+import { normalizeToolCategory } from "@/lib/tools/runtime/categories";
 import { permissionKindForTool, type ToolPermissionKind } from "./permissions";
 
 export interface GroupedTools {

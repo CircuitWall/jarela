@@ -11,7 +11,7 @@
 // Runs at ingest inside `spillImagePart` so every ref on disk starts
 // already resized. See ADR-0065 (spill) and ADR-0066 (this).
 
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 
 export interface ShrinkResult {
   buf: Buffer;

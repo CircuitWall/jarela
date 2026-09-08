@@ -1,4 +1,4 @@
-import type { ContentPart } from "@/lib/tools/types";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 import { prepareThreadRun, persistAssistantMessage, snapshotThreadModelConfigName, withInterruptMarker } from "@/lib/agents/run-thread";
 import type { AssistantUsageSnapshot } from "@/lib/agents/run-thread";
 import { finalizeRouteDecision } from "@/lib/agents/model-router";

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { loadExternalTools } from "@/lib/tools/external";
+import { loadExternalTools } from "@/lib/tools/runtime/external";
 import { getBuiltinToolNames } from "@/lib/tools";
 import {
   isDropinDisabled,

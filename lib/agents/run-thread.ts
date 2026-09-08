@@ -1,8 +1,8 @@
 import { streamWithConfig } from "@/lib/agents/llm";
 import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
-import type { ContentPart } from "@/lib/tools/types";
-import { registeredCapability } from "@/lib/tools/registry";
+import type { ContentPart } from "@/lib/tools/runtime/types";
+import { registeredCapability } from "@/lib/tools/runtime/registry";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";

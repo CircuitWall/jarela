@@ -10,7 +10,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { platform } from "node:os";
 import { randomUUID } from "node:crypto";
-import { resolveSubprocessEnv } from "@/lib/tools/subprocess-env";
+import { resolveSubprocessEnv } from "@/lib/tools/security/subprocess-env";
 
 const MAX_BUF = 256_000;
 const DEFAULT_SHELL = platform() === "win32" ? "powershell.exe" : (process.env.SHELL || "/bin/bash");

@@ -30,12 +30,12 @@ vi.mock("@/lib/stores/memory", () => ({
   putMemory: vi.fn(),
 }));
 
-vi.mock("@/lib/tools/subprocess-env", () => ({
+vi.mock("@/lib/tools/security/subprocess-env", () => ({
   setFullShellEnv: vi.fn(),
 }));
 
 import { discoverAllShellEnv } from "./discover";
-import { setFullShellEnv } from "@/lib/tools/subprocess-env";
+import { setFullShellEnv } from "@/lib/tools/security/subprocess-env";
 
 const mockedDiscoverAllShellEnv = vi.mocked(discoverAllShellEnv);
 const mockedSetFullShellEnv = vi.mocked(setFullShellEnv);

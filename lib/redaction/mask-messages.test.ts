@@ -7,7 +7,7 @@ vi.mock("@/lib/stores/app-settings", () => ({
 
 import { withMaskRun, getMaskRunContext } from "./context";
 import { maskInvokeMessages } from "./mask-messages";
-import type { InvokeMessage } from "@/lib/tools/types";
+import type { InvokeMessage } from "@/lib/tools/runtime/types";
 
 const FAKE_ANT = "sk-ant-abc123def456ghi789jkl000"; // jarela-secret-ok
 

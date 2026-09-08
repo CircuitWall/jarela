@@ -10,7 +10,7 @@
 // (`@langchain/`, `langchain`) so picking one installs without an extra
 // approval round-trip.
 
-import type { BuiltinCategory } from "../registry";
+import type { BuiltinCategory } from "../runtime/registry";
 
 export interface LangChainCatalogEntry {
   /** Stable id for React keys + analytics. Lowercase kebab-case. */

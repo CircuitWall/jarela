@@ -3,7 +3,7 @@ import {
   PROVIDERS_DIR,
 } from "@/lib/providers/external";
 import { BUILTIN_PROVIDER_NAMES } from "@/lib/providers";
-import { loadExternalTools, getToolsDir } from "@/lib/tools/external";
+import { loadExternalTools, getToolsDir } from "@/lib/tools/runtime/external";
 import { getBuiltinToolNames } from "@/lib/tools";
 import { describeToolSecrets } from "@/lib/stores/tool-secrets";
 import { describeToolConfig } from "@/lib/stores/tool-config";

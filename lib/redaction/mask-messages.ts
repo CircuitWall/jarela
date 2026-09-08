@@ -3,7 +3,7 @@
 // swapped for «SECRET:...» placeholders, and records per-payload
 // summaries on the run context for later UI surfacing.
 
-import type { InvokeMessage, ContentPart, OpenAITool } from "@/lib/tools/types";
+import type { InvokeMessage, ContentPart, OpenAITool } from "@/lib/tools/runtime/types";
 import type { RedactionSummary } from "./mask";
 import { getMaskRunContext, recordSummary } from "./context";
 

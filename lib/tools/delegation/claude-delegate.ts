@@ -30,13 +30,13 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
 import { currentWorkspace, reportToolProgress, type ToolConfig } from "../filesystem/workspace-context";
-import { withStreamDefault } from "../tool-metadata";
-import { resolveSafetyMode } from "../safety";
-import { resolveSubprocessEnv } from "../subprocess-env";
-import { gitDiffSummary } from "../git-probe";
+import { withStreamDefault } from "../support/tool-metadata";
+import { resolveSafetyMode } from "../security/safety";
+import { resolveSubprocessEnv } from "../security/subprocess-env";
+import { gitDiffSummary } from "../support/git-probe";
 import { getClaudeCodeConfig, type ClaudeCodeSyncMemory } from "./claude-code-config";
 import { getSession, rememberSession } from "@/lib/stores/claude-delegate-sessions";
-import * as bridge from "../claude-memory-bridge";
+import * as bridge from "./claude-memory-bridge";
 import * as jobs from "./claude-delegate-jobs";
 
 const DEFAULT_TIMEOUT_S = 600;

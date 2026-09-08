@@ -1123,7 +1123,7 @@ export interface CatalogModel {
   };
 }
 
-export type { ContentPart, MessageContent } from "@/lib/tools/types";
+export type { ContentPart, MessageContent } from "@/lib/tools/runtime/types";
 
 import type {
   Harness as _Harness,

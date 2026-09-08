@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { geminiProvider } from "./gemini";
-import type { OpenAITool } from "@/lib/tools/types";
+import type { OpenAITool } from "@/lib/tools/runtime/types";
 
 const tool: OpenAITool = {
   type: "function",

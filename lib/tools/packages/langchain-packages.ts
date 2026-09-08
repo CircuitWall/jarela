@@ -43,11 +43,11 @@ import {
   registerLangChainPackage,
   type RegisteredPackage,
 } from "./langchain-package";
-import { categorizeByVerb } from "../categorize-by-verb";
+import { categorizeByVerb } from "../runtime/categorize-by-verb";
 import { errorMessage } from "@/lib/utils/error";
 import { isPackageDisabled } from "@/lib/stores/disabled-packages";
 import { getInjectedSubprocessEnv } from "@/lib/env/allowlist";
-import { BUILTIN_CATEGORIES } from "../registry";
+import { BUILTIN_CATEGORIES } from "../runtime/registry";
 
 // Re-exported for convenience so callers already importing from
 // `langchain-packages` don't have to add a second import. The single

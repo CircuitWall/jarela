@@ -14,7 +14,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { convertToOpenAITool } from "@langchain/core/utils/function_calling";
 import type { Runnable } from "@langchain/core/runnables";
 import type { ModelProvider, ProviderParams } from "@/lib/providers/types";
-import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/types";
+import type { ContentPart, InvokeMessage, OpenAITool, ToolParamSchema } from "@/lib/tools/runtime/types";
 import { maskInvokeMessages } from "@/lib/redaction/mask-messages";
 import { getEffectiveProviderToolLimit } from "./tool-limit";
 
@@ -356,7 +356,7 @@ function toInvokeMessages(messages: BaseMessage[]): InvokeMessage[] {
       if (ai.tool_calls?.length) {
         const metaMap = (ai.additional_kwargs?.provider_tool_call_meta ?? {}) as Record<string, Record<string, unknown>>;
         invokeMsg.tool_calls = ai.tool_calls.map((tc) => {
-          const ref: import("@/lib/tools/types").ToolCallRef = {
+          const ref: import("@/lib/tools/runtime/types").ToolCallRef = {
             id: tc.id ?? "",
             type: "function" as const,
             function: { name: tc.name, arguments: JSON.stringify(tc.args) },

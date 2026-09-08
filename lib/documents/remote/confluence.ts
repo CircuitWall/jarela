@@ -8,7 +8,7 @@
 // `lastmodified` is older than the previous run's high-water mark.
 
 import { atlassianFetch, type AtlassianAuth } from "@circuitwall/atlassian-langchain";
-import { resolvePackageAuth } from "@/lib/tools/auth-registry";
+import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import {
   parseSourceConfig,
   updateDocumentSourceCursor,
