@@ -294,7 +294,6 @@ export function applyProviderToolLimitToCatalog(
     }),
   };
 }
-
 function scoreToolCandidate(
   entry: ToolCatalogEntry | undefined,
   options: ProviderToolLimitOptions,
