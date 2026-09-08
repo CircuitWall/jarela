@@ -334,10 +334,10 @@ describe("confluence_get_page", () => {
     const out = await confluenceGetPageTool.invoke({ page_id: "p1" });
 
     expect(calls[0].url).toBe(
-      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=storage&include-version=true",
+      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=STORAGE&include-version=true",
     );
     expect(calls[1].url).toBe(
-      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=view&include-version=true",
+      "https://test.atlassian.net/wiki/api/v2/pages/p1?body-format=VIEW&include-version=true",
     );
     expect(JSON.parse(out)).toEqual({
       id: "p1",
