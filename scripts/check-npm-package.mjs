@@ -98,12 +98,6 @@ try {
   }
 
   const packedPackage = JSON.parse(packedManifest);
-  if (!packedPackage.dependencies?.["@circuitwall/icloud-langchain"]) {
-    throw new Error(
-      "npm tarball package.json is missing dependency @circuitwall/icloud-langchain, which root source imports at build time",
-    );
-  }
-
   extractDir = mkdtempSync(join(tmpdir(), "jarela-package-"));
   run("tar", ["-xf", filename, "-C", extractDir]);
   run("npm", ["run", "packages:build", "--silent"], { cwd: join(extractDir, "package") });

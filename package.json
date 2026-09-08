@@ -130,11 +130,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
-    "@circuitwall/atlassian-langchain": "workspace:^",
-    "@circuitwall/github-langchain": "workspace:^",
-    "@circuitwall/icloud-langchain": "workspace:^",
-    "@circuitwall/jira-align-langchain": "workspace:^",
-    "@circuitwall/ms-todo-langchain": "workspace:^",
     "@langchain/cohere": "^1.0.5",
     "@langchain/core": "^1.2.9",
     "@langchain/deepseek": "^1.1.10",

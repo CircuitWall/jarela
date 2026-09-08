@@ -8,7 +8,7 @@
 // comments flattened into one text body. Comments live on the same chunk
 // graph as the issue body so the same retrieval query can surface either.
 
-import { atlassianFetch, type AtlassianAuth } from "@circuitwall/atlassian-langchain";
+import { optionalFunction } from "@/lib/tools/packages/optional-package";
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import {
   parseSourceConfig,
@@ -17,6 +17,13 @@ import {
 } from "@/lib/stores/document-sources";
 import { adfToText } from "./flatten";
 import { upsertRemoteDocument, type UpsertResult } from "./upsert";
+
+interface AtlassianAuth { url: string; email: string; apiToken: string }
+const atlassianFetch = optionalFunction<(auth: AtlassianAuth, path: string, init?: RequestInit) => Promise<unknown>>(
+  "@circuitwall/atlassian-langchain",
+  "atlassianFetch",
+  () => { throw new Error("Atlassian package is not installed."); },
+);
 
 const PAGE_LIMIT = 50;
 const MAX_ISSUES_PER_RUN = 500;

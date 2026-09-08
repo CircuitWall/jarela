@@ -2,12 +2,10 @@
 //
 //   1. Legacy LangGUI layout (~/.langgui with langgui.db) — rebrand
 //      migration: rename the dir + the DB files.
-//   2. On Windows, ~/.jarela → %LOCALAPPDATA%\Jarela (ADR-0006) to escape
+//   2. On Windows, the default is %LOCALAPPDATA%\Jarela (ADR-0006) to escape
 //      OneDrive-synced user-profile paths.
 //
-// No backward-compat for env vars is retained at the code level; both
-// migrations are best-effort renames on first launch against a populated
-// machine so existing users keep their data.
+// Legacy data migration is intentionally limited to the old LangGUI name.
 
 import { existsSync, mkdirSync, renameSync, readdirSync, rmdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -93,16 +91,10 @@ export function getDataDir(): string {
   const envDir = process.env.JARELA_DB_DIR;
   const newDir = envDir ? expandHome(envDir) : defaultDataDir();
 
-  // Only run automatic migrations for the default location; if the user
-  // customized JARELA_DB_DIR they're explicitly opting out.
+  // Only run the old LangGUI rebrand migration for the default location; if
+  // the user customized JARELA_DB_DIR they're explicitly opting out.
   if (!envDir) {
-    // Chain order matters: rebrand first so a ~/.langgui from the old
-    // build lands at ~/.jarela, then the Windows-only move lifts that to
-    // %LOCALAPPDATA%\Jarela in the same boot.
-    migrateLegacyDir(join(homedir(), ".langgui"), join(homedir(), ".jarela"));
-    if (process.platform === "win32" && newDir !== join(homedir(), ".jarela")) {
-      migrateLegacyDir(join(homedir(), ".jarela"), newDir);
-    }
+    migrateLegacyDir(join(homedir(), ".langgui"), newDir);
   }
 
   mkdirSync(newDir, { recursive: true });

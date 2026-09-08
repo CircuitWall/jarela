@@ -434,6 +434,11 @@ export const api = {
         method: "POST",
         body: JSON.stringify(version ? { spec, version } : { spec }),
       }),
+    remove: (spec: string) =>
+      request<{ status: "removed"; spec: string }>("/packages/install", {
+        method: "DELETE",
+        body: JSON.stringify({ spec }),
+      }),
     listPending: () =>
       request<LangChainPackagePendingInstall[]>("/packages/install"),
     approveInstall: (id: string) =>

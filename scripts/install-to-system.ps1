@@ -28,6 +28,7 @@
 param(
   [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Jarela'),
   [switch]$SkipBuild,
+  [switch]$SkipOptionalPackages,
   [switch]$NoStart,
   [switch]$SkipTailscale,
   [switch]$Boot
@@ -67,6 +68,17 @@ Info ("node: " + $nodeCmd.Source)
 Info ("npm:  " + $npm)
 Info ("repo: " + $RepoRoot)
 Info ("dest: " + $InstallDir)
+
+$OptionalPackagesDir = Join-Path (Join-Path $env:LOCALAPPDATA 'Jarela') 'packages'
+$OptionalPackages = @(
+  (Join-Path $RepoRoot 'packages\atlassian-langchain'),
+  (Join-Path $RepoRoot 'packages\github-langchain'),
+  (Join-Path $RepoRoot 'packages\icloud-langchain'),
+  (Join-Path $RepoRoot 'packages\jira-align-langchain'),
+  (Join-Path $RepoRoot 'packages\linkedin-enterprise-langchain'),
+  (Join-Path $RepoRoot 'packages\linkedin-personal-langchain'),
+  (Join-Path $RepoRoot 'packages\ms-todo-langchain')
+)
 
 # ── 1. Stop existing instance so we can overwrite files ────────────────────
 Step "Stopping any existing Jarela instance"
@@ -117,6 +129,13 @@ $serverJs   = Join-Path $standalone 'server.js'
 
 if (-not (Test-Path $serverJs)) {
   throw "Standalone build missing at $serverJs. Re-run without -SkipBuild."
+}
+
+if (-not $SkipOptionalPackages) {
+  Step "Installing optional integration packages"
+  New-Item -ItemType Directory -Path $OptionalPackagesDir -Force | Out-Null
+  & $npm install --prefix $OptionalPackagesDir --no-save --no-fund --no-audit --legacy-peer-deps @OptionalPackages
+  if ($LASTEXITCODE -ne 0) { throw "optional integration package install failed" }
 }
 
 # -- 2.5. Stop any existing supervisor + server cleanly ---------------------

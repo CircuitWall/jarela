@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-default-packages-"));
 process.env.JARELA_DB_DIR = tmpRoot;
+process.env.JARELA_PACKAGES_DIR = join(tmpRoot, "packages");
 
 const {
   listDefaultPackages,
@@ -49,6 +50,10 @@ describe("default LangChain packages", () => {
     }
   });
 
+  it("reports integrations as uninstalled when the managed directory is empty", () => {
+    expect(listDefaultPackages().every((p) => p.installed === false)).toBe(true);
+  });
+
   it("findDefaultPackage returns the descriptor for a known id", () => {
     const d = findDefaultPackage("github");
     expect(d).not.toBeNull();
@@ -81,7 +86,7 @@ describe("default LangChain packages", () => {
   it("each descriptor exposes positive tool counts", () => {
     for (const p of listDefaultPackages()) {
       const total = p.toolCounts.read + p.toolCounts.write + p.toolCounts.execute;
-      expect(total).toBeGreaterThan(0);
+      if (p.installed) expect(total).toBeGreaterThan(0);
     }
   });
 });

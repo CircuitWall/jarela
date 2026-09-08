@@ -46,6 +46,7 @@ if (-not $nodeCmd) {
 }
 $node = $nodeCmd.Source
 Write-Log "node: $node"
+Write-Log "packages: $env:JARELA_PACKAGES_DIR"
 
 $serverJs = Join-Path $InstallDir 'server.js'
 if (-not (Test-Path $serverJs)) {

@@ -48,6 +48,7 @@ interface UnifiedRow {
   capability?: "read" | "write" | "execute";
   toolCounts?: { read: number; write: number; execute: number };
   enabled?: boolean;
+  installed?: boolean;
   npmPackage?: string;
   packageImport?: string;
   category?: string;
@@ -125,6 +126,7 @@ function buildRows(
   }
 
   for (const p of defaults) {
+    if (!p.installed) continue;
     const total = p.toolCounts.read + p.toolCounts.write + p.toolCounts.execute;
     rows.push({
       kind: "default",
@@ -135,6 +137,7 @@ function buildRows(
       toolCount: total,
       toolCounts: p.toolCounts,
       enabled: p.enabled,
+      installed: p.installed,
       npmPackage: p.npmPackage,
       category: p.category,
       integrationId: p.integrationId,

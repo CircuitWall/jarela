@@ -13,7 +13,7 @@
 // indexOnDemand) cover one-shot indexing of a PR / issue / file URL
 // under the shared `on_demand_url` source row.
 
-import { githubFetch, type GitHubAuth } from "@circuitwall/github-langchain";
+import { optionalFunction } from "@/lib/tools/packages/optional-package";
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import {
   parseSourceConfig,
@@ -22,6 +22,13 @@ import {
 } from "@/lib/stores/document-sources";
 import { ALLOWED_EXT, isLikelyBinary, lowerExt } from "../indexer";
 import { upsertRemoteDocument, type UpsertResult } from "./upsert";
+
+interface GitHubAuth { token: string }
+const githubFetch = optionalFunction<(auth: GitHubAuth, path: string, init?: RequestInit) => Promise<unknown>>(
+  "@circuitwall/github-langchain",
+  "githubFetch",
+  () => { throw new Error("GitHub package is not installed."); },
+);
 
 const PR_PAGE_LIMIT = 50;
 const MAX_PRS_PER_RUN = 200;
