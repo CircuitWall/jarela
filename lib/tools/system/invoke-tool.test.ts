@@ -36,14 +36,14 @@ describe("invoke_tool", () => {
   });
 
   it("rejects recursive self-invocation", async () => {
-    const out = parse(await invokeToolTool.invoke({ name: "invoke_tool", args: {} }));
+    await expect(invokeToolTool.invoke({ name: "invoke_tool", args: {} }))
+      .rejects.toThrow("invoke_tool cannot target itself");
+  });
 
-    expect(out).toMatchObject({
-      ok: false,
-      tool: "invoke_tool",
-      status: "rejected",
-      error_code: "recursive_invoke_tool",
-    });
+  it("rejects invoke_tool as a schema target before execution", () => {
+    const parsed = invokeToolTool.schema.safeParse({ name: "invoke_tool", args: {} });
+
+    expect(parsed.success).toBe(false);
   });
 
   it("rejects tools that are not enabled for the current agent", async () => {

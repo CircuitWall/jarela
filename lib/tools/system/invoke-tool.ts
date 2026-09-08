@@ -212,12 +212,16 @@ export const invokeToolTool = tool(
   {
     name: "invoke_tool",
     description:
-      "Execute a permitted tool by name. Use this after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. " +
+      "Never target invoke_tool itself; call the target tool directly. Execute a permitted tool by name only after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. " +
       "Pass the target's arguments as args_json: a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. " +
       "Never use invoke_tool to call invoke_tool itself; call already-loaded tools directly instead of wrapping them. " +
       "This does not bypass permissions, disabled categories, unavailable MCP servers, disabled drop-in tools, or credential requirements. Call list_tools with include_schema=true when you need the target tool's argument schema.",
     schema: z.object({
-      name: z.string().min(1).describe("Exact target tool name from list_tools."),
+      name: z
+        .string()
+        .min(1)
+        .refine((name) => name !== "invoke_tool", "invoke_tool cannot target itself")
+        .describe("Exact target tool name from list_tools; never use invoke_tool itself."),
       // A string carries arguments through every provider. Gemini strips
       // `additionalProperties` from tool schemas, which turns a free-form
       // object into one the model can only ever emit as `{}`.

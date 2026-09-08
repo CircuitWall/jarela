@@ -286,7 +286,7 @@ export const fileReadTool = tool(
 
 const writeSchema = z.object({
   path: z.string().describe("File path. Absolute (C:\\... or /...) or ~/foo recommended; bare relative paths resolve against the user's HOME directory."),
-  content: z.string().describe("Full file content. Overwrites the file if it exists."),
+  content: z.string().min(1, "content is required").describe("Required: full UTF-8 file content, not a patch or partial fragment. Overwrites the file if it exists."),
   create_dirs: z
     .boolean()
     .optional()
@@ -326,7 +326,7 @@ export const fileWriteTool = tool(
   {
     name: "file_write",
     description:
-      "Create or fully overwrite a UTF-8 text file. Parent directories are created by default. Prefer file_edit or file_multi_edit for targeted changes to existing files; avoid shell heredocs/echo redirection for file writes.",
+      "Create or fully overwrite a UTF-8 text file. The required content argument must contain the complete file contents, not a patch or partial fragment. Parent directories are created by default. Prefer file_edit or file_multi_edit for targeted changes to existing files; avoid shell heredocs/echo redirection for file writes.",
     schema: writeSchema,
   },
 );

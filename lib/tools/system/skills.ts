@@ -34,7 +34,7 @@ export const writeSkillTool = tool(
   {
     name: "write_skill",
     description:
-      "Create or update a skill in the skills directory as a SKILL.md file, compatible with VS Code Copilot and other tools. Use this for user-requested skill edits and for proactive, scoped skill improvements that make repeated task handling more reliable.",
+      "Create or update a skill in the skills directory as a complete SKILL.md file, compatible with VS Code Copilot and other tools. The required content argument must contain the full markdown file, including its heading and instructions; do not omit it or send only a patch. Use this for user-requested skill edits and for proactive, scoped skill improvements that make repeated task handling more reliable.",
     schema: z.object({
       id: z
         .string()
