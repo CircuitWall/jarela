@@ -3,11 +3,11 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { platform } from "node:os";
 import { TerminalSession, getSession, putSession, removeSession, listSessions, sessionCount, evictIdleSessions } from "@/lib/terminal";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 import { checkExecAllowed, resolveSafetyMode, type SafetyMode } from "./safety";
 import { getConfig } from "@/lib/env/config";
-import type { ToolConfig } from "./workspace-context";
-import { currentWorkspace } from "./workspace-context";
+import type { ToolConfig } from "./filesystem/workspace-context";
+import { currentWorkspace } from "./filesystem/workspace-context";
 import { withStreamDefault } from "./tool-metadata";
 
 // Evict idle sessions every 60 s. .unref() so this timer doesn't keep Node alive.

@@ -2,7 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
 import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 
 export const memoryReadTool = tool(
   async ({ namespace, key }) => {

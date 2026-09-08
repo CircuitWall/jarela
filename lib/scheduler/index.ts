@@ -6,7 +6,7 @@ import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { indexAllSources } from "@/lib/documents/indexer";
 import { runTriggerTick, runScheduledTaskFiringNow } from "@/lib/triggers";
 import { runAllHealthProbes } from "@/lib/health/runner";
-import { maybeAutoFileToolTelemetryIssue } from "@/lib/tools/tool-telemetry-issue";
+import { maybeAutoFileToolTelemetryIssue } from "@/lib/tools/system/tool-telemetry-issue";
 import { runSpillFileGc } from "@/lib/attachments/spill-gc";
 import { isMasterKeyLocked, onMasterKeyUnlocked } from "@/lib/crypto/master-key";
 import { getConfig } from "@/lib/env/config";

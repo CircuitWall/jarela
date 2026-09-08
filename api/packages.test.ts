@@ -28,7 +28,7 @@ writeFileSync(
 process.env.JARELA_DB_DIR = tmpRoot;
 process.env.JARELA_PACKAGES_DIR = packagesDir;
 
-const { _resetLangChainPackages } = await import("@/lib/tools/langchain-packages");
+const { _resetLangChainPackages } = await import("@/lib/tools/packages/langchain-packages");
 const { GET } = await import("@/app/api/v1/packages/route");
 const { POST } = await import("@/app/api/v1/packages/reload/route");
 

@@ -5,7 +5,7 @@ vi.mock("node:os", async (importOriginal) => ({
   platform: () => "win32",
 }));
 
-const { buildCodexArgs, resolveCodexLaunch, resolveCodexWorkspace } = await import("./codex-delegate");
+const { buildCodexArgs, resolveCodexLaunch, resolveCodexWorkspace } = await import("./delegation/codex-delegate");
 
 describe("buildCodexArgs", () => {
   it("uses Codex JSON output and a read-only sandbox by default", () => {

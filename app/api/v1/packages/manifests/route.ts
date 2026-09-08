@@ -4,7 +4,7 @@ import {
   createManifest,
   listManifests,
   MANIFEST_INPUT_SCHEMA,
-} from "@/lib/tools/package-manifests";
+} from "@/lib/tools/packages/package-manifests";
 import { errorMessage } from "@/lib/utils/error";
 
 export function GET() {

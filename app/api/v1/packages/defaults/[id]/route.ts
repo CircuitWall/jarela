@@ -5,7 +5,7 @@ import {
   findDefaultPackage,
   listDefaultPackages,
   setDefaultPackageEnabled,
-} from "@/lib/tools/default-packages";
+} from "@/lib/tools/packages/default-packages";
 import { setPackageDisabled } from "@/lib/stores/disabled-packages";
 import { errorMessage } from "@/lib/utils/error";
 

@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerLangChainPackage } from "./langchain-package";
-import { reportToolProgress, type ToolConfig } from "./workspace-context";
+import { registerLangChainPackage } from "./packages/langchain-package";
+import { reportToolProgress, type ToolConfig } from "./filesystem/workspace-context";
 import {
   getVersionAdoptionState,
   recordVersionAdoptionWorkflowProgress,

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 import {
   registeredNames,
   registeredCategory,

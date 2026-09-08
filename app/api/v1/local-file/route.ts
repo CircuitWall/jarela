@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { currentWorkspace } from "@/lib/tools/workspace-context";
+import { currentWorkspace } from "@/lib/tools/filesystem/workspace-context";
 import { errorMessage } from "@/lib/utils/error";
 
 const MAX_SNIPPET_BYTES = 16_384;

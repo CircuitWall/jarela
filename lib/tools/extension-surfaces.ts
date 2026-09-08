@@ -11,7 +11,7 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 
 interface ExtensionSurface {
   id: string;

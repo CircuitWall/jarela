@@ -13,7 +13,7 @@ afterAll(() => {
 
 const { localExecTool } = await import("./exec");
 const { terminalTool } = await import("./terminal");
-const { setWorkspace, _resetWorkspaceContext } = await import("./workspace-context");
+const { setWorkspace, _resetWorkspaceContext } = await import("./filesystem/workspace-context");
 
 function parse(s: string) { return JSON.parse(s) as Record<string, unknown>; }
 

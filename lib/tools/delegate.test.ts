@@ -36,7 +36,7 @@ vi.mock("./langchain-package", () => ({
   }),
 }));
 
-const { delegateToAgentTool } = await import("./delegate");
+const { delegateToAgentTool } = await import("./delegation/delegate");
 
 function makeConfig(overrides: Partial<{
   thread_id: string;

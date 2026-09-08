@@ -12,7 +12,7 @@ const {
   setDefaultPackageEnabled,
   registerDefaultPackages,
   _resetDefaultPackages,
-} = await import("./default-packages");
+} = await import("./packages/default-packages");
 
 const { setPackageDisabled, listDisabledPackages } = await import(
   "@/lib/stores/disabled-packages"

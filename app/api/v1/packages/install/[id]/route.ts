@@ -3,7 +3,7 @@ import { errorResponse } from "@/lib/api/responses";
 import {
   approvePackageInstall,
   denyPackageInstall,
-} from "@/lib/tools/package-install";
+} from "@/lib/tools/packages/package-install";
 import { errorMessage } from "@/lib/utils/error";
 
 interface Ctx {

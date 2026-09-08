@@ -12,7 +12,7 @@
 import { SYSTEM_PROMPT as CITATION_CHECKER_PROMPT } from "@/lib/agents/citation-checker";
 import { SYSTEM_PROMPT as HALLUCINATION_CLASSIFIER_PROMPT } from "@/lib/agents/hallucination-classifier";
 import { SYSTEM_PROMPT as PRICING_EXTRACT_PROMPT } from "@/lib/pricing/llm-extract";
-import { DESIGN_QA_PROMPT } from "@/lib/tools/claude-delegate";
+import { DESIGN_QA_PROMPT } from "@/lib/tools/delegation/claude-delegate";
 import { buildSharedToolCatalogContext } from "@/lib/agents/prepare/system-prompt";
 import { BUILTIN_HARNESSES } from "@/lib/agents/harness/presets";
 

@@ -58,7 +58,7 @@ writeFileSync(
 process.env.JARELA_DB_DIR = tmpRoot;
 process.env.JARELA_PACKAGES_DIR = packagesDir;
 
-const { _resetLangChainPackages } = await import("./langchain-packages");
+const { _resetLangChainPackages } = await import("./packages/langchain-packages");
 const {
   createManifest,
   deleteManifest,
@@ -69,7 +69,7 @@ const {
   manifestDisableKey,
   normalizeManifestName,
   _wipeManifests,
-} = await import("./package-manifests");
+} = await import("./packages/package-manifests");
 const {
   listDisabledPackages,
   setPackageDisabled,

@@ -5,11 +5,11 @@
 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 import { checkExecAllowed, resolveSafetyMode } from "./safety";
 import { TerminalSession } from "@/lib/terminal";
 import { getConfig } from "@/lib/env/config";
-import { currentWorkspace, type ToolConfig } from "./workspace-context";
+import { currentWorkspace, type ToolConfig } from "./filesystem/workspace-context";
 import { withStreamDefault } from "./tool-metadata";
 
 const BLOCKED_PATTERNS = [
