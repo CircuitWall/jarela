@@ -326,8 +326,21 @@ describe("jira_rank_issues", () => {
     expect(calls[0].url).toMatch(/\/issue\/rank$/);
     expect(JSON.parse(calls[0].init.body as string)).toEqual({
       issues: ["A-1", "A-2"],
-      rankAfterIssue: "A-3",
+      rankAfterIssue: { issueKey: "A-3" },
       rankCustomFieldId: 10019,
+    });
+  });
+
+  it("accepts issue-key objects as rank anchors and normalizes them for the API", async () => {
+    responses = [{ status: 204, body: "" }];
+    const out = JSON.parse(await jiraRankIssuesTool.invoke({
+      issues: ["A-1"],
+      rank_before_issue: { issueKey: "A-2" },
+    }));
+    expect(out.ok).toBe(true);
+    expect(JSON.parse(calls[0].init.body as string)).toEqual({
+      issues: ["A-1"],
+      rankBeforeIssue: { issueKey: "A-2" },
     });
   });
 });
