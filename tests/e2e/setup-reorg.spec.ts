@@ -163,7 +163,7 @@ test("memory panel renders structured values and masks secret-shaped keys", asyn
   await page.getByRole("tab", { name: "Memory", exact: true }).click();
 
   // Filter to our namespace so the list is bounded.
-  await page.getByRole("combobox").selectOption("e2e-demo");
+  await page.getByRole("combobox", { name: "Memory namespace" }).selectOption("e2e-demo");
 
   // Plain string renders without JSON quoting.
   await expect(page.getByText("remember the milk", { exact: true })).toBeVisible();

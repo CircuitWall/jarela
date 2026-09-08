@@ -56,12 +56,28 @@ export async function seedMockAgent(request: APIRequestContext): Promise<{ model
 export async function waitForAppReady(page: Page, timeout = 30_000): Promise<void> {
   const overlay = page.locator('[role="status"][aria-live="polite"].fixed.inset-0');
   if (await overlay.count()) {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let recovery = 0; recovery < 3; recovery++) {
       const pickTile = overlay.locator('button[aria-label^="Open "]').first();
-      if (!(await pickTile.isVisible().catch(() => false))) break;
-      await pickTile.evaluate((element) => (element as HTMLButtonElement).click()).catch(() => undefined);
+      await page.waitForLoadState("load").catch(() => undefined);
+      const deadline = Date.now() + 5_000;
+      while (Date.now() < deadline && !(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
+        if (!(await pickTile.isVisible().catch(() => false))) break;
+        await pickTile.click({ force: true, timeout: 5_000 }).catch(() => undefined);
+        if (!(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
+          await pickTile.focus().catch(() => undefined);
+          await pickTile.press("Enter").catch(() => undefined);
+        }
+        if (!(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
+          await pickTile.dispatchEvent("click").catch(() => undefined);
+        }
+        if (!(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
+          await page.waitForTimeout(250);
+        }
+      }
       if (await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false)) break;
-      await page.waitForTimeout(100);
+      if (recovery < 2) {
+        await page.reload({ waitUntil: "domcontentloaded" });
+      }
     }
   }
   await overlay.waitFor({ state: "detached", timeout });
