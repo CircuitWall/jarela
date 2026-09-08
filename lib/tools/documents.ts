@@ -7,7 +7,7 @@ import { tool } from "@langchain/core/tools";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { z } from "zod";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 import { withStreamDefault } from "./tool-metadata";
 import { searchDocuments } from "@/lib/documents/search";
 import {

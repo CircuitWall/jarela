@@ -2,12 +2,12 @@ import {
   jiraReadTools,
   jiraWriteTools,
   jiraExecuteTools,
-} from "./jira-tools";
+} from "./jira/jira-tools";
 import {
   confluenceReadTools,
   confluenceWriteTools,
   confluenceExecuteTools,
-} from "./confluence-tools";
+} from "./confluence/confluence-tools";
 
 export {
   setAuthResolver,
@@ -62,10 +62,8 @@ export {
   jiraExecuteTools,
   jiraTools,
   validateSprintTransition,
-  resolveCustomFieldNames,
-  extractFieldValue,
-  type JiraFieldDef,
-} from "./jira-tools";
+} from "./jira/jira-tools";
+export { resolveCustomFieldNames, extractFieldValue, type JiraFieldDef } from "./jira/jira-formatters";
 
 export {
   confluenceSearchTool,
@@ -95,7 +93,7 @@ export {
   confluenceTools,
   confluenceTextToStorage,
   parseV2NextCursor,
-} from "./confluence-tools";
+} from "./confluence/confluence-tools";
 
 export const atlassianReadTools = [
   ...jiraReadTools,

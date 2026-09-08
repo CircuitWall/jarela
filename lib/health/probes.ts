@@ -21,18 +21,18 @@ import type { LinkedInEnterpriseAuth } from "@circuitwall/linkedin-enterprise-la
 // scheduler before any agent tool call has caused builtins.ts to load.
 // Skip during `next build` page-data collection: parallel workers would
 // race on the SQLite migration lock when isPackageDisabled() opens the DB.
-import { registerDefaultPackages } from "@/lib/tools/default-packages";
+import { registerDefaultPackages } from "@/lib/tools/packages/default-packages";
 if (process.env.NEXT_PHASE !== "phase-production-build") {
   registerDefaultPackages();
 }
-import { _resolveGmailAuth } from "@/lib/tools/gmail";
-import { _resolveOutlookAuth } from "@/lib/tools/outlook";
+import { _resolveGmailAuth } from "@/lib/tools/communications/gmail";
+import { _resolveOutlookAuth } from "@/lib/tools/communications/outlook";
 import { resolveGoogleTokenEndpoint } from "@/lib/integrations/gmail-oauth";
 import { getMicrosoftAccessToken } from "@/lib/integrations/microsoft-oauth";
 import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/stores/integrations";
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
-import { getClaudeCodeConfig } from "@/lib/tools/claude-code-config";
-import { getCodexConfig, resolveCodexLaunch } from "@/lib/tools/codex-delegate";
+import { getClaudeCodeConfig } from "@/lib/tools/delegation/claude-code-config";
+import { getCodexConfig, resolveCodexLaunch } from "@/lib/tools/delegation/codex-delegate";
 
 export const __testing = {
   spawnClaudeCodeVersion(bin: string, env: NodeJS.ProcessEnv) {

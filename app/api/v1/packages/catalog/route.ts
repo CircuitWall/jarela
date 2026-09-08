@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getLangChainCatalog } from "@/lib/tools/langchain-catalog";
+import { getLangChainCatalog } from "@/lib/tools/packages/langchain-catalog";
 
 // Static curated catalog of well-known LangChain tool packages. Lets the
 // UI render a picker so users don't have to hunt npm for the right

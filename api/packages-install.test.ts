@@ -10,7 +10,7 @@ mkdirSync(packagesDir, { recursive: true });
 process.env.JARELA_DB_DIR = tmpRoot;
 process.env.JARELA_PACKAGES_DIR = packagesDir;
 
-const { _resetPackageInstallStore } = await import("@/lib/tools/package-install");
+const { _resetPackageInstallStore } = await import("@/lib/tools/packages/package-install");
 const { GET, POST } = await import("@/app/api/v1/packages/install/route");
 const { DELETE } = await import("@/app/api/v1/packages/install/[id]/route");
 

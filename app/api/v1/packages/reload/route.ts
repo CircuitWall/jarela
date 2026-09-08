@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getPackagesDir,
   reloadLangChainPackages,
-} from "@/lib/tools/langchain-packages";
+} from "@/lib/tools/packages/langchain-packages";
 
 export async function POST() {
   const result = await reloadLangChainPackages();

@@ -3,7 +3,7 @@ import {
   getEffectivePackageAllowlist,
   isPackageAllowed,
   publisherOf,
-} from "./package-allowlist";
+} from "./packages/package-allowlist";
 
 const ENV_KEY = "JARELA_PACKAGE_ALLOWLIST";
 

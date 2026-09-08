@@ -9,48 +9,48 @@
 import "./memory";
 import "./documents";
 import "./exec";
-import "./files";
-import "./files-search";
-import "./workspace";
-import "./search";
-import "./fetch";
-import "./shopping";
+import "./filesystem/files";
+import "./filesystem/files-search";
+import "./filesystem/workspace";
+import "./web/search";
+import "./web/fetch";
+import "./web/shopping";
 import "./location";
-import "./generate_image";
-import "./generate_voice";
+import "./web/generate_image";
+import "./web/generate_voice";
 import "./schedule";
 import "./watcher";
-import "./propose";
-import "./agent-instruction";
-import "./integrations";
+import "./system/propose";
+import "./system/agent-instruction";
+import "./system/integrations";
 import "./workflow-progress";
 // Default LangChain packages (Atlassian, GitHub, Jira Align) ship with
 // Jarela but are runtime-toggleable: see ./default-packages.ts.
-import { registerDefaultPackages } from "./default-packages";
+import { registerDefaultPackages } from "./packages/default-packages";
 // Skip during `next build` page-data collection: parallel workers would
 // race on the SQLite migration lock when isPackageDisabled() opens the DB.
 // The real server boot path still imports this barrel and runs the call.
 if (process.env.NEXT_PHASE !== "phase-production-build") {
   registerDefaultPackages();
 }
-import "./gmail";
-import "./calendar";
-import "./outlook";
-import "./outlook-calendar";
-import "./ms-todo";
-import "./ms-graph";
-import "./delegate";
-import "./system_config";
-import "./list-tools";
-import "./invoke-tool";
-import "./providers-info";
-import "./mcp-servers-info";
+import "./communications/gmail";
+import "./communications/calendar";
+import "./communications/outlook";
+import "./communications/outlook-calendar";
+import "./communications/ms-todo";
+import "./communications/ms-graph";
+import "./delegation/delegate";
+import "./system/system_config";
+import "./system/list-tools";
+import "./system/invoke-tool";
+import "./system/providers-info";
+import "./system/mcp-servers-info";
 import "./extension-surfaces";
-import "./harness-info";
+import "./system/harness-info";
 import "./async-results-tool";
-import "./tool-telemetry-issue";
-import "./browser-control";
-import "./skills";
+import "./system/tool-telemetry-issue";
+import "./web/browser-control";
+import "./system/skills";
 import "./terminal";
-import "./claude-delegate";
-import "./codex-delegate";
+import "./delegation/claude-delegate";
+import "./delegation/codex-delegate";

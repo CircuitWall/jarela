@@ -75,9 +75,9 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, spawn: spawnFn };
 });
 
-const { claudeDelegateTool, claudeDelegateStatusTool } = await import("./claude-delegate");
-const { _resetDelegateJobs } = await import("./claude-delegate-jobs");
-const { _resetWorkspaceContext, setWorkspace } = await import("./workspace-context");
+const { claudeDelegateTool, claudeDelegateStatusTool } = await import("./delegation/claude-delegate");
+const { _resetDelegateJobs } = await import("./delegation/claude-delegate-jobs");
+const { _resetWorkspaceContext, setWorkspace } = await import("./filesystem/workspace-context");
 const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
 
 function parse(s: string): Record<string, unknown> {

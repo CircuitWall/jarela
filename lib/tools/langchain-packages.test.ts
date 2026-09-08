@@ -12,7 +12,7 @@ const {
   reloadLangChainPackages,
   getPackagesDir,
   _resetLangChainPackages,
-} = await import("./langchain-packages");
+} = await import("./packages/langchain-packages");
 const { registeredNames, registeredCategory, registeredCapability, _resetRegistry } = await import("./registry");
 
 interface FakeToolSpec {

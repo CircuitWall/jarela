@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import type { RunnableConfig } from "@langchain/core/runnables";
-import { registerLangChainPackage } from "./langchain-package";
+import { registerLangChainPackage } from "./packages/langchain-package";
 import {
   createScheduledTask,
   listScheduledTasks,

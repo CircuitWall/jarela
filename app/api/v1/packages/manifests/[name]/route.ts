@@ -5,7 +5,7 @@ import {
   deleteManifest,
   getManifest,
   MANIFEST_INPUT_SCHEMA,
-} from "@/lib/tools/package-manifests";
+} from "@/lib/tools/packages/package-manifests";
 import { z } from "zod";
 import { errorMessage } from "@/lib/utils/error";
 

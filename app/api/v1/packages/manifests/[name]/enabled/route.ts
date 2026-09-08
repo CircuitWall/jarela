@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { errorResponse, notFoundResponse, validateBody } from "@/lib/api/responses";
-import { setManifestEnabled } from "@/lib/tools/package-manifests";
+import { setManifestEnabled } from "@/lib/tools/packages/package-manifests";
 import { errorMessage } from "@/lib/utils/error";
 
 const ToggleSchema = z.object({ enabled: z.boolean() });

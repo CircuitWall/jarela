@@ -48,7 +48,7 @@ const {
   introspectPackage,
   _pendingDirForTest,
   _resetPackageInstallStore,
-} = await import("./package-install");
+} = await import("./packages/package-install");
 
 beforeEach(() => {
   _resetPackageInstallStore();
@@ -231,7 +231,7 @@ describe("runInstall pipeline (trusted publisher)", () => {
   });
 
   it("clears a stale 'cannot resolve' manifest error after the install", async () => {
-    const { reloadLangChainPackages } = await import("./langchain-packages");
+    const { reloadLangChainPackages } = await import("./packages/langchain-packages");
     // Use a name that no prior test touched so Node's resolve caches
     // can't paper over the "package missing" state.
     const stalePkg = "@langchain/stale-sample";
