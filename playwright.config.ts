@@ -21,10 +21,13 @@ const E2E_DB_DIR = reuseServer
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
+  // All projects share the single isolated server and its SQLite database.
+  // Parallel browser workers can overwrite the active agent and lifecycle
+  // state while another test is still opening the boot screen.
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 2 : undefined,
+  workers: 1,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   timeout: 30_000,
   expect: { timeout: 5_000 },

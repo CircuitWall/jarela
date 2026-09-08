@@ -54,7 +54,7 @@ export function MemoryPanel() {
       <div className="px-4 py-2 space-y-2 border-b border-border">
         <label className="flex items-center gap-2 text-[11px] text-fg-subtle">
           <span className="shrink-0">Proactive memory</span>
-          <Select full={false} value={policy} onChange={(event) => void changePolicy(event.target.value as MemoryPolicy)}>
+          <Select aria-label="Proactive memory policy" full={false} value={policy} onChange={(event) => void changePolicy(event.target.value as MemoryPolicy)}>
             <option value="important">Important only</option>
             <option value="balanced">Balanced</option>
             <option value="detailed">Detailed</option>
@@ -66,7 +66,7 @@ export function MemoryPanel() {
             <TextInput className="pl-7"
               placeholder="Search…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
           </div>
-          <Select full={false} value={nsFilter} onChange={(e) => setNsFilter(e.target.value)}>
+          <Select aria-label="Memory namespace" full={false} value={nsFilter} onChange={(e) => setNsFilter(e.target.value)}>
             <option value="">All namespaces</option>
             {namespaces.map((ns) => <option key={ns} value={ns}>{ns}</option>)}
           </Select>
