@@ -399,7 +399,7 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
         </p>
 
         {/* Tile slot — always reserves the same 11rem so neighbours don't shift. */}
-        <div className="w-44 h-44 relative">
+        <div className="relative z-10 h-44 w-44">
           {tileAgent ? (
             <button
               type="button"

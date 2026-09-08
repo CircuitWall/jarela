@@ -16,7 +16,7 @@ test.beforeEach(async ({ request, page }) => {
 test("Memory panel renders header, search, and namespace filter", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Memory Store" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("textbox", { name: "Search…" })).toBeVisible();
-  await expect(page.getByRole("combobox")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Memory namespace" })).toBeVisible();
 });
 
 test("Memory panel exposes a way to add a new memory entry", async ({ page }) => {

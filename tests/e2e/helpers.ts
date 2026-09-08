@@ -56,9 +56,12 @@ export async function seedMockAgent(request: APIRequestContext): Promise<{ model
 export async function waitForAppReady(page: Page, timeout = 30_000): Promise<void> {
   const overlay = page.locator('[role="status"][aria-live="polite"].fixed.inset-0');
   if (await overlay.count()) {
-    const pickTile = page.locator('button[aria-label^="Open "]').first();
-    if (await pickTile.isVisible().catch(() => false)) {
-      await pickTile.click({ timeout: 5_000 }).catch(() => { /* already opening */ });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const pickTile = overlay.locator('button[aria-label^="Open "]').first();
+      if (!(await pickTile.isVisible().catch(() => false))) break;
+      await pickTile.evaluate((element) => (element as HTMLButtonElement).click()).catch(() => undefined);
+      if (await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false)) break;
+      await page.waitForTimeout(100);
     }
   }
   await overlay.waitFor({ state: "detached", timeout });
