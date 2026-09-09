@@ -107,6 +107,25 @@ describe("tool usefulness telemetry", () => {
     expect(rows[0].sample_arg_shape).not.toContain("secret-2");
   });
 
+  it("classifies failures for escalation without storing raw arguments", () => {
+    const suffix = Date.now();
+    const events = (name: string, error: string) => [
+      { id: `${name}-call`, phase: "call" as const, name, payload: { token: "hidden" } },
+      { id: `${name}-result`, phase: "result" as const, name, payload: { error } },
+    ];
+    recordToolUsage([
+      ...events(`auth_${suffix}`, "401 unauthorized"),
+      ...events(`timeout_${suffix}`, "timeout while contacting service"),
+      ...events(`schema_${suffix}`, "schema validation failed"),
+      ...events(`skip_${suffix}`, "skipped: duplicate event"),
+    ], "");
+
+    expect(listToolFailureSamples(`auth_${suffix}`)[0].failure_class).toBe("configuration_problem");
+    expect(listToolFailureSamples(`timeout_${suffix}`)[0].failure_class).toBe("transient_tool_failure");
+    expect(listToolFailureSamples(`schema_${suffix}`)[0].failure_class).toBe("suspected_product_gap");
+    expect(listToolFailureSamples(`skip_${suffix}`)[0].failure_class).toBe("expected_skip");
+  });
+
   it("prunes stale failure samples by TTL", () => {
     const old = "2026-01-01T00:00:00.000Z";
     const current = "2026-02-15T00:00:00.000Z";
