@@ -185,8 +185,10 @@ describe("Dialog", () => {
     const dialog = screen.getByRole("dialog");
     expect(overlay.className).toContain("p-0");
     expect(overlay.className).toContain("items-stretch");
-    expect(dialog.className).toContain("w-screen");
-    expect(dialog.className).toContain("h-[100dvh]");
+    expect(dialog.className).toContain("w-full");
+    expect(dialog.className).toContain("h-full");
+    expect(dialog.className).toContain("max-w-full");
+    expect(dialog.className).toContain("max-h-full");
     expect(dialog.className).toContain("rounded-none");
   });
 });
