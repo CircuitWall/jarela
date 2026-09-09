@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.3] - 2026-09-10
+
+### Fixed
+
+- **Markdown-aware text editors open in edit mode when empty.** After 1.41.2,
+  `MarkdownTextarea` defaulted to preview mode even for blank fields, which
+  hid the input behind a "Nothing to preview" placeholder on fresh profiles
+  and broke the Playwright locator for the "About me" textbox. The initial
+  mode is now derived from the incoming value — preview when there is content
+  to render, edit when the field is empty.
+- **Consumer builds no longer choke on integration-only type imports.**
+  Package types that referenced integration-only modules leaked into the
+  consumer build; the shared types are now scoped so downstream projects can
+  compile against the published package again.
+- **Jira Align telemetry uses endpoint-specific filter fields.** The Jira
+  Align integration sent the same generic filter payload to every endpoint,
+  causing empty result sets on endpoints that expect their own field names.
+  Each endpoint now maps to its documented filter shape.
+- **Blocked tool calls surface as their own telemetry failure class.** Tool
+  invocations that were denied by permission rules previously registered as
+  generic execution failures, hiding the underlying cause. Telemetry now
+  classifies them as `blocked` so the reason is visible upstream.
+
 ## [1.41.2] - 2026-09-09
 
 ### Added
