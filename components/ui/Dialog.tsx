@@ -88,7 +88,7 @@ export function Dialog({
   const renderClose = showClose ?? showHeader;
 
   const overlayCls =
-    "fixed inset-0 bg-black/60 flex justify-center " +
+    "fixed inset-0 box-border bg-black/60 flex justify-center " +
     (fitViewport ? "p-0 " : "p-2 sm:p-4 ") +
     LEVEL[level] +
     " " +
@@ -96,15 +96,21 @@ export function Dialog({
 
   const cardCls =
     (fitViewport
-      ? "bg-surface-2 w-screen h-[100dvh] max-w-[100vw] max-h-[100dvh] shadow-xl flex flex-col rounded-none border-0"
+      ? "bg-surface-2 w-full h-full max-w-full max-h-full shadow-xl flex flex-col rounded-none border-0"
       : "bg-surface-2 border border-border rounded-2xl w-full shadow-xl flex flex-col " +
         SIZE[size] +
         " " +
-        (align === "top" ? "my-2 sm:my-4" : "max-h-[90vh]"));
+        (align === "top" ? "my-2 sm:my-4" : "max-h-full"));
 
   return createPortal(
     <div
       className={overlayCls}
+      style={{
+        paddingTop: fitViewport ? "env(safe-area-inset-top)" : "max(0.5rem, env(safe-area-inset-top))",
+        paddingRight: fitViewport ? "env(safe-area-inset-right)" : "max(0.5rem, env(safe-area-inset-right))",
+        paddingBottom: fitViewport ? "env(safe-area-inset-bottom)" : "max(0.5rem, env(safe-area-inset-bottom))",
+        paddingLeft: fitViewport ? "env(safe-area-inset-left)" : "max(0.5rem, env(safe-area-inset-left))",
+      }}
       role="presentation"
       onMouseDown={dismissOnBackdrop ? onClose : undefined}
     >
@@ -125,7 +131,7 @@ export function Dialog({
                 type="button"
                 onClick={onClose}
                 className={
-                  "text-fg-subtle hover:text-fg transition-colors" +
+                  "shrink-0 min-h-9 min-w-9 inline-flex items-center justify-center text-fg-subtle hover:text-fg transition-colors" +
                   (title === undefined && titlePrefix === undefined ? " ml-auto" : "")
                 }
                 aria-label="Close"
@@ -135,12 +141,7 @@ export function Dialog({
             )}
           </div>
         )}
-        <div
-          className={
-            "flex-1 min-h-0 " +
-            (padded ? "overflow-y-auto p-4 space-y-3" : "")
-          }
-        >
+        <div className={`flex-1 min-h-0 overflow-y-auto ${padded ? "p-4 space-y-3" : ""}`}>
           {children}
         </div>
         {footer}

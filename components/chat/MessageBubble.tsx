@@ -1,5 +1,5 @@
 "use client";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1297,6 +1297,9 @@ const MarkdownContent = memo(function MarkdownContent({ text, streaming, onInApp
             if (match?.[1] === "map") {
               return <MapEmbed payload={reactChildrenToText(children).replace(/\n$/, "")} />;
             }
+            if (match?.[1] === "mermaid") {
+              return <MermaidFence source={reactChildrenToText(children).replace(/\n$/, "")} />;
+            }
             return match ? (
               <CodeFence language={match[1]} className={className ?? ""}>{children}</CodeFence>
             ) : (
@@ -1616,6 +1619,52 @@ function CodeFence({ language, className, children }: { language: string; classN
         <code className={className}>{children}</code>
       </pre>
     </div>
+  );
+}
+
+function MermaidFence({ source }: { source: string }) {
+  const renderId = `mermaid-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSvg(null);
+    setError(null);
+    void (async () => {
+      try {
+        const [{ default: mermaid }, { default: DOMPurify }] = await Promise.all([
+          import("mermaid"),
+          import("dompurify"),
+        ]);
+        mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: "base" });
+        const result = await mermaid.render(renderId, source);
+        if (cancelled) return;
+        setSvg(DOMPurify.sanitize(result.svg, { USE_PROFILES: { svg: true } }));
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [renderId, source]);
+
+  if (error) {
+    return (
+      <div className="my-2 rounded-md border border-warn/40 bg-warn/5 p-2">
+        <p className="mb-1 text-[10px] uppercase tracking-wide text-warn">Mermaid preview unavailable</p>
+        <CodeFence language="mermaid" className="language-mermaid"><>{source}</></CodeFence>
+      </div>
+    );
+  }
+  if (!svg) {
+    return <div className="my-2 rounded-md border border-border/60 bg-surface-3/40 p-3 text-xs text-fg-faint">Rendering diagram…</div>;
+  }
+  return (
+    <div
+      className="my-2 max-w-full overflow-x-auto rounded-md border border-border/60 bg-surface-2 p-3"
+      dangerouslySetInnerHTML={{ __html: svg }}
+      aria-label="Mermaid diagram"
+    />
   );
 }
 
