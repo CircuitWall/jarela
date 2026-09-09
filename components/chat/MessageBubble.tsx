@@ -1657,12 +1657,13 @@ function MermaidFence({ source }: { source: string }) {
     );
   }
   if (!svg) {
-    return <div className="my-2 rounded-md border border-border/60 bg-surface-3/40 p-3 text-xs text-fg-faint">Rendering diagram…</div>;
+    return <div className="my-2 rounded-md border border-border/60 bg-surface-3/40 p-3 text-xs text-fg-faint">Rendering diagram...</div>;
   }
   return (
     <div
       className="my-2 max-w-full overflow-x-auto rounded-md border border-border/60 bg-surface-2 p-3"
       dangerouslySetInnerHTML={{ __html: svg }}
+      role="img"
       aria-label="Mermaid diagram"
     />
   );
