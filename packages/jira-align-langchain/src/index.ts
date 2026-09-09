@@ -192,7 +192,12 @@ export const jiraAlignSearchItemsTool = tool(
     const clauses: string[] = [];
     if (state) clauses.push(`state eq '${escapeOData(state)}'`);
     if (owner) clauses.push(`owner eq '${escapeOData(owner)}'`);
-    if (program_id) clauses.push(`programId eq ${Number.isFinite(Number(program_id)) ? program_id : `'${escapeOData(program_id)}'`}`);
+    if (program_id) {
+      const programValue = Number.isFinite(Number(program_id)) ? program_id : `'${escapeOData(program_id)}'`;
+      clauses.push(type === "feature"
+        ? `additionalProgramIds/any(p: p eq ${programValue})`
+        : `programId eq ${programValue}`);
+    }
     if (team_id) clauses.push(`teamId eq ${Number.isFinite(Number(team_id)) ? team_id : `'${escapeOData(team_id)}'`}`);
     if (updated_since) clauses.push(`lastUpdated ge ${normalizeDate(updated_since)}`);
     if (filter) clauses.push(`(${filter})`);
@@ -586,6 +591,7 @@ const ENTITY_TO_COLLECTION: Record<string, string> = {
 };
 const KNOWN_ENTITIES = Object.keys(ENTITY_TO_COLLECTION) as ReadonlyArray<keyof typeof ENTITY_TO_COLLECTION>;
 const ENTITY_ENUM = z.enum(KNOWN_ENTITIES as [string, ...string[]]);
+const ENTITY_NAME_FIELD: Record<string, string> = { release: "title" };
 
 function entityCollectionFor(entity_type: string): string | { error: string } {
   const seg = ENTITY_TO_COLLECTION[entity_type.toLowerCase()];
@@ -625,7 +631,10 @@ export const jiraAlignListEntitiesTool = tool(
 
     const params = new URLSearchParams();
     const clauses: string[] = [];
-    if (name_filter) clauses.push(`contains(name, '${escapeOData(name_filter)}')`);
+    if (name_filter) {
+      const nameField = ENTITY_NAME_FIELD[entity_type] ?? "name";
+      clauses.push(`contains(${nameField}, '${escapeOData(name_filter)}')`);
+    }
     if (filter) clauses.push(`(${filter})`);
     if (clauses.length) params.set("$filter", clauses.join(" and "));
     params.set("limit", String(Math.min(max_results ?? 50, 100)));
