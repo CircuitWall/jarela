@@ -12,6 +12,18 @@ describe("MarkdownTextarea", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
+  it("starts in edit mode when the value is empty", () => {
+    render(<MarkdownTextarea value="" onChange={() => undefined} />);
+
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
+  it("starts in edit mode when the value is only whitespace", () => {
+    render(<MarkdownTextarea value={"   \n\t"} onChange={() => undefined} />);
+
+    expect(screen.getByRole("textbox")).toBeTruthy();
+  });
+
   it("pretty-prints valid JSON in preview mode", () => {
     render(<MarkdownTextarea value='{"name":"Jarela","enabled":true}' onChange={() => undefined} />);
 
