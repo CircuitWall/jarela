@@ -13,6 +13,7 @@ import {
   jiraAlignCreateEntityTool,
   jiraAlignUpdateEntityTool,
   jiraAlignDeleteEntityTool,
+  jiraAlignSearchItemsTool,
 } from "../src/index";
 
 const t = setupFetchHarness();
@@ -79,7 +80,25 @@ describe("jira_align_list_entities", () => {
       entity_type: "release", name_filter: "Q2", filter: "isActive eq true",
     });
     const decoded = decodeURIComponent(t.calls[0].url).replace(/\+/g, " ");
-    expect(decoded).toMatch(/contains\(name, 'Q2'\) and \(isActive eq true\)/);
+    expect(decoded).toMatch(/contains\(title, 'Q2'\) and \(isActive eq true\)/);
+  });
+
+  it("uses the release title field for name filters", async () => {
+    t.setResponses([{ body: { items: [] } }]);
+    await jiraAlignListEntitiesTool.invoke({ entity_type: "release", name_filter: "PI 26.3" });
+    const decoded = decodeURIComponent(t.calls[0].url).replace(/\+/g, " ");
+    expect(decoded).toMatch(/contains\(title, 'PI 26\.3'\)/);
+    expect(decoded).not.toContain("contains(name");
+  });
+});
+
+describe("jira_align_search_items", () => {
+  it("uses the feature program collection for program filters", async () => {
+    t.setResponses([{ body: { items: [] } }]);
+    await jiraAlignSearchItemsTool.invoke({ type: "feature", program_id: "38" });
+    const decoded = decodeURIComponent(t.calls[0].url).replace(/\+/g, " ");
+    expect(decoded).toMatch(/additionalProgramIds\/any\(p: p eq 38\)/);
+    expect(decoded).not.toContain("programId eq");
   });
 });
 
