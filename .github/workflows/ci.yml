@@ -331,13 +331,13 @@ jobs:
           mkdir -p "$JARELA_DB_DIR/packages"
           npm install --prefix "$JARELA_DB_DIR/packages" \
             --no-save --no-fund --no-audit --legacy-peer-deps \
-            packages/atlassian-langchain \
-            packages/github-langchain \
-            packages/icloud-langchain \
-            packages/jira-align-langchain \
-            packages/linkedin-enterprise-langchain \
-            packages/linkedin-personal-langchain \
-            packages/ms-todo-langchain
+            "$GITHUB_WORKSPACE/packages/atlassian-langchain" \
+            "$GITHUB_WORKSPACE/packages/github-langchain" \
+            "$GITHUB_WORKSPACE/packages/icloud-langchain" \
+            "$GITHUB_WORKSPACE/packages/jira-align-langchain" \
+            "$GITHUB_WORKSPACE/packages/linkedin-enterprise-langchain" \
+            "$GITHUB_WORKSPACE/packages/linkedin-personal-langchain" \
+            "$GITHUB_WORKSPACE/packages/ms-todo-langchain"
 
       - name: Start production server
         run: |
