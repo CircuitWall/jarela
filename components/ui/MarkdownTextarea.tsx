@@ -33,7 +33,7 @@ export function MarkdownTextarea({
   maxLength,
   monospace,
 }: Props) {
-  const [mode, setMode] = useState<"edit" | "preview">("preview");
+  const [mode, setMode] = useState<"edit" | "preview">(() => (value.trim() ? "preview" : "edit"));
   const fontClass = monospace ? "font-mono" : "";
   return (
     <div className="space-y-1">
