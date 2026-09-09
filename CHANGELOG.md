@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.2] - 2026-09-09
+
+### Added
+
+- **Mermaid diagrams and safe dialogs now render in chat.** Mermaid content is
+  displayed as diagrams, while potentially unsafe dialog content is rendered
+  through the existing safe markdown path.
+
 ## [1.41.1] - 2026-09-08
 
 ### Fixed
