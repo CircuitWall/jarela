@@ -11,11 +11,12 @@
 
 import { resolvePackageAuth } from "@/lib/tools/runtime/auth-registry";
 import { spawnSync } from "node:child_process";
-import type { AtlassianAuth } from "@circuitwall/atlassian-langchain";
-import type { GitHubAuth } from "@circuitwall/github-langchain";
-import type { JiraAlignAuth } from "@circuitwall/jira-align-langchain";
-import type { LinkedInPersonalAuth } from "@circuitwall/linkedin-personal-langchain";
-import type { LinkedInEnterpriseAuth } from "@circuitwall/linkedin-enterprise-langchain";
+
+type AtlassianAuth = { url: string; email: string; apiToken: string };
+type GitHubAuth = { token: string };
+type JiraAlignAuth = { url: string; apiToken: string };
+type LinkedInPersonalAuth = { accessToken: string };
+type LinkedInEnterpriseAuth = { accessToken: string; version?: string };
 // Trigger registration of the default LangChain package auth resolvers
 // before the first probe runs. Health probes can be invoked from the
 // scheduler before any agent tool call has caused builtins.ts to load.

@@ -39,6 +39,8 @@
     "node_modules",
     "backend-archived",
     "frontend",
-    "app/sw.ts"
+    "app/sw.ts",
+    "**/*.test.ts",
+    "**/*.test.tsx"
   ]
 }
