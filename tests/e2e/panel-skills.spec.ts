@@ -40,6 +40,7 @@ test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
     await page.getByRole("button", { name: "New", exact: true }).click();
     await expect(page.getByRole("heading", { name: "New skill" })).toBeVisible();
     await page.getByPlaceholder("e.g. code-review").fill("e2e-smoke-skill");
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("textbox", { name: /Content/ }).fill("# E2E Smoke Skill\n\nWritten by the panel-skills e2e test.\n");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("heading", { name: "New skill" })).toBeHidden();
@@ -47,11 +48,13 @@ test("add a repo, write a skill, edit it, then delete it", async ({ page }) => {
     await expect(page.getByText("E2E Smoke Skill")).toBeVisible({ timeout: 10_000 });
     await page.getByText("E2E Smoke Skill").click();
     await expect(page.getByRole("heading", { name: /Edit skill/ })).toBeVisible();
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("textbox", { name: /Content/ }).fill("# E2E Smoke Skill\n\nEdited by the panel-skills e2e test.\n");
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.getByRole("heading", { name: /Edit skill/ })).toBeHidden();
 
     await page.getByText("E2E Smoke Skill").click();
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByRole("textbox", { name: /Content/ })).toHaveValue(/Edited by the panel-skills e2e test/);
     await page.getByRole("button", { name: "Delete", exact: true }).click();
     await expect(page.getByText("E2E Smoke Skill")).toHaveCount(0);
