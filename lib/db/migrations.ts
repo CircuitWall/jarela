@@ -355,6 +355,7 @@ export function runMigrations(db: DatabaseSync): void {
     CREATE TABLE IF NOT EXISTS tool_failure_samples (
       tool_name          TEXT NOT NULL,
       normalized_reason  TEXT NOT NULL,
+      failure_class      TEXT NOT NULL DEFAULT 'suspected_product_gap',
       count              INTEGER NOT NULL DEFAULT 0,
       sample_error       TEXT NOT NULL,
       sample_arg_shape   TEXT NOT NULL,
@@ -376,6 +377,7 @@ export function runMigrations(db: DatabaseSync): void {
     );
   `);
   ensureBridgeEventSubscriptionColumns(db);
+  ensureToolFailureSampleColumns(db);
   ensureBridgeRouteColumns(db);
   ensureAgentConfigColumns(db);
   ensureTaskAssignmentColumns(db);
@@ -410,6 +412,13 @@ export function runMigrations(db: DatabaseSync): void {
   ensureAgentRouterColumns(db);
   spillLegacyImageAttachments(db);
   cleanOrphanModelAssignments(db);
+}
+
+function ensureToolFailureSampleColumns(db: DatabaseSync): void {
+  const cols = db.prepare("PRAGMA table_info(tool_failure_samples)").all() as Array<{ name: string }>;
+  if (!cols.some((col) => col.name === "failure_class")) {
+    db.exec("ALTER TABLE tool_failure_samples ADD COLUMN failure_class TEXT NOT NULL DEFAULT 'suspected_product_gap'");
+  }
 }
 
 function cleanOrphanModelAssignments(db: DatabaseSync): void {

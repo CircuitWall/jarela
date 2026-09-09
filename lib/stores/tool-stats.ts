@@ -36,6 +36,7 @@ interface ToolUsageDelta {
 export interface ToolFailureSampleRow {
   tool_name: string;
   normalized_reason: string;
+  failure_class: ToolFailureClass;
   count: number;
   sample_error: string;
   sample_arg_shape: string;
@@ -43,11 +44,18 @@ export interface ToolFailureSampleRow {
   last_seen_at: string;
 }
 
+export type ToolFailureClass =
+  | "expected_skip"
+  | "transient_tool_failure"
+  | "configuration_problem"
+  | "suspected_product_gap";
+
 interface ToolFailureSampleDelta {
   name: string;
   reason: string;
   sampleError: string;
   argShape: string;
+  failureClass: ToolFailureClass;
 }
 
 const FAILURE_SAMPLE_MAX_CHARS = 300;
@@ -70,10 +78,11 @@ const UPSERT_SQL = `
 
 const UPSERT_FAILURE_SAMPLE_SQL = `
   INSERT INTO tool_failure_samples
-    (tool_name, normalized_reason, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
+    (tool_name, normalized_reason, failure_class, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
   VALUES
-    (?, ?, 1, ?, ?, ?, ?)
+    (?, ?, ?, 1, ?, ?, ?, ?)
   ON CONFLICT(tool_name, normalized_reason) DO UPDATE SET
+    failure_class = excluded.failure_class,
     count = tool_failure_samples.count + 1,
     sample_error = excluded.sample_error,
     sample_arg_shape = excluded.sample_arg_shape,
@@ -109,6 +118,7 @@ export function recordToolUsage(
       failureStmt.run(
         sample.name,
         sample.reason,
+        sample.failureClass,
         sample.sampleError,
         sample.argShape,
         stamp,
@@ -149,7 +159,7 @@ export function getToolStatsMap(names?: readonly string[]): Map<string, ToolUsef
 }
 
 export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[] {
-  const sql = `SELECT tool_name, normalized_reason, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at
+  const sql = `SELECT tool_name, normalized_reason, failure_class, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at
      FROM tool_failure_samples${toolName ? " WHERE tool_name=?" : ""}
      ORDER BY count DESC, last_seen_at DESC`;
   return (toolName
@@ -267,6 +277,7 @@ export function summarizeToolFailureSamples(
     out.push({
       name: item.name,
       reason: normalizeFailureReason(errorText, item.resultPayload),
+      failureClass: classifyFailure(errorText, item.resultPayload),
       sampleError: truncateForSample(redactPotentialSecret(errorText), FAILURE_SAMPLE_MAX_CHARS),
       argShape: truncateForSample(argShape(item.callPayload), FAILURE_ARG_SHAPE_MAX_CHARS),
     });
@@ -346,6 +357,19 @@ function normalizeFailureReason(text: string, payload: unknown): string {
   if (/rate.?limit|too many requests|429|quota/.test(lower)) return "rate_limited";
   if (/context|too long|max_tokens|token count|payload too large/.test(lower)) return "size_or_context";
   return "other";
+}
+
+function classifyFailure(text: string, payload: unknown): ToolFailureClass {
+  const lower = `${text} ${stringifyPayload(payload)}`.toLowerCase();
+  if (/\b(skip|skipped|not applicable|duplicate|no event)\b/.test(lower)) return "expected_skip";
+  const reason = normalizeFailureReason(text, payload);
+  if (reason === "timeout" || reason === "rate_limited" || /\b(network|econn|temporar|503|502)\b/.test(lower)) {
+    return "transient_tool_failure";
+  }
+  if (reason === "auth" || reason === "permission" || reason === "not_found" || /not configured|disabled/.test(lower)) {
+    return "configuration_problem";
+  }
+  return "suspected_product_gap";
 }
 
 function argShape(payload: unknown): string {

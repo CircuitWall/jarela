@@ -312,7 +312,7 @@ function renderIssueBody(
     if (row.failures.length > 0) {
       lines.push("", "Failure scenarios:");
       for (const failure of row.failures.slice(0, 5)) {
-        lines.push(`- ${failure.normalized_reason} (${failure.count}x, last ${failure.last_seen_at})`);
+        lines.push(`- ${failure.failure_class} / ${failure.normalized_reason} (${failure.count}x, last ${failure.last_seen_at})`);
         lines.push(`  - sample error: ${failure.sample_error}`);
         lines.push(`  - argument shape: ${failure.sample_arg_shape}`);
       }
