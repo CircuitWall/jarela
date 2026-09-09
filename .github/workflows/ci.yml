@@ -326,6 +326,19 @@ jobs:
           name: next-standalone
           path: .next/standalone
 
+      - name: Install optional integration packages for E2E
+        run: |
+          mkdir -p "$JARELA_DB_DIR/packages"
+          npm install --prefix "$JARELA_DB_DIR/packages" \
+            --no-save --no-fund --no-audit --legacy-peer-deps \
+            packages/atlassian-langchain \
+            packages/github-langchain \
+            packages/icloud-langchain \
+            packages/jira-align-langchain \
+            packages/linkedin-enterprise-langchain \
+            packages/linkedin-personal-langchain \
+            packages/ms-todo-langchain
+
       - name: Start production server
         run: |
           mkdir -p "$JARELA_DB_DIR"
