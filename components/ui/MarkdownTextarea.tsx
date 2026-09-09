@@ -15,6 +15,15 @@ interface Props {
 
 const MD_REMARK_PLUGINS = [remarkGfm];
 
+function prettyJson(value: string): string | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return null;
+  }
+}
+
 export function MarkdownTextarea({
   value,
   onChange,
@@ -24,7 +33,7 @@ export function MarkdownTextarea({
   maxLength,
   monospace,
 }: Props) {
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"edit" | "preview">("preview");
   const fontClass = monospace ? "font-mono" : "";
   return (
     <div className="space-y-1">
@@ -74,7 +83,13 @@ export function MarkdownTextarea({
           style={{ minHeight: rows ? `${rows * 1.5}em` : undefined }}
         >
           {value.trim() ? (
-            <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS}>{value}</ReactMarkdown>
+            (() => {
+              const formatted = prettyJson(value);
+              if (formatted !== null) {
+                return <pre className={`${fontClass} whitespace-pre-wrap text-xs leading-snug`}>{formatted}</pre>;
+              }
+              return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS}>{value}</ReactMarkdown>;
+            })()
           ) : (
             <span className="text-fg-faint italic">Nothing to preview</span>
           )}
