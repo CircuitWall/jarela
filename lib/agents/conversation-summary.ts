@@ -76,6 +76,25 @@ function summaryMessages(transcript: string): ProviderMessage[] {
         "- Mark uncertainty with \"(unclear)\" rather than guessing.",
         "- Preserve every distinct fact, identifier, and decision from the transcript.",
         "- Do not add meta-commentary about the summary itself.",
+        "",
+        "After the sections above, append one more fenced block using the exact",
+        "language tag `jarela-topics`: a JSON array segmenting the transcript into",
+        "the distinct topics/subjects it covers, in chronological order. Each",
+        "message in the transcript below is prefixed with its real ISO timestamp —",
+        "copy those exact timestamps, never invent or estimate one. Each array",
+        "entry is:",
+        '  {"title": short topic label, "start_at": ISO timestamp of that topic\'s',
+        '   first message, "end_at": ISO timestamp of its last message, "recap":',
+        '   1-2 sentence recap of just this topic, "facts": [...]}.',
+        "`facts` is usually empty — only include an entry when the topic produced",
+        "a durable preference, decision, or constraint worth recalling in an",
+        "unrelated future conversation (not routine task chatter). Each fact is",
+        '  {"subject": short label, "content": one self-contained sentence,',
+        '   "tags": string[], "confidence": "explicit"|"inferred"|"verified"}.',
+        "`confidence` is \"explicit\" when the user stated it outright, \"verified\"",
+        "when a tool result confirmed it, \"inferred\" when you're deducing it.",
+        "Emit exactly one `jarela-topics` fence, after all Markdown sections,",
+        "with nothing else following it.",
       ].join("\n"),
     },
     {
@@ -95,6 +114,79 @@ function summaryMessages(transcript: string): ProviderMessage[] {
 // the warm-summary card. Guard against that here so a degenerate
 // sentinel-only completion is treated as no summary rather than persisted.
 const BARE_SENTINEL_RE = /^NO_?REPLY$/i;
+
+// Trailing structured block the summarizer prompt asks for (see
+// summaryMessages above) — mirrors the `jarela-references` fence pattern
+// in lib/agents/citation-checker.ts. Forgiving on malformed JSON / missing
+// fields: a bad or absent block just means no topic segmentation this pass,
+// never a reason to drop the prose summary itself.
+const TOPIC_SEGMENTS_FENCE_RE = /\n*```jarela-topics\s*\n([\s\S]*?)\n```[\s\n]*$/;
+
+export interface SummaryTopicFact {
+  subject: string;
+  content: string;
+  tags: string[];
+  confidence: "explicit" | "inferred" | "verified";
+}
+
+export interface SummaryTopicSegment {
+  title: string;
+  start_at: string;
+  end_at: string;
+  recap: string;
+  facts: SummaryTopicFact[];
+}
+
+export function extractTopicSegments(text: string): { body: string; topics: SummaryTopicSegment[] } {
+  const m = TOPIC_SEGMENTS_FENCE_RE.exec(text);
+  if (!m) return { body: text, topics: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(m[1]);
+  } catch {
+    return { body: text, topics: [] };
+  }
+  if (!Array.isArray(parsed)) return { body: text, topics: [] };
+  const topics: SummaryTopicSegment[] = [];
+  for (const item of parsed) {
+    if (!item || typeof item !== "object") continue;
+    const obj = item as Record<string, unknown>;
+    const title = typeof obj.title === "string" ? obj.title.trim() : "";
+    const start_at = typeof obj.start_at === "string" ? obj.start_at.trim() : "";
+    const end_at = typeof obj.end_at === "string" ? obj.end_at.trim() : "";
+    const recap = typeof obj.recap === "string" ? obj.recap.trim() : "";
+    if (!title || !start_at || !end_at) continue;
+    const facts: SummaryTopicFact[] = [];
+    if (Array.isArray(obj.facts)) {
+      for (const f of obj.facts) {
+        if (!f || typeof f !== "object") continue;
+        const fo = f as Record<string, unknown>;
+        const subject = typeof fo.subject === "string" ? fo.subject.trim() : "";
+        const content = typeof fo.content === "string" ? fo.content.trim() : "";
+        if (!subject || !content) continue;
+        const tags = Array.isArray(fo.tags)
+          ? fo.tags.filter((t): t is string => typeof t === "string" && t.trim().length > 0).map((t) => t.trim())
+          : [];
+        const confidence = fo.confidence === "verified" || fo.confidence === "inferred" ? fo.confidence : "explicit";
+        facts.push({ subject, content, tags, confidence });
+      }
+    }
+    topics.push({ title, start_at, end_at, recap, facts });
+  }
+  const body = text.slice(0, m.index).trimEnd();
+  return { body, topics };
+}
+
+/** Parse the `threads.warm_summary_topics` column (JSON array or NULL) for API responses. */
+export function parseStoredTopics(raw: string | null | undefined): SummaryTopicSegment[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as SummaryTopicSegment[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function summarizeTranscript(
   provider: Pick<ModelProvider, "chat">,

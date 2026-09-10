@@ -385,10 +385,30 @@ export interface ThreadDetail extends ThreadSummary {
   // readout. Null when the summary was produced before these columns existed.
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
+  // Per-topic segmentation of the same warm range as `warm_summary`. Empty/
+  // null when the summarizer didn't return a topics fence (older model,
+  // malformed output) or on legacy rows. Not persisted across compactions —
+  // covers only the currently cached warm range, same as `warm_summary`.
+  warm_summary_topics?: SummaryTopicSegment[] | null;
   // Boundary an automatic compaction is preparing right now. The pin only
   // moves once its recap is stored, so this is the only signal the UI has
   // that a compaction is in flight.
   pending_hot_since?: string | null;
+}
+
+export interface SummaryTopicFact {
+  subject: string;
+  content: string;
+  tags: string[];
+  confidence: "explicit" | "inferred" | "verified";
+}
+
+export interface SummaryTopicSegment {
+  title: string;
+  start_at: string;
+  end_at: string;
+  recap: string;
+  facts: SummaryTopicFact[];
 }
 
 export interface ThreadContextPin {
@@ -398,6 +418,7 @@ export interface ThreadContextPin {
   warm_summary_computed_at: string | null;
   warm_summary_source_messages: number | null;
   warm_summary_source_chars: number | null;
+  warm_summary_topics: SummaryTopicSegment[] | null;
 }
 
 export interface MemoryItem {

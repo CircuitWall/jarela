@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getThread } from "@/lib/stores/threads";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
+import { parseStoredTopics } from "@/lib/agents/conversation-summary";
 
 type Params = { params: Promise<{ thread_id: string }> };
 
@@ -33,5 +34,6 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     warm_summary_computed_at: updated?.warm_summary_computed_at ?? null,
     warm_summary_source_messages: updated?.warm_summary_source_messages ?? null,
     warm_summary_source_chars: updated?.warm_summary_source_chars ?? null,
+    warm_summary_topics: parseStoredTopics(updated?.warm_summary_topics),
   });
 }

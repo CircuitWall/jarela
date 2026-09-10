@@ -24,6 +24,14 @@ export interface ThreadRow {
   // know the source counts.
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
+  // JSON-encoded SummaryTopicSegment[] (see lib/agents/conversation-summary.ts)
+  // covering the same range as warm_summary_before. NULL when the summarizer
+  // didn't return a topics fence, or on legacy rows.
+  warm_summary_topics?: string | null;
+  // Auto boundary detection is suppressed while message_count is below this
+  // value. Set once by moveThreadContextBoundary on a user-initiated move;
+  // 0 = no active suppression.
+  auto_boundary_locked_until_msg_count?: number;
 }
 export interface MessageRow {
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
@@ -276,6 +284,17 @@ export function setThreadContextPin(thread_id: string, hot_since: string | null)
     .run(hot_since, thread_id);
 }
 
+// Called by moveThreadContextBoundary whenever the user explicitly moves the
+// boundary (drag, or manual /compact) — never by the auto-detector's own
+// commit path, which calls setThreadContextPin directly. `untilMessageCount`
+// is a one-time write; the read side (lib/agents/run-thread.ts) just compares
+// against it, no per-turn write needed.
+export function setAutoBoundaryLock(thread_id: string, untilMessageCount: number): void {
+  getDb()
+    .prepare("UPDATE threads SET auto_boundary_locked_until_msg_count=? WHERE thread_id=?")
+    .run(Math.max(0, untilMessageCount), thread_id);
+}
+
 // Cache the latest warm-tier summary alongside the boundary it covers. The
 // chat UI considers the summary fresh only when `warm_summary_before` matches
 // the current `hot_since`; any boundary change triggers a re-summarise on the
@@ -286,10 +305,11 @@ export function setThreadWarmSummary(
   before: string | null,
   sourceMessages?: number | null,
   sourceChars?: number | null,
+  topics?: string | null,
 ): void {
   getDb()
     .prepare(
-      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=? WHERE thread_id=?",
+      "UPDATE threads SET warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=?, warm_summary_topics=? WHERE thread_id=?",
     )
     .run(
       summary,
@@ -297,6 +317,7 @@ export function setThreadWarmSummary(
       now(),
       typeof sourceMessages === "number" ? sourceMessages : null,
       typeof sourceChars === "number" ? sourceChars : null,
+      topics ?? null,
       thread_id,
     );
 }

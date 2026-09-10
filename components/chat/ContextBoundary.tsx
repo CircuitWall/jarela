@@ -9,6 +9,9 @@ import { useState, type MouseEventHandler, type PointerEventHandler } from "reac
 import { Archive, ChevronDown, ChevronUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { StatusDot } from "@/components/ui/StatusDot";
+import { MetaRow } from "@/components/ui/MetaRow";
+import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import type { SummaryTopicSegment } from "@/api/types";
 
 interface WarmSummaryCardProps {
   /** Number of messages older than the boundary that the summary covers. */
@@ -23,6 +26,8 @@ interface WarmSummaryCardProps {
   computedAt: string | null;
   /** True while a turn is streaming — promotes the placeholder to a "computing…" state. */
   streaming: boolean;
+  /** Per-topic segmentation of the same warm range, if the summarizer returned one. */
+  topics?: SummaryTopicSegment[] | null;
 }
 
 export function WarmSummaryCard({
@@ -32,11 +37,15 @@ export function WarmSummaryCard({
   hotSince,
   computedAt,
   streaming,
+  topics,
 }: WarmSummaryCardProps) {
   const [expanded, setExpanded] = useState(false);
   const fresh = !!summary && summaryBefore === hotSince;
   const stale = !!summary && !fresh;
   const computing = stale && streaming;
+  // Topics cover the same range as the prose (persisted together); only
+  // show them when that range is the one currently in effect.
+  const freshTopics = fresh && topics && topics.length > 0 ? topics : null;
 
   return (
     <div
@@ -60,6 +69,13 @@ export function WarmSummaryCard({
       </div>
 
       <div className="px-4 pb-3">
+        {freshTopics && (
+          <div className="mb-3 flex flex-col gap-1">
+            {freshTopics.map((topic, i) => (
+              <TopicSegmentRow key={`${topic.title}-${i}`} topic={topic} />
+            ))}
+          </div>
+        )}
         {!!summary ? (
           <div
             className={[
@@ -107,6 +123,54 @@ export function WarmSummaryCard({
       )}
     </div>
   );
+}
+
+// One row per topic the summarizer segmented the warm range into (ADR-0042
+// extension: timeline → subject separation). Collapsed by default — title,
+// time range, and a fact-uplift note if this topic produced any durable
+// facts (already written to long-term memory by the background compaction
+// job, not just displayed here). Expands to the topic's own recap + facts.
+function TopicSegmentRow({ topic }: { topic: SummaryTopicSegment }) {
+  const [open, setOpen] = useState(false);
+  const range = formatTopicRange(topic.start_at, topic.end_at);
+  return (
+    <div className="min-w-0">
+      <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open} accent="neutral">
+        <CollapseChevron open={open} size={9} />
+        <span className="font-medium text-fg-muted truncate">{topic.title}</span>
+        {range && <span className="text-fg-faint shrink-0">· {range}</span>}
+        {topic.facts.length > 0 && (
+          <span className="ml-auto shrink-0 text-[9px] uppercase tracking-wide text-accent">
+            {topic.facts.length} {topic.facts.length === 1 ? "fact" : "facts"} saved
+          </span>
+        )}
+      </MetaRow>
+      {open && (
+        <div className="mt-1 ml-4 space-y-1.5">
+          {topic.recap && <p className="text-[11px] text-fg-muted">{topic.recap}</p>}
+          {topic.facts.length > 0 && (
+            <ul className="space-y-0.5">
+              {topic.facts.map((fact, i) => (
+                <li key={`${fact.subject}-${i}`} className="text-[11px] text-fg-faint">
+                  <span className="font-medium text-fg-muted">{fact.subject}:</span> {fact.content}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatTopicRange(startAt: string, endAt: string): string | null {
+  const start = new Date(startAt);
+  const end = new Date(endAt);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const fmt: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
+  const startLabel = start.toLocaleDateString(undefined, fmt);
+  const endLabel = end.toLocaleDateString(undefined, fmt);
+  return startLabel === endLabel ? startLabel : `${startLabel} – ${endLabel}`;
 }
 
 interface ContextBoundaryDividerProps {
