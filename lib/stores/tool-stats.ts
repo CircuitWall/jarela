@@ -37,6 +37,11 @@ export interface ToolFailureSampleRow {
   tool_name: string;
   normalized_reason: string;
   failure_class: ToolFailureClass;
+  workflow_name: string | null;
+  event_type: string | null;
+  extraction_valid: number;
+  intended_tool: string | null;
+  blocked_operation: string | null;
   count: number;
   sample_error: string;
   sample_arg_shape: string;
@@ -56,6 +61,17 @@ interface ToolFailureSampleDelta {
   sampleError: string;
   argShape: string;
   failureClass: ToolFailureClass;
+  workflowName: string | null;
+  eventType: string | null;
+  extractionValid: number;
+  intendedTool: string | null;
+  blockedOperation: string | null;
+}
+
+export interface ToolUsageContext {
+  workflowName?: string | null;
+  eventType?: string | null;
+  extractionValid?: boolean;
 }
 
 const FAILURE_SAMPLE_MAX_CHARS = 300;
@@ -78,11 +94,16 @@ const UPSERT_SQL = `
 
 const UPSERT_FAILURE_SAMPLE_SQL = `
   INSERT INTO tool_failure_samples
-    (tool_name, normalized_reason, failure_class, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
+    (tool_name, normalized_reason, failure_class, workflow_name, event_type, extraction_valid, intended_tool, blocked_operation, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at)
   VALUES
-    (?, ?, ?, 1, ?, ?, ?, ?)
+    (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
   ON CONFLICT(tool_name, normalized_reason) DO UPDATE SET
     failure_class = excluded.failure_class,
+    workflow_name = excluded.workflow_name,
+    event_type = excluded.event_type,
+    extraction_valid = excluded.extraction_valid,
+    intended_tool = excluded.intended_tool,
+    blocked_operation = excluded.blocked_operation,
     count = tool_failure_samples.count + 1,
     sample_error = excluded.sample_error,
     sample_arg_shape = excluded.sample_arg_shape,
@@ -92,9 +113,10 @@ const UPSERT_FAILURE_SAMPLE_SQL = `
 export function recordToolUsage(
   toolEvents: readonly PersistedToolEvent[],
   assistantContent: string,
+  context: ToolUsageContext = {},
 ): void {
   const deltas = summarizeToolUsage(toolEvents, assistantContent);
-  const failureSamples = summarizeToolFailureSamples(toolEvents);
+  const failureSamples = summarizeToolFailureSamples(toolEvents, context);
   if (deltas.length === 0) return;
 
   const db = getDb();
@@ -119,6 +141,11 @@ export function recordToolUsage(
         sample.name,
         sample.reason,
         sample.failureClass,
+        context.workflowName ?? null,
+        context.eventType ?? null,
+        context.extractionValid === undefined ? 0 : context.extractionValid ? 1 : 0,
+        sample.intendedTool,
+        sample.blockedOperation,
         sample.sampleError,
         sample.argShape,
         stamp,
@@ -159,7 +186,7 @@ export function getToolStatsMap(names?: readonly string[]): Map<string, ToolUsef
 }
 
 export function listToolFailureSamples(toolName?: string): ToolFailureSampleRow[] {
-  const sql = `SELECT tool_name, normalized_reason, failure_class, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at
+  const sql = `SELECT tool_name, normalized_reason, failure_class, workflow_name, event_type, extraction_valid, intended_tool, blocked_operation, count, sample_error, sample_arg_shape, first_seen_at, last_seen_at
      FROM tool_failure_samples${toolName ? " WHERE tool_name=?" : ""}
      ORDER BY count DESC, last_seen_at DESC`;
   return (toolName
@@ -258,6 +285,7 @@ export function summarizeToolUsage(
 
 export function summarizeToolFailureSamples(
   toolEvents: readonly PersistedToolEvent[],
+  context: ToolUsageContext = {},
 ): ToolFailureSampleDelta[] {
   const byId = new Map<string, { name: string; callPayload: unknown; resultPayload?: unknown }>();
   for (const ev of toolEvents) {
@@ -278,6 +306,11 @@ export function summarizeToolFailureSamples(
       name: item.name,
       reason: normalizeFailureReason(errorText, item.resultPayload),
       failureClass: classifyFailure(errorText, item.resultPayload),
+      workflowName: context.workflowName ?? null,
+      eventType: context.eventType ?? null,
+      extractionValid: context.extractionValid ? 1 : 0,
+      intendedTool: item.name,
+      blockedOperation: normalizeFailureReason(errorText, item.resultPayload),
       sampleError: truncateForSample(redactPotentialSecret(errorText), FAILURE_SAMPLE_MAX_CHARS),
       argShape: truncateForSample(argShape(item.callPayload), FAILURE_ARG_SHAPE_MAX_CHARS),
     });

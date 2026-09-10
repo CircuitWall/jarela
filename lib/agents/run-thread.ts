@@ -1258,7 +1258,11 @@ export function persistAssistantMessage(
       messageMetadata,
     );
     if (sanitizedEvents && sanitizedEvents.length > 0) {
-      recordToolUsage(sanitizedEvents, persisted);
+      recordToolUsage(sanitizedEvents, persisted, {
+        workflowName: category ?? "assistant_turn",
+        eventType: category ?? "assistant_turn",
+        extractionValid: persisted.length > 0,
+      });
     }
     // Per ADR-0064 transparency requirement: surface what was held back
     // from the LLM during this turn on the assistant message's metadata.
