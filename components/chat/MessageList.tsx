@@ -1,7 +1,7 @@
 "use client";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Brain, ChevronRight, Hourglass, X, ArrowDown, Eye, EyeOff } from "lucide-react";
-import type { AgentConfig, ContentPart, Message, UserProfile } from "@/api/types";
+import type { AgentConfig, ContentPart, Message, SummaryTopicSegment, UserProfile } from "@/api/types";
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
@@ -47,6 +47,7 @@ interface Props {
   warmSummaryComputedAt?: string | null;
   warmSummarySourceMessages?: number | null;
   warmSummarySourceChars?: number | null;
+  warmSummaryTopics?: SummaryTopicSegment[] | null;
   warmSummaryPending?: boolean;
   /** An automatic compaction is summarising earlier messages right now. */
   compactionPending?: boolean;
@@ -61,7 +62,7 @@ interface Props {
   onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1027,6 +1028,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               hotSince={hotSince ?? null}
               computedAt={warmSummaryComputedAt ?? null}
               streaming={!!streaming}
+              topics={warmSummaryTopics ?? null}
             />
           </div>
         </div>

@@ -378,6 +378,7 @@ export const api = {
         warm_summary_computed_at?: string | null;
         warm_summary_source_messages?: number | null;
         warm_summary_source_chars?: number | null;
+        warm_summary_topics?: string | null;
       }>(
         `/agents/${encodeURIComponent(id)}/compact`,
         // Conversation summarization can take longer than normal API calls,

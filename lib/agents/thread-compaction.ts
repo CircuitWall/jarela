@@ -10,7 +10,8 @@ import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/sto
 import { getProvider } from "@/lib/providers";
 import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
 import type { ProviderParams } from "@/lib/providers/types";
-import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { summarizeTranscript, transcriptText, extractTopicSegments } from "@/lib/agents/conversation-summary";
+import { upliftTopicFacts } from "@/lib/agents/warm-summary-background";
 import { getConfig } from "@/lib/env/config";
 
 export type ThreadCompactionResult =
@@ -28,6 +29,7 @@ export type ThreadCompactionResult =
       warm_summary_computed_at: string | null;
       warm_summary_source_messages: number;
       warm_summary_source_chars: number;
+      warm_summary_topics: string | null;
     };
 
 function maxThreadMessages(): number {
@@ -111,7 +113,12 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   const messageCount = hasPriorSummary ? priorSourceMessages + newRows.length : newRows.length;
 
   const provider = getProvider(cfg.provider);
-  const summary = (await summarizeTranscript(provider, cfg.model_id, providerParams, transcript)).trim();
+  const rawSummary = (await summarizeTranscript(provider, cfg.model_id, providerParams, transcript)).trim();
+  if (!rawSummary) return { compacted: false, reason: "empty summary" };
+  // Strip (and use) the same trailing jarela-topics fence the automatic
+  // boundary-compaction path parses — without this, the raw fence JSON would
+  // leak verbatim into warm_summary and the sessions archive dump below.
+  const { body: summary, topics } = extractTopicSegments(rawSummary);
   if (!summary) return { compacted: false, reason: "empty summary" };
 
   putMemory("sessions", `${agentId}/${Date.now()}`, {
@@ -121,6 +128,7 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
     message_count: messageCount,
     compacted_at: new Date().toISOString(),
   });
+  upliftTopicFacts(topics);
   const archivePruned = pruneSessionArchives(agentId, maxSessionArchives());
 
   const lastCreatedAt = rows[rows.length - 1].created_at;
@@ -134,6 +142,7 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
       before: newPin,
       sourceMessages: messageCount,
       sourceChars: contextChars,
+      topics: topics.length > 0 ? JSON.stringify(topics) : null,
     },
   });
 
@@ -153,5 +162,6 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
     warm_summary_computed_at: updated?.warm_summary_computed_at ?? null,
     warm_summary_source_messages: updated?.warm_summary_source_messages ?? messageCount,
     warm_summary_source_chars: updated?.warm_summary_source_chars ?? contextChars,
+    warm_summary_topics: updated?.warm_summary_topics ?? (topics.length > 0 ? JSON.stringify(topics) : null),
   };
 }

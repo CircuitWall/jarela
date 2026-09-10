@@ -19,6 +19,7 @@ import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { messageToResponse, resolveContextWindowTokens } from "@/lib/api/serializers";
 import { pendingCompactionBoundary } from "@/lib/agents/warm-summary-background";
+import { parseStoredTopics } from "@/lib/agents/conversation-summary";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   return NextResponse.json({
     ...thread,
+    warm_summary_topics: parseStoredTopics(thread.warm_summary_topics),
     context_window_tokens: contextWindowTokens,
     pending_hot_since: pendingCompactionBoundary(thread_id),
     // No server-side filtering: clients receive every message with its

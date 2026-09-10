@@ -9,7 +9,7 @@ import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
 import { AuthErrorBanner } from "./AuthErrorBanner";
 import { InputBar } from "./InputBar";
 import { MessageList } from "./MessageList";
-import { makeQueuedId } from "./chat-helpers";
+import { makeQueuedId, parseWarmSummaryTopics } from "./chat-helpers";
 import { useChatErrorReporting } from "./useChatErrorReporting";
 import { useChatQueue, type ChatQueueApi } from "./useChatQueue";
 import { useThreadCrossDeviceSync } from "./useThreadCrossDeviceSync";
@@ -170,6 +170,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         thread.metaApplier.setWarmSummaryComputedAt(result.warm_summary_computed_at ?? null);
         thread.metaApplier.setWarmSummarySourceMessages(result.warm_summary_source_messages ?? null);
         thread.metaApplier.setWarmSummarySourceChars(result.warm_summary_source_chars ?? null);
+        thread.metaApplier.setWarmSummaryTopics?.(parseWarmSummaryTopics(result.warm_summary_topics));
       } else {
         thread.addNotice("Nothing to compact yet — send some messages first.");
       }
@@ -228,6 +229,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         warmSummaryComputedAt={thread.warmSummaryComputedAt}
         warmSummarySourceMessages={thread.warmSummarySourceMessages}
         warmSummarySourceChars={thread.warmSummarySourceChars}
+        warmSummaryTopics={thread.warmSummaryTopics}
         warmSummaryPending={thread.warmSummaryPending}
         compactionPending={thread.compactionPending}
         onSetContextPin={thread.setContextPin}

@@ -987,6 +987,24 @@ function ensureThreadContextPinColumns(db: DatabaseSync): void {
   // much. NULL on legacy rows / rows summarised before these columns existed.
   if (!names.has("warm_summary_source_messages")) db.exec("ALTER TABLE threads ADD COLUMN warm_summary_source_messages INTEGER");
   if (!names.has("warm_summary_source_chars"))    db.exec("ALTER TABLE threads ADD COLUMN warm_summary_source_chars INTEGER");
+  // Per-topic segmentation of the same warm range as `warm_summary`: a JSON
+  // array of {title, start_at, end_at, recap, facts} (see SummaryTopicSegment
+  // in lib/agents/conversation-summary.ts). NULL when the summarizer didn't
+  // return a topics fence (older model, malformed output) or on legacy rows.
+  // Covers the same range as `warm_summary_before` — not persisted across
+  // compactions, so it's overwritten (not appended) on every refresh.
+  if (!names.has("warm_summary_topics"))     db.exec("ALTER TABLE threads ADD COLUMN warm_summary_topics TEXT");
+  // Message-count threshold below which the idle+topic-shift auto boundary
+  // detector (lib/agents/run-thread.ts maybeAutoContextBoundary) is
+  // suppressed for this thread. Set once (to message_count + N*2) whenever
+  // the user explicitly moves the boundary (drag, or manual /compact) via
+  // moveThreadContextBoundary — see lib/agents/context-boundary.ts. NOT
+  // touched by the auto-detector's own commit path. A pure read-side
+  // comparison against message_count (already loaded every turn) — no
+  // per-turn write needed, unlike a decrementing counter.
+  if (!names.has("auto_boundary_locked_until_msg_count")) {
+    db.exec("ALTER TABLE threads ADD COLUMN auto_boundary_locked_until_msg_count INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 // Per-tier input-token breakdown so the chat UI can show actual

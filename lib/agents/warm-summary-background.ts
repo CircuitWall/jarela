@@ -1,8 +1,9 @@
 import { getProvider } from "@/lib/providers";
-import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { summarizeTranscript, transcriptText, extractTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
 import { unwrapWarmSummary, wrapWarmSummary } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
+import { putMemory } from "@/lib/stores/memory";
 import {
   getRecentMessagesWindow,
   getThread,
@@ -74,7 +75,9 @@ async function commitBoundaryCompaction(
     boundary,
     built.sourceMessages,
     built.sourceChars,
+    built.topics.length > 0 ? JSON.stringify(built.topics) : null,
   );
+  upliftTopicFacts(built.topics);
   console.info(
     `[context-boundary:auto] thread=${threadId} committed boundary=${boundary} warm_msgs=${built.sourceMessages}`,
   );
@@ -88,10 +91,11 @@ export async function refreshWarmSummary(threadId: string): Promise<void> {
   const built = await buildSummaryBefore(threadId, boundary);
   if (!built) return;
   if (!built.summary) {
-    persistIfCurrent(threadId, boundary, "", built.sourceMessages, built.sourceChars);
+    persistIfCurrent(threadId, boundary, "", built.sourceMessages, built.sourceChars, built.topics);
     return;
   }
-  persistIfCurrent(threadId, boundary, built.summary, built.sourceMessages, built.sourceChars);
+  persistIfCurrent(threadId, boundary, built.summary, built.sourceMessages, built.sourceChars, built.topics);
+  upliftTopicFacts(built.topics);
 }
 
 interface BuiltSummary {
@@ -99,6 +103,9 @@ interface BuiltSummary {
   summary: string;
   sourceMessages: number;
   sourceChars: number;
+  // Per-topic segmentation of the same range (see SummaryTopicSegment). Empty
+  // when the summarizer didn't return a `jarela-topics` fence.
+  topics: SummaryTopicSegment[];
 }
 
 /**
@@ -127,7 +134,7 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
   const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
 
   if (warmRows.length < 2 || sourceChars < 24) {
-    return { summary: "", sourceMessages: warmRows.length, sourceChars };
+    return { summary: "", sourceMessages: warmRows.length, sourceChars, topics: [] };
   }
 
   const contextTokens = typeof providerParams.context_window_tokens === "number"
@@ -136,7 +143,7 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
 
   const transcript = warmRows
-    .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .map((m) => `[${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
     .join("\n\n")
     .slice(-summaryInputChars)
     .trim();
@@ -147,7 +154,9 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
     ? providerParams
     : { ...providerParams, max_tokens: 1024 };
 
-  const summary = (await summarizeTranscript(provider, modelCfg.model_id, summaryParams, transcript)).trim();
+  const raw = (await summarizeTranscript(provider, modelCfg.model_id, summaryParams, transcript)).trim();
+  if (!raw) return null;
+  const { body: summary, topics } = extractTopicSegments(raw);
   if (!summary) return null;
 
   return {
@@ -158,6 +167,7 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
     ].join("\n"),
     sourceMessages: warmRows.length,
     sourceChars,
+    topics,
   };
 }
 
@@ -167,6 +177,7 @@ function persistIfCurrent(
   summary: string,
   sourceMessages: number,
   sourceChars: number,
+  topics: SummaryTopicSegment[],
 ): void {
   const latest = getThread(threadId);
   if (!latest || latest.hot_since !== boundary) return;
@@ -182,5 +193,45 @@ function persistIfCurrent(
     boundary,
     sourceMessages,
     sourceChars,
+    topics.length > 0 ? JSON.stringify(topics) : null,
   );
+}
+
+// Batched uplift (once per compaction pass, covering every topic segment
+// together — not fired per-segment as each is identified). Direct writes,
+// same as the agent-facing memory_upsert tool: background compaction has
+// no tool-call loop to route an approval through, and facts already write
+// without a gate today. Exported so lib/agents/thread-compaction.ts (the
+// manual /compact path, which also produces topic segments) can reuse it.
+export function upliftTopicFacts(topics: readonly SummaryTopicSegment[]): void {
+  const seenKeys = new Set<string>();
+  for (const topic of topics) {
+    for (const fact of topic.facts) {
+      const key = slugifyForMemoryKey(fact.subject);
+      if (!key || seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      putMemory("facts", key, {
+        version: 2,
+        kind: "fact",
+        subject: fact.subject,
+        content: fact.content,
+        tags: fact.tags,
+        confidence: fact.confidence,
+        source: "conversation",
+        observed_at: null,
+        expires_at: null,
+        summary: null,
+        aliases: [],
+        status: "active",
+      });
+    }
+  }
+}
+
+function slugifyForMemoryKey(subject: string): string {
+  return subject
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }

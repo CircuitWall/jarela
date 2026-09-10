@@ -467,20 +467,28 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     && !req._skip_persist_message
     && isAutoBoundaryEligibleCategory(req.user_category)
   ) {
-    autoHotSince = await maybeAutoContextBoundary(
-      req.thread_id,
-      trimmed,
-      agentCfg.history_window_hours,
-      autoBoundaryScope,
-      req.history_bridge_key ?? undefined,
-    );
-    if (autoHotSince && autoBoundaryScope !== "bridge") {
-      // Deferred on purpose: the pin lands only once the recap that replaces
-      // the cut-off messages is stored, so THIS turn still runs on the old
-      // boundary instead of on an empty hot window with no summary.
-      kickBoundaryCompaction(req.thread_id, autoHotSince);
-      compactionPending = true;
-      autoHotSince = null;
+    // A manual move (drag, or /compact) locks auto-detection out until
+    // message_count passes the threshold set at move time, so it doesn't
+    // silently re-move a boundary the user just set on the very next
+    // idle+shift turn. Pure comparison against fields already loaded on
+    // `thread` — no per-turn write, unlike a decrementing counter.
+    const autoBoundaryLocked = thread.message_count < (thread.auto_boundary_locked_until_msg_count ?? 0);
+    if (!autoBoundaryLocked) {
+      autoHotSince = await maybeAutoContextBoundary(
+        req.thread_id,
+        trimmed,
+        agentCfg.history_window_hours,
+        autoBoundaryScope,
+        req.history_bridge_key ?? undefined,
+      );
+      if (autoHotSince && autoBoundaryScope !== "bridge") {
+        // Deferred on purpose: the pin lands only once the recap that replaces
+        // the cut-off messages is stored, so THIS turn still runs on the old
+        // boundary instead of on an empty hot window with no summary.
+        kickBoundaryCompaction(req.thread_id, autoHotSince);
+        compactionPending = true;
+        autoHotSince = null;
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import type { Message } from "@/api/types";
+import type { Message, SummaryTopicSegment } from "@/api/types";
 import { applyThreadMeta, type SystemNotice, type ThreadMetaApplier } from "./chat-helpers";
 
 interface Params {
@@ -26,6 +26,7 @@ export interface ThreadDataApi {
   warmSummaryComputedAt: string | null;
   warmSummarySourceMessages: number | null;
   warmSummarySourceChars: number | null;
+  warmSummaryTopics: SummaryTopicSegment[] | null;
   warmSummaryPending: boolean;
   compactionPending: boolean;
   contextWindowTokens: number | null;
@@ -46,6 +47,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
   const [warmSummaryComputedAt, setWarmSummaryComputedAt] = useState<string | null>(null);
   const [warmSummarySourceMessages, setWarmSummarySourceMessages] = useState<number | null>(null);
   const [warmSummarySourceChars, setWarmSummarySourceChars] = useState<number | null>(null);
+  const [warmSummaryTopics, setWarmSummaryTopics] = useState<SummaryTopicSegment[] | null>(null);
   const [warmSummaryPending, setWarmSummaryPending] = useState(false);
   const [compactionPending, setCompactionPending] = useState(false);
   const [contextWindowTokens, setContextWindowTokens] = useState<number | null>(null);
@@ -57,7 +59,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setHotSince, setWarmSummary, setWarmSummaryBefore,
     setWarmSummaryComputedAt, setWarmSummarySourceMessages,
     setWarmSummarySourceChars, setContextWindowTokens, setWarmSummaryPending,
-    setCompactionPending,
+    setCompactionPending, setWarmSummaryTopics,
   };
 
   const addNotice = useCallback((text: string) => {
@@ -76,6 +78,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummaryComputedAt(null);
       setWarmSummarySourceMessages(null);
       setWarmSummarySourceChars(null);
+      setWarmSummaryTopics(null);
       setWarmSummaryPending(false);
       setCompactionPending(false);
       setContextWindowTokens(null);
@@ -91,6 +94,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     setWarmSummaryComputedAt(null);
     setWarmSummarySourceMessages(null);
     setWarmSummarySourceChars(null);
+    setWarmSummaryTopics(null);
     setWarmSummaryPending(false);
     setCompactionPending(false);
     setContextWindowTokens(null);
@@ -128,6 +132,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummaryComputedAt(updated.warm_summary_computed_at);
       setWarmSummarySourceMessages(updated.warm_summary_source_messages);
       setWarmSummarySourceChars(updated.warm_summary_source_chars);
+      setWarmSummaryTopics(updated.warm_summary_topics);
       if (!updated.hot_since || updated.warm_summary_before === updated.hot_since) {
         setWarmSummaryPending(false);
       }
@@ -185,7 +190,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     messages, setMessages, messagesRef, notices, setNotices, addNotice,
     hasMore, setHasMore, loadingMore, messagesLoading,
     hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt,
-    warmSummarySourceMessages, warmSummarySourceChars, warmSummaryPending, compactionPending, contextWindowTokens,
+    warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending, compactionPending, contextWindowTokens,
     metaApplier, loadOlder, setContextPin,
   };
 }

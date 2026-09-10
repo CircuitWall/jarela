@@ -1,5 +1,5 @@
 "use client";
-import type { ContentPart, Message } from "@/api/types";
+import type { ContentPart, Message, SummaryTopicSegment } from "@/api/types";
 
 export interface QueuedMessage {
   id: string;
@@ -19,6 +19,7 @@ export interface ThreadMetaApplier {
   setWarmSummaryComputedAt: (v: string | null) => void;
   setWarmSummarySourceMessages: (v: number | null) => void;
   setWarmSummarySourceChars: (v: number | null) => void;
+  setWarmSummaryTopics?: (v: SummaryTopicSegment[] | null) => void;
   setContextWindowTokens: (v: number | null) => void;
   setWarmSummaryPending?: (v: boolean) => void;
   setCompactionPending?: (v: boolean) => void;
@@ -31,6 +32,7 @@ export interface ThreadGetPayload {
   warm_summary_computed_at?: string | null;
   warm_summary_source_messages?: number | null;
   warm_summary_source_chars?: number | null;
+  warm_summary_topics?: SummaryTopicSegment[] | null;
   pending_hot_since?: string | null;
   context_window_tokens?: number | null;
 }
@@ -116,6 +118,7 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
   meta.setWarmSummaryComputedAt(payload.warm_summary_computed_at ?? null);
   meta.setWarmSummarySourceMessages(payload.warm_summary_source_messages ?? null);
   meta.setWarmSummarySourceChars(payload.warm_summary_source_chars ?? null);
+  meta.setWarmSummaryTopics?.(payload.warm_summary_topics ?? null);
   meta.setContextWindowTokens(payload.context_window_tokens ?? null);
   meta.setWarmSummaryPending?.(!!hotSince && summaryBefore !== hotSince);
   meta.setCompactionPending?.(!!payload.pending_hot_since);
@@ -123,4 +126,16 @@ export function applyThreadMeta(meta: ThreadMetaApplier, payload: ThreadGetPaylo
 
 export function makeQueuedId(prefix = "q"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Parse the raw `warm_summary_topics` JSON string from the manual /compact
+ *  response (the thread GET/context-pin routes already return it parsed). */
+export function parseWarmSummaryTopics(raw: string | null | undefined): SummaryTopicSegment[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as SummaryTopicSegment[]) : null;
+  } catch {
+    return null;
+  }
 }
