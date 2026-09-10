@@ -88,7 +88,17 @@ interface ListCache<T> {
   inflight: Promise<T[]> | null;
 }
 
+interface ValueCache<T> {
+  data: T | null;
+  fetchedAt: number;
+  inflight: Promise<T> | null;
+}
+
 function emptyCache<T>(): ListCache<T> {
+  return { data: null, fetchedAt: 0, inflight: null };
+}
+
+function emptyValueCache<T>(): ValueCache<T> {
   return { data: null, fetchedAt: 0, inflight: null };
 }
 
@@ -180,6 +190,10 @@ const agentListCache: ListCache<AgentConfig> = emptyCache();
 const modelListCache: ListCache<ModelConfig> = emptyCache();
 const taskListCache: ListCache<TaskAssignment> = emptyCache();
 const toolListCache: ListCache<ToolInfo> = emptyCache();
+const toolListWithDisabledCache: ListCache<ToolInfo> = emptyCache();
+const integrationCredentialCache: ListCache<Credential> = emptyCache();
+const integrationListCache: ValueCache<IntegrationsListResponse> = emptyValueCache();
+const harnessListCache: ValueCache<HarnessListResponse> = emptyValueCache();
 
 function setAgentListCache(rows: AgentConfig[], notify = true): AgentConfig[] {
   const snap = cloneRows(rows);
@@ -226,8 +240,17 @@ function setToolListCache(rows: ToolInfo[]): ToolInfo[] {
   return cloneRows(snap);
 }
 
+function setToolListWithDisabledCache(rows: ToolInfo[]): ToolInfo[] {
+  const snap = cloneRows(rows);
+  toolListWithDisabledCache.data = snap;
+  toolListWithDisabledCache.fetchedAt = Date.now();
+  toolListWithDisabledCache.inflight = null;
+  return cloneRows(snap);
+}
+
 function invalidateToolListCache(): void {
   toolListCache.data = null;
+  toolListWithDisabledCache.data = null;
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent("jarela:tools-changed"));
   }
@@ -251,6 +274,25 @@ function cachedList<T>(
       // promise here, every subsequent caller gets the same stale rejection
       // forever (until hard refresh), which is exactly what happens after a
       // temporary 423 lock during idle-screen unlock flows.
+      if (cache.inflight === req) cache.inflight = null;
+      throw err;
+    });
+  cache.inflight = req;
+  return req;
+}
+
+function cachedValue<T>(cache: ValueCache<T>, fetchFn: () => Promise<T>): Promise<T> {
+  const now = Date.now();
+  if (cache.data !== null && now - cache.fetchedAt < LIST_TTL_MS) return Promise.resolve(cache.data);
+  if (cache.inflight) return cache.inflight;
+  const req = fetchFn()
+    .then((value) => {
+      cache.data = value;
+      cache.fetchedAt = Date.now();
+      cache.inflight = null;
+      return value;
+    })
+    .catch((err) => {
       if (cache.inflight === req) cache.inflight = null;
       throw err;
     });
@@ -390,6 +432,14 @@ export const api = {
   tools: {
     list: (opts?: { force?: boolean; query?: string; includeDisabled?: boolean }) => {
       const q = opts?.query?.trim();
+      if (!q && opts?.includeDisabled) {
+        return cachedList(
+          toolListWithDisabledCache,
+          () => request<ToolInfo[]>("/tools?include_disabled=true"),
+          setToolListWithDisabledCache,
+          opts.force === true,
+        );
+      }
       const params = new URLSearchParams();
       if (q) params.set("q", q);
       if (opts?.includeDisabled) params.set("include_disabled", "true");
@@ -696,6 +746,20 @@ export const api = {
 
   credentials: {
     list: (filter?: { type?: string; provider?: string }) => {
+      if (filter?.type === "integration" && !filter.provider) {
+        return cachedList(
+          integrationCredentialCache,
+          () => request<Credential[]>("/credentials?type=integration"),
+          (rows) => {
+            const snap = cloneRows(rows);
+            integrationCredentialCache.data = snap;
+            integrationCredentialCache.fetchedAt = Date.now();
+            integrationCredentialCache.inflight = null;
+            return cloneRows(snap);
+          },
+          false,
+        );
+      }
       const qs = new URLSearchParams();
       if (filter?.type) qs.set("type", filter.type);
       if (filter?.provider) qs.set("provider", filter.provider);
@@ -705,6 +769,7 @@ export const api = {
     create: async (data: CredentialIn, opts?: { force?: boolean }) => {
       const qs = opts?.force ? "?force=1" : "";
       const created = await request<Credential>(`/credentials${qs}`, { method: "POST", body: JSON.stringify(data) });
+      integrationCredentialCache.data = null;
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       return created;
     },
@@ -713,12 +778,14 @@ export const api = {
       const updated = await request<Credential>(`/credentials/${encodeURIComponent(id)}${qs}`, {
         method: "PUT", body: JSON.stringify(data),
       });
+      integrationCredentialCache.data = null;
       if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       return updated;
     },
     delete: async (id: string) => {
       const res = await request<{ deleted: boolean }>(`/credentials/${encodeURIComponent(id)}`, { method: "DELETE" });
       if (res.deleted && typeof window !== "undefined") {
+        integrationCredentialCache.data = null;
         window.dispatchEvent(new CustomEvent("jarela:credentials-changed"));
       }
       return res;
@@ -830,13 +897,19 @@ export const api = {
   },
 
   integrations: {
-    list: () => request<IntegrationsListResponse>("/integrations"),
-    save: (name: string, values: Record<string, string>) =>
-      request<IntegrationStatus>(`/integrations/${encodeURIComponent(name)}`, {
+    list: () => cachedValue(integrationListCache, () => request<IntegrationsListResponse>("/integrations")),
+    save: async (name: string, values: Record<string, string>) => {
+      const result = await request<IntegrationStatus>(`/integrations/${encodeURIComponent(name)}`, {
         method: "PUT", body: JSON.stringify(values),
-      }),
-    delete: (name: string) =>
-      request<{ deleted: boolean }>(`/integrations/${encodeURIComponent(name)}`, { method: "DELETE" }),
+      });
+      integrationListCache.data = null;
+      return result;
+    },
+    delete: async (name: string) => {
+      const result = await request<{ deleted: boolean }>(`/integrations/${encodeURIComponent(name)}`, { method: "DELETE" });
+      integrationListCache.data = null;
+      return result;
+    },
     test: (name: string, credentialId?: string) =>
       request<{ ok: boolean; error?: string; detail?: Record<string, unknown> }>(
         `/integrations/${encodeURIComponent(name)}/test`,
@@ -1111,22 +1184,34 @@ export const api = {
   },
 
   harnesses: {
-    list: () => request<HarnessListResponse>("/harnesses"),
+    list: () => cachedValue(harnessListCache, () => request<HarnessListResponse>("/harnesses")),
     get: (id: string) => request<Harness>(`/harnesses/${encodeURIComponent(id)}`),
-    create: (data: HarnessIn) =>
-      request<Harness>("/harnesses", { method: "POST", body: JSON.stringify(data) }),
-    update: (id: string, patch: HarnessPatch) =>
-      request<Harness>(`/harnesses/${encodeURIComponent(id)}`, {
+    create: async (data: HarnessIn) => {
+      const result = await request<Harness>("/harnesses", { method: "POST", body: JSON.stringify(data) });
+      harnessListCache.data = null;
+      return result;
+    },
+    update: async (id: string, patch: HarnessPatch) => {
+      const result = await request<Harness>(`/harnesses/${encodeURIComponent(id)}`, {
         method: "PATCH",
         body: JSON.stringify(patch),
-      }),
-    delete: (id: string) =>
-      request<{ deleted: boolean }>(`/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" }),
-    setDefault: (id: string) =>
-      request<{ id: string }>("/harnesses/default", {
+      });
+      harnessListCache.data = null;
+      return result;
+    },
+    delete: async (id: string) => {
+      const result = await request<{ deleted: boolean }>(`/harnesses/${encodeURIComponent(id)}`, { method: "DELETE" });
+      harnessListCache.data = null;
+      return result;
+    },
+    setDefault: async (id: string) => {
+      const result = await request<{ id: string }>("/harnesses/default", {
         method: "PUT",
         body: JSON.stringify({ id }),
-      }),
+      });
+      harnessListCache.data = null;
+      return result;
+    },
   },
 
   proxy: {
