@@ -40,9 +40,10 @@ Chosen option: add a versioned-by-enum `failure_class` to
 
 Classification is derived from sanitized error text and the normalized reason.
 Existing rows are migrated with the conservative `suspected_product_gap`
-default. Reports expose the class so a later per-pattern escalation threshold
-can distinguish operational failures from expected skips without storing raw
-arguments or user content.
+default. Reports expose the class and bounded context fields (`workflow_name`,
+`event_type`, `extraction_valid`, `intended_tool`, and normalized
+`blocked_operation`) so per-pattern escalation can distinguish operational
+failures from expected skips without storing raw arguments or user content.
 
 ### Consequences
 
@@ -51,8 +52,9 @@ arguments or user content.
 * Good, because the current bounded sample retention and secret redaction remain
   in place.
 * Good, because the migration is additive and preserves existing telemetry.
-* Bad, because classification is heuristic until callers provide richer
-  workflow context; it must not be treated as a definitive vendor diagnosis.
+* Bad, because classification remains heuristic and the context fields are
+  only as precise as the turn metadata supplied by the caller; they must not be
+  treated as a definitive vendor diagnosis.
 
 ## More Information
 

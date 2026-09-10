@@ -126,6 +126,26 @@ describe("tool usefulness telemetry", () => {
     expect(listToolFailureSamples(`skip_${suffix}`)[0].failure_class).toBe("expected_skip");
   });
 
+  it("persists sanitized workflow context for blocked operations", () => {
+    const name = `context_tool_${Date.now()}`;
+    recordToolUsage([
+      { id: "context-call", phase: "call", name, payload: { value: "x" } },
+      { id: "context-call", phase: "result", name, payload: { error: "schema validation failed" } },
+    ], "The extraction produced a candidate.", {
+      workflowName: "watcher",
+      eventType: "calendar_event",
+      extractionValid: true,
+    });
+
+    expect(listToolFailureSamples(name)[0]).toMatchObject({
+      workflow_name: "watcher",
+      event_type: "calendar_event",
+      extraction_valid: 1,
+      intended_tool: name,
+      blocked_operation: "validation",
+    });
+  });
+
   it("prunes stale failure samples by TTL", () => {
     const old = "2026-01-01T00:00:00.000Z";
     const current = "2026-02-15T00:00:00.000Z";

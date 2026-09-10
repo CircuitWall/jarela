@@ -356,6 +356,11 @@ export function runMigrations(db: DatabaseSync): void {
       tool_name          TEXT NOT NULL,
       normalized_reason  TEXT NOT NULL,
       failure_class      TEXT NOT NULL DEFAULT 'suspected_product_gap',
+      workflow_name      TEXT,
+      event_type         TEXT,
+      extraction_valid   INTEGER NOT NULL DEFAULT 0,
+      intended_tool      TEXT,
+      blocked_operation  TEXT,
       count              INTEGER NOT NULL DEFAULT 0,
       sample_error       TEXT NOT NULL,
       sample_arg_shape   TEXT NOT NULL,
@@ -416,8 +421,18 @@ export function runMigrations(db: DatabaseSync): void {
 
 function ensureToolFailureSampleColumns(db: DatabaseSync): void {
   const cols = db.prepare("PRAGMA table_info(tool_failure_samples)").all() as Array<{ name: string }>;
-  if (!cols.some((col) => col.name === "failure_class")) {
-    db.exec("ALTER TABLE tool_failure_samples ADD COLUMN failure_class TEXT NOT NULL DEFAULT 'suspected_product_gap'");
+  const additions = [
+    ["failure_class", "TEXT NOT NULL DEFAULT 'suspected_product_gap'"],
+    ["workflow_name", "TEXT"],
+    ["event_type", "TEXT"],
+    ["extraction_valid", "INTEGER NOT NULL DEFAULT 0"],
+    ["intended_tool", "TEXT"],
+    ["blocked_operation", "TEXT"],
+  ] as const;
+  for (const [name, definition] of additions) {
+    if (!cols.some((col) => col.name === name)) {
+      db.exec(`ALTER TABLE tool_failure_samples ADD COLUMN ${name} ${definition}`);
+    }
   }
 }
 
