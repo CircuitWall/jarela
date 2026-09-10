@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.4] - 2026-09-10
+
+### Fixed
+
+- **Blocked tool failures retain their context and can trigger recurring
+  alerts.** Permission-denied tool calls now use a dedicated telemetry failure
+  class with the original blocking context, and recurring tool failures can
+  raise an actionable issue instead of remaining hidden in generic execution
+  errors.
+- **Optional package installs use peer dependencies by default.** Package
+  installation now keeps shared dependencies at the host application's level
+  unless a package explicitly requires bundled dependencies, avoiding
+  unnecessary duplicate installs.
+
 ## [1.41.3] - 2026-09-10
 
 ### Fixed
