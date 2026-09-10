@@ -24,6 +24,10 @@ vi.mock("@/lib/embeddings", () => ({
     error: null,
     failed: texts.length,
   })),
+  upsertMemoryEmbedCache: () => {},
+  evictMemoryEmbedCache: () => {},
+  upsertMessageEmbedCache: () => {},
+  resetMessageEmbedCache: () => {},
 }));
 
 const { reindexLocalFile } = await import("./reindex-local-file");

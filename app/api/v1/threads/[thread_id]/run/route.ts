@@ -253,7 +253,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           const contentToPersist = collected.aborted
             ? withInterruptMarker(collected.assistantContent)
             : collected.assistantContent;
-          persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null, routeDecision);
+          persistAssistantMessage(thread_id, contentToPersist, collected.usedTools, collected.toolEvents, null, collected.usage ?? null, prepared.context_snapshot ?? null, prepared.source_manifest ?? null, routeDecision, prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null);
           // If the turn failed AND persistAssistantMessage skipped writing
           // a row (no content + no tool events + not aborted), persist a
           // synthetic `run_error` marker so the failure survives reload

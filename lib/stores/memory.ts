@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/db";
-import { embedOne } from "@/lib/embeddings";
+import { embedOne, upsertMemoryEmbedCache, evictMemoryEmbedCache } from "@/lib/embeddings";
 import { encrypt, decryptIfNeeded } from "@/lib/crypto/envelope";
 import { isSensitiveMemoryNamespace } from "@/lib/crypto/sensitive";
 import { isLegacyStructuredMemoryRaw, memorySearchText, parseStructuredMemory, type StructuredMemoryRecord } from "@/lib/memory/record";
@@ -112,10 +112,13 @@ export function putMemory(namespace: string, key: string, value: unknown): Memor
     getDb()
       .prepare("UPDATE memory_store SET embedding=? WHERE namespace=? AND key=?")
       .run(JSON.stringify(vec), namespace, key);
+    upsertMemoryEmbedCache(namespace, key, json, vec, t);
   });
   return { namespace, key, value: json, created_at, updated_at: t };
 }
 
 export function deleteMemory(namespace: string, key: string): boolean {
-  return (getDb().prepare("DELETE FROM memory_store WHERE namespace=? AND key=?").run(namespace, key) as { changes: number }).changes > 0;
+  const removed = (getDb().prepare("DELETE FROM memory_store WHERE namespace=? AND key=?").run(namespace, key) as { changes: number }).changes > 0;
+  evictMemoryEmbedCache(namespace, key);
+  return removed;
 }

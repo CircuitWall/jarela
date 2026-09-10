@@ -7,7 +7,7 @@ import rehypeRaw from "rehype-raw";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import "highlight.js/styles/github-dark.css";
-import { AlertTriangle, Bot, Check, Clock, Copy, CornerDownRight, Eye, EyeOff, ExternalLink, FileText, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
+import { AlertTriangle, Bot, Brain, Check, Clock, Copy, CornerDownRight, Eye, EyeOff, ExternalLink, FileText, Globe, Link as LinkIcon, Link2, Loader2, MessageCircle, Paperclip, Pause, Play, RotateCcw, ShieldCheck, User, Users, X, Zap } from "lucide-react";
 import type { AgentConfig, AutomationActivityMetadata, Message, RouteDecisionMetadata, UserProfile } from "@/api/types";
 import type { ContentPart } from "@/api/types";
 import { ToolList } from "@/components/chat/ToolList";
@@ -1493,6 +1493,29 @@ function RedactionShield({
   );
 }
 
+// Quiet per-turn indicator that the automatic semantic recall pass (see
+// buildRecallContext in lib/agents/run-thread.ts) surfaced something.
+// Counts only, never the recalled content itself — an earlier design that
+// dumped every recalled item into the citation manifest was reverted for
+// producing a noisy, mostly-irrelevant panel on every reply.
+function MemoryRecallBadge({ memoryHits, messageHits }: { memoryHits: number; messageHits: number }) {
+  const total = memoryHits + messageHits;
+  if (total <= 0) return null;
+  const parts = [
+    memoryHits > 0 ? `${memoryHits} ${memoryHits === 1 ? "memory" : "memories"}` : null,
+    messageHits > 0 ? `${messageHits} past ${messageHits === 1 ? "message" : "messages"}` : null,
+  ].filter(Boolean);
+  return (
+    <MetaRow
+      accent="neutral"
+      title="The agent's automatic memory recall pass surfaced these before drafting this reply."
+    >
+      <Brain size={10} />
+      <span className="truncate">Recalled {parts.join(" · ")}</span>
+    </MetaRow>
+  );
+}
+
 function RoutingDecisionSummary({ decision }: { decision: RouteDecisionMetadata }) {
   const [open, setOpen] = useState(false);
   const summary = formatRoutingDecisionSummary(decision);
@@ -2053,6 +2076,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
   const routingDecision = !isUser && "metadata" in message
     ? (message.metadata as { routing?: RouteDecisionMetadata } | null | undefined)?.routing ?? null
     : null;
+  const memoryRecall = !isUser && "metadata" in message
+    ? (message.metadata as { memory_recall?: { memory_hits: number; message_hits: number } } | null | undefined)?.memory_recall ?? null
+    : null;
   const automationActivity = !isUser && "metadata" in message
     ? message.metadata?.automation_activity ?? null
     : null;
@@ -2242,6 +2268,9 @@ export const MessageBubble = memo(function MessageBubble({ message, agentConfig,
         )}
         {routingDecision && (
           <RoutingDecisionSummary decision={routingDecision} />
+        )}
+        {memoryRecall && (
+          <MemoryRecallBadge memoryHits={memoryRecall.memory_hits} messageHits={memoryRecall.message_hits} />
         )}
         {citations && Array.isArray(citations.sources) && citations.sources.length > 0 && (
           <ReferencesPanel sources={citations.sources} />

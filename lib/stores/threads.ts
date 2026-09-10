@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
-import { embedOne } from "@/lib/embeddings";
+import { embedOne, upsertMessageEmbedCache, resetMessageEmbedCache } from "@/lib/embeddings";
 
 const now = () => new Date().toISOString();
 
@@ -81,6 +81,7 @@ export function createThread(agent_id: string, title?: string): ThreadRow {
 export function deleteThread(thread_id: string): boolean {
   const db = getDb();
   db.prepare("DELETE FROM messages WHERE thread_id=?").run(thread_id);
+  resetMessageEmbedCache();
   const r = db.prepare("DELETE FROM threads WHERE thread_id=?").run(thread_id);
   return r.changes > 0;
 }
@@ -194,6 +195,7 @@ export function addMessage(
     embedOne(content).then((vec) => {
       if (vec) {
         getDb().prepare("UPDATE messages SET embedding=? WHERE msg_id=?").run(JSON.stringify(vec), msg_id);
+        upsertMessageEmbedCache(msg_id, thread_id, role, content, vec, t);
       }
     }).catch(() => { /* logged in embeddings module */ });
   }
@@ -254,6 +256,7 @@ export function pruneThreadMessages(threadId: string, keepLast: number): number 
   const removed = Number(r.changes);
   db.prepare("UPDATE threads SET message_count=?, updated_at=? WHERE thread_id=?")
     .run(Math.max(0, total - removed), new Date().toISOString(), threadId);
+  if (removed > 0) resetMessageEmbedCache();
   return removed;
 }
 

@@ -26,6 +26,10 @@ vi.mock("@/lib/embeddings", () => ({
   embedOne: vi.fn(async () => null),
   embedBestEffort: vi.fn(async () => ({ vectors: [], error: null, failed: 0 })),
   cosine: () => 0,
+  upsertMemoryEmbedCache: () => {},
+  evictMemoryEmbedCache: () => {},
+  upsertMessageEmbedCache: () => {},
+  resetMessageEmbedCache: () => {},
 }));
 
 const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary } =

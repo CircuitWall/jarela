@@ -1,6 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getMemory, putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
+import { recall } from "@/lib/embeddings";
 import { CURRENT_STRUCTURED_MEMORY_VERSION, StructuredMemoryInputSchema } from "@/lib/memory/record";
 import { registerLangChainPackage } from "../packages/langchain-package";
 
@@ -98,10 +99,35 @@ export const memoryDeleteTool = tool(
   },
 );
 
+export const memorySearchTool = tool(
+  async ({ query, namespace, limit }) => {
+    const take = limit ?? 10;
+    // recall() ranks across all namespaces + chat messages together; when the
+    // caller wants one namespace, over-fetch first so the post-filter still
+    // has enough candidates to reach `take`.
+    const hits = await recall(query, namespace ? take * 4 : take);
+    const filtered = hits
+      .filter((h) => h.source === "memory" && (!namespace || h.namespace === namespace))
+      .slice(0, take)
+      .map((h) => ({ namespace: h.namespace, key: h.key, content: h.content, score: h.score, updated_at: h.created_at }));
+    return JSON.stringify(filtered);
+  },
+  {
+    name: "memory_search",
+    description:
+      "Semantically search long-term memory by meaning, not exact text (embeddings-based cosine similarity; falls back to keyword overlap when no embedding provider is configured). Prefer this over memory_list when your query is a paraphrase or concept rather than a literal substring you expect to find verbatim.",
+    schema: z.object({
+      query: z.string().describe("Natural-language query to search memory for"),
+      namespace: z.string().optional().describe("Restrict results to this namespace (optional)"),
+      limit: z.number().optional().describe("Max results (default 10)"),
+    }),
+  },
+);
+
 registerLangChainPackage({
   category: "Memory",
   tools: {
-    read: [memoryReadTool, memoryListTool],
+    read: [memoryReadTool, memoryListTool, memorySearchTool],
     write: [memoryWriteTool, memoryUpsertTool, memoryDeleteTool],
   },
 });
