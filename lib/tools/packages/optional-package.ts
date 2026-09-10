@@ -28,8 +28,10 @@ export function loadOptionalPackage<T extends AnyModule>(packageName: string): T
   try {
     const req = createRuntimeRequire(join(getPackagesDir(), "_anchor"));
     return req(managedPackagePath(packageName)) as T;
-  } catch {
-    // The package is genuinely absent or failed to load from its managed path.
+  } catch (err) {
+    // Keep the optional boundary non-fatal, but leave the actual load failure
+    // visible so missing peer dependencies are diagnosable from server logs.
+    console.error(`[optional-package] failed to load ${packageName}: ${err instanceof Error ? err.message : String(err)}`);
   }
   return null;
 }
@@ -70,7 +72,8 @@ export function isOptionalPackageInstalled(packageName: string): boolean {
     const req = createRuntimeRequire(join(getPackagesDir(), "_anchor"));
     req(managedPackagePath(packageName));
     return true;
-  } catch {
+  } catch (err) {
+    console.error(`[optional-package] failed to load ${packageName}: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
 }

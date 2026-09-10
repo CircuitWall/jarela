@@ -19,11 +19,11 @@ process.env.JARELA_DB_DIR = tmpRoot;
 process.env.JARELA_PACKAGES_DIR = packagesDir;
 
 // Capture every `npm install` invocation so we can assert the install
-// pipeline passes the flags that v1.10.0 added (cross-spawn for the
-// Windows EINVAL trap, --legacy-peer-deps for ERESOLVE on the LangChain
-// stack). The mocked child emits a synchronous success.
+// pipeline uses normal peer resolution first and only falls back to the
+// legacy resolver for a genuine ERESOLVE failure.
 interface SpawnCall { args: string[]; cwd: string }
 const spawnCalls: SpawnCall[] = [];
+let nextSpawnFailure: string | null = null;
 vi.mock("cross-spawn", () => {
   return {
     default: (cmd: string, args: string[], opts: { cwd: string }) => {
@@ -34,7 +34,15 @@ vi.mock("cross-spawn", () => {
       };
       child.stderr = new EventEmitter();
       child.stdout = new EventEmitter();
-      queueMicrotask(() => child.emit("close", 0));
+      queueMicrotask(() => {
+        if (nextSpawnFailure) {
+          child.stderr.emit("data", Buffer.from(nextSpawnFailure));
+          nextSpawnFailure = null;
+          child.emit("close", 1);
+        } else {
+          child.emit("close", 0);
+        }
+      });
       return child;
     },
   };
@@ -179,9 +187,9 @@ describe("_pendingDirForTest", () => {
   });
 });
 
-// Regression tests for v1.10.0 / v1.10.1 install pipeline:
+// Regression tests for the install pipeline:
 //   - spawn must go through cross-spawn (Windows EINVAL on npm.cmd shim)
-//   - npm args must include --legacy-peer-deps (LangChain ERESOLVE)
+//   - normal peer resolution is attempted before the legacy fallback
 //   - a successful install must reload manifests so stale "cannot resolve"
 //     errors from a manifest saved before the package existed clear out
 describe("runInstall pipeline (trusted publisher)", () => {
@@ -210,7 +218,7 @@ describe("runInstall pipeline (trusted publisher)", () => {
     );
   });
 
-  it("invokes npm via cross-spawn with --legacy-peer-deps and --save", async () => {
+  it("invokes npm via cross-spawn with normal peer resolution", async () => {
     const outcome = await beginInstall({ spec: "@langchain/sample" });
     expect(outcome.status).toBe("installed");
 
@@ -218,10 +226,19 @@ describe("runInstall pipeline (trusted publisher)", () => {
     const [call] = spawnCalls;
     expect(call.args[0]).toBe("npm");
     expect(call.args).toContain("install");
-    expect(call.args).toContain("--legacy-peer-deps");
+    expect(call.args).not.toContain("--legacy-peer-deps");
     expect(call.args).toContain("--save");
     expect(call.args).toContain("@langchain/sample");
     expect(call.cwd).toBe(packagesDir);
+  });
+
+  it("retries with legacy peer resolution only after ERESOLVE", async () => {
+    nextSpawnFailure = "npm ERR! ERESOLVE could not resolve peer dependency";
+    const outcome = await beginInstall({ spec: "@langchain/sample" });
+    expect(outcome.status).toBe("installed");
+    expect(spawnCalls).toHaveLength(2);
+    expect(spawnCalls[0]!.args).not.toContain("--legacy-peer-deps");
+    expect(spawnCalls[1]!.args).toContain("--legacy-peer-deps");
   });
 
   it("appends the version to the spec when one is supplied", async () => {
