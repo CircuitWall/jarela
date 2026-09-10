@@ -25,6 +25,7 @@ export interface AgentConfigRow {
   is_default: number;
   history_limit: number;        // 0 = unlimited
   history_window_hours: number; // 0 = no time bound
+  hot_turn_limit?: number;      // 0 = token budget only
   never_reply: number;          // 1 = run the agent but don't auto-send replies via bridges
   adaptive_persona_enabled: number;  // 1 = use runtime mood/tone adaptation hints
   adaptive_persona_strength: number; // 0..100, how strongly to adapt to cues
@@ -146,6 +147,7 @@ export interface UpsertAgentInput {
   is_default?: boolean;
   history_limit?: number;
   history_window_hours?: number;
+  hot_turn_limit?: number;
   never_reply?: boolean;
   adaptive_persona_enabled?: boolean;
   adaptive_persona_strength?: number;
@@ -314,13 +316,14 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       `INSERT OR REPLACE INTO agent_configs
         (id, name, icon, identity, instructions, tools, model_config_name, is_default,
          history_limit, history_window_hours, never_reply,
+         hot_turn_limit,
          adaptive_persona_enabled, adaptive_persona_strength, adaptive_empathy, adaptive_expressiveness, adaptive_verbosity, adaptive_mbti,
          voice_enabled, voice_model, voice_name, voice_stt_model, voice_auto_speak,
          harness_id, delegate_targets, context_tier_proportions,
          anti_hallucination_mode, anti_hallucination_model_config, citation_strictness,
          tool_credentials, router_policy, router_enabled,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.id,
@@ -338,6 +341,7 @@ export function upsertAgentConfig(input: UpsertAgentInput): AgentConfigRow {
       input.never_reply === undefined
         ? (existing?.never_reply ?? 0)
         : (input.never_reply ? 1 : 0),
+      Math.max(0, Math.floor(input.hot_turn_limit ?? existing?.hot_turn_limit ?? 12)),
       input.adaptive_persona_enabled === undefined
         ? (existing?.adaptive_persona_enabled ?? 0)
         : (input.adaptive_persona_enabled ? 1 : 0),

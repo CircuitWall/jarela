@@ -5,6 +5,8 @@ export interface AgentInfo {
   icon: string | null;
 }
 
+export const DEFAULT_HOT_TURN_LIMIT = 12;
+
 export interface AgentConfig {
   id: string;
   name: string;
@@ -16,6 +18,7 @@ export interface AgentConfig {
   is_default: boolean;
   history_limit: number;
   history_window_hours: number;
+  hot_turn_limit: number;
   never_reply: boolean;
   adaptive_persona_enabled: boolean;
   adaptive_persona_strength: number;
@@ -113,6 +116,7 @@ export interface AgentConfigIn {
   is_default?: boolean;
   history_limit?: number;
   history_window_hours?: number;
+  hot_turn_limit?: number;
   never_reply?: boolean;
   adaptive_persona_enabled?: boolean;
   adaptive_persona_strength?: number;

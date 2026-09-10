@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AgentConfig, AgentConfigIn } from "@/api/types";
+import { DEFAULT_HOT_TURN_LIMIT, type AgentConfig, type AgentConfigIn } from "@/api/types";
 import { useTools } from "@/hooks/useTools";
 import { isBasicToolCategory } from "@/lib/tools/runtime/categories";
 import { MBTI_PRESETS, type MbtiType } from "@/lib/agents/adaptive-persona-presets";
@@ -27,6 +27,9 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const [instructions, setInstructions] = useState(agent?.instructions ?? "");
   const [isDefault, setIsDefault] = useState<boolean>(agent?.is_default ?? false);
   const [modelConfigName, setModelConfigName] = useState<string>(agent?.model_config_name ?? "");
+  const [historyLimit, setHistoryLimit] = useState<number>(agent?.history_limit ?? 50);
+  const [historyWindowHours, setHistoryWindowHours] = useState<number>(agent?.history_window_hours ?? 8);
+  const [hotTurnLimit, setHotTurnLimit] = useState<number>(agent?.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT);
   const [selectedTools, setSelectedTools] = useState<string[]>(agent?.tools ?? []);
   const [toolCredentials, setToolCredentials] = useState<Record<string, string>>(
     agent?.tool_credentials ?? {},
@@ -75,7 +78,9 @@ export function useAgentEditorForm(agent: AgentConfig | undefined) {
   const fields = {
     name, setName, icon, setIcon, identity, setIdentity, instructions, setInstructions,
     isDefault, setIsDefault, iconInputRef, handleIconFile: handleIconFileFor(setIcon),
-    modelConfigName, setModelConfigName, tools, selectedTools,
+    modelConfigName, setModelConfigName,
+    historyLimit, setHistoryLimit, historyWindowHours, setHistoryWindowHours,
+    hotTurnLimit, setHotTurnLimit, tools, selectedTools,
     toolCredentials, setToolCredentialFor,
     delegateTargets, setDelegateTargets, harnessId, setHarnessId,
     antiHallucMode, setAntiHallucMode, antiHallucModel, setAntiHallucModel,
@@ -106,7 +111,8 @@ function handleIconFileFor(setIcon: (v: string | null) => void) {
 
 interface PayloadFields {
   name: string; icon: string | null; identity: string; instructions: string;
-  isDefault: boolean; modelConfigName: string; selectedTools: string[];
+  isDefault: boolean; modelConfigName: string;
+  historyLimit: number; historyWindowHours: number; hotTurnLimit: number; selectedTools: string[];
   toolCredentials: Record<string, string>;
   delegateTargets: string[]; harnessId: string; tierOverride: TierOverride;
   antiHallucMode: AntiHallucMode; antiHallucModel: string;
@@ -125,6 +131,9 @@ function buildAgentPayload(f: PayloadFields): AgentConfigIn {
     instructions: f.instructions.trim(),
     tools: f.selectedTools,
     model_config_name: f.modelConfigName || null,
+    history_limit: Math.max(0, Math.floor(f.historyLimit)),
+    history_window_hours: Math.max(0, Math.floor(f.historyWindowHours)),
+    hot_turn_limit: Math.max(0, Math.floor(f.hotTurnLimit)),
     is_default: f.isDefault,
     adaptive_persona_enabled: f.adaptivePersonaEnabled,
     adaptive_mbti: f.adaptiveMbti,

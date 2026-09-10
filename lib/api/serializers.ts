@@ -2,6 +2,7 @@
 // item (`[id]/route.ts`) handlers. Keeping these in one place stops the
 // list and item shapes from drifting (they were copy-pasted before).
 
+import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import { getAgentTierProportions, getAgentToolCredentials, parseCitationStrictness, parseDelegateTargets } from "@/lib/stores/agent-configs";
 import type { BridgeRow } from "@/lib/stores/bridges";
@@ -22,6 +23,7 @@ export function agentToResponse(a: AgentConfigRow) {
     is_default: !!a.is_default,
     history_limit: a.history_limit,
     history_window_hours: a.history_window_hours,
+    hot_turn_limit: a.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT,
     never_reply: !!a.never_reply,
     adaptive_persona_enabled: !!a.adaptive_persona_enabled,
     adaptive_persona_strength: a.adaptive_persona_strength,

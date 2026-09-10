@@ -122,7 +122,7 @@ export const proposeConfigChangeTool = tool(
           "— default mode is 'add' and merges tools into the existing allowlist; use mode='replace' only when the user explicitly asks to replace the full tool list\n" +
           "- enable_tool_category: { category: 'Web' } — only when list_tools shows a globally disabled built-in category is required\n" +
           "- enable_dropin_tool: { name: 'custom_tool_name' } — only when list_tools shows a globally disabled drop-in tool is required\n" +
-          "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, harness_id? } " +
+          "- update_agent: { agent_id, identity?, instructions?, instructions_append?, history_limit?, history_window_hours?, hot_turn_limit?, harness_id? } " +
           "  — use instructions_append to add standing rules without overwriting existing ones; " +
           "  use instructions_edits for deterministic transforms over the current saved instruction text " +
           "(mutually exclusive with instructions/instructions_append). " +

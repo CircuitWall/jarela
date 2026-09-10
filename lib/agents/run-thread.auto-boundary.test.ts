@@ -9,6 +9,7 @@ process.env.JARELA_DB_DIR = tmpRoot;
 process.env.JARELA_MAX_THREAD_MESSAGES = "4";
 
 const streamWithConfigMock = vi.fn();
+let providerSummary = "AUTO-COMPACT-RECAP";
 
 vi.mock("@/lib/agents/llm", () => ({
   streamWithConfig: (...args: unknown[]) => streamWithConfigMock(...args),
@@ -21,7 +22,7 @@ vi.mock("@/lib/scheduler", () => ({
 vi.mock("@/lib/providers", () => ({
   getProvider: () => ({
     chat: async () => ({
-      stream: (async function* () { yield "AUTO-COMPACT-RECAP"; })(),
+      stream: (async function* () { yield providerSummary; })(),
     }),
   }),
 }));
@@ -70,6 +71,8 @@ async function waitForCondition(predicate: () => boolean, timeoutMs = 1000): Pro
 
 describe("prepareThreadRun auto context boundary", () => {
   beforeEach(() => {
+    process.env.JARELA_MAX_THREAD_MESSAGES = "4";
+    providerSummary = "AUTO-COMPACT-RECAP";
     streamWithConfigMock.mockReset();
     process.env.JARELA_MODEL_ROUTER_MODE = "off";
     streamWithConfigMock.mockImplementation(() => chunks(
@@ -123,6 +126,62 @@ describe("prepareThreadRun auto context boundary", () => {
       return !!refreshed?.hot_since
         && !!refreshed.warm_summary?.includes("AUTO-COMPACT-RECAP")
         && refreshed.warm_summary_before === refreshed.hot_since;
+    });
+  });
+
+  it("starts topic-aware compaction when the hot-turn limit is exceeded", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-hot-turn-limit",
+      name: "Hot Turn Limit Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      history_window_hours: 0,
+      hot_turn_limit: 1,
+    });
+    const thread = createThread("agent-hot-turn-limit");
+    for (let i = 0; i < 3; i += 1) {
+      addMessage(thread.thread_id, "user", `topic ${i} question`);
+      addMessage(thread.thread_id, "assistant", `topic ${i} answer`);
+    }
+    const seeded = getMessages(thread.thread_id);
+    seeded.forEach((message, index) => {
+      getDb().prepare("UPDATE messages SET created_at=? WHERE msg_id=?")
+        .run(new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(), message.msg_id);
+    });
+    const orderedSeeded = getMessages(thread.thread_id);
+    providerSummary = [
+      "AUTO-COMPACT-RECAP",
+      "```jarela-topics",
+      JSON.stringify([{
+        title: "active topic",
+        start_at: orderedSeeded[2].created_at,
+        end_at: new Date(Date.now() + 60_000).toISOString(),
+        recap: "The active topic continues across the raw boundary.",
+        facts: [],
+      }]),
+      "```",
+    ].join("\n");
+
+    await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "topic 3 question",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    // The trigger commits asynchronously after the topic-aware recap succeeds.
+    await waitForCondition(() => {
+      const updated = getThread(thread.thread_id);
+      return !!updated?.hot_since
+        && updated.warm_summary_before === updated.hot_since
+        && updated.warm_summary_source_messages === 2;
     });
   });
 
@@ -319,6 +378,19 @@ describe("prepareThreadRun auto context boundary", () => {
     for (let i = 0; i < 24; i++) {
       addMessage(thread.thread_id, i % 2 === 0 ? "user" : "assistant", `older turn ${i}`);
     }
+    const seeded = getMessages(thread.thread_id);
+    providerSummary = [
+      "AUTO-COMPACT-RECAP",
+      "```jarela-topics",
+      JSON.stringify([{
+        title: "retained topic",
+        start_at: seeded[20].created_at,
+        end_at: seeded[23].created_at,
+        recap: "The retained topic spans the size-compaction boundary.",
+        facts: [],
+      }]),
+      "```",
+    ].join("\n");
 
     await prepareThreadRun({
       thread_id: thread.thread_id,
@@ -333,8 +405,11 @@ describe("prepareThreadRun auto context boundary", () => {
 
     const updated = getThread(thread.thread_id);
     expect(updated?.warm_summary).toContain("AUTO-COMPACT-RECAP");
-    expect(updated?.hot_since).toBeTruthy();
+    expect(updated?.hot_since).toBe(seeded[20].created_at);
     expect(getMessages(thread.thread_id).map((m) => m.content)).toEqual([
+      "older turn 20",
+      "older turn 21",
+      "older turn 22",
       "older turn 23",
       "continue after retention guard",
     ]);

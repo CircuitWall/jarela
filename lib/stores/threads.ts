@@ -243,24 +243,30 @@ export function getOrCreateAgentThread(agentId: string): ThreadRow {
 }
 
 // Retention guardrail: keep at most `keepLast` most-recent messages on a
-// thread and delete the rest. Used by /compact so /new doesn't grow the
-// transcript unboundedly across many compactions. Returns the number of
-// rows actually removed (0 if the thread is already within the cap).
-export function pruneThreadMessages(threadId: string, keepLast: number): number {
+// thread and delete the rest. When preserveSince is supplied, every message
+// at or after that boundary is retained because the warm summary only covers
+// rows before it.
+export function pruneThreadMessages(threadId: string, keepLast: number, preserveSince?: string): number {
   if (!Number.isFinite(keepLast) || keepLast <= 0) return 0;
   const db = getDb();
+  const totalQuery = preserveSince
+    ? "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND created_at < ?"
+    : "SELECT COUNT(*) AS n FROM messages WHERE thread_id=?";
   const total = (db
-    .prepare("SELECT COUNT(*) AS n FROM messages WHERE thread_id=?")
-    .get(threadId) as { n: number } | undefined)?.n ?? 0;
+    .prepare(totalQuery)
+    .get(...(preserveSince ? [threadId, preserveSince] : [threadId])) as { n: number } | undefined)?.n ?? 0;
   if (total <= keepLast) return 0;
-  const removeCount = total - keepLast;
-  const r = db
-    .prepare(
-      "DELETE FROM messages WHERE msg_id IN (" +
+  const removeCount = preserveSince ? total : total - keepLast;
+  const deleteSql = preserveSince
+    ? "DELETE FROM messages WHERE msg_id IN (" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? AND created_at < ? ORDER BY created_at ASC LIMIT ?" +
+      ")"
+    : "DELETE FROM messages WHERE msg_id IN (" +
       "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY created_at ASC LIMIT ?" +
-      ")",
-    )
-    .run(threadId, removeCount);
+      ")";
+  const r = db
+    .prepare(deleteSql)
+    .run(...(preserveSince ? [threadId, preserveSince, removeCount] : [threadId, removeCount]));
   const removed = Number(r.changes);
   db.prepare("UPDATE threads SET message_count=?, updated_at=? WHERE thread_id=?")
     .run(Math.max(0, total - removed), new Date().toISOString(), threadId);

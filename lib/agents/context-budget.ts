@@ -128,6 +128,40 @@ export function takeRecentMessagesWithinBudget(messages: readonly MessageRow[], 
   return chosen.reverse();
 }
 
+/**
+ * Keep complete conversational turns while respecting the token budget.
+ * A turn starts at a user message; assistant/tool rows that follow it stay
+ * attached to that turn. A trailing user row is therefore still a valid
+ * in-flight turn when the assistant response has not been persisted yet.
+ */
+export function takeRecentTurnsWithinBudget(
+  messages: readonly MessageRow[],
+  tokenBudget: number,
+  turnLimit: number,
+): MessageRow[] {
+  if (turnLimit <= 0) return takeRecentMessagesWithinBudget(messages, tokenBudget);
+  if (tokenBudget <= 0 || messages.length === 0) return [];
+
+  const chosen: MessageRow[] = [];
+  let used = 0;
+  let turns = 0;
+  let reachedTurnLimit = false;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (reachedTurnLimit) break;
+    if (message.role === "user") {
+      if (turns >= turnLimit) break;
+      turns += 1;
+    }
+    const tokens = estimateTokens(transcriptText(message.content));
+    if (chosen.length > 0 && used + tokens > tokenBudget) break;
+    chosen.push(message);
+    used += tokens;
+    if (message.role === "user" && turns >= turnLimit) reachedTurnLimit = true;
+  }
+  return chosen.reverse();
+}
+
 export function truncateLargestMessagesWithinBudget(messages: readonly MessageRow[], tokenBudget: number): MessageRow[] {
   if (messages.length === 0) return [];
   if (tokenBudget <= 0) return messages.slice(-1);
