@@ -11,6 +11,9 @@ import {
   setThreadWarmSummary,
 } from "@/lib/stores/threads";
 
+const MAX_TOPIC_BOUNDARY_EXPANSION_TURNS = 4;
+const MAX_TOPIC_PREVIEW_CHARS = 24_000;
+
 const activeRefreshes = new Set<string>();
 // Boundaries an automatic compaction has proposed but not yet committed.
 // The pin only moves once the recap that replaces the cut-off messages is
@@ -62,25 +65,78 @@ async function commitBoundaryCompaction(
   boundary: string,
   basePin: string | null,
 ): Promise<void> {
-  const built = await buildSummaryBefore(threadId, boundary);
+  const topicBoundary = await findTopicBoundary(threadId, boundary);
+  const effectiveBoundary = topicBoundary ?? boundary;
+  const built = await buildSummaryBefore(threadId, effectiveBoundary);
   if (!built?.summary) return;
   // The user may have dragged the boundary themselves while we summarised;
   // their pin wins.
   const latest = getThread(threadId);
   if (!latest || (latest.hot_since ?? null) !== basePin) return;
-  setThreadContextPin(threadId, boundary);
+  setThreadContextPin(threadId, effectiveBoundary);
   setThreadWarmSummary(
     threadId,
     wrapWarmSummary(built.summary, "foreground"),
-    boundary,
+    effectiveBoundary,
     built.sourceMessages,
     built.sourceChars,
     built.topics.length > 0 ? JSON.stringify(built.topics) : null,
   );
   upliftTopicFacts(built.topics);
   console.info(
-    `[context-boundary:auto] thread=${threadId} committed boundary=${boundary} warm_msgs=${built.sourceMessages}`,
+    `[context-boundary:auto] thread=${threadId} committed boundary=${effectiveBoundary} warm_msgs=${built.sourceMessages}`,
   );
+}
+
+export async function findTopicBoundary(threadId: string, boundary: string): Promise<string | null> {
+  const thread = getThread(threadId);
+  if (!thread) return null;
+  const agent = getAgentConfig(thread.agent_id);
+  if (!agent) return null;
+  const modelName = agent.model_config_name ?? getDefaultModelConfig()?.name ?? null;
+  const modelCfg = modelName ? getModelConfig(modelName) : null;
+  if (!modelCfg?.provider || !modelCfg.model_id) return null;
+
+  const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
+    .filter((row) => row.role === "user" || row.role === "assistant");
+  const boundaryIndex = rows.findIndex((row) => row.created_at >= boundary);
+  if (boundaryIndex < 0) return null;
+
+  const previewRows = rows.slice(Math.max(0, boundaryIndex - 8), Math.min(rows.length, boundaryIndex + 10));
+  let previewChars = 0;
+  const previewParts: string[] = [];
+  for (const row of previewRows) {
+    if (previewChars >= MAX_TOPIC_PREVIEW_CHARS) break;
+    const prefix = `[${row.created_at}] ${row.role === "user" ? "User" : "Assistant"}: `;
+    const remaining = MAX_TOPIC_PREVIEW_CHARS - previewChars - prefix.length;
+    if (remaining <= 0) break;
+    const text = transcriptText(row.content).slice(0, remaining);
+    previewParts.push(`${prefix}${text}`);
+    previewChars += prefix.length + text.length;
+  }
+  const transcript = previewParts.join("\n\n").trim();
+  if (!transcript) return null;
+
+  try {
+    const provider = getProvider(modelCfg.provider);
+    const params = getModelParams(modelCfg);
+    const raw = await summarizeTranscript(provider, modelCfg.model_id, {
+      ...params,
+      max_tokens: params.max_tokens ?? 768,
+    }, transcript);
+    const { topics } = extractTopicSegments(raw);
+    const candidate = topics
+      .filter((topic) => topic.start_at < boundary && topic.end_at >= boundary)
+      .sort((a, b) => b.start_at.localeCompare(a.start_at))[0];
+    if (!candidate) return null;
+
+    const candidateIndex = rows.findIndex((row) => row.created_at >= candidate.start_at);
+    if (candidateIndex < 0 || candidateIndex >= boundaryIndex) return null;
+    const expansionTurns = rows.slice(candidateIndex, boundaryIndex).filter((row) => row.role === "user").length;
+    return expansionTurns <= MAX_TOPIC_BOUNDARY_EXPANSION_TURNS ? candidate.start_at : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function refreshWarmSummary(threadId: string): Promise<void> {

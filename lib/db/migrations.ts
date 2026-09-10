@@ -812,6 +812,9 @@ function ensureAgentConfigColumns(db: DatabaseSync): void {
   if (!names.has("history_window_hours")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN history_window_hours INTEGER NOT NULL DEFAULT 8");
   }
+  if (!names.has("hot_turn_limit")) {
+    db.exec("ALTER TABLE agent_configs ADD COLUMN hot_turn_limit INTEGER NOT NULL DEFAULT 12");
+  }
   // never_reply: when 1, the dispatcher records the inbound message and
   // the agent's response in the thread but doesn't send the reply back
   // through the bridge. Useful for read-only / observer agents on group

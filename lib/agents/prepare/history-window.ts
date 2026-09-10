@@ -17,6 +17,7 @@ import {
   computeContextBudget,
   estimateTokens,
   takeRecentMessagesWithinBudget,
+  takeRecentTurnsWithinBudget,
   truncateLargestMessagesWithinBudget,
   type ContextBudget,
 } from "@/lib/agents/context-budget";
@@ -28,6 +29,7 @@ import { listRecentMaterialAutomationActivities } from "@/lib/stores/automation-
 import { getProvider } from "@/lib/providers";
 import { getKnownContextLength } from "@/lib/providers/known-context-windows";
 import type { ContentPart } from "@/lib/tools/runtime/types";
+import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 
 export interface ResolvedHistoryWindow {
   history: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>;
@@ -94,7 +96,11 @@ export async function buildHistoryWindow(
     ignoreTimeWindow?: boolean;
   } = {},
 ): Promise<ResolvedHistoryWindow> {
-  const limit = agentCfg.history_limit ?? 50;
+  const hotTurnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
+  const configuredLimit = agentCfg.history_limit ?? 50;
+  const limit = configuredLimit > 0 && hotTurnLimit > 0
+    ? Math.max(configuredLimit, hotTurnLimit * 2)
+    : configuredLimit;
   const windowHours = agentCfg.history_window_hours ?? 8;
   // Explicit pin wins over the agent default. NULL/undefined falls back to
   // the time-window heuristic; existing threads with no pin behave exactly
@@ -159,7 +165,9 @@ export async function buildHistoryWindow(
   for (const tier of budget.tierPriority) {
     if (tier === "hot") {
       ({ cap: hotCap } = applyTierSpill(budget.tierBudgets.hot, spill, 0));
-      hotMessages = takeRecentMessagesWithinBudget(allWindowMessages, hotCap);
+      hotMessages = hotTurnLimit > 0
+        ? takeRecentTurnsWithinBudget(allWindowMessages, hotCap, hotTurnLimit)
+        : takeRecentMessagesWithinBudget(allWindowMessages, hotCap);
       const used = sumMessageTokens(hotMessages);
       ({ spill } = applyTierSpill(budget.tierBudgets.hot, spill, used));
     } else if (tier === "warm") {
@@ -173,7 +181,9 @@ export async function buildHistoryWindow(
       // pin; fall back to the first hot message's timestamp so unpinned
       // threads can also benefit from cache hits across turns that don't
       // change the hot/warm split.
-      const hotForSlice = hotMessages ?? takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot);
+      const hotForSlice = hotMessages ?? (hotTurnLimit > 0
+        ? takeRecentTurnsWithinBudget(allWindowMessages, budget.tierBudgets.hot, hotTurnLimit)
+        : takeRecentMessagesWithinBudget(allWindowMessages, budget.tierBudgets.hot));
       const autoBoundary = hotForSlice[0]?.created_at ?? null;
       const boundaryKey = hotSince ?? autoBoundary;
       const cachedWarm = cached?.warm_summary

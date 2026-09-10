@@ -5,6 +5,7 @@ import {
   normalizeTierPriority,
   normalizeTierProportions,
   takeRecentMessagesWithinBudget,
+  takeRecentTurnsWithinBudget,
   truncateLargestMessagesWithinBudget,
   estimateTokens,
 } from "./context-budget";
@@ -32,6 +33,24 @@ describe("estimateTokens", () => {
   it("returns 0 for empty/whitespace input", () => {
     expect(estimateTokens("")).toBe(0);
     expect(estimateTokens("   ")).toBe(0);
+  });
+});
+
+describe("takeRecentTurnsWithinBudget", () => {
+  it("keeps the newest complete user-led turns", () => {
+    const messages = [
+      { ...msg("first"), role: "user" },
+      { ...msg("first answer"), role: "assistant" },
+      { ...msg("second"), role: "user" },
+      { ...msg("second answer with tool events"), role: "assistant" },
+      { ...msg("third"), role: "user" },
+    ];
+
+    expect(takeRecentTurnsWithinBudget(messages, 10_000, 2).map((m) => m.content)).toEqual([
+      "second",
+      "second answer with tool events",
+      "third",
+    ]);
   });
 });
 

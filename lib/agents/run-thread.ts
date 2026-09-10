@@ -1,4 +1,5 @@
 import { streamWithConfig } from "@/lib/agents/llm";
+import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/runtime/types";
@@ -180,6 +181,33 @@ function estimateRequiredHotContextTokens(
   const messages = getRecentMessagesWindow(thread_id, limit, sinceISO, scope ?? "all", bridgeKey ?? undefined);
   const hotTokens = messages.reduce((acc, m) => acc + estimateTokens(transcriptText(m.content)), 0);
   return hotTokens > 0 ? hotTokens : null;
+}
+
+function hotTurnBoundary(
+  threadId: string,
+  agentCfg: { history_limit?: number | null; history_window_hours?: number | null; hot_turn_limit?: number | null },
+  scope: "foreground" | "bridge" | "all",
+  bridgeKey?: string,
+): string | null {
+  const turnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
+  if (turnLimit <= 0 || scope === "bridge") return null;
+
+  const thread = getThread(threadId);
+  const windowHours = agentCfg.history_window_hours ?? 8;
+  const sinceISO = thread?.hot_since
+    ?? (windowHours > 0 ? new Date(Date.now() - windowHours * 3600_000).toISOString() : undefined);
+  const messages = getRecentMessagesWindow(
+    threadId,
+    (agentCfg.history_limit ?? 50) > 0
+      ? Math.max(agentCfg.history_limit ?? 50, turnLimit * 2)
+      : agentCfg.history_limit ?? 50,
+    sinceISO,
+    scope,
+    bridgeKey,
+  );
+  const userMessages = messages.filter((message) => message.role === "user");
+  if (userMessages.length <= turnLimit) return null;
+  return userMessages[userMessages.length - turnLimit]?.created_at ?? null;
 }
 
 async function maybeAutoCompactOversizedThread(agentId: string, threadId: string, messageCount: number): Promise<void> {
@@ -502,6 +530,23 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       req.message_metadata ?? null,
     );
     touchThread(req.thread_id, trimmed.slice(0, 80) || undefined);
+
+    // Once the configured hot-turn count is exceeded, prepare a topic-aware
+    // warm summary in the background. The boundary is committed only after
+    // the summary succeeds, so this turn still has its previous context.
+    if (
+      req.hot_since === undefined
+      && isAutoBoundaryEligibleCategory(req.user_category)
+      && autoBoundaryScope === "foreground"
+    ) {
+      const latestThread = getThread(req.thread_id);
+      const locked = !!latestThread
+        && latestThread.message_count < (latestThread.auto_boundary_locked_until_msg_count ?? 0);
+      if (!locked) {
+        const boundary = hotTurnBoundary(req.thread_id, agentCfg, autoBoundaryScope);
+        if (boundary) kickBoundaryCompaction(req.thread_id, boundary);
+      }
+    }
   }
 
   const hasImageContext = contentHasImage(content)

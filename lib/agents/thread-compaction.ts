@@ -11,7 +11,7 @@ import { getProvider } from "@/lib/providers";
 import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
 import type { ProviderParams } from "@/lib/providers/types";
 import { summarizeTranscript, transcriptText, extractTopicSegments } from "@/lib/agents/conversation-summary";
-import { upliftTopicFacts } from "@/lib/agents/warm-summary-background";
+import { findTopicBoundary, upliftTopicFacts } from "@/lib/agents/warm-summary-background";
 import { getConfig } from "@/lib/env/config";
 
 export type ThreadCompactionResult =
@@ -82,9 +82,16 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   const priorSourceChars = thread.warm_summary_source_chars ?? 0;
   const hasPriorSummary = priorSummary.length > 0 && !!priorBefore;
 
+  const rawBoundary = rows[Math.max(0, rows.length - keepLast)]?.created_at
+    ?? rows[rows.length - 1].created_at;
+  const proposedTopicBoundary = await findTopicBoundary(thread.thread_id, rawBoundary);
+  const newPin = proposedTopicBoundary && (!priorBefore || proposedTopicBoundary > priorBefore)
+    ? proposedTopicBoundary
+    : rawBoundary;
+
   const newRows = hasPriorSummary
-    ? rows.filter((r) => r.created_at > (priorBefore as string))
-    : rows;
+    ? rows.filter((r) => r.created_at > (priorBefore as string) && r.created_at < newPin)
+    : rows.filter((r) => r.created_at < newPin);
 
   if (hasPriorSummary && newRows.length === 0) {
     return { compacted: false, reason: "nothing new since last compact" };
@@ -131,11 +138,6 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   upliftTopicFacts(topics);
   const archivePruned = pruneSessionArchives(agentId, maxSessionArchives());
 
-  const lastCreatedAt = rows[rows.length - 1].created_at;
-  const lastMs = Date.parse(lastCreatedAt);
-  const pinMs = Number.isFinite(lastMs) ? lastMs + 1 : Date.now();
-  const newPin = new Date(pinMs).toISOString();
-
   moveThreadContextBoundary(thread.thread_id, newPin, {
     warmSummary: {
       summary,
@@ -146,7 +148,7 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
     },
   });
 
-  const pruned = pruneThreadMessages(thread.thread_id, keepLast);
+  const pruned = pruneThreadMessages(thread.thread_id, keepLast, newPin);
   const updated = getThread(thread.thread_id);
 
   return {

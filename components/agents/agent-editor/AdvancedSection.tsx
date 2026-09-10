@@ -45,6 +45,33 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
       <Divider />
       <TierOverrideField form={form} selectedModel={selectedModel} />
       <Divider />
+      <div className="space-y-2">
+        <p className="text-[11px] text-fg-subtle leading-snug font-medium">Conversation history</p>
+        <div className="grid grid-cols-3 gap-2">
+          <HistoryNumberField
+            id="hot-turn-limit"
+            label="Hot turns"
+            value={form.hotTurnLimit}
+            onChange={form.setHotTurnLimit}
+          />
+          <HistoryNumberField
+            id="history-limit"
+            label="History messages"
+            value={form.historyLimit}
+            onChange={form.setHistoryLimit}
+          />
+          <HistoryNumberField
+            id="history-window-hours"
+            label="Window hours"
+            value={form.historyWindowHours}
+            onChange={form.setHistoryWindowHours}
+          />
+        </div>
+        <p className="text-[10px] text-fg-faint leading-snug">
+          Hot turns controls recent verbatim context. History messages limits the raw rows available for compaction; window hours limits their age. Set History messages or Window hours to 0 for unlimited.
+        </p>
+      </div>
+      <Divider />
       <ToolCredentialsSection form={form} embedded />
       {!form.modelConfigName && (
         <>
@@ -108,5 +135,32 @@ export function AdvancedSection({ form, models, integrations, isFullMode, onClos
         onClose={onClose}
       />
     </Section>
+  );
+}
+
+function HistoryNumberField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-[10px] text-fg-faint" htmlFor={id}>{label}</label>
+      <input
+        id={id}
+        type="number"
+        min={0}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Math.max(0, Number.parseInt(e.target.value, 10) || 0))}
+        className="w-full rounded-md border border-border bg-surface-1 px-2 py-1.5 text-xs text-fg"
+      />
+    </div>
   );
 }
