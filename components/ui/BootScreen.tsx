@@ -352,12 +352,24 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
   // feel seamless — only the surrounding chrome (pill, recent list)
   // fades in or out.
   const tileAgent = focusAgent ?? defaultAgent;
-  const tileClickable = phase === "pick" && tileAgent !== null;
   const showAdoption =
     phase === "pick" &&
     adoption !== null &&
     adoption.default_agent_id === defaultAgent?.id &&
     (adoption.status === "pending" || adoption.status === "running" || adoption.status === "failed" || adoption.status === "done");
+  // Block the direct-tile bypass while adoption hasn't been started or is
+  // actively running — otherwise a user can click straight past the review
+  // gate before the deterministic fetch-changes step (or the agent's own
+  // build-todo-list work) has finished. "failed"/"done" are terminal (the
+  // adoption already ran, or errored out with its own Retry affordance in
+  // the card) so the tile stays usable there; dismissing the card is the
+  // one intentional escape hatch out of "pending"/"running". First-time
+  // adoption (fresh install, nothing to diff against) is exempt — there's
+  // no prior behavior to catch up on, so gating it would just add friction.
+  const adoptionBlocksTile = showAdoption
+    && !adoption?.is_first_adoption
+    && (adoption?.status === "pending" || adoption?.status === "running");
+  const tileClickable = phase === "pick" && tileAgent !== null && !adoptionBlocksTile;
   const adoptionTitle = adoption?.is_first_adoption
     ? `Adopting ${adoption.current_version}`
     : `Updated to ${adoption?.current_version ?? "new version"}`;
@@ -408,7 +420,9 @@ export function BootScreen({ agents, agentsLoaded, activeAgentId, onPickAgent, s
               aria-label={
                 tileClickable
                   ? `Open ${tileAgent.name}`
-                  : `Opening ${tileAgent.name}`
+                  : adoptionBlocksTile
+                    ? `Review the ${adoption?.current_version ?? "update"} adoption checklist below before opening ${tileAgent.name}`
+                    : `Opening ${tileAgent.name}`
               }
               className={[
                 "absolute inset-0 rounded-3xl overflow-hidden",
