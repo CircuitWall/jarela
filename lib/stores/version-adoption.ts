@@ -264,6 +264,28 @@ function phase1Checklist(): VersionAdoptionChecklistItem[] {
   return PHASE_1_CHECKLIST.map((entry) => ({ ...entry }));
 }
 
+// `fetch-changes` never needs an agent tool call: the git diff it reports
+// on already ran synchronously in createState() (via buildChecklist), so
+// the item starts pre-completed with the deterministic result baked into
+// its reason. Only `build-todo-list` is left for the agent to actually do.
+function resolvedPhase1Checklist(
+  adoptionChecklist: readonly VersionAdoptionChecklistItem[],
+  isFirst: boolean,
+): VersionAdoptionChecklistItem[] {
+  const [fetchChanges, ...rest] = phase1Checklist();
+  const affectedCount = adoptionChecklist.reduce((n, entry) => n + entry.affected_files.length, 0);
+  return [
+    {
+      ...fetchChanges,
+      status: "done",
+      reason: isFirst
+        ? "First adoption — no previously adopted version to diff against."
+        : `Computed deterministically via git diff against the previously adopted version: ${affectedCount} affected file(s) across ${adoptionChecklist.length} area(s).`,
+    },
+    ...rest,
+  ];
+}
+
 function stalePromptRisks(checklist: readonly VersionAdoptionChecklistItem[]): string[] {
   return checklist
     .filter((item) => item.id === "skills-instructions" || item.id === "scheduled-work" || item.id === "stale-prompts" || item.id === "permissions")
@@ -285,10 +307,8 @@ function buildAdoptionPrompt(state: Pick<VersionAdoptionState, "current_version"
     `Run Jarela version adoption for ${phaseLabel}.`,
     "",
     "Phase 1 — impact radius analysis:",
-    "- First, call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"impact_radius\"`, `item_id: \"fetch-changes\"`, and `status: \"checking\"`.",
-    "- Fetch or infer the changed surface from the provided version summary, changelog, and available repo context.",
-    "- Then call `workflow_progress` for `item_id: \"fetch-changes\"` with `status: \"done\"` or `status: \"needs_attention\"`.",
-    "- Next call `workflow_progress` for `item_id: \"build-todo-list\"` with `status: \"checking\"`.",
+    "- The changed-file surface (`fetch-changes`) was already computed deterministically by the system via git diff against the previously adopted version — see each Phase 2 checklist item below with its affected_files. Do not independently fetch or guess at what changed; that item is already marked done in the UI.",
+    "- Call `workflow_progress` with `workflow_id: \"version_adoption\"`, `phase: \"impact_radius\"`, `item_id: \"build-todo-list\"`, and `status: \"checking\"`.",
     "- Build the Phase 2 todo list from the adoption checklist below, deciding which items are actionable, skipped, or need attention.",
     "- Then call `workflow_progress` for `item_id: \"build-todo-list\"` with `status: \"done\"`.",
     "",
@@ -336,7 +356,7 @@ function createState(currentVersion: string, previousVersion: string | null): St
     started_at: null,
     completed_at: null,
     dismissed_at: null,
-    checklist: phase1Checklist(),
+    checklist: resolvedPhase1Checklist(adoptionChecklist, isFirst),
     stale_prompt_risks: stalePromptRisks(adoptionChecklist),
     summary: buildSummary(summaryInput, adoptionChecklist),
     error: defaultAgent ? null : "No default agent is configured.",
@@ -379,7 +399,11 @@ export function updateVersionAdoptionState(
       });
     }
     const thread = getOrCreateAgentThread(state.default_agent_id);
-    if (nextChecklist.length > 0) nextChecklist[0].status = "checking";
+    // fetch-changes is pre-completed at createState() time; mark the next
+    // still-open item (normally build-todo-list) as checking instead of
+    // hardcoding index 0, which would otherwise clobber that done status.
+    const firstOpen = nextChecklist.findIndex((entry) => entry.status !== "done" && entry.status !== "skipped");
+    if (firstOpen !== -1) nextChecklist[firstOpen].status = "checking";
     const running = {
       ...state,
       status: "running",

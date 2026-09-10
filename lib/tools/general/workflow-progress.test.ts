@@ -46,7 +46,11 @@ describe("workflow_progress tool", () => {
     const state = out.state as { phase: string; status: string; checklist: Array<{ id: string; status: string }> };
     expect(state.status).toBe("running");
     expect(state.phase).toBe("impact_radius");
-    expect(state.checklist.find((item) => item.id === "fetch-changes")?.status).toBe("checking");
+    // fetch-changes starts pre-completed (deterministic git diff at creation
+    // time) — the existing shouldPreserveCompleted guard in
+    // lib/stores/workflow-progress.ts correctly refuses to downgrade it
+    // back to "checking".
+    expect(state.checklist.find((item) => item.id === "fetch-changes")?.status).toBe("done");
   });
 
   it("swaps to the Phase 2 adoption checklist when adoption starts", async () => {

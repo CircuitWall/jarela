@@ -90,11 +90,17 @@ describe("version adoption state", () => {
     expect(running.adoption_prompt).toContain("Phase 2");
     expect(running.adoption_prompt).toContain("workflow_progress");
     expect(running.adoption_prompt).toContain('workflow_id: "version_adoption"');
-    expect(running.adoption_prompt).toContain('item_id: "fetch-changes"');
+    expect(running.adoption_prompt).toContain("fetch-changes");
     expect(running.adoption_prompt).toContain('item_id: "build-todo-list"');
     expect(running.adoption_prompt).toContain("Phase 2 adoption checklist");
     expect(running.adoption_prompt).toContain("If Phase 1 finds no adoption work");
-    expect(running.checklist[0].status).toBe("checking");
+    // fetch-changes is resolved deterministically at creation time (git diff),
+    // never left for the agent to fetch/infer — build-todo-list is the item
+    // that actually needs the agent's work.
+    expect(running.checklist[0].id).toBe("fetch-changes");
+    expect(running.checklist[0].status).toBe("done");
+    expect(running.checklist[1].id).toBe("build-todo-list");
+    expect(running.checklist[1].status).toBe("checking");
   });
 
   it("records item-by-item adoption progress through the workflow helper", () => {
