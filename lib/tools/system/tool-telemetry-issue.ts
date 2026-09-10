@@ -25,6 +25,7 @@ const TOOL_FAILURE_TOTAL_METRIC = "tool_failure_patterns_total";
 const AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MIN_FAILURE_COUNT = 2;
 const DEFAULT_AUTO_FAILURE_THRESHOLD = 500;
+const DEFAULT_PATTERN_FAILURE_THRESHOLD = 3;
 
 interface TelemetryIssueInput {
   tool_names?: string[];
@@ -171,11 +172,34 @@ export interface InternalMetricThreshold {
 
 export async function maybeAutoFileToolTelemetryIssue(
   nowDate = new Date(),
-  opts: { failureThreshold?: number; minFailureCount?: number } = {},
+  opts: { failureThreshold?: number; minFailureCount?: number; patternFailureThreshold?: number } = {},
 ): Promise<AutoToolTelemetryIssueResult> {
   if (!isCategoryEnabled("Config")) return { skipped: true, reason: "tool_category_disabled" };
   if (!githubTokenConfigured()) return { skipped: true, reason: "github_token_missing" };
   if (!autoTelemetryDue(nowDate)) return { skipped: true, reason: "not_due" };
+
+  const pattern = findEscalationPattern(
+    listToolFailureSamples(),
+    opts.patternFailureThreshold ?? DEFAULT_PATTERN_FAILURE_THRESHOLD,
+  );
+  if (pattern) {
+    const issue = buildToolTelemetryComplaintIssue({
+      tool_names: [pattern.tool_name],
+      max_tools: 1,
+      min_failure_count: 1,
+      title: `Blocked tool escalation: ${pattern.tool_name} ${pattern.normalized_reason}`,
+    });
+    if (getFingerprint(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY) === issue.fingerprint) {
+      return { skipped: true, reason: "already_filed", issue };
+    }
+    const github = await createToolTelemetryGitHubIssue({
+      title: issue.title,
+      body: issue.body,
+      labels: ["bug", "telemetry", "tools"],
+    });
+    if (github.ok) recordSeen(AUTO_FINGERPRINT_SCOPE, AUTO_FINGERPRINT_KEY, issue.fingerprint);
+    return { skipped: !github.ok, reason: github.ok ? undefined : "github_create_failed", issue, github };
+  }
 
   const metric = currentToolFailureMetric(opts.failureThreshold ?? DEFAULT_AUTO_FAILURE_THRESHOLD);
 
@@ -203,6 +227,17 @@ export async function maybeAutoFileToolTelemetryIssue(
     recordSeen(AUTO_THRESHOLD_SCOPE, metric.metric, String(metric.bucket));
   }
   return { skipped: !github.ok, reason: github.ok ? undefined : "github_create_failed", issue, github, metric };
+}
+
+function findEscalationPattern(
+  samples: readonly ToolFailureSampleRow[],
+  threshold: number,
+): ToolFailureSampleRow | null {
+  const minimum = Math.max(1, Math.floor(threshold));
+  return samples
+    .filter((sample) => sample.failure_class === "suspected_product_gap")
+    .filter((sample) => sample.normalized_reason === "validation" || sample.count >= minimum)
+    .sort((a, b) => b.count - a.count || b.last_seen_at.localeCompare(a.last_seen_at))[0] ?? null;
 }
 
 export function currentToolFailureMetric(threshold = DEFAULT_AUTO_FAILURE_THRESHOLD): InternalMetricThreshold {

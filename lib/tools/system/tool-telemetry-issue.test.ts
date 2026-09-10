@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getDb } from "@/lib/db";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-telemetry-issue-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -22,6 +23,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   delete process.env.GH_TOKEN;
   delete process.env.GITHUB_TOKEN;
+  const db = getDb();
+  db.exec("DELETE FROM tool_stats; DELETE FROM tool_failure_samples; DELETE FROM change_tracker WHERE scope IN ('tool-telemetry-issues', 'internal-metric-thresholds'); DELETE FROM memory_store WHERE namespace='tool-telemetry-issues';");
 });
 
 describe("report_tool_telemetry_issue", () => {
@@ -126,5 +129,46 @@ describe("report_tool_telemetry_issue", () => {
     expect(result.skipped).toBe(true);
     expect(result.reason).toBe("threshold_not_met");
     expect(result.metric?.metric).toBe("tool_failure_patterns_total");
+  });
+
+  it("escalates a repeated product failure before the global metric threshold", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ number: 456, html_url: "https://github.com/CircuitWall/jarela/issues/456" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const toolName = `recurring_contract_${Date.now()}`;
+    for (let i = 0; i < 3; i += 1) {
+      recordToolUsage([
+        { id: `call-${i}`, phase: "call", name: toolName, payload: { value: "x" } },
+        { id: `call-${i}`, phase: "result", name: toolName, payload: { error: "schema validation failed" } },
+      ], "");
+    }
+
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-02T00:00:00.000Z"), {
+      failureThreshold: 100_000,
+    });
+    expect(result.skipped).toBe(false);
+    expect(result.issue?.title).toContain(toolName);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not escalate expected skips", async () => {
+    process.env.GH_TOKEN = "ghp_test";
+    const toolName = `expected_skip_${Date.now()}`;
+    for (let i = 0; i < 3; i += 1) {
+      recordToolUsage([
+        { id: `skip-${i}`, phase: "call", name: toolName, payload: {} },
+        { id: `skip-${i}`, phase: "result", name: toolName, payload: { error: "skipped: duplicate event" } },
+      ], "");
+    }
+
+    const result = await maybeAutoFileToolTelemetryIssue(new Date("2026-10-03T00:00:00.000Z"), {
+      failureThreshold: 100_000,
+    });
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("threshold_not_met");
   });
 });
