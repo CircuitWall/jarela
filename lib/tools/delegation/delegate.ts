@@ -111,6 +111,7 @@ async function runDelegatedTurn(
         prepared.context_snapshot ?? null,
         prepared.source_manifest ?? null,
         routeDecision,
+        prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
       );
     }
     return collected;

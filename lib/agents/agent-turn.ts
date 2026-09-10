@@ -196,7 +196,9 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           prepared.context_snapshot ?? null,
           prepared.source_manifest ?? null,
           routeDecision,
-          req.assistant_message_metadata ?? null,
+          prepared.memory_recall
+            ? { ...req.assistant_message_metadata, memory_recall: prepared.memory_recall }
+            : req.assistant_message_metadata ?? null,
         );
       }
 

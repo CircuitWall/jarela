@@ -298,6 +298,11 @@ export interface PreparedThreadRun {
   source_manifest?: SourceManifestEntry[];
   // Per-turn model-selection decision captured before execution.
   route_decision?: RouteDecisionMetadata;
+  // Counts only (never content) from the automatic recall pass this turn.
+  // Forwarded to `persistAssistantMessage` for the chat UI's quiet
+  // "N memories used" indicator (no per-item dump — see run history for
+  // why that was tried and reverted as noise).
+  memory_recall?: { memory_hits: number; message_hits: number };
 }
 
 export interface ContextUsageSnapshot {
@@ -676,11 +681,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     ? contentText(historyWindow.history[0].content)
     : null;
   const rawRecallCtx = req.context_profile && req.context_profile.include_recall === false
-    ? ""
+    ? { text: "", memoryHits: 0, messageHits: 0 }
     : await raceWithBudget(
       buildRecallContext(req.thread_id, trimmed, oldestInWindow, surroundingsQuery),
       recallWaitBudgetMs,
-      "",
+      { text: "", memoryHits: 0, messageHits: 0 },
     );
 
   // Apply the per-category context profile (see lib/agents/turn-profile.ts).
@@ -700,7 +705,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const effectiveFacts = profile && profile.include_facts === false
     ? ""
     : historyWindow.factsCtx;
-  const recallCtx = rawRecallCtx;
+  const recallCtx = rawRecallCtx.text;
 
   // Numbered source manifest, shown to the agent for `[N]` markers and
   // persisted on the assistant row so the chat UI can resolve markers →
@@ -810,6 +815,9 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     },
     source_manifest: sourceManifest.length > 0 ? sourceManifest : undefined,
     route_decision: routeDecision,
+    memory_recall: rawRecallCtx.memoryHits > 0 || rawRecallCtx.messageHits > 0
+      ? { memory_hits: rawRecallCtx.memoryHits, message_hits: rawRecallCtx.messageHits }
+      : undefined,
   };
 }
 
@@ -1621,9 +1629,10 @@ async function buildRecallContext(
   query: string,
   windowOldestContent: string | null,
   surroundingsQuery = "",
-): Promise<string> {
+): Promise<{ text: string; memoryHits: number; messageHits: number }> {
   const ambient = surroundingsQuery.trim();
-  if (!query.trim() && !ambient) return "";
+  const empty = { text: "", memoryHits: 0, messageHits: 0 };
+  if (!query.trim() && !ambient) return empty;
   const memoryPolicy = getMemoryPolicy();
   const limit = memoryPolicy === "important" ? 4 : memoryPolicy === "detailed" ? 12 : 8;
   let hits: RecalledMemory[];
@@ -1636,10 +1645,10 @@ async function buildRecallContext(
       ambient ? recall(ambient, Math.min(4, limit)) : Promise.resolve([]),
     ]);
   } catch {
-    return "";
+    return empty;
   }
   hits = mergeRecallHits(hits, ambientHits);
-  if (hits.length === 0) return "";
+  if (hits.length === 0) return empty;
 
   // Drop matches that already live in the in-prompt history window.
   const filtered = hits.filter((h) => {
@@ -1649,7 +1658,7 @@ async function buildRecallContext(
     }
     return true;
   });
-  if (filtered.length === 0) return "";
+  if (filtered.length === 0) return empty;
 
   const similarPriorUserRequests = filtered.filter(
     (h) => h.source === "message" && h.role === "user" && h.score >= 0.3,
@@ -1676,7 +1685,11 @@ async function buildRecallContext(
       lines.push(`• [${tag} · ${h.role}, ${stamp}] ${truncate(h.content, 280)}`);
     }
   }
-  return lines.join("\n");
+  return {
+    text: lines.join("\n"),
+    memoryHits: filtered.filter((h) => h.source === "memory").length,
+    messageHits: filtered.filter((h) => h.source === "message").length,
+  };
 }
 
 function truncate(s: string, max: number): string {

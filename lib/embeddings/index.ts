@@ -254,6 +254,90 @@ export function cosine(a: number[], b: number[]): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
+// Jarela is a single long-running process (no multi-instance cache-invalidation
+// concern), and recall() runs on every agent turn — re-fetching every embedded
+// row and JSON.parse-ing its vector on every call is wasted, repeated work on
+// data that rarely changes between turns. These caches hold the *parsed*
+// vectors in memory for the process lifetime; lib/stores/memory.ts and
+// lib/stores/threads.ts keep them current via the upsert/evict calls below
+// right after they persist a new embedding, so recall() never re-scans SQLite
+// after the first lazy load.
+interface CachedMemoryEmbedding {
+  namespace: string; key: string; value: string; embedding: number[]; created_at: string;
+}
+interface CachedMessageEmbedding {
+  msg_id: string; thread_id: string; role: string; content: string; embedding: number[]; created_at: string;
+}
+
+let memEmbedCache: Map<string, CachedMemoryEmbedding> | null = null;
+let msgEmbedCache: Map<string, CachedMessageEmbedding> | null = null;
+
+function memCacheKey(namespace: string, key: string): string {
+  return `${namespace}\u0000${key}`;
+}
+
+function loadMemEmbedCache(): Map<string, CachedMemoryEmbedding> {
+  if (memEmbedCache) return memEmbedCache;
+  const rows = getDb().prepare(
+    `SELECT namespace, key, value, embedding, created_at FROM memory_store
+      WHERE embedding IS NOT NULL AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})`,
+  ).all(...EXCLUDED_NS) as Array<{ namespace: string; key: string; value: string; embedding: string; created_at: string }>;
+  const cache = new Map<string, CachedMemoryEmbedding>();
+  for (const r of rows) {
+    const vec = parseEmbedding(r.embedding);
+    if (!vec) continue;
+    cache.set(memCacheKey(r.namespace, r.key), { namespace: r.namespace, key: r.key, value: r.value, embedding: vec, created_at: r.created_at });
+  }
+  memEmbedCache = cache;
+  return cache;
+}
+
+function loadMsgEmbedCache(): Map<string, CachedMessageEmbedding> {
+  if (msgEmbedCache) return msgEmbedCache;
+  const rows = getDb().prepare(
+    "SELECT msg_id, thread_id, role, content, embedding, created_at FROM messages WHERE embedding IS NOT NULL",
+  ).all() as Array<{ msg_id: string; thread_id: string; role: string; content: string; embedding: string; created_at: string }>;
+  const cache = new Map<string, CachedMessageEmbedding>();
+  for (const r of rows) {
+    const vec = parseEmbedding(r.embedding);
+    if (!vec) continue;
+    cache.set(r.msg_id, { msg_id: r.msg_id, thread_id: r.thread_id, role: r.role, content: r.content, embedding: vec, created_at: r.created_at });
+  }
+  msgEmbedCache = cache;
+  return cache;
+}
+
+// Write-through — called right after a caller persists a fresh embedding, so
+// the cache reflects it immediately instead of waiting for a full reload.
+// No-op before the cache is first populated; loadMemEmbedCache() will pick
+// the row up from SQLite on that first load.
+export function upsertMemoryEmbedCache(namespace: string, key: string, value: string, embedding: number[], created_at: string): void {
+  if (!memEmbedCache || EXCLUDED_NS.includes(namespace)) return;
+  memEmbedCache.set(memCacheKey(namespace, key), { namespace, key, value, embedding, created_at });
+}
+
+export function evictMemoryEmbedCache(namespace: string, key: string): void {
+  memEmbedCache?.delete(memCacheKey(namespace, key));
+}
+
+export function upsertMessageEmbedCache(msg_id: string, thread_id: string, role: string, content: string, embedding: number[], created_at: string): void {
+  if (!msgEmbedCache) return;
+  msgEmbedCache.set(msg_id, { msg_id, thread_id, role, content, embedding, created_at });
+}
+
+// Bulk removals (thread delete, /compact pruning) don't track which msg_ids
+// they removed at the call site — dropping the whole cache is cheap and
+// correct; the next recall() lazily rebuilds it from the now-smaller table.
+export function resetMessageEmbedCache(): void {
+  msgEmbedCache = null;
+}
+
+/** @internal — test-only: force both caches to rebuild from SQLite. */
+export function _resetEmbedCaches(): void {
+  memEmbedCache = null;
+  msgEmbedCache = null;
+}
+
 export interface RecalledMemory {
   source: "memory" | "message";
   namespace?: string;
@@ -275,22 +359,10 @@ export async function recall(query: string, limit = 5, policy: MemoryPolicy = ge
   const scored: RecalledMemory[] = [];
 
   // ── semantic pass ─────────────────────────────────────────────────────────
+  // Reads pre-parsed vectors from the in-memory cache (see above) instead of
+  // re-querying + re-JSON.parse-ing every embedded row on every turn.
   if (qVec) {
-    const memRows = db.prepare(
-      // Exclude sensitive namespaces (ADR-0005) — encrypted blobs would
-      // surface as enc:v1:… strings and credentials should never reach
-      // the agent context via recall regardless.
-      `SELECT namespace, key, value, embedding, created_at FROM memory_store
-        WHERE embedding IS NOT NULL AND namespace NOT IN (${EXCLUDED_NS_PLACEHOLDERS})`,
-    ).all(...EXCLUDED_NS) as Array<{ namespace: string; key: string; value: string; embedding: string; created_at: string }>;
-
-    const msgRows = db.prepare(
-      "SELECT thread_id, role, content, embedding, created_at FROM messages WHERE embedding IS NOT NULL",
-    ).all() as Array<{ thread_id: string; role: string; content: string; embedding: string; created_at: string }>;
-
-    for (const r of memRows) {
-      const v = parseEmbedding(r.embedding);
-      if (!v) continue;
+    for (const r of loadMemEmbedCache().values()) {
       const structured = parseStructuredMemory(r.value);
       if (structured && !isStructuredMemoryEligible(structured, policy)) continue;
       if (!structured && policy === "important") continue;
@@ -298,15 +370,13 @@ export async function recall(query: string, limit = 5, policy: MemoryPolicy = ge
       if (content === null) continue;
       scored.push({
         source: "memory", namespace: r.namespace, key: r.key,
-        content, score: cosine(qVec, v), created_at: r.created_at,
+        content, score: cosine(qVec, r.embedding), created_at: r.created_at,
       });
     }
-    for (const r of msgRows) {
-      const v = parseEmbedding(r.embedding);
-      if (!v) continue;
+    for (const r of loadMsgEmbedCache().values()) {
       scored.push({
         source: "message", thread_id: r.thread_id, role: r.role,
-        content: r.content, score: cosine(qVec, v), created_at: r.created_at,
+        content: r.content, score: cosine(qVec, r.embedding), created_at: r.created_at,
       });
     }
   }

@@ -302,6 +302,13 @@ export interface MessageMetadata {
     bridge_id: string;
     chat_id: string;
   };
+  /** Counts only (never content) from the automatic semantic recall pass
+   *  that ran on this turn's user message. Absent when recall found
+   *  nothing or wasn't run (e.g. context_profile.include_recall=false). */
+  memory_recall?: {
+    memory_hits: number;
+    message_hits: number;
+  };
 }
 
 export type AutomationActivitySource = "scheduled_task" | "watcher" | "bridge";

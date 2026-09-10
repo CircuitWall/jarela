@@ -30,6 +30,10 @@ vi.mock("@/lib/embeddings", () => ({
   embedOne: async () => null,
   cosine: () => 0,
   recall: async () => [],
+  upsertMemoryEmbedCache: () => {},
+  evictMemoryEmbedCache: () => {},
+  upsertMessageEmbedCache: () => {},
+  resetMessageEmbedCache: () => {},
 }));
 
 const { prepareThreadRun } = await import("./run-thread");
