@@ -192,7 +192,7 @@ describe("MessageList conversation focus", () => {
 
     expect(screen.getByText("Earlier messages summary")).toBeTruthy();
     expect(screen.getByText("ready")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
     expect(onSetContextPin).not.toHaveBeenCalled();
   });
 
@@ -221,7 +221,7 @@ describe("MessageList conversation focus", () => {
     fireEvent.click(handle);
 
     expect(screen.getByText("Earlier messages summary")).toBeTruthy();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
     expect(onSetContextPin).not.toHaveBeenCalled();
   });
 

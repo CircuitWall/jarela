@@ -1,7 +1,8 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { AgentConfig, AgentConfigIn } from "@/api/types";
+import { api } from "@/api/client";
 import { useAgents } from "@/hooks/useAgents";
 import { useModels } from "@/hooks/useModels";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
@@ -50,6 +51,15 @@ export function AgentsPanel() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("agents", "agent", containerRef);
+
+  useEffect(() => {
+    void Promise.allSettled([
+      api.tools.list({ includeDisabled: true }),
+      api.credentials.list({ type: "integration" }),
+      api.integrations.list(),
+      api.harnesses.list(),
+    ]);
+  }, []);
 
   async function handleSave(data: AgentConfigIn) {
     if (editing === "new") {

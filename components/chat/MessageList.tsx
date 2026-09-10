@@ -88,7 +88,6 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
   const [pendingHotSince, setPendingHotSince] = useState<string | null>(null);
   const [topControlsOpen, setTopControlsOpen] = useState(false);
   const [summaryPopoverOpen, setSummaryPopoverOpen] = useState(false);
-  const [summaryPopoverTop, setSummaryPopoverTop] = useState<number | null>(null);
 
   // Apply category filter. Messages with no `category` (NULL = ordinary
   // chat) are always shown; tagged messages are gated by their toggle.
@@ -452,7 +451,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       requestAnimationFrame(() => {
         suppressBoundaryClickRef.current = false;
       });
-      toggleSummaryPopoverAt(e.clientY);
+      setSummaryPopoverOpen((x) => !x);
       clearDragState();
       return;
     }
@@ -473,24 +472,10 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
     clearDragState();
   }
 
-  function toggleSummaryPopoverAt(clientY: number) {
-    const host = hostRef.current;
-    if (!host) {
-      setSummaryPopoverOpen((x) => !x);
-      return;
-    }
-    const hostRect = host.getBoundingClientRect();
-    const lineTop = committedBoundaryLineTop();
-    const fallbackTop = Math.max(20, clientY - hostRect.top + 8);
-    const top = Math.max(12, Math.min(hostRect.height - 260, (lineTop ?? fallbackTop) + 14));
-    setSummaryPopoverTop(top);
-    setSummaryPopoverOpen((x) => !x);
-  }
-
   function handleBoundaryClick(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
     if (suppressBoundaryClickRef.current) return;
-    toggleSummaryPopoverAt(e.clientY);
+    setSummaryPopoverOpen((x) => !x);
   }
 
   const currentBoundaryIndex = boundaryIndexFor(hotSince ?? null);
@@ -968,52 +953,35 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
       )}
 
       {summaryPopoverOpen && (
-        <div
-          data-testid="summary-popover"
-          className="absolute left-1/2 -translate-x-1/2 z-40 w-[min(42rem,calc(100%-2rem))]"
-          style={{ top: `${summaryPopoverTop ?? 20}px` }}
+        <Dialog
+          open
+          onClose={() => setSummaryPopoverOpen(false)}
+          title="Earlier messages summary"
+          size="xl"
+          align="top"
+          padded={false}
         >
-          <div className="rounded-xl border border-border bg-surface/95 backdrop-blur-md shadow-xl p-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-fg">Earlier messages summary</span>
-                <span
-                  className={[
-                    "text-[10px] px-1.5 py-px rounded border inline-flex items-center gap-1",
-                    summaryUpdating ? "border-accent/40 bg-accent/10 text-accent" :
-                    summaryFresh ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
-                    summaryStale ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" :
-                    "border-border bg-surface-2 text-fg-faint",
-                  ].join(" ")}
-                >
-                  {summaryUpdating && (
-                    <span
-                      className="h-2 w-2 rounded-full bg-accent animate-pulse"
-                      aria-label="Summary updating"
-                    />
-                  )}
-                  <span>
-                    {summaryUpdating
-                      ? "updating"
-                      : summaryFresh
-                      ? "ready"
-                      : summaryStale
-                      ? "needs refresh"
-                      : "pending"}
-                  </span>
-                </span>
-              </div>
-              <button
-                type="button"
-                data-testid="summary-popover-close"
-                onClick={() => setSummaryPopoverOpen(false)}
-                className="text-xs px-2 py-1 rounded border border-border bg-surface-2 text-fg-muted hover:text-fg"
+          <div className="p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <span
+                className={[
+                  "text-[10px] px-1.5 py-px rounded border inline-flex items-center gap-1",
+                  summaryUpdating ? "border-accent/40 bg-accent/10 text-accent" :
+                  summaryFresh ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" :
+                  summaryStale ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400" :
+                  "border-border bg-surface-2 text-fg-faint",
+                ].join(" ")}
               >
-                Close
-              </button>
+                {summaryUpdating && (
+                  <span className="h-2 w-2 rounded-full bg-accent animate-pulse" aria-label="Summary updating" />
+                )}
+                <span>
+                  {summaryUpdating ? "updating" : summaryFresh ? "ready" : summaryStale ? "needs refresh" : "pending"}
+                </span>
+              </span>
             </div>
             {!summaryUpdating && (
-              <p className="text-[11px] text-fg-faint mb-2">
+              <p className="text-[11px] text-fg-faint">
                 {summaryFresh
                   ? "Showing the latest summary for messages above the boundary line."
                   : summaryStale
@@ -1031,7 +999,7 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
               topics={warmSummaryTopics ?? null}
             />
           </div>
-        </div>
+        </Dialog>
       )}
 
       <Dialog
