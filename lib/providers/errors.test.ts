@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { ProviderAuthError, isAuthErrorMessage, isAuthHttpStatus } from "./errors";
+import {
+  ProviderAuthError,
+  isAuthErrorMessage,
+  isAuthHttpStatus,
+  isRetryableProviderStreamError,
+} from "./errors";
 
 describe("ProviderAuthError", () => {
   it("carries provider, status, and code=auth_failed", () => {
@@ -59,5 +64,30 @@ describe("isAuthErrorMessage", () => {
     [undefined],
   ])("does not classify %j as auth", (msg) => {
     expect(isAuthErrorMessage(msg)).toBe(false);
+  });
+});
+
+describe("isRetryableProviderStreamError", () => {
+  it.each([
+    "request ended without sending any chunks",
+    "premature close while reading stream",
+    "stream connection reset by peer",
+    "fetch failed (cause: UND_ERR_SOCKET)",
+    "request timed out before the first event",
+  ])("classifies %j as retryable", (msg) => {
+    expect(isRetryableProviderStreamError(msg)).toBe(true);
+  });
+
+  it.each([
+    "401 Unauthorized",
+    "invalid api key",
+    "context_length_exceeded",
+    "invalid request body",
+    "Run interrupted by user.",
+    "",
+    null,
+    undefined,
+  ])("does not classify %j as retryable", (msg) => {
+    expect(isRetryableProviderStreamError(msg)).toBe(false);
   });
 });

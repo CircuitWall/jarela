@@ -54,3 +54,16 @@ export function isAuthErrorMessage(msg: string | null | undefined): boolean {
     /(refresh|access)[_\s-]*token[_\s-]*(expired|revoked|invalid)/i.test(msg)
   );
 }
+
+// These are provider-neutral stream failures that can happen after a 200
+// response but before the first model output. The caller must still verify
+// that no visible output was emitted before retrying.
+export function isRetryableProviderStreamError(msg: string | null | undefined): boolean {
+  return !!msg && (
+    /request ended without sending (?:any )?chunks?/i.test(msg) ||
+    /(?:premature|unexpected).*(?:stream|close|end)/i.test(msg) ||
+    /(?:stream|connection).*(?:closed|reset|dropped|terminated|premature)/i.test(msg) ||
+    /(?:fetch failed|econnreset|eai_again|und_err_socket|socket hang up|network error)/i.test(msg) ||
+    /(?:request|stream).*(?:timed out|timeout)/i.test(msg)
+  );
+}
