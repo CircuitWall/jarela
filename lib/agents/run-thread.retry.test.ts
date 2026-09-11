@@ -90,6 +90,51 @@ describe("prepareThreadRun transient retry", () => {
     expect(pingCount).toBe(1);
   });
 
+  it("retries a provider-neutral pre-output stream failure", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-stream-error",
+      name: "Stream Error Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-stream-error");
+
+    streamWithConfigMock
+      .mockImplementationOnce(() => chunks(
+        { type: "error", data: { code: "stream_error", message: "stream connection reset by peer" } },
+      ))
+      .mockImplementationOnce(() => chunks(
+        {
+          type: "done",
+          data: {
+            message_id: "done-stream-error",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        },
+      ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Ping",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const collected = await collectStream(prepared.stream);
+    expect(collected.terminal).toBe("done");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps per-agent router policy as retry seed instead of reverting to global", async () => {
     process.env.JARELA_MODEL_ROUTER_MODE = "heuristic";
     process.env.JARELA_MODEL_ROUTER_POLICY = "balanced";

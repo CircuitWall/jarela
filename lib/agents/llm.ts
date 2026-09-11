@@ -8,7 +8,7 @@ import {
 } from "@langchain/core/messages";
 import type { BaseMessage } from "@langchain/core/messages";
 import { getProvider } from "@/lib/providers";
-import { ProviderAuthError, isAuthErrorMessage } from "@/lib/providers/errors";
+import { ProviderAuthError, isAuthErrorMessage, isRetryableProviderStreamError } from "@/lib/providers/errors";
 import { getModelConfig, getDefaultModelConfig, getModelParams, upsertModelConfig } from "@/lib/stores/model-config";
 import { getAllToolsAsync } from "@/lib/tools";
 import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
@@ -574,6 +574,11 @@ async function* streamWithConfigImpl(
         `${providerLabel}: the credential the model uses was rejected as invalid or expired. ` +
         `Open the credential in Settings → Credentials and re-enter or refresh the key, then retry.`;
       code = "auth_failed";
+    } else if (isRetryableProviderStreamError(rawMsg)) {
+      friendly =
+        `${cfg.provider}: the streaming connection ended before the model produced output. ` +
+        "This is usually a temporary network or upstream failure; retrying may recover it.";
+      code = "stream_error";
     } else if (isRateLimitError(err, rawMsg)) {
       // Provider throttled us. The raw SDK message is often useless
       // ("429 status code (no body)"), so replace it with something the
