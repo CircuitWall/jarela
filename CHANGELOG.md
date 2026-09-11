@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.6] - 2026-09-11
+
+### Fixed
+
+- **Transient web-search transport failures recover automatically.** DuckDuckGo
+  searches now retry temporary network, rate-limit, and upstream server errors
+  while preserving immediate handling for non-retryable responses.
+
 ## [1.41.5] - 2026-09-11
 
 ### Fixed
