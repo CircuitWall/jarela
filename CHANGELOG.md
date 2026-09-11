@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.5] - 2026-09-11
+
+### Fixed
+
+- **Transient provider stream failures recover automatically.** Provider
+  connections that end before producing model output now use the shared
+  retryable stream-error path, while partially streamed responses are not
+  replayed blindly.
+
 ## [1.41.4] - 2026-09-10
 
 ### Fixed
