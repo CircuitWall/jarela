@@ -88,4 +88,20 @@ describe("webSearchTool", () => {
     expect(data.tried).toContain("duckduckgo:error");
     expect(data.error).toMatch(/DuckDuckGo returned 202 anomaly placeholder/i);
   });
+
+  it("retries transient DuckDuckGo transport failures", async () => {
+    delete process.env.TAVILY_API_KEY;
+    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
+    resetConfigCache();
+    vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(response(ddgHtml()));
+
+    const raw = await webSearchTool.invoke({ query: "python", max_results: 5 });
+    const data = JSON.parse(String(raw)) as { provider: string; total: number };
+
+    expect(data.provider).toBe("duckduckgo");
+    expect(data.total).toBe(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 });
