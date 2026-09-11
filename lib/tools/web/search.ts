@@ -93,35 +93,50 @@ const UA_POOL = [
 
 async function ddgSearch(query: string, limit: number): Promise<SearchResult[]> {
   // DDG returns a 202 "anomaly detection" placeholder when it suspects
-  // automation. Retry with rotated UAs and exponential backoff. Empty results
-  // on a 200 are treated as legitimate "no hits" and not retried.
+  // automation. Retry with rotated UAs and exponential backoff. Transient
+  // transport failures and 429/5xx responses use the same retry path. Empty
+  // results on a 200 are treated as legitimate "no hits" and not retried.
   let lastStatus = 0;
+  let lastError: unknown = null;
   for (let attempt = 0; attempt < 5; attempt++) {
     const ua = UA_POOL[attempt % UA_POOL.length];
-    const res = await fetch("https://html.duckduckgo.com/html/", {
-      method: "POST",
-      headers: {
-        "User-Agent": ua,
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Referer": "https://duckduckgo.com/",
-      },
-      body: `q=${encodeURIComponent(query)}&kl=us-en`,
-    });
-    lastStatus = res.status;
-    if (!res.ok) throw new Error(`DuckDuckGo ${res.status}`);
-    const html = await res.text();
-    const parsed = parseDDGHtml(html, limit);
-    if (parsed.length > 0) return parsed;
-    if (res.status !== 202) return parsed; // genuine empty result on 200
+    try {
+      const res = await fetch("https://html.duckduckgo.com/html/", {
+        method: "POST",
+        headers: {
+          "User-Agent": ua,
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Referer": "https://duckduckgo.com/",
+        },
+        body: `q=${encodeURIComponent(query)}&kl=us-en`,
+      });
+      lastStatus = res.status;
+      if (!res.ok && res.status !== 429 && res.status < 500) {
+        throw new Error(`DuckDuckGo ${res.status}`);
+      }
+      const html = await res.text();
+      const parsed = parseDDGHtml(html, limit);
+      if (parsed.length > 0) return parsed;
+      if (res.status === 200) return parsed; // genuine empty result
+    } catch (err) {
+      lastError = err;
+      if (err instanceof Error && /^DuckDuckGo 4\d\d/.test(err.message) && !/DuckDuckGo 429/.test(err.message)) {
+        throw err;
+      }
+    }
     // Backoff: 400, 900, 1400, 1900 ms — total max ≈ 4.6s
     if (attempt < 4) await new Promise((r) => setTimeout(r, 400 + attempt * 500));
   }
-  // All retries returned 202 placeholder. Surface this as a provider failure
-  // rather than an empty success, so the caller can fall through to another
-  // backend or show an actionable error.
-  throw new Error(`DuckDuckGo returned ${lastStatus} anomaly placeholder on all attempts`);
+  // All retries failed or returned a 202 placeholder. Surface this as a
+  // provider failure rather than an empty success, so the caller can fall
+  // through to another backend or show an actionable error.
+  if (lastError && lastStatus === 0) throw lastError;
+  if (lastStatus === 202) {
+    throw new Error("DuckDuckGo returned 202 anomaly placeholder on all attempts");
+  }
+  throw new Error(`DuckDuckGo returned ${lastStatus} after all retries`);
 }
 
 function parseDDGHtml(html: string, limit: number): SearchResult[] {
