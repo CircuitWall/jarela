@@ -32,6 +32,6 @@ describe("MarkdownTextarea", () => {
     expect(screen.getByText(/"name": "Jarela"/)).toBeTruthy();
     expect(screen.getByText(/"enabled": true/)).toBeTruthy();
     expect(screen.queryByRole("textbox")).toBeNull();
-    expect((container.querySelector(".jarela-rich") as HTMLElement).style.minHeight).toBe("5em");
+    expect((container.querySelector(".jarela-rich") as HTMLElement).style.minHeight).toBe("5rem");
   });
 });

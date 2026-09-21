@@ -80,7 +80,7 @@ export function MarkdownTextarea({
       ) : (
         <div
           className={`${className} prose prose-invert prose-sm prose-headings:text-sm prose-p:text-xs prose-li:text-xs prose-code:text-xs prose-pre:text-xs max-w-none jarela-rich overflow-auto`.trim()}
-          style={{ minHeight: rows ? `${rows * 1.25}em` : undefined }}
+          style={{ minHeight: rows ? `${rows * 1.25}rem` : undefined }}
         >
           {value.trim() ? (
             (() => {
