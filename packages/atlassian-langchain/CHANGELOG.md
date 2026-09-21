@@ -18,6 +18,14 @@ and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   point, matching every other write tool (it was only reachable via the
   `jiraWriteTools` array before).
 
+## [1.41.7] - 2026-09-21
+
+### Fixed
+
+- `jira_update_issue` and `jira_create_issue` now auto-wrap plain strings (or
+  arrays of strings) as `{value: "..."}` for option-type custom fields.
+- `jiraUpdateIssueTool` is exported by name from the package entry point.
+
 ## [1.0.0] — 2026-06-13
 
 ### Changed

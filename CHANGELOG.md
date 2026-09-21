@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tool_result_get` accepts the older flat `{name, offset, limit}` shape**
   as shorthand for `result_ref.name`, with a deprecation warning.
 
+## [1.41.7] - 2026-09-21
+
+### Fixed
+
+- **Jira option-type custom fields accept plain strings.** `jira_update_issue`
+  and `jira_create_issue` now auto-wrap a plain string (or array of strings)
+  as `{value: "..."}` for single/multi-select custom fields.
+- **MCP and external tool schema errors include field-level detail.** Invalid
+  calls now expose the underlying field path and expected/received type.
+- **Tool reliability fixes improve actionable errors and compatibility.**
+  `invoke_tool`, `file_write`, `write_skill`, and `tool_result_get` now handle
+  the reported self-target, missing-content, and legacy result-reference cases.
+- **Markdown preview height matches the editor line height.** Preview mode
+  now uses rem-based sizing consistent with the editor.
+
 ## [1.41.6] - 2026-09-11
 
 ### Fixed
