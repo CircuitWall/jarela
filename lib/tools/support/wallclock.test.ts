@@ -254,6 +254,23 @@ describe("wrapWithWallclock", () => {
       expect(schema.properties?.value).toEqual({ type: "string" });
     });
 
+    it("surfaces the underlying JSON-Schema validation detail when a caller sends bad args, instead of a bare generic message", async () => {
+      // wrapWithWallclock rebuilds every MCP/external tool via tool(), and
+      // that's the schema the model's call is actually validated against
+      // first. @langchain/core only appends the ajv error detail (field
+      // path, expected type) when verboseParsingErrors is set — otherwise
+      // callers just get "did not match expected schema" with nothing to
+      // act on. This is Jarela's error-surface layer, not the MCP server's.
+      const inner = makeJsonSchemaTool("json-schema-required", 5, {
+        type: "object",
+        properties: { name: { type: "string" } },
+        required: ["name"],
+      });
+      const wrapped = wrapWithWallclock(inner);
+
+      await expect(wrapped.invoke({} as never)).rejects.toThrow(/required property "name"/);
+    });
+
     it("treats a `properties`-only schema (no explicit `type: object`) as object-shaped too", () => {
       const inner = makeJsonSchemaTool("no-type-check", 5, { properties: {} });
       const wrapped = wrapWithWallclock(inner);

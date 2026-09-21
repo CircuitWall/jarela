@@ -284,9 +284,15 @@ export const fileReadTool = tool(
 
 // --- write --------------------------------------------------------------
 
+const CONTENT_REQUIRED_MESSAGE =
+  "content is required — pass the full file body, not a patch or diff. For incremental changes use file_multi_edit.";
+
 const writeSchema = z.object({
   path: z.string().describe("File path. Absolute (C:\\... or /...) or ~/foo recommended; bare relative paths resolve against the user's HOME directory."),
-  content: z.string().min(1, "content is required").describe("Required: full UTF-8 file content, not a patch or partial fragment. Overwrites the file if it exists."),
+  content: z
+    .string({ error: CONTENT_REQUIRED_MESSAGE })
+    .min(1, CONTENT_REQUIRED_MESSAGE)
+    .describe("Required: full UTF-8 file content, not a patch or partial fragment. Overwrites the file if it exists."),
   create_dirs: z
     .boolean()
     .optional()

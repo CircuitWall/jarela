@@ -1,6 +1,7 @@
 import { atlassianFetch, type AtlassianAuth } from "../shared";
 
-export interface JiraFieldDef { id: string; name: string; custom: boolean }
+export interface JiraFieldSchema { type: string; items?: string; custom?: string }
+export interface JiraFieldDef { id: string; name: string; custom: boolean; schema?: JiraFieldSchema }
 
 const FIELD_CACHE_TTL_MS = 60 * 60 * 1000;
 const fieldCache = new Map<string, { fields: JiraFieldDef[]; loaded: number }>();
@@ -9,12 +10,31 @@ export async function loadJiraFields(auth: AtlassianAuth): Promise<JiraFieldDef[
   const cached = fieldCache.get(auth.url);
   if (cached && Date.now() - cached.loaded < FIELD_CACHE_TTL_MS) return cached.fields;
   const data = await atlassianFetch(auth, "/rest/api/3/field") as
-    | Array<{ id: string; name: string; custom: boolean }>
+    | Array<{ id: string; name: string; custom: boolean; schema?: JiraFieldSchema }>
     | { error?: string };
   if (!Array.isArray(data)) return data as { error: string };
-  const fields = data.map((field) => ({ id: field.id, name: field.name, custom: field.custom }));
+  const fields = data.map((field) => ({ id: field.id, name: field.name, custom: field.custom, schema: field.schema }));
   fieldCache.set(auth.url, { fields, loaded: Date.now() });
   return fields;
+}
+
+// Jira Cloud rejects a bare string/array-of-strings for "option" (single
+// select) and "option"-item arrays (multi select / checkboxes) custom
+// fields with "Specify a valid 'id' or 'name' for <field>" — it needs
+// {value: "<label>"} (or {id}), same for each array entry. Every other
+// field type (text, number, date, user, …) already accepts what the
+// caller sends, so this only touches option-shaped fields, and only when
+// the caller passed a raw string rather than already-shaped {id}/{value}.
+export function coerceCustomFieldValue(fieldDef: JiraFieldDef | undefined, value: unknown): unknown {
+  const schema = fieldDef?.schema;
+  if (!schema) return value;
+  if (schema.type === "option" && typeof value === "string") {
+    return { value };
+  }
+  if (schema.type === "array" && schema.items === "option" && Array.isArray(value)) {
+    return value.map((item) => (typeof item === "string" ? { value: item } : item));
+  }
+  return value;
 }
 
 export function resolveCustomFieldNames(

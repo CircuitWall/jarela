@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { atlassianFetch, authHeader, parseJsonSafe, resolveAuth, type AtlassianAuth } from "../shared";
 import {
+  coerceCustomFieldValue,
   extractFieldValue,
   loadJiraFields,
   resolveCustomFieldNames,
@@ -279,8 +280,9 @@ export const jiraCreateIssueTool = tool(
             .map((f) => `${f.name} (${f.id})`).join("; "),
         });
       }
+      const byId = new Map(fieldList.map((f) => [f.id, f]));
       for (const c of r.resolved) {
-        fields[c.id] = (custom_fields as Record<string, unknown>)[c.input];
+        fields[c.id] = coerceCustomFieldValue(byId.get(c.id), (custom_fields as Record<string, unknown>)[c.input]);
       }
     }
     const data = await atlassianFetch(auth, `/rest/api/3/issue`, {
@@ -393,7 +395,10 @@ async function resolveJiraUpdateCustomFields(
     };
   }
   const out: Record<string, unknown> = {};
-  for (const c of r.resolved) out[c.id] = (customFields as Record<string, unknown>)[c.input];
+  const byId = new Map(fieldList.map((f) => [f.id, f]));
+  for (const c of r.resolved) {
+    out[c.id] = coerceCustomFieldValue(byId.get(c.id), (customFields as Record<string, unknown>)[c.input]);
+  }
   return out;
 }
 
@@ -517,7 +522,9 @@ export const jiraUpdateIssueTool = tool(
       "`labels_add`/`labels_remove`. Assignee can be set by `assignee_account_id` or by " +
       "`assignee_email` (auto-resolved); pass null/\"unassigned\" to clear. Custom fields accept " +
       "display names ('Due Date') or ids ('customfield_10015'); values are passed through verbatim " +
-      "(string for date/text, number for numeric, full ADF object for rich-text custom fields). " +
+      "(string for date/text, number for numeric, full ADF object for rich-text custom fields) " +
+      "except single/multi-select fields, where a plain string (or array of strings) is auto-wrapped " +
+      "as the {value: \"...\"} shape Jira Cloud requires. " +
       "**PREFER THIS over shell-exec'ing the jira CLI.** Disable to make the agent read-only.",
     schema: z.object({
       issue_key: z.string().describe("Issue key like PROJ-123"),

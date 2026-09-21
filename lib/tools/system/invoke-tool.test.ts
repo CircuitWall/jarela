@@ -12,7 +12,7 @@ afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
 });
 
-const { invokeToolTool } = await import("./invoke-tool");
+const { invokeToolTool, SELF_INVOKE_MESSAGE } = await import("./invoke-tool");
 const { createThread } = await import("@/lib/stores/threads");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 
@@ -44,6 +44,21 @@ describe("invoke_tool", () => {
     const parsed = invokeToolTool.schema.safeParse({ name: "invoke_tool", args: {} });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it("uses identical wording for the schema-level and runtime self-invoke rejections", async () => {
+    // Telemetry showed agents retrying because these two rejection paths
+    // used to say different things ("cannot target itself" vs "cannot
+    // invoke itself") for the exact same mistake. Both must now share
+    // SELF_INVOKE_MESSAGE so there is only one error to recognize.
+    const schemaResult = invokeToolTool.schema.safeParse({ name: "invoke_tool", args: {} });
+    expect(schemaResult.success).toBe(false);
+    if (!schemaResult.success) {
+      expect(schemaResult.error.issues[0]?.message).toBe(SELF_INVOKE_MESSAGE);
+    }
+
+    await expect(invokeToolTool.invoke({ name: "invoke_tool", args: {} }))
+      .rejects.toThrow(SELF_INVOKE_MESSAGE);
   });
 
   it("rejects tools that are not enabled for the current agent", async () => {

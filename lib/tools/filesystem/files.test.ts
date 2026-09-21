@@ -237,6 +237,15 @@ describe("file_write", () => {
     expect(out.error).toMatch(/exceeds 2000000 bytes/);
     expect(existsSync(f)).toBe(false);
   });
+
+  it("gives a clear, actionable error when content is omitted entirely", async () => {
+    const f = join(scratch, "missing-content.txt");
+    // @ts-expect-error — exercising the omitted-required-field case a model can hit.
+    await expect(fileWriteTool.invoke({ path: f })).rejects.toThrow(
+      /content is required — pass the full file body, not a patch or diff\. For incremental changes use file_multi_edit\./,
+    );
+    expect(existsSync(f)).toBe(false);
+  });
 });
 
 // ── file_edit ───────────────────────────────────────────────────────────────

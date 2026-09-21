@@ -225,6 +225,12 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
       name: t.name,
       description: t.description ?? "",
       schema: (extendedSchema ?? schema) as never,
+      // Every MCP/external tool is JSON-Schema-validated (not zod), and
+      // @langchain/core only appends the underlying ajv error detail
+      // (field path, expected type, received) when this is set — otherwise
+      // a bad call just gets "did not match expected schema" with nothing
+      // for the agent to act on.
+      verboseParsingErrors: true,
     } as never,
   );
   return rebuilt as unknown as T;

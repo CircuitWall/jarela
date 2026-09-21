@@ -199,6 +199,34 @@ describe("tool_result_get", () => {
       delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
     }
   });
+
+  it("also accepts the deprecated flat {name, offset, limit} shape as a shorthand for result_ref", async () => {
+    // Some agents still call with a flat `name` instead of nesting it under
+    // `result_ref` — accept it rather than failing outright, with a
+    // deprecation warning, per the tool_result_get schema-drift fix.
+    const payload = "abcdefghij".repeat(20);
+    process.env.JARELA_TOOL_RESULT_MAX_BYTES = "32";
+    const warnSpy: unknown[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => { warnSpy.push(args); };
+    try {
+      const inner = tool(
+        async () => payload,
+        { name: "large-text-flat", description: "test", schema: z.object({}).passthrough() },
+      );
+      const wrapped = wrapWithWallclock(inner);
+      const out = JSON.parse(await wrapped.invoke({}) as string);
+      expect(out.truncated).toBe(true);
+
+      const got = JSON.parse(await toolResultGetTool.invoke({ name: out.result_ref.name, offset: 5, limit: 12 }) as string);
+      expect(got).toMatchObject({ ok: true, status: "done", offset: 5, limit: 12, done: false });
+      expect(got.result).toBe(payload.slice(5, 17));
+      expect(warnSpy.some((args) => String(args[0]).includes("deprecated flat \"name\""))).toBe(true);
+    } finally {
+      console.warn = originalWarn;
+      delete process.env.JARELA_TOOL_RESULT_MAX_BYTES;
+    }
+  });
 });
 
 describe("tool result offload", () => {
