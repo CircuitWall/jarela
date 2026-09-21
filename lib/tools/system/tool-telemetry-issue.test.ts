@@ -2,7 +2,6 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getDb } from "@/lib/db";
 
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-tool-telemetry-issue-"));
 process.env.JARELA_DB_DIR = tmpRoot;
@@ -12,6 +11,7 @@ afterAll(() => {
 });
 
 const { recordToolUsage } = await import("@/lib/stores/tool-stats");
+const { getDb } = await import("@/lib/db");
 const {
   buildToolTelemetryComplaintIssue,
   maybeAutoFileToolTelemetryIssue,
