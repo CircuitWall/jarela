@@ -22,6 +22,7 @@ export {
   jiraSearchTool,
   jiraGetIssueTool,
   jiraCreateIssueTool,
+  jiraUpdateIssueTool,
   jiraAddCommentTool,
   jiraFindUserTool,
   jiraListBoardsTool,
@@ -63,7 +64,13 @@ export {
   jiraTools,
   validateSprintTransition,
 } from "./jira/jira-tools";
-export { resolveCustomFieldNames, extractFieldValue, type JiraFieldDef } from "./jira/jira-formatters";
+export {
+  resolveCustomFieldNames,
+  extractFieldValue,
+  coerceCustomFieldValue,
+  type JiraFieldDef,
+  type JiraFieldSchema,
+} from "./jira/jira-formatters";
 
 export {
   confluenceSearchTool,

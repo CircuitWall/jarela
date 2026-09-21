@@ -5,6 +5,9 @@ import { registerLangChainPackage } from "../packages/langchain-package";
 
 const NOT_CONFIGURED = JSON.stringify({ error: "No writable skill repo is configured; built-in skills are read-only" });
 
+const CONTENT_REQUIRED_MESSAGE =
+  "content is required — pass the full markdown file body, not a patch or diff.";
+
 export const readSkillTool = tool(
   async ({ id }) => {
     const skill = getSkill(id);
@@ -41,8 +44,8 @@ export const writeSkillTool = tool(
         .regex(/^[\w-]+$/, "Letters, digits, and hyphens only")
         .describe("Skill ID used as the directory name (e.g. 'code-review')"),
       content: z
-        .string()
-        .min(1)
+        .string({ error: CONTENT_REQUIRED_MESSAGE })
+        .min(1, CONTENT_REQUIRED_MESSAGE)
         .describe("Full markdown content of the skill, starting with a # Heading."),
     }),
   },

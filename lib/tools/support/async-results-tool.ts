@@ -45,9 +45,16 @@ async function waitForFinish(key: string, waitMs: number): Promise<AsyncResultRe
 }
 
 export const toolResultGetTool = tool(
-  async ({ key, result_ref, offset, limit, wait_ms, consume }) => {
-    if (result_ref?.name) {
-      return JSON.stringify(await readToolResultRef({ name: result_ref.name, offset, limit }));
+  async ({ key, result_ref, name, offset, limit, wait_ms, consume }) => {
+    const refName = result_ref?.name ?? name;
+    if (refName) {
+      if (!result_ref?.name) {
+        console.warn(
+          `[tool_result_get] deprecated flat "name" argument used instead of "result_ref: { name }"; ` +
+          "accepting it for now, but callers should switch to the nested shape.",
+        );
+      }
+      return JSON.stringify(await readToolResultRef({ name: refName, offset, limit }));
     }
     if (!key) {
       return JSON.stringify({ ok: false, status: "unknown", error: "pass either key or result_ref.name" });
@@ -98,6 +105,10 @@ export const toolResultGetTool = tool(
       result_ref: z.object({
         name: z.string().describe("The result_ref.name returned by a truncated tool result."),
       }).optional().describe("Read a spilled tool result by reference instead of an async key."),
+      name: z
+        .string()
+        .optional()
+        .describe("Deprecated: use result_ref.name instead. Flat shorthand for result_ref: { name }, accepted for now."),
       offset: z.number().int().min(0).optional().describe("Byte offset when reading a spilled result_ref."),
       limit: z.number().int().min(1).max(1024 * 1024).optional().describe("Maximum bytes to read from a spilled result_ref."),
     }),

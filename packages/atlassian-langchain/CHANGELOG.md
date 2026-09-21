@@ -10,6 +10,13 @@ and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `confluence_get_page` now fetches storage and rendered view bodies with
   separate valid Confluence v2 `body-format` requests.
+- `jira_update_issue` and `jira_create_issue` now auto-wrap a plain string
+  (or array of strings) as `{value: "..."}` for option-type custom fields
+  (single/multi-select) instead of passing it through verbatim — Jira Cloud
+  rejects a bare string for those with "Specify a valid 'id' or 'name'".
+- `jiraUpdateIssueTool` is now exported by name from the package entry
+  point, matching every other write tool (it was only reachable via the
+  `jiraWriteTools` array before).
 
 ## [1.0.0] — 2026-06-13
 

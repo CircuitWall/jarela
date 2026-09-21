@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Jira option-type custom fields accept plain strings.** `jira_update_issue`
+  and `jira_create_issue` now auto-wrap a plain string (or array of strings)
+  as `{value: "..."}` for single/multi-select custom fields — Jira Cloud
+  rejects a bare string for those with "Specify a valid 'id' or 'name'".
+- **MCP and external tool schema errors include the field-level detail.**
+  A tool call that fails JSON-Schema validation now surfaces the underlying
+  field path and expected/received type instead of a bare "did not match
+  expected schema" message.
+- **`invoke_tool` gives one consistent error when targeting itself.** The
+  schema-level and runtime rejections used to word the same mistake
+  differently, driving pointless retries.
+- **`file_write` / `write_skill` give an actionable error when `content` is
+  omitted**, instead of zod's generic "expected string, received undefined".
+- **`tool_result_get` accepts the older flat `{name, offset, limit}` shape**
+  as shorthand for `result_ref.name`, with a deprecation warning.
+
 ## [1.41.6] - 2026-09-11
 
 ### Fixed

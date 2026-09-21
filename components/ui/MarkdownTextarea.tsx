@@ -70,7 +70,7 @@ export function MarkdownTextarea({
       </div>
       {mode === "edit" ? (
         <textarea
-          className={`${className} ${fontClass}`.trim()}
+          className={`${className} ${fontClass} text-sm leading-5`.trim()}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
@@ -79,8 +79,8 @@ export function MarkdownTextarea({
         />
       ) : (
         <div
-          className={`${className} prose prose-invert prose-sm max-w-none jarela-rich overflow-auto`}
-          style={{ minHeight: rows ? `${rows * 1.5}em` : undefined }}
+          className={`${className} prose prose-invert prose-sm prose-headings:text-sm prose-p:text-xs prose-li:text-xs prose-code:text-xs prose-pre:text-xs max-w-none jarela-rich overflow-auto`.trim()}
+          style={{ minHeight: rows ? `${rows * 1.25}em` : undefined }}
         >
           {value.trim() ? (
             (() => {

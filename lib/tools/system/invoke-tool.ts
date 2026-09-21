@@ -13,6 +13,15 @@ import { getThread } from "@/lib/stores/threads";
 
 type Permission = "enabled" | "disabled" | "unavailable";
 
+// Shared between the schema-level refine (fires at parse time, before the
+// tool function ever runs) and the runtime guard in resolveTargetPermission
+// (a defensive backstop for any caller that reaches executeTool without
+// going through this schema). Telemetry showed these two paths drifting
+// into different wording for the same rejection, which reads to the model
+// like two different problems and drives pointless retries.
+export const SELF_INVOKE_MESSAGE =
+  "invoke_tool cannot target itself — call the tool directly, or check list_tools for the tool you meant to invoke";
+
 // Reasons that mean "permitted, just not bound to the model this turn".
 // Everything else — agent_not_allowed, category_disabled, dropin_tool_disabled
 // — is a real denial and still rejects.
@@ -103,7 +112,7 @@ async function resolveTargetPermission(
   if (toolName === "invoke_tool") {
     return {
       ok: false,
-      response: reject(toolName, "invoke_tool cannot invoke itself", "recursive_invoke_tool"),
+      response: reject(toolName, SELF_INVOKE_MESSAGE, "recursive_invoke_tool"),
     };
   }
 
@@ -220,7 +229,7 @@ export const invokeToolTool = tool(
       name: z
         .string()
         .min(1)
-        .refine((name) => name !== "invoke_tool", "invoke_tool cannot target itself")
+        .refine((name) => name !== "invoke_tool", SELF_INVOKE_MESSAGE)
         .describe("Exact target tool name from list_tools; never use invoke_tool itself."),
       // A string carries arguments through every provider. Gemini strips
       // `additionalProperties` from tool schemas, which turns a free-form
