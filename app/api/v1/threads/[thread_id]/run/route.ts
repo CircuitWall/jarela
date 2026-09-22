@@ -393,12 +393,13 @@ export async function GET(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const showTools = req.nextUrl.searchParams.get("show_tools") !== "false";
   const showThinking = req.nextUrl.searchParams.get("show_thinking") !== "false";
+  const awaitContinuation = req.nextUrl.searchParams.get("await_continuation") === "true";
   const stream_options: StreamOptions = {
     filters: { include_tools: showTools, include_thinking: showThinking },
   };
 
   const run = getRun(thread_id);
-  if (!run) {
+  if (!run || (awaitContinuation && run.status !== "running")) {
     // Cold attach. If the per-thread queue already has work pending
     // (typical when the chat is reopened just after firing a scheduled
     // task / watcher / bridge turn — the request was enqueued via
