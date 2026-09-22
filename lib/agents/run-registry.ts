@@ -260,6 +260,10 @@ export function broadcast(run: ActiveRun, chunk: StreamChunk): void {
   if (chunk.type === "heartbeat") return;
   if (chunk.type === "text_delta") {
     run.final_text += (chunk.data.delta as string) ?? "";
+  } else if (chunk.type === "reset_text") {
+    // Output-validator retry (ADR-0037) discarding a flagged completed
+    // reply — see StreamChunk in base.ts.
+    run.final_text = "";
   } else if (chunk.type === "tool_call") {
     const id = (chunk.data as { id?: string }).id;
     if (id) {

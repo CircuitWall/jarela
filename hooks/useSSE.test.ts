@@ -34,6 +34,17 @@ function streamDone(): AsyncIterable<string> {
   };
 }
 
+function streamWithFabricationRetry(): AsyncIterable<string> {
+  return {
+    async *[Symbol.asyncIterator]() {
+      yield JSON.stringify({ type: "text_delta", delta: "flagged reply" });
+      yield JSON.stringify({ type: "reset_text" });
+      yield JSON.stringify({ type: "text_delta", delta: "corrected reply" });
+      yield JSON.stringify({ type: "done" });
+    },
+  };
+}
+
 function streamWithProgress(): AsyncIterable<string> {
   return {
     async *[Symbol.asyncIterator]() {
@@ -71,6 +82,25 @@ describe("useSSE contract", () => {
 
     expect(result.current.authError).toBeNull();
     expect(result.current.streamingContent).toBe("");
+  });
+
+  // Issue #576: a "reset_text" event (emitted when the output validator
+  // flags a completed reply and auto-retries) must clear the streaming
+  // buffer so the corrected retry replaces the flagged reply on screen
+  // instead of appending after it.
+  it("clears the streaming buffer on reset_text instead of appending", async () => {
+    submitRunMock.mockResolvedValue({ accepted: true });
+    subscribeRunMock.mockReturnValue(streamWithFabricationRetry());
+
+    const { result } = renderHook(() => useSSE());
+
+    await act(async () => {
+      await result.current.commands.start("thread-1", "hello");
+    });
+
+    await waitFor(() => expect(result.current.streaming).toBe(false));
+    expect(result.current.streamingContent).toBe("corrected reply");
+    expect(result.current.streamingContent).not.toContain("flagged reply");
   });
 
   it("records tool_progress events alongside tool_call/tool_result (ADR-0073)", async () => {

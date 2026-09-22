@@ -90,7 +90,7 @@ normal `POST` instead.
 Abort the in-flight run. This is the only interrupt; typing mid-run steers.
 
 - **Source:** [`app/api/v1/threads/[thread_id]/run/route.ts`](../app/api/v1/threads/[thread_id]/run/route.ts)
-- **Stream chunk types:** `text`, `thinking`, `tool_call`, `tool_result`, `tool_progress` (zero or more per call, live status from a still-running tool — ADR-0073), `usage`, `done` (see `lib/agents/base.ts` for the full union)
+- **Stream chunk types:** `text`, `thinking`, `tool_call`, `tool_result`, `tool_progress` (zero or more per call, live status from a still-running tool — ADR-0073), `reset_text` (discard prior live text before an output-validator replacement retry), `usage`, `done` (see `lib/agents/base.ts` for the full union)
 
 ---
 

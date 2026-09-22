@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   appendHistoryMessage,
   buildRetryContextSummary,
+  buildFabricationNudge,
+  retryTextOverlapRatio,
   toolCallSignature,
   looksLikeStall,
   isWriteLikeToolName,
@@ -68,6 +70,53 @@ describe("buildRetryContextSummary", () => {
 
   it("returns an empty string when there is nothing to recap", () => {
     expect(buildRetryContextSummary("   ", [])).toBe("");
+  });
+
+  it("does not clip a reply longer than the old 280-char cap (issue #577)", () => {
+    const text = "x".repeat(1000);
+    expect(buildRetryContextSummary(text, [])).toBe(`Already said this turn: ${text}`);
+  });
+
+  it("clips a reply past the 2000-char cap with an ellipsis", () => {
+    const text = "y".repeat(2500);
+    const result = buildRetryContextSummary(text, []);
+    expect(result).toBe(`Already said this turn: ${"y".repeat(1997)}...`);
+    expect(result.length).toBe("Already said this turn: ".length + 2000);
+  });
+});
+
+describe("buildFabricationNudge", () => {
+  it("tells the model the flagged reply was discarded and not to restate it", () => {
+    const nudge = buildFabricationNudge("You wrote \"(via web_search)\" but did not call \"web_search\" this turn.");
+    expect(nudge).toContain("discarded");
+    expect(nudge).toContain("Do NOT restate");
+    expect(nudge).toContain("(via web_search)");
+    expect(nudge).not.toMatch(/redo this turn/i);
+  });
+
+  it("omits the trailing reason clause when no reason is given", () => {
+    const nudge = buildFabricationNudge("");
+    expect(nudge).toBe(
+      "↻ Auto-retry: output validator flagged your reply. The flagged reply has been discarded — the user will see ONLY what you write next, not the original. Do NOT restate, summarize, or repeat any part of the previous answer. Emit ONLY the fix: call the tool that's actually missing, or state the corrected claim in one or two sentences.",
+    );
+  });
+});
+
+describe("retryTextOverlapRatio", () => {
+  it("returns 1 when the retry fully repeats the original's wording", () => {
+    expect(retryTextOverlapRatio("The cat sat on the mat.", "the cat sat on the mat")).toBe(1);
+  });
+
+  it("returns 0 for completely disjoint text", () => {
+    expect(retryTextOverlapRatio("The cat sat on the mat.", "Completely different words here")).toBe(0);
+  });
+
+  it("returns a fraction for partial overlap", () => {
+    expect(retryTextOverlapRatio("alpha beta gamma", "alpha beta delta epsilon")).toBe(0.5);
+  });
+
+  it("returns 0 when the retry is empty", () => {
+    expect(retryTextOverlapRatio("alpha beta", "")).toBe(0);
   });
 });
 

@@ -66,6 +66,13 @@ export async function collectStream(
           result.assistantContent += (chunk.data.delta as string) ?? "";
           break;
         }
+        case "reset_text": {
+          // Output-validator retry (ADR-0037) discarding a flagged
+          // completed reply — see StreamChunk in base.ts. Only the retry's
+          // own text_delta chunks (which follow) should end up persisted.
+          result.assistantContent = "";
+          break;
+        }
         case "tool_call": {
           const d = chunk.data as { id?: string; name?: string; arguments?: unknown };
           if (d.name) result.usedTools.push(d.name);
