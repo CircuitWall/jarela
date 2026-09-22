@@ -65,16 +65,17 @@
   },
   "dependencies": {
     "ical.js": "^2.2.1",
-    "imapflow": "^1.7.6",
-    "tsdav": "^2.2.2"
+    "imapflow": "^2.0.6",
+    "tsdav": "^2.3.4"
   },
   "devDependencies": {
-    "@langchain/core": "^1.1.46",
-    "@types/node": "^22.20.1",
-    "rimraf": "^6.0.1",
-    "tsup": "^8.3.5",
+    "@langchain/core": "^1.2.12",
+    "@types/node": "^26.6.2",
+    "@vitest/coverage-v8": "^4.1.11",
+    "rimraf": "^6.1.3",
+    "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.7",
-    "zod": "^4.5.1"
+    "vitest": "^4.1.11",
+    "zod": "^4.6.5"
   }
 }

@@ -97,6 +97,11 @@ function ok<T>(value: T): string {
   return JSON.stringify(value);
 }
 
+function envelopeDateToIso(value: string | Date | null | undefined): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return value ?? null;
+}
+
 // ── IMAP client factory ────────────────────────────────────────────────
 
 const IMAP_HOST = "imap.mail.me.com";
@@ -245,7 +250,7 @@ export const icloudMailListMessagesTool = tool(
               msg.envelope?.from
                 ?.map((a) => `${a.name ? `${a.name} ` : ""}<${a.address}>`)
                 .join(", ") ?? null,
-            date: msg.envelope?.date?.toISOString() ?? null,
+            date: envelopeDateToIso(msg.envelope?.date),
             flags: Array.from(msg.flags ?? []),
             size: msg.size ?? 0,
           });
@@ -333,7 +338,7 @@ export const icloudMailGetMessageTool = tool(
             msg.envelope?.cc
               ?.map((a) => `${a.name ? `${a.name} ` : ""}<${a.address}>`)
               .join(", ") ?? null,
-          date: msg.envelope?.date?.toISOString() ?? null,
+          date: envelopeDateToIso(msg.envelope?.date),
           flags: Array.from(msg.flags ?? []),
           text: fetchedParts["text/plain"] ?? null,
           html: include_html ? fetchedParts["text/html"] ?? null : null,

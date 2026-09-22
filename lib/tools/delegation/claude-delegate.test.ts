@@ -624,8 +624,10 @@ describe("claude_delegate — idle wall-clock (resets on subprocess activity)", 
     const promise = claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, timeout_seconds: 0.05 });
     const child = await waitForChild(precedingCount);
 
-    // Two activity bursts, 30ms apart — each resets the 50ms idle timer, so
-    // by 60ms total (past the ORIGINAL 50ms deadline) it must still be alive.
+    // Emit once immediately, then again after 30ms. This puts the assertion
+    // beyond the original 50ms deadline without racing test-worker startup
+    // against the initial watchdog timer.
+    child.stdout.emit("data", Buffer.from(assistantTextLine("still working") + "\n"));
     await new Promise((r) => setTimeout(r, 30));
     child.stdout.emit("data", Buffer.from(assistantTextLine("still working") + "\n"));
     await new Promise((r) => setTimeout(r, 30));

@@ -3,6 +3,7 @@
 // because the package's `parser` field is an instance, not a serialisable
 // config object.)
 import nextConfig from "eslint-config-next";
+import tseslint from "typescript-eslint";
 
 // Node builtins that must be imported with the `node:` prefix. Next 16's
 // edge-runtime bundler can't resolve bare specifiers like `"crypto"` or
@@ -38,6 +39,23 @@ const config = [
     ],
   },
   {
+    // Next's bundled Babel parser does not implement ESLint 10's
+    // ScopeManager#addGlobals. TypeScript ESLint does, so it must override
+    // every source extension covered by eslint-config-next's base preset.
+    files: ["**/*.{js,jsx,mjs,ts,tsx,mts,cts}"],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: { ecmaFeatures: { jsx: true } },
+    },
+  },
+  {
+    settings: {
+      // eslint-config-next's bundled eslint-plugin-react still reaches the
+      // removed context.getFilename API only when version auto-detection runs.
+      // Keep this explicit until upstream ships native ESLint 10 support.
+      // https://github.com/vercel/next.js/issues/89764
+      react: { version: "19.3" },
+    },
     rules: {
       // eslint-plugin-react-hooks@6 ships React-Compiler advisory rules that
       // are too noisy for this codebase right now; we disable them so lint

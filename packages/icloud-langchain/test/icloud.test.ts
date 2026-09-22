@@ -142,7 +142,7 @@ describe("icloud_mail_list_messages", () => {
             envelope: {
               subject: `Subject ${uid}`,
               from: [{ name: "Sender", address: `from${uid}@x` }],
-              date: new Date("2026-06-20T12:00:00Z"),
+              date: uid === 12 ? "2026-06-20T12:00:00.000Z" : new Date("2026-06-20T12:00:00Z"),
             },
             flags: new Set(["\\Seen"]),
             size: 1024,
@@ -158,6 +158,7 @@ describe("icloud_mail_list_messages", () => {
       uid: 12,
       subject: "Subject 12",
       from: "Sender <from12@x>",
+      date: "2026-06-20T12:00:00.000Z",
     });
   });
 
