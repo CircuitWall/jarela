@@ -244,7 +244,10 @@ describe("buildToolPermissionContext", () => {
     expect(ctx).toContain("4. Read the schema.");
     expect(ctx).toContain("5. Invoke through the proxy.");
     expect(ctx).toContain("6. Read large results by reference.");
-    expect(ctx).toContain("7. Stop and ask.");
+    expect(ctx).toContain("7. Verify before reporting.");
+    expect(ctx).toContain("8. Stop and ask.");
+    expect(ctx).toContain("read, write, execute, send, schedule, delete, propose");
+    expect(ctx).toContain("performed, proposed, blocked, failed, not_performed");
 
     expect(ctx).toContain("names=[\"exact_name\"]");
     expect(ctx).toContain("scope=\"all\"");

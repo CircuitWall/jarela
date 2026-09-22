@@ -1,3 +1,4 @@
+import { isWriteToolNameSegment, STALL_NOW_ACTION_VERBS, STALL_TAIL_PHRASES } from "@/lib/agents/action-vocabulary";
 import { streamWithConfig } from "@/lib/agents/llm";
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import { getConfig } from "@/lib/env/config";
@@ -1117,7 +1118,7 @@ async function* stallRetryStream(
   // Fabrication check (ADR-0037): only run when no other path claimed
   // this turn.
   const fabrication = !sawError && !stalled && !looped
-    ? validateAssistantOutput(textBuf, toolNames, allowedTools)
+    ? validateAssistantOutput(textBuf, toolNames, allowedTools, toolNames.filter(isWriteLikeToolName))
     : ({ ok: true } as const);
 
   // Strict-mode citation audit. Runs ONLY at `citation_strictness === 'strict'`
@@ -1286,7 +1287,7 @@ export function persistAssistantMessage(
   // the agent config so callers don't have to thread it through.
   if (trimmed && !wasInterrupted && !final.includes("*⚠️ Agent stalled")) {
     const allowedTools = lookupAllowedToolsForThread(thread_id);
-    const v = validateAssistantOutput(trimmed, toolList, allowedTools);
+    const v = validateAssistantOutput(trimmed, toolList, allowedTools, toolList.filter(isWriteLikeToolName));
     if (!v.ok) {
       final = `${final}\n\n*⚠️ Output validator flagged: ${v.reason}*`;
     }
@@ -1556,12 +1557,6 @@ const TOOL_LOOP_THRESHOLD = 3;
 // verb. Per-segment match so e.g. `dataset_search` doesn't qualify on
 // `set`. Used to flag the "called read-only tools then promised a write"
 // stall pattern.
-const WRITE_VERB_SEGMENTS = new Set([
-  "write", "edit", "create", "update", "delete", "move", "copy", "mkdir",
-  "add", "insert", "patch", "post", "put", "send", "publish", "save",
-  "upload", "transition", "rank", "merge", "set", "schedule", "cancel",
-]);
-
 export function isWriteLikeToolName(name: string): boolean {
   if (!name) return false;
   // Built-ins declare their safety class at registration (ADR-0038), so trust
@@ -1571,7 +1566,7 @@ export function isWriteLikeToolName(name: string): boolean {
   const capability = registeredCapability(name);
   if (capability) return capability !== "read";
   const segments = name.toLowerCase().split(/[._\-/]+/).filter(Boolean);
-  return segments.some((s) => WRITE_VERB_SEGMENTS.has(s));
+  return segments.some(isWriteToolNameSegment);
 }
 
 // `invoke_tool` is a dispatcher: the tool that actually ran is named in its
@@ -1629,20 +1624,20 @@ export function buildRetryContextSummary(
   return parts.join("\n");
 }
 
+const STALL_PHRASE_GROUP = STALL_TAIL_PHRASES.join("|").replace(/ /g, "\\s+");
+const STALL_NOW_VERB_GROUP = STALL_NOW_ACTION_VERBS.join("|");
+
 const STALL_PATTERNS: RegExp[] = [
-  /\bone (moment|sec(?:ond)?)\b/i,
+  new RegExp(`\\b(?:${STALL_PHRASE_GROUP})\\b`, "i"),
   /\bgive me (a|just a) (moment|sec(?:ond)?|minute)\b/i,
-  /\bhold on\b/i,
-  /\bjust a (moment|sec(?:ond)?|minute)\b/i,
-  /\bbear with me\b/i,
-  /\blet me (check|verify|continue|proceed|look|try|do (?:that|this|it))\b/i,
+  /\blet me (try|do (?:that|this|it))\b/i,
   /\bi['’]?ll (check|verify|continue|proceed|look|try|do (?:that|this|it)|keep going|get (?:on|right) (?:on|to))/i,
   /\b(continuing|proceeding|working on it|moving on)\b.*[!.]?\s*$/i,
   // Aspirational future-action family: "Writing X now", "Saving the file
   // now", "Creating the report now". Catches the read-only-tools +
   // narrate-the-write + end-of-turn loop where the model promises a
   // write but never invokes the corresponding tool.
-  /\b(writing|saving|creating|updating|deleting|adding|appending|generating|drafting|pushing|sending|posting|moving|copying|renaming|editing|regenerating)\b[^.!?]*\bnow\b[!.]?\s*$/i,
+  new RegExp(`\\b(?:${STALL_NOW_VERB_GROUP})\\b[^.!?]*\\bnow\\b[!.]?\\s*$`, "i"),
   // Broader promise-shape: any "I'll <verb>" or "I will <verb>" followed
   // by "now" anywhere in the trailing clause. Catches "I will read it
   // now to understand the plan" / "I'll add the note now" — variants the

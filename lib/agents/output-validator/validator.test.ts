@@ -106,11 +106,21 @@ describe("validateAssistantOutput", () => {
       expect(r.ok).toBe(true);
     });
 
-    it("claim with no tool, but a real tool ran this turn — ok (lenient: any tool counts)", () => {
+    it("read claim with a read tool — ok", () => {
       const r = validateAssistantOutput(
         "I checked the file.",
         ["file_read"],
         ALLOWED,
+      );
+      expect(r.ok).toBe(true);
+    });
+
+    it("write claim with a matching write tool — ok", () => {
+      const r = validateAssistantOutput(
+        "I updated the file.",
+        ["file_write"],
+        ALLOWED,
+        ["file_write"],
       );
       expect(r.ok).toBe(true);
     });
@@ -137,6 +147,25 @@ describe("validateAssistantOutput", () => {
       const r = validateAssistantOutput(
         "I've updated memory with the new rule.",
         [],
+        ALLOWED,
+      );
+      expect(r.ok).toBe(false);
+    });
+
+    it("rejects a write claim after only a read tool", () => {
+      const r = validateAssistantOutput(
+        "I updated the file after checking it.",
+        ["file_read"],
+        ALLOWED,
+      );
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.kind).toBe("claim_without_tool");
+    });
+
+    it("rejects vague completion language without a write tool", () => {
+      const r = validateAssistantOutput(
+        "The change is in place.",
+        ["file_read"],
         ALLOWED,
       );
       expect(r.ok).toBe(false);
