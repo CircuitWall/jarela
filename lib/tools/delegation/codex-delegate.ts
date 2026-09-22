@@ -12,6 +12,9 @@ import { resolveSafetyMode } from "../security/safety";
 import { resolveSubprocessEnv } from "../security/subprocess-env";
 import { withStreamDefault } from "../support/tool-metadata";
 import { currentWorkspace, reportToolProgress, type ToolConfig } from "../filesystem/workspace-context";
+import { getSession, rememberSession } from "@/lib/stores/codex-delegate-sessions";
+import * as jobs from "./claude-delegate-jobs";
+import { getCodexDelegateJobStatus } from "./codex-delegate-status";
 
 const INTEGRATION_ID = "openai-codex";
 const DEFAULT_TIMEOUT_SECONDS = 600;
@@ -61,8 +64,10 @@ export function resolveCodexLaunch(bin: string, args: string[], appData = proces
   return { command: bin, args };
 }
 
-export function buildCodexArgs(task: string, model: string | undefined, profile: string | undefined, addDirs: string[] | undefined, allowUnsafe: boolean): string[] {
-  const args = ["exec", "--json", "--sandbox", allowUnsafe ? "workspace-write" : "read-only"];
+export function buildCodexArgs(task: string, model: string | undefined, profile: string | undefined, addDirs: string[] | undefined, allowUnsafe: boolean, sessionId?: string): string[] {
+  const args = sessionId
+    ? ["exec", "resume", sessionId, "--json", "--sandbox", allowUnsafe ? "workspace-write" : "read-only"]
+    : ["exec", "--json", "--sandbox", allowUnsafe ? "workspace-write" : "read-only"];
   if (model) args.push("--model", model);
   if (profile) args.push("--profile", profile);
   for (const directory of addDirs ?? []) args.push("--add-dir", directory);
@@ -85,7 +90,12 @@ function eventDiagnostic(event: { error?: unknown; message?: unknown }): string 
   return "";
 }
 
-function collectCodexOutput(child: ChildProcess, timeoutMs: number, onProgress: (step: string) => void): Promise<{ result: string; threadId?: string; steps: string[] }> {
+function collectCodexOutput(
+  child: ChildProcess,
+  timeoutMs: number,
+  onProgress: (step: string) => void,
+  onThreadStarted?: (threadId: string) => void,
+): Promise<{ result: string; threadId?: string; steps: string[] }> {
   return new Promise((resolve, reject) => {
     let output = "";
     let stderr = "";
@@ -109,11 +119,16 @@ function collectCodexOutput(child: ChildProcess, timeoutMs: number, onProgress: 
       for (const line of lines) {
         try {
           const event = JSON.parse(line) as { type?: string; thread_id?: string; error?: unknown; message?: unknown; item?: { type?: string; text?: string; command?: string } };
-          if (event.type === "thread.started") threadId = event.thread_id;
+          if (event.type === "thread.started" && typeof event.thread_id === "string") {
+            threadId = event.thread_id;
+            onThreadStarted?.(threadId);
+          }
           if (event.type === "error" || event.type === "turn.failed") terminalDiagnostic = eventDiagnostic(event);
           if (event.item?.type === "agent_message" && event.item.text) {
             finalMessage = event.item.text;
-            steps.push(`Codex: ${event.item.text.replace(/\s+/g, " ").trim().slice(0, 400)}`);
+            const step = `Codex: ${event.item.text.replace(/\s+/g, " ").trim().slice(0, 400)}`;
+            steps.push(step);
+            onProgress(step);
           }
           if (event.item?.type === "command_execution" && event.item.command) {
             const step = `→ ${event.item.command.slice(0, 200)}`;
@@ -139,8 +154,48 @@ function collectCodexOutput(child: ChildProcess, timeoutMs: number, onProgress: 
   });
 }
 
+function projectKey(cwd: string, feature?: string): string {
+  return feature?.trim() ? `${cwd}::${feature.trim()}` : cwd;
+}
+
+function outputShape(completed: { result: string; threadId?: string; steps: string[] }, opts: {
+  task: string;
+  cwd: string;
+  model?: string;
+  profile?: string;
+  addDirs?: string[];
+  allowUnsafe: boolean;
+  safetyMode: ReturnType<typeof resolveSafetyMode>;
+  resumed: boolean;
+  background: boolean;
+}) {
+  return {
+    ok: true,
+    result: completed.result || null,
+    thread_id: completed.threadId,
+    cwd: opts.cwd,
+    model: opts.model ?? null,
+    profile: opts.profile ?? null,
+    add_dirs: opts.addDirs ?? [],
+    sandbox: opts.allowUnsafe ? "workspace-write" : "read-only",
+    safety_mode: opts.safetyMode,
+    resumed: opts.resumed,
+    transcript: {
+      provider: "Codex",
+      parent_message: opts.task,
+      steps: completed.steps,
+      launch: {
+        model: opts.model ?? null,
+        profile: opts.profile ?? null,
+        sandbox: opts.allowUnsafe ? "workspace-write" : "read-only",
+        background: opts.background,
+      },
+    },
+  };
+}
+
 export const codexDelegateTool = withStreamDefault(tool(
-  async ({ task, cwd: requestedCwd, model, profile, add_dirs, allow_unsafe, timeout_seconds }, config?: ToolConfig) => {
+  async ({ task, cwd: requestedCwd, feature, model, profile, add_dirs, allow_unsafe, timeout_seconds, fresh, background }, config?: ToolConfig) => {
     const safetyMode = resolveSafetyMode();
     if (safetyMode === "safe") {
       return JSON.stringify({ ok: false, code: "SAFETY_BLOCKED", error: "codex_delegate requires JARELA_TOOL_SAFETY to be at least 'mostly_safe'.", safety_mode: safetyMode });
@@ -160,7 +215,9 @@ export const codexDelegateTool = withStreamDefault(tool(
     const resolvedModel = model ?? codex.model;
     const resolvedProfile = profile ?? codex.profile;
     const resolvedAddDirs = add_dirs ?? codex.addDirs;
-    const args = buildCodexArgs(task, resolvedModel, resolvedProfile, resolvedAddDirs, allowUnsafe);
+    const key = projectKey(cwd, feature);
+    const priorSession = fresh ? null : getSession(key);
+    const args = buildCodexArgs(task, resolvedModel, resolvedProfile, resolvedAddDirs, allowUnsafe, priorSession ?? undefined);
     const launch = resolveCodexLaunch(codex.bin, args);
     let child: ChildProcess;
     try {
@@ -168,24 +225,49 @@ export const codexDelegateTool = withStreamDefault(tool(
     } catch (error) {
       throw new Error(`failed to spawn codex: ${(error as Error).message}`);
     }
+    const finish = async (completed: { result: string; threadId?: string; steps: string[] }, isBackground: boolean, jobId?: string) => {
+      if (completed.threadId) {
+        rememberSession(key, completed.threadId);
+        if (jobId) jobs.setJobSession(jobId, completed.threadId);
+      }
+      return {
+        ...outputShape(completed, {
+          task, cwd, model: resolvedModel, profile: resolvedProfile, addDirs: resolvedAddDirs,
+          allowUnsafe, safetyMode, resumed: !!priorSession, background: isBackground,
+        }),
+        changes: await gitDiffSummary(cwd),
+      };
+    };
+
+    if (background) {
+      const jobId = crypto.randomUUID();
+      const job = jobs.createJob(jobId, {
+        projectKey: key,
+        sessionId: priorSession ?? "",
+        parentMessage: task,
+        resumed: !!priorSession,
+        launch: { model: resolvedModel ?? null, profile: resolvedProfile ?? null, sandbox: allowUnsafe ? "workspace-write" : "read-only", background: true },
+      });
+      job._child = child;
+      void collectCodexOutput(child, (timeout_seconds ?? codex.timeoutSeconds) * 1000, (step) => {
+        jobs.appendStep(jobId, step);
+        reportToolProgress(config, "codex_delegate", step);
+      }, (threadId) => jobs.setJobSession(jobId, threadId))
+        .then((completed) => finish(completed, true, jobId))
+        .then((result) => jobs.completeJob(jobId, result))
+        .catch((error) => jobs.failJob(jobId, (error as Error).message));
+      return JSON.stringify({
+        job_id: jobId,
+        status: "running",
+        project_key: key,
+        session_id: priorSession,
+        resumed: !!priorSession,
+        transcript: { provider: "Codex", parent_message: task, steps: [], launch: job.launch },
+      });
+    }
+
     const completed = await collectCodexOutput(child, (timeout_seconds ?? codex.timeoutSeconds) * 1000, (step) => reportToolProgress(config, "codex_delegate", step));
-    return JSON.stringify({
-      ok: true,
-      result: completed.result || null,
-      thread_id: completed.threadId,
-      cwd,
-      model: resolvedModel ?? null,
-      profile: resolvedProfile ?? null,
-      add_dirs: resolvedAddDirs ?? [],
-      sandbox: allowUnsafe ? "workspace-write" : "read-only",
-      safety_mode: safetyMode,
-      transcript: {
-        provider: "Codex",
-        parent_message: task,
-        steps: completed.steps,
-      },
-      changes: await gitDiffSummary(cwd),
-    });
+    return JSON.stringify(await finish(completed, false));
   },
   {
     name: "codex_delegate",
@@ -194,13 +276,37 @@ export const codexDelegateTool = withStreamDefault(tool(
     schema: z.object({
       task: z.string().min(1).describe("Self-contained coding task for Codex."),
       cwd: z.string().optional().describe("Target repository directory. Defaults to the active workspace; call workspace_init first when omitted."),
+      feature: z.string().optional().describe("Optional sub-session label for parallel work in one workspace."),
       model: z.string().optional().describe("Optional Codex model override."),
       profile: z.string().optional().describe("Optional pre-existing Codex configuration profile."),
       add_dirs: z.array(z.string()).optional().describe("Additional directories Codex may write alongside the workspace."),
       allow_unsafe: z.boolean().optional().describe("Grant Codex workspace-write access for this trusted task under mostly_safe mode."),
+      fresh: z.boolean().optional().describe("Start a new Codex session instead of resuming this workspace/feature session."),
+      background: z.boolean().optional().describe("Run in the background and return a job id for codex_delegate_status polling."),
       timeout_seconds: z.number().positive().optional().describe("Idle timeout in seconds."),
     }),
   },
 ), true);
 
-registerLangChainPackage({ category: "Other", integrationId: INTEGRATION_ID, tools: { execute: [codexDelegateTool] } });
+export const codexDelegateStatusTool = tool(
+  ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }) => {
+    if (action === "cancel") {
+      if (!jobs.cancelJob(job_id)) throw new Error(`No running job with id ${job_id}`);
+      return JSON.stringify({ job_id, status: "cancelled" });
+    }
+    const status = getCodexDelegateJobStatus(job_id, last_step_index);
+    if (!status) throw new Error(`No job found with id ${job_id}`);
+    return JSON.stringify(status);
+  },
+  {
+    name: "codex_delegate_status",
+    description: "Poll or cancel a background codex_delegate job. Relay new_steps while it runs; when done, inspect the returned changes before reporting success.",
+    schema: z.object({
+      job_id: z.string().describe("Job id returned by a background codex_delegate call."),
+      last_step_index: z.number().optional().describe("Previous next_step_index; defaults to zero."),
+      action: z.enum(["poll", "cancel"]).optional().describe("Poll by default; cancel terminates the job."),
+    }),
+  },
+);
+
+registerLangChainPackage({ category: "Other", integrationId: INTEGRATION_ID, tools: { execute: [codexDelegateTool, codexDelegateStatusTool] } });

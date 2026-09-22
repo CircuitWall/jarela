@@ -31,6 +31,12 @@ describe("buildCodexArgs", () => {
     ]);
   });
 
+  it("resumes a known Codex session for follow-up delegation", () => {
+    expect(buildCodexArgs("continue", undefined, undefined, undefined, false, "thread-123")).toEqual([
+      "exec", "resume", "thread-123", "--json", "--sandbox", "read-only", "continue",
+    ]);
+  });
+
   it("launches npm-installed Codex through Node on Windows", () => {
     const result = resolveCodexLaunch("codex", ["login", "status"], WINDOWS_APP_DATA);
     expect(result.command).toBe(process.execPath);

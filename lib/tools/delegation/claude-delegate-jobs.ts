@@ -64,6 +64,11 @@ export function appendStep(jobId: string, step: string): void {
   if (job && job.status === "running") job.steps.push(step);
 }
 
+export function setJobSession(jobId: string, sessionId: string): void {
+  const job = registry().get(jobId);
+  if (job && job.status === "running") job.sessionId = sessionId;
+}
+
 // completeJob/failJob only transition a job that's still "running" — a
 // cancelled job's underlying process can still emit a late close/error
 // event after cancelJob already flipped the status; without this guard
@@ -88,7 +93,7 @@ export function failJob(jobId: string, errorMessage: string): void {
 
 export function cancelJob(jobId: string): boolean {
   const job = registry().get(jobId);
-  if (!job) return false;
+  if (!job || job.status !== "running") return false;
   if (job._child) {
     try { job._child.kill("SIGTERM"); } catch { /* already dead */ }
   }

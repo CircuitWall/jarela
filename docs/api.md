@@ -249,6 +249,7 @@ serve the in-app UI and are subject to change without notice:
 - `/api/v1/health/probes`
 - `/api/v1/events/test`
 - `/api/v1/threads/[thread_id]/context-pin`
+- `/api/v1/delegations/codex/[job_id]`
 - `/api/v1/agents/[id]/compact`, `/display-filters`, `/thread`
 - `/api/v1/models/[name]`
 - `/api/v1/providers/[provider]/models`, `/github-copilot/auth`

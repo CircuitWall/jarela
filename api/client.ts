@@ -17,6 +17,7 @@ import type {
   BrowserHistoryResponse,
   BrowserExtensionStatus,
   BrowserTabsResponse,
+  CodexDelegateJobStatus,
   ArtifactCleanupResponse,
   ArtifactLifecycleResponse,
   ArtifactLifecycleSettings,
@@ -979,6 +980,13 @@ export const api = {
       ),
     deny: (id: string) =>
       request<PendingAction>(`/pending-actions/${encodeURIComponent(id)}/deny`, { method: "POST", body: "{}" }),
+  },
+
+  codexDelegates: {
+    get: (job_id: string) =>
+      request<CodexDelegateJobStatus>(`/delegations/codex/${encodeURIComponent(job_id)}`),
+    cancel: (job_id: string) =>
+      request<CodexDelegateJobStatus>(`/delegations/codex/${encodeURIComponent(job_id)}`, { method: "DELETE" }),
   },
 
   scheduledTasks: {
