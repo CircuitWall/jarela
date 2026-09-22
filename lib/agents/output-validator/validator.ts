@@ -1,6 +1,7 @@
-import { findActionClaims } from "./claim-detector";
+import { findActionClaims, isWriteActionClaim } from "./claim-detector";
 import { findCitations } from "./citation-parser";
 import type { ValidationResult } from "./types";
+import { isWriteToolNameSegment } from "@/lib/agents/action-vocabulary";
 
 const SUMMARY_PATTERNS: RegExp[] = [
   /^#{1,6}\s*Summary(?:\s+of\s+changes)?\b/im,
@@ -24,6 +25,7 @@ export function validateAssistantOutput(
   text: string,
   toolCalls: readonly string[],
   allowedTools: readonly string[],
+  writeTools?: readonly string[],
 ): ValidationResult {
   const calledSet = new Set(toolCalls);
   const allowedSet = new Set(allowedTools);
@@ -51,11 +53,26 @@ export function validateAssistantOutput(
     }
   }
 
-  // Claim and summary checks only fire when zero tools were called. If any
-  // tool ran, the text is treated as legitimately describing work done.
+  const claims = findActionClaims(text);
+  // Read-only tools prove that information was inspected, not that state was
+  // changed. Keep this check separate from stall detection: stall detection
+  // owns future/promise-shaped endings, while this owns completed-action
+  // claims that contradict the tool evidence.
+  const hasWriteEvidence = writeTools === undefined
+    ? toolCalls.some((name) => name.toLowerCase().split(/[._\-/]+/).filter(Boolean).some(isWriteToolNameSegment))
+    : writeTools.length > 0;
+  const writeClaim = claims.find(isWriteActionClaim);
+  if (writeClaim && !hasWriteEvidence) {
+    return {
+      ok: false,
+      kind: "claim_without_tool",
+      reason: `You wrote "${writeClaim.raw}" but no successful state-changing tool was recorded this turn. Either call the write tool or rephrase as a proposal.`,
+      evidence: writeClaim.raw,
+    };
+  }
+
   if (toolCalls.length > 0) return { ok: true };
 
-  const claims = findActionClaims(text);
   if (claims.length > 0) {
     const c = claims[0];
     return {
