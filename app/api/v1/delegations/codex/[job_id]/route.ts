@@ -13,6 +13,6 @@ export async function GET(_req: Request, { params }: Params) {
 
 export async function DELETE(_req: Request, { params }: Params) {
   const { job_id } = await params;
-  if (!cancelJob(job_id)) return NextResponse.json({ error: "No running job" }, { status: 404 });
+  if (!cancelJob(job_id, "codex")) return NextResponse.json({ error: "No running job" }, { status: 404 });
   return NextResponse.json(getCodexDelegateJobStatus(job_id));
 }

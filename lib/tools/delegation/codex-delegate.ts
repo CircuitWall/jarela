@@ -242,6 +242,7 @@ export const codexDelegateTool = withStreamDefault(tool(
     if (background) {
       const jobId = crypto.randomUUID();
       const job = jobs.createJob(jobId, {
+        provider: "codex",
         projectKey: key,
         sessionId: priorSession ?? "",
         parentMessage: task,
@@ -291,7 +292,7 @@ export const codexDelegateTool = withStreamDefault(tool(
 export const codexDelegateStatusTool = tool(
   ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }) => {
     if (action === "cancel") {
-      if (!jobs.cancelJob(job_id)) throw new Error(`No running job with id ${job_id}`);
+      if (!jobs.cancelJob(job_id, "codex")) throw new Error(`No running job with id ${job_id}`);
       return JSON.stringify({ job_id, status: "cancelled" });
     }
     const status = getCodexDelegateJobStatus(job_id, last_step_index);
