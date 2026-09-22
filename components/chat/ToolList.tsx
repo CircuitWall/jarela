@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
+import { StructuredTurnCard } from "@/components/chat/StructuredTurnCard";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
 import { api } from "@/api/client";
@@ -480,13 +481,19 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           stepCount={transcriptSteps.length}
         />
       </MetaRow>
-      <LiveTranscript
-        steps={transcriptSteps}
-        parentMessage={delegateTranscript?.parentMessage}
-        provider={delegateTranscript?.provider}
-        designQuestions={delegateTranscript?.designQuestions}
-        launch={delegateTranscript?.launch}
-      />
+      {delegateTranscript ? (
+        <DelegateTurnCards
+          parentMessage={delegateTranscript.parentMessage}
+          provider={delegateTranscript.provider}
+          steps={transcriptSteps}
+          designQuestions={delegateTranscript.designQuestions}
+          awaitingUserAnswers={delegateTranscript.awaitingUserAnswers}
+          resultText={delegateTranscript.resultText}
+          launch={delegateTranscript.launch}
+        />
+      ) : (
+        <LiveTranscript steps={transcriptSteps} />
+      )}
       {open && (
         <div className="mt-0.5 rounded border border-border/40 bg-surface-2/30 px-2 py-1.5 space-y-1.5 text-[10px]">
           <WorkflowProgressDetails group={group} />
@@ -751,54 +758,34 @@ function StepRow({ step }: { step: string }) {
 const TRANSCRIPT_COLLAPSED_MAX_PX = 112; // ~7 rows
 const TRANSCRIPT_EXPANDED_MAX_PX = 320;
 
-function LiveTranscript({
-  steps,
-  parentMessage,
-  provider = "Delegate",
-  designQuestions = [],
-  launch,
-}: {
-  steps: string[];
-  parentMessage?: string;
-  provider?: string;
-  designQuestions?: string[];
-  launch?: Record<string, unknown> | null;
-}) {
+// Capped-height, auto-scrolling step list with a "read more"/"show less"
+// toggle once content overflows. Shared by the generic per-call transcript
+// (LiveTranscript) and the Steps section of a delegate reply card, so a
+// long-running claude_delegate/codex_delegate turn doesn't push the whole
+// card (and everything below it) off-screen.
+function StepList({ steps }: { steps: string[] }) {
   const [expanded, setExpanded] = useState(false);
   const [overflowing, setOverflowing] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const hasMeta = !!parentMessage || !!launch || designQuestions.length > 0;
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     setOverflowing(el.scrollHeight > el.clientHeight);
-  }, [steps.length, expanded, hasMeta, designQuestions.length]);
+  }, [steps.length, expanded]);
 
-  if (steps.length === 0 && !hasMeta) return null;
+  if (steps.length === 0) return null;
   return (
-    <div className="pl-[22px] -mt-0.5 min-w-0">
+    <div className="min-w-0">
       <div
         ref={scrollRef}
         className="flex flex-col gap-0.5 overflow-y-auto rounded border border-border/30 bg-surface-2/20 px-1.5 py-1 transition-[max-height] duration-150 ease-out"
         style={{ maxHeight: expanded ? TRANSCRIPT_EXPANDED_MAX_PX : TRANSCRIPT_COLLAPSED_MAX_PX }}
       >
-        {parentMessage && <TranscriptMetaRow label={`Asked ${provider}`} value={parentMessage} />}
-        {launch && <TranscriptMetaRow label="Started" value={formatClaudeLaunchSummary(launch)} />}
         {steps.map((s, i) => (
           <StepRow key={i} step={s} />
         ))}
-        {designQuestions.length > 0 && (
-          <div className="mt-1 rounded border border-amber-500/30 bg-amber-500/5 px-1.5 py-1 text-[10px] leading-[1.45] text-amber-800 dark:text-amber-200">
-            <div className="uppercase tracking-wide text-[9px] font-medium text-amber-700 dark:text-amber-300">{provider} questions</div>
-            <ol className="mt-0.5 list-decimal list-inside space-y-0.5">
-              {designQuestions.map((question, i) => (
-                <li key={i} className="break-words whitespace-pre-wrap">{question}</li>
-              ))}
-            </ol>
-          </div>
-        )}
       </div>
       {overflowing && (
         <button
@@ -812,11 +799,112 @@ function LiveTranscript({
   );
 }
 
-function TranscriptMetaRow({ label, value }: { label: string; value: string }) {
+function LiveTranscript({ steps }: { steps: string[] }) {
+  if (steps.length === 0) return null;
   return (
-    <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-1.5 min-w-0 text-[10px] leading-[1.5]">
-      <span className="uppercase tracking-wide text-[9px] text-fg-faint">{label}</span>
-      <span className="min-w-0 truncate text-fg-muted" title={value}>{value}</span>
+    <div className="pl-[22px] -mt-0.5 min-w-0">
+      <StepList steps={steps} />
+    </div>
+  );
+}
+
+// Renders a claude_delegate/codex_delegate exchange as two structured turn
+// cards — the task sent (accent, like an outbound bubble) and the
+// sub-agent's reply (plain, like an inbound bubble) — reusing the same
+// StructuredTurnCard skeleton bridge/extension/watcher turns render with,
+// so a delegate exchange reads like the rest of the automation-turn family
+// instead of a bespoke tool-call log.
+function DelegateTurnCards({
+  parentMessage,
+  provider,
+  steps,
+  designQuestions,
+  awaitingUserAnswers,
+  resultText,
+  launch,
+}: {
+  parentMessage?: string;
+  provider: string;
+  steps: string[];
+  designQuestions: string[];
+  awaitingUserAnswers: boolean;
+  resultText?: string;
+  launch?: Record<string, unknown> | null;
+}) {
+  if (!parentMessage && steps.length === 0 && !resultText) return null;
+
+  // Every section defaults open — a delegate exchange should read like the
+  // step-by-step transcript it replaces, not force an extra click per part.
+  const askedSections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [];
+  if (parentMessage) {
+    askedSections.push({
+      label: "Task",
+      defaultOpen: true,
+      content: <p className="text-[11px] leading-[1.45] whitespace-pre-wrap break-words">{parentMessage}</p>,
+    });
+  }
+  if (launch) {
+    askedSections.push({
+      label: "Started",
+      defaultOpen: true,
+      content: <span className="text-[11px]">{formatClaudeLaunchSummary(launch)}</span>,
+    });
+  }
+
+  const replySections: Array<{ label: string; content: ReactNode; defaultOpen?: boolean; hint?: string }> = [];
+  if (steps.length > 0) {
+    replySections.push({
+      label: "Steps",
+      defaultOpen: true,
+      hint: `${steps.length}`,
+      content: <StepList steps={steps} />,
+    });
+  }
+  if (designQuestions.length > 0) {
+    replySections.push({
+      label: `${provider} questions`,
+      defaultOpen: true,
+      content: (
+        <ol className="list-decimal list-inside space-y-0.5 text-[11px] leading-[1.45]">
+          {designQuestions.map((q, i) => (
+            <li key={i} className="break-words whitespace-pre-wrap">{q}</li>
+          ))}
+        </ol>
+      ),
+    });
+  } else if (resultText) {
+    replySections.push({
+      label: "Result",
+      defaultOpen: true,
+      content: <p className="text-[11px] leading-[1.45] whitespace-pre-wrap break-words">{resultText}</p>,
+    });
+  }
+  const replyChip = awaitingUserAnswers ? (
+    <span className="px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[9.5px] uppercase tracking-wide shrink-0">
+      awaiting answer
+    </span>
+  ) : null;
+  return (
+    <div className="pl-[22px] -mt-0.5 min-w-0 flex flex-col gap-1.5">
+      {askedSections.length > 0 && (
+        <StructuredTurnCard
+          categoryKey={null}
+          Icon={Bot}
+          title={`Asked ${provider}`}
+          sections={askedSections}
+          accent={true}
+        />
+      )}
+      {replySections.length > 0 && (
+        <StructuredTurnCard
+          categoryKey={null}
+          Icon={Bot}
+          title={`${provider} replied`}
+          chips={replyChip}
+          sections={replySections}
+          accent={false}
+        />
+      )}
     </div>
   );
 }
@@ -1133,6 +1221,7 @@ function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown
   designQuestions: string[];
   awaitingUserAnswers: boolean;
   launch: Record<string, unknown> | null;
+  resultText?: string;
 } | null {
   if (toolName !== "claude_delegate" && toolName !== "claude_delegate_status" && toolName !== "codex_delegate" && toolName !== "codex_delegate_status") return null;
   const resultObj = coerceObject(result);
@@ -1142,6 +1231,11 @@ function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown
   const designQuestions = Array.isArray(transcript?.design_questions)
     ? transcript.design_questions.filter((q): q is string => typeof q === "string" && q.length > 0)
     : [];
+  const resultText = typeof resultObj?.result === "string"
+    ? resultObj.result
+    : typeof nestedResult?.result === "string"
+      ? nestedResult.result
+      : undefined;
   return {
     provider: typeof transcript?.provider === "string" ? transcript.provider : toolName.startsWith("codex_") ? "Codex" : "Claude",
     parentMessage: typeof transcript?.parent_message === "string"
@@ -1153,6 +1247,7 @@ function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown
     designQuestions,
     awaitingUserAnswers: transcript?.awaiting_user_answers === true || resultObj?.awaiting_answers === true || nestedResult?.awaiting_answers === true,
     launch: coerceObject(transcript?.launch) ?? coerceObject(nestedResult?.launch) ?? coerceObject(resultObj?.launch),
+    resultText,
   };
 }
 
