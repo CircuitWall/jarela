@@ -1348,12 +1348,14 @@ export function subscribeRun(
   thread_id: string,
   signal: AbortSignal,
   stream_options?: StreamOptions,
+  await_continuation = false,
 ): AsyncGenerator<string> {
   const params = new URLSearchParams();
   const includeTools = stream_options?.filters?.include_tools;
   const includeThinking = stream_options?.filters?.include_thinking;
   if (includeTools === false) params.set("show_tools", "false");
   if (includeThinking === false) params.set("show_thinking", "false");
+  if (await_continuation) params.set("await_continuation", "true");
   const qs = params.toString();
   const url = `${BASE}/threads/${thread_id}/run${qs ? `?${qs}` : ""}`;
 

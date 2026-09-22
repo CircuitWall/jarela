@@ -29,6 +29,9 @@ type UseSSECommands = {
   stop: () => void;
   attach: (threadId: string) => Promise<void>;
   clearStreamingContent: () => void;
+  splitStreamingContent: () => string;
+  restoreStreamingContent: (content: string) => void;
+  expectSteeredContinuation: (expected: boolean) => void;
 };
 
 function useRunActivity() {
@@ -128,6 +131,17 @@ function useStreamingBuffer() {
     setStreamingContent("");
   }, []);
 
+  const splitStreamingContent = useCallback(() => {
+    const content = streamingContent + pendingTextRef.current;
+    pendingTextRef.current = "";
+    setStreamingContent("");
+    return content;
+  }, [streamingContent]);
+
+  const restoreStreamingContent = useCallback((content: string) => {
+    if (content) setStreamingContent((current) => content + current);
+  }, []);
+
   useEffect(() => () => { cancelPendingFlush(); }, [cancelPendingFlush]);
 
   return {
@@ -139,6 +153,8 @@ function useStreamingBuffer() {
     cancelPendingFlush,
     reset,
     clearStreamingContent,
+    splitStreamingContent,
+    restoreStreamingContent,
   };
 }
 
@@ -157,6 +173,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   const [authError, setAuthError] = useState<AuthError>(null);
   const abortRef = useRef<AbortController | null>(null);
   const threadIdRef = useRef<string | null>(null);
+  const steeredContinuationRef = useRef(false);
   const {
     open: openActivity,
     close: closeActivity,
@@ -174,6 +191,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     cancelPendingFlush,
     reset: resetBuffer,
     clearStreamingContent,
+    splitStreamingContent,
+    restoreStreamingContent,
   } = useStreamingBuffer();
 
   // Abort the active EventSource on unmount so the server connection closes
@@ -182,7 +201,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
 
   const consume = useCallback(async (
     iterable: AsyncIterable<string>,
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     for await (const raw of iterable) {
       let event: SSEEventType;
       try {
@@ -227,6 +246,9 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
         ]);
       } else if (event.type === "done") {
         flushPending();
+        const continueSteeredRun = steeredContinuationRef.current;
+        steeredContinuationRef.current = false;
+        if (continueSteeredRun) return true;
         setStreaming(false);
         closeActivity();
         // Don't clear streamingContent here — it would cause a visual gap
@@ -238,7 +260,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
         // the message, so clearing here would yank it out from under a user
         // who's still reading. It clears on the next start()/attach().
         onDone?.();
-        break;
+        return false;
       } else if (event.type === "error") {
         cancelPendingFlush();
         setStreaming(false);
@@ -257,9 +279,10 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
         // marker) and then calls clearStreaming(). Clearing here would blank
         // the bubble before the persisted row arrives.
         onDone?.();
-        break;
+        return false;
       }
     }
+    return false;
   }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, onToolCall, onToolResult, setActivityStatus, activeToolsRef]);
 
   const start = useCallback(async (
@@ -289,7 +312,10 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       // Query: subscribe to the run's chunk stream. Always opens the GET,
       // regardless of whether we got 202 or 409 — if 409 a run is already
       // in flight on the server and we want to observe it.
-      await consume(subscribeRun(threadId, ctrl.signal, options));
+      let continuation = false;
+      do {
+        continuation = await consume(subscribeRun(threadId, ctrl.signal, options, continuation));
+      } while (continuation);
       return { accepted: submit.accepted };
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -334,6 +360,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     // start()/attach() — same pattern as the `done` branch in consume().
     closeActivity();
     abortRef.current?.abort();
+    steeredContinuationRef.current = false;
     onDone?.();
   }, [closeActivity, flushPending, onDone]);
 
@@ -357,7 +384,10 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     openActivity("Reconnecting…");
 
     try {
-      await consume(subscribeRun(threadId, ctrl.signal));
+      let continuation = false;
+      do {
+        continuation = await consume(subscribeRun(threadId, ctrl.signal, undefined, continuation));
+      } while (continuation);
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         onDone?.();
@@ -377,6 +407,9 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
   // Called by the consumer after a refetch lands, so the streaming bubble
   // gets swapped for the persisted assistant message in a single render.
   const dismissAuthError = useCallback(() => { setAuthError(null); }, []);
+  const expectSteeredContinuation = useCallback((expected: boolean) => {
+    steeredContinuationRef.current = expected;
+  }, []);
 
   const state: UseSSEState = {
     streaming,
@@ -392,6 +425,9 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     stop,
     attach,
     clearStreamingContent,
+    splitStreamingContent,
+    restoreStreamingContent,
+    expectSteeredContinuation,
   };
 
   return {
@@ -408,5 +444,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     stop,
     attach,
     clearStreamingContent,
+    splitStreamingContent,
+    restoreStreamingContent,
+    expectSteeredContinuation,
   };
 }

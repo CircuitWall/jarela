@@ -30,6 +30,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const { state } = useAppContext();
   const [attachments, setAttachments] = useState<ContentPart[]>([]);
   const [compacting, setCompacting] = useState(false);
+  const [steeredSegments, setSteeredSegments] = useState<Array<{ id: string; content: string }>>([]);
   const { userProfile, profileLoading, agentConfig, agentConfigLoading } =
     useUserProfileAndAgent(agentId);
 
@@ -60,7 +61,10 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       setMessages: thread.setMessages,
       setHasMore: thread.setHasMore,
       applyMeta: thread.metaApplier,
-      clearStreaming: () => clearStreamingRef.current(),
+      clearStreaming: () => {
+        clearStreamingRef.current();
+        setSteeredSegments([]);
+      },
       pendingAutoSpeakRef,
     }).finally(() => drainQueueRef.current());
     onMessageSent();
@@ -138,12 +142,20 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const steerRun = useCallback(async (text: string): Promise<boolean> => {
     if (!threadId) return false;
     const optId = `opt-${makeQueuedId("")}`;
+    const priorContent = sse.splitStreamingContent();
+    if (priorContent) setSteeredSegments((segments) => [...segments, { id: optId, content: priorContent }]);
+    sse.expectSteeredContinuation(true);
     thread.setMessages((p) => [
       ...p,
       { id: optId, role: "user", content: text, created_at: new Date().toISOString(), status: 'steering' },
     ]);
     const { steered } = await api.threads.steerRun(threadId, text);
-    if (!steered) thread.setMessages((p) => p.filter((m) => m.id !== optId));
+    if (!steered) {
+      thread.setMessages((p) => p.filter((m) => m.id !== optId));
+      setSteeredSegments((segments) => segments.filter((segment) => segment.id !== optId));
+      sse.restoreStreamingContent(priorContent);
+      sse.expectSteeredContinuation(false);
+    }
     return steered;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
@@ -207,6 +219,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       <MessageList
         threadId={threadId}
         messages={thread.messages}
+        steeredSegments={steeredSegments}
         notices={thread.notices}
         agentConfig={agentConfig}
         userProfile={userProfile}

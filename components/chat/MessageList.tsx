@@ -22,9 +22,15 @@ interface QueuedMessageView {
   attachmentCount: number;
 }
 
+interface SteeredSegment {
+  id: string;
+  content: string;
+}
+
 interface Props {
   threadId?: string | null;
   messages: Message[];
+  steeredSegments?: SteeredSegment[];
   notices?: SystemNotice[];
   agentConfig?: AgentConfig | null;
   userProfile?: UserProfile | null;
@@ -62,7 +68,7 @@ interface Props {
   onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
 }
 
-export function MessageList({ threadId, messages, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+export function MessageList({ threadId, messages, steeredSegments, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -855,6 +861,18 @@ export function MessageList({ threadId, messages, notices, agentConfig, userProf
         const nodes = visibleMessages.flatMap((msg, i) => {
           const startsTurn = i === 0 || visibleMessages[i - 1].role !== msg.role;
           const out = [] as React.ReactNode[];
+          const steeredSegment = steeredSegments?.find((segment) => segment.id === msg.id);
+          if (steeredSegment) {
+            out.push(
+              <StreamingBubble
+                key={`steered-${steeredSegment.id}`}
+                content={steeredSegment.content}
+                threadId={threadId ?? null}
+                agentConfig={agentConfig ?? null}
+                showAvatar={i === 0 || visibleMessages[i - 1].role !== "assistant"}
+              />,
+            );
+          }
           if (hasBoundary && !pinAfterAll && i === boundaryIndex) {
             out.push(renderBoundary(`boundary-${msg.id}`));
           }

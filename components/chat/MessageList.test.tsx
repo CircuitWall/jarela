@@ -5,7 +5,7 @@ import { MessageList } from "./MessageList";
 import type { Message } from "@/api/types";
 
 vi.mock("./MessageBubble", () => ({
-  MessageBubble: ({ message }: { message: Message }) => (
+  MessageBubble: ({ message }: { message: Pick<Message, "content"> }) => (
     <div>{message.content}</div>
   ),
 }));
@@ -79,6 +79,24 @@ describe("MessageList conversation focus", () => {
     expect(within(activity).getByText("I found a match")).toBeTruthy();
     expect(within(activity).getByTestId("tool-list")).toBeTruthy();
     expect(container.querySelectorAll("[data-testid='live-turn-activity']")).toHaveLength(1);
+  });
+
+  it("places the steering message between the prior and steered live answers", () => {
+    const { container } = render(
+      <MessageList
+        threadId="thread-1"
+        messages={[
+          mkMessage("u1", "user", "initial request", "2026-08-09T10:00:00.000Z"),
+          { ...mkMessage("steer-1", "user", "focus on the API", "2026-08-09T10:00:01.000Z"), status: "steering" },
+        ]}
+        steeredSegments={[{ id: "steer-1", content: "prior live answer" }]}
+        streamingContent="steered live answer"
+      />,
+    );
+
+    const transcript = container.textContent ?? "";
+    expect(transcript.indexOf("prior live answer")).toBeLessThan(transcript.indexOf("focus on the API"));
+    expect(transcript.indexOf("focus on the API")).toBeLessThan(transcript.indexOf("steered live answer"));
   });
 
   it("shows thinking dots while a run has produced nothing yet, and drops them once it has", () => {
