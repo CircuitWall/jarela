@@ -6,26 +6,23 @@ Jarela is a local-first desktop chat UI for LangGraph agents. It runs as a singl
 
 ## Find your path
 
-=== "Using Jarela"
+### Using Jarela
 
-	Start with installation, then learn the runtime model and the main extension points.
+Start with installation, then learn the runtime model and the main extension points.
 
-	[Install Jarela](INSTALL.md){ .md-button .md-button--primary }
-	[Understand the architecture](ARCHITECTURE.md){ .md-button }
+[Install Jarela](INSTALL.md) · [Understand the architecture](ARCHITECTURE.md)
 
-=== "Developing Jarela"
+### Developing Jarela
 
-	Set up the repository, run the checks, and use the architecture docs before changing a shared boundary.
+Set up the repository, run the checks, and use the architecture docs before changing a shared boundary.
 
-	[Set up development](DEVELOPMENT.md){ .md-button .md-button--primary }
-	[Explore extension surfaces](EXTENDING.md){ .md-button }
+[Set up development](DEVELOPMENT.md) · [Explore extension surfaces](EXTENDING.md)
 
-=== "Teaching the agent"
+### Teaching the agent
 
-	The built-in documentation skill makes local documentation the first source of truth and uses the public site only as a fallback.
+The built-in documentation skill makes local documentation the first source of truth and uses the public site only as a fallback.
 
-	[Read the architecture](ARCHITECTURE.md){ .md-button .md-button--primary }
-	[Read the extension guide](EXTENDING.md){ .md-button }
+[Read the architecture](ARCHITECTURE.md) · [Read the extension guide](EXTENDING.md)
 
 ## Why Jarela exists
 
@@ -75,6 +72,6 @@ This separation is what makes the app extendable without collapsing into one mon
 
 ## Further reading
 
-- [README](../README.md)
-- [CONTRIBUTING.md](../CONTRIBUTING.md)
-- [CHANGELOG.md](../CHANGELOG.md)
+- [README](https://github.com/CircuitWall/jarela#readme)
+- [CONTRIBUTING.md](https://github.com/CircuitWall/jarela/blob/main/CONTRIBUTING.md)
+- [CHANGELOG.md](https://github.com/CircuitWall/jarela/blob/main/CHANGELOG.md)

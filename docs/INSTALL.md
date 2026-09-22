@@ -15,7 +15,7 @@ All four end at the same place: a Next.js process on `http://127.0.0.1:4312`, wi
 
 ## Path 1 — Native package
 
-Download the package for your OS from the [latest release](../../releases/latest):
+Download the package for your OS from the [latest release](https://github.com/CircuitWall/jarela/releases/latest):
 
 - `jarela-<version>-win.msi` — Windows
 - `jarela-<version>-darwin.pkg` — macOS
@@ -48,7 +48,7 @@ Native package install locations:
 
 ## Path 2 — Pre-built archive
 
-Download the archive for your OS from the [latest release](../../releases/latest):
+Download the archive for your OS from the [latest release](https://github.com/CircuitWall/jarela/releases/latest):
 
 - `jarela-<version>-darwin.tar.gz` — macOS (arm64)
 - `jarela-<version>-win.zip` — Windows
@@ -94,7 +94,7 @@ bash scripts/install-to-system.sh --skip-build
 - **macOS** "unidentified developer": the `xattr -dr com.apple.quarantine` line above clears it for the whole bundle in one go. Without it, you'd right-click → Open the first time per binary.
 - **Windows** SmartScreen: **More info → Run anyway**, once.
 
-These warnings exist because we don't yet pay for an Apple Developer ID or an Authenticode cert. See [ADR-0011](docs/adr/0011-distribute-via-portable-archives-and-npm.md) for the trade-off.
+These warnings exist because we don't yet pay for an Apple Developer ID or an Authenticode cert. See [ADR-0011](adr/0011-distribute-via-portable-archives-and-npm.md) for the trade-off.
 
 ---
 
@@ -162,8 +162,6 @@ jarela uninstall-service
 ```
 
 (Neither command touches your data dir.)
-
----
 
 ---
 
