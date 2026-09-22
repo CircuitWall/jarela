@@ -73,6 +73,13 @@ export interface StreamChunk {
   // lib/tools/workspace-context.ts's reportToolProgress() -> the tool's
   // LangGraph-provided `config.writer` -> "custom" stream mode in
   // lib/agents/llm.ts (ADR-0073).
-  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "tool_progress" | "done" | "error" | "heartbeat" | "status";
+  //
+  // "reset_text" tells every text-accumulating consumer (client streaming
+  // buffer, the persistence collector) to discard whatever it has buffered
+  // for this turn so far. Emitted only by the output-validator retry path in
+  // `stallRetryStream` (run-thread.ts) when a COMPLETED reply is flagged as
+  // fabricated/uncited — as opposed to a stall retry, where the prior prose
+  // is a legitimate partial answer worth keeping. `data` is empty.
+  type: "text_delta" | "thinking_delta" | "tool_call" | "tool_result" | "tool_progress" | "done" | "error" | "heartbeat" | "status" | "reset_text";
   data: Record<string, unknown>;
 }

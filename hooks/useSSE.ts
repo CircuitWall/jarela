@@ -142,6 +142,16 @@ function useStreamingBuffer() {
     if (content) setStreamingContent((current) => content + current);
   }, []);
 
+  // Output-validator retry (ADR-0037) discarding a flagged completed reply
+  // (see the "reset_text" StreamChunk in base.ts): drop whatever hasn't been
+  // flushed yet so a flush scheduled just before this runs is a no-op (the
+  // `if (pendingTextRef.current)` guard in flushPending short-circuits on
+  // the now-empty string), then clear what's already rendered.
+  const resetStreamingText = useCallback(() => {
+    pendingTextRef.current = "";
+    setStreamingContent("");
+  }, []);
+
   useEffect(() => () => { cancelPendingFlush(); }, [cancelPendingFlush]);
 
   return {
@@ -155,6 +165,7 @@ function useStreamingBuffer() {
     clearStreamingContent,
     splitStreamingContent,
     restoreStreamingContent,
+    resetStreamingText,
   };
 }
 
@@ -193,6 +204,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
     clearStreamingContent,
     splitStreamingContent,
     restoreStreamingContent,
+    resetStreamingText,
   } = useStreamingBuffer();
 
   // Abort the active EventSource on unmount so the server connection closes
@@ -212,6 +224,8 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       if (event.type === "text_delta") {
         appendText(event.delta);
         setActivityStatus("Responding…");
+      } else if (event.type === "reset_text") {
+        resetStreamingText();
       } else if (event.type === "status") {
         const label = typeof event.label === "string" && event.label.trim().length > 0
           ? event.label
@@ -283,7 +297,7 @@ export function useSSE(onDone?: () => void): UnifiedHookResult<UseSSEState, UseS
       }
     }
     return false;
-  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, onToolCall, onToolResult, setActivityStatus, activeToolsRef]);
+  }, [appendText, appendThinking, cancelPendingFlush, closeActivity, flushPending, onDone, onToolCall, onToolResult, resetStreamingText, setActivityStatus, activeToolsRef]);
 
   const start = useCallback(async (
     threadId: string,

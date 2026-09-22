@@ -1224,6 +1224,11 @@ export type SSEEventType =
   // (e.g. claude_delegate relaying the sub-agent's own turns). `id` matches
   // the same call's "tool_call"/"tool_result" id.
   | { type: "tool_progress"; id: string; name: string; text: string }
+  // Output-validator retry (ADR-0037) discarding a flagged completed reply:
+  // the client must clear its streaming text buffer before the retry's own
+  // "text_delta" chunks arrive, so the corrected reply replaces rather than
+  // appends to the flagged one.
+  | { type: "reset_text" }
   | { type: "done"; message_id: string; usage: { input_tokens: number; output_tokens: number } }
   | { type: "error"; message: string; code: string; credential_id?: string; provider?: string }
   // Server is rejecting a new POST/WS message because a run is already in

@@ -19,7 +19,7 @@ vi.mock("@/lib/scheduler", () => ({
 
 const { prepareThreadRun } = await import("./run-thread");
 const { collectStream } = await import("./stream-collector");
-const { upsertModelConfig } = await import("@/lib/stores/model-config");
+const { deleteModelConfig, upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
 const { createThread } = await import("@/lib/stores/threads");
 
@@ -309,5 +309,131 @@ describe("prepareThreadRun transient retry", () => {
     expect(collected.assistantContent).toContain("Retry guard skipped automatic retry");
     expect(collected.assistantContent).toContain(toolName);
     expect(collected.assistantContent).not.toContain("↻ Auto-retry");
+  });
+
+  // Issues #576 / #577: the output validator (ADR-0037) flags a completed
+  // reply as fabricated and auto-retries. Before the fix, the flagged reply
+  // and the retry both landed in the persisted/rendered message, glued
+  // together with a "↻" separator. The fix discards the flagged reply via
+  // a `reset_text` chunk, so only the corrected retry should survive.
+  it("discards the flagged reply instead of concatenating it with the retry", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-fabrication-retry",
+      name: "Fabrication Retry Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-fabrication-retry");
+
+    streamWithConfigMock
+      .mockImplementationOnce(() => chunks(
+        { type: "text_delta", data: { delta: "I patched the file to fix the bug." } },
+        {
+          type: "done",
+          data: {
+            message_id: "done-fabrication-1",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        },
+      ))
+      .mockImplementationOnce(() => chunks(
+        { type: "text_delta", data: { delta: "Treating this as a proposal since no tool was called: the bug is a missing null check on line 12." } },
+        {
+          type: "done",
+          data: {
+            message_id: "done-fabrication-2",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        },
+      ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Did you fix the null-check bug?",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const chunkTypes: string[] = [];
+    const collected = await collectStream(prepared.stream, {
+      onChunk: (chunk) => chunkTypes.push(chunk.type),
+    });
+
+    expect(collected.terminal).toBe("done");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+    // The reset_text chunk is what tells the client/persistence buffers to
+    // drop the flagged reply — this is the structural fix for issue #576.
+    expect(chunkTypes).toContain("reset_text");
+    // Only the retry's own text should survive — the flagged reply is gone,
+    // and there is no "↻" glue between two copies.
+    expect(collected.assistantContent).not.toContain("I patched the file");
+    expect(collected.assistantContent).not.toContain("↻");
+    expect(collected.assistantContent).toBe(
+      "Treating this as a proposal since no tool was called: the bug is a missing null check on line 12.",
+    );
+  });
+
+  it("keeps the flagged reply when preparing its replacement fails", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-fabrication-prepare-failure",
+      name: "Fabrication Prepare Failure Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-fabrication-prepare-failure");
+
+    streamWithConfigMock.mockImplementationOnce(() => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "text_delta", data: { delta: "I patched the file to fix the bug." } } as StreamChunk;
+        deleteModelConfig("default");
+        yield {
+          type: "done",
+          data: {
+            message_id: "done-fabrication-prepare-failure",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        } as StreamChunk;
+      },
+    }));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Did you fix the null-check bug?",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const chunkTypes: string[] = [];
+    const collected = await collectStream(prepared.stream, {
+      onChunk: (chunk) => chunkTypes.push(chunk.type),
+    });
+
+    expect(collected.terminal).toBe("error");
+    expect(chunkTypes).not.toContain("reset_text");
+    expect(chunkTypes).toContain("text_delta");
+    expect(collected.assistantContent).toBe("I patched the file to fix the bug.");
   });
 });

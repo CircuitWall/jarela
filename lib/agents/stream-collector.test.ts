@@ -38,6 +38,22 @@ describe("collectStream", () => {
     expect(out.aborted).toBeUndefined();
   });
 
+  // Issue #576: the output-validator retry emits "reset_text" to discard a
+  // flagged reply before the retry's own text streams in. This is the
+  // single unified collector (see file header) that feeds both the DB
+  // persistence path and — via the same chunk sequence — the live client
+  // buffer, so this covers the fix at the shared root.
+  it("clears the accumulated text on reset_text, keeping only what follows", async () => {
+    const out = await collectStream(fromArray([
+      { type: "text_delta", data: { delta: "flagged reply" } },
+      { type: "reset_text", data: {} },
+      { type: "text_delta", data: { delta: "corrected reply" } },
+      { type: "done", data: {} },
+    ]));
+    expect(out.terminal).toBe("done");
+    expect(out.assistantContent).toBe("corrected reply");
+  });
+
   it("flags aborted=true when the iterator throws an AbortError", async () => {
     async function* throwing(): AsyncIterable<StreamChunk> {
       yield { type: "text_delta", data: { delta: "partial" } };

@@ -1179,9 +1179,20 @@ async function* stallRetryStream(
     return;
   }
 
-  // Visible separator between the stalled prose and the retry continuation,
-  // so the user can see something is being re-attempted.
-  yield { type: "text_delta", data: { delta: "\n\n↻ " } };
+  // A stall/loop retry continues a legitimate partial answer, so the prior
+  // prose stays visible with a "↻" separator. A fabrication/citation retry
+  // (ADR-0037) is different: the COMPLETED reply itself is what's wrong, so
+  // the correct move is to discard it, not append a correction after it —
+  // otherwise the user (and the persisted message) ends up with both the
+  // flagged reply and its replacement (issue #576). `reset_text` tells the
+  // client buffer and the persistence collector to drop what they've
+  // accumulated for this turn; only the retry's own chunks land after it.
+  const isReplaceRetry = !stalled && !looped;
+  if (!isReplaceRetry) {
+    // Visible separator between the stalled prose and the retry
+    // continuation, so the user can see something is being re-attempted.
+    yield { type: "text_delta", data: { delta: "\n\n↻ " } };
+  }
 
   // Inject a forceful nudge as a synthetic user message so the model sees
   // its own flagged reply + an instruction to continue. Each failure mode
@@ -1195,8 +1206,8 @@ async function* stallRetryStream(
         : classifierStalled
           ? `↻ Auto-retry: the anti-hallucination classifier flagged your reply as a stall (${classifierReason || "promise without a write tool"}). Don't narrate the next step; either CALL the actual tool that fulfils what you promised, or stop and explain why you can't.`
           : citationFail
-            ? `↻ Auto-retry: the citation audit flagged ${uncitedHighClaims.length} high-impact claim${uncitedHighClaims.length === 1 ? "" : "s"} without a verified source:\n${uncitedHighClaims.slice(0, 5).map((c, i) => `  ${i + 1}. ${c.text}${c.reason ? ` — ${c.reason}` : ""}`).join("\n")}\n\nFix each one in exactly ONE of these three ways:\n  (a) cite an existing source from the manifest by appending the marker \`[N]\` to the claim,\n  (b) call a tool now (file_read, web_search, fetch_webpage, memory_read, …) to actually ground the claim before stating it,\n  (c) rephrase plainly — drop the specific number/fact, or say "I don't have a source for this" — so the claim is no longer load-bearing.\n\nDo NOT just restate the same claim. Do NOT invent a marker number that isn't in the manifest.`
-            : `↻ Auto-retry: output validator flagged your reply. ${"reason" in fabrication ? fabrication.reason : ""} Redo this turn without the false claim — either call the actual tool, or rephrase as a proposal/question.`;
+            ? `↻ Auto-retry: the citation audit flagged ${uncitedHighClaims.length} high-impact claim${uncitedHighClaims.length === 1 ? "" : "s"} without a verified source:\n${uncitedHighClaims.slice(0, 5).map((c, i) => `  ${i + 1}. ${c.text}${c.reason ? ` — ${c.reason}` : ""}`).join("\n")}\n\nThe flagged reply has been discarded — the user will see ONLY what you write next, not the original. Fix each claim in exactly ONE of these three ways:\n  (a) cite an existing source from the manifest by appending the marker \`[N]\` to the claim,\n  (b) call a tool now (file_read, web_search, fetch_webpage, memory_read, …) to actually ground the claim before stating it,\n  (c) rephrase plainly — drop the specific number/fact, or say "I don't have a source for this" — so the claim is no longer load-bearing.\n\nDo NOT restate the rest of the previous reply — it has been discarded and will not be shown again; write only the corrected content. Do NOT invent a marker number that isn't in the manifest.`
+            : buildFabricationNudge("reason" in fabrication ? fabrication.reason : "");
 
   const retryContext = buildRetryContextSummary(textBuf, toolNames, toolResultSummaries);
   const nudgeWithContext = retryContext ? `${nudge}\n\n${retryContext}` : nudge;
@@ -1207,16 +1218,52 @@ async function* stallRetryStream(
     attachments: undefined,
     _stall_retries_left: retriesLeft - 1,
     _retry_count: (originalReq._retry_count ?? 0) + 1,
-    // The nudge is in-memory only — never write it to `messages`. The
-    // assistant's combined (original + ↻ + retry) text gets persisted
-    // ONCE at end-of-turn via `persistAssistantMessage`, which is the
-    // sole durable record of what happened. Without these flags the
-    // nudge becomes a permanent user-role row the LLM mistakes for
-    // user input on every future turn.
+    // The nudge is in-memory only — never write it to `messages`. What ends
+    // up persisted at end-of-turn via `persistAssistantMessage` is: for a
+    // stall/loop retry, the flagged prose + "↻" + the retry (a genuine
+    // continuation); for a fabrication/citation retry, the `reset_text`
+    // chunk above already cleared the buffer, so it's the retry alone.
+    // Without these flags the nudge becomes a permanent user-role row the
+    // LLM mistakes for user input on every future turn.
     _skip_persist_message: true,
     _history_append_message: nudgeWithContext,
   });
-  for await (const chunk of retry.stream) yield chunk;
+  if (!isReplaceRetry) {
+    for await (const chunk of retry.stream) yield chunk;
+    return;
+  }
+  // Telemetry only (issue #577): a fabrication retry that still mostly
+  // repeats the discarded reply's wording didn't fix the underlying
+  // regurgitation habit, even though `reset_text` kept the user from
+  // seeing two copies. Surfaces as a log line, same as the tool-loop
+  // warning above — no gating, no effect on what gets rendered.
+  let retryTextBuf = "";
+  let resetEmitted = false;
+  for await (const chunk of retry.stream) {
+    if (chunk.type === "text_delta") {
+      const d = (chunk.data as { delta?: unknown } | undefined)?.delta;
+      if (typeof d === "string") {
+        // A prepared retry can still fail before it produces content. Keep
+        // the flagged reply until its replacement has an actual first delta,
+        // so an upstream failure does not turn a usable answer into a blank
+        // bubble plus an error marker.
+        if (!resetEmitted) {
+          yield { type: "reset_text", data: {} };
+          resetEmitted = true;
+        }
+        retryTextBuf += d;
+      }
+    }
+    yield chunk;
+  }
+  if (trimmedText && retryTextBuf.trim()) {
+    const overlap = retryTextOverlapRatio(trimmedText, retryTextBuf);
+    if (overlap >= 0.85) {
+      console.warn(
+        `[output-validator] retry_regurgitation ratio=${overlap.toFixed(2)} thread=${originalReq.thread_id}`,
+      );
+    }
+  }
 }
 
 export interface AssistantUsageSnapshot {
@@ -1603,6 +1650,13 @@ function summarizeRetryValue(value: unknown): string {
   }
 }
 
+// A short clip reads to the model as "a snippet of what I said" rather than
+// "the whole thing I said" — which pushed it to re-emit the full prior reply
+// on retry instead of trusting that the recap already covers it (issue
+// #577). 2000 chars covers the overwhelming majority of turns in full while
+// still bounding the nudge's own token cost.
+const RETRY_CONTEXT_CLIP_CHARS = 2000;
+
 export function buildRetryContextSummary(
   text: string,
   toolNames: readonly string[],
@@ -1611,7 +1665,9 @@ export function buildRetryContextSummary(
   const parts: string[] = [];
   const trimmedText = text.trim();
   if (trimmedText) {
-    const clipped = trimmedText.length > 280 ? `${trimmedText.slice(0, 277)}...` : trimmedText;
+    const clipped = trimmedText.length > RETRY_CONTEXT_CLIP_CHARS
+      ? `${trimmedText.slice(0, RETRY_CONTEXT_CLIP_CHARS - 3)}...`
+      : trimmedText;
     parts.push(`Already said this turn: ${clipped}`);
   }
   const uniqueTools = [...new Set(toolNames.filter(Boolean))];
@@ -1622,6 +1678,39 @@ export function buildRetryContextSummary(
     parts.push(`Tool results already seen this turn:\n${toolResults.slice(0, 5).map((line, index) => `  ${index + 1}. ${line}`).join("\n")}`);
   }
   return parts.join("\n");
+}
+
+// The default ADR-0037 fabrication nudge (issue #577). Phrased as a
+// minimal-diff instruction rather than "redo this turn" — "redo" reads to
+// the model as "do the whole thing over", which is exactly the regurgitation
+// this issue reports. Paired with the `reset_text` StreamChunk (issue #576),
+// which discards the flagged reply when the replacement produces its first
+// text delta, so the persisted final reply never contains both versions.
+export function buildFabricationNudge(reason: string): string {
+  return `↻ Auto-retry: output validator flagged your reply${reason ? ` — ${reason}` : ""}. The flagged reply has been discarded — the user will see ONLY what you write next, not the original. Do NOT restate, summarize, or repeat any part of the previous answer. Emit ONLY the fix: call the tool that's actually missing, or state the corrected claim in one or two sentences.`;
+}
+
+// Word-multiset containment: what fraction of `retry`'s tokens also appear
+// in `original`. Order-insensitive and duplicate-aware (each token in
+// `original` can only satisfy one token in `retry`), so a retry that mostly
+// repeats the flagged reply verbatim — the failure mode issue #577
+// describes — scores high regardless of minor rewording. Used only for
+// telemetry: it flags regurgitation, it doesn't gate or alter rendering.
+export function retryTextOverlapRatio(original: string, retry: string): number {
+  const tokenize = (s: string) => s.toLowerCase().match(/[a-z0-9']+/g) ?? [];
+  const retryTokens = tokenize(retry);
+  if (retryTokens.length === 0) return 0;
+  const originalCounts = new Map<string, number>();
+  for (const t of tokenize(original)) originalCounts.set(t, (originalCounts.get(t) ?? 0) + 1);
+  let shared = 0;
+  for (const t of retryTokens) {
+    const remaining = originalCounts.get(t) ?? 0;
+    if (remaining > 0) {
+      shared += 1;
+      originalCounts.set(t, remaining - 1);
+    }
+  }
+  return shared / retryTokens.length;
 }
 
 const STALL_PHRASE_GROUP = STALL_TAIL_PHRASES.join("|").replace(/ /g, "\\s+");

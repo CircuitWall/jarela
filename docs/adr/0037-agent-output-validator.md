@@ -140,13 +140,31 @@ const fabricated = !sawError && !stalled
   ? validateAssistantOutput(textBuf, toolCalls, allowedTools)
   : { ok: true };
 if (stalled) { /* existing path */ }
-else if (!fabricated.ok) { /* mirror stall path: ↻ separator, nudge with reason, recurse */ }
+else if (!fabricated.ok) { /* discard + nudge with reason, recurse — see below */ }
 else { yield doneChunk; return; }
 ```
 
 `persistAssistantMessage` gets a third tag (alongside the stall warning):
 `*⚠️ Output validator flagged: <reason>*` when the retry budget is
 exhausted but the second attempt also fails.
+
+> **Correction (2026-09-22, issues #576 / #577):** the original wiring above
+> literally mirrored the stall path — `↻` separator, keep the flagged prose
+> visible, recurse — for the fabrication/citation branch too. That's correct
+> for a *stall* (nothing was said yet, or only a partial promise) but wrong
+> for a *fabrication* flag: there the reply already completed and is what's
+> wrong, so appending a correction after it left both the flagged reply and
+> the retry rendered and persisted together. The fabrication/citation branch
+> now yields a `reset_text` `StreamChunk` (see `base.ts`) instead of the `↻`
+> text delta — every text-accumulating consumer (the client streaming
+> buffer, `collectStream`, `run-registry`'s replay buffer) treats it as
+> "discard what you've buffered for this turn," so only the retry's own
+> text ends up shown and persisted. The stall/loop branch is unchanged.
+> The retry nudge for this branch was also reworded from "redo this turn"
+> to an explicit minimal-diff instruction (`buildFabricationNudge`), and the
+> "already said this turn" recap clip was raised from 280 to 2000 chars —
+> both aimed at the model regurgitating the full flagged reply instead of
+> emitting just the fix.
 
 ### Tool-call surfacing into the stream wrapper
 
