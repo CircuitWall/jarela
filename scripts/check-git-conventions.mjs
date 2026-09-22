@@ -18,6 +18,7 @@ const IMPERATIVE_VERBS = new Set([
   "detect",
   "document",
   "drop",
+  "exclude",
   "enable",
   "enforce",
   "expose",
