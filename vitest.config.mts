@@ -77,6 +77,7 @@ export default defineConfig({
         "lib/stores/watchers.ts",
         "lib/stores/document-sources.ts",
         "lib/stores/pending-actions.ts",
+        "lib/stores/allowed-sites.ts",
         // Filesystem document indexer + chokidar-backed handlers — exercised by
         // the documents-watcher e2e spec.
         "lib/documents/reindex-local-file.ts",
