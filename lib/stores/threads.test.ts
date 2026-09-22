@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -104,6 +104,28 @@ describe("addMessage metadata", () => {
     addMessage(t.thread_id, "assistant", "claim with [src](https://a)", undefined, null, meta);
     const [row] = getMessages(t.thread_id);
     expect(row.metadata).toBe(JSON.stringify(meta));
+  });
+
+  it("assigns strictly increasing timestamps when a burst shares one clock tick", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    try {
+      const thread = createThread("agent-meta");
+      for (let index = 0; index < 5; index += 1) {
+        addMessage(thread.thread_id, index % 2 === 0 ? "user" : "assistant", `message ${index}`);
+      }
+
+      const rows = getMessages(thread.thread_id);
+      expect(rows.map((row) => row.created_at)).toEqual([
+        "2026-01-01T00:00:00.000Z",
+        "2026-01-01T00:00:00.001Z",
+        "2026-01-01T00:00:00.002Z",
+        "2026-01-01T00:00:00.003Z",
+        "2026-01-01T00:00:00.004Z",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
