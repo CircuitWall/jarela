@@ -22,7 +22,7 @@ export interface CodexDelegateJobStatus {
 }
 
 export function getCodexDelegateJobStatus(jobId: string, lastStepIndex = 0): CodexDelegateJobStatus | null {
-  const job = jobs.getJob(jobId);
+  const job = jobs.getJob(jobId, "codex");
   if (!job) return null;
   const index = Math.max(0, Math.floor(lastStepIndex));
   return {

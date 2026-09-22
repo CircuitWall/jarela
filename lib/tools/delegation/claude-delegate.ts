@@ -599,7 +599,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
 
     if (resolvedBackground) {
       const jobId = crypto.randomUUID();
-      const job = jobs.createJob(jobId, { projectKey: key, sessionId, parentMessage: task, resumed: resume, launch });
+      const job = jobs.createJob(jobId, { provider: "claude", projectKey: key, sessionId, parentMessage: task, resumed: resume, launch });
       const child = spawnClaude({
         args: spawnArgs, cwd, env, timeoutMs,
         onStep: (s) => { jobs.appendStep(jobId, s); reportToolProgress(config, "claude_delegate", s); },
@@ -666,12 +666,12 @@ export const claudeDelegateTool = withStreamDefault(tool(
 export const claudeDelegateStatusTool = tool(
   ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }) => {
     if (action === "cancel") {
-      const cancelled = jobs.cancelJob(job_id);
+      const cancelled = jobs.cancelJob(job_id, "claude");
       if (!cancelled) throw new Error(`No running job with id ${job_id}`);
       return JSON.stringify({ job_id, status: "cancelled" });
     }
 
-    const job = jobs.getJob(job_id);
+    const job = jobs.getJob(job_id, "claude");
     if (!job) throw new Error(`No job found with id ${job_id}`);
 
     const idx = Math.max(0, Math.floor(last_step_index ?? 0) || 0);

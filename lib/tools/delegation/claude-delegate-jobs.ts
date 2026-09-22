@@ -1,16 +1,27 @@
-// In-process job registry for background `claude_delegate` runs.
+// In-process job registry for background `claude_delegate` AND
+// `codex_delegate` runs — one registry, because "spawn a delegate, poll or
+// cancel it by job_id" is the same shape for both providers.
 //
 // Pinned under globalThis via Symbol.for so the registry survives Next.js
 // module re-evaluation (HMR / route-bundle isolation) — same idempotency
 // pattern as `workspace-context.ts`'s per-thread state map. Shared between
-// `claude-delegate.ts` (writes: createJob/appendStep/completeJob/failJob)
-// and its `claude_delegate_status` tool (reads/cancels).
+// `claude-delegate.ts` / `codex-delegate.ts` (writes:
+// createJob/appendStep/completeJob/failJob) and their respective
+// `*_delegate_status` tools (reads/cancels).
+//
+// Every job is tagged with the `provider` that created it, and `getJob` /
+// `cancelJob` require the caller to state which provider it's acting as —
+// a `codex_delegate_status` call (or the codex delegations HTTP route)
+// passing a `claude_delegate` job's id gets treated as not-found rather
+// than silently reading or killing someone else's job.
 
 import type { ChildProcess } from "node:child_process";
 
 export type JobStatus = "running" | "done" | "error" | "cancelled";
+export type JobProvider = "claude" | "codex";
 
 export interface DelegateJob {
+  provider: JobProvider;
   status: JobStatus;
   startedAt: number;
   finishedAt: number | null;
@@ -36,8 +47,9 @@ function registry(): Map<string, DelegateJob> {
   return g[JOBS_SYM];
 }
 
-export function createJob(jobId: string, opts: { projectKey: string; sessionId: string; parentMessage: string; resumed: boolean; launch?: unknown }): DelegateJob {
+export function createJob(jobId: string, opts: { provider: JobProvider; projectKey: string; sessionId: string; parentMessage: string; resumed: boolean; launch?: unknown }): DelegateJob {
   const job: DelegateJob = {
+    provider: opts.provider,
     status: "running",
     startedAt: Date.now(),
     finishedAt: null,
@@ -55,8 +67,11 @@ export function createJob(jobId: string, opts: { projectKey: string; sessionId: 
   return job;
 }
 
-export function getJob(jobId: string): DelegateJob | null {
-  return registry().get(jobId) ?? null;
+// Scoped by provider so a job_id from one delegate provider can't be read
+// through the other's status tool/route.
+export function getJob(jobId: string, provider: JobProvider): DelegateJob | null {
+  const job = registry().get(jobId);
+  return job && job.provider === provider ? job : null;
 }
 
 export function appendStep(jobId: string, step: string): void {
@@ -91,9 +106,11 @@ export function failJob(jobId: string, errorMessage: string): void {
   job._child = null;
 }
 
-export function cancelJob(jobId: string): boolean {
+// Scoped by provider for the same reason as `getJob` — a mixed-up job_id
+// must not be able to kill a different provider's running process.
+export function cancelJob(jobId: string, provider: JobProvider): boolean {
   const job = registry().get(jobId);
-  if (!job || job.status !== "running") return false;
+  if (!job || job.provider !== provider || job.status !== "running") return false;
   if (job._child) {
     try { job._child.kill("SIGTERM"); } catch { /* already dead */ }
   }

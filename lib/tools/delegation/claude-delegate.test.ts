@@ -76,7 +76,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 const { claudeDelegateTool, claudeDelegateStatusTool } = await import("./claude-delegate");
-const { _resetDelegateJobs } = await import("./claude-delegate-jobs");
+const { _resetDelegateJobs, createJob } = await import("./claude-delegate-jobs");
 const { _resetWorkspaceContext, setWorkspace } = await import("../filesystem/workspace-context");
 const { saveIntegration, deleteIntegration } = await import("@/lib/stores/integrations");
 
@@ -500,6 +500,19 @@ describe("claude_delegate — background mode + claude_delegate_status", () => {
 
   it("cancel on an unknown job_id throws", async () => {
     await expect(claudeDelegateStatusTool.invoke({ job_id: "does-not-exist", action: "cancel" })).rejects.toThrow(/No running job/);
+  });
+
+  it("treats a codex_delegate job as not found — the shared registry is scoped by provider", async () => {
+    createJob("codex-job-1", {
+      provider: "codex",
+      projectKey: "/tmp/project",
+      sessionId: "",
+      parentMessage: "Fix the test",
+      resumed: false,
+    });
+
+    await expect(claudeDelegateStatusTool.invoke({ job_id: "codex-job-1" })).rejects.toThrow(/No job found/);
+    await expect(claudeDelegateStatusTool.invoke({ job_id: "codex-job-1", action: "cancel" })).rejects.toThrow(/No running job/);
   });
 });
 
