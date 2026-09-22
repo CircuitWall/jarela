@@ -1127,6 +1127,27 @@ export interface PendingAction {
   decided_at: string | null;
 }
 
+export interface CodexDelegateJobStatus {
+  job_id: string;
+  status: "running" | "done" | "error" | "cancelled";
+  elapsed_ms: number;
+  steps: string[];
+  new_steps: string[];
+  next_step_index: number;
+  project_key: string;
+  session_id: string | null;
+  resumed: boolean;
+  launch: unknown;
+  transcript: {
+    provider: "Codex";
+    parent_message: string;
+    steps: string[];
+    launch: unknown;
+  };
+  result?: unknown;
+  error?: string | null;
+}
+
 export interface McpRegistryEntry {
   id: string;
   name: string;

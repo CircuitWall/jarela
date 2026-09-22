@@ -30,6 +30,8 @@ import { Badge } from "@/components/ui/Badge";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { ProviderLogo, brandSlugForToolName } from "@/components/models/ProviderLogo";
+import { api } from "@/api/client";
+import type { CodexDelegateJobStatus } from "@/api/types";
 
 // Distinct lucide glyph per internal tool family so the chat transcript
 // is glanceable — operator can tell a file write from a web fetch from a
@@ -49,6 +51,8 @@ const INTERNAL_TOOL_ICONS: ReadonlyArray<readonly [string, LucideIcon]> = [
   ["local_exec", Terminal],
   ["terminal", Terminal],
   ["delegate_to_agent", Bot],
+  ["claude_delegate", Bot],
+  ["codex_delegate", Bot],
   ["generate_image", ImageIcon],
   ["generate_voice", Mic],
   ["tool_result", Inbox],
@@ -385,14 +389,17 @@ function groupByCallId(events: ToolEvent[]): ToolCallGroup[] {
 
 function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: number }) {
   const [open, setOpen] = useState(false);
+  const codexJobId = group.name === "codex_delegate" ? codexBackgroundJobId(group.result) : null;
+  const { status: codexJob, cancel: cancelCodexJob } = useCodexDelegateJob(codexJobId);
+  const displayedResult = codexJob ?? group.result;
   const effectiveArgs = hasVisibleArgs(group.args)
     ? group.args
-    : argsFromResult(group.name, group.result);
+    : argsFromResult(group.name, displayedResult);
   const summary = renderArgsSummary(group.name, effectiveArgs);
   const summaryTitle = argsSummaryTitle(group.name, effectiveArgs);
   const hasArgs = hasVisibleArgs(effectiveArgs);
-  const delegateTranscript = delegateTranscriptFrom(group.name, effectiveArgs, group.result);
-  const transcriptSteps = group.steps.length > 0 ? group.steps : delegateTranscript?.steps ?? stepsFromResult(group.result);
+  const delegateTranscript = delegateTranscriptFrom(group.name, effectiveArgs, displayedResult);
+  const transcriptSteps = group.steps.length > 0 ? group.steps : delegateTranscript?.steps ?? stepsFromResult(displayedResult);
   return (
     <div className="min-w-0 max-w-full">
       <MetaRow fullWidth onClick={() => setOpen((v) => !v)} expanded={open}>
@@ -422,6 +429,22 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
           >
             bg
           </Badge>
+        )}
+        {codexJob?.status === "running" && (
+          <Badge tone="info" className="uppercase tracking-wide" title="Codex job is updating live">
+            live
+          </Badge>
+        )}
+        {codexJob?.status === "running" && (
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); void cancelCodexJob(); }}
+            className="control-tap shrink-0 text-fg-faint hover:text-rose-600 dark:hover:text-rose-300"
+            title="Cancel Codex task"
+            aria-label="Cancel Codex task"
+          >
+            <X size={12} />
+          </button>
         )}
         {group.readByAgent && (
           <Badge
@@ -496,6 +519,49 @@ function ToolCallCard({ group, startedAt }: { group: ToolCallGroup; startedAt: n
       )}
     </div>
   );
+}
+
+function codexBackgroundJobId(result: unknown): string | null {
+  const value = coerceObject(unwrapLangChainSerializable(result));
+  return value?.status === "running" && typeof value.job_id === "string" ? value.job_id : null;
+}
+
+function useCodexDelegateJob(jobId: string | null): {
+  status: CodexDelegateJobStatus | null;
+  cancel: () => Promise<void>;
+} {
+  const [status, setStatus] = useState<CodexDelegateJobStatus | null>(null);
+
+  useEffect(() => {
+    setStatus(null);
+    if (!jobId) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      try {
+        const next = await api.codexDelegates.get(jobId);
+        if (cancelled) return;
+        setStatus(next);
+        if (next.status !== "running") return;
+      } catch (error) {
+        if (!cancelled) console.error("Codex job refresh failed", error);
+      }
+      if (!cancelled) timer = window.setTimeout(poll, 1_000);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [jobId]);
+
+  const cancel = async () => {
+    if (!jobId) return;
+    const next = await api.codexDelegates.cancel(jobId);
+    setStatus(next);
+  };
+
+  return { status, cancel };
 }
 
 function ToolResultRefDetails({ value }: { value: unknown }) {
@@ -1068,7 +1134,7 @@ function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown
   awaitingUserAnswers: boolean;
   launch: Record<string, unknown> | null;
 } | null {
-  if (toolName !== "claude_delegate" && toolName !== "claude_delegate_status" && toolName !== "codex_delegate") return null;
+  if (toolName !== "claude_delegate" && toolName !== "claude_delegate_status" && toolName !== "codex_delegate" && toolName !== "codex_delegate_status") return null;
   const resultObj = coerceObject(result);
   const nestedResult = coerceObject(resultObj?.result);
   const transcript = coerceObject(nestedResult?.transcript) ?? coerceObject(resultObj?.transcript);
@@ -1077,7 +1143,7 @@ function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown
     ? transcript.design_questions.filter((q): q is string => typeof q === "string" && q.length > 0)
     : [];
   return {
-    provider: typeof transcript?.provider === "string" ? transcript.provider : toolName === "codex_delegate" ? "Codex" : "Claude",
+    provider: typeof transcript?.provider === "string" ? transcript.provider : toolName.startsWith("codex_") ? "Codex" : "Claude",
     parentMessage: typeof transcript?.parent_message === "string"
       ? transcript.parent_message
       : typeof argsObj?.task === "string"
@@ -1093,7 +1159,9 @@ function delegateTranscriptFrom(toolName: string, args: unknown, result: unknown
 function formatClaudeLaunchSummary(launch: Record<string, unknown>): string {
   const parts: string[] = [];
   if (typeof launch.model === "string" && launch.model) parts.push(`model ${launch.model}`);
+  if (typeof launch.profile === "string" && launch.profile) parts.push(`profile ${launch.profile}`);
   if (typeof launch.tools === "string" && launch.tools) parts.push(`tools ${launch.tools}`);
+  if (typeof launch.sandbox === "string" && launch.sandbox) parts.push(`sandbox ${launch.sandbox}`);
   if (typeof launch.permission_mode_used === "string") parts.push(`permission ${launch.permission_mode_used}`);
   if (typeof launch.timeout_seconds === "number") parts.push(`${launch.timeout_seconds}s timeout`);
   if (launch.background === true) parts.push("background");

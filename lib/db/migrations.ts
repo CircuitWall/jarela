@@ -380,6 +380,13 @@ export function runMigrations(db: DatabaseSync): void {
       session_id  TEXT NOT NULL,
       updated_at  TEXT NOT NULL
     );
+    -- Codex CLI sessions are provider-specific and must not share Claude's
+    -- session namespace, even when both work on the same workspace.
+    CREATE TABLE IF NOT EXISTS codex_delegate_sessions (
+      project_key TEXT PRIMARY KEY,
+      session_id  TEXT NOT NULL,
+      updated_at  TEXT NOT NULL
+    );
   `);
   ensureBridgeEventSubscriptionColumns(db);
   ensureToolFailureSampleColumns(db);

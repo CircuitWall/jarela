@@ -151,6 +151,7 @@ describe("list_tools", () => {
       "claude_delegate",
       "claude_delegate_status",
       "codex_delegate",
+      "codex_delegate_status",
       "terminal_open",
       "terminal_exec",
       "terminal_send",

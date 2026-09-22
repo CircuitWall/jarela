@@ -287,7 +287,7 @@ on two orthogonal axes ([ADR-0038](./adr/0038-tool-capability-axis.md)):
     `file_write`, `schedule_task`, `documents_add_local_source`).
   * `execute`: invokes external systems with side effects users see
     outside Jarela, OR runs arbitrary code (`local_exec`,
-    `generate_image`, `delegate_to_agent`, `claude_delegate`,
+    `generate_image`, `delegate_to_agent`, `claude_delegate`, `codex_delegate`,
     `jira_create_issue`, `gmail_create_draft`).
 
 Files with mixed capabilities (memory, files, schedule, atlassian, github,
@@ -366,6 +366,33 @@ sequenceDiagram
     MB->>DB: putMemory / deleteMemory
     CD->>CD: gitDiffSummary(cwd) — verify loop
     CD-->>AG: { result, changes, permission_denials, sync, steps }
+```
+
+## Key Flow — Supervise a Codex coding task (ADR-0086)
+
+```mermaid
+sequenceDiagram
+    participant AG as Agent Runtime
+    participant CD as codex_delegate tool
+    participant DB as SQLite (codex_delegate_sessions)
+    participant CLI as codex CLI (child process)
+    participant UI as Chat UI (ToolList card)
+
+    AG->>CD: codex_delegate({ task, cwd, feature?, background? })
+    CD->>DB: getSession(project_key)
+    CD->>CLI: spawn exec or exec resume with sandbox policy
+    loop each JSONL event
+      CLI-->>CD: command or agent-message event
+      CD->>UI: tool_progress chunk (live transcript)
+    end
+    CLI-->>CD: thread id and final result
+    CD->>DB: rememberSession(project_key, thread_id)
+    CD->>CD: gitDiffSummary(cwd) — verify loop
+    CD-->>AG: { result, changes, transcript, resumed }
+    opt background run
+      AG->>CD: codex_delegate_status(job_id, poll or cancel)
+      CD-->>AG: steps, status, result
+    end
 ```
 
 ## Key Flow — Browser-extension page capture (ADR-0018)

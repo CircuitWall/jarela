@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ToolList, type ToolEvent } from "./ToolList";
+
+const { codexJobGet, codexJobCancel } = vi.hoisted(() => ({
+  codexJobGet: vi.fn(),
+  codexJobCancel: vi.fn(),
+}));
+vi.mock("@/api/client", () => ({
+  api: { codexDelegates: { get: codexJobGet, cancel: codexJobCancel } },
+}));
 
 describe("ToolList — live progress (ADR-0073)", () => {
   it("shows oversized tool results as a preview with a file reference", () => {
@@ -116,6 +124,59 @@ describe("ToolList — live progress (ADR-0073)", () => {
     ];
     render(<ToolList events={events} />);
     expect(screen.getByText("step 1")).toBeTruthy();
+  });
+
+  it("renders the completed Codex background job transcript and launch policy", () => {
+    const events: ToolEvent[] = [
+      { id: "c1", phase: "call", name: "codex_delegate_status", payload: { job_id: "job-1" } },
+      {
+        id: "c1",
+        phase: "result",
+        name: "codex_delegate_status",
+        payload: {
+          status: "done",
+          transcript: {
+            provider: "Codex",
+            parent_message: "Fix the failing test",
+            steps: ["→ npm test", "Codex: fixed the assertion"],
+            launch: { model: "gpt-5.6-codex", profile: "work", sandbox: "workspace-write", background: true },
+          },
+        },
+      },
+    ];
+    render(<ToolList events={events} />);
+
+    expect(screen.getByText("npm test")).toBeTruthy();
+    expect(screen.getByText("Codex: fixed the assertion")).toBeTruthy();
+    expect(screen.getByText(/model gpt-5.6-codex.*profile work.*sandbox workspace-write.*background/)).toBeTruthy();
+  });
+
+  it("refreshes a running Codex job in its original tool card", async () => {
+    codexJobGet.mockResolvedValueOnce({
+      job_id: "job-1",
+      status: "done",
+      elapsed_ms: 100,
+      steps: ["→ npm test", "Codex: fixed the assertion"],
+      new_steps: ["→ npm test", "Codex: fixed the assertion"],
+      next_step_index: 2,
+      project_key: "/tmp/project",
+      session_id: "thread-1",
+      resumed: false,
+      launch: { sandbox: "workspace-write", background: true },
+      transcript: {
+        provider: "Codex",
+        parent_message: "Fix the failing test",
+        steps: ["→ npm test", "Codex: fixed the assertion"],
+        launch: { sandbox: "workspace-write", background: true },
+      },
+    });
+    render(<ToolList events={[
+      { id: "c1", phase: "call", name: "codex_delegate", payload: { task: "Fix the failing test" } },
+      { id: "c1", phase: "result", name: "codex_delegate", payload: { job_id: "job-1", status: "running" } },
+    ]} />);
+
+    await waitFor(() => expect(screen.getByText("Codex: fixed the assertion")).toBeTruthy());
+    expect(codexJobGet).toHaveBeenCalledWith("job-1");
   });
 
   it("renders persisted Claude transcript metadata, launch details, questions, and awaiting badge", () => {
