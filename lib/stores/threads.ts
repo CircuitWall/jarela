@@ -96,7 +96,7 @@ export function deleteThread(thread_id: string): boolean {
 
 export function getMessages(thread_id: string): MessageRow[] {
   return getDb()
-    .prepare(MSG_COLS_SQL + " WHERE thread_id=? ORDER BY created_at ASC")
+    .prepare(MSG_COLS_SQL + " WHERE thread_id=? ORDER BY created_at ASC, msg_id ASC")
     .all(thread_id) as unknown as MessageRow[];
 }
 
@@ -133,7 +133,7 @@ export function getRecentMessagesWindow(
     sql += " AND created_at >= ?";
     params.push(sinceISO);
   }
-  sql += " ORDER BY created_at DESC";
+  sql += " ORDER BY created_at DESC, msg_id DESC";
   if (limit > 0) {
     sql += " LIMIT ?";
     params.push(limit);
@@ -154,7 +154,7 @@ export function getMessagesAfter(
   return getDb()
     .prepare(
       MSG_COLS_SQL +
-        " WHERE thread_id=? AND created_at > ? ORDER BY created_at ASC LIMIT ?",
+        " WHERE thread_id=? AND created_at > ? ORDER BY created_at ASC, msg_id ASC LIMIT ?",
     )
     .all(thread_id, afterISO, limit) as unknown as MessageRow[];
 }
@@ -174,7 +174,7 @@ export function getMessagesPage(
     sql += " AND created_at < ?";
     params.push(beforeISO);
   }
-  sql += " ORDER BY created_at DESC LIMIT ?";
+  sql += " ORDER BY created_at DESC, msg_id DESC LIMIT ?";
   params.push(limit + 1); // fetch one extra to detect if there's more
   const rows = db.prepare(sql).all(...params) as unknown as MessageRow[];
   const has_more = rows.length > limit;
@@ -190,8 +190,19 @@ export function addMessage(
   metadata?: Record<string, unknown> | null,
 ): MessageRow {
   const msg_id = randomUUID();
-  const t = now();
   const db = getDb();
+  const current = now();
+  const previous = db
+    .prepare("SELECT created_at FROM messages WHERE thread_id=? ORDER BY created_at DESC, msg_id DESC LIMIT 1")
+    .get(thread_id) as { created_at: string } | undefined;
+  // Context pins and pagination cursors are timestamp-based. Advance a burst
+  // by one millisecond when wall-clock resolution would otherwise collapse
+  // adjacent messages onto an ambiguous retention boundary.
+  const previousMs = previous ? Date.parse(previous.created_at) : Number.NaN;
+  const currentMs = Date.parse(current);
+  const t = Number.isFinite(previousMs) && Number.isFinite(currentMs) && currentMs <= previousMs
+    ? new Date(previousMs + 1).toISOString()
+    : current;
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
   const metadataJson = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
   db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
@@ -259,10 +270,10 @@ export function pruneThreadMessages(threadId: string, keepLast: number, preserve
   const removeCount = preserveSince ? total : total - keepLast;
   const deleteSql = preserveSince
     ? "DELETE FROM messages WHERE msg_id IN (" +
-      "  SELECT msg_id FROM messages WHERE thread_id=? AND created_at < ? ORDER BY created_at ASC LIMIT ?" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? AND created_at < ? ORDER BY created_at ASC, msg_id ASC LIMIT ?" +
       ")"
     : "DELETE FROM messages WHERE msg_id IN (" +
-      "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY created_at ASC LIMIT ?" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY created_at ASC, msg_id ASC LIMIT ?" +
       ")";
   const r = db
     .prepare(deleteSql)
