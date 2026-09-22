@@ -24,11 +24,13 @@ describe("built-in skills", () => {
     expect(skills.map((s) => s.id)).toEqual(expect.arrayContaining([
       "browser-navigation",
       "jarela-configuration",
+      "jarela-documentation",
       "jarela-integrations",
       "jarela-operations",
       "memory-organization",
     ]));
     expect(skills.find((s) => s.id === "jarela-integrations")?.source).toBe("builtin");
+    expect(getSkill("jarela-documentation")?.content).toContain("describe_extension_surfaces");
     expect(getSkill("memory-organization")?.content).toContain("memory_upsert");
   });
 

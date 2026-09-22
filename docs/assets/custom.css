@@ -1,0 +1,65 @@
+:root {
+  --md-primary-fg-color: #0f766e;
+  --md-primary-fg-color--light: #14b8a6;
+  --md-primary-fg-color--dark: #115e59;
+  --md-accent-fg-color: #d97706;
+  --md-default-bg-color: #f8fafc;
+  --md-default-fg-color: #172033;
+  --md-typeset-font-size: 0.86rem;
+  --md-code-font-size: 0.78rem;
+}
+
+.md-typeset {
+  line-height: 1.72;
+}
+
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  color: #102a43;
+  font-weight: 700;
+}
+
+.md-typeset a {
+  text-decoration: none;
+}
+
+.md-typeset a:hover {
+  text-decoration: underline;
+}
+
+.md-header {
+  background: linear-gradient(135deg, #12343b 0%, #0f766e 100%);
+}
+
+.md-tabs {
+  background: rgba(18, 52, 59, 0.94);
+}
+
+.md-main__inner {
+  margin-top: 1.2rem;
+}
+
+.md-typeset .md-button {
+  border-radius: 0.3rem;
+  margin: 0.35rem 0.35rem 0.35rem 0;
+}
+
+.md-typeset table:not([class]) th {
+  background: #e6f4f1;
+  color: #12343b;
+}
+
+.md-typeset table:not([class]) td,
+.md-typeset table:not([class]) th {
+  padding: 0.7rem 0.85rem;
+}
+
+.md-typeset code {
+  border-radius: 0.2rem;
+}
+
+.md-content img {
+  border-radius: 0.5rem;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.12);
+}
