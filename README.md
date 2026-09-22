@@ -24,6 +24,7 @@ Then open http://127.0.0.1:4312.
 
 Full docs are organized under the docs site and source docs folder:
 
+- [Live documentation site](https://circuitwall.github.io/jarela/)
 - [Docs home](docs/index.md)
 - [Install guide](docs/INSTALL.md)
 - [Development guide](docs/DEVELOPMENT.md)
