@@ -263,7 +263,7 @@ describe("MessageList conversation focus", () => {
     expect(screen.queryByLabelText("conversation focus boundary")).toBeNull();
   });
 
-  it("does not render a boundary for a bare automatic hot_since without summary state", () => {
+  it("renders a boundary for a persisted hot_since before summary metadata arrives", () => {
     const messages = [
       mkMessage("m1", "user", "older", "2026-08-09T10:00:00.000Z"),
       mkMessage("m2", "assistant", "latest", "2026-08-09T10:00:01.000Z"),
@@ -279,8 +279,8 @@ describe("MessageList conversation focus", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: /drag to move conversation focus/i })).toBeNull();
-    expect(screen.queryByLabelText("conversation focus boundary")).toBeNull();
+    expect(screen.getByRole("button", { name: /drag to move conversation focus/i })).toBeTruthy();
+    expect(screen.getByLabelText("conversation focus boundary")).toBeTruthy();
   });
 
   it("renders a breathing boundary while a confirmed focus move refreshes summary", () => {
