@@ -10,7 +10,6 @@ export interface ClaudeCodeLaunchDefaults {
   tools?: string;
   addDirs?: string[];
   permissionMode?: ClaudeCodePermissionMode;
-  allowUnsafe?: boolean;
   background?: boolean;
   timeoutSeconds?: number;
   syncMemory?: ClaudeCodeSyncMemory;
@@ -102,7 +101,6 @@ export function getClaudeCodeConfig(): ClaudeCodeConfig {
     tools: first(raw?.default_tools, process.env.JARELA_CLAUDE_DEFAULT_TOOLS),
     addDirs: listFromString(first(raw?.default_add_dirs, process.env.JARELA_CLAUDE_DEFAULT_ADD_DIRS)),
     permissionMode: permissionModeFromString(first(raw?.default_permission_mode, process.env.JARELA_CLAUDE_DEFAULT_PERMISSION_MODE)),
-    allowUnsafe: boolFromString(first(raw?.default_allow_unsafe, process.env.JARELA_CLAUDE_DEFAULT_ALLOW_UNSAFE)),
     background: boolFromString(first(raw?.default_background, process.env.JARELA_CLAUDE_DEFAULT_BACKGROUND)),
     timeoutSeconds: positiveNumberFromString(first(raw?.default_timeout_seconds, process.env.JARELA_CLAUDE_DEFAULT_TIMEOUT_SECONDS)),
     syncMemory: syncMemoryFromString(first(raw?.default_sync_memory, process.env.JARELA_CLAUDE_DEFAULT_SYNC_MEMORY)),

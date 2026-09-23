@@ -81,7 +81,6 @@ export const INTEGRATIONS = {
       { key: "default_tools", label: "Default Claude tools (optional)", placeholder: "default or Read,Grep,WebSearch", secret: false, required: false },
       { key: "default_add_dirs", label: "Extra directories (optional)", placeholder: "/path/one, /path/two", secret: false, required: false },
       { key: "default_permission_mode", label: "Permission mode (optional)", placeholder: "dontAsk, default, acceptEdits, bypassPermissions, plan", secret: false, required: false },
-      { key: "default_allow_unsafe", label: "Allow unsafe by default (optional)", placeholder: "false", secret: false, required: false },
       { key: "default_background", label: "Run in background by default (optional)", placeholder: "false", secret: false, required: false },
       { key: "default_timeout_seconds", label: "Timeout seconds (optional)", placeholder: "600", secret: false, required: false },
       { key: "default_sync_memory", label: "Memory sync mode (optional)", placeholder: "both, in, out, or false", secret: false, required: false },
