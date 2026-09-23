@@ -19,6 +19,13 @@ import { registerLangChainPackage } from "../packages/langchain-package";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { pathResolverFor, assertSafePath, withFsDeadline } from "./files";
 import { buildOutline, shouldOutline } from "./file-outline";
+import {
+  locateOldString,
+  buildNotFoundDiagnostic,
+  buildMultipleMatchesDiagnostic,
+  dominantEol,
+  conformEol,
+} from "./edit-match";
 import { getConfig } from "@/lib/env/config";
 
 // ---------------------------------------------------------------------------
@@ -408,10 +415,16 @@ const multiEditSchema = z.object({
     .min(1)
     .max(MAX_MULTI_EDITS)
     .describe(`Up to ${MAX_MULTI_EDITS} edits, applied in order. All-or-nothing: if any edit fails to find exactly one match, the file is not modified.`),
+  strategy: z
+    .enum(["exact", "trim_trailing", "normalize_whitespace"])
+    .optional()
+    .describe(
+      "Matching strategy for every edit's old_string, tried only after a plain exact match fails. 'exact' (default): byte-exact substring, unchanged behavior. 'trim_trailing': ignore trailing whitespace differences at the end of each line. 'normalize_whitespace': ignore leading/trailing whitespace and collapse internal runs of spaces/tabs on each line. CRLF/LF differences between old_string and the file are always tolerated regardless of this setting.",
+    ),
 });
 
 export const fileMultiEditTool = tool(
-  async ({ path: filePath, edits }, config?: ToolConfig) => {
+  async ({ path: filePath, edits, strategy }, config?: ToolConfig) => {
     let abs = filePath;
     try {
       abs = pathResolverFor(config).resolve(filePath);
@@ -419,40 +432,56 @@ export const fileMultiEditTool = tool(
 
       const raw = await withFsDeadline("file_multi_edit.read", abs, () => fs.readFile(abs, "utf8"));
       let buf = raw;
-      const results: Array<{ index: number; ok: boolean; match_count?: number; error?: string }> = [];
+      const results: Array<{
+        index: number;
+        ok: boolean;
+        match_count?: number;
+        error?: string;
+        diagnostic?: ReturnType<typeof buildNotFoundDiagnostic> | ReturnType<typeof buildMultipleMatchesDiagnostic>;
+      }> = [];
       let failed = false;
 
       for (let i = 0; i < edits.length; i++) {
         const { old_string, new_string } = edits[i];
-        const first = buf.indexOf(old_string);
-        if (first === -1) {
+        const attempt = locateOldString(buf, old_string, strategy ?? "exact");
+        if (attempt.ranges.length === 0) {
           results.push({
             index: i, ok: false,
             error: "old_string not found in the current buffer (note: earlier edits may have already changed it).",
+            diagnostic: buildNotFoundDiagnostic(buf, old_string),
           });
           failed = true;
           continue;
         }
-        const second = buf.indexOf(old_string, first + old_string.length);
-        if (second !== -1) {
-          const count = buf.split(old_string).length - 1;
+        if (attempt.ranges.length > 1) {
           results.push({
-            index: i, ok: false, match_count: count,
+            index: i, ok: false, match_count: attempt.ranges.length,
             error: "old_string matches multiple times. Add surrounding context to make it unique.",
+            diagnostic: buildMultipleMatchesDiagnostic(buf, attempt.ranges),
           });
           failed = true;
           continue;
         }
-        buf = buf.slice(0, first) + new_string + buf.slice(first + old_string.length);
+        const { start, end } = attempt.ranges[0];
+        let replacement = new_string;
+        if (attempt.crlfAdjusted) {
+          const eol = dominantEol(buf);
+          if (eol) replacement = conformEol(replacement, eol);
+        }
+        buf = buf.slice(0, start) + replacement + buf.slice(end);
         results.push({ index: i, ok: true });
       }
 
       if (failed) {
+        // Edits before the first failure applied cleanly against the buffer
+        // as submitted — the caller can resubmit just that leading slice.
+        const cleanPrefixCount = results.findIndex((r) => !r.ok);
         return JSON.stringify({
           ok: false,
           path: abs,
           error: "one or more edits failed; file was not modified",
           edits: results,
+          clean_prefix_count: cleanPrefixCount,
         });
       }
 
@@ -471,7 +500,7 @@ export const fileMultiEditTool = tool(
   {
     name: "file_multi_edit",
     description:
-      "Apply multiple anchored str_replace edits to one file atomically. Each edit's old_string must match EXACTLY ONCE in the (partially-edited) buffer at the time it's applied. All-or-nothing: if any edit fails, the file is not modified and per-edit status is returned. Prefer this over multiple file_edit round-trips or shell rewrites when refactoring within a single file.",
+      "Apply multiple anchored str_replace edits to one file atomically. Each edit's old_string must match EXACTLY ONCE in the (partially-edited) buffer at the time it's applied. All-or-nothing: if any edit fails, the file is not modified and per-edit status is returned, including `clean_prefix_count` (how many edits from the start would have applied — resubmit just that leading slice). CRLF/LF differences are tolerated automatically. Optional strategy ('trim_trailing' | 'normalize_whitespace') relaxes whitespace matching as a fallback when the exact match fails — off by default, applies to every edit in the call. Failed edits carry a `diagnostic` (fuzzy nearest-match snippet, or occurrence line numbers for multiple matches). Prefer this over multiple file_edit round-trips or shell rewrites when refactoring within a single file.",
     schema: multiEditSchema,
   },
 );

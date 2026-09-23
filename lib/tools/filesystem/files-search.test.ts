@@ -339,4 +339,78 @@ describe("file_multi_edit", () => {
     expect(out.path).toBe(f);
     expect(readFileSync(f, "utf8")).toBe("BETA\n");
   });
+
+  it("reports clean_prefix_count for the edits that would have applied before the first failure", async () => {
+    const f = join(projectRoot, "prefix.ts");
+    writeFileSync(f, "const a = 1;\nconst b = 2;\nconst c = 3;\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      edits: [
+        { old_string: "const a = 1;", new_string: "const a = 10;" },
+        { old_string: "const b = 2;", new_string: "const b = 20;" },
+        { old_string: "DOES NOT EXIST", new_string: "x" },
+      ],
+    }));
+    expect(out.ok).toBe(false);
+    expect(out.clean_prefix_count).toBe(2);
+    const editStatuses = out.edits as Array<{ index: number; ok: boolean }>;
+    expect(editStatuses[0].ok).toBe(true);
+    expect(editStatuses[1].ok).toBe(true);
+    expect(editStatuses[2].ok).toBe(false);
+    // Still all-or-nothing: nothing was written.
+    expect(readFileSync(f, "utf8")).toBe("const a = 1;\nconst b = 2;\nconst c = 3;\n");
+  });
+
+  it("attaches a not-found diagnostic to the failing edit", async () => {
+    const f = join(projectRoot, "diag.ts");
+    writeFileSync(f, "one\ntwo\nthree\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      edits: [{ old_string: "twoo", new_string: "x" }],
+    }));
+    expect(out.ok).toBe(false);
+    const editStatuses = out.edits as Array<{ diagnostic?: { nearest_match: { line: number } | null } }>;
+    expect(editStatuses[0].diagnostic?.nearest_match?.line).toBe(2);
+  });
+
+  it("attaches a multiple-matches diagnostic with occurrence line numbers", async () => {
+    const f = join(projectRoot, "diag2.ts");
+    writeFileSync(f, "dup\nkeep\ndup\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      edits: [{ old_string: "dup", new_string: "x" }],
+    }));
+    expect(out.ok).toBe(false);
+    const editStatuses = out.edits as Array<{ diagnostic?: { occurrences: number[] } }>;
+    expect(editStatuses[0].diagnostic?.occurrences).toEqual([1, 3]);
+  });
+
+  it("strategy=trim_trailing applies to every edit in the batch", async () => {
+    // Trailing whitespace on a non-final line of each old_string — a
+    // trailing-only difference at the very end wouldn't fail exact match in
+    // the first place, since indexOf ignores what follows a match.
+    const f = join(projectRoot, "strat.ts");
+    writeFileSync(f, "const a = 1;   \nconst b = 2;\t\nconst c = 3;\nconst d = 4;\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      strategy: "trim_trailing",
+      edits: [
+        { old_string: "const a = 1;\nconst b = 2;", new_string: "const a = 10;\nconst b = 20;" },
+        { old_string: "const c = 3;\nconst d = 4;", new_string: "const c = 30;\nconst d = 40;" },
+      ],
+    }));
+    expect(out.ok).toBe(true);
+    expect(readFileSync(f, "utf8")).toBe("const a = 10;\nconst b = 20;\nconst c = 30;\nconst d = 40;\n");
+  });
+
+  it("tolerates CRLF/LF mismatch between old_string and the file, preserving CRLF on write", async () => {
+    const f = join(projectRoot, "crlf.ts");
+    writeFileSync(f, "const a = 1;\r\nconst b = 2;\r\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      edits: [{ old_string: "const a = 1;\nconst b = 2;", new_string: "const a = 10;\nconst b = 20;" }],
+    }));
+    expect(out.ok).toBe(true);
+    expect(readFileSync(f, "utf8")).toBe("const a = 10;\r\nconst b = 20;\r\n");
+  });
 });

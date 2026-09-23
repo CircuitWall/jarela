@@ -8,6 +8,13 @@ import { checkFsAllowed, resolveSafetyMode } from "../security/safety";
 import { getConfig } from "@/lib/env/config";
 import { currentWorkspace, type ToolConfig } from "./workspace-context";
 import { buildOutline, capOutline, shouldOutline } from "./file-outline";
+import {
+  locateOldString,
+  buildNotFoundDiagnostic,
+  buildMultipleMatchesDiagnostic,
+  dominantEol,
+  conformEol,
+} from "./edit-match";
 
 // Dedicated file tools. Agents previously had to drive every edit through
 // `local_exec` / `terminal`, which works for "create a new file with this
@@ -348,39 +355,54 @@ const editSchema = z.object({
       "Exact literal substring to replace. Must appear EXACTLY ONCE in the file (include surrounding context to disambiguate).",
     ),
   new_string: z.string().describe("Replacement text. May be empty to delete."),
+  strategy: z
+    .enum(["exact", "trim_trailing", "normalize_whitespace"])
+    .optional()
+    .describe(
+      "Matching strategy, tried only after a plain exact match fails. 'exact' (default): byte-exact substring, unchanged behavior. 'trim_trailing': ignore trailing whitespace differences at the end of each line. 'normalize_whitespace': ignore leading/trailing whitespace and collapse internal runs of spaces/tabs on each line. CRLF/LF differences between old_string and the file are always tolerated regardless of this setting.",
+    ),
 });
 
 export const fileEditTool = tool(
-  async ({ path: filePath, old_string, new_string }, config?: ToolConfig) => {
+  async ({ path: filePath, old_string, new_string, strategy }, config?: ToolConfig) => {
     let abs = filePath;
     try {
       abs = pathResolverFor(config).resolve(filePath);
       assertSafePath(abs, "write");
       const raw = await withFsDeadline("file_edit.read", abs, () => fs.readFile(abs, "utf8"));
-      const first = raw.indexOf(old_string);
-      if (first === -1) {
+      const attempt = locateOldString(raw, old_string, strategy ?? "exact");
+      if (attempt.ranges.length === 0) {
         return JSON.stringify({
           ok: false,
           path: abs,
           error: "old_string not found. Re-read the file and try with the exact current content.",
+          diagnostic: buildNotFoundDiagnostic(raw, old_string),
         });
       }
-      const second = raw.indexOf(old_string, first + old_string.length);
-      if (second !== -1) {
+      if (attempt.ranges.length > 1) {
         return JSON.stringify({
           ok: false,
           path: abs,
           error: "old_string matches multiple times. Add surrounding context to make it unique.",
-          match_count: raw.split(old_string).length - 1,
+          match_count: attempt.ranges.length,
+          diagnostic: buildMultipleMatchesDiagnostic(raw, attempt.ranges),
         });
       }
-      const next = raw.slice(0, first) + new_string + raw.slice(first + old_string.length);
+      const { start, end } = attempt.ranges[0];
+      let replacement = new_string;
+      if (attempt.crlfAdjusted) {
+        const eol = dominantEol(raw);
+        if (eol) replacement = conformEol(replacement, eol);
+      }
+      const next = raw.slice(0, start) + replacement + raw.slice(end);
       await withFsDeadline("file_edit", abs, () => fs.writeFile(abs, next, "utf8"));
       return JSON.stringify({
         ok: true,
         path: abs,
         bytes_before: Buffer.byteLength(raw, "utf8"),
         bytes_after: Buffer.byteLength(next, "utf8"),
+        matched_strategy: attempt.usedStrategy,
+        eol_normalized: attempt.crlfAdjusted,
       });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
@@ -389,7 +411,7 @@ export const fileEditTool = tool(
   {
     name: "file_edit",
     description:
-      "Replace a single exact-match substring inside a file. The old_string must appear exactly once — include enough surrounding context to disambiguate. Use this for one in-place edit instead of shell heredocs; use file_multi_edit for several edits in the same file.",
+      "Replace a single exact-match substring inside a file. The old_string must appear exactly once — include enough surrounding context to disambiguate. CRLF/LF differences between old_string and the file are tolerated automatically. Optional strategy ('trim_trailing' | 'normalize_whitespace') relaxes whitespace matching as a fallback when the exact match fails — off by default. On failure, the response includes a `diagnostic` with a fuzzy nearest-match snippet (not-found) or the line numbers of every occurrence (multiple-matches). Use this for one in-place edit instead of shell heredocs; use file_multi_edit for several edits in the same file.",
     schema: editSchema,
   },
 );
