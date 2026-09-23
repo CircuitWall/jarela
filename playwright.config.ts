@@ -45,10 +45,18 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
     {
-      // Catches iOS PWA layout regressions (e.g. position:absolute drifting
-      // when the on-screen keyboard pushes the body up).
+      // Keep mobile coverage focused on viewport/PWA-sensitive contracts.
+      // The full workflow suite runs once in Chromium; duplicating API-only
+      // CRUD and desktop-neutral panel checks here adds time without a second
+      // browser-specific signal.
       name: "mobile-safari",
       use: { ...devices["iPhone 13"] },
+      testMatch: [
+        "**/smoke.spec.ts",
+        "**/layout.spec.ts",
+        "**/chat-mock.spec.ts",
+        "**/panel-chat-focus-boundary.spec.ts",
+      ],
     },
   ],
 
