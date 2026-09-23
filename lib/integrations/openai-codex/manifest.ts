@@ -44,8 +44,8 @@ export const openaiCodexManifest: IntegrationManifest = {
       say: "Run `codex login` in a terminal to sign in with ChatGPT. Alternatively, save a valid OpenAI API key for this integration; API-key use is billed at standard Platform API rates.",
     },
     {
-      when: "the delegated task cannot edit files",
-      say: "Jarela starts Codex in a read-only sandbox by default. Set allow_unsafe to true only for a task you trust to grant workspace-write access.",
+      when: "codex_delegate returns SAFETY_BLOCKED",
+      say: "codex_delegate refuses to run under JARELA_TOOL_SAFETY=safe, since spawning Codex grants it workspace-write access. Raise the tier to 'mostly_safe' (the default) or 'bypass'.",
     },
   ],
 };

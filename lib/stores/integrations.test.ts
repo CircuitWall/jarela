@@ -58,7 +58,6 @@ describe("integrations store (credentials-backed)", () => {
         default_tools: "Read,Grep,WebSearch",
         default_add_dirs: "/tmp/a, /tmp/b",
         default_permission_mode: "dontAsk",
-        default_allow_unsafe: "false",
         default_background: "true",
         default_timeout_seconds: "900",
         default_sync_memory: "both",

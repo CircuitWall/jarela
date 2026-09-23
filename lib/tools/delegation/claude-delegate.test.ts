@@ -150,30 +150,25 @@ describe("claude_delegate — safety gate", () => {
     expect(state.calls).toHaveLength(0);
   });
 
-  it("forces --permission-mode dontAsk under mostly_safe (the default) without allow_unsafe", async () => {
+  it("defaults to --permission-mode bypassPermissions under mostly_safe (the default)", async () => {
     const out = parse(await claudeDelegateTool.invoke({ task: "do a thing", cwd: projectRoot, sync_memory: false }));
     expect(out.safety_mode).toBe("mostly_safe");
-    expect(out.permission_mode_used).toBe("dontAsk");
+    expect(out.permission_mode_used).toBe("bypassPermissions");
     expect(state.calls[0]!.args).toContain("--permission-mode");
-    expect(state.calls[0]!.args[state.calls[0]!.args.indexOf("--permission-mode") + 1]).toBe("dontAsk");
+    expect(state.calls[0]!.args[state.calls[0]!.args.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
   });
 
-  it("honours a requested permission_mode when allow_unsafe=true under mostly_safe", async () => {
+  it("honours a requested permission_mode under mostly_safe", async () => {
     const out = parse(await claudeDelegateTool.invoke({
       task: "do a thing", cwd: projectRoot, sync_memory: false,
-      allow_unsafe: true, permission_mode: "acceptEdits",
+      permission_mode: "acceptEdits",
     }));
     expect(out.permission_mode_used).toBe("acceptEdits");
     const args = state.calls[0]!.args;
     expect(args[args.indexOf("--permission-mode") + 1]).toBe("acceptEdits");
   });
 
-  it("defaults to bypassPermissions when allow_unsafe=true but no permission_mode given", async () => {
-    const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, allow_unsafe: true }));
-    expect(out.permission_mode_used).toBe("bypassPermissions");
-  });
-
-  it("honours the caller's permission_mode as-is under bypass, ignoring allow_unsafe", async () => {
+  it("honours the caller's permission_mode as-is under bypass too", async () => {
     process.env.JARELA_TOOL_SAFETY = "bypass";
     const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot, sync_memory: false, permission_mode: "plan" }));
     expect(out.safety_mode).toBe("bypass");
@@ -184,7 +179,7 @@ describe("claude_delegate — safety gate", () => {
     state.script = [resultLine({ permission_denials: [{ tool_name: "Write", tool_input: { file_path: "x" } }] })];
     const out = parse(await claudeDelegateTool.invoke({ task: "write a file", cwd: projectRoot, sync_memory: false }));
     expect(out.permission_denials).toHaveLength(1);
-    expect(String(out.verify_hint)).toMatch(/allow_unsafe/);
+    expect(String(out.verify_hint)).toMatch(/permission_mode/);
   });
 });
 
@@ -269,7 +264,6 @@ describe("claude_delegate — global launch profile", () => {
       default_tools: "Read,Grep",
       default_add_dirs: "/tmp/alpha, /tmp/beta",
       default_permission_mode: "acceptEdits",
-      default_allow_unsafe: "true",
       default_timeout_seconds: "123",
       default_sync_memory: "false",
       default_escalate_questions: "false",
@@ -292,7 +286,6 @@ describe("claude_delegate — global launch profile", () => {
       cwd: projectRoot,
       model: "opus",
       tools: "Read,Grep",
-      allow_unsafe: true,
       permission_mode_used: "acceptEdits",
       timeout_seconds: 123,
       sync_memory: false,
@@ -306,7 +299,6 @@ describe("claude_delegate — global launch profile", () => {
       default_model: "opus",
       default_tools: "Read,Grep",
       default_permission_mode: "bypassPermissions",
-      default_allow_unsafe: "true",
       default_sync_memory: "false",
       default_escalate_questions: "false",
     });
@@ -318,7 +310,6 @@ describe("claude_delegate — global launch profile", () => {
       tools: "Bash",
       add_dirs: ["/tmp/override"],
       permission_mode: "plan",
-      allow_unsafe: true,
       escalate_questions: true,
       sync_memory: false,
     }));
@@ -341,18 +332,17 @@ describe("claude_delegate — global launch profile", () => {
     });
   });
 
-  it("keeps mostly_safe read-only when the profile does not opt into unsafe execution", async () => {
+  it("honours the profile's permission_mode under mostly_safe without any escalation flag", async () => {
     saveIntegration("claude-code", {
       default_permission_mode: "acceptEdits",
-      default_allow_unsafe: "false",
       default_sync_memory: "false",
     });
 
     const out = parse(await claudeDelegateTool.invoke({ task: "x", cwd: projectRoot }));
 
-    expect(out.permission_mode_used).toBe("dontAsk");
+    expect(out.permission_mode_used).toBe("acceptEdits");
     expect((out.launch as Record<string, unknown>).requested_permission_mode).toBe("acceptEdits");
-    expect((out.launch as Record<string, unknown>).permission_mode_used).toBe("dontAsk");
+    expect((out.launch as Record<string, unknown>).permission_mode_used).toBe("acceptEdits");
   });
 
   it("can run in background by default from the global launch profile", async () => {

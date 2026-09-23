@@ -86,24 +86,14 @@ export type SafetyGate =
   | { blocked: true; safetyMode: "safe" }
   | { blocked: false; safetyMode: "mostly_safe" | "bypass"; permissionMode: string };
 
-export function resolveSafetyGate(requestedPermissionMode: string | undefined, allowUnsafe: boolean): SafetyGate {
+export function resolveSafetyGate(requestedPermissionMode: string | undefined): SafetyGate {
   const safetyMode = resolveSafetyMode();
   if (safetyMode === "safe") return { blocked: true, safetyMode };
-  if (safetyMode === "bypass") {
-    return { blocked: false, safetyMode, permissionMode: requestedPermissionMode ?? "bypassPermissions" };
-  }
-  // mostly_safe (default): force read-only unless the caller explicitly
-  // escalates for this one call — mirrors `local_exec`'s `allow_unsafe`.
-  // Uses "dontAsk" rather than "default": it's the mode Claude Code's own
-  // docs document for headless auto-deny ("auto-denies every tool call
-  // that would otherwise prompt you… the session never waits for input"),
-  // confirmed empirically to allow reads while cleanly denying writes/exec
-  // with no hang — the same behavior "default" happened to show in
-  // headless mode, but without a documented guarantee behind it.
-  if (allowUnsafe) {
-    return { blocked: false, safetyMode, permissionMode: requestedPermissionMode ?? "bypassPermissions" };
-  }
-  return { blocked: false, safetyMode, permissionMode: "dontAsk" };
+  // mostly_safe (default) and bypass both grant full access: Claude runs
+  // with the requested permission mode (default "bypassPermissions"),
+  // matching how a user invoking the CLI interactively would use it
+  // (ADR-0087). "safe" above is the only tier that refuses the call.
+  return { blocked: false, safetyMode, permissionMode: requestedPermissionMode ?? "bypassPermissions" };
 }
 
 // ── stream-json parsing (ported from the prior external tool) ────────────
@@ -147,7 +137,6 @@ interface ClaudeLaunchDetails {
   tools: string;
   add_dirs: string[];
   requested_permission_mode: string | null;
-  allow_unsafe: boolean;
   permission_mode_used: string;
   background: boolean;
   timeout_seconds: number;
@@ -471,7 +460,7 @@ async function finalizeRun(raw: RawClaudeResult, opts: FinalizeOpts) {
     permission_mode_used: opts.permissionMode,
     permission_denials: permissionDenials,
     ...(permissionDenials.length > 0 ? {
-      verify_hint: "Claude's write/exec attempts were denied — see permission_denials. Pass allow_unsafe: true to let it actually make changes, or raise JARELA_TOOL_SAFETY.",
+      verify_hint: "Claude's write/exec attempts were denied — see permission_denials. Pass a more permissive permission_mode (e.g. 'bypassPermissions'), or raise JARELA_TOOL_SAFETY.",
     } : {}),
     changes,
     ...(syncReport ? { sync: syncReport } : {}),
@@ -496,10 +485,7 @@ const delegateSchema = z.object({
   tools: z.string().optional().describe("Tool set: 'default' (all built-in, the default), '' (none), or a comma-separated list (e.g. 'Read,Grep,WebSearch')."),
   add_dirs: z.array(z.string()).optional().describe("Extra directories the sub-agent may access (--add-dir)."),
   permission_mode: permissionModeEnum.optional().describe(
-    "Requested permission mode. Only honoured when JARELA_TOOL_SAFETY is 'bypass', or under 'mostly_safe' when allow_unsafe is true — otherwise it's forced to 'dontAsk' (read/explore only, every write/exec auto-denied).",
-  ),
-  allow_unsafe: z.boolean().optional().describe(
-    "Under the default 'mostly_safe' safety tier, escalate this one call so the requested permission_mode (default 'bypassPermissions') is actually honoured, letting Claude write/exec. Ignored under 'safe' (always blocked) and 'bypass' (already unrestricted).",
+    "Requested permission mode, honoured as-is under both tiers that allow this tool ('mostly_safe', the default, and 'bypass'). Defaults to 'bypassPermissions' when omitted. 'safe' refuses the call outright regardless of this field.",
   ),
   escalate_questions: z.boolean().optional().describe(
     "When true (default), the sub-agent is system-prompted to halt on ambiguous design decisions and surface them as a '## Design questions' block. Set false to have it plow through without asking.",
@@ -520,7 +506,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
     const defaults = claudeConfig.launchDefaults;
     const {
       task, cwd: rawCwd, feature,
-      permission_mode, allow_unsafe, escalate_questions, fresh,
+      permission_mode, escalate_questions, fresh,
       background, timeout_seconds, sync_memory,
     } = input;
 
@@ -528,13 +514,12 @@ export const claudeDelegateTool = withStreamDefault(tool(
     const tools = input.tools ?? defaults.tools;
     const add_dirs = input.add_dirs ?? defaults.addDirs;
     const resolvedPermissionMode = permission_mode ?? defaults.permissionMode;
-    const resolvedAllowUnsafe = allow_unsafe ?? defaults.allowUnsafe ?? false;
     const resolvedBackground = background ?? defaults.background ?? false;
     const resolvedTimeoutSeconds = timeout_seconds ?? defaults.timeoutSeconds ?? DEFAULT_TIMEOUT_S;
     const resolvedSyncMemory = sync_memory ?? defaults.syncMemory;
     const resolvedEscalateQuestions = escalate_questions ?? defaults.escalateQuestions ?? true;
 
-    const gate = resolveSafetyGate(resolvedPermissionMode, resolvedAllowUnsafe === true);
+    const gate = resolveSafetyGate(resolvedPermissionMode);
     if (gate.blocked) {
       return JSON.stringify({
         ok: false,
@@ -560,7 +545,6 @@ export const claudeDelegateTool = withStreamDefault(tool(
       tools: toolsList,
       add_dirs: add_dirs ?? [],
       requested_permission_mode: resolvedPermissionMode ?? null,
-      allow_unsafe: resolvedAllowUnsafe === true,
       permission_mode_used: gate.permissionMode,
       background: resolvedBackground === true,
       timeout_seconds: resolvedTimeoutSeconds,
@@ -654,7 +638,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
     description:
       "Delegate a feature-scoped coding task to a local Claude Code CLI process with full tool access (Read, Write, Edit, Bash, Skill, WebSearch, etc.), running inside the active workspace (call workspace_init first). " +
       "Claude runs with its normal local and project configuration, so enabled Claude plugins, skills, MCP servers, hooks, CLAUDE.md instructions, and auto-memory are available under Claude's own approval policies. Sessions are keyed per project directory (and optional feature label) so the sub-agent accumulates long-term context across calls. " +
-      "Gated by JARELA_TOOL_SAFETY: under the default 'mostly_safe' tier, Claude can read/explore freely but every write/exec attempt is auto-denied (surfaced in permission_denials) unless you pass allow_unsafe: true; 'safe' refuses the call outright; 'bypass' honours whatever permission_mode you request. " +
+      "Gated by JARELA_TOOL_SAFETY: 'safe' refuses the call outright; both 'mostly_safe' (default) and 'bypass' grant Claude full read/write/exec access via the requested permission_mode (default 'bypassPermissions') — matching how a user running the Claude Code CLI directly would use it. " +
       "Every call returns a git-diff summary in `changes` — after this call, inspect `changes` and read the modified files (or run tests/lint via local_exec) before reporting success to the user. Do not take Claude's own summary text on faith. " +
       "For long tasks, use background: true — returns a job_id immediately; poll with claude_delegate_status. When awaiting_answers is true, relay the '## Design questions' block to the user and call again with answers folded into the next task.",
     schema: delegateSchema,

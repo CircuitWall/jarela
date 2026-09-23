@@ -64,10 +64,10 @@ export function resolveCodexLaunch(bin: string, args: string[], appData = proces
   return { command: bin, args };
 }
 
-export function buildCodexArgs(task: string, model: string | undefined, profile: string | undefined, addDirs: string[] | undefined, allowUnsafe: boolean, sessionId?: string): string[] {
+export function buildCodexArgs(task: string, model: string | undefined, profile: string | undefined, addDirs: string[] | undefined, sessionId?: string): string[] {
   const args = sessionId
-    ? ["exec", "resume", sessionId, "--json", "--sandbox", allowUnsafe ? "workspace-write" : "read-only"]
-    : ["exec", "--json", "--sandbox", allowUnsafe ? "workspace-write" : "read-only"];
+    ? ["exec", "resume", sessionId, "--json", "--sandbox", "workspace-write"]
+    : ["exec", "--json", "--sandbox", "workspace-write"];
   if (model) args.push("--model", model);
   if (profile) args.push("--profile", profile);
   for (const directory of addDirs ?? []) args.push("--add-dir", directory);
@@ -164,7 +164,6 @@ function outputShape(completed: { result: string; threadId?: string; steps: stri
   model?: string;
   profile?: string;
   addDirs?: string[];
-  allowUnsafe: boolean;
   safetyMode: ReturnType<typeof resolveSafetyMode>;
   resumed: boolean;
   background: boolean;
@@ -177,7 +176,7 @@ function outputShape(completed: { result: string; threadId?: string; steps: stri
     model: opts.model ?? null,
     profile: opts.profile ?? null,
     add_dirs: opts.addDirs ?? [],
-    sandbox: opts.allowUnsafe ? "workspace-write" : "read-only",
+    sandbox: "workspace-write",
     safety_mode: opts.safetyMode,
     resumed: opts.resumed,
     transcript: {
@@ -187,7 +186,7 @@ function outputShape(completed: { result: string; threadId?: string; steps: stri
       launch: {
         model: opts.model ?? null,
         profile: opts.profile ?? null,
-        sandbox: opts.allowUnsafe ? "workspace-write" : "read-only",
+        sandbox: "workspace-write",
         background: opts.background,
       },
     },
@@ -195,13 +194,12 @@ function outputShape(completed: { result: string; threadId?: string; steps: stri
 }
 
 export const codexDelegateTool = withStreamDefault(tool(
-  async ({ task, cwd: requestedCwd, feature, model, profile, add_dirs, allow_unsafe, timeout_seconds, fresh, background }, config?: ToolConfig) => {
+  async ({ task, cwd: requestedCwd, feature, model, profile, add_dirs, timeout_seconds, fresh, background }, config?: ToolConfig) => {
     const safetyMode = resolveSafetyMode();
     if (safetyMode === "safe") {
       return JSON.stringify({ ok: false, code: "SAFETY_BLOCKED", error: "codex_delegate requires JARELA_TOOL_SAFETY to be at least 'mostly_safe'.", safety_mode: safetyMode });
     }
     const codex = getCodexConfig();
-    const allowUnsafe = allow_unsafe === true || safetyMode === "bypass";
     const workspaceRoot = currentWorkspace(config)?.root;
     const requestedWorkspace = resolveCodexWorkspace(requestedCwd, workspaceRoot);
     if (!requestedWorkspace) {
@@ -217,7 +215,7 @@ export const codexDelegateTool = withStreamDefault(tool(
     const resolvedAddDirs = add_dirs ?? codex.addDirs;
     const key = projectKey(cwd, feature);
     const priorSession = fresh ? null : getSession(key);
-    const args = buildCodexArgs(task, resolvedModel, resolvedProfile, resolvedAddDirs, allowUnsafe, priorSession ?? undefined);
+    const args = buildCodexArgs(task, resolvedModel, resolvedProfile, resolvedAddDirs, priorSession ?? undefined);
     const launch = resolveCodexLaunch(codex.bin, args);
     let child: ChildProcess;
     try {
@@ -233,7 +231,7 @@ export const codexDelegateTool = withStreamDefault(tool(
       return {
         ...outputShape(completed, {
           task, cwd, model: resolvedModel, profile: resolvedProfile, addDirs: resolvedAddDirs,
-          allowUnsafe, safetyMode, resumed: !!priorSession, background: isBackground,
+          safetyMode, resumed: !!priorSession, background: isBackground,
         }),
         changes: await gitDiffSummary(cwd),
       };
@@ -247,7 +245,7 @@ export const codexDelegateTool = withStreamDefault(tool(
         sessionId: priorSession ?? "",
         parentMessage: task,
         resumed: !!priorSession,
-        launch: { model: resolvedModel ?? null, profile: resolvedProfile ?? null, sandbox: allowUnsafe ? "workspace-write" : "read-only", background: true },
+        launch: { model: resolvedModel ?? null, profile: resolvedProfile ?? null, sandbox: "workspace-write", background: true },
       });
       job._child = child;
       void collectCodexOutput(child, (timeout_seconds ?? codex.timeoutSeconds) * 1000, (step) => {
@@ -273,7 +271,7 @@ export const codexDelegateTool = withStreamDefault(tool(
   {
     name: "codex_delegate",
     description:
-      "Delegate a focused coding task to the locally installed OpenAI Codex CLI. Call workspace_init with the target repository before this tool, or pass cwd explicitly; do not use Jarela's install directory as the project workspace. Codex loads its normal user and project configuration, so enabled Codex plugins, skills, MCP servers, and hooks are available to the delegated run under Codex's own approval policies. Codex reuses its local ChatGPT sign-in by default; an optional saved API key is used only for trusted automation. Under JARELA_TOOL_SAFETY=mostly_safe, Codex starts read-only unless allow_unsafe is true, which grants workspace-write access. Use profile only for a pre-existing trusted Codex profile and add_dirs only when the task needs additional writable directories. Returns Codex's final message and a git diff summary; inspect the changes before reporting success.",
+      "Delegate a focused coding task to the locally installed OpenAI Codex CLI. Call workspace_init with the target repository before this tool, or pass cwd explicitly; do not use Jarela's install directory as the project workspace. Codex loads its normal user and project configuration, so enabled Codex plugins, skills, MCP servers, and hooks are available to the delegated run under Codex's own approval policies. Codex reuses its local ChatGPT sign-in by default; an optional saved API key is used only for trusted automation. Under JARELA_TOOL_SAFETY=mostly_safe (default) and 'bypass', Codex runs with workspace-write access — matching how a user running the CLI directly would use it; 'safe' refuses the call outright. Use profile only for a pre-existing trusted Codex profile and add_dirs only when the task needs additional writable directories. Returns Codex's final message and a git diff summary; inspect the changes before reporting success.",
     schema: z.object({
       task: z.string().min(1).describe("Self-contained coding task for Codex."),
       cwd: z.string().optional().describe("Target repository directory. Defaults to the active workspace; call workspace_init first when omitted."),
@@ -281,7 +279,6 @@ export const codexDelegateTool = withStreamDefault(tool(
       model: z.string().optional().describe("Optional Codex model override."),
       profile: z.string().optional().describe("Optional pre-existing Codex configuration profile."),
       add_dirs: z.array(z.string()).optional().describe("Additional directories Codex may write alongside the workspace."),
-      allow_unsafe: z.boolean().optional().describe("Grant Codex workspace-write access for this trusted task under mostly_safe mode."),
       fresh: z.boolean().optional().describe("Start a new Codex session instead of resuming this workspace/feature session."),
       background: z.boolean().optional().describe("Run in the background and return a job id for codex_delegate_status polling."),
       timeout_seconds: z.number().positive().optional().describe("Idle timeout in seconds."),
