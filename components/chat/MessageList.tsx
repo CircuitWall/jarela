@@ -823,15 +823,10 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
           (!!effectiveHotSince && visibleMessages.length > 0 && boundaryIndex === -1
             && visibleMessages[visibleMessages.length - 1].created_at < effectiveHotSince)
           || (!effectiveHotSince && interactiveBoundary);
-        const hasSummaryBoundary = !!effectiveHotSince && (
-          warmSummaryPending ||
-          !!warmSummary ||
-          warmSummaryBefore === effectiveHotSince ||
-          !!warmSummaryComputedAt ||
-          typeof warmSummarySourceMessages === "number" ||
-          typeof warmSummarySourceChars === "number"
-        );
-        const hasBoundary = hasSummaryBoundary && (boundaryIndex !== -1 || pinAfterAll);
+        // The pin is the boundary's source of truth. Summary data can arrive
+        // later (or be unavailable on an older thread), but hiding the line
+        // in that interval makes a valid focus selection look like it vanished.
+        const hasBoundary = !!effectiveHotSince && (boundaryIndex !== -1 || pinAfterAll);
         const olderInVisible = pinAfterAll
           ? visibleMessages.length
           : hasBoundary ? boundaryIndex : 0;
