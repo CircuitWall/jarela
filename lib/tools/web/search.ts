@@ -11,10 +11,55 @@ interface SearchResult {
   snippet: string;
 }
 
+interface SearchProviderAdapter {
+  readonly id: SearchProvider;
+  search(query: string, limit: number): Promise<SearchResult[]>;
+}
+
 type SearchProvider = "tavily" | "google" | "duckduckgo";
 
 const SUPPORTED_PROVIDERS = new Set<string>(["tavily", "google", "duckduckgo"]);
 const DEFAULT_PROVIDER_ORDER: SearchProvider[] = ["tavily", "google", "duckduckgo"];
+const DDG_USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122.0 Safari/537.36",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/121.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 Version/17.2 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+] as const;
+const DDG_RETRY_DELAYS_MS = [400, 900, 1400, 1900] as const;
+const DDG_REQUEST_TIMEOUT_MS = 10_000;
+const DDG_COMMON_HEADERS = {
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Upgrade-Insecure-Requests": "1",
+} as const;
+const DDG_MIN_INTERVAL_MS = 5_000;
+
+let ddgRequestQueue = Promise.resolve();
+let ddgNextAllowedAt = 0;
+
+async function withDdgRateLimit<T>(work: () => Promise<T>): Promise<T> {
+  let release!: () => void;
+  const previous = ddgRequestQueue;
+  ddgRequestQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+
+  try {
+    const waitMs = Math.max(0, ddgNextAllowedAt - Date.now());
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    ddgNextAllowedAt = Date.now() + DDG_MIN_INTERVAL_MS;
+    return await work();
+  } finally {
+    release();
+  }
+}
+
+/** @internal Test-only reset for the module-scoped DDG scheduler. */
+export function __resetDdgRateLimitForTests(): void {
+  ddgRequestQueue = Promise.resolve();
+  ddgNextAllowedAt = 0;
+}
 
 function parseProviderOrder(raw: string): { order: SearchProvider[]; ignored: string[]; usedDefault: boolean } {
   const out: SearchProvider[] = [];
@@ -59,9 +104,8 @@ async function googleSearch(query: string, limit: number, apiKey: string, search
 }
 
 // Tavily is the preferred backend for agent-grade search (clean JSON, citations,
-// good ranking) but requires an API key. Without one we fall back to scraping
-// DuckDuckGo's HTML endpoint — which works without auth and goes through
-// EnvHttpProxyAgent on corporate networks.
+// good ranking) but requires an API key. Without one we use the maintained
+// DuckDuckGo client, which handles DDG's request and response protocol.
 async function tavilySearch(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
   const res = await fetch("https://api.tavily.com/search", {
     method: "POST",
@@ -82,110 +126,205 @@ async function tavilySearch(query: string, limit: number, apiKey: string): Promi
   }));
 }
 
-// Rotate UA across retries — DDG flags repeated identical fingerprints.
-const UA_POOL = [
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-  "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0",
-];
-
 async function ddgSearch(query: string, limit: number): Promise<SearchResult[]> {
-  // DDG returns a 202 "anomaly detection" placeholder when it suspects
-  // automation. Retry with rotated UAs and exponential backoff. Transient
-  // transport failures and 429/5xx responses use the same retry path. Empty
-  // results on a 200 are treated as legitimate "no hits" and not retried.
-  let lastStatus = 0;
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const ua = UA_POOL[attempt % UA_POOL.length];
-    try {
-      const res = await fetch("https://html.duckduckgo.com/html/", {
-        method: "POST",
-        headers: {
-          "User-Agent": ua,
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Referer": "https://duckduckgo.com/",
-        },
-        body: `q=${encodeURIComponent(query)}&kl=us-en`,
-      });
-      lastStatus = res.status;
-      if (!res.ok && res.status !== 429 && res.status < 500) {
-        throw new Error(`DuckDuckGo ${res.status}`);
-      }
-      const html = await res.text();
-      const parsed = parseDDGHtml(html, limit);
-      if (parsed.length > 0) return parsed;
-      if (res.status === 200) return parsed; // genuine empty result
-    } catch (err) {
-      lastError = err;
-      if (err instanceof Error && /^DuckDuckGo 4\d\d/.test(err.message) && !/DuckDuckGo 429/.test(err.message)) {
-        throw err;
-      }
-    }
-    // Backoff: 400, 900, 1400, 1900 ms — total max ≈ 4.6s
-    if (attempt < 4) await new Promise((r) => setTimeout(r, 400 + attempt * 500));
-  }
-  // All retries failed or returned a 202 placeholder. Surface this as a
-  // provider failure rather than an empty success, so the caller can fall
-  // through to another backend or show an actionable error.
-  if (lastError && lastStatus === 0) throw lastError;
-  if (lastStatus === 202) {
-    throw new Error("DuckDuckGo returned 202 anomaly placeholder on all attempts");
-  }
-  throw new Error(`DuckDuckGo returned ${lastStatus} after all retries`);
+  return withDdgRateLimit(() => ddgSearchAttempts(query, limit));
 }
 
-function parseDDGHtml(html: string, limit: number): SearchResult[] {
-  const results: SearchResult[] = [];
-  // Each result block contains a result__a (title link) and a result__snippet (snippet link).
-  const blockRe = /<div\s+class="result\s+results_links[^"]*"[\s\S]*?<\/div>\s*<\/div>/g;
-  let match: RegExpExecArray | null;
-  while ((match = blockRe.exec(html)) !== null) {
-    if (results.length >= limit) break;
-    const block = match[0];
-    const titleMatch = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(block);
-    const snippetMatch = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/.exec(block);
-    if (!titleMatch) continue;
-    const url = unwrapDDGRedirect(decodeHTML(titleMatch[1]));
-    if (!url) continue;
-    const title = stripTags(titleMatch[2]).trim();
-    const snippet = snippetMatch ? stripTags(snippetMatch[1]).trim() : "";
-    if (title) results.push({ title, url, snippet });
+async function ddgSearchAttempts(query: string, limit: number): Promise<SearchResult[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < DDG_USER_AGENTS.length; attempt++) {
+    try {
+      const vqd = await getDdgVqd(query, DDG_USER_AGENTS[attempt]);
+      try {
+        const response = await fetchDdgResults(query, vqd, DDG_USER_AGENTS[attempt]);
+        return parseDdgResults(response, limit);
+      } catch (error) {
+        if (isDdgChallenge(error)) {
+          return fetchDdgHtmlResults(query, limit, DDG_USER_AGENTS[attempt]);
+        }
+        throw error;
+      }
+    } catch (error) {
+      lastError = error;
+      const retryDelay = DDG_RETRY_DELAYS_MS[attempt];
+      if (retryDelay !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelay));
+      }
+    }
   }
+  const detail = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`DuckDuckGo search failed after ${DDG_USER_AGENTS.length} attempts: ${detail}`);
+}
+
+function isDdgChallenge(error: unknown): boolean {
+  return error instanceof Error && /anomaly|unexpected response|(?:search|status) 202/i.test(error.message);
+}
+
+async function fetchDdgHtmlResults(query: string, limit: number, userAgent: string): Promise<SearchResult[]> {
+  const response = await fetch("https://html.duckduckgo.com/html/", {
+    method: "POST",
+    headers: {
+      ...DDG_COMMON_HEADERS,
+      "Content-Type": "application/x-www-form-urlencoded",
+      Referer: "https://duckduckgo.com/",
+      "User-Agent": userAgent,
+    },
+    body: `q=${encodeURIComponent(query)}&kl=us-en`,
+    signal: AbortSignal.timeout(Math.min(getConfig().httpRequestTimeoutMs, DDG_REQUEST_TIMEOUT_MS)),
+  });
+  if (!response.ok) throw new Error(`DuckDuckGo HTML search ${response.status}`);
+  const html = await response.text();
+  const results: SearchResult[] = [];
+  const titleRe = /<a\b[^>]*class=["'][^"']*\bresult__a\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while (results.length < limit && (match = titleRe.exec(html)) !== null) {
+    const tagEnd = html.indexOf(">", match.index);
+    if (tagEnd < 0) continue;
+    const href = /\bhref=["']([^"']+)["']/i.exec(html.slice(match.index, tagEnd + 1))?.[1];
+    const url = href ? unwrapDdgHtmlUrl(href) : null;
+    if (!url) continue;
+    const next = html.slice(match.index + match[0].length);
+    const snippet = /<a\b[^>]*class=["'][^"']*\bresult__snippet\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/i.exec(next)?.[1] ?? "";
+    results.push({ title: stripDdgMarkup(match[1]), url, snippet: stripDdgMarkup(snippet) });
+  }
+  if (results.length === 0) throw new Error("DuckDuckGo returned no parseable results");
   return results;
 }
 
-function unwrapDDGRedirect(href: string): string | null {
-  // DDG wraps outbound links as //duckduckgo.com/l/?uddg=<encoded>&...
-  if (href.startsWith("//")) href = `https:${href}`;
+function unwrapDdgHtmlUrl(value: string): string | null {
   try {
-    const u = new URL(href);
-    if (u.hostname.endsWith("duckduckgo.com") && u.pathname === "/l/") {
-      const real = u.searchParams.get("uddg");
-      return real ? decodeURIComponent(real) : null;
+    const url = new URL(value.startsWith("//") ? `https:${value}` : value);
+    if (url.hostname.endsWith("duckduckgo.com") && url.pathname === "/l/") {
+      return url.searchParams.get("uddg");
     }
-    return u.toString();
+    return url.toString();
   } catch {
     return null;
   }
 }
 
-function stripTags(s: string): string {
-  return s.replace(/<[^>]+>/g, "");
+async function getDdgVqd(query: string, userAgent: string): Promise<string> {
+  const url = new URL("https://duckduckgo.com/");
+  url.searchParams.set("q", query);
+  url.searchParams.set("ia", "web");
+    const response = await fetch(url, {
+      headers: { ...DDG_COMMON_HEADERS, "User-Agent": userAgent },
+      signal: AbortSignal.timeout(Math.min(getConfig().httpRequestTimeoutMs, DDG_REQUEST_TIMEOUT_MS)),
+    });
+  if (!response.ok) throw new Error(`DuckDuckGo bootstrap ${response.status}`);
+  const html = await response.text();
+  const match = /\bvqd\s*(?:["']?\s*[:=]\s*)(?:["']|&quot;)?(\d+-\d+(?:-\d+)?)(?:["']|&quot;)?/i.exec(html);
+  if (!match) {
+    const contentType = response.headers.get("content-type") ?? "unknown content type";
+    const markers = [
+      /captcha|challenge|anomaly/i.test(html) ? "challenge" : "",
+      /duckduckgo/i.test(html) ? "duckduckgo-page" : "",
+    ].filter(Boolean).join(",") || "none";
+    throw new Error(
+      `DuckDuckGo bootstrap did not return a search token (status=${response.status}, ` +
+      `content-type=${contentType}, body-length=${html.length}, markers=${markers})`,
+    );
+  }
+  return match[1];
 }
 
-function decodeHTML(s: string): string {
-  return s
+async function fetchDdgResults(query: string, vqd: string, userAgent: string): Promise<string> {
+  const url = new URL("https://links.duckduckgo.com/d.js");
+  const params: Record<string, string> = {
+    q: query,
+    t: "D",
+    l: "en-us",
+    kl: "us-en",
+    s: "0",
+    dl: "en",
+    ct: "US",
+    bing_market: "en-US",
+    df: "a",
+    vqd,
+    sp: "1",
+    bpa: "1",
+    biaexp: "b",
+    msvrtexp: "b",
+    nadse: "b",
+    eclsexp: "b",
+    tjsexp: "b",
+  };
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    const response = await fetch(url, {
+      headers: {
+        ...DDG_COMMON_HEADERS,
+        Accept: "application/javascript,text/javascript,*/*;q=0.8",
+        Referer: "https://duckduckgo.com/",
+        "User-Agent": userAgent,
+      },
+      signal: AbortSignal.timeout(Math.min(getConfig().httpRequestTimeoutMs, DDG_REQUEST_TIMEOUT_MS)),
+  });
+  if (!response.ok) throw new Error(`DuckDuckGo search ${response.status}`);
+  const body = await response.text();
+    if (/DDG\.deep\.anomalyDetectionBlock/.test(body)) {
+    throw new Error("DuckDuckGo detected an anomaly in the request");
+  }
+  return body;
+}
+
+function parseDdgResults(body: string, limit: number): SearchResult[] {
+  const marker = "DDG.pageLayout.load('d',";
+  const start = body.indexOf(marker);
+  if (start < 0) throw new Error("DuckDuckGo returned an unexpected response format");
+  const arrayStart = start + marker.length;
+  const arrayEnd = findJsonEnd(body, arrayStart);
+  const raw = JSON.parse(body.slice(arrayStart, arrayEnd));
+  if (!Array.isArray(raw)) throw new Error("DuckDuckGo returned an invalid result list");
+  return raw.slice(0, limit).flatMap((item: unknown) => {
+    if (!item || typeof item !== "object") return [];
+    const result = item as { t?: string; u?: string; a?: string; n?: unknown };
+    if (result.n !== undefined) return [];
+    const title = result.t?.trim();
+    const url = result.u?.trim();
+    if (!title || !url) return [];
+    return [{ title, url, snippet: stripDdgMarkup(result.a ?? "") }];
+  });
+}
+
+function findJsonEnd(text: string, start: number): number {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index++) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "[") depth++;
+    else if (char === "]" && --depth === 0) return index + 1;
+  }
+  throw new Error("DuckDuckGo returned an incomplete result list");
+}
+
+function stripDdgMarkup(value: string): string {
+  return value
+    .replace(/<[^>]+>/g, "")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#39;/g, "'")
+    .replace(/&#x27;|&#39;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">");
+}
+
+function createDuckDuckGoProvider(): SearchProviderAdapter {
+  return { id: "duckduckgo", search: ddgSearch };
+}
+
+function createTavilyProvider(apiKey: string): SearchProviderAdapter {
+  return { id: "tavily", search: (query, limit) => tavilySearch(query, limit, apiKey) };
+}
+
+function createGoogleProvider(apiKey: string, searchEngineId: string): SearchProviderAdapter {
+  return { id: "google", search: (query, limit) => googleSearch(query, limit, apiKey, searchEngineId) };
 }
 
 function resolveGoogleSearchApiKey(): string | null {
@@ -224,11 +363,12 @@ export const webSearchTool = tool(
           tried.push("google:missing_api_key");
           continue;
         }
-        const results = provider === "tavily"
-          ? await tavilySearch(query, limit, tavilyKey!)
+        const adapter = provider === "tavily"
+          ? createTavilyProvider(tavilyKey!)
           : provider === "google"
-            ? await googleSearch(query, limit, googleApiKey!, googleSearchEngineId)
-            : await ddgSearch(query, limit);
+            ? createGoogleProvider(googleApiKey!, googleSearchEngineId)
+            : createDuckDuckGoProvider();
+        const results = await adapter.search(query, limit);
         if (results.length === 0) {
           tried.push(`${provider}:empty`);
           continue;
