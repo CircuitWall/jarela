@@ -301,6 +301,163 @@ describe("file_edit", () => {
     expect(out.ok).toBe(true);
     expect(readFileSync(f, "utf8")).toBe("keep rest");
   });
+
+  it("reports matched_strategy and eol_normalized:false on a plain exact match", async () => {
+    const f = join(scratch, "e5.txt");
+    writeFileSync(f, "alpha beta gamma");
+    const out = parse(await fileEditTool.invoke({
+      path: f,
+      old_string: "beta",
+      new_string: "BETA",
+    }));
+    expect(out).toMatchObject({ ok: true, matched_strategy: "exact", eol_normalized: false });
+  });
+
+  describe("not-found diagnostic", () => {
+    it("includes a nearest-match snippet with line context", async () => {
+      const f = join(scratch, "diag1.txt");
+      writeFileSync(f, "one\ntwo\nthe quikc brown fox\nfour\nfive\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "the quick brown fox",
+        new_string: "x",
+      }));
+      expect(out.ok).toBe(false);
+      const diagnostic = out.diagnostic as { nearest_match: { line: number; snippet: string } | null };
+      expect(diagnostic.nearest_match?.line).toBe(3);
+      expect(diagnostic.nearest_match?.snippet).toContain("3: the quikc brown fox");
+    });
+
+    it("surfaces a normalized_hint when trim_trailing would match uniquely", async () => {
+      // Trailing whitespace on the *first* line of a multi-line old_string —
+      // a trailing-only difference at the very end of old_string wouldn't
+      // fail in the first place, since indexOf ignores what follows a match.
+      const f = join(scratch, "diag2.txt");
+      writeFileSync(f, "before\nkeep this line   \nafter final\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "keep this line\nafter final",
+        new_string: "x",
+      }));
+      expect(out.ok).toBe(false);
+      const diagnostic = out.diagnostic as { normalized_hint: string | null };
+      expect(diagnostic.normalized_hint).toMatch(/trim_trailing/);
+      expect(diagnostic.normalized_hint).toMatch(/line 2/);
+    });
+
+    it("returns null nearest_match when nothing is remotely similar", async () => {
+      const f = join(scratch, "diag3.txt");
+      writeFileSync(f, "completely unrelated content\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "xyz123",
+        new_string: "x",
+      }));
+      expect(out.ok).toBe(false);
+      const diagnostic = out.diagnostic as { nearest_match: unknown };
+      expect(diagnostic.nearest_match).toBeNull();
+    });
+  });
+
+  describe("multiple-matches diagnostic", () => {
+    it("lists the line number of every occurrence", async () => {
+      const f = join(scratch, "diag4.txt");
+      writeFileSync(f, "dup\nkeep\ndup\nkeep\ndup\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "dup",
+        new_string: "x",
+      }));
+      expect(out.ok).toBe(false);
+      expect(out.match_count).toBe(3);
+      const diagnostic = out.diagnostic as { occurrences: number[] };
+      expect(diagnostic.occurrences).toEqual([1, 3, 5]);
+    });
+  });
+
+  describe("strategy: trim_trailing", () => {
+    it("does nothing when omitted, even though a trailing-whitespace-only difference exists", async () => {
+      const f = join(scratch, "strat1.txt");
+      writeFileSync(f, "keep this line   \nafter final\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "keep this line\nafter final",
+        new_string: "x",
+      }));
+      expect(out.ok).toBe(false);
+    });
+
+    it("matches when old_string differs only by trailing whitespace on a non-final line", async () => {
+      const f = join(scratch, "strat2.txt");
+      writeFileSync(f, "before\nkeep this line   \nafter final\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "keep this line\nafter final",
+        new_string: "replaced first\nreplaced second",
+        strategy: "trim_trailing",
+      }));
+      expect(out.ok).toBe(true);
+      expect(out.matched_strategy).toBe("trim_trailing");
+      expect(readFileSync(f, "utf8")).toBe("before\nreplaced first\nreplaced second\n");
+    });
+  });
+
+  describe("strategy: normalize_whitespace", () => {
+    it("matches when old_string differs by leading indentation and internal spacing", async () => {
+      const f = join(scratch, "strat3.txt");
+      writeFileSync(f, "<div>\n    <p>hello   world</p>\n</div>\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "<p>hello world</p>",
+        new_string: "<p>replaced</p>",
+        strategy: "normalize_whitespace",
+      }));
+      expect(out.ok).toBe(true);
+      expect(out.matched_strategy).toBe("normalize_whitespace");
+      expect(readFileSync(f, "utf8")).toBe("<div>\n    <p>replaced</p>\n</div>\n");
+    });
+  });
+
+  describe("CRLF/LF tolerance", () => {
+    it("matches an LF old_string against a CRLF file and writes back with CRLF preserved", async () => {
+      const f = join(scratch, "crlf1.txt");
+      writeFileSync(f, "one\r\ntwo\r\nthree\r\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "two",
+        new_string: "TWO",
+      }));
+      expect(out.ok).toBe(true);
+      expect(out.eol_normalized).toBe(false); // single-line old_string — no EOL bytes to mismatch
+      expect(readFileSync(f, "utf8")).toBe("one\r\nTWO\r\nthree\r\n");
+    });
+
+    it("matches a multi-line LF old_string against a CRLF file and conforms new_string's newlines to CRLF", async () => {
+      const f = join(scratch, "crlf2.txt");
+      writeFileSync(f, "one\r\ntwo\r\nthree\r\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "two\nthree",
+        new_string: "TWO\nTHREE",
+      }));
+      expect(out.ok).toBe(true);
+      expect(out.eol_normalized).toBe(true);
+      expect(readFileSync(f, "utf8")).toBe("one\r\nTWO\r\nTHREE\r\n");
+    });
+
+    it("matches a multi-line CRLF old_string against an LF file and conforms new_string's newlines to LF", async () => {
+      const f = join(scratch, "crlf3.txt");
+      writeFileSync(f, "one\ntwo\nthree\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "two\r\nthree",
+        new_string: "TWO\r\nTHREE",
+      }));
+      expect(out.ok).toBe(true);
+      expect(out.eol_normalized).toBe(true);
+      expect(readFileSync(f, "utf8")).toBe("one\nTWO\nTHREE\n");
+    });
+  });
 });
 
 // ── file_move ───────────────────────────────────────────────────────────────
