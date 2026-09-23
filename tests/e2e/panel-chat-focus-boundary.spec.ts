@@ -97,6 +97,54 @@ test("drag boundary confirms before changing the conversation focus", async ({ p
   }).toBe(true);
 });
 
+test("renders a pinned boundary before warm summary metadata arrives", async ({ page }) => {
+  const marker = `pw-bare-pin-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  await page.goto("/");
+  await page.getByRole("button", { name: /E2E Mock/ }).first().click();
+  const composer = page.getByPlaceholder("Message…");
+  await expect(composer).toBeEnabled({ timeout: 15_000 });
+  await composer.fill(`MOCK:reply=${marker}`);
+  await page.locator('button[aria-label="Send"]').click();
+  await expect(page.getByText(marker).last()).toBeVisible({ timeout: 20_000 });
+
+  const threadsRes = await page.request.get("/api/v1/threads?limit=1");
+  const [thread] = (await threadsRes.json()) as ThreadSummary[];
+  const detailRes = await page.request.get(`/api/v1/threads/${thread.thread_id}`);
+  const detail = (await detailRes.json()) as ThreadDetail;
+  const firstMessage = detail.messages[0];
+  expect(firstMessage?.created_at).toBeTruthy();
+  const pinRes = await page.request.patch(`/api/v1/threads/${thread.thread_id}/context-pin`, {
+    data: { hot_since: firstMessage.created_at },
+  });
+  expect(pinRes.ok()).toBeTruthy();
+
+  // A warm-summary refresh is asynchronous. Hide its metadata in the
+  // browser response to exercise the exact interval that used to drop the
+  // divider even though the persisted pin remained valid.
+  const threadRoute = `**/api/v1/threads/${thread.thread_id}*`;
+  const hideSummaryMetadata = async (route: import("@playwright/test").Route) => {
+    const response = await route.fetch();
+    const payload = await response.json() as Record<string, unknown>;
+    await route.fulfill({
+      status: response.status(),
+      headers: response.headers(),
+      json: {
+        ...payload,
+        warm_summary: null,
+        warm_summary_before: null,
+        warm_summary_computed_at: null,
+        warm_summary_source_messages: null,
+        warm_summary_source_chars: null,
+        warm_summary_topics: null,
+      },
+    });
+  };
+  await page.route(threadRoute, hideSummaryMetadata, { times: 1 });
+  await page.goto(`/?agent=${encodeURIComponent(thread.agent_id)}&thread=${encodeURIComponent(thread.thread_id)}`);
+  await expect(page.locator("[data-focus-boundary='1']")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("button", { name: /Drag to move conversation focus/i })).toBeVisible();
+});
+
 test("dragging to bottom edge still opens confirmation", async ({ page, browserName }) => {
   test.skip(browserName !== "chromium", "Pointer drag simulation is only stable in Chromium for this spec.");
   await sendMockReplies(page, 7, "pw-edge-scroll");

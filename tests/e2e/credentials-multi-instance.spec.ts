@@ -255,15 +255,9 @@ test.describe("credentials panel UI", () => {
         await request.delete(`/api/v1/credentials/${encodeURIComponent(c.id)}`);
       }
     }
-    try {
-      await page.goto("/?tab=credentials");
-      await waitForAppReady(page);
-      await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
-      await expect(page.getByText("No credentials yet", { exact: false })).toBeVisible();
-    } finally {
-      // Re-seed the mock model so other tests in the file still pass.
-      // seedMockAgent's POST is idempotent on the model name.
-      await seedMockAgent(request);
-    }
+    await page.goto("/?tab=credentials");
+    await waitForAppReady(page);
+    await expect(page.getByRole("heading", { name: "Credentials" })).toBeVisible();
+    await expect(page.getByText("No credentials yet", { exact: false })).toBeVisible();
   });
 });

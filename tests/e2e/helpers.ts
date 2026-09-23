@@ -25,7 +25,16 @@ export async function seedMockAgent(request: APIRequestContext): Promise<{ model
   if (list.ok()) {
     const existing = (await list.json()) as Array<{ id: string; name: string }>;
     const hit = existing.find((a) => a.name === agentName);
-    if (hit) return { model: modelName, agent: hit.id };
+    if (hit) {
+      const restore = await request.put(`/api/v1/agents/${encodeURIComponent(hit.id)}`, {
+        data: { is_default: true, model_config_name: modelName },
+      });
+      if (!restore.ok()) {
+        throw new Error(`restore mock agent failed: ${restore.status()} ${await restore.text()}`);
+      }
+      await dismissVersionAdoption(request);
+      return { model: modelName, agent: hit.id };
+    }
   }
 
   const agentRes = await request.post("/api/v1/agents", {
@@ -42,7 +51,26 @@ export async function seedMockAgent(request: APIRequestContext): Promise<{ model
     throw new Error(`seed agent failed: ${agentRes.status()} ${await agentRes.text()}`);
   }
   const body = (await agentRes.json()) as { id: string };
+  await dismissVersionAdoption(request);
   return { model: modelName, agent: body.id };
+}
+
+async function dismissVersionAdoption(request: APIRequestContext): Promise<void> {
+  const response = await request.post("/api/v1/lifecycle/adoption", {
+    data: { action: "dismiss" },
+  });
+  if (!response.ok()) {
+    throw new Error(`dismiss version adoption failed: ${response.status()} ${await response.text()}`);
+  }
+  const state = (await response.json()) as { status?: string };
+  if (state.status !== "dismissed") {
+    throw new Error(`dismiss version adoption returned status=${state.status ?? "unknown"}`);
+  }
+  const persisted = await request.get("/api/v1/lifecycle/adoption");
+  const persistedState = (await persisted.json()) as { status?: string };
+  if (!persisted.ok() || persistedState.status !== "dismissed") {
+    throw new Error(`dismiss version adoption did not persist status=${persistedState.status ?? "unknown"}`);
+  }
 }
 
 // BootScreen (components/ui/BootScreen.tsx) overlays the whole app at
@@ -55,28 +83,16 @@ export async function seedMockAgent(request: APIRequestContext): Promise<{ model
 // click headers, menus, or modals.
 export async function waitForAppReady(page: Page, timeout = 30_000): Promise<void> {
   const overlay = page.locator('[role="status"][aria-live="polite"].fixed.inset-0');
-  if (await overlay.count()) {
-    for (let recovery = 0; recovery < 3; recovery++) {
-      const pickTile = overlay.locator('button[aria-label^="Open "]').first();
-      await page.waitForLoadState("load").catch(() => undefined);
-      const deadline = Date.now() + 5_000;
-      while (Date.now() < deadline && !(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
-        if (!(await pickTile.isVisible().catch(() => false))) break;
-        await pickTile.click({ force: true, timeout: 5_000 }).catch(() => undefined);
-        if (!(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
-          await pickTile.focus().catch(() => undefined);
-          await pickTile.press("Enter").catch(() => undefined);
-        }
-        if (!(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
-          await pickTile.dispatchEvent("click").catch(() => undefined);
-        }
-        if (!(await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false))) {
-          await page.waitForTimeout(250);
-        }
-      }
-      if (await page.locator('button[aria-label^="Opening "]').isVisible().catch(() => false)) break;
-      if (recovery < 2) {
-        await page.reload({ waitUntil: "domcontentloaded" });
+  if (await overlay.isVisible().catch(() => false)) {
+    const phaseTile = overlay.locator('button[aria-label^="Open "], button[aria-label^="Opening "]').first();
+    const phase = await Promise.race([
+      phaseTile.waitFor({ state: "visible", timeout }).then(() => "tile" as const),
+      overlay.waitFor({ state: "detached", timeout }).then(() => "done" as const),
+    ]);
+    if (phase === "tile") {
+      const openingTile = overlay.locator('button[aria-label^="Opening "]').first();
+      if (!(await openingTile.isVisible().catch(() => false))) {
+        await overlay.locator('button[aria-label^="Open "]').first().click({ timeout });
       }
     }
   }
