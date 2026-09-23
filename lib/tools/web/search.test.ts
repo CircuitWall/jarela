@@ -219,6 +219,39 @@ describe("webSearchTool", () => {
     expect(data.total).toBe(1);
     expect(data.results[0].url).toBe("https://www.wikipedia.org/");
   });
+
+  it("falls back to DDG HTML results when bootstrap omits the VQD token", async () => {
+    delete process.env.TAVILY_API_KEY;
+    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
+    resetConfigCache();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response("<html>search page without token</html>", { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        ddgHtmlResultResponse(
+          "Wikipedia",
+          "https://www.wikipedia.org/",
+          "The free encyclopedia.",
+        ),
+      );
+
+    const raw = await webSearchTool.invoke({
+      query: "Wikipedia",
+      max_results: 5,
+    });
+    const data = JSON.parse(String(raw)) as {
+      provider: string;
+      total: number;
+      results: Array<{ url: string }>;
+    };
+
+    expect(data.provider).toBe("duckduckgo");
+    expect(data.total).toBe(1);
+    expect(data.results[0].url).toBe("https://www.wikipedia.org/");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });
 
 function ddgBootstrapResponse(): Response {
@@ -240,6 +273,14 @@ function ddgResultResponse(
 ): Response {
   const body = `DDG.pageLayout.load('d',${JSON.stringify([{ t: title, u: url, a: snippet }])});DDG.duckbar.load('news',{});`;
   return new Response(body, { status: 200 });
+}
+
+function ddgHtmlResultResponse(title: string, url: string, snippet: string): Response {
+  return new Response(
+    `<a class="result__a" href="//duckduckgo.com/l/?uddg=${encodeURIComponent(url)}">${title}</a>` +
+      `<a class="result__snippet">${snippet}</a>`,
+    { status: 200 },
+  );
 }
 
 function mockDdgSuccess(

@@ -29,6 +29,8 @@ const DDG_USER_AGENTS = [
 ] as const;
 const DDG_RETRY_DELAYS_MS = [400, 900, 1400, 1900] as const;
 const DDG_REQUEST_TIMEOUT_MS = 10_000;
+const DDG_CHALLENGE_ERROR_RE =
+  /anomaly|unexpected response|search token|(?:search|status) 202/i;
 const DDG_COMMON_HEADERS = {
   Accept: "text/html,application/xhtml+xml,application/xml;q=0.9",
   "Accept-Language": "en-US,en;q=0.9",
@@ -133,19 +135,28 @@ async function ddgSearch(query: string, limit: number): Promise<SearchResult[]> 
 async function ddgSearchAttempts(query: string, limit: number): Promise<SearchResult[]> {
   let lastError: unknown;
   for (let attempt = 0; attempt < DDG_USER_AGENTS.length; attempt++) {
+    const userAgent = DDG_USER_AGENTS[attempt];
     try {
-      const vqd = await getDdgVqd(query, DDG_USER_AGENTS[attempt]);
+      const vqd = await getDdgVqd(query, userAgent);
       try {
-        const response = await fetchDdgResults(query, vqd, DDG_USER_AGENTS[attempt]);
+        const response = await fetchDdgResults(query, vqd, userAgent);
         return parseDdgResults(response, limit);
       } catch (error) {
         if (isDdgChallenge(error)) {
-          return fetchDdgHtmlResults(query, limit, DDG_USER_AGENTS[attempt]);
+          return fetchDdgHtmlResults(query, limit, userAgent);
         }
         throw error;
       }
     } catch (error) {
-      lastError = error;
+      if (isDdgChallenge(error)) {
+        try {
+          return await fetchDdgHtmlResults(query, limit, userAgent);
+        } catch (fallbackError) {
+          lastError = fallbackError;
+        }
+      } else {
+        lastError = error;
+      }
       const retryDelay = DDG_RETRY_DELAYS_MS[attempt];
       if (retryDelay !== undefined) {
         await new Promise((resolve) => setTimeout(resolve, retryDelay));
@@ -157,7 +168,7 @@ async function ddgSearchAttempts(query: string, limit: number): Promise<SearchRe
 }
 
 function isDdgChallenge(error: unknown): boolean {
-  return error instanceof Error && /anomaly|unexpected response|(?:search|status) 202/i.test(error.message);
+  return error instanceof Error && DDG_CHALLENGE_ERROR_RE.test(error.message);
 }
 
 async function fetchDdgHtmlResults(query: string, limit: number, userAgent: string): Promise<SearchResult[]> {
