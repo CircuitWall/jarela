@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.0] - 2026-09-23
+
+### Added
+
+- **File edits now provide resilient matching and diagnostics.** `file_edit` and
+  `file_multi_edit` report nearby matches and occurrence lines, tolerate CRLF/LF
+  differences, and support opt-in trailing-whitespace and normalized-whitespace
+  strategies. Batch failures also report how many leading edits were clean.
+- **Delegated turns now render as structured conversation cards.** Claude Code
+  and Codex exchanges show the request, progress, and response as distinct turns
+  instead of a flat tool transcript.
+
+### Changed
+
+- **Claude Code and Codex delegation now grants full access under
+  `mostly_safe`.** The `safe` tier remains the blocking mode; callers that need
+  the previous read-only behavior must explicitly select `safe`.
+
 ### Fixed
+
+- **Pinned context boundaries render when persisted summary metadata is absent.**
+  A saved boundary is now visible even when a thread response has no warm-summary
+  fields.
+- **Mobile E2E coverage stays focused on browser-specific behavior.** Chromium
+  retains the complete workflow suite while Mobile Safari covers viewport,
+  composer, boot, and context-boundary contracts without duplicating desktop-only
+  workflows.
 
 - **Jira option-type custom fields accept plain strings.** `jira_update_issue`
   and `jira_create_issue` now auto-wrap a plain string (or array of strings)
@@ -24,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   omitted**, instead of zod's generic "expected string, received undefined".
 - **`tool_result_get` accepts the older flat `{name, offset, limit}` shape**
   as shorthand for `result_ref.name`, with a deprecation warning.
+
+### Breaking Changes
+
+- **Delegation safety defaults changed.** `claude_delegate` and
+  `codex_delegate` no longer default to read-only behavior under
+  `JARELA_TOOL_SAFETY=mostly_safe`; use `JARELA_TOOL_SAFETY=safe` to block these
+  tools.
 
 ## [1.41.7] - 2026-09-21
 
