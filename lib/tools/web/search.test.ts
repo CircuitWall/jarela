@@ -1,349 +1,49 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resetConfigCache } from "@/lib/env/config";
-import { __resetDdgRateLimitForTests, webSearchTool } from "./search";
+import { webSearchTool } from "./search";
 
-const originalTavilyKey = process.env.TAVILY_API_KEY;
-const originalProviderOrder = process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER;
-const originalGoogleApiKey = process.env.GOOGLE_API_KEY;
-const originalGoogleSearchEngineId = process.env.JARELA_GOOGLE_SEARCH_ENGINE_ID;
+const originalFirecrawlKey = process.env.FIRECRAWL_API_KEY;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  process.env.FIRECRAWL_API_KEY = originalFirecrawlKey;
+});
 
 describe("webSearchTool", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-    vi.useRealTimers();
-    process.env.TAVILY_API_KEY = originalTavilyKey;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = originalProviderOrder;
-    process.env.GOOGLE_API_KEY = originalGoogleApiKey;
-    process.env.JARELA_GOOGLE_SEARCH_ENGINE_ID = originalGoogleSearchEngineId;
-    __resetDdgRateLimitForTests();
-    resetConfigCache();
-  });
+  it("calls Firecrawl v2 search and normalizes web results", async () => {
+    process.env.FIRECRAWL_API_KEY = "fc-test";
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({
+      success: true,
+      data: { web: [{ title: "TypeScript", url: "https://www.typescriptlang.org/", description: "Docs" }] },
+    }), { status: 200 }));
 
-  it("uses Google Custom Search when configured", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.GOOGLE_API_KEY = "google-test";
-    process.env.JARELA_GOOGLE_SEARCH_ENGINE_ID = "cx-test";
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "google,duckduckgo";
-    resetConfigCache();
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          items: [
-            {
-              title: "Python",
-              link: "https://www.python.org/",
-              snippet: "Official Python site.",
-            },
-          ],
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
-
-    const raw = await webSearchTool.invoke({ query: "python", max_results: 5 });
-    const data = JSON.parse(String(raw)) as {
-      provider: string;
-      total: number;
-      results: Array<{ url: string }>;
-    };
-
-    expect(data.provider).toBe("google");
-    expect(data.total).toBe(1);
-    expect(data.results[0].url).toBe("https://www.python.org/");
+    const data = parse(await webSearchTool.invoke({ query: "TypeScript", max_results: 5 }));
+    expect(data).toMatchObject({ engine: "firecrawl", provider: "firecrawl", total: 1 });
+    expect(data.results[0]).toMatchObject({ title: "TypeScript", url: "https://www.typescriptlang.org/", snippet: "Docs" });
     expect(fetch).toHaveBeenCalledWith(
+      "https://api.firecrawl.dev/v2/search",
       expect.objectContaining({
-        href: expect.stringContaining(
-          "https://www.googleapis.com/customsearch/v1?",
-        ),
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer fc-test" }),
+        body: JSON.stringify({ query: "TypeScript", limit: 5, sources: ["web"] }),
       }),
     );
   });
 
-  it("serializes concurrent DuckDuckGo searches behind the global cooldown", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
-    resetConfigCache();
-    vi.useFakeTimers();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    mockDdgSuccess(
-      fetchMock,
-      "First",
-      "https://example.com/first",
-      "First result.",
-    );
-    mockDdgSuccess(
-      fetchMock,
-      "Second",
-      "https://example.com/second",
-      "Second result.",
-    );
-
-    const first = webSearchTool.invoke({ query: "first", max_results: 5 });
-    await Promise.resolve();
-    const second = webSearchTool.invoke({ query: "second", max_results: 5 });
-    await vi.advanceTimersByTimeAsync(5_000);
-    await Promise.all([first, second]);
-
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    vi.useRealTimers();
-  });
-  it("falls through to DuckDuckGo when Tavily returns no results", async () => {
-    process.env.TAVILY_API_KEY = "tvly-test";
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "tavily,duckduckgo";
-    resetConfigCache();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ results: [] }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      }),
-    );
-    mockDdgSuccess(
-      fetchMock,
-      "Python.org",
-      "https://www.python.org/",
-      "Official Python site.",
-      ddgBootstrapUnquotedResponse(),
-    );
-
-    const raw = await webSearchTool.invoke({ query: "python", max_results: 5 });
-    const data = JSON.parse(String(raw)) as {
-      provider: string;
-      tried: string[];
-      total: number;
-      results: Array<{ url: string }>;
-    };
-
-    expect(data.provider).toBe("duckduckgo");
-    expect(data.tried).toContain("tavily:empty");
-    expect(data.total).toBe(1);
-    expect(data.results[0].url).toBe("https://www.python.org/");
-  });
-
-  it("returns an error instead of empty success when DuckDuckGo is blocked", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
-    resetConfigCache();
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      if (String(input).includes("duckduckgo.com/?"))
-        return ddgBootstrapResponse();
-      return new Response("<html>blocked</html>");
-    });
-
-    const raw = await webSearchTool.invoke({ query: "python", max_results: 5 });
-    const data = JSON.parse(String(raw)) as {
-      error?: string;
-      total?: number;
-      tried: string[];
-      results?: unknown[];
-    };
-
+  it("returns a useful error when Firecrawl has no results", async () => {
+    process.env.FIRECRAWL_API_KEY = "fc-test";
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(JSON.stringify({ success: true, data: { web: [] } }), { status: 200 }));
+    const data = parse(await webSearchTool.invoke({ query: "nothing", max_results: 5 }));
     expect(data.total).toBe(0);
-    expect(data.results).toEqual([]);
-    expect(data.tried).toContain("duckduckgo:error");
-    expect(data.error).toMatch(/no parseable results/i);
-  });
-
-  it("normalizes malformed DuckDuckGo responses", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
-    resetConfigCache();
-    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      if (String(input).includes("duckduckgo.com/?"))
-        return ddgBootstrapResponse();
-      return new Response("<html>not a DDG response</html>");
-    });
-
-    const raw = await webSearchTool.invoke({
-      query: "site:ica.se erbjudanden ICA vecka",
-      max_results: 5,
-    });
-    const data = JSON.parse(String(raw)) as { error?: string };
-
-    expect(data.error).toMatch(/no parseable results/i);
-    expect(data.error).not.toMatch(/reading ['"]1['"]/i);
-  });
-
-  it("retries transient DuckDuckGo transport failures", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
-    resetConfigCache();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"));
-    mockDdgSuccess(
-      fetchMock,
-      "Python.org",
-      "https://www.python.org/",
-      "Official Python site.",
-    );
-
-    const raw = await webSearchTool.invoke({ query: "python", max_results: 5 });
-    const data = JSON.parse(String(raw)) as { provider: string; total: number };
-
-    expect(data.provider).toBe("duckduckgo");
-    expect(data.total).toBe(1);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-  });
-
-  it("falls back to DDG HTML results when d.js is challenged", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
-    resetConfigCache();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock
-      .mockResolvedValueOnce(ddgBootstrapResponse())
-      .mockResolvedValueOnce(
-        new Response("DDG.deep.anomalyDetectionBlock({})", { status: 202 }),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          `
-        <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.wikipedia.org%2F">Wikipedia</a>
-        <a class="result__snippet">The free encyclopedia.</a>
-      `,
-          { status: 200 },
-        ),
-      );
-
-    const raw = await webSearchTool.invoke({
-      query: "Wikipedia",
-      max_results: 5,
-    });
-    const data = JSON.parse(String(raw)) as {
-      provider: string;
-      total: number;
-      results: Array<{ url: string }>;
-    };
-
-    expect(data.provider).toBe("duckduckgo");
-    expect(data.total).toBe(1);
-    expect(data.results[0].url).toBe("https://www.wikipedia.org/");
-  });
-
-  it("falls back to DDG HTML results when bootstrap omits the VQD token", async () => {
-    delete process.env.TAVILY_API_KEY;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo";
-    resetConfigCache();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response("<html>search page without token</html>", { status: 200 }),
-      )
-      .mockResolvedValueOnce(
-        ddgHtmlResultResponse(
-          "Wikipedia",
-          "https://www.wikipedia.org/",
-          "The free encyclopedia.",
-        ),
-      );
-
-    const raw = await webSearchTool.invoke({
-      query: "Wikipedia",
-      max_results: 5,
-    });
-    const data = JSON.parse(String(raw)) as {
-      provider: string;
-      total: number;
-      results: Array<{ url: string }>;
-    };
-
-    expect(data.provider).toBe("duckduckgo");
-    expect(data.total).toBe(1);
-    expect(data.results[0].url).toBe("https://www.wikipedia.org/");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it("reports DDG HTML fallback challenge pages instead of parse failures", async () => {
-    delete process.env.TAVILY_API_KEY;
-    delete process.env.GOOGLE_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.JARELA_GOOGLE_SEARCH_ENGINE_ID;
-    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo,tavily,google";
-    resetConfigCache();
-    const fetchMock = vi.spyOn(globalThis, "fetch");
-    for (let attempt = 0; attempt < 5; attempt++) {
-      fetchMock
-        .mockResolvedValueOnce(ddgBootstrapResponse())
-        .mockResolvedValueOnce(
-          new Response("DDG.deep.anomalyDetectionBlock({})", { status: 202 }),
-        )
-        .mockResolvedValueOnce(ddgHtmlChallengeResponse());
-    }
-
-    const raw = await webSearchTool.invoke({
-      query: "Wikipedia",
-      max_results: 5,
-    });
-    const data = JSON.parse(String(raw)) as {
-      error?: string;
-      tried: string[];
-      results: unknown[];
-      total: number;
-    };
-
-    expect(data.total).toBe(0);
-    expect(data.results).toEqual([]);
-    expect(data.tried).toEqual([
-      "duckduckgo:error",
-      "tavily:missing_api_key",
-      "google:missing_search_engine_id",
-    ]);
-    expect(data.error).toMatch(/DuckDuckGo HTML search 202 challenge/i);
-    expect(data.error).not.toMatch(/no parseable results/i);
-    const djsCalls = fetchMock.mock.calls.filter(([input]) =>
-      String(input).includes("links.duckduckgo.com/d.js"),
-    );
-    const htmlFallbackCalls = fetchMock.mock.calls.filter(([input]) =>
-      String(input).includes("html.duckduckgo.com/html/"),
-    );
-    expect(djsCalls).toHaveLength(5);
-    expect(htmlFallbackCalls).toHaveLength(5);
+    expect(data.error).toMatch(/no web results/i);
   });
 });
 
-function ddgBootstrapResponse(): Response {
-  return new Response('<html><script>vqd="4-12345"</script></html>', {
-    status: 200,
-  });
-}
-
-function ddgBootstrapUnquotedResponse(): Response {
-  return new Response("<html><script>vqd=4-12345</script></html>", {
-    status: 200,
-  });
-}
-
-function ddgResultResponse(
-  title: string,
-  url: string,
-  snippet: string,
-): Response {
-  const body = `DDG.pageLayout.load('d',${JSON.stringify([{ t: title, u: url, a: snippet }])});DDG.duckbar.load('news',{});`;
-  return new Response(body, { status: 200 });
-}
-
-function ddgHtmlResultResponse(title: string, url: string, snippet: string): Response {
-  return new Response(
-    `<a class="result__a" href="//duckduckgo.com/l/?uddg=${encodeURIComponent(url)}">${title}</a>` +
-      `<a class="result__snippet">${snippet}</a>`,
-    { status: 200 },
-  );
-}
-
-function ddgHtmlChallengeResponse(): Response {
-  return new Response("<html><title>DuckDuckGo</title><p>challenge</p></html>", {
-    status: 202,
-  });
-}
-
-function mockDdgSuccess(
-  fetchMock: ReturnType<typeof vi.spyOn>,
-  title: string,
-  url: string,
-  snippet: string,
-  bootstrap = ddgBootstrapResponse(),
-): void {
-  fetchMock
-    .mockResolvedValueOnce(bootstrap)
-    .mockResolvedValueOnce(ddgResultResponse(title, url, snippet));
+function parse(raw: string): {
+  engine: string;
+  provider: string;
+  total: number;
+  results: Array<{ title: string; url: string; snippet: string }>;
+  error?: string;
+} {
+  return JSON.parse(raw) as ReturnType<typeof parse>;
 }

@@ -119,6 +119,14 @@ export const INTEGRATIONS = {
       { key: "api_key", label: "API key", placeholder: "AIza…", secret: true, required: true },
     ],
   },
+  firecrawl: {
+    label: "Firecrawl Search",
+    category: "other" as IntegrationCategory,
+    description: "Used by web_search through Firecrawl's v2 Search API. Create an API key at firecrawl.dev.",
+    fields: [
+      { key: "api_key", label: "API key", placeholder: "fc-…", secret: true, required: true },
+    ],
+  },
   openai: {
     label: "OpenAI",
     category: "llm" as IntegrationCategory,
