@@ -142,10 +142,12 @@ async function ddgSearchAttempts(query: string, limit: number): Promise<SearchRe
         const response = await fetchDdgResults(query, vqd, userAgent);
         return parseDdgResults(response, limit);
       } catch (error) {
-        if (isDdgChallenge(error)) {
-          return fetchDdgHtmlResults(query, limit, userAgent);
+        if (!isDdgChallenge(error)) throw error;
+        try {
+          return await fetchDdgHtmlResults(query, limit, userAgent);
+        } catch (fallbackError) {
+          lastError = fallbackError;
         }
-        throw error;
       }
     } catch (error) {
       if (isDdgChallenge(error)) {
@@ -157,10 +159,10 @@ async function ddgSearchAttempts(query: string, limit: number): Promise<SearchRe
       } else {
         lastError = error;
       }
-      const retryDelay = DDG_RETRY_DELAYS_MS[attempt];
-      if (retryDelay !== undefined) {
-        await new Promise((resolve) => setTimeout(resolve, retryDelay));
-      }
+    }
+    const retryDelay = DDG_RETRY_DELAYS_MS[attempt];
+    if (retryDelay !== undefined) {
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
     }
   }
   const detail = lastError instanceof Error ? lastError.message : String(lastError);
@@ -183,8 +185,10 @@ async function fetchDdgHtmlResults(query: string, limit: number, userAgent: stri
     body: `q=${encodeURIComponent(query)}&kl=us-en`,
     signal: AbortSignal.timeout(Math.min(getConfig().httpRequestTimeoutMs, DDG_REQUEST_TIMEOUT_MS)),
   });
+  if (response.status === 202) throw new Error("DuckDuckGo HTML search 202 challenge");
   if (!response.ok) throw new Error(`DuckDuckGo HTML search ${response.status}`);
   const html = await response.text();
+  if (/captcha|challenge|anomaly/i.test(html)) throw new Error("DuckDuckGo HTML search challenge page");
   const results: SearchResult[] = [];
   const titleRe = /<a\b[^>]*class=["'][^"']*\bresult__a\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
