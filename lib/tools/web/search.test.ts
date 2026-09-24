@@ -252,6 +252,53 @@ describe("webSearchTool", () => {
     expect(data.results[0].url).toBe("https://www.wikipedia.org/");
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("reports DDG HTML fallback challenge pages instead of parse failures", async () => {
+    delete process.env.TAVILY_API_KEY;
+    delete process.env.GOOGLE_API_KEY;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.JARELA_GOOGLE_SEARCH_ENGINE_ID;
+    process.env.JARELA_WEB_SEARCH_PROVIDER_ORDER = "duckduckgo,tavily,google";
+    resetConfigCache();
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    for (let attempt = 0; attempt < 5; attempt++) {
+      fetchMock
+        .mockResolvedValueOnce(ddgBootstrapResponse())
+        .mockResolvedValueOnce(
+          new Response("DDG.deep.anomalyDetectionBlock({})", { status: 202 }),
+        )
+        .mockResolvedValueOnce(ddgHtmlChallengeResponse());
+    }
+
+    const raw = await webSearchTool.invoke({
+      query: "Wikipedia",
+      max_results: 5,
+    });
+    const data = JSON.parse(String(raw)) as {
+      error?: string;
+      tried: string[];
+      results: unknown[];
+      total: number;
+    };
+
+    expect(data.total).toBe(0);
+    expect(data.results).toEqual([]);
+    expect(data.tried).toEqual([
+      "duckduckgo:error",
+      "tavily:missing_api_key",
+      "google:missing_search_engine_id",
+    ]);
+    expect(data.error).toMatch(/DuckDuckGo HTML search 202 challenge/i);
+    expect(data.error).not.toMatch(/no parseable results/i);
+    const djsCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes("links.duckduckgo.com/d.js"),
+    );
+    const htmlFallbackCalls = fetchMock.mock.calls.filter(([input]) =>
+      String(input).includes("html.duckduckgo.com/html/"),
+    );
+    expect(djsCalls).toHaveLength(5);
+    expect(htmlFallbackCalls).toHaveLength(5);
+  });
 });
 
 function ddgBootstrapResponse(): Response {
@@ -281,6 +328,12 @@ function ddgHtmlResultResponse(title: string, url: string, snippet: string): Res
       `<a class="result__snippet">${snippet}</a>`,
     { status: 200 },
   );
+}
+
+function ddgHtmlChallengeResponse(): Response {
+  return new Response("<html><title>DuckDuckGo</title><p>challenge</p></html>", {
+    status: 202,
+  });
 }
 
 function mockDdgSuccess(
