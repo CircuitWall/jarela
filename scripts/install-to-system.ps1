@@ -244,7 +244,11 @@ Copy-Item -Path (Join-Path $RepoRoot 'scripts\installed-launcher.vbs') `
           -Destination (Join-Path $InstallDir 'launcher.vbs') -Force
 
 # Stamp a version marker so we know which commit produced this install.
-$commit = try { (& git -C $RepoRoot rev-parse --short HEAD).Trim() } catch { 'unknown' }
+$commit = try {
+  $head = (& git -C $RepoRoot rev-parse --short HEAD).Trim()
+  $dirty = (& git -C $RepoRoot status --porcelain --untracked-files=normal).Trim()
+  if ($dirty) { "$head-dirty" } else { $head }
+} catch { 'unknown' }
 @{
   installedAt   = (Get-Date).ToString('o')
   commit        = $commit
