@@ -6,7 +6,7 @@
 // that only runs once the hot path has already failed to find a unique
 // match, so normal edits never pay for it.
 
-export type EditStrategy = "exact" | "trim_trailing" | "normalize_whitespace";
+export type EditStrategy = "exact" | "trim_trailing" | "normalize_whitespace" | "fuzzy";
 
 // A `Transform` rewrites text for matching purposes while remembering, for
 // every character it emits, the offset in the ORIGINAL text it came from.
@@ -124,6 +124,36 @@ function strategyTransform(strategy: EditStrategy): ((s: string) => Transform) |
   return null;
 }
 
+function fuzzyUniqueRange(raw: string, oldString: string): MatchRange[] {
+  if (oldString.length < 20) return [];
+  const oldLines = oldString.split(/\r\n|\r|\n/).map((line) => line.trim().replace(/[ \t]+/g, " "));
+  if (oldLines.some((line) => line.length === 0)) return [];
+  const rawLines = raw.split(/\r\n|\r|\n/);
+  const rawLineStarts: number[] = [];
+  let offset = 0;
+  for (const line of rawLines) {
+    rawLineStarts.push(offset);
+    offset += line.length + 1;
+  }
+  const scores: Array<{ score: number; start: number; end: number }> = [];
+  for (let i = 0; i + oldLines.length <= rawLines.length; i++) {
+    const candidate = rawLines
+      .slice(i, i + oldLines.length)
+      .map((line) => line.trim().replace(/[ \t]+/g, " "));
+    const score = candidate.reduce((total, line, index) => total + diceSimilarity(line, oldLines[index]), 0) / oldLines.length;
+    if (score >= 0.88) {
+      const endLine = i + oldLines.length - 1;
+      const end = rawLineStarts[endLine] + rawLines[endLine].length;
+      scores.push({ score, start: rawLineStarts[i], end });
+    }
+  }
+  scores.sort((a, b) => b.score - a.score);
+  const best = scores[0];
+  const second = scores[1];
+  if (!best || (second && best.score - second.score < 0.08)) return [];
+  return [{ start: best.start, end: best.end }];
+}
+
 function composeTransforms(raw: string, fns: Array<(s: string) => Transform>): Transform {
   let current: Transform = identityTransform(raw);
   for (const fn of fns) {
@@ -195,6 +225,11 @@ export function locateOldString(raw: string, oldString: string, requestedStrateg
         return { ranges: withStrategy, usedStrategy: requestedStrategy, crlfAdjusted: true };
       }
     }
+  }
+
+  if (requestedStrategy === "fuzzy") {
+    const fuzzy = fuzzyUniqueRange(raw, oldString);
+    if (fuzzy.length > 0) return { ranges: fuzzy, usedStrategy: "fuzzy", crlfAdjusted: false };
   }
 
   return { ranges: [], usedStrategy: requestedStrategy, crlfAdjusted: false };
@@ -300,6 +335,10 @@ export function buildNotFoundDiagnostic(raw: string, oldString: string): NotFoun
       normalized_hint = `matches uniquely at line ${lineNumberAt(raw, attempt[0].start)} if strategy="${strategy}" is used`;
       break;
     }
+  }
+  if (!normalized_hint && fuzzyUniqueRange(raw, oldString).length === 1) {
+    const fuzzy = fuzzyUniqueRange(raw, oldString)[0];
+    normalized_hint = `matches uniquely at line ${lineNumberAt(raw, fuzzy.start)} if strategy="fuzzy" is used`;
   }
 
   return { reason: "not_found", nearest_match, normalized_hint };

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -155,6 +155,17 @@ describe("workspace + file tools", () => {
     const read = parse(await fileReadTool.invoke({ path: "inside.txt" }));
     expect(read.ok).toBe(true);
     expect(read.content).toBe("ok");
+  });
+
+  it("scoped=true refuses symlinked paths outside the workspace", async () => {
+    const outside = mkdtempSync(join(tmpRoot, "outside-"));
+    writeFileSync(join(outside, "secret.txt"), "outside");
+    symlinkSync(outside, join(projectRoot, "linked"), "junction");
+    await workspaceInitTool.invoke({ path: projectRoot, scoped: true, include_tree: false, include_git: false });
+
+    const out = parse(await fileReadTool.invoke({ path: "linked/secret.txt" }));
+    expect(out.ok).toBe(false);
+    expect(String(out.error)).toMatch(/outside the scoped workspace/);
   });
 });
 

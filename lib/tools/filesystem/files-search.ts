@@ -411,15 +411,16 @@ const multiEditSchema = z.object({
     .array(z.object({
       old_string: z.string().min(1).describe("Exact literal substring to replace. Must match EXACTLY ONCE in the (current, partially-edited) buffer at the time it's applied."),
       new_string: z.string().describe("Replacement text. May be empty to delete."),
+      replace_all: z.boolean().optional().describe("Replace every non-overlapping match instead of requiring exactly one match. Default false."),
     }))
     .min(1)
     .max(MAX_MULTI_EDITS)
     .describe(`Up to ${MAX_MULTI_EDITS} edits, applied in order. All-or-nothing: if any edit fails to find exactly one match, the file is not modified.`),
   strategy: z
-    .enum(["exact", "trim_trailing", "normalize_whitespace"])
+    .enum(["exact", "trim_trailing", "normalize_whitespace", "fuzzy"])
     .optional()
     .describe(
-      "Matching strategy for every edit's old_string, tried only after a plain exact match fails. 'exact' (default): byte-exact substring, unchanged behavior. 'trim_trailing': ignore trailing whitespace differences at the end of each line. 'normalize_whitespace': ignore leading/trailing whitespace and collapse internal runs of spaces/tabs on each line. CRLF/LF differences between old_string and the file are always tolerated regardless of this setting.",
+      "Matching strategy for every edit's old_string, tried only after exact matching fails. 'exact' (default), 'trim_trailing', and 'normalize_whitespace' are conservative fallbacks. 'fuzzy' allows small textual drift only for a unique high-confidence line block; ambiguous matches are refused.",
     ),
 });
 
@@ -442,7 +443,7 @@ export const fileMultiEditTool = tool(
       let failed = false;
 
       for (let i = 0; i < edits.length; i++) {
-        const { old_string, new_string } = edits[i];
+        const { old_string, new_string, replace_all } = edits[i];
         const attempt = locateOldString(buf, old_string, strategy ?? "exact");
         if (attempt.ranges.length === 0) {
           results.push({
@@ -453,7 +454,7 @@ export const fileMultiEditTool = tool(
           failed = true;
           continue;
         }
-        if (attempt.ranges.length > 1) {
+        if (attempt.ranges.length > 1 && !replace_all) {
           results.push({
             index: i, ok: false, match_count: attempt.ranges.length,
             error: "old_string matches multiple times. Add surrounding context to make it unique.",
@@ -462,14 +463,15 @@ export const fileMultiEditTool = tool(
           failed = true;
           continue;
         }
-        const { start, end } = attempt.ranges[0];
         let replacement = new_string;
         if (attempt.crlfAdjusted) {
           const eol = dominantEol(buf);
           if (eol) replacement = conformEol(replacement, eol);
         }
-        buf = buf.slice(0, start) + replacement + buf.slice(end);
-        results.push({ index: i, ok: true });
+        for (const { start, end } of [...attempt.ranges].reverse()) {
+          buf = buf.slice(0, start) + replacement + buf.slice(end);
+        }
+        results.push({ index: i, ok: true, match_count: attempt.ranges.length });
       }
 
       if (failed) {
@@ -490,6 +492,7 @@ export const fileMultiEditTool = tool(
         ok: true,
         path: abs,
         edits_applied: edits.length,
+        replacements: results.map((result) => result.match_count ?? 1),
         bytes_before: Buffer.byteLength(raw, "utf8"),
         bytes_after: Buffer.byteLength(buf, "utf8"),
       });
