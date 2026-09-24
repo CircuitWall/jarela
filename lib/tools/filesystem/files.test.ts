@@ -121,6 +121,14 @@ describe("credential-file denylist", () => {
     expect(out.content).toBe("readable");
   });
 
+  it("refuses file_stat inside credential directories", async () => {
+    mkdirSync(join(tmpRoot, ".ssh"), { recursive: true });
+    writeFileSync(join(tmpRoot, ".ssh", "config"), "Host *\n");
+    const out = parse(await fileStatTool.invoke({ path: "~/.ssh/config" }));
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/credential directory/);
+  });
+
   it("JARELA_ALLOW_SENSITIVE_FILES=1 bypasses the denylist", async () => {
     process.env.JARELA_ALLOW_SENSITIVE_FILES = "1";
     try {
@@ -246,6 +254,27 @@ describe("file_write", () => {
     );
     expect(existsSync(f)).toBe(false);
   });
+
+  it("writes a UTF-8 file in bounded chunks using returned byte offsets", async () => {
+    const f = join(scratch, "chunked.txt");
+    const first = parse(await fileEditTool.invoke({ path: f, content: "héllo\n" }));
+    expect(first).toMatchObject({ ok: true, offset_bytes: 0, bytes_written: 7, next_offset: 7, truncated: true });
+    const second = parse(await fileEditTool.invoke({
+      path: f,
+      content: "世界\n",
+      offset_bytes: first.next_offset,
+      truncate: false,
+    }));
+    expect(second).toMatchObject({ ok: true, offset_bytes: 7, bytes_written: 7, next_offset: 14, truncated: false });
+    expect(readFileSync(f, "utf8")).toBe("héllo\n世界\n");
+  });
+
+  it("measures file_write limits in UTF-8 bytes", async () => {
+    const f = join(scratch, "utf8-limit.txt");
+    const out = parse(await fileWriteTool.invoke({ path: f, content: "é".repeat(1_000_001) }));
+    expect(out.ok).toBe(false);
+    expect(out.error).toMatch(/exceeds 2000000 bytes/);
+  });
 });
 
 // ── file_edit ───────────────────────────────────────────────────────────────
@@ -288,6 +317,19 @@ describe("file_edit", () => {
     expect(out.match_count).toBe(3);
     // File is left untouched on rejection.
     expect(readFileSync(f, "utf8")).toBe("foo bar foo bar foo");
+  });
+
+  it("replaces every match when replace_all=true", async () => {
+    const f = join(scratch, "replace-all.txt");
+    writeFileSync(f, "foo\nfoo\nfoo\n");
+    const out = parse(await fileEditTool.invoke({
+      path: f,
+      old_string: "foo",
+      new_string: "bar",
+      replace_all: true,
+    }));
+    expect(out).toMatchObject({ ok: true, replacements: 3 });
+    expect(readFileSync(f, "utf8")).toBe("bar\nbar\nbar\n");
   });
 
   it("supports deletion via empty new_string", async () => {
@@ -415,6 +457,35 @@ describe("file_edit", () => {
       expect(out.ok).toBe(true);
       expect(out.matched_strategy).toBe("normalize_whitespace");
       expect(readFileSync(f, "utf8")).toBe("<div>\n    <p>replaced</p>\n</div>\n");
+    });
+  });
+
+  describe("strategy: fuzzy", () => {
+    it("accepts a unique high-confidence textual drift", async () => {
+      const f = join(scratch, "fuzzy1.txt");
+      writeFileSync(f, "before\nconst importantValue = 43;\nafter\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "const importantValue = 42;",
+        new_string: "const importantValue = 44;",
+        strategy: "fuzzy",
+      }));
+      expect(out).toMatchObject({ ok: true, matched_strategy: "fuzzy", replacements: 1 });
+      expect(readFileSync(f, "utf8")).toBe("before\nconst importantValue = 44;\nafter\n");
+    });
+
+    it("refuses ambiguous high-confidence candidates", async () => {
+      const f = join(scratch, "fuzzy2.txt");
+      writeFileSync(f, "const importantValue = 43;\nconst importantValue = 41;\n");
+      const out = parse(await fileEditTool.invoke({
+        path: f,
+        old_string: "const importantValue = 42;",
+        new_string: "const importantValue = 44;",
+        strategy: "fuzzy",
+      }));
+      expect(out.ok).toBe(false);
+      expect(out.error).toMatch(/not found/);
+      expect(readFileSync(f, "utf8")).toBe("const importantValue = 43;\nconst importantValue = 41;\n");
     });
   });
 

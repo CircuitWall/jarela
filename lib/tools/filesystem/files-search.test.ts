@@ -302,6 +302,18 @@ describe("file_multi_edit", () => {
     expect(readFileSync(f, "utf8")).toBe("x\nx\n");
   });
 
+  it("replaces every match for an explicit replace_all edit", async () => {
+    const f = join(projectRoot, "replace-all.ts");
+    writeFileSync(f, "x\nx\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      edits: [{ old_string: "x", new_string: "y", replace_all: true }],
+    }));
+    expect(out.ok).toBe(true);
+    expect(out.replacements).toEqual([2]);
+    expect(readFileSync(f, "utf8")).toBe("y\ny\n");
+  });
+
   it("subsequent edits see earlier edits' results (in-order application)", async () => {
     const f = join(projectRoot, "chain.ts");
     writeFileSync(f, "STEP1\n");
@@ -401,6 +413,18 @@ describe("file_multi_edit", () => {
     }));
     expect(out.ok).toBe(true);
     expect(readFileSync(f, "utf8")).toBe("const a = 10;\nconst b = 20;\nconst c = 30;\nconst d = 40;\n");
+  });
+
+  it("strategy=fuzzy applies only to a unique high-confidence block", async () => {
+    const f = join(projectRoot, "fuzzy.ts");
+    writeFileSync(f, "const importantValue = 43;\n");
+    const out = parse(await fileMultiEditTool.invoke({
+      path: f,
+      strategy: "fuzzy",
+      edits: [{ old_string: "const importantValue = 42;", new_string: "const importantValue = 44;" }],
+    }));
+    expect(out.ok).toBe(true);
+    expect(readFileSync(f, "utf8")).toBe("const importantValue = 44;\n");
   });
 
   it("tolerates CRLF/LF mismatch between old_string and the file, preserving CRLF on write", async () => {

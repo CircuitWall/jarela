@@ -312,7 +312,8 @@ export const fileWriteTool = tool(
     try {
       abs = pathResolverFor(config).resolve(filePath);
       const cap = maxWriteBytes();
-      if (content.length > cap) {
+      const contentBytes = Buffer.byteLength(content, "utf8");
+      if (contentBytes > cap) {
         return JSON.stringify({ ok: false, path: abs, error: `content exceeds ${cap} bytes` });
       }
       assertSafePath(abs, "write");
@@ -351,35 +352,73 @@ const editSchema = z.object({
   old_string: z
     .string()
     .min(1)
+    .optional()
     .describe(
       "Exact literal substring to replace. Must appear EXACTLY ONCE in the file (include surrounding context to disambiguate).",
     ),
-  new_string: z.string().describe("Replacement text. May be empty to delete."),
+  new_string: z.string().optional().describe("Replacement text. May be empty to delete."),
+  content: z.string().min(1).optional().describe("One UTF-8 chunk for a large-file write. Use instead of old_string/new_string."),
+  offset_bytes: z.number().int().min(0).optional().describe("Chunk mode: zero-based byte offset; use the previous result's next_offset."),
+  truncate: z.boolean().optional().describe("Chunk mode: truncate before writing. Defaults true when offset_bytes is 0."),
+  replace_all: z.boolean().optional().describe("Replace every non-overlapping match instead of requiring exactly one match. Default false."),
   strategy: z
-    .enum(["exact", "trim_trailing", "normalize_whitespace"])
+    .enum(["exact", "trim_trailing", "normalize_whitespace", "fuzzy"])
     .optional()
     .describe(
-      "Matching strategy, tried only after a plain exact match fails. 'exact' (default): byte-exact substring, unchanged behavior. 'trim_trailing': ignore trailing whitespace differences at the end of each line. 'normalize_whitespace': ignore leading/trailing whitespace and collapse internal runs of spaces/tabs on each line. CRLF/LF differences between old_string and the file are always tolerated regardless of this setting.",
+      "Matching strategy, tried only after a plain exact match fails. 'exact' (default): byte-exact substring. 'trim_trailing': ignore trailing whitespace differences. 'normalize_whitespace': normalize line whitespace. 'fuzzy': allow small textual drift only when a unique high-confidence line block exists; ambiguous matches are refused. CRLF/LF differences are always tolerated.",
     ),
+}).superRefine((value, ctx) => {
+  const chunkMode = value.content !== undefined || value.offset_bytes !== undefined || value.truncate !== undefined;
+  const replaceMode = value.old_string !== undefined || value.new_string !== undefined || value.replace_all !== undefined || value.strategy !== undefined;
+  if (chunkMode && replaceMode) {
+    ctx.addIssue({ code: "custom", message: "Use either chunk mode or replacement mode, not both." });
+  } else if (!chunkMode && (!value.old_string || value.new_string === undefined)) {
+    ctx.addIssue({ code: "custom", message: "Provide old_string and new_string, or provide content for chunk mode." });
+  }
 });
 
 export const fileEditTool = tool(
-  async ({ path: filePath, old_string, new_string, strategy }, config?: ToolConfig) => {
+  async ({ path: filePath, old_string, new_string, content, offset_bytes, truncate, replace_all, strategy }, config?: ToolConfig) => {
     let abs = filePath;
+    let handle: import("node:fs/promises").FileHandle | undefined;
     try {
       abs = pathResolverFor(config).resolve(filePath);
       assertSafePath(abs, "write");
+      if (content !== undefined) {
+        const offset = offset_bytes ?? 0;
+        const shouldTruncate = truncate ?? offset === 0;
+        const data = Buffer.from(content, "utf8");
+        const cap = maxWriteBytes();
+        if (data.byteLength > cap) {
+          return JSON.stringify({ ok: false, path: abs, error: `chunk exceeds ${cap} bytes` });
+        }
+        if (shouldTruncate) {
+          await withFsDeadline("file_edit.mkdir", path.dirname(abs), () => fs.mkdir(path.dirname(abs), { recursive: true }));
+        }
+        handle = await withFsDeadline("file_edit.open", abs, () => fs.open(abs, shouldTruncate ? "w" : "r+"));
+        const result = await withFsDeadline("file_edit.chunk", abs, () => handle!.write(data, 0, data.byteLength, offset));
+        return JSON.stringify({
+          ok: true,
+          path: abs,
+          offset_bytes: offset,
+          bytes_written: result.bytesWritten,
+          next_offset: offset + result.bytesWritten,
+          truncated: shouldTruncate,
+        });
+      }
+      const oldText = old_string ?? "";
+      const replacementText = new_string ?? "";
       const raw = await withFsDeadline("file_edit.read", abs, () => fs.readFile(abs, "utf8"));
-      const attempt = locateOldString(raw, old_string, strategy ?? "exact");
+      const attempt = locateOldString(raw, oldText, strategy ?? "exact");
       if (attempt.ranges.length === 0) {
         return JSON.stringify({
           ok: false,
           path: abs,
           error: "old_string not found. Re-read the file and try with the exact current content.",
-          diagnostic: buildNotFoundDiagnostic(raw, old_string),
+          diagnostic: buildNotFoundDiagnostic(raw, oldText),
         });
       }
-      if (attempt.ranges.length > 1) {
+      if (attempt.ranges.length > 1 && !replace_all) {
         return JSON.stringify({
           ok: false,
           path: abs,
@@ -388,30 +427,37 @@ export const fileEditTool = tool(
           diagnostic: buildMultipleMatchesDiagnostic(raw, attempt.ranges),
         });
       }
-      const { start, end } = attempt.ranges[0];
-      let replacement = new_string;
+      let replacement = replacementText;
       if (attempt.crlfAdjusted) {
         const eol = dominantEol(raw);
         if (eol) replacement = conformEol(replacement, eol);
       }
-      const next = raw.slice(0, start) + replacement + raw.slice(end);
+      let next = raw;
+      for (const { start, end } of [...attempt.ranges].reverse()) {
+        next = next.slice(0, start) + replacement + next.slice(end);
+      }
       await withFsDeadline("file_edit", abs, () => fs.writeFile(abs, next, "utf8"));
       return JSON.stringify({
         ok: true,
         path: abs,
         bytes_before: Buffer.byteLength(raw, "utf8"),
         bytes_after: Buffer.byteLength(next, "utf8"),
+        replacements: attempt.ranges.length,
         matched_strategy: attempt.usedStrategy,
         eol_normalized: attempt.crlfAdjusted,
       });
     } catch (err) {
       return JSON.stringify({ ok: false, path: abs, error: (err as Error).message });
+    } finally {
+      if (handle) {
+        try { await withFsDeadline("file_edit.close", abs, () => handle!.close()); } catch { /* preserve the edit result */ }
+      }
     }
   },
   {
     name: "file_edit",
     description:
-      "Replace a single exact-match substring inside a file. The old_string must appear exactly once — include enough surrounding context to disambiguate. CRLF/LF differences between old_string and the file are tolerated automatically. Optional strategy ('trim_trailing' | 'normalize_whitespace') relaxes whitespace matching as a fallback when the exact match fails — off by default. On failure, the response includes a `diagnostic` with a fuzzy nearest-match snippet (not-found) or the line numbers of every occurrence (multiple-matches). Use this for one in-place edit instead of shell heredocs; use file_multi_edit for several edits in the same file.",
+      "Edit a UTF-8 text file in one of two modes: replacement mode uses old_string/new_string and requires one match by default (set replace_all=true for every non-overlapping match); chunk mode uses content plus offset_bytes, starting at 0 and continuing with the returned next_offset for large files. Do not mix modes. Use file_multi_edit for several different replacements in one file.",
     schema: editSchema,
   },
 );
@@ -846,6 +892,7 @@ export const fileStatTool = tool(
     let abs = targetPath;
     try {
       abs = pathResolverFor(config).resolve(targetPath);
+      assertSafePath(abs, "read");
       const st = await withFsDeadline("file_stat", abs, () => fs.stat(abs));
       return JSON.stringify({
         ok: true,
