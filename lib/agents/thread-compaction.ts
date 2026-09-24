@@ -44,6 +44,11 @@ export function autoCompactionKeepLast(cap: number): number {
   return Math.max(1, cap - Math.max(20, Math.ceil(cap * 0.1)));
 }
 
+function timestampAfter(timestamp: string): string {
+  const millis = Date.parse(timestamp);
+  return Number.isFinite(millis) ? new Date(millis + 1).toISOString() : timestamp;
+}
+
 function pruneSessionArchives(agentId: string, keepLast: number): number {
   const prefix = `${agentId}/`;
   const all = listMemory("sessions", undefined, 10_000)
@@ -65,7 +70,7 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   const thread = getOrCreateAgentThread(agentId);
   const rows = getMessages(thread.thread_id);
 
-  if (rows.length < 2) {
+  if (rows.length === 0) {
     return { compacted: false, reason: "nothing to compact" };
   }
 
@@ -82,8 +87,11 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   const priorSourceChars = thread.warm_summary_source_chars ?? 0;
   const hasPriorSummary = priorSummary.length > 0 && !!priorBefore;
 
-  const rawBoundary = rows[Math.max(0, rows.length - keepLast)]?.created_at
-    ?? rows[rows.length - 1].created_at;
+  const fullSessionReset = keepLast >= rows.length;
+  const rawBoundary = fullSessionReset
+    ? timestampAfter(rows[rows.length - 1].created_at)
+    : rows[Math.max(0, rows.length - keepLast)]?.created_at
+      ?? rows[rows.length - 1].created_at;
   const proposedTopicBoundary = await findTopicBoundary(thread.thread_id, rawBoundary);
   const newPin = proposedTopicBoundary && (!priorBefore || proposedTopicBoundary > priorBefore)
     ? proposedTopicBoundary

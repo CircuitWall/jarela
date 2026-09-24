@@ -311,6 +311,18 @@ function isRetryable(err: unknown, status?: number): boolean {
   return true; // network errors / fetch rejections
 }
 
+async function parseJsonResponse<T>(res: Response): Promise<T> {
+  const bytes = await res.arrayBuffer();
+  const body = new Uint8Array(bytes);
+  const isGzip = body[0] === 0x1f && body[1] === 0x8b;
+  if (!isGzip) return JSON.parse(new TextDecoder().decode(body)) as T;
+
+  const source = new Response(body).body;
+  if (!source) throw new Error("Unable to read gzip response body");
+  const stream = source.pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text()) as T;
+}
+
 async function request<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const cfg = runtimeConfig();
   const maxAttempts = Math.max(1, cfg.httpMaxAttempts);
@@ -362,7 +374,7 @@ async function request<T>(path: string, init?: RequestInit & { timeoutMs?: numbe
         }
         throw new Error(`${res.status} ${text}`);
       }
-      return res.json() as Promise<T>;
+      return parseJsonResponse<T>(res);
     } catch (err) {
       // Bail out immediately on caller cancel — never report it as a
       // network failure.

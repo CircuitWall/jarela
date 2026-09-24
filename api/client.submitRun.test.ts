@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { submitRun, uploadBinaryFile, uploadImageFile } from "./client";
+import { api, submitRun, uploadBinaryFile, uploadImageFile } from "./client";
 import type { ContentPart } from "./types";
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -100,5 +100,21 @@ describe("uploadBinaryFile", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.headers).toBeUndefined();
+  });
+});
+
+describe("api JSON responses", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("decodes a gzip body when an intermediary omits content-encoding", async () => {
+    const encoded = Uint8Array.from(atob("H4sIAAAAAAAACqtWykjNyclXslIqzy/KSVGqBQDRQQnYEQAAAA=="), (char) => char.charCodeAt(0));
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(encoded, {
+      headers: { "Content-Type": "application/json" },
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(api.profile.get()).resolves.toEqual({ hello: "world" });
   });
 });
