@@ -11,6 +11,8 @@ const {
   createThread,
   listThreadsByAgent,
   getMessages,
+  getMessagesAfter,
+  getMessagesPage,
   getThread,
   commitThreadWarmContext,
   setThreadContextPin,
@@ -155,7 +157,7 @@ describe("addMessage metadata", () => {
     expect(row.metadata).toBe(JSON.stringify(meta));
   });
 
-  it("assigns strictly increasing timestamps when a burst shares one clock tick", () => {
+  it("assigns strictly increasing seq even when created_at collides within one clock tick", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     try {
@@ -165,13 +167,12 @@ describe("addMessage metadata", () => {
       }
 
       const rows = getMessages(thread.thread_id);
-      expect(rows.map((row) => row.created_at)).toEqual([
-        "2026-01-01T00:00:00.000Z",
-        "2026-01-01T00:00:00.001Z",
-        "2026-01-01T00:00:00.002Z",
-        "2026-01-01T00:00:00.003Z",
-        "2026-01-01T00:00:00.004Z",
-      ]);
+      // created_at is untouched wall-clock — every row legitimately shares
+      // the frozen instant. Ordering no longer depends on it.
+      expect(rows.every((row) => row.created_at === "2026-01-01T00:00:00.000Z")).toBe(true);
+      const seqs = rows.map((row) => row.seq);
+      expect(seqs).toEqual([...seqs].sort((a, b) => a - b));
+      expect(new Set(seqs).size).toBe(5);
     } finally {
       vi.useRealTimers();
     }
@@ -210,6 +211,85 @@ describe("pruneThreadMessages", () => {
     expect(rows.map((r) => r.content)).toEqual(["m2", "m3", "m4", "m5"]);
     // message_count column tracks the live row count after pruning.
     expect(getThread(t.thread_id)?.message_count).toBe(4);
+  });
+
+  it("preserveFromSeq deletes only rows strictly before that seq cursor", () => {
+    const t = createThread("agent-prune");
+    const rows = [];
+    for (let i = 0; i < 5; i++) rows.push(addMessage(t.thread_id, "user", `m${i}`));
+    // keepLast is irrelevant on this branch — the seq cursor is authoritative.
+    const removed = pruneThreadMessages(t.thread_id, 1, rows[3].seq);
+    expect(removed).toBe(3);
+    expect(getMessages(t.thread_id).map((r) => r.content)).toEqual(["m3", "m4"]);
+  });
+
+  it("preserveFromSeq is a same-millisecond collision safe: a tied created_at at the cursor doesn't get skipped", () => {
+    // Regression for the boundary tie that reappeared once addMessage
+    // stopped bumping colliding created_at values (ADR-0088). The seq
+    // cursor disambiguates a burst even when every created_at is identical.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-01T00:00:00.000Z"));
+    try {
+      const t = createThread("agent-prune-collide");
+      const rows = [];
+      for (let i = 0; i < 4; i++) rows.push(addMessage(t.thread_id, "user", `m${i}`));
+      expect(new Set(rows.map((r) => r.created_at)).size).toBe(1);
+
+      const removed = pruneThreadMessages(t.thread_id, 1, rows[2].seq);
+      expect(removed).toBe(2);
+      expect(getMessages(t.thread_id).map((r) => r.content)).toEqual(["m2", "m3"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("pagination cursors are seq-based, not timestamp-based", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("getMessagesPage orders by seq and paginates via a beforeSeq cursor", () => {
+    const t = createThread("agent-page");
+    const rows = [];
+    for (let i = 0; i < 5; i++) rows.push(addMessage(t.thread_id, "user", `m${i}`));
+
+    const first = getMessagesPage(t.thread_id, 2);
+    expect(first.messages.map((m) => m.content)).toEqual(["m3", "m4"]);
+    expect(first.has_more).toBe(true);
+
+    const oldestSeqOnPage = first.messages[0].seq;
+    const second = getMessagesPage(t.thread_id, 2, oldestSeqOnPage);
+    expect(second.messages.map((m) => m.content)).toEqual(["m1", "m2"]);
+    expect(second.has_more).toBe(true);
+  });
+
+  it("getMessagesAfter returns only rows with a strictly greater seq", () => {
+    const t = createThread("agent-page");
+    const rows = [];
+    for (let i = 0; i < 4; i++) rows.push(addMessage(t.thread_id, "user", `m${i}`));
+
+    const after = getMessagesAfter(t.thread_id, rows[1].seq);
+    expect(after.map((m) => m.content)).toEqual(["m2", "m3"]);
+  });
+
+  it("does not skip or duplicate rows when created_at collides across the whole burst", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-02-01T00:00:00.000Z"));
+    try {
+      const t = createThread("agent-page-collide");
+      const rows = [];
+      for (let i = 0; i < 6; i++) rows.push(addMessage(t.thread_id, "user", `m${i}`));
+      expect(new Set(rows.map((r) => r.created_at)).size).toBe(1);
+
+      const page = getMessagesPage(t.thread_id, 3);
+      expect(page.messages.map((m) => m.content)).toEqual(["m3", "m4", "m5"]);
+
+      const after = getMessagesAfter(t.thread_id, rows[2].seq);
+      expect(after.map((m) => m.content)).toEqual(["m3", "m4", "m5"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -202,6 +202,10 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  // Server-assigned monotonic order (SQLite rowid). The canonical sort and
+  // pagination-cursor key — created_at is wall-clock and can collide.
+  // Absent on client-only optimistic bubbles that haven't been persisted yet.
+  seq?: number;
   // Captured live during the run, persisted with the assistant message.
   // Lets the chat UI render historical tool invocations the same way it
   // renders live streaming ones.

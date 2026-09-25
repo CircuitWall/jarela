@@ -7,7 +7,11 @@ const now = () => new Date().toISOString();
 // Explicit column list for message reads — omits `embedding` (~20KB of
 // JSON-encoded float[] per row) which only the embeddings module reads.
 // Avoids dragging it through the chat-history result set on every call.
-const MSG_COLS_SQL = "SELECT msg_id, thread_id, role, content, created_at, tool_events, category, metadata FROM messages";
+// `rowid` (aliased `seq`) is SQLite's own monotonic insertion-order integer —
+// every rowid table has one for free, no migration needed. It's the only
+// reliable ordering key: `created_at` is wall-clock and can collide within
+// the same millisecond on a fast burst (see addMessage below).
+const MSG_COLS_SQL = "SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata FROM messages";
 
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
@@ -34,6 +38,9 @@ export interface ThreadRow {
   auto_boundary_locked_until_msg_count?: number;
 }
 export interface MessageRow {
+  // SQLite rowid — strictly increasing insertion order, unique per row.
+  // The canonical sort/pagination key; created_at is display-only.
+  seq: number;
   msg_id: string; thread_id: string; role: string; content: string; created_at: string;
   // JSON-encoded array of PersistedToolEvent. null when no tool work happened
   // on this turn or for user messages. Read back by the chat UI so historical
@@ -96,7 +103,7 @@ export function deleteThread(thread_id: string): boolean {
 
 export function getMessages(thread_id: string): MessageRow[] {
   return getDb()
-    .prepare(MSG_COLS_SQL + " WHERE thread_id=? ORDER BY created_at ASC, msg_id ASC")
+    .prepare(MSG_COLS_SQL + " WHERE thread_id=? ORDER BY rowid ASC")
     .all(thread_id) as unknown as MessageRow[];
 }
 
@@ -133,7 +140,7 @@ export function getRecentMessagesWindow(
     sql += " AND created_at >= ?";
     params.push(sinceISO);
   }
-  sql += " ORDER BY created_at DESC, msg_id DESC";
+  sql += " ORDER BY rowid DESC";
   if (limit > 0) {
     sql += " LIMIT ?";
     params.push(limit);
@@ -142,39 +149,39 @@ export function getRecentMessagesWindow(
   return rows.reverse();
 }
 
-// Forward-fetch — return messages strictly newer than `afterISO`, oldest
+// Forward-fetch — return messages strictly newer than `afterSeq`, oldest
 // first, capped at `limit`. Used by the chat view to pull only the
 // freshly-persisted user+assistant pair after a run completes, instead of
 // re-fetching the whole most-recent page.
 export function getMessagesAfter(
   thread_id: string,
-  afterISO: string,
+  afterSeq: number,
   limit = 50,
 ): MessageRow[] {
   return getDb()
     .prepare(
       MSG_COLS_SQL +
-        " WHERE thread_id=? AND created_at > ? ORDER BY created_at ASC, msg_id ASC LIMIT ?",
+        " WHERE thread_id=? AND rowid > ? ORDER BY rowid ASC LIMIT ?",
     )
-    .all(thread_id, afterISO, limit) as unknown as MessageRow[];
+    .all(thread_id, afterSeq, limit) as unknown as MessageRow[];
 }
 
 // Pagination for the chat UI. Returns the latest N messages strictly older
-// than `beforeISO` (cursor). Caller passes the oldest already-loaded message's
-// created_at as the cursor; first page omits beforeISO.
+// than `beforeSeq` (cursor). Caller passes the oldest already-loaded
+// message's `seq` as the cursor; first page omits beforeSeq.
 export function getMessagesPage(
   thread_id: string,
   limit: number,
-  beforeISO?: string,
+  beforeSeq?: number,
 ): { messages: MessageRow[]; has_more: boolean } {
   const db = getDb();
   const params: (string | number)[] = [thread_id];
   let sql = MSG_COLS_SQL + " WHERE thread_id=?";
-  if (beforeISO) {
-    sql += " AND created_at < ?";
-    params.push(beforeISO);
+  if (beforeSeq !== undefined) {
+    sql += " AND rowid < ?";
+    params.push(beforeSeq);
   }
-  sql += " ORDER BY created_at DESC, msg_id DESC LIMIT ?";
+  sql += " ORDER BY rowid DESC LIMIT ?";
   params.push(limit + 1); // fetch one extra to detect if there's more
   const rows = db.prepare(sql).all(...params) as unknown as MessageRow[];
   const has_more = rows.length > limit;
@@ -191,22 +198,12 @@ export function addMessage(
 ): MessageRow {
   const msg_id = randomUUID();
   const db = getDb();
-  const current = now();
-  const previous = db
-    .prepare("SELECT created_at FROM messages WHERE thread_id=? ORDER BY created_at DESC, msg_id DESC LIMIT 1")
-    .get(thread_id) as { created_at: string } | undefined;
-  // Context pins and pagination cursors are timestamp-based. Advance a burst
-  // by one millisecond when wall-clock resolution would otherwise collapse
-  // adjacent messages onto an ambiguous retention boundary.
-  const previousMs = previous ? Date.parse(previous.created_at) : Number.NaN;
-  const currentMs = Date.parse(current);
-  const t = Number.isFinite(previousMs) && Number.isFinite(currentMs) && currentMs <= previousMs
-    ? new Date(previousMs + 1).toISOString()
-    : current;
+  const t = now();
   const toolEventsJson = toolEvents && toolEvents.length > 0 ? JSON.stringify(toolEvents) : null;
   const metadataJson = metadata && Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null;
-  db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
+  const info = db.prepare("INSERT INTO messages (msg_id,thread_id,role,content,created_at,tool_events,category,metadata) VALUES (?,?,?,?,?,?,?,?)")
     .run(msg_id, thread_id, role, content, t, toolEventsJson, category, metadataJson);
+  const seq = Number(info.lastInsertRowid);
   db.prepare("UPDATE threads SET message_count=message_count+1 WHERE thread_id=?").run(thread_id);
   // Best-effort: embed the message so semantic recall can pull it back later.
   // Skip empty / very short content (greetings have no useful signal).
@@ -218,7 +215,7 @@ export function addMessage(
       }
     }).catch(() => { /* logged in embeddings module */ });
   }
-  return { msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
+  return { seq, msg_id, thread_id, role, content, created_at: t, tool_events: toolEventsJson, category, metadata: metadataJson };
 }
 
 // Shallow-merge `partial` into a message's existing metadata. Use this
@@ -254,30 +251,32 @@ export function getOrCreateAgentThread(agentId: string): ThreadRow {
 }
 
 // Retention guardrail: keep at most `keepLast` most-recent messages on a
-// thread and delete the rest. When preserveSince is supplied, every message
-// at or after that boundary is retained because the warm summary only covers
-// rows before it.
-export function pruneThreadMessages(threadId: string, keepLast: number, preserveSince?: string): number {
+// thread and delete the rest. When preserveFromSeq is supplied, every
+// message at or after that `seq` cursor is retained because the warm
+// summary only covers rows before it. Uses `seq` rather than created_at so
+// a same-millisecond collision at the exact boundary can't leave a row
+// stuck — neither summarized nor pruned (see ADR-0088).
+export function pruneThreadMessages(threadId: string, keepLast: number, preserveFromSeq?: number): number {
   if (!Number.isFinite(keepLast) || keepLast <= 0) return 0;
   const db = getDb();
-  const totalQuery = preserveSince
-    ? "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND created_at < ?"
+  const totalQuery = preserveFromSeq !== undefined
+    ? "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid < ?"
     : "SELECT COUNT(*) AS n FROM messages WHERE thread_id=?";
   const total = (db
     .prepare(totalQuery)
-    .get(...(preserveSince ? [threadId, preserveSince] : [threadId])) as { n: number } | undefined)?.n ?? 0;
+    .get(...(preserveFromSeq !== undefined ? [threadId, preserveFromSeq] : [threadId])) as { n: number } | undefined)?.n ?? 0;
   if (total <= keepLast) return 0;
-  const removeCount = preserveSince ? total : total - keepLast;
-  const deleteSql = preserveSince
+  const removeCount = preserveFromSeq !== undefined ? total : total - keepLast;
+  const deleteSql = preserveFromSeq !== undefined
     ? "DELETE FROM messages WHERE msg_id IN (" +
-      "  SELECT msg_id FROM messages WHERE thread_id=? AND created_at < ? ORDER BY created_at ASC, msg_id ASC LIMIT ?" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? AND rowid < ? ORDER BY rowid ASC LIMIT ?" +
       ")"
     : "DELETE FROM messages WHERE msg_id IN (" +
-      "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY created_at ASC, msg_id ASC LIMIT ?" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY rowid ASC LIMIT ?" +
       ")";
   const r = db
     .prepare(deleteSql)
-    .run(...(preserveSince ? [threadId, preserveSince, removeCount] : [threadId, removeCount]));
+    .run(...(preserveFromSeq !== undefined ? [threadId, preserveFromSeq, removeCount] : [threadId, removeCount]));
   const removed = Number(r.changes);
   db.prepare("UPDATE threads SET message_count=?, updated_at=? WHERE thread_id=?")
     .run(Math.max(0, total - removed), new Date().toISOString(), threadId);

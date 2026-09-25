@@ -2,7 +2,7 @@
 import { useEffect, type RefObject } from "react";
 import { api } from "@/api/client";
 import type { Message } from "@/api/types";
-import { appendUnique, applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
+import { appendUnique, applyThreadMeta, isUnconfirmed, type ThreadMetaApplier } from "./chat-helpers";
 
 interface Params {
   threadId: string | null;
@@ -48,12 +48,18 @@ export function useThreadCrossDeviceSync({
       const generation = replaceExisting
         ? ++replacementGeneration
         : ++appendGeneration;
-      const anchor = !replaceExisting && cur.length > 0
-        ? cur[cur.length - 1].created_at
+      // Anchor on the last *confirmed* message — an unconfirmed one has no
+      // server-assigned `seq` yet. If the only local messages are still
+      // pending (e.g. our own send is mid-flight), fall through to the
+      // merge branch below rather than the raw-overwrite branch, so this
+      // fetch can never drop an in-flight local bubble.
+      const confirmed = cur.filter((m) => !isUnconfirmed(m));
+      const anchor = !replaceExisting && confirmed.length > 0
+        ? confirmed[confirmed.length - 1].seq
         : undefined;
       const fetchPromise = replaceExisting
         ? api.threads.get(threadId, { limit: Math.max(50, cur.length) })
-        : anchor
+        : anchor !== undefined
         ? api.threads.get(threadId, { after: anchor })
         : api.threads.get(threadId);
       const precedingReplacement = latestReplacement;
@@ -66,8 +72,10 @@ export function useThreadCrossDeviceSync({
         if (replaceExisting) {
           setMessages(() => d.messages);
           setHasMore(d.has_more);
-        } else if (anchor) {
+        } else if (anchor !== undefined) {
           if (d.messages.length === 0) return;
+          setMessages((prev) => appendUnique(prev, d.messages));
+        } else if (cur.length > 0) {
           setMessages((prev) => appendUnique(prev, d.messages));
         } else {
           setMessages(() => d.messages);

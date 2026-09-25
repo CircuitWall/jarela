@@ -28,6 +28,12 @@ type Params = { params: Promise<{ thread_id: string }> };
 const DEFAULT_PAGE = 50;
 const DEFAULT_CONTEXT_WINDOW_TOKENS = 8_192;
 
+function parseSeqParam(raw: string | null): number | undefined {
+  if (!raw) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export async function GET(req: NextRequest, { params }: Params) {
   const { thread_id } = await params;
   const thread = getThread(thread_id);
@@ -35,8 +41,11 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const url = new URL(req.url);
   const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit")) || DEFAULT_PAGE));
-  const before = url.searchParams.get("before") ?? undefined;
-  const after  = url.searchParams.get("after")  ?? undefined;
+  // Cursors are the message `seq` (SQLite rowid) — a monotonic order key,
+  // not a timestamp — so pagination can't skip/duplicate rows on a
+  // created_at collision.
+  const before = parseSeqParam(url.searchParams.get("before"));
+  const after  = parseSeqParam(url.searchParams.get("after"));
 
   // `after` is a forward-fetch shortcut: caller (typically ChatView's
   // run-completion handler) already has the recent messages and just wants
@@ -44,7 +53,7 @@ export async function GET(req: NextRequest, { params }: Params) {
   // forward window is not paginated — caller already has everything older.
   let messages: MessageRow[];
   let has_more: boolean;
-  if (after) {
+  if (after !== undefined) {
     messages = getMessagesAfter(thread_id, after, limit);
     has_more = false;
   } else {

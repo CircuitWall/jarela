@@ -128,6 +128,7 @@ export function messageToResponse(
 ) {
   return {
     id: m.msg_id,
+    seq: m.seq,
     role: m.role,
     content: m.content,
     created_at: m.created_at,

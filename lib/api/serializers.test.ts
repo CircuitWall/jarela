@@ -190,6 +190,7 @@ function makeUsageRow(overrides: Partial<MessageUsageRow> = {}): MessageUsageRow
 
 function makeMessageRow(overrides: Partial<MessageRow> = {}): MessageRow {
   return {
+    seq: 1,
     msg_id: "m1",
     thread_id: "t1",
     role: "assistant",

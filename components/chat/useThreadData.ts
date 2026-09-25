@@ -172,7 +172,7 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     if (!threadId || loadingMore || !hasMore || messages.length === 0) return;
     setLoadingMore(true);
     try {
-      const oldest = messages[0].created_at;
+      const oldest = messages[0].seq;
       const d = await api.threads.get(threadId, { before: oldest, limit: 50 });
       setMessages((prev) => [...d.messages, ...prev]);
       setHasMore(d.has_more);

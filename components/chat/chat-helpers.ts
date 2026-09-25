@@ -54,17 +54,18 @@ export interface ThreadGetPayload {
 // All incoming rows are stamped status='confirmed'. The local pending bubbles
 // carry status='pending' until promoted here.
 //
-// The final step re-sorts by `created_at` ASC. This matters whenever a user
-// bubble is appended optimistically while a reply is still in flight: the
-// client stamps it before the server has finished persisting the assistant
-// message. Both remaining paths do this — Stop (or an attachment submit)
-// followed by a queue drain, and steering, which the server persists mid-run.
-// Without the sort, the earlier assistant reply (server timestamp T2) lands
-// AFTER the user bubble (client timestamp T3 ≈ later) even though the true
-// order is [user, reply, user].
-// Since a single-machine install has ≤1ms clock skew, the ISO string
-// timestamps sort correctly and Array.sort's stability preserves the
-// relative order of same-timestamp confirmations.
+// The final step re-sorts by `seq` ASC — the server-assigned monotonic
+// order, not created_at. This matters whenever a user bubble is appended
+// optimistically while a reply is still in flight: the client renders it
+// before the server has finished persisting the assistant message. Both
+// remaining paths do this — Stop (or an attachment submit) followed by a
+// queue drain, and steering, which the server persists mid-run. Without the
+// sort, the earlier assistant reply lands after the user bubble even though
+// the true order is [user, reply, user].
+// A still-pending bubble has no `seq` yet (the server hasn't assigned one),
+// so it sorts after every message that does — it's about to become the
+// newest. Array.sort's stability then preserves relative order among
+// multiple such pending bubbles.
 // A bubble the client created optimistically and the server has not yet
 // echoed back. All of these reconcile in place; only the label differs.
 export function isUnconfirmed(m: Message): boolean {
@@ -105,7 +106,8 @@ export function appendUnique(prev: Message[], incoming: Message[]): Message[] {
     result.push(confirmed);
   }
 
-  result.sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0));
+  const orderKey = (m: Message) => (typeof m.seq === "number" ? m.seq : Number.POSITIVE_INFINITY);
+  result.sort((a, b) => orderKey(a) - orderKey(b));
   return result;
 }
 
