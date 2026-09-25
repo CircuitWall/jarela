@@ -34,6 +34,7 @@ import { getIntegrationRaw, INTEGRATIONS, type IntegrationName } from "@/lib/sto
 import { getStoredOAuthToken as getStoredCopilotOAuthToken } from "@/lib/providers/github-copilot-auth";
 import { getClaudeCodeConfig } from "@/lib/tools/delegation/claude-code-config";
 import { getCodexConfig, resolveCodexLaunch } from "@/lib/tools/delegation/codex-delegate";
+import { readJsonResponse } from "@/lib/utils/http-json";
 
 export const __testing = {
   spawnClaudeCodeVersion(bin: string, env: NodeJS.ProcessEnv) {
@@ -120,7 +121,7 @@ export async function probeAtlassian(): Promise<HealthResult> {
       const body = await res.text().catch(() => "");
       return probeError(`Atlassian ${res.status}: ${body.slice(0, 200)}`);
     }
-    const me = (await res.json()) as { displayName?: string; emailAddress?: string; accountId?: string };
+    const me = await readJsonResponse<{ displayName?: string; emailAddress?: string; accountId?: string }>(res);
     return ok({ displayName: me.displayName, email: me.emailAddress, accountId: me.accountId });
   } catch (err) {
     return transient(describeError(err));
@@ -145,7 +146,7 @@ export async function probeJiraAlign(): Promise<HealthResult> {
       const body = await res.text().catch(() => "");
       return probeError(`Jira Align ${res.status}: ${body.slice(0, 200)}`);
     }
-    const data = (await res.json()) as { items?: unknown[] };
+    const data = await readJsonResponse<{ items?: unknown[] }>(res);
     return ok({ url: auth.url, sample_programs: Array.isArray(data.items) ? data.items.length : 0 });
   } catch (err) {
     return transient(describeError(err));
@@ -173,7 +174,7 @@ export async function probeGithub(): Promise<HealthResult> {
       const body = await res.text().catch(() => "");
       return probeError(`GitHub ${res.status}: ${body.slice(0, 200)}`);
     }
-    const me = (await res.json()) as { login?: string; name?: string | null; type?: string };
+    const me = await readJsonResponse<{ login?: string; name?: string | null; type?: string }>(res);
     return ok({ login: me.login, name: me.name ?? null, type: me.type });
   } catch (err) {
     return transient(describeError(err));
@@ -229,7 +230,7 @@ export async function probeGmail(): Promise<HealthResult> {
       const body = await tokenRes.text().catch(() => "");
       return probeError(`OAuth refresh failed ${tokenRes.status}: ${body.slice(0, 200)}`);
     }
-    const { access_token } = (await tokenRes.json()) as { access_token?: string };
+    const { access_token } = await readJsonResponse<{ access_token?: string }>(tokenRes);
     if (!access_token) return probeError("OAuth response missing access_token");
     const res = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
       headers: { Authorization: `Bearer ${access_token}`, Accept: "application/json" },
@@ -243,7 +244,7 @@ export async function probeGmail(): Promise<HealthResult> {
       const body = await res.text().catch(() => "");
       return probeError(`Gmail ${res.status}: ${body.slice(0, 200)}`);
     }
-    const data = (await res.json()) as { labels?: Array<{ id: string; name: string }> };
+    const data = await readJsonResponse<{ labels?: Array<{ id: string; name: string }> }>(res);
     return ok({ labels: data.labels?.length ?? 0 });
   } catch (err) {
     return transient(describeError(err));
@@ -268,7 +269,7 @@ export async function probeOutlook(): Promise<HealthResult> {
       const body = await res.text().catch(() => "");
       return probeError(`Graph ${res.status}: ${body.slice(0, 200)}`);
     }
-    const me = (await res.json()) as { displayName?: string; mail?: string; userPrincipalName?: string };
+    const me = await readJsonResponse<{ displayName?: string; mail?: string; userPrincipalName?: string }>(res);
     return ok({ displayName: me.displayName, email: me.mail ?? me.userPrincipalName });
   } catch (err) {
     return transient(describeError(err));
@@ -336,7 +337,7 @@ export async function probeAnthropic(): Promise<HealthResult> {
     }
     if (res.status === 429) return transient("Anthropic rate-limited the probe (429).");
     if (!res.ok) return probeError(`Anthropic returned ${res.status}`);
-    const data = (await res.json()) as { data?: Array<{ id: string }> };
+    const data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
     return ok({ models: (data.data ?? []).map((m) => m.id).length });
   } catch (err) {
     return transient(describeError(err));
@@ -358,7 +359,7 @@ export async function probeOpenAI(): Promise<HealthResult> {
     }
     if (res.status === 429) return transient("OpenAI rate-limited the probe (429).");
     if (!res.ok) return probeError(`OpenAI returned ${res.status}`);
-    const data = (await res.json()) as { data?: Array<{ id: string }> };
+    const data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
     return ok({ models: (data.data ?? []).length });
   } catch (err) {
     return transient(describeError(err));
@@ -378,7 +379,7 @@ export async function probeDeepseek(): Promise<HealthResult> {
     }
     if (res.status === 429) return transient("DeepSeek rate-limited the probe (429).");
     if (!res.ok) return probeError(`DeepSeek returned ${res.status}`);
-    const data = (await res.json()) as { data?: Array<{ id: string }> };
+    const data = await readJsonResponse<{ data?: Array<{ id: string }> }>(res);
     return ok({ models: (data.data ?? []).length });
   } catch (err) {
     return transient(describeError(err));
@@ -398,7 +399,7 @@ export async function probeCohere(): Promise<HealthResult> {
     }
     if (res.status === 429) return transient("Cohere rate-limited the probe (429).");
     if (!res.ok) return probeError(`Cohere returned ${res.status}`);
-    const data = (await res.json()) as { models?: Array<{ name: string }> };
+    const data = await readJsonResponse<{ models?: Array<{ name: string }> }>(res);
     return ok({ models: (data.models ?? []).length });
   } catch (err) {
     return transient(describeError(err));
@@ -431,7 +432,7 @@ export async function probeGithubCopilot(): Promise<HealthResult> {
         const body = await res.text().catch(() => "");
         return probeError(`GitHub Copilot ${res.status}: ${body.slice(0, 200)}`);
       }
-      const json = (await res.json()) as { expires_at?: string };
+      const json = await readJsonResponse<{ expires_at?: string }>(res);
       return ok({ auth: "oauth", session_expires_at: json.expires_at ?? null });
     } catch (err) {
       return transient(describeError(err));
@@ -551,7 +552,8 @@ export async function probeLinkedInPersonal(): Promise<HealthResult> {
     if (res.status === 403) return ok({ auth: "oauth", warning: "OAuth succeeded, but LinkedIn denied profile lookup. Reconnect with the OpenID Connect profile scope (openid profile)." });
     if (res.status === 429) return transient("LinkedIn rate-limited the personal probe (429).");
     if (!res.ok) return probeError(`LinkedIn Personal returned ${res.status}`);
-    const body = await res.json().catch(() => ({})) as { name?: string; email?: string };
+    const body = await readJsonResponse<{ name?: string; email?: string }>(res)
+      .catch((): { name?: string; email?: string } => ({}));
     return ok({ displayName: body.name, email: body.email, auth: "oauth" });
   } catch (err) {
     return transient(describeError(err));
