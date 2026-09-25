@@ -72,6 +72,7 @@ async function commitBoundaryCompaction(
   const committed = await compactThreadWarmContext(threadId, boundary, {
     expectedHotSince: basePin,
     alignTopicBoundary: true,
+    allowEmptySummary: true,
     ...options,
   });
   if (!committed) return;
