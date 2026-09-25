@@ -63,7 +63,11 @@ function pruneSessionArchives(agentId: string, keepLast: number): number {
   return removed;
 }
 
-export async function compactAgentThread(agentId: string, keepLast = maxThreadMessages()): Promise<ThreadCompactionResult> {
+export async function compactAgentThread(
+  agentId: string,
+  keepLast = maxThreadMessages(),
+  resetContext = false,
+): Promise<ThreadCompactionResult> {
   const agent = getAgentConfig(agentId);
   if (!agent) throw new Error("Agent not found");
 
@@ -87,7 +91,7 @@ export async function compactAgentThread(agentId: string, keepLast = maxThreadMe
   const priorSourceChars = thread.warm_summary_source_chars ?? 0;
   const hasPriorSummary = priorSummary.length > 0 && !!priorBefore;
 
-  const fullSessionReset = keepLast >= rows.length;
+  const fullSessionReset = resetContext || keepLast >= rows.length;
   const rawBoundary = fullSessionReset
     ? timestampAfter(rows[rows.length - 1].created_at)
     : rows[Math.max(0, rows.length - keepLast)]?.created_at

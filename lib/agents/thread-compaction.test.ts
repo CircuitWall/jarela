@@ -58,4 +58,19 @@ describe("autoCompactionKeepLast", () => {
     expect(result.hot_since).toBe("2026-09-25T12:00:00.001Z");
     expect(state.movedTo).toBe("2026-09-25T12:00:00.001Z");
   });
+
+  it("resets all context even when ordinary retention would keep recent rows", async () => {
+    state.movedTo = null;
+    state.rows = [
+      { role: "user", content: "older session", created_at: "2026-09-25T12:00:00.000Z" },
+      { role: "assistant", content: "older answer", created_at: "2026-09-25T12:00:01.000Z" },
+      { role: "user", content: "start fresh", created_at: "2026-09-25T12:00:02.000Z" },
+    ];
+
+    const result = await compactAgentThread("agent-1", 1, true);
+
+    expect(result.compacted).toBe(true);
+    expect(result.hot_since).toBe("2026-09-25T12:00:02.001Z");
+    expect(state.movedTo).toBe("2026-09-25T12:00:02.001Z");
+  });
 });

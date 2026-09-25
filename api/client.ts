@@ -418,7 +418,7 @@ export const api = {
     },
     getThread: (id: string) =>
       request<ThreadSummary>(`/agents/${encodeURIComponent(id)}/thread`),
-    compact: (id: string) =>
+    compact: (id: string, options?: { resetContext?: boolean }) =>
       request<{
         compacted: boolean;
         summary?: string;
@@ -438,7 +438,7 @@ export const api = {
         `/agents/${encodeURIComponent(id)}/compact`,
         // Conversation summarization can take longer than normal API calls,
         // so avoid tripping the default HTTP timeout for large threads.
-        { method: "POST", body: "{}", timeoutMs: 180_000 },
+        { method: "POST", body: JSON.stringify({ reset_context: options?.resetContext === true }), timeoutMs: 180_000 },
       ),
   },
 
