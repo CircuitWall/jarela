@@ -1,5 +1,5 @@
-import { getThread, setThreadContextPin, setThreadWarmSummary, setAutoBoundaryLock } from "@/lib/stores/threads";
-import { kickWarmSummaryRefresh } from "@/lib/agents/warm-summary-background";
+import { getThread, setThreadContextPin, setAutoBoundaryLock } from "@/lib/stores/threads";
+import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 
 // Every caller of moveThreadContextBoundary represents a user-initiated
 // boundary change (drag the line, or the manual /compact command) — the
@@ -30,29 +30,21 @@ export function moveThreadContextBoundary(
   hotSince: string | null,
   options: MoveThreadContextBoundaryOptions = {},
 ) {
+  // Do not expose a narrower hot query before its replacement warm context
+  // exists. The background coordinator publishes both in one transaction.
+  if (hotSince && options.refreshWarmSummary) {
+    const currentCount = getThread(threadId)?.message_count ?? 0;
+    kickBoundaryCompaction(threadId, hotSince, {
+      autoBoundaryLockedUntilMessageCount: currentCount + MANUAL_PIN_COOLDOWN_TURNS * MESSAGES_PER_TURN,
+    });
+    return getThread(threadId);
+  }
+
   setThreadContextPin(threadId, hotSince);
   // Clearing the pin (hotSince=null) means the user wants auto-detection
   // back in full control right away — clear the lock instead of arming it.
   // Only an actual manual placement earns a cooldown.
   const currentCount = getThread(threadId)?.message_count ?? 0;
   setAutoBoundaryLock(threadId, hotSince ? currentCount + MANUAL_PIN_COOLDOWN_TURNS * MESSAGES_PER_TURN : 0);
-  if (options.warmSummary) {
-    setThreadWarmSummary(
-      threadId,
-      options.warmSummary.summary,
-      options.warmSummary.before,
-      options.warmSummary.sourceMessages,
-      options.warmSummary.sourceChars,
-      options.warmSummary.topics,
-    );
-  }
-  const updated = getThread(threadId);
-  if (
-    options.refreshWarmSummary
-    && hotSince
-    && updated?.warm_summary_before !== hotSince
-  ) {
-    kickWarmSummaryRefresh(threadId);
-  }
-  return updated;
+  return getThread(threadId);
 }

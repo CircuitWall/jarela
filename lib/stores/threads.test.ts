@@ -12,6 +12,7 @@ const {
   listThreadsByAgent,
   getMessages,
   getThread,
+  commitThreadWarmContext,
   setThreadContextPin,
   setThreadWarmSummary,
   pruneThreadMessages,
@@ -76,6 +77,54 @@ describe("thread context pin (ADR-0042)", () => {
     expect(drifted?.hot_since).toBe("2026-06-01T08:00:00.000Z");
     expect(drifted?.warm_summary_before).toBe("2026-06-01T10:00:00.000Z");
     // ⇒ freshness check `warm_summary_before === hot_since` returns false.
+  });
+
+  it("commits a hot boundary and its warm summary atomically", () => {
+    const t = createThread("agent-x");
+    const committed = commitThreadWarmContext(t.thread_id, {
+      hotSince: "2026-06-01T10:00:00.000Z",
+      summary: "<!-- jarela:warm-scope=foreground -->\nolder context recap",
+      sourceMessages: 4,
+      sourceChars: 120,
+      topics: "[]",
+      expectedHotSince: null,
+    });
+
+    expect(committed?.hot_since).toBe("2026-06-01T10:00:00.000Z");
+    expect(committed?.warm_summary_before).toBe("2026-06-01T10:00:00.000Z");
+    expect(committed?.warm_summary_source_messages).toBe(4);
+
+    setThreadContextPin(t.thread_id, "2026-06-01T11:00:00.000Z");
+    const stale = commitThreadWarmContext(t.thread_id, {
+      hotSince: "2026-06-01T12:00:00.000Z",
+      summary: "stale recap",
+      sourceMessages: 6,
+      sourceChars: 180,
+      expectedHotSince: "2026-06-01T10:00:00.000Z",
+    });
+    expect(stale).toBeNull();
+    expect(getThread(t.thread_id)?.hot_since).toBe("2026-06-01T11:00:00.000Z");
+
+    const expectedSummary = getThread(t.thread_id)?.warm_summary ?? null;
+    const replacement = commitThreadWarmContext(t.thread_id, {
+      hotSince: "2026-06-01T11:00:00.000Z",
+      summary: "newer recap",
+      sourceMessages: 6,
+      sourceChars: 180,
+      expectedHotSince: "2026-06-01T11:00:00.000Z",
+      expectedWarmSummary: expectedSummary,
+    });
+    expect(replacement?.warm_summary).toBe("newer recap");
+    const staleSummary = commitThreadWarmContext(t.thread_id, {
+      hotSince: "2026-06-01T11:00:00.000Z",
+      summary: "must not replace newer recap",
+      sourceMessages: 7,
+      sourceChars: 210,
+      expectedHotSince: "2026-06-01T11:00:00.000Z",
+      expectedWarmSummary: expectedSummary,
+    });
+    expect(staleSummary).toBeNull();
+    expect(getThread(t.thread_id)?.warm_summary).toBe("newer recap");
   });
 });
 

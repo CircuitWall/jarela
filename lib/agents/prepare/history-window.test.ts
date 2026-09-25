@@ -229,7 +229,7 @@ describe("buildHistoryWindow warm-summary cache", () => {
     for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
   });
 
-  it("caches the warm summary across turns when no explicit pin is set", async () => {
+  it("keeps an unpinned warm fallback ephemeral until background compaction commits", async () => {
     const thread_id = seedWarmThread();
     chatReturns("RECAP-A");
 
@@ -238,18 +238,16 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(chatSpy).toHaveBeenCalledTimes(1);
 
     const persisted = getThread(thread_id);
-    expect(persisted?.warm_summary).toContain("RECAP-A");
-    // Stamped with the auto-boundary key (first hot message's timestamp),
-    // not null — that's what lets the next turn hit the cache.
-    expect(typeof persisted?.warm_summary_before).toBe("string");
-    expect((persisted?.warm_summary_before ?? "").length).toBeGreaterThan(0);
+    expect(persisted?.warm_summary).toBeNull();
+    expect(persisted?.hot_since).toBeNull();
 
-    // Second turn with no thread mutations: same hot/warm split → cache hit,
-    // chat NOT invoked a second time.
+    // The background compactor owns durable caching, so an unpinned fallback
+    // may be rebuilt while the thread has no committed warm boundary.
     chatSpy.mockClear();
+    chatReturns("RECAP-B");
     const second = await buildHistoryWindow(thread_id, agentCfg(), providerParams, "follow up", modelInfo);
-    expect(second.warmSummaryCtx).toContain("RECAP-A");
-    expect(chatSpy).not.toHaveBeenCalled();
+    expect(second.warmSummaryCtx).toContain("RECAP-B");
+    expect(chatSpy).toHaveBeenCalledTimes(1);
   });
 
   it("stores a foreground-scoped background summary without automation or bridge rows", async () => {
@@ -382,7 +380,7 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(result.budget.contextWindowTokens).toBe(200_000);
   });
 
-  it("re-summarises when the explicit pin moves", async () => {
+  it("rebuilds an uncommitted explicit pin summary until the coordinator stores it", async () => {
     const thread_id = seedWarmThread();
     chatReturns("RECAP-PIN-1");
     setThreadContextPin(thread_id, "2026-06-17T00:00:00.000Z");
@@ -391,11 +389,12 @@ describe("buildHistoryWindow warm-summary cache", () => {
 
     chatSpy.mockClear();
     chatReturns("RECAP-PIN-2");
-    // Same pin → cache hit.
+    // The direct pin has no atomically committed recap, so this remains an
+    // ephemeral fallback until the background coordinator publishes one.
     await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q2", modelInfo, "2026-06-17T00:00:00.000Z");
-    expect(chatSpy).not.toHaveBeenCalled();
+    expect(chatSpy).toHaveBeenCalledTimes(1);
 
-    // Move the pin → cache miss, summariser runs again.
+    // Moving the pin rebuilds against the new boundary.
     chatSpy.mockClear();
     await buildHistoryWindow(thread_id, agentCfg(), providerParams, "q3", modelInfo, "2026-06-17T06:00:00.000Z");
     expect(chatSpy).toHaveBeenCalledTimes(1);

@@ -423,6 +423,7 @@ export interface ThreadContextPin {
   warm_summary_source_messages: number | null;
   warm_summary_source_chars: number | null;
   warm_summary_topics: SummaryTopicSegment[] | null;
+  pending_hot_since?: string | null;
 }
 
 export interface MemoryItem {

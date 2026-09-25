@@ -312,6 +312,61 @@ export function setAutoBoundaryLock(thread_id: string, untilMessageCount: number
     .run(Math.max(0, untilMessageCount), thread_id);
 }
 
+export interface ThreadWarmContextCommit {
+  hotSince: string;
+  summary: string;
+  sourceMessages: number;
+  sourceChars: number;
+  topics?: string | null;
+  /** Reject the commit if another compactor or user action moved the pin. */
+  expectedHotSince?: string | null;
+  /** Reject the commit if another compactor refreshed the same boundary. */
+  expectedWarmSummary?: string | null;
+  autoBoundaryLockedUntilMessageCount?: number;
+}
+
+// A warm recap is only valid for the exact boundary it replaced. Commit both
+// fields in one SQLite transaction so a model call can never leave the thread
+// between a new hot pin and its corresponding warm context.
+export function commitThreadWarmContext(
+  thread_id: string,
+  input: ThreadWarmContextCommit,
+): ThreadRow | null {
+  const db = getDb();
+  const checkExpectedPin = Object.hasOwn(input, "expectedHotSince");
+  const checkExpectedSummary = Object.hasOwn(input, "expectedWarmSummary");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const current = getThread(thread_id);
+    if (
+      !current
+      || (checkExpectedPin && (current.hot_since ?? null) !== input.expectedHotSince)
+      || (checkExpectedSummary && (current.warm_summary ?? null) !== input.expectedWarmSummary)
+    ) {
+      db.exec("ROLLBACK");
+      return null;
+    }
+    db.prepare(
+      "UPDATE threads SET hot_since=?, warm_summary=?, warm_summary_before=?, warm_summary_computed_at=?, warm_summary_source_messages=?, warm_summary_source_chars=?, warm_summary_topics=?, auto_boundary_locked_until_msg_count=? WHERE thread_id=?",
+    ).run(
+      input.hotSince,
+      input.summary,
+      input.hotSince,
+      now(),
+      input.sourceMessages,
+      input.sourceChars,
+      input.topics ?? null,
+      input.autoBoundaryLockedUntilMessageCount ?? current.auto_boundary_locked_until_msg_count ?? 0,
+      thread_id,
+    );
+    db.exec("COMMIT");
+    return getThread(thread_id);
+  } catch (err) {
+    try { db.exec("ROLLBACK"); } catch { /* transaction already closed */ }
+    throw err;
+  }
+}
+
 // Cache the latest warm-tier summary alongside the boundary it covers. The
 // chat UI considers the summary fresh only when `warm_summary_before` matches
 // the current `hot_since`; any boundary change triggers a re-summarise on the

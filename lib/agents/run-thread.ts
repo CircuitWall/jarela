@@ -7,8 +7,8 @@ import type { ContentPart } from "@/lib/tools/runtime/types";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
 import { spillImageAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
-import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
+import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
 import { getForegroundTabPresence } from "@/lib/api/foreground-presence";
 import { addMessage, getMessagesPage, getRecentMessagesWindow, getThread, mergeMessageMetadata, touchThread, type PersistedToolEvent } from "@/lib/stores/threads";
 import { transcriptText } from "@/lib/agents/conversation-summary";
@@ -555,11 +555,12 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
 
   const agentTierProportions = getAgentTierProportions(agentCfg);
 
+  const requestedHotSinceDiffers = req.hot_since !== undefined && req.hot_since !== (thread.hot_since ?? null);
   const effectiveHotSince = req.context_profile?.history_scope === "bridge"
     ? null
-    : req.hot_since !== undefined
-      ? req.hot_since
-      : (autoHotSince ?? thread.hot_since ?? null);
+    : requestedHotSinceDiffers
+      ? (thread.hot_since ?? null)
+      : (req.hot_since ?? autoHotSince ?? thread.hot_since ?? null);
   const requiredHotContextTokens = req.context_profile?.include_hot === false
     ? null
     : estimateRequiredHotContextTokens(
@@ -685,11 +686,11 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     ? { ...baseProviderParams, context_tier_proportions: agentTierProportions }
     : baseProviderParams;
 
-  // ADR-0042. Persist the user-chosen boundary before we build the window so
-  // the history fetch and the cached-summary lookup both see the same pin.
-  // `null` clears the pin; `undefined` leaves whatever's already on the row.
-  if (req.hot_since !== undefined) {
-    moveThreadContextBoundary(req.thread_id, req.hot_since, { refreshWarmSummary: true });
+  // New non-null pins are deferred until their warm summary is ready. A clear
+  // broadens context, so it can be committed immediately without a recap.
+  if (requestedHotSinceDiffers) {
+    if (req.hot_since === null) moveThreadContextBoundary(req.thread_id, null);
+    else if (req.hot_since) kickBoundaryCompaction(req.thread_id, req.hot_since);
   }
   const historyWindow = await buildHistoryWindow(
     req.thread_id,
