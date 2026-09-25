@@ -168,7 +168,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     if (!agentId) return;
     setCompacting(true);
     try {
-      const result = await api.agents.compact(agentId);
+      const result = await api.agents.compact(agentId, { resetContext: true });
       if (result.compacted) {
         // Server moved the hot/warm pin to just after the last existing
         // message and persisted the warm summary. Mirror that in-place so
