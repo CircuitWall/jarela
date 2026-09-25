@@ -5,10 +5,9 @@ import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-conf
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { putMemory } from "@/lib/stores/memory";
 import {
+  commitThreadWarmContext,
   getRecentMessagesWindow,
   getThread,
-  setThreadContextPin,
-  setThreadWarmSummary,
 } from "@/lib/stores/threads";
 
 const MAX_TOPIC_BOUNDARY_EXPANSION_TURNS = 4;
@@ -44,14 +43,18 @@ export function pendingCompactionBoundary(threadId: string): string | null {
  * Commit both together instead: on success the pin and the recap land in
  * the same write, and on failure the thread keeps its full history.
  */
-export function kickBoundaryCompaction(threadId: string, boundary: string): void {
+export function kickBoundaryCompaction(
+  threadId: string,
+  boundary: string,
+  options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount"> = {},
+): void {
   if (!threadId || !boundary) return;
   if (activeRefreshes.has(threadId) || pendingBoundaries.has(threadId)) return;
   const basePin = getThread(threadId)?.hot_since ?? null;
   pendingBoundaries.set(threadId, boundary);
   activeRefreshes.add(threadId);
   queueMicrotask(() => {
-    void commitBoundaryCompaction(threadId, boundary, basePin)
+    void commitBoundaryCompaction(threadId, boundary, basePin, options)
       .catch((err) => console.warn(`[context-boundary:auto] compaction failed thread=${threadId}: ${String(err)}`))
       .finally(() => {
         pendingBoundaries.delete(threadId);
@@ -64,27 +67,16 @@ async function commitBoundaryCompaction(
   threadId: string,
   boundary: string,
   basePin: string | null,
+  options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">,
 ): Promise<void> {
-  const topicBoundary = await findTopicBoundary(threadId, boundary);
-  const effectiveBoundary = topicBoundary ?? boundary;
-  const built = await buildSummaryBefore(threadId, effectiveBoundary);
-  if (!built?.summary) return;
-  // The user may have dragged the boundary themselves while we summarised;
-  // their pin wins.
-  const latest = getThread(threadId);
-  if (!latest || (latest.hot_since ?? null) !== basePin) return;
-  setThreadContextPin(threadId, effectiveBoundary);
-  setThreadWarmSummary(
-    threadId,
-    wrapWarmSummary(built.summary, "foreground"),
-    effectiveBoundary,
-    built.sourceMessages,
-    built.sourceChars,
-    built.topics.length > 0 ? JSON.stringify(built.topics) : null,
-  );
-  upliftTopicFacts(built.topics);
+  const committed = await compactThreadWarmContext(threadId, boundary, {
+    expectedHotSince: basePin,
+    alignTopicBoundary: true,
+    ...options,
+  });
+  if (!committed) return;
   console.info(
-    `[context-boundary:auto] thread=${threadId} committed boundary=${effectiveBoundary} warm_msgs=${built.sourceMessages}`,
+    `[context-boundary:auto] thread=${threadId} committed boundary=${committed.boundary} warm_msgs=${committed.sourceMessages}`,
   );
 }
 
@@ -142,16 +134,11 @@ export async function findTopicBoundary(threadId: string, boundary: string): Pro
 export async function refreshWarmSummary(threadId: string): Promise<void> {
   const thread = getThread(threadId);
   if (!thread?.hot_since) return;
-  const boundary = thread.hot_since;
-
-  const built = await buildSummaryBefore(threadId, boundary);
-  if (!built) return;
-  if (!built.summary) {
-    persistIfCurrent(threadId, boundary, "", built.sourceMessages, built.sourceChars, built.topics);
-    return;
-  }
-  persistIfCurrent(threadId, boundary, built.summary, built.sourceMessages, built.sourceChars, built.topics);
-  upliftTopicFacts(built.topics);
+  await compactThreadWarmContext(threadId, thread.hot_since, {
+    expectedHotSince: thread.hot_since,
+    alignTopicBoundary: false,
+    allowEmptySummary: true,
+  });
 }
 
 interface BuiltSummary {
@@ -162,6 +149,55 @@ interface BuiltSummary {
   // Per-topic segmentation of the same range (see SummaryTopicSegment). Empty
   // when the summarizer didn't return a `jarela-topics` fence.
   topics: SummaryTopicSegment[];
+}
+
+export interface CommittedWarmContext {
+  boundary: string;
+  summary: string;
+  sourceMessages: number;
+  sourceChars: number;
+  topics: SummaryTopicSegment[];
+}
+
+export interface WarmContextCompactionOptions {
+  expectedHotSince?: string | null;
+  expectedWarmSummary?: string | null;
+  alignTopicBoundary?: boolean;
+  allowEmptySummary?: boolean;
+  autoBoundaryLockedUntilMessageCount?: number;
+}
+
+// The only path that turns raw foreground history into warm context. The LLM
+// call happens before the conditional transaction; `commitThreadWarmContext`
+// then publishes the matching recap and hot boundary together or rejects a
+// stale result if another action changed the pin meanwhile.
+export async function compactThreadWarmContext(
+  threadId: string,
+  requestedBoundary: string,
+  options: WarmContextCompactionOptions = {},
+): Promise<CommittedWarmContext | null> {
+  const baseThread = getThread(threadId);
+  if (!baseThread) return null;
+  const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundary) : null;
+  const boundary = topicBoundary ?? requestedBoundary;
+  const built = await buildSummaryBefore(threadId, boundary);
+  if (!built || (!built.summary && !options.allowEmptySummary)) return null;
+
+  const committed = commitThreadWarmContext(threadId, {
+    hotSince: boundary,
+    summary: built.summary ? wrapWarmSummary(built.summary, "foreground") : "",
+    sourceMessages: built.sourceMessages,
+    sourceChars: built.sourceChars,
+    topics: built.topics.length > 0 ? JSON.stringify(built.topics) : null,
+    expectedHotSince: Object.hasOwn(options, "expectedHotSince") ? options.expectedHotSince : (baseThread.hot_since ?? null),
+    expectedWarmSummary: Object.hasOwn(options, "expectedWarmSummary")
+      ? options.expectedWarmSummary
+      : (baseThread.warm_summary ?? null),
+    autoBoundaryLockedUntilMessageCount: options.autoBoundaryLockedUntilMessageCount,
+  });
+  if (!committed) return null;
+  upliftTopicFacts(built.topics);
+  return { boundary, ...built };
 }
 
 /**
@@ -186,11 +222,21 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
 
   const rows = getRecentMessagesWindow(threadId, 0, undefined, "foreground")
     .filter((m) => m.role === "user" || m.role === "assistant");
-  const warmRows = rows.filter((m) => m.created_at < boundary);
-  const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
+  const prior = thread.warm_summary ? unwrapWarmSummary(thread.warm_summary) : null;
+  const canExtendPrior = prior?.scope === "foreground"
+    && !!thread.warm_summary_before
+    && thread.warm_summary_before < boundary;
+  const warmRows = rows.filter((m) => m.created_at < boundary && (!canExtendPrior || m.created_at >= thread.warm_summary_before!));
+  const newChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
+  const sourceMessages = canExtendPrior
+    ? (thread.warm_summary_source_messages ?? 0) + warmRows.length
+    : warmRows.length;
+  const sourceChars = canExtendPrior
+    ? (thread.warm_summary_source_chars ?? 0) + newChars
+    : newChars;
 
-  if (warmRows.length < 2 || sourceChars < 24) {
-    return { summary: "", sourceMessages: warmRows.length, sourceChars, topics: [] };
+  if ((canExtendPrior ? newChars : sourceChars) < 24 || (canExtendPrior ? warmRows.length === 0 : warmRows.length < 2)) {
+    return { summary: canExtendPrior ? prior.content : "", sourceMessages, sourceChars, topics: [] };
   }
 
   const contextTokens = typeof providerParams.context_window_tokens === "number"
@@ -198,11 +244,20 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
     : 32768;
   const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
 
-  const transcript = warmRows
+  const newTranscript = warmRows
     .map((m) => `[${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
     .join("\n\n")
-    .slice(-summaryInputChars)
     .trim();
+  const transcript = (canExtendPrior
+    ? [
+        "Previous compressed memory (preserve every fact, identifier, and decision below):",
+        prior.content,
+        "",
+        "--- New turns since the above summary ---",
+        newTranscript,
+      ].join("\n\n")
+    : newTranscript
+  ).slice(-summaryInputChars).trim();
   if (!transcript) return null;
 
   const provider = getProvider(modelCfg.provider);
@@ -225,32 +280,6 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
     sourceChars,
     topics,
   };
-}
-
-function persistIfCurrent(
-  threadId: string,
-  boundary: string,
-  summary: string,
-  sourceMessages: number,
-  sourceChars: number,
-  topics: SummaryTopicSegment[],
-): void {
-  const latest = getThread(threadId);
-  if (!latest || latest.hot_since !== boundary) return;
-
-  if (latest.warm_summary && latest.warm_summary_before === boundary) {
-    const cached = unwrapWarmSummary(latest.warm_summary);
-    if (cached.scope === "foreground") return;
-  }
-
-  setThreadWarmSummary(
-    threadId,
-    summary ? wrapWarmSummary(summary, "foreground") : "",
-    boundary,
-    sourceMessages,
-    sourceChars,
-    topics.length > 0 ? JSON.stringify(topics) : null,
-  );
 }
 
 // Batched uplift (once per compaction pass, covering every topic segment

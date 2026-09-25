@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   rows: [] as Array<{ role: "user" | "assistant"; content: string; created_at: string }>,
   movedTo: null as string | null,
+  alignTopicBoundary: false,
 }));
 
 vi.mock("@/lib/stores/agent-configs", () => ({
@@ -14,21 +15,14 @@ vi.mock("@/lib/stores/threads", () => ({
   getThread: () => ({ hot_since: state.movedTo, warm_summary: "summary", warm_summary_before: state.movedTo }),
   pruneThreadMessages: () => 0,
 }));
-vi.mock("@/lib/stores/model-config", () => ({
-  getModelConfig: () => ({ provider: "test", model_id: "test-model" }),
-  getDefaultModelConfig: () => null,
-  getModelParams: () => ({}),
-}));
-vi.mock("@/lib/providers", () => ({
-  getProvider: () => ({
-    chat: async () => ({ stream: (async function* () { yield "summary"; })() }),
-  }),
-}));
 vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {}, listMemory: () => [], deleteMemory: () => false }));
-vi.mock("@/lib/agents/context-boundary", () => ({
-  moveThreadContextBoundary: (_threadId: string, hotSince: string) => { state.movedTo = hotSince; },
+vi.mock("@/lib/agents/warm-summary-background", () => ({
+  compactThreadWarmContext: async (_threadId: string, boundary: string, options: { alignTopicBoundary: boolean }) => {
+    state.movedTo = boundary;
+    state.alignTopicBoundary = options.alignTopicBoundary;
+    return { boundary, summary: "summary", sourceMessages: state.rows.length, sourceChars: 42, topics: [] };
+  },
 }));
-vi.mock("@/lib/agents/warm-summary-background", () => ({ findTopicBoundary: async () => null, upliftTopicFacts: () => {} }));
 vi.mock("@/lib/env/config", () => ({ getConfig: () => ({ maxThreadMessages: 1000, maxSessionArchives: 20 }) }));
 
 import { autoCompactionKeepLast, compactAgentThread } from "./thread-compaction";
@@ -57,6 +51,7 @@ describe("autoCompactionKeepLast", () => {
     expect(result.compacted).toBe(true);
     expect(result.hot_since).toBe("2026-09-25T12:00:00.001Z");
     expect(state.movedTo).toBe("2026-09-25T12:00:00.001Z");
+    expect(state.alignTopicBoundary).toBe(false);
   });
 
   it("resets all context even when ordinary retention would keep recent rows", async () => {
@@ -72,5 +67,6 @@ describe("autoCompactionKeepLast", () => {
     expect(result.compacted).toBe(true);
     expect(result.hot_since).toBe("2026-09-25T12:00:02.001Z");
     expect(state.movedTo).toBe("2026-09-25T12:00:02.001Z");
+    expect(state.alignTopicBoundary).toBe(false);
   });
 });

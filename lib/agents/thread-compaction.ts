@@ -5,13 +5,8 @@ import {
   getThread,
   pruneThreadMessages,
 } from "@/lib/stores/threads";
-import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
-import { getModelConfig, getDefaultModelConfig, getModelParams } from "@/lib/stores/model-config";
-import { getProvider } from "@/lib/providers";
 import { putMemory, listMemory, deleteMemory } from "@/lib/stores/memory";
-import type { ProviderParams } from "@/lib/providers/types";
-import { summarizeTranscript, transcriptText, extractTopicSegments } from "@/lib/agents/conversation-summary";
-import { findTopicBoundary, upliftTopicFacts } from "@/lib/agents/warm-summary-background";
+import { compactThreadWarmContext } from "@/lib/agents/warm-summary-background";
 import { getConfig } from "@/lib/env/config";
 
 export type ThreadCompactionResult =
@@ -78,104 +73,42 @@ export async function compactAgentThread(
     return { compacted: false, reason: "nothing to compact" };
   }
 
-  const cfg = (agent.model_config_name
-    ? getModelConfig(agent.model_config_name)
-    : null) ?? getDefaultModelConfig();
-
-  if (!cfg) throw new Error("No model configured");
-
-  const providerParams: ProviderParams = getModelParams(cfg);
-  const priorSummary = (thread.warm_summary ?? "").trim();
-  const priorBefore = thread.warm_summary_before ?? null;
-  const priorSourceMessages = thread.warm_summary_source_messages ?? 0;
-  const priorSourceChars = thread.warm_summary_source_chars ?? 0;
-  const hasPriorSummary = priorSummary.length > 0 && !!priorBefore;
-
   const fullSessionReset = resetContext || keepLast >= rows.length;
   const rawBoundary = fullSessionReset
     ? timestampAfter(rows[rows.length - 1].created_at)
     : rows[Math.max(0, rows.length - keepLast)]?.created_at
       ?? rows[rows.length - 1].created_at;
-  const proposedTopicBoundary = await findTopicBoundary(thread.thread_id, rawBoundary);
-  const newPin = proposedTopicBoundary && (!priorBefore || proposedTopicBoundary > priorBefore)
-    ? proposedTopicBoundary
-    : rawBoundary;
-
-  const newRows = hasPriorSummary
-    ? rows.filter((r) => r.created_at > (priorBefore as string) && r.created_at < newPin)
-    : rows.filter((r) => r.created_at < newPin);
-
-  if (hasPriorSummary && newRows.length === 0) {
-    return { compacted: false, reason: "nothing new since last compact" };
-  }
-
-  const flattened = newRows.map((r) => ({
-    role: r.role,
-    text: transcriptText(r.content),
-  }));
-  const newTurnsText = flattened
-    .map((r) => `${r.role === "user" ? "User" : "Assistant"}: ${r.text}`)
-    .join("\n\n");
-
-  const transcript = hasPriorSummary
-    ? [
-        "Previous compressed memory (preserve every fact, identifier, and decision below):",
-        priorSummary,
-        "",
-        "--- New turns since the above summary ---",
-        newTurnsText,
-      ].join("\n\n")
-    : newTurnsText;
-
-  const newCharCount = newTurnsText.length;
-  const contextChars = hasPriorSummary ? priorSourceChars + newCharCount : newCharCount;
-  const messageCount = hasPriorSummary ? priorSourceMessages + newRows.length : newRows.length;
-
-  const provider = getProvider(cfg.provider);
-  const rawSummary = (await summarizeTranscript(provider, cfg.model_id, providerParams, transcript)).trim();
-  if (!rawSummary) return { compacted: false, reason: "empty summary" };
-  // Strip (and use) the same trailing jarela-topics fence the automatic
-  // boundary-compaction path parses — without this, the raw fence JSON would
-  // leak verbatim into warm_summary and the sessions archive dump below.
-  const { body: summary, topics } = extractTopicSegments(rawSummary);
-  if (!summary) return { compacted: false, reason: "empty summary" };
+  const context = await compactThreadWarmContext(thread.thread_id, rawBoundary, {
+    expectedHotSince: thread.hot_since ?? null,
+    alignTopicBoundary: !fullSessionReset,
+  });
+  if (!context) return { compacted: false, reason: "summary was not committed" };
 
   putMemory("sessions", `${agentId}/${Date.now()}`, {
-    summary,
+    summary: context.summary,
     agent_id: agentId,
     agent_name: agent.name,
-    message_count: messageCount,
+    message_count: context.sourceMessages,
     compacted_at: new Date().toISOString(),
   });
-  upliftTopicFacts(topics);
   const archivePruned = pruneSessionArchives(agentId, maxSessionArchives());
 
-  moveThreadContextBoundary(thread.thread_id, newPin, {
-    warmSummary: {
-      summary,
-      before: newPin,
-      sourceMessages: messageCount,
-      sourceChars: contextChars,
-      topics: topics.length > 0 ? JSON.stringify(topics) : null,
-    },
-  });
-
-  const pruned = pruneThreadMessages(thread.thread_id, keepLast, newPin);
+  const pruned = pruneThreadMessages(thread.thread_id, keepLast, context.boundary);
   const updated = getThread(thread.thread_id);
 
   return {
     compacted: true,
-    summary,
-    message_count: messageCount,
-    context_chars: contextChars,
+    summary: context.summary,
+    message_count: context.sourceMessages,
+    context_chars: context.sourceChars,
     pruned,
     archive_pruned: archivePruned,
-    hot_since: updated?.hot_since ?? newPin,
-    warm_summary: updated?.warm_summary ?? summary,
-    warm_summary_before: updated?.warm_summary_before ?? newPin,
+    hot_since: updated?.hot_since ?? context.boundary,
+    warm_summary: updated?.warm_summary ?? context.summary,
+    warm_summary_before: updated?.warm_summary_before ?? context.boundary,
     warm_summary_computed_at: updated?.warm_summary_computed_at ?? null,
-    warm_summary_source_messages: updated?.warm_summary_source_messages ?? messageCount,
-    warm_summary_source_chars: updated?.warm_summary_source_chars ?? contextChars,
-    warm_summary_topics: updated?.warm_summary_topics ?? (topics.length > 0 ? JSON.stringify(topics) : null),
+    warm_summary_source_messages: updated?.warm_summary_source_messages ?? context.sourceMessages,
+    warm_summary_source_chars: updated?.warm_summary_source_chars ?? context.sourceChars,
+    warm_summary_topics: updated?.warm_summary_topics ?? (context.topics.length > 0 ? JSON.stringify(context.topics) : null),
   };
 }

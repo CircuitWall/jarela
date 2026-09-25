@@ -116,14 +116,12 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, attach]);
 
-  // ADR-0042. Move the user's boundary line. Optimistic update so the chat
-  // chrome reacts instantly; PATCH then confirms server-side. Keep the
-  // previous summary visible while the new one recomputes so users retain
-  // continuity instead of seeing an empty placeholder.
+  // ADR-0042. Keep the current boundary visible while the server prepares
+  // and atomically publishes the replacement warm context plus new pin.
   const setContextPin = useCallback(async (next: string | null) => {
     if (!threadId) return;
-    setHotSince(next);
-    setWarmSummaryPending(!!next);
+    if (next === null) setHotSince(null);
+    setCompactionPending(next !== null);
     try {
       const updated = await api.threads.setContextPin(threadId, next);
       setHotSince(updated.hot_since);
@@ -133,11 +131,13 @@ export function useThreadData({ threadId, attach }: Params): ThreadDataApi {
       setWarmSummarySourceMessages(updated.warm_summary_source_messages);
       setWarmSummarySourceChars(updated.warm_summary_source_chars);
       setWarmSummaryTopics(updated.warm_summary_topics);
-      if (!updated.hot_since || updated.warm_summary_before === updated.hot_since) {
+      setCompactionPending(!!updated.pending_hot_since);
+      if (!updated.pending_hot_since && (!updated.hot_since || updated.warm_summary_before === updated.hot_since)) {
         setWarmSummaryPending(false);
       }
     } catch (err) {
       setWarmSummaryPending(false);
+      setCompactionPending(false);
       console.error("setContextPin failed", err);
     }
   }, [threadId]);

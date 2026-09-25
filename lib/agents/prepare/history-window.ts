@@ -8,7 +8,7 @@
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { getRecentMessagesWindow, getThread, setThreadWarmSummary } from "@/lib/stores/threads";
+import { getRecentMessagesWindow, getThread } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
@@ -214,27 +214,9 @@ export async function buildHistoryWindow(
           getConfig().warmSummaryBudgetMs,
           "",
         );
-        // Persist the freshly-computed summary keyed on the boundary it
-        // covers so the chat UI can render it on the next page load and
-        // subsequent same-boundary turns short-circuit the LLM call. We
-        // persist for both pinned and auto-boundary cases — without this,
-        // unpinned threads pay the summariser tax every turn.
-        if (warmSummaryCtx && boundaryKey) {
-          // Compaction-stat columns: count of messages older than the hot
-          // slice + their flattened transcript length. The chat UI shows
-          // these on the boundary chip so the user can see the savings.
-          const warmMsgCount = Math.max(0, allWindowMessages.length - hotForSlice.length);
-          const warmSourceChars = allWindowMessages
-            .slice(0, warmMsgCount)
-            .reduce((acc, m) => acc + transcriptText(m.content).length, 0);
-          setThreadWarmSummary(
-            thread_id,
-            wrapWarmSummary(warmSummaryCtx, scope),
-            boundaryKey,
-            warmMsgCount,
-            warmSourceChars,
-          );
-        }
+        // This per-turn fallback is intentionally ephemeral. Persisting it
+        // here would create a warm summary without atomically moving the hot
+        // boundary. The background compaction coordinator owns persistence.
       }
       const used = estimateTokens(warmSummaryCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));

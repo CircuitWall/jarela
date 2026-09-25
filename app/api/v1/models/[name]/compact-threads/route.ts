@@ -22,8 +22,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig } from "@/lib/stores/model-config";
-import { listThreadsByAgent, getMessages, setThreadWarmSummary } from "@/lib/stores/threads";
+import { commitThreadWarmContext, listThreadsByAgent, getMessages } from "@/lib/stores/threads";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
+import { wrapWarmSummary } from "@/lib/agents/prepare/history-window";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
@@ -82,8 +83,17 @@ export async function POST(req: NextRequest, { params }: Params) {
           transcript,
         );
         if (summary) {
-          setThreadWarmSummary(t.thread_id, summary, hotStart.created_at);
-          compacted += 1;
+          const sourceChars = warmMsgs.reduce((total, message) => total + transcriptText(message.content).length, 0);
+          const committed = commitThreadWarmContext(t.thread_id, {
+            hotSince: hotStart.created_at,
+            summary: wrapWarmSummary(summary, "foreground"),
+            sourceMessages: warmMsgs.length,
+            sourceChars,
+            expectedHotSince: t.hot_since ?? null,
+            expectedWarmSummary: t.warm_summary ?? null,
+          });
+          if (committed) compacted += 1;
+          else skipped += 1;
         } else {
           skipped += 1;
         }
