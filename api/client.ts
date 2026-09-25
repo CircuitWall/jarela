@@ -646,14 +646,14 @@ export const api = {
     list: (limit = 50, offset = 0) => request<ThreadSummary[]>(`/threads?limit=${limit}&offset=${offset}`),
     create: (agent_id: string, title?: string) =>
       request<ThreadSummary>("/threads", { method: "POST", body: JSON.stringify({ agent_id, title }) }),
-    get: (thread_id: string, opts?: { limit?: number; before?: string; after?: string }) => {
+    get: (thread_id: string, opts?: { limit?: number; before?: number; after?: number }) => {
       const p = new URLSearchParams();
       if (opts?.limit) p.set("limit", String(opts.limit));
-      if (opts?.before) p.set("before", opts.before);
-      // `after`: only return messages newer than this ISO timestamp. Used
-      // by ChatView post-run to fetch the freshly-persisted user+assistant
-      // pair instead of re-pulling the whole most-recent page.
-      if (opts?.after) p.set("after", opts.after);
+      if (opts?.before !== undefined) p.set("before", String(opts.before));
+      // `after`: only return messages with a `seq` newer than this cursor.
+      // Used by ChatView post-run to fetch the freshly-persisted
+      // user+assistant pair instead of re-pulling the whole most-recent page.
+      if (opts?.after !== undefined) p.set("after", String(opts.after));
       const qs = p.toString() ? `?${p}` : "";
       return request<ThreadDetail>(`/threads/${thread_id}${qs}`);
     },

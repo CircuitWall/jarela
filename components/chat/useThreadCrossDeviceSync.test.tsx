@@ -18,6 +18,7 @@ vi.mock("@/api/client", () => ({
 
 const initial: Message = {
   id: "activity-1",
+  seq: 1,
   role: "assistant",
   content: "Check: checking",
   created_at: "2026-09-01T10:00:00.000Z",
@@ -88,6 +89,64 @@ describe("useThreadCrossDeviceSync", () => {
       expect(result.current[0].content).toBe("Check: no action needed");
     });
     expect(getThreadMock).toHaveBeenCalledWith("thread-1", { limit: 50 });
+  });
+
+  it("merges instead of overwriting when the only local message is still unconfirmed", async () => {
+    // Regression: a pending (not-yet-persisted) local bubble has no `seq`
+    // yet, so it can't be used as the forward-fetch anchor. Before the fix
+    // this fell through to the "no anchor" branch, which did a raw
+    // `setMessages(() => d.messages)` overwrite and silently dropped the
+    // pending bubble.
+    const pending: Message = {
+      id: "opt-1",
+      role: "user",
+      content: "still sending",
+      created_at: "2026-09-01T10:05:00.000Z",
+      status: "pending",
+    };
+    const serverRow: Message = {
+      id: "s-1",
+      seq: 2,
+      role: "assistant",
+      content: "unrelated cross-device update",
+      created_at: "2026-09-01T10:04:00.000Z",
+      category: "watcher",
+    };
+    getThreadMock.mockResolvedValue({ messages: [serverRow], has_more: false });
+
+    const { result } = renderHook(() => {
+      const [messages, setMessages] = useState<Message[]>([pending]);
+      const messagesRef = useRef(messages);
+      messagesRef.current = messages;
+      useThreadCrossDeviceSync({
+        threadId: "thread-1",
+        streamingRef: { current: false },
+        messagesRef,
+        setMessages,
+        setHasMore: vi.fn(),
+        applyMeta: {
+          setHotSince: vi.fn(),
+          setWarmSummary: vi.fn(),
+          setWarmSummaryBefore: vi.fn(),
+          setWarmSummaryComputedAt: vi.fn(),
+          setWarmSummarySourceMessages: vi.fn(),
+          setWarmSummarySourceChars: vi.fn(),
+          setContextWindowTokens: vi.fn(),
+        },
+      });
+      return messages;
+    });
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("jarela:thread-updated", {
+        detail: { thread_id: "thread-1" },
+      }));
+    });
+
+    await waitFor(() => {
+      expect(result.current.map((m) => m.id)).toEqual(["s-1", "opt-1"]);
+    });
+    expect(result.current.find((m) => m.id === "opt-1")?.status).toBe("pending");
   });
 
   it("ignores an older refresh that resolves after a newer one", async () => {
@@ -181,6 +240,7 @@ describe("useThreadCrossDeviceSync", () => {
 
     const appended: Message = {
       id: "bridge-1",
+      seq: 2,
       role: "user",
       content: "Remote reply",
       created_at: "2026-09-01T10:02:00.000Z",

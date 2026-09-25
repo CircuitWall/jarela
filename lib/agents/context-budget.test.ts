@@ -13,6 +13,7 @@ import type { MessageRow } from "@/lib/stores/threads";
 
 function msg(content: string): MessageRow {
   return {
+    seq: 0,
     msg_id: "m",
     thread_id: "t",
     role: "user",

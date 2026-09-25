@@ -378,6 +378,17 @@ describe("prepareThreadRun auto context boundary", () => {
     for (let i = 0; i < 24; i++) {
       addMessage(thread.thread_id, i % 2 === 0 ? "user" : "assistant", `older turn ${i}`);
     }
+    // addMessage no longer guarantees distinct created_at within a fast burst
+    // (ADR-0088 — row order is `seq`, not created_at). This test's topic
+    // boundary is matched by created_at label (findTopicBoundary only knows
+    // the LLM's timestamp strings), so give the seeded rows deterministic,
+    // strictly increasing timestamps like a real paced conversation would
+    // have, instead of relying on real wall-clock resolution across a tight
+    // synchronous loop.
+    const restamp = getDb().prepare("UPDATE messages SET created_at=? WHERE msg_id=?");
+    const insertedOrder = getMessages(thread.thread_id);
+    const base = Date.now() - insertedOrder.length * 1000;
+    insertedOrder.forEach((row, i) => restamp.run(new Date(base + i * 1000).toISOString(), row.msg_id));
     const seeded = getMessages(thread.thread_id);
     providerSummary = [
       "AUTO-COMPACT-RECAP",

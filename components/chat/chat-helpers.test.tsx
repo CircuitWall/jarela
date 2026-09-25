@@ -2,22 +2,27 @@ import { describe, it, expect } from "vitest";
 import type { Message } from "@/api/types";
 import { appendUnique, applyThreadMeta, type ThreadMetaApplier } from "./chat-helpers";
 
-const mkMsg = (id: string, role: "user" | "assistant", content: string, created_at: string, status?: "pending" | "sent" | "steering" | "confirmed"): Message => ({
+// created_at is display-only after the seq-ordering change — every fixture
+// shares one value to prove ordering doesn't depend on it. `seq` is omitted
+// for optimistic/pending bubbles: the server hasn't assigned one yet.
+const SAME_TIMESTAMP = "2026-08-01T10:00:00.000Z";
+const mkMsg = (id: string, role: "user" | "assistant", content: string, seq?: number, status?: "pending" | "sent" | "steering" | "confirmed"): Message => ({
   id,
   role,
   content,
-  created_at,
+  created_at: SAME_TIMESTAMP,
+  ...(typeof seq === "number" ? { seq } : {}),
   ...(status ? { status } : {}),
 });
 
 describe("appendUnique — ordering", () => {
   it("promotes a pending user bubble in place when the server row arrives", () => {
     const prev: Message[] = [
-      mkMsg("s1", "user", "hello", "2026-08-01T10:00:00.000Z", "confirmed"),
-      mkMsg("opt-1", "user", "world", "2026-08-01T10:00:01.000Z", "pending"),
+      mkMsg("s1", "user", "hello", 1, "confirmed"),
+      mkMsg("opt-1", "user", "world", undefined, "pending"),
     ];
     const incoming: Message[] = [
-      mkMsg("s2", "user", "world", "2026-08-01T10:00:01.000Z"),
+      mkMsg("s2", "user", "world", 2),
     ];
     const out = appendUnique(prev, incoming);
     expect(out.map((m) => m.id)).toEqual(["s1", "s2"]);
@@ -30,10 +35,10 @@ describe("appendUnique — ordering", () => {
     "promotes a %s bubble in place rather than duplicating it",
     (status) => {
       const prev: Message[] = [
-        mkMsg("opt-1", "user", "skip the tests", "2026-08-01T10:00:01.000Z", status),
+        mkMsg("opt-1", "user", "skip the tests", undefined, status),
       ];
       const incoming: Message[] = [
-        mkMsg("s2", "user", "skip the tests", "2026-08-01T10:00:01.000Z"),
+        mkMsg("s2", "user", "skip the tests", 1),
       ];
       const out = appendUnique(prev, incoming);
       expect(out.map((m) => m.id)).toEqual(["s2"]);
@@ -41,28 +46,30 @@ describe("appendUnique — ordering", () => {
     },
   );
 
-  it("reorders by created_at when an out-of-order server row arrives", () => {
+  it("reorders by seq when an out-of-order server row arrives", () => {
     // Steer race: a user bubble is appended optimistically while the previous
-    // reply is still being persisted server-side. Without a chronological sort
-    // that reply lands after the user bubble even though it happened earlier.
+    // reply is still being persisted server-side. Without a seq-based sort
+    // that reply lands after the user bubble even though it was persisted
+    // first — created_at can't disambiguate this (both fixtures share one
+    // timestamp), only the server-assigned seq can.
     const prev: Message[] = [
-      mkMsg("u1", "user", "first", "2026-08-01T10:00:00.000Z", "confirmed"),
-      mkMsg("opt-2", "user", "steer", "2026-08-01T10:00:05.000Z", "pending"),
+      mkMsg("u1", "user", "first", 1, "confirmed"),
+      mkMsg("opt-2", "user", "steer", undefined, "pending"),
     ];
     const incoming: Message[] = [
-      mkMsg("a1", "assistant", "partial ⏸ Interrupted", "2026-08-01T10:00:03.000Z"),
-      mkMsg("u2", "user", "steer", "2026-08-01T10:00:05.000Z"),
+      mkMsg("a1", "assistant", "partial ⏸ Interrupted", 2),
+      mkMsg("u2", "user", "steer", 3),
     ];
     const out = appendUnique(prev, incoming);
     expect(out.map((m) => m.id)).toEqual(["u1", "a1", "u2"]);
   });
 
-  it("appends genuinely new server rows in chronological order", () => {
+  it("appends genuinely new server rows in seq order", () => {
     const prev: Message[] = [
-      mkMsg("u1", "user", "hi", "2026-08-01T10:00:00.000Z", "confirmed"),
+      mkMsg("u1", "user", "hi", 1, "confirmed"),
     ];
     const incoming: Message[] = [
-      mkMsg("a1", "assistant", "hello there", "2026-08-01T10:00:01.000Z"),
+      mkMsg("a1", "assistant", "hello there", 2),
     ];
     const out = appendUnique(prev, incoming);
     expect(out.map((m) => m.id)).toEqual(["u1", "a1"]);
@@ -70,21 +77,21 @@ describe("appendUnique — ordering", () => {
 
   it("is idempotent when incoming duplicates prev by id", () => {
     const prev: Message[] = [
-      mkMsg("u1", "user", "hi", "2026-08-01T10:00:00.000Z", "confirmed"),
-      mkMsg("a1", "assistant", "hello", "2026-08-01T10:00:01.000Z", "confirmed"),
+      mkMsg("u1", "user", "hi", 1, "confirmed"),
+      mkMsg("a1", "assistant", "hello", 2, "confirmed"),
     ];
     const out = appendUnique(prev, prev);
     expect(out.map((m) => m.id)).toEqual(["u1", "a1"]);
     expect(out.every((m) => m.status === "confirmed")).toBe(true);
   });
 
-  it("preserves relative order for messages with identical timestamps (stable sort)", () => {
+  it("preserves relative order for multiple pending bubbles with no seq yet (stable sort)", () => {
     const prev: Message[] = [
-      mkMsg("u1", "user", "hi", "2026-08-01T10:00:00.000Z", "confirmed"),
+      mkMsg("u1", "user", "hi", 1, "confirmed"),
     ];
     const incoming: Message[] = [
-      mkMsg("a1", "assistant", "one", "2026-08-01T10:00:01.000Z"),
-      mkMsg("a2", "assistant", "two", "2026-08-01T10:00:01.000Z"),
+      mkMsg("a1", "assistant", "one"),
+      mkMsg("a2", "assistant", "two"),
     ];
     const out = appendUnique(prev, incoming);
     expect(out.map((m) => m.id)).toEqual(["u1", "a1", "a2"]);

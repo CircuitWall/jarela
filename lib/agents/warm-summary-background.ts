@@ -81,7 +81,18 @@ async function commitBoundaryCompaction(
   );
 }
 
-export async function findTopicBoundary(threadId: string, boundary: string): Promise<string | null> {
+export interface TopicBoundary {
+  created_at: string;
+  // The exact row the boundary resolved to. Callers that need to act on
+  // rows exactly (e.g. pruning) must use this instead of re-matching
+  // `created_at` — the LLM only knows created_at labels, and several rows
+  // can legitimately share one when they land in the same millisecond
+  // (ADR-0088), so re-deriving a row from the string alone would silently
+  // pick the wrong one of a tied group.
+  seq: number;
+}
+
+export async function findTopicBoundary(threadId: string, boundary: string): Promise<TopicBoundary | null> {
   const thread = getThread(threadId);
   if (!thread) return null;
   const agent = getAgentConfig(thread.agent_id);
@@ -126,7 +137,9 @@ export async function findTopicBoundary(threadId: string, boundary: string): Pro
     const candidateIndex = rows.findIndex((row) => row.created_at >= candidate.start_at);
     if (candidateIndex < 0 || candidateIndex >= boundaryIndex) return null;
     const expansionTurns = rows.slice(candidateIndex, boundaryIndex).filter((row) => row.role === "user").length;
-    return expansionTurns <= MAX_TOPIC_BOUNDARY_EXPANSION_TURNS ? candidate.start_at : null;
+    return expansionTurns <= MAX_TOPIC_BOUNDARY_EXPANSION_TURNS
+      ? { created_at: candidate.start_at, seq: rows[candidateIndex].seq }
+      : null;
   } catch {
     return null;
   }
@@ -154,6 +167,12 @@ interface BuiltSummary {
 
 export interface CommittedWarmContext {
   boundary: string;
+  // The exact row `boundary` cuts at, when the caller supplied one (via
+  // `requestedBoundarySeq`) or topic alignment resolved one. Destructive
+  // callers (pruning) must cut on this, not by re-matching `boundary`
+  // against created_at — see TopicBoundary and ADR-0088. Null when neither
+  // source had one (e.g. the automatic paths, which never prune).
+  boundarySeq: number | null;
   summary: string;
   sourceMessages: number;
   sourceChars: number;
@@ -166,6 +185,11 @@ export interface WarmContextCompactionOptions {
   alignTopicBoundary?: boolean;
   allowEmptySummary?: boolean;
   autoBoundaryLockedUntilMessageCount?: number;
+  // The exact row `requestedBoundary` was derived from, when the caller
+  // already has one (e.g. thread-compaction.ts picking a row by array
+  // index). Superseded by topic alignment's own resolved seq when that
+  // applies.
+  requestedBoundarySeq?: number;
 }
 
 // The only path that turns raw foreground history into warm context. The LLM
@@ -180,7 +204,8 @@ export async function compactThreadWarmContext(
   const baseThread = getThread(threadId);
   if (!baseThread) return null;
   const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundary) : null;
-  const boundary = topicBoundary ?? requestedBoundary;
+  const boundary = topicBoundary?.created_at ?? requestedBoundary;
+  const boundarySeq = topicBoundary?.seq ?? options.requestedBoundarySeq ?? null;
   const built = await buildSummaryBefore(threadId, boundary);
   if (!built || (!built.summary && !options.allowEmptySummary)) return null;
 
@@ -198,7 +223,7 @@ export async function compactThreadWarmContext(
   });
   if (!committed) return null;
   upliftTopicFacts(built.topics);
-  return { boundary, ...built };
+  return { boundary, boundarySeq, ...built };
 }
 
 /**

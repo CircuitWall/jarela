@@ -55,7 +55,9 @@ Create a thread bound to an agent.
 
 ### `GET /api/v1/threads/[thread_id]`
 
-Read messages (paged or "after a marker") for one thread.
+Read messages (paged or "after a marker") for one thread. `before`/`after`
+are message `seq` values (the server-assigned monotonic order), not
+timestamps — pass the `seq` of the oldest/newest message you already have.
 
 ### `PATCH /api/v1/threads/[thread_id]`
 

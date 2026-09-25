@@ -74,13 +74,21 @@ export async function compactAgentThread(
   }
 
   const fullSessionReset = resetContext || keepLast >= rows.length;
-  const rawBoundary = fullSessionReset
-    ? timestampAfter(rows[rows.length - 1].created_at)
-    : rows[Math.max(0, rows.length - keepLast)]?.created_at
-      ?? rows[rows.length - 1].created_at;
+  const lastRow = rows[rows.length - 1];
+  const boundaryRow = fullSessionReset ? null : rows[Math.max(0, rows.length - keepLast)] ?? lastRow;
+  const rawBoundary = fullSessionReset ? timestampAfter(lastRow.created_at) : boundaryRow!.created_at;
+  // `rawBoundary` is a created_at value (ADR-0042 persists hot_since/
+  // warm_summary_before as timestamps), but WHICH rows this round actually
+  // prunes must be exact — a same-millisecond collision at the boundary
+  // would otherwise tie under `<` and get silently skipped (see ADR-0088).
+  // Pass the exact row's `seq` through so compactThreadWarmContext can
+  // return an equally exact `boundarySeq` for the destructive prune below,
+  // instead of the caller re-deriving one from the created_at string.
+  const requestedBoundarySeq = fullSessionReset ? lastRow.seq + 1 : boundaryRow!.seq;
   const context = await compactThreadWarmContext(thread.thread_id, rawBoundary, {
     expectedHotSince: thread.hot_since ?? null,
     alignTopicBoundary: !fullSessionReset,
+    requestedBoundarySeq,
   });
   if (!context) return { compacted: false, reason: "summary was not committed" };
 
@@ -93,7 +101,7 @@ export async function compactAgentThread(
   });
   const archivePruned = pruneSessionArchives(agentId, maxSessionArchives());
 
-  const pruned = pruneThreadMessages(thread.thread_id, keepLast, context.boundary);
+  const pruned = pruneThreadMessages(thread.thread_id, keepLast, context.boundarySeq ?? requestedBoundarySeq);
   const updated = getThread(thread.thread_id);
 
   return {

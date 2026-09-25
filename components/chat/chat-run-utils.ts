@@ -17,14 +17,13 @@ export interface FinalizeParams {
 // so this is O(turn) instead of O(thread). Falls back to full reload if
 // no anchor (fresh thread, race).
 //
-// Anchor on the last *persisted* row, never an `opt-*` optimistic — the
-// optimistic's created_at is from the client clock and could skip the
-// just-persisted user row if it skews ahead of the server.
+// Anchor on the last *persisted* row, never an `opt-*` optimistic — an
+// optimistic bubble has no server-assigned `seq` yet.
 export async function finalizeRunFromServer(p: FinalizeParams): Promise<void> {
   // Anchor on the last confirmed (non-opt-*) message so we only fetch the
   // delta. Falls back to a full reload when there are no confirmed messages yet.
   const confirmed = p.messagesRef.current.filter((m) => !isUnconfirmed(m));
-  const anchor = confirmed.length > 0 ? confirmed[confirmed.length - 1].created_at : undefined;
+  const anchor = confirmed.length > 0 ? confirmed[confirmed.length - 1].seq : undefined;
   const d = anchor
     ? await api.threads.get(p.threadId, { after: anchor })
     : await api.threads.get(p.threadId);
