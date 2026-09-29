@@ -256,11 +256,19 @@ export function getOrCreateAgentThread(agentId: string): ThreadRow {
 // summary only covers rows before it. Uses `seq` rather than created_at so
 // a same-millisecond collision at the exact boundary can't leave a row
 // stuck — neither summarized nor pruned (see ADR-0088).
+//
+// The preserveFromSeq path never deletes scheduled_task/watcher/bridge rows,
+// even when they're before the cursor: the warm summary that authorizes this
+// destructive prune is built from getRecentMessagesWindow's "foreground"
+// scope, which excludes exactly those categories (ADR-0044's channel
+// isolation). Deleting them here would destroy automation-channel history
+// nothing else has folded into a summary.
 export function pruneThreadMessages(threadId: string, keepLast: number, preserveFromSeq?: number): number {
   if (!Number.isFinite(keepLast) || keepLast <= 0) return 0;
   const db = getDb();
+  const categoryGuard = " AND (category IS NULL OR category NOT IN ('scheduled_task','watcher','bridge'))";
   const totalQuery = preserveFromSeq !== undefined
-    ? "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid < ?"
+    ? "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid < ?" + categoryGuard
     : "SELECT COUNT(*) AS n FROM messages WHERE thread_id=?";
   const total = (db
     .prepare(totalQuery)
@@ -269,7 +277,7 @@ export function pruneThreadMessages(threadId: string, keepLast: number, preserve
   const removeCount = preserveFromSeq !== undefined ? total : total - keepLast;
   const deleteSql = preserveFromSeq !== undefined
     ? "DELETE FROM messages WHERE msg_id IN (" +
-      "  SELECT msg_id FROM messages WHERE thread_id=? AND rowid < ? ORDER BY rowid ASC LIMIT ?" +
+      "  SELECT msg_id FROM messages WHERE thread_id=? AND rowid < ?" + categoryGuard + " ORDER BY rowid ASC LIMIT ?" +
       ")"
     : "DELETE FROM messages WHERE msg_id IN (" +
       "  SELECT msg_id FROM messages WHERE thread_id=? ORDER BY rowid ASC LIMIT ?" +
