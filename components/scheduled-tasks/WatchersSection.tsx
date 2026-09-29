@@ -1,8 +1,9 @@
 "use client";
 import { AlertCircle, Bell, CheckCircle2, EyeOff, Loader2, Play, Power, Trash2, Zap } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "@/api/client";
 import type { AgentConfig, ModelConfig, Watcher } from "@/api/types";
+import { useListState } from "@/hooks/useListState";
 import { formatRelative as sharedFormatRelative } from "@/lib/utils/time";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
@@ -18,18 +19,13 @@ import { errorMessage } from "@/lib/utils/error";
 // cron firing. Watchers are agent-created via the `schedule_watcher`
 // tool; the UI is read-only-ish (cancel / pause / run-now / silent).
 export function WatchersSection({ agents, models }: { agents: Record<string, AgentConfig>; models: ModelConfig[] }) {
-  const [watchers, setWatchers] = useState<Watcher[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  async function load() {
-    setLoading(true);
+  // Surface load failures instead of silently rendering "No watchers" — a
+  // swallowed catch here was masking real list errors and made it look
+  // like the panel was filtering watchers it actually wasn't.
+  const load = useCallback(async () => {
     try {
-      setWatchers(await api.watchers.list());
+      return await api.watchers.list();
     } catch (e) {
-      // Surface the failure instead of silently rendering "No watchers".
-      // A swallowed catch here was masking real list errors and made it
-      // look like the panel was filtering watchers it actually wasn't.
-      console.error(e);
       pushToast({
         kind: "error",
         source: "system",
@@ -40,14 +36,15 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
         thread_id: null,
         ttl: 6000,
       });
+      throw e;
     }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void load(); }, []);
-  useEffect(() => {
-    const t = setInterval(() => void load(), 15_000);
-    return () => clearInterval(t);
   }, []);
+  const { items: watchers, loading, refresh } = useListState<Watcher>({ loader: load });
+
+  useEffect(() => {
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
+  }, [refresh]);
 
   async function cancel(w: Watcher) {
     if (!confirm(`Cancel watcher "${w.label}"?`)) return;
@@ -70,7 +67,7 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
         context: { panel: "scheduled-tasks", action: "watcher.cancel", watcher_id: w.id },
       });
     } finally {
-      void load();
+      void refresh();
     }
   }
 
@@ -94,7 +91,7 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
         context: { panel: "scheduled-tasks", action: "watcher.runNow", watcher_id: w.id, label: w.label },
       });
     } finally {
-      void load();
+      void refresh();
     }
   }
 
@@ -137,7 +134,7 @@ export function WatchersSection({ agents, models }: { agents: Record<string, Age
             models={models}
             onCancel={() => cancel(w)}
             onRunNow={() => runNow(w)}
-            onChanged={() => void load()}
+            onChanged={() => void refresh()}
           />
         ))}
       </div>

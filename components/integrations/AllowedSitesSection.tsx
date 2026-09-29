@@ -1,8 +1,9 @@
 "use client";
 import { Globe, Loader2, Plus, ShieldAlert, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { api } from "@/api/client";
 import type { AllowedSiteStatus } from "@/api/types";
+import { useListState } from "@/hooks/useListState";
 import { errorMessage } from "@/lib/utils/error";
 
 // Settings card for the allowed-sites list. A host on this list grants
@@ -17,63 +18,52 @@ import { errorMessage } from "@/lib/utils/error";
 // behind the corp VPN). Without it, the SSRF guard refuses the fetch
 // even for an allow-listed host.
 export function AllowedSitesSection() {
-  const [sites, setSites] = useState<AllowedSiteStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { items: sites, loading, error: loadError, refresh } = useListState<AllowedSiteStatus>({
+    loader: async () => (await api.allowedSites.list()).sites,
+  });
+  // Action errors (add/toggle/remove) are surfaced separately from list-load
+  // errors, but rendered in the same spot below.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const error = actionError ?? loadError;
   const [adding, setAdding] = useState(false);
   const [newHost, setNewHost] = useState("");
   const [newBypass, setNewBypass] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await api.allowedSites.list();
-      setSites(r.sites);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
 
   async function add() {
     const host = newHost.trim();
     if (!host) return;
     setAdding(true);
-    setError(null);
+    setActionError(null);
     try {
       await api.allowedSites.add({ hostname: host, ssrf_bypass: newBypass });
       setNewHost("");
       setNewBypass(false);
-      await load();
+      await refresh();
     } catch (e) {
-      setError(errorMessage(e));
+      setActionError(errorMessage(e));
     } finally {
       setAdding(false);
     }
   }
 
   async function toggleBypass(s: AllowedSiteStatus) {
-    setError(null);
+    setActionError(null);
     try {
       await api.allowedSites.setSsrfBypass(s.hostname, !s.ssrf_bypass);
-      await load();
+      await refresh();
     } catch (e) {
-      setError(errorMessage(e));
+      setActionError(errorMessage(e));
     }
   }
 
   async function remove(s: AllowedSiteStatus) {
     if (!confirm(`Remove ${s.hostname}? The agent will lose browser-RPC and cookie access for this host.`)) return;
-    setError(null);
+    setActionError(null);
     try {
       await api.allowedSites.remove(s.hostname);
-      await load();
+      await refresh();
     } catch (e) {
-      setError(errorMessage(e));
+      setActionError(errorMessage(e));
     }
   }
 
