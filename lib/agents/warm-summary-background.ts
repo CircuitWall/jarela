@@ -18,6 +18,19 @@ const activeRefreshes = new Set<string>();
 // The pin only moves once the recap that replaces the cut-off messages is
 // stored, so the turn that proposes it still runs on the old boundary.
 const pendingBoundaries = new Map<string, string>();
+// A boundary request that arrived while a prior one for the same thread was
+// still in flight. Last-write-wins: kickBoundaryCompaction used to silently
+// drop any request that arrived while one was already running (dragging
+// the divider twice quickly, or two devices moving the same thread's
+// boundary — both real, supported interactions), so the thread would settle
+// on whichever boundary was requested FIRST with no error and no sign the
+// later request was ignored. Queuing the latest one and re-running it once
+// the in-flight commit settles makes the boundary always converge on what
+// the caller most recently asked for.
+const queuedBoundaries = new Map<string, {
+  boundary: string;
+  options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">;
+}>();
 
 export function kickWarmSummaryRefresh(threadId: string): void {
   if (!threadId || activeRefreshes.has(threadId)) return;
@@ -29,9 +42,14 @@ export function kickWarmSummaryRefresh(threadId: string): void {
   });
 }
 
-/** ISO boundary an automatic compaction is currently preparing, if any. */
+/**
+ * ISO boundary an automatic compaction is currently preparing, if any. A
+ * queued (most-recently-requested) boundary takes priority over one already
+ * in flight — that's what the thread will actually end up at once the
+ * in-flight commit settles, so it's the honest answer to "what's pending".
+ */
 export function pendingCompactionBoundary(threadId: string): string | null {
-  return pendingBoundaries.get(threadId) ?? null;
+  return queuedBoundaries.get(threadId)?.boundary ?? pendingBoundaries.get(threadId) ?? null;
 }
 
 /**
@@ -42,6 +60,9 @@ export function pendingCompactionBoundary(threadId: string): string | null {
  * pin, so the messages the recap is supposed to cover aren't even fetched.
  * Commit both together instead: on success the pin and the recap land in
  * the same write, and on failure the thread keeps its full history.
+ *
+ * A request arriving while a prior one for this thread is still in flight
+ * is queued (last-write-wins), not dropped — see queuedBoundaries above.
  */
 export function kickBoundaryCompaction(
   threadId: string,
@@ -49,7 +70,18 @@ export function kickBoundaryCompaction(
   options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount"> = {},
 ): void {
   if (!threadId || !boundary) return;
-  if (activeRefreshes.has(threadId) || pendingBoundaries.has(threadId)) return;
+  if (activeRefreshes.has(threadId) || pendingBoundaries.has(threadId)) {
+    queuedBoundaries.set(threadId, { boundary, options });
+    return;
+  }
+  runBoundaryCompaction(threadId, boundary, options);
+}
+
+function runBoundaryCompaction(
+  threadId: string,
+  boundary: string,
+  options: Pick<WarmContextCompactionOptions, "autoBoundaryLockedUntilMessageCount">,
+): void {
   const basePin = getThread(threadId)?.hot_since ?? null;
   pendingBoundaries.set(threadId, boundary);
   activeRefreshes.add(threadId);
@@ -59,6 +91,14 @@ export function kickBoundaryCompaction(
       .finally(() => {
         pendingBoundaries.delete(threadId);
         activeRefreshes.delete(threadId);
+        const queued = queuedBoundaries.get(threadId);
+        if (!queued) return;
+        queuedBoundaries.delete(threadId);
+        // Skip a no-op re-run if the boundary that just committed already
+        // matches what was queued — the queued request was superseded by
+        // the very commit it was waiting behind.
+        const settled = getThread(threadId)?.hot_since ?? null;
+        if (queued.boundary !== settled) runBoundaryCompaction(threadId, queued.boundary, queued.options);
       });
   });
 }
