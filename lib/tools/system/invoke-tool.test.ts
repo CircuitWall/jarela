@@ -225,4 +225,37 @@ describe("invoke_tool", () => {
     expect(schema.shape).toHaveProperty("args_json");
     expect(invokeToolTool.description).toContain("args_json");
   });
+
+  it("still accepts structured args directly — resolveArgs prefers it over args_json when populated", async () => {
+    upsertAgentConfig({
+      id: "invoke-structured-args-agent",
+      name: "Invoke Structured Args",
+      identity: "test",
+      instructions: "",
+      tools: [],
+    });
+    const thread = createThread("invoke-structured-args-agent");
+
+    const out = parse(await invokeToolTool.invoke(
+      { name: "list_tools", args: { query: "invoke_tool" } },
+      { configurable: { thread_id: thread.thread_id } },
+    ));
+
+    expect(out).toMatchObject({ ok: true, tool: "list_tools", status: "done" });
+  });
+
+  // Structured `args` is strictly more reliable than a hand-escaped JSON
+  // string for any provider that supports free-form object schemas
+  // (Anthropic, OpenAI) — only Gemini's schema sanitiser forces args_json
+  // (sanitizeGeminiSchema strips additionalProperties, leaving `args`
+  // emittable only as `{}`). The description must not steer every model
+  // toward the strictly worse string-encoding path just to accommodate
+  // Gemini; `args` is the primary field, args_json the fallback.
+  it("presents structured args as primary, not deprecated — args_json is the fallback for providers that can't emit a free-form object", () => {
+    expect(invokeToolTool.description).not.toMatch(/deprecated/i);
+    const argsIdx = invokeToolTool.description.indexOf("Prefer args");
+    const argsJsonFallbackIdx = invokeToolTool.description.indexOf("args_json");
+    expect(argsIdx).toBeGreaterThanOrEqual(0);
+    expect(argsJsonFallbackIdx).toBeGreaterThan(argsIdx);
+  });
 });

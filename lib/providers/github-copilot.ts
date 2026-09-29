@@ -205,11 +205,11 @@ async function resolvedAnthropicClient(params: ProviderParams): Promise<Anthropi
 export const githubCopilotProvider: ModelProvider = {
   name: "github-copilot",
 
-  async chat(model_id, messages, params): Promise<ProviderStreamResult> {
+  async chat(model_id, messages, params, signal): Promise<ProviderStreamResult> {
     if (isCopilotClaudeModel(model_id)) {
       const client = await resolvedAnthropicClient(params);
       const body = buildAnthropicMessageBody(model_id, messages, params, []);
-      const stream = client.messages.stream(body);
+      const stream = client.messages.stream(body, { signal });
       return {
         stream: (async function* () {
           for await (const event of stream) {
@@ -228,7 +228,7 @@ export const githubCopilotProvider: ModelProvider = {
       temperature: params.temperature,
       ...openaiTokenLimitParams(model_id, params),
       ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
-    });
+    }, { signal });
     return {
       stream: (async function* () {
         for await (const chunk of stream) {
@@ -239,11 +239,11 @@ export const githubCopilotProvider: ModelProvider = {
     };
   },
 
-  async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+  async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
     if (isCopilotClaudeModel(model_id)) {
       const client = await resolvedAnthropicClient(params);
       const body = buildAnthropicMessageBody(model_id, messages, params, tools);
-      const resp = await client.messages.create(body as Anthropic.Messages.MessageCreateParamsNonStreaming);
+      const resp = await client.messages.create(body as Anthropic.Messages.MessageCreateParamsNonStreaming, { signal });
       const textContent = resp.content
         .filter((b): b is Anthropic.TextBlock => b.type === "text")
         .map((b) => b.text)
@@ -267,15 +267,15 @@ export const githubCopilotProvider: ModelProvider = {
       temperature: params.temperature,
       ...openaiTokenLimitParams(model_id, params),
       ...(pickGitHubCompatOptions(params) as Record<string, unknown>),
-    });
+    }, { signal });
     return parseOpenAIInvokeChoice(resp.choices[0]);
   },
 
-  async *streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
+  async *streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
     if (isCopilotClaudeModel(model_id)) {
       const client = await resolvedAnthropicClient(params);
       const body = buildAnthropicMessageBody(model_id, messages, params, tools);
-      const stream = client.messages.stream(body);
+      const stream = client.messages.stream(body, { signal });
       yield* translateAnthropicStreamEvents(stream);
       return;
     }
@@ -291,7 +291,7 @@ export const githubCopilotProvider: ModelProvider = {
       ...openaiTokenLimitParams(model_id, params),
       ...compat,
       stream_options: { include_usage: true, ...(compat.stream_options as object | undefined) },
-    });
+    }, { signal });
 
     yield* streamOpenAIEvents(
       stream as AsyncIterable<{

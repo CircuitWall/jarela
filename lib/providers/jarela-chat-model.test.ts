@@ -36,6 +36,44 @@ afterEach(() => {
   resetConfigCache();
 });
 
+describe("JarelaChatModel — abort signal forwarding", () => {
+  it("forwards the RunnableConfig signal into provider.streamInvoke (Stop button must reach the provider call, not just LangGraph's own loop)", async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const provider: ModelProvider = {
+      name: "test",
+      async chat() { throw new Error("unused"); },
+      async *streamInvoke(_modelId, _messages, _params, _tools, signal) {
+        receivedSignal = signal;
+        yield { type: "text", delta: "hi" };
+        yield { type: "stop", reason: "stop" };
+      },
+    };
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+    const controller = new AbortController();
+    const stream = await model.stream([new HumanMessage("hello")], { signal: controller.signal });
+    for await (const _chunk of stream) { /* drain */ }
+
+    expect(receivedSignal).toBe(controller.signal);
+  });
+
+  it("forwards the RunnableConfig signal into provider.invoke (non-streaming path)", async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const provider: ModelProvider = {
+      name: "test",
+      async chat() { throw new Error("unused"); },
+      async invoke(_modelId, _messages, _params, _tools, signal) {
+        receivedSignal = signal;
+        return { text: "hi", tool_calls: [], stop_reason: "stop" };
+      },
+    };
+    const model = new JarelaChatModel({ provider, modelId: "m", params: {}, boundTools: [makeTool(1)] });
+    const controller = new AbortController();
+    await model.invoke([new HumanMessage("hello")], { signal: controller.signal });
+
+    expect(receivedSignal).toBe(controller.signal);
+  });
+});
+
 async function collectChunks(
   model: JarelaChatModel,
   msg = "hello",

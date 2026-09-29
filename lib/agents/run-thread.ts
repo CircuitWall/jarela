@@ -833,7 +833,19 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // duplicate the already-persisted user prompt in model context.
   const finalHistory = appendHistoryMessage(effectiveHistory, req._history_append_message);
 
-  const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, req.signal);
+  // A dedicated controller for THIS attempt, chained from the caller's own
+  // signal (Stop button / run abort still works normally) but independently
+  // abortable. stallRetryStream aborts it right before starting a stall/loop
+  // retry, so the abandoned attempt's still-in-flight provider call is
+  // actually cancelled instead of left running behind the new attempt
+  // (ADR-0089) — without this, breaking out of the consumer loop on a
+  // detected tool-loop does nothing to stop the underlying HTTP call.
+  const attemptAbort = new AbortController();
+  if (req.signal) {
+    if (req.signal.aborted) attemptAbort.abort(req.signal.reason);
+    else req.signal.addEventListener("abort", () => attemptAbort.abort(req.signal!.reason), { once: true });
+  }
+  const rawStream = streamWithConfig(req.thread_id, finalHistory, streamOpts, attemptAbort.signal);
   // Preserve the effective per-turn router policy as the retry seed. Without
   // this, transient retries fall back to the global policy whenever the
   // initial request didn't carry an explicit _router_policy_override, which
@@ -854,7 +866,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // the same with retry continuations. Bypass it entirely for those callers.
   const stream = req.disable_quality_gates
     ? transientWrapped
-    : stallRetryStream(transientWrapped, req, allowedTools, retriesLeft);
+    : stallRetryStream(transientWrapped, req, allowedTools, retriesLeft, attemptAbort);
   return {
     stream,
     thread_id: req.thread_id,
@@ -982,6 +994,7 @@ async function* stallRetryStream(
   originalReq: ThreadRunRequest,
   allowedTools: readonly string[],
   retriesLeft: number,
+  attemptAbort: AbortController,
 ): AsyncGenerator<StreamChunk> {
   // If no retry budget, just forward everything unchanged. The downstream
   // persistAssistantMessage will still tag a stall or fabrication with a
@@ -998,6 +1011,15 @@ async function* stallRetryStream(
   // ReAct loop where the model spins on the same tool call. Counts
   // increment only on tool_call chunks; tool_result echoes are ignored.
   const signatureCounts = new Map<string, number>();
+  // invoke_tool is `execute`-capability regardless of its target and never
+  // throws — a rejected/errored proxied call still comes back as a normal
+  // tool_result. Without tracking outcome per call id, a REJECTED proxied
+  // write (bad args_json, permission denied, target tool crashed) still
+  // satisfies "a write tool ran this turn" below, silently defeating both
+  // the fabrication check and the stall/loop auto-retry for exactly the
+  // turns where the model's claimed action didn't actually happen.
+  const toolCallIds = new Map<string, string>();
+  const failedProxyCallIds = new Set<string>();
   let loopedToolName: string | null = null;
   let doneChunk: StreamChunk | null = null;
   let sawError = false;
@@ -1008,7 +1030,7 @@ async function* stallRetryStream(
       if (typeof d === "string") textBuf += d;
       yield chunk;
     } else if (chunk.type === "tool_call") {
-      const data = chunk.data as { name?: unknown; arguments?: unknown } | undefined;
+      const data = chunk.data as { id?: unknown; name?: unknown; arguments?: unknown } | undefined;
       const rawName = typeof data?.name === "string" ? data.name : "";
       const args = data?.arguments && typeof data.arguments === "object"
         ? (data.arguments as Record<string, unknown>)
@@ -1016,6 +1038,7 @@ async function* stallRetryStream(
       const name = unwrapInvokedToolName(rawName, args);
       if (name) {
         toolNames.push(name);
+        if (typeof data?.id === "string") toolCallIds.set(data.id, name);
         const sig = toolCallSignature(rawName, args);
         const count = (signatureCounts.get(sig) ?? 0) + 1;
         signatureCounts.set(sig, count);
@@ -1035,8 +1058,14 @@ async function* stallRetryStream(
       }
       yield chunk;
     } else if (chunk.type === "tool_result") {
-      const data = chunk.data as { name?: unknown; result?: unknown } | undefined;
+      const data = chunk.data as { id?: unknown; name?: unknown; result?: unknown } | undefined;
       const name = typeof data?.name === "string" ? data.name : "tool";
+      if (name === "invoke_tool" && typeof data?.id === "string") {
+        const payload = data?.result as { ok?: unknown } | null | undefined;
+        if (payload && typeof payload === "object" && payload.ok === false) {
+          failedProxyCallIds.add(data.id);
+        }
+      }
       const summary = summarizeRetryValue(data?.result).trim();
       if (summary) {
         const clipped = summary.length > 240 ? `${summary.slice(0, 237)}...` : summary;
@@ -1057,6 +1086,15 @@ async function* stallRetryStream(
     }
   }
 
+  // Every call this turn whose outcome is actually known to have succeeded —
+  // excludes proxied (invoke_tool) calls confirmed rejected/errored by their
+  // tool_result. A direct call with no proxy involved, or a proxied call
+  // whose result hasn't arrived, still counts (fail open: absence of
+  // evidence of failure is not evidence of failure).
+  const succeededToolNames = [...toolCallIds.entries()]
+    .filter(([id]) => !failedProxyCallIds.has(id))
+    .map(([, name]) => name);
+
   const trimmedText = textBuf.trim();
   const isStallProse = trimmedText.length > 0 && looksLikeStall(trimmedText);
   // The original stall path: model produced narration but called nothing.
@@ -1064,13 +1102,16 @@ async function* stallRetryStream(
   // The "promised next-step" path: model DID call read-only tools, ended
   // the turn with stall prose ("Writing it now", "Saving the file now"),
   // and never invoked a write-like tool. Real failure from the wild — the
-  // read+narrate+stop loop slipped past the zero-tool gate.
+  // read+narrate+stop loop slipped past the zero-tool gate. Uses
+  // succeededToolNames — a write attempt that was rejected/errored (most
+  // commonly a proxied invoke_tool call) must still count as "no write
+  // tool ran", or a genuinely stalled turn is silently waved through.
   const promisedWriteStall =
     !sawError &&
     !zeroToolStall &&
     isStallProse &&
     toolNames.length > 0 &&
-    !toolNames.some(isWriteLikeToolName);
+    !succeededToolNames.some(isWriteLikeToolName);
   const regexStalled = zeroToolStall || promisedWriteStall;
   const looped = !sawError && loopedToolName !== null;
 
@@ -1117,9 +1158,10 @@ async function* stallRetryStream(
         : (classifierStalled || (classifierReason === "" && regexStalled)); // "model" mode
 
   // Fabrication check (ADR-0037): only run when no other path claimed
-  // this turn.
+  // this turn. hasWriteEvidence must reflect a CONFIRMED write, not merely
+  // an attempted one — see succeededToolNames above.
   const fabrication = !sawError && !stalled && !looped
-    ? validateAssistantOutput(textBuf, toolNames, allowedTools, toolNames.filter(isWriteLikeToolName))
+    ? validateAssistantOutput(textBuf, toolNames, allowedTools, succeededToolNames.filter(isWriteLikeToolName))
     : ({ ok: true } as const);
 
   // Strict-mode citation audit. Runs ONLY at `citation_strictness === 'strict'`
@@ -1167,7 +1209,11 @@ async function* stallRetryStream(
     return;
   }
 
-  const writeLikeTools = [...new Set(toolNames.filter(isWriteLikeToolName))];
+  // succeededToolNames, not toolNames — a rejected/errored proxied write
+  // (bad args_json, permission denied, target tool crashed) produced no
+  // side effect, so there's nothing a retry could duplicate. Skipping the
+  // retry anyway would strand the turn on a write that never happened.
+  const writeLikeTools = [...new Set(succeededToolNames.filter(isWriteLikeToolName))];
   if (writeLikeTools.length > 0) {
     yield {
       type: "text_delta",
@@ -1212,6 +1258,14 @@ async function* stallRetryStream(
 
   const retryContext = buildRetryContextSummary(textBuf, toolNames, toolResultSummaries);
   const nudgeWithContext = retryContext ? `${nudge}\n\n${retryContext}` : nudge;
+
+  // Cancel this attempt's own provider call before starting the retry — the
+  // consumer loop above already stopped reading (via `break` on tool-loop
+  // detection, or naturally via `doneChunk`), but that alone never aborted
+  // the underlying HTTP request. Without this, an abandoned attempt can keep
+  // running a tool call in the background while the retry starts a second,
+  // unrelated one.
+  attemptAbort.abort("stall_retry");
 
   const retry = await prepareThreadRun({
     ...originalReq,

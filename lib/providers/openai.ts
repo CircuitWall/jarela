@@ -275,7 +275,7 @@ function isModelNotFoundError(err: unknown): boolean {
 export const openaiProvider: ModelProvider = {
   name: "openai",
 
-  async chat(model_id, messages, params): Promise<ProviderStreamResult> {
+  async chat(model_id, messages, params, signal): Promise<ProviderStreamResult> {
     const client = makeClient(params);
     const mapped = messages.map((m): InvokeMessage => ({
       role: m.role,
@@ -288,11 +288,11 @@ export const openaiProvider: ModelProvider = {
       temperature: params.temperature,
       ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
-    });
+    }, { signal });
     return streamOpenAIText(stream);
   },
 
-  async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+  async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
     const client = makeClient(params);
     const resp = await client.chat.completions.create({
       model: model_id,
@@ -303,12 +303,12 @@ export const openaiProvider: ModelProvider = {
       temperature: params.temperature,
       ...openaiTokenLimitParams(model_id, params),
       ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
-    });
+    }, { signal });
     return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
   },
 
-  streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
-    return openaiStreamInvoke(makeClient(params), model_id, messages, params, tools);
+  streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
+    return openaiStreamInvoke(makeClient(params), model_id, messages, params, tools, signal);
   },
 
   async embed(model_id, inputs, params): Promise<number[][]> {
@@ -343,6 +343,7 @@ async function* openaiStreamInvoke(
   messages: InvokeMessage[],
   params: ProviderParams,
   tools: OpenAITool[],
+  signal?: AbortSignal,
 ): AsyncIterable<ProviderStreamEvent> {
   const compatOptions = pickOpenAICompatOptions(params) as Record<string, unknown>;
   const body: OpenAI.Chat.ChatCompletionCreateParamsStreaming = {
@@ -358,7 +359,7 @@ async function* openaiStreamInvoke(
     body.tools = tools as OpenAI.Chat.ChatCompletionTool[];
     body.tool_choice = "auto";
   }
-  const stream = await client.chat.completions.create(body);
+  const stream = await client.chat.completions.create(body, { signal });
   yield* streamOpenAIEvents(
     stream as AsyncIterable<{
       choices?: OpenAIStreamChoice[];
@@ -375,7 +376,7 @@ export function makeOpenAICompatProvider(
   return {
     name: providerName,
 
-    async chat(model_id, messages, params): Promise<ProviderStreamResult> {
+    async chat(model_id, messages, params, signal): Promise<ProviderStreamResult> {
       const client = makeClient(params, defaultBaseURL, fixedHeaders, providerName);
       const mapped = messages.map((m): InvokeMessage => ({
         role: m.role,
@@ -388,11 +389,11 @@ export function makeOpenAICompatProvider(
         temperature: params.temperature,
         ...openaiTokenLimitParams(model_id, params),
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
-      });
+      }, { signal });
       return streamOpenAIText(stream);
     },
 
-    async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+    async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
       const client = makeClient(params, defaultBaseURL, fixedHeaders, providerName);
       const resp = await client.chat.completions.create({
         model: model_id,
@@ -403,12 +404,12 @@ export function makeOpenAICompatProvider(
         temperature: params.temperature,
         ...openaiTokenLimitParams(model_id, params),
         ...(pickOpenAICompatOptions(params) as Record<string, unknown>),
-      });
+      }, { signal });
       return parseOpenAIInvokeChoice(resp.choices[0] as OpenAIInvokeChoice);
     },
 
-    streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
-      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, messages, params, tools);
+    streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
+      return openaiStreamInvoke(makeClient(params, defaultBaseURL, fixedHeaders, providerName), model_id, messages, params, tools, signal);
     },
 
     async embed(model_id, inputs, params): Promise<number[][]> {

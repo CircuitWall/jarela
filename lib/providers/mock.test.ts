@@ -68,6 +68,22 @@ describe("mockProvider.chat", () => {
       mockProvider.chat("mock-1", [{ role: "user", content: "MOCK:error=boom" }], {}),
     ).rejects.toThrow("boom");
   });
+
+  it("stops streaming once the caller's AbortSignal fires mid-stream (Stop button must actually cancel the provider call)", async () => {
+    const controller = new AbortController();
+    const res = await mockProvider.chat("mock-1", [
+      { role: "user", content: "MOCK:reply=one two three four five" },
+    ], {}, controller.signal);
+
+    const seen: string[] = [];
+    await expect((async () => {
+      for await (const chunk of res.stream) {
+        seen.push(chunk);
+        if (seen.length === 2) controller.abort();
+      }
+    })()).rejects.toThrow();
+    expect(seen.length).toBeLessThan(5);
+  });
 });
 
 describe("mockProvider.invoke", () => {

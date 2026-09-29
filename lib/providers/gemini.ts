@@ -36,8 +36,13 @@ function nativeBaseUrl(params: ProviderParams): string {
 // fetch at 10 min by default, matching the implicit ceilings the official
 // OpenAI / Anthropic SDKs already enforce.
 const NATIVE_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
-function nativeFetchSignal(): AbortSignal {
-  return AbortSignal.timeout(NATIVE_FETCH_TIMEOUT_MS);
+// Combines the fixed timeout with the caller's own cancellation signal (Stop
+// button / run abort) so neither one drops the other — a caller-aborted
+// request must not wait out the 10-minute ceiling, and a request with no
+// caller signal still gets the timeout it always had.
+function nativeFetchSignal(callerSignal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(NATIVE_FETCH_TIMEOUT_MS);
+  return callerSignal ? AbortSignal.any([timeout, callerSignal]) : timeout;
 }
 
 function geminiApiKey(params: ProviderParams): string {
@@ -270,6 +275,7 @@ async function geminiNativeGenerate(
   model_id: string,
   body: Record<string, unknown>,
   params: ProviderParams,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const apiKey = geminiApiKey(params);
   const res = await fetch(
@@ -278,7 +284,7 @@ async function geminiNativeGenerate(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: nativeFetchSignal(),
+      signal: nativeFetchSignal(signal),
     },
   );
   if (!res.ok) {
@@ -341,6 +347,7 @@ async function* geminiNativeStreamInvoke(
   messages: InvokeMessage[],
   params: ProviderParams,
   tools: OpenAITool[],
+  signal?: AbortSignal,
 ): AsyncIterable<ProviderStreamEvent> {
   const { systemInstruction, contents } = invokeMessagesToGemini(messages);
   const body: Record<string, unknown> = {
@@ -360,7 +367,7 @@ async function* geminiNativeStreamInvoke(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: nativeFetchSignal(),
+      signal: nativeFetchSignal(signal),
     },
   );
   if (!res.ok || !res.body) {
@@ -449,6 +456,7 @@ async function geminiNativeInvoke(
   messages: InvokeMessage[],
   params: ProviderParams,
   tools: OpenAITool[],
+  signal?: AbortSignal,
 ): Promise<InvokeResult> {
   const { systemInstruction, contents } = invokeMessagesToGemini(messages);
   const body: Record<string, unknown> = {
@@ -460,7 +468,7 @@ async function geminiNativeInvoke(
   const p = params as Record<string, unknown>;
   if (p.gemini_tool_config && typeof p.gemini_tool_config === "object") body.toolConfig = p.gemini_tool_config;
   if (Array.isArray(p.gemini_safety_settings)) body.safetySettings = p.gemini_safety_settings;
-  const data = await geminiNativeGenerate(model_id, body, params);
+  const data = await geminiNativeGenerate(model_id, body, params, signal);
   return extractGeminiInvokeResult(data);
 }
 
@@ -468,6 +476,7 @@ async function geminiNativeChat(
   model_id: string,
   messages: ProviderMessage[],
   params: ProviderParams,
+  signal?: AbortSignal,
 ): Promise<ProviderStreamResult> {
   const { systemInstruction, contents } = providerMessagesToGemini(messages);
   const body: Record<string, unknown> = {
@@ -485,7 +494,7 @@ async function geminiNativeChat(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: nativeFetchSignal(),
+      signal: nativeFetchSignal(signal),
     },
   );
   if (!res.ok || !res.body) {
@@ -568,10 +577,10 @@ async function geminiEmbed(model_id: string, inputs: string[], params: ProviderP
 
 export const geminiProvider: ModelProvider = {
   ...geminiCompat,
-  async chat(model_id, messages, params): Promise<ProviderStreamResult> {
-    if (isCompatMode(params)) return geminiCompat.chat(model_id, messages, params);
+  async chat(model_id, messages, params, signal): Promise<ProviderStreamResult> {
+    if (isCompatMode(params)) return geminiCompat.chat(model_id, messages, params, signal);
     try {
-      return await geminiNativeChat(model_id, messages, params);
+      return await geminiNativeChat(model_id, messages, params, signal);
     } catch (err) {
       // Auth failures use the SAME api_key on both endpoints — falling
       // back to compat will fail the same way and mask the real cause
@@ -579,38 +588,38 @@ export const geminiProvider: ModelProvider = {
       // "credential invalid" banner deep-linking to /settings/credentials.
       if (err instanceof ProviderAuthError) throw err;
       console.warn("[gemini] native chat failed, falling back to OpenAI-compat:", err);
-      return geminiCompat.chat(model_id, messages, params);
+      return geminiCompat.chat(model_id, messages, params, signal);
     }
   },
 
-  async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+  async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
     if (isCompatMode(params)) {
       if (!geminiCompat.invoke) throw new Error("Gemini compat provider has no invoke() implementation");
-      return geminiCompat.invoke(model_id, messages, params, tools);
+      return geminiCompat.invoke(model_id, messages, params, tools, signal);
     }
     try {
-      return await geminiNativeInvoke(model_id, messages, params, tools);
+      return await geminiNativeInvoke(model_id, messages, params, tools, signal);
     } catch (err) {
       if (err instanceof ProviderAuthError) throw err;
       console.warn("[gemini] native invoke failed, falling back to OpenAI-compat:", err);
       if (!geminiCompat.invoke) throw new Error("Gemini compat provider has no invoke() implementation");
-      return geminiCompat.invoke(model_id, messages, params, tools);
+      return geminiCompat.invoke(model_id, messages, params, tools, signal);
     }
   },
 
-  streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
+  streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
     if (isCompatMode(params)) {
       if (!geminiCompat.streamInvoke) throw new Error("Gemini compat provider has no streamInvoke() implementation");
-      return geminiCompat.streamInvoke(model_id, messages, params, tools);
+      return geminiCompat.streamInvoke(model_id, messages, params, tools, signal);
     }
     return (async function* (): AsyncIterable<ProviderStreamEvent> {
       try {
-        yield* geminiNativeStreamInvoke(model_id, messages, params, tools);
+        yield* geminiNativeStreamInvoke(model_id, messages, params, tools, signal);
       } catch (err) {
         if (err instanceof ProviderAuthError) throw err;
         console.warn("[gemini] native streamInvoke failed, falling back to OpenAI-compat:", err);
         if (!geminiCompat.streamInvoke) throw new Error("Gemini compat provider has no streamInvoke() implementation");
-        yield* geminiCompat.streamInvoke(model_id, messages, params, tools);
+        yield* geminiCompat.streamInvoke(model_id, messages, params, tools, signal);
       }
     })();
   },
