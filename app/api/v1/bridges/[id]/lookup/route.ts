@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getBridge } from "@/lib/stores/bridges";
 import { lookupBridgeChat } from "@/lib/bridges/runtime";
+import { validateBody } from "@/lib/api/responses";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -25,11 +26,9 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const parsed = Schema.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
-  }
+  const parsed = await validateBody(req, Schema);
+  if (parsed instanceof NextResponse) return parsed;
 
-  const chat = await lookupBridgeChat(id, parsed.data.phone);
+  const chat = await lookupBridgeChat(id, parsed.phone);
   return NextResponse.json({ chat });
 }

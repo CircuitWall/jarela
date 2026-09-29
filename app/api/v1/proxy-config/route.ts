@@ -6,6 +6,7 @@ import {
   saveProxyConfig,
 } from "@/lib/stores/proxy-config";
 import { applyProxyConfigFromDb, envProxyWasSetAtBoot } from "@/lib/proxy/dispatcher";
+import { validateBody } from "@/lib/api/responses";
 
 // Single-row proxy config (ADR-0009). GET returns current status; PUT
 // upserts; DELETE clears.
@@ -33,11 +34,9 @@ export function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const parsed = InputSchema.safeParse(await req.json());
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
-  }
-  const result = saveProxyConfig(parsed.data);
+  const parsed = await validateBody(req, InputSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const result = saveProxyConfig(parsed);
   if ("error" in result) return NextResponse.json(result, { status: 400 });
   const apply = await applyProxyConfigFromDb();
   return NextResponse.json({ config: result, applied: apply, env_override: envProxyWasSetAtBoot() });

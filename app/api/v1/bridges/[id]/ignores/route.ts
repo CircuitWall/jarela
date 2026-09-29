@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { addIgnore, getBridge, listIgnores, type BridgeIgnoreRow } from "@/lib/stores/bridges";
 import { errorMessage } from "@/lib/utils/error";
+import { validateBody } from "@/lib/api/responses";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -35,16 +36,14 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const parsed = CreateSchema.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
-  }
+  const parsed = await validateBody(req, CreateSchema);
+  if (parsed instanceof NextResponse) return parsed;
 
   try {
     const row = addIgnore({
       bridge_id: id,
-      remote_jid: parsed.data.remote_jid,
-      label: parsed.data.label ?? null,
+      remote_jid: parsed.remote_jid,
+      label: parsed.label ?? null,
     });
     return NextResponse.json(toResponse(row), { status: 201 });
   } catch (err) {

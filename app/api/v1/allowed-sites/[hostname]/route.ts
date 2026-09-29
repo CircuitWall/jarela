@@ -6,6 +6,7 @@ import {
   setSsrfBypass,
   type CookieRecord,
 } from "@/lib/stores/allowed-sites";
+import { validateBody } from "@/lib/api/responses";
 
 // Per-host operations on the allowed-sites list.
 //
@@ -42,33 +43,23 @@ interface RouteContext {
 
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   const { hostname } = await ctx.params;
-  let body: unknown;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
-  const parsed = PutInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
-  }
-  const ok = putCookies(hostname, parsed.data.cookies as CookieRecord[]);
+  const parsed = await validateBody(req, PutInputSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const ok = putCookies(hostname, parsed.cookies as CookieRecord[]);
   if (!ok) {
     return NextResponse.json(
       { error: "host is not on the allowed-sites list" },
       { status: 403 },
     );
   }
-  return NextResponse.json({ ok: true, count: parsed.data.cookies.length });
+  return NextResponse.json({ ok: true, count: parsed.cookies.length });
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
   const { hostname } = await ctx.params;
-  let body: unknown;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
-  const parsed = PatchInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
-  }
-  const ok = setSsrfBypass(hostname, parsed.data.ssrf_bypass);
+  const parsed = await validateBody(req, PatchInputSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const ok = setSsrfBypass(hostname, parsed.ssrf_bypass);
   if (!ok) return NextResponse.json({ error: "host not found" }, { status: 404 });
   return NextResponse.json({ ok: true });
 }
