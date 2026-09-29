@@ -135,6 +135,7 @@ flowchart LR
     C --> XP[External providers<br/>~/.jarela/providers/*.cjs<br/>hot-loaded]
     D --> G[Built-in tools]
     D --> XT[External tools<br/>~/.jarela/tools/*.cjs<br/>hot-loaded]
+    D -."delegate_to_agent reaches Agent Runtime internals<br/>(run-thread, model-router, stream-collector) directly<br/>— the one intentional bidirectional edge".-> B
     D --> EM[Embeddings<br/>lib/embeddings]
     D --> FS[File Store<br/>lib/files<br/>~/.jarela/files/]
     A --> V[Voice<br/>lib/voice<br/>STT + TTS]

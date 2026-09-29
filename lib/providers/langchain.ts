@@ -1,12 +1,15 @@
 /**
  * Bridge provider: wraps any LangChain `BaseChatModel` so that Jarela's
- * `ModelProvider` interface can surface the entire LangChain ecosystem of
- * model integrations (Gemini, Bedrock, Cohere, Ollama-native, etc.) without
- * us writing a custom adapter for each one.
+ * `ModelProvider` interface can reach a LangChain-only vendor integration
+ * without us writing a custom adapter for it. Only add a vendor here when
+ * no native adapter exists under `lib/providers/` — Gemini and DeepSeek
+ * have native adapters (`gemini.ts`, `deepseek.ts`) with vendor-specific
+ * tool-call/reasoning handling, so route those there, not through this
+ * generic bridge.
  *
  * Config (params on a `model_configs` row with `provider: "langchain"`):
  *   - lc_class: required. The exported class name to instantiate
- *               (e.g. "ChatGoogleGenerativeAI", "ChatCohere").
+ *               (e.g. "ChatCohere").
  *   - All other params are forwarded to the class constructor as-is, so any
  *     vendor-specific option (apiKey, region, projectId, ...) "just works".
  *
@@ -50,7 +53,7 @@ async function loadLangChainModel(model_id: string, params: ProviderParams): Pro
   if (hit) return hit;
 
   const cls = params.lc_class as string | undefined;
-  if (!cls) throw new Error(`langchain provider: params.lc_class is required (e.g. "ChatGoogleGenerativeAI")`);
+  if (!cls) throw new Error(`langchain provider: params.lc_class is required (e.g. "ChatCohere")`);
 
   // Strip our control fields from the args we pass to the class constructor.
   const { lc_class: _ignore1, lc_module: _ignore2, ...ctorArgs } = params as Record<string, unknown>;
@@ -61,25 +64,15 @@ async function loadLangChainModel(model_id: string, params: ProviderParams): Pro
 
   let model: BaseChatModel;
   switch (cls) {
-    case "ChatGoogleGenerativeAI": {
-      const { ChatGoogleGenerativeAI } = await import("@langchain/google-genai");
-      model = new ChatGoogleGenerativeAI(args as unknown as ConstructorParameters<typeof ChatGoogleGenerativeAI>[0]);
-      break;
-    }
     case "ChatCohere": {
       const { ChatCohere } = await import("@langchain/cohere");
       model = new ChatCohere(args as unknown as ConstructorParameters<typeof ChatCohere>[0]);
       break;
     }
-    case "ChatDeepSeek": {
-      const { ChatDeepSeek } = await import("@langchain/deepseek");
-      model = new ChatDeepSeek(args as unknown as ConstructorParameters<typeof ChatDeepSeek>[0]);
-      break;
-    }
     default:
       throw new Error(
         `langchain provider: unknown lc_class "${cls}". ` +
-        `Supported: ChatGoogleGenerativeAI, ChatCohere, ChatDeepSeek. ` +
+        `Supported: ChatCohere. ` +
         `To add another, install @langchain/<vendor> and extend lib/providers/langchain.ts.`
       );
   }
