@@ -75,10 +75,16 @@ export type ProviderStreamEvent =
 
 export interface ModelProvider {
   readonly name: string;
+  // `signal`, when supplied, aborts the underlying SDK/fetch call — not just
+  // the caller's own consumption of the result. Optional and trailing so
+  // existing external `~/.jarela/providers/*.cjs` plugins that don't accept
+  // it remain valid implementations; they simply keep not supporting
+  // cancellation (no regression — see ADR-0089).
   chat(
     model_id: string,
     messages: ProviderMessage[],
     params: ProviderParams,
+    signal?: AbortSignal,
   ): Promise<ProviderStreamResult>;
   // Non-streaming structured call. Providers without tool support omit this.
   invoke?(
@@ -86,6 +92,7 @@ export interface ModelProvider {
     messages: InvokeMessage[],
     params: ProviderParams,
     tools: OpenAITool[],
+    signal?: AbortSignal,
   ): Promise<InvokeResult>;
   // Streaming structured call. Yields token + thinking + tool-fragment events
   // as they arrive. Providers without streaming support omit this.
@@ -94,6 +101,7 @@ export interface ModelProvider {
     messages: InvokeMessage[],
     params: ProviderParams,
     tools: OpenAITool[],
+    signal?: AbortSignal,
   ): AsyncIterable<ProviderStreamEvent>;
   // Generate embeddings for one or more inputs. Used for semantic recall over
   // memory and chat history. Providers without embedding support omit this.

@@ -66,4 +66,119 @@ describe("collectStream", () => {
     expect(out.aborted).toBe(true);
     expect(out.assistantContent).toBe("partial");
   });
+
+  // invoke_tool is registered as `execute` capability (lib/tools/system/invoke-tool.ts),
+  // so leaving `usedTools` as the literal wrapper name "invoke_tool" makes
+  // persistAssistantMessage's stall/fabrication checks (isWriteLikeToolName)
+  // treat EVERY proxied call as a successful write, regardless of the actual
+  // target tool's capability or whether the call was rejected/errored.
+  describe("usedTools unwraps invoke_tool dispatches to the target tool", () => {
+    it("records the target tool name, not the invoke_tool wrapper, for a successful proxied call", async () => {
+      const out = await collectStream(fromArray([
+        {
+          type: "tool_call",
+          data: { id: "call-1", name: "invoke_tool", arguments: { name: "memory_write", args_json: "{}" } },
+        },
+        {
+          type: "tool_result",
+          data: {
+            id: "call-1",
+            name: "invoke_tool",
+            result: { ok: true, tool: "memory_write", status: "done", result: {} },
+          },
+        },
+        { type: "done", data: {} },
+      ]));
+      expect(out.usedTools).toEqual(["memory_write"]);
+    });
+
+    it("excludes a rejected proxied call from usedTools — nothing was actually done under that name", async () => {
+      const out = await collectStream(fromArray([
+        {
+          type: "tool_call",
+          data: { id: "call-1", name: "invoke_tool", arguments: { name: "memory_write", args_json: "not json" } },
+        },
+        {
+          type: "tool_result",
+          data: {
+            id: "call-1",
+            name: "invoke_tool",
+            result: { ok: false, tool: "memory_write", status: "rejected", error: "bad_args_json" },
+          },
+        },
+        { type: "done", data: {} },
+      ]));
+      expect(out.usedTools).toEqual([]);
+    });
+
+    it("excludes an errored proxied call from usedTools", async () => {
+      const out = await collectStream(fromArray([
+        {
+          type: "tool_call",
+          data: { id: "call-1", name: "invoke_tool", arguments: { name: "file_write", args_json: "{}" } },
+        },
+        {
+          type: "tool_result",
+          data: {
+            id: "call-1",
+            name: "invoke_tool",
+            result: { ok: false, tool: "file_write", status: "error", error: "disk full" },
+          },
+        },
+        { type: "done", data: {} },
+      ]));
+      expect(out.usedTools).toEqual([]);
+    });
+
+    it("still includes a proxied call with no matching result yet (e.g. run aborted mid-call) — fails open, not closed", async () => {
+      const out = await collectStream(fromArray([
+        {
+          type: "tool_call",
+          data: { id: "call-1", name: "invoke_tool", arguments: { name: "memory_write", args_json: "{}" } },
+        },
+        { type: "done", data: {} },
+      ]));
+      expect(out.usedTools).toEqual(["memory_write"]);
+    });
+
+    it("leaves a direct (non-proxied) tool call unaffected regardless of its result shape", async () => {
+      const out = await collectStream(fromArray([
+        { type: "tool_call", data: { id: "call-1", name: "web_search", arguments: { q: "x" } } },
+        { type: "tool_result", data: { id: "call-1", name: "web_search", result: { ok: false } } },
+        { type: "done", data: {} },
+      ]));
+      expect(out.usedTools).toEqual(["web_search"]);
+    });
+
+    it("does not let one rejected proxied call suppress a different, genuinely successful one", async () => {
+      const out = await collectStream(fromArray([
+        {
+          type: "tool_call",
+          data: { id: "call-1", name: "invoke_tool", arguments: { name: "memory_write", args_json: "bad" } },
+        },
+        {
+          type: "tool_result",
+          data: {
+            id: "call-1",
+            name: "invoke_tool",
+            result: { ok: false, tool: "memory_write", status: "rejected", error: "bad_args_json" },
+          },
+        },
+        {
+          type: "tool_call",
+          data: { id: "call-2", name: "invoke_tool", arguments: { name: "memory_write", args_json: "{}" } },
+        },
+        {
+          type: "tool_result",
+          data: {
+            id: "call-2",
+            name: "invoke_tool",
+            result: { ok: true, tool: "memory_write", status: "done", result: {} },
+          },
+        },
+        { type: "done", data: {} },
+      ]));
+      expect(out.usedTools).toEqual(["memory_write"]);
+    });
+  });
 });

@@ -222,7 +222,8 @@ export const invokeToolTool = tool(
     name: "invoke_tool",
     description:
       "Never target invoke_tool itself; call the target tool directly. Execute a permitted tool by name only after list_tools finds a tool that is permitted for this agent but was not directly loaded this turn, especially when permission_reason='proxy_only' or 'provider_tool_limit'. " +
-      "Pass the target's arguments as args_json: a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. " +
+      "Prefer args: pass the target's arguments as a structured JSON object, matching its list_tools include_schema=true schema — this is the more reliable form and works on every provider that supports nested object schemas. " +
+      "Only use args_json (the same arguments JSON-encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}') if your provider strips structured object schemas so args can only ever be emitted as '{}'. Send args_json='{}' when the target takes no arguments. " +
       "Never use invoke_tool to call invoke_tool itself; call already-loaded tools directly instead of wrapping them. " +
       "This does not bypass permissions, disabled categories, unavailable MCP servers, disabled drop-in tools, or credential requirements. Call list_tools with include_schema=true when you need the target tool's argument schema.",
     schema: z.object({
@@ -231,17 +232,18 @@ export const invokeToolTool = tool(
         .min(1)
         .refine((name) => name !== "invoke_tool", SELF_INVOKE_MESSAGE)
         .describe("Exact target tool name from list_tools; never use invoke_tool itself."),
-      // A string carries arguments through every provider. Gemini strips
-      // `additionalProperties` from tool schemas, which turns a free-form
-      // object into one the model can only ever emit as `{}`.
-      args_json: z
-        .string()
-        .optional()
-        .describe("Target tool arguments as a JSON object string, matching its list_tools include_schema=true schema."),
       args: z
         .record(z.string(), z.unknown())
         .optional()
-        .describe("Deprecated: use args_json. Structured form of the same arguments."),
+        .describe("Preferred. Target tool arguments as a structured JSON object, matching its list_tools include_schema=true schema."),
+      // A string carries arguments through every provider. Gemini strips
+      // `additionalProperties` from tool schemas, which turns a free-form
+      // object into one the model can only ever emit as `{}` — that's the
+      // one case `args` can't carry arguments and this fallback is needed.
+      args_json: z
+        .string()
+        .optional()
+        .describe("Fallback for providers that cannot emit a structured args object (it will be empty '{}' in that case). Same arguments as a JSON object string."),
     }),
   },
 );

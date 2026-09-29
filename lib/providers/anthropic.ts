@@ -328,7 +328,7 @@ function usageEventFromDelta(usage: Anthropic.MessageDeltaUsage | undefined): Pr
 export const anthropicProvider: ModelProvider = {
   name: "anthropic",
 
-  async chat(model_id, messages, params): Promise<ProviderStreamResult> {
+  async chat(model_id, messages, params, signal): Promise<ProviderStreamResult> {
     const client = new Anthropic({
       apiKey: resolveApiKey(params),
       baseURL: params.base_url,
@@ -354,7 +354,7 @@ export const anthropicProvider: ModelProvider = {
       max_tokens: params.max_tokens ?? 4096,
       system: withSystemCacheControl(systemText),
       messages: userMessages,
-    });
+    }, { signal });
 
     return {
       stream: (async function* () {
@@ -367,7 +367,7 @@ export const anthropicProvider: ModelProvider = {
     };
   },
 
-  async invoke(model_id, messages, params, tools): Promise<InvokeResult> {
+  async invoke(model_id, messages, params, tools, signal): Promise<InvokeResult> {
     const client = new Anthropic({
       apiKey: resolveApiKey(params),
       baseURL: params.base_url,
@@ -390,7 +390,7 @@ export const anthropicProvider: ModelProvider = {
       tools: anthropicTools,
       ...(params.thinking ? { thinking: resolveThinkingParam(params.thinking, model_id) } : {}),
       ...(pickAnthropicOptions(params, model_id) as Record<string, unknown>),
-    });
+    }, { signal });
 
     const textContent = resp.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
@@ -408,7 +408,7 @@ export const anthropicProvider: ModelProvider = {
     };
   },
 
-  streamInvoke(model_id, messages, params, tools): AsyncIterable<ProviderStreamEvent> {
+  streamInvoke(model_id, messages, params, tools, signal): AsyncIterable<ProviderStreamEvent> {
     return (async function* () {
       const client = new Anthropic({
         apiKey: resolveApiKey(params),
@@ -436,7 +436,7 @@ export const anthropicProvider: ModelProvider = {
         (body as unknown as Record<string, unknown>).thinking = resolveThinkingParam(params.thinking, model_id);
       }
 
-      const stream = client.messages.stream(body);
+      const stream = client.messages.stream(body, { signal });
       const blockType = new Map<number, "text" | "thinking" | "tool_use">();
 
       for await (const event of stream) {

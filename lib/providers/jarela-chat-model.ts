@@ -77,7 +77,7 @@ export class JarelaChatModel extends BaseChatModel {
 
   async _generate(
     messages: BaseMessage[],
-    _options: this["ParsedCallOptions"],
+    options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): Promise<ChatResult> {
     const invokeMessages = maskInvokeMessages(toInvokeMessages(messages));
@@ -85,7 +85,7 @@ export class JarelaChatModel extends BaseChatModel {
 
     // Streaming path — assemble chunks into a final message.
     if (this._provider.streamInvoke && openaiTools.length > 0) {
-      const finalChunk = await this._streamToFinalChunk(invokeMessages, openaiTools, runManager);
+      const finalChunk = await this._streamToFinalChunk(invokeMessages, openaiTools, runManager, options.signal);
       const gen: ChatGeneration = {
         message: aiMessageFromChunk(finalChunk.message as AIMessageChunk),
         text: typeof finalChunk.message.content === "string" ? finalChunk.message.content : "",
@@ -94,7 +94,7 @@ export class JarelaChatModel extends BaseChatModel {
     }
 
     if (this._provider.invoke && openaiTools.length > 0) {
-      const result = await this._provider.invoke(this._modelId, invokeMessages, this._params, openaiTools);
+      const result = await this._provider.invoke(this._modelId, invokeMessages, this._params, openaiTools, options.signal);
       const aiMsg = new AIMessage({
         content: result.text ?? "",
         tool_calls: result.tool_calls.map((tc) => ({
@@ -111,7 +111,7 @@ export class JarelaChatModel extends BaseChatModel {
     const providerMessages = invokeMessages
       .filter((m) => m.role !== "tool")
       .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
-    const { stream } = await this._provider.chat(this._modelId, providerMessages, this._params);
+    const { stream } = await this._provider.chat(this._modelId, providerMessages, this._params, options.signal);
     let text = "";
     for await (const chunk of stream) { text += chunk; }
     const gen: ChatGeneration = { message: new AIMessage(text), text };
@@ -122,9 +122,10 @@ export class JarelaChatModel extends BaseChatModel {
     invokeMessages: InvokeMessage[],
     openaiTools: OpenAITool[],
     runManager?: CallbackManagerForLLMRun,
+    signal?: AbortSignal,
   ): Promise<ChatGenerationChunk> {
     let acc: ChatGenerationChunk | null = null;
-    for await (const chunk of this._streamFromProvider(invokeMessages, openaiTools, runManager)) {
+    for await (const chunk of this._streamFromProvider(invokeMessages, openaiTools, runManager, signal)) {
       acc = acc ? acc.concat(chunk) : chunk;
     }
     return acc ?? new ChatGenerationChunk({ message: new AIMessageChunk({ content: "" }), text: "" });
@@ -132,14 +133,14 @@ export class JarelaChatModel extends BaseChatModel {
 
   async *_streamResponseChunks(
     messages: BaseMessage[],
-    _options: this["ParsedCallOptions"],
+    options: this["ParsedCallOptions"],
     runManager?: CallbackManagerForLLMRun,
   ): AsyncGenerator<ChatGenerationChunk> {
     const invokeMessages = maskInvokeMessages(toInvokeMessages(messages));
     const openaiTools = this._convertedTools();
 
     if (!this._provider.streamInvoke) {
-      const result = await this._generate(messages, _options, runManager);
+      const result = await this._generate(messages, options, runManager);
       const msg = result.generations[0].message as AIMessage;
       yield new ChatGenerationChunk({
         message: new AIMessageChunk({
@@ -157,18 +158,19 @@ export class JarelaChatModel extends BaseChatModel {
       return;
     }
 
-    yield* this._streamFromProvider(invokeMessages, openaiTools, runManager);
+    yield* this._streamFromProvider(invokeMessages, openaiTools, runManager, options.signal);
   }
 
   private async *_streamFromProvider(
     invokeMessages: InvokeMessage[],
     openaiTools: OpenAITool[],
     runManager?: CallbackManagerForLLMRun,
+    signal?: AbortSignal,
   ): AsyncGenerator<ChatGenerationChunk> {
     if (!this._provider.streamInvoke) return;
     let emittedAny = false;
     let stopReason: "stop" | "tool_use" | "length" | undefined;
-    for await (const event of this._provider.streamInvoke(this._modelId, invokeMessages, this._params, openaiTools)) {
+    for await (const event of this._provider.streamInvoke(this._modelId, invokeMessages, this._params, openaiTools, signal)) {
       if (event.type === "text") {
         emittedAny = true;
         await runManager?.handleLLMNewToken(event.delta);

@@ -123,9 +123,11 @@ function tokenize(text: string): string[] {
   return text.match(/\S+\s*|\s+/g) ?? (text ? [text] : []);
 }
 
-async function* streamText(text: string, slowMs?: number): AsyncIterable<string> {
+async function* streamText(text: string, slowMs?: number, signal?: AbortSignal): AsyncIterable<string> {
   for (const chunk of tokenize(text)) {
+    signal?.throwIfAborted();
     if (slowMs) await sleep(slowMs);
+    signal?.throwIfAborted();
     yield chunk;
   }
 }
@@ -133,20 +135,22 @@ async function* streamText(text: string, slowMs?: number): AsyncIterable<string>
 export const mockProvider: ModelProvider = {
   name: "mock",
 
-  async chat(_model_id, messages, _params: ProviderParams): Promise<ProviderStreamResult> {
+  async chat(_model_id, messages, _params: ProviderParams, signal): Promise<ProviderStreamResult> {
     const userText = lastUserText(messages as ProviderMessage[]);
     const directives = parseMockDirectives(userText);
     if (directives.error) throw new Error(directives.error);
+    signal?.throwIfAborted();
     const reply = pickReply(directives, userText);
     return {
-      stream: streamText(reply, directives.slowMs),
+      stream: streamText(reply, directives.slowMs, signal),
     };
   },
 
-  async invoke(_model_id, messages, _params, _tools: OpenAITool[]): Promise<InvokeResult> {
+  async invoke(_model_id, messages, _params, _tools: OpenAITool[], signal): Promise<InvokeResult> {
     const userText = lastUserText(messages as InvokeMessage[]);
     const directives = parseMockDirectives(userText);
     if (directives.error) throw new Error(directives.error);
+    signal?.throwIfAborted();
 
     if (directives.tool) {
       return {
@@ -171,14 +175,18 @@ export const mockProvider: ModelProvider = {
     messages,
     _params,
     _tools: OpenAITool[],
+    signal,
   ): AsyncIterable<ProviderStreamEvent> {
     const userText = lastUserText(messages as InvokeMessage[]);
     const directives = parseMockDirectives(userText);
     if (directives.error) throw new Error(directives.error);
+    signal?.throwIfAborted();
 
     if (directives.think) {
       for (const chunk of tokenize(directives.think)) {
+        signal?.throwIfAborted();
         if (directives.slowMs) await sleep(directives.slowMs);
+        signal?.throwIfAborted();
         yield { type: "thinking", delta: chunk };
       }
     }
@@ -193,7 +201,9 @@ export const mockProvider: ModelProvider = {
 
     const reply = pickReply(directives, userText);
     for (const chunk of tokenize(reply)) {
+      signal?.throwIfAborted();
       if (directives.slowMs) await sleep(directives.slowMs);
+      signal?.throwIfAborted();
       yield { type: "text", delta: chunk };
     }
     yield { type: "stop", reason: directives.stopReason ?? "stop" };

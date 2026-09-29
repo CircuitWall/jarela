@@ -311,6 +311,143 @@ describe("prepareThreadRun transient retry", () => {
     expect(collected.assistantContent).not.toContain("↻ Auto-retry");
   });
 
+  it("does not let a rejected invoke_tool proxy call satisfy write-evidence — a claimed save that was actually rejected must still trigger the fabrication retry", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-proxy-fabrication",
+      name: "Proxy Fabrication Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: ["file_write"],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-proxy-fabrication");
+
+    streamWithConfigMock
+      .mockImplementationOnce(() => chunks(
+        {
+          type: "tool_call",
+          data: { id: "call-1", name: "invoke_tool", arguments: { name: "file_write", args_json: "not valid json" } },
+        },
+        {
+          type: "tool_result",
+          data: {
+            id: "call-1",
+            name: "invoke_tool",
+            result: { ok: false, tool: "file_write", status: "rejected", error: "args_json must be a JSON object string", error_code: "bad_args_json" },
+          },
+        },
+        { type: "text_delta", data: { delta: "I've saved the file for you." } },
+        {
+          type: "done",
+          data: {
+            message_id: "done-proxy-fabrication-1",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        },
+      ))
+      .mockImplementationOnce(() => chunks(
+        { type: "text_delta", data: { delta: "That failed — the arguments weren't valid JSON. Let me retry with correct args." } },
+        {
+          type: "done",
+          data: {
+            message_id: "done-proxy-fabrication-2",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        },
+      ));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Save this note to the file",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const chunkTypes: string[] = [];
+    const collected = await collectStream(prepared.stream, {
+      onChunk: (chunk) => chunkTypes.push(chunk.type),
+    });
+
+    expect(collected.terminal).toBe("done");
+    // Retried — the rejected proxy call must not have satisfied write-evidence.
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+    // Discarded via reset_text (fabrication path), not the "state-changing
+    // tools already ran" write-guard skip.
+    expect(chunkTypes).toContain("reset_text");
+    expect(collected.assistantContent).not.toContain("I've saved the file");
+    expect(collected.assistantContent).not.toContain("Retry guard skipped automatic retry");
+    expect(collected.assistantContent).toBe("That failed — the arguments weren't valid JSON. Let me retry with correct args.");
+  });
+
+  it("aborts the stalled attempt's own signal before starting the tool-loop retry (prevents the abandoned provider call from racing a duplicate attempt)", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-loop-abort",
+      name: "Loop Abort Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: ["web_search"],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-loop-abort");
+    const toolArgs = { q: "same query" };
+
+    let firstAttemptSignal: AbortSignal | undefined;
+    streamWithConfigMock
+      .mockImplementationOnce((_threadId: string, _messages: unknown[], _options: unknown, signal: AbortSignal) => {
+        firstAttemptSignal = signal;
+        return chunks(
+          { type: "tool_call", data: { id: "call-1", name: "web_search", arguments: toolArgs } },
+          { type: "tool_call", data: { id: "call-2", name: "web_search", arguments: toolArgs } },
+          { type: "tool_call", data: { id: "call-3", name: "web_search", arguments: toolArgs } },
+        );
+      })
+      .mockImplementationOnce((_threadId: string, _messages: unknown[], _options: unknown, _signal: AbortSignal) => {
+        // By the time the retry attempt starts, the original (abandoned)
+        // attempt's own signal must already be aborted — otherwise its
+        // still-running provider call and this new attempt could both
+        // execute web_search concurrently.
+        expect(firstAttemptSignal?.aborted).toBe(true);
+        return chunks({
+          type: "done",
+          data: {
+            message_id: "done-loop-abort",
+            usage: { input_tokens: 1, output_tokens: 1, source: "estimate" },
+            provider: "openai",
+            model_id: "gpt-4o-mini",
+            model_config_name: "default",
+          },
+        });
+      });
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Search repeatedly",
+      context_profile: {
+        include_hot: true,
+        include_warm: false,
+        include_facts: false,
+        include_recall: false,
+      },
+    });
+
+    const collected = await collectStream(prepared.stream);
+    expect(collected.terminal).toBe("done");
+    expect(streamWithConfigMock).toHaveBeenCalledTimes(2);
+    expect(firstAttemptSignal?.aborted).toBe(true);
+  });
+
   // Issues #576 / #577: the output validator (ADR-0037) flags a completed
   // reply as fabricated and auto-retries. Before the fix, the flagged reply
   // and the retry both landed in the persisted/rendered message, glued
