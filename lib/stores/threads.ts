@@ -134,8 +134,13 @@ export function getRecentMessagesWindow(
   thread_id: string,
   limit: number,
   sinceISO?: string,
-  scope: "foreground" | "bridge" | "all" | "none" = "all",
+  scope: "foreground" | "bridge" | "all" | "none" | "channels" = "all",
   bridgeKey?: string,
+  // ADR-0044 — active channel set for scope="channels". "chat" means
+  // category IS NULL (the pseudo-channel); any other entry must be one of
+  // FOREGROUND_EXCLUDED_CATEGORIES. An empty/omitted list degenerates to
+  // "no rows" rather than silently falling back to "all".
+  channels?: readonly string[],
 ): MessageRow[] {
   if (scope === "none") return [];
   const db = getDb();
@@ -154,6 +159,16 @@ export function getRecentMessagesWindow(
     if (!bridgeKey) return [];
     sql += " AND category='bridge' AND json_extract(metadata, '$.bridge_conversation.key')=?";
     params.push(bridgeKey);
+  } else if (scope === "channels") {
+    const active = channels ?? [];
+    const includesChat = active.includes("chat");
+    const extra = active.filter((c) => c !== "chat");
+    const clauses: string[] = [];
+    if (includesChat) clauses.push("category IS NULL");
+    if (extra.length > 0) clauses.push(`category IN (${extra.map(() => "?").join(",")})`);
+    if (clauses.length === 0) return []; // no active channel — nothing qualifies
+    sql += " AND (" + clauses.join(" OR ") + ")";
+    params.push(...extra);
   }
   if (sinceISO) {
     sql += " AND created_at >= ?";
@@ -311,6 +326,58 @@ export function pruneThreadMessages(threadId: string, keepLast: number, preserve
     .run(Math.max(0, total - removed), new Date().toISOString(), threadId);
   if (removed > 0) resetMessageEmbedCache();
   return removed;
+}
+
+// Rows belonging to one automation channel (ADR-0044). Unlike "foreground"
+// scope (which excludes ALL of FOREGROUND_EXCLUDED_CATEGORIES), this fetches
+// exactly one of them — the messages a per-channel warm summary for that
+// channel needs to cover. `category` must be a member of
+// FOREGROUND_EXCLUDED_CATEGORIES; the "chat" pseudo-channel (category IS
+// NULL) is covered by getRecentMessagesWindow's existing "foreground" scope
+// and has no separate function here.
+export function getMessagesByAutomationCategory(threadId: string, category: string): MessageRow[] {
+  if (!(FOREGROUND_EXCLUDED_CATEGORIES as readonly string[]).includes(category)) {
+    throw new Error(`getMessagesByAutomationCategory: "${category}" is not an automation channel`);
+  }
+  return getDb()
+    .prepare(MSG_COLS_SQL + " WHERE thread_id=? AND category=? ORDER BY rowid ASC")
+    .all(threadId, category) as unknown as MessageRow[];
+}
+
+export interface ThreadChannelSummaryRow {
+  thread_id: string;
+  channel: string;
+  summary: string;
+  summary_before: string | null;
+  computed_at: string;
+}
+
+// ADR-0044 — one cached warm summary per (thread, automation channel),
+// alongside the legacy single `threads.warm_summary*` columns which remain
+// the "chat" channel's summary (see history-window.ts). No optimistic-
+// concurrency guard: two concurrent computations for the same channel+
+// boundary produce the same content from the same source rows, so a race
+// costs at most one duplicate LLM call, not corruption — unlike the shared
+// hot/warm boundary move, there's no cross-field invariant to protect here.
+export function getThreadChannelSummary(threadId: string, channel: string): ThreadChannelSummaryRow | null {
+  return (getDb()
+    .prepare("SELECT thread_id, channel, summary, summary_before, computed_at FROM thread_channel_summaries WHERE thread_id=? AND channel=?")
+    .get(threadId, channel) as ThreadChannelSummaryRow | undefined) ?? null;
+}
+
+export function commitThreadChannelSummary(
+  threadId: string,
+  channel: string,
+  input: { summary: string; summaryBefore: string | null },
+): void {
+  getDb()
+    .prepare(
+      `INSERT INTO thread_channel_summaries (thread_id, channel, summary, summary_before, computed_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(thread_id, channel) DO UPDATE SET
+         summary=excluded.summary, summary_before=excluded.summary_before, computed_at=excluded.computed_at`,
+    )
+    .run(threadId, channel, input.summary, input.summaryBefore, now());
 }
 
 export function touchThread(thread_id: string, firstMsg?: string): void {

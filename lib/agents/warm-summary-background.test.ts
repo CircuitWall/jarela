@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
   },
   commits: [] as Array<{ hotSince: string; summary: string }>,
   rows: [] as unknown[],
+  automationRows: {} as Record<string, unknown[]>,
+  channelSummaries: {} as Record<string, { thread_id: string; channel: string; summary: string; summary_before: string | null; computed_at: string }>,
 }));
 state.rows = DEFAULT_ROWS;
 
@@ -31,6 +33,17 @@ vi.mock("@/lib/stores/threads", () => ({
     };
     return state.thread;
   },
+  getMessagesByAutomationCategory: (threadId: string, channel: string) => state.automationRows[channel] ?? [],
+  getThreadChannelSummary: (threadId: string, channel: string) => state.channelSummaries[channel] ?? null,
+  commitThreadChannelSummary: (threadId: string, channel: string, input: { summary: string; summaryBefore: string | null }) => {
+    state.channelSummaries[channel] = {
+      thread_id: threadId,
+      channel,
+      summary: input.summary,
+      summary_before: input.summaryBefore,
+      computed_at: "2026-09-25T10:00:00.000Z",
+    };
+  },
 }));
 vi.mock("@/lib/stores/agent-configs", () => ({
   getAgentConfig: () => ({ id: "agent-1", model_config_name: "model-1" }),
@@ -46,14 +59,16 @@ vi.mock("@/lib/stores/memory", () => ({ putMemory: () => {} }));
 vi.mock("@/lib/agents/prepare/history-window", () => ({
   unwrapWarmSummary: (s: string) => ({ scope: "foreground", content: s }),
   wrapWarmSummary: (s: string) => s,
+  AUTOMATION_CHANNEL_ORDER: ["scheduled_task", "watcher", "bridge"],
 }));
 vi.mock("@/lib/agents/conversation-summary", () => ({
-  summarizeTranscript: async () => "",
+  summarizeTranscript: vi.fn(async () => ""),
   transcriptText: (c: unknown) => String(c),
   extractTopicSegments: (raw: string) => ({ body: raw, topics: [] }),
 }));
 
-import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary } from "./warm-summary-background";
+import { kickBoundaryCompaction, compactThreadWarmContext, pendingCompactionBoundary, compactAutomationChannelWarmContext, isChannelSummaryFresh } from "./warm-summary-background";
+import { summarizeTranscript } from "@/lib/agents/conversation-summary";
 
 describe("compactThreadWarmContext — seq-exact boundary (ADR-0088)", () => {
   it("excludes only rows at-or-after the boundary seq from the warm summary, even when their created_at ties the boundary (a same-millisecond tie is now possible since addMessage no longer bumps colliding timestamps)", async () => {
@@ -165,5 +180,99 @@ describe("kickBoundaryCompaction", () => {
 
     expect(state.commits).toHaveLength(1);
     expect(pendingCompactionBoundary("thread-1")).toBeNull();
+  });
+});
+
+describe("compactAutomationChannelWarmContext (ADR-0044)", () => {
+  it("returns an empty cached summary — not null — when there's too little automation activity, so freshness still short-circuits later calls", async () => {
+    state.automationRows = { watcher: [{ seq: 1, role: "assistant", content: "one fire", created_at: "2026-09-25T09:00:00.000Z" }] };
+    state.channelSummaries = {};
+
+    const built = await compactAutomationChannelWarmContext("thread-1", "watcher", "2026-09-25T10:00:00.000Z");
+    expect(built?.summary).toBe("");
+    expect(built?.sourceMessages).toBe(1);
+    expect(isChannelSummaryFresh("thread-1", "watcher", "2026-09-25T10:00:00.000Z")).toBe(true);
+  });
+
+  it("summarises rows below the boundary and commits under the channel's own key, leaving other channels untouched", async () => {
+    state.automationRows = {
+      watcher: [
+        { seq: 1, role: "assistant", content: "watcher fired once", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 2, role: "assistant", content: "watcher fired twice", created_at: "2026-09-25T09:30:00.000Z" },
+      ],
+      bridge: [
+        { seq: 3, role: "assistant", content: "bridge message", created_at: "2026-09-25T09:15:00.000Z" },
+      ],
+    };
+    state.channelSummaries = {};
+    vi.mocked(summarizeTranscript).mockResolvedValueOnce("watcher fired twice overnight");
+
+    const built = await compactAutomationChannelWarmContext("thread-1", "watcher", "2026-09-25T10:00:00.000Z");
+    expect(built?.summary).toContain("watcher fired twice overnight");
+    expect(built?.summary).toContain("--- watcher activity summary ---");
+    expect(built?.sourceMessages).toBe(2);
+
+    expect(isChannelSummaryFresh("thread-1", "watcher", "2026-09-25T10:00:00.000Z")).toBe(true);
+    expect(isChannelSummaryFresh("thread-1", "bridge", "2026-09-25T10:00:00.000Z")).toBe(false);
+  });
+
+  it("excludes rows at-or-after a seq-exact boundary the same way the chat channel does", async () => {
+    state.automationRows = {
+      watcher: [
+        { seq: 9, role: "assistant", content: "before cursor, first", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 10, role: "assistant", content: "before cursor, second", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 11, role: "assistant", content: "at cursor, stays hot", created_at: "2026-09-25T09:00:00.000Z" },
+      ],
+    };
+    state.channelSummaries = {};
+    vi.mocked(summarizeTranscript).mockResolvedValueOnce("recap");
+
+    await compactAutomationChannelWarmContext("thread-1", "watcher", "2026-09-25T09:00:00.000Z", 11);
+    expect(vi.mocked(summarizeTranscript)).toHaveBeenCalled();
+    const [, , , transcript] = vi.mocked(summarizeTranscript).mock.calls.at(-1)!;
+    expect(transcript).toContain("before cursor");
+    expect(transcript).not.toContain("at cursor, stays hot");
+  });
+});
+
+describe("kickBoundaryCompaction refreshes automation channels alongside chat (ADR-0044)", () => {
+  it("commits a (possibly empty) summary for every automation channel at the same resolved boundary chat just committed", async () => {
+    state.thread = {
+      thread_id: "thread-1",
+      hot_since: null,
+      warm_summary: null,
+      warm_summary_before: null,
+      message_count: 2,
+    };
+    state.commits = [];
+    state.rows = DEFAULT_ROWS;
+    state.automationRows = {
+      watcher: [
+        { seq: 1, role: "assistant", content: "watcher fired", created_at: "2026-09-25T09:00:00.000Z" },
+        { seq: 2, role: "assistant", content: "watcher fired again", created_at: "2026-09-25T09:30:00.000Z" },
+      ],
+    };
+    state.channelSummaries = {};
+    vi.mocked(summarizeTranscript).mockReset();
+    vi.mocked(summarizeTranscript).mockResolvedValue("watcher recap");
+
+    kickBoundaryCompaction("thread-1", "2026-09-25T10:00:00.000Z");
+    await vi.waitFor(() => expect(state.commits).toHaveLength(1));
+    // The chat commit resolves synchronously inside the same microtask
+    // chain as the automation refresh, but the refresh is a separate
+    // async Promise.all fired after — wait for all three to land.
+    await vi.waitFor(() => {
+      expect(state.channelSummaries.scheduled_task).toBeTruthy();
+      expect(state.channelSummaries.watcher).toBeTruthy();
+      expect(state.channelSummaries.bridge).toBeTruthy();
+    });
+
+    expect(state.channelSummaries.watcher.summary).toContain("watcher recap");
+    expect(state.channelSummaries.watcher.summary_before).toBe(state.commits[0].hotSince);
+    // No automation rows seeded for these two — committed with an empty
+    // summary (bookkeeping for freshness), not skipped entirely.
+    expect(state.channelSummaries.scheduled_task.summary).toBe("");
+    expect(state.channelSummaries.bridge.summary).toBe("");
+    expect(state.channelSummaries.scheduled_task.summary_before).toBe(state.commits[0].hotSince);
   });
 });

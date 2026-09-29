@@ -38,6 +38,8 @@ export interface RunAgentTurnRequest {
   user_message_metadata?: Record<string, unknown> | null;
   assistant_message_metadata?: Record<string, unknown> | null;
   history_bridge_key?: string | null;
+  /** ADR-0044 — active channel set for this turn; see ThreadRunRequest. */
+  channels?: string[];
   silent?: boolean;
   /** Queue policy for callers that distinguish foreground from background work. */
   queue_lane?: QueueLane;
@@ -142,6 +144,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
         user_category: req.user_category ?? null,
         message_metadata: req.user_message_metadata ?? null,
         history_bridge_key: req.history_bridge_key ?? null,
+        channels: req.channels,
         delivery_channel: req.delivery_channel ?? null,
         context_profile: contextProfile,
         disable_quality_gates: req.disable_quality_gates,

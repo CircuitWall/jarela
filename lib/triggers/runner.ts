@@ -38,6 +38,13 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
   }
   const thread = getOrCreateAgentThread(firing.agentId);
   const category = firing.category ?? firing.kind;
+  // ADR-0044 — automation-initiated turns get exactly their own channel,
+  // never unioned with "chat" or any other automation channel. Only set it
+  // when the category is one this ADR actually models a summary table for;
+  // an unrecognized category falls back to today's context_profile-driven
+  // scope rather than degenerating to an empty "channels" fetch.
+  const AUTOMATION_CHANNELS: readonly string[] = ["scheduled_task", "watcher", "bridge"];
+  const channels = AUTOMATION_CHANNELS.includes(category) ? [category] : undefined;
   const label = typeof firing.meta?.label === "string"
     ? firing.meta.label
     : typeof firing.meta?.description === "string"
@@ -77,6 +84,7 @@ export async function runTriggerAgent(firing: PromptFiring): Promise<TriggerOutc
       message: effectivePrompt,
       user_category: category,
       assistant_category: category,
+      channels,
       silent: firing.silent === true,
       queue_lane: firing.meta?.queueLane === "interactive" ? "interactive" : "background",
       queue_expires_at: typeof firing.meta?.expiresAt === "number"
