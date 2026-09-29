@@ -13,10 +13,6 @@ const now = () => new Date().toISOString();
 // NULL in the DB also means "no filter".
 export type UserPreset = "home" | "work" | "dev" | "custom";
 
-export function isUserPreset(v: unknown): v is UserPreset {
-  return v === "home" || v === "work" || v === "dev" || v === "custom";
-}
-
 export interface UserProfileRow {
   id: string;
   name: string;

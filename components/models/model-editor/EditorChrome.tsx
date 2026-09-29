@@ -32,21 +32,3 @@ export function EditorChrome({ title, wide, onClose, expertToggle, children, foo
     </>
   );
 }
-
-interface ExpertToggleProps {
-  showExpert: boolean;
-  onToggle: () => void;
-}
-
-export function ExpertToggle({ showExpert, onToggle }: ExpertToggleProps) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={showExpert}
-      className="text-[11px] text-fg-faint hover:text-fg-muted transition-colors inline-flex items-center gap-1"
-    >
-      {showExpert ? "Hide advanced fields" : "Show advanced fields (context tuning, base URL, headers)"}
-    </button>
-  );
-}

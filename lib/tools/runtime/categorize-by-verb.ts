@@ -78,10 +78,3 @@ export function categorizeByVerb(toolName: string): Capability {
   }
   return "execute";
 }
-
-/** @internal — exposed for tests so the corpus stays in sync with reality. */
-export const _VERB_TABLES = {
-  read: READ_VERBS,
-  write: WRITE_VERBS,
-  execute: EXECUTE_VERBS,
-} as const;
