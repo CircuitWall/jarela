@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { ENV_ALLOWLIST, listOverrides, setOverride } from "@/lib/env/allowlist";
+import { validateBody } from "@/lib/api/responses";
 
 const PutSchema = z.object({
   integration: z.string().min(1),
@@ -30,11 +31,9 @@ export function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  const parsed = PutSchema.safeParse(await req.json());
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
-  }
-  const { integration, field, envVars } = parsed.data;
+  const parsed = await validateBody(req, PutSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const { integration, field, envVars } = parsed;
   const result = setOverride(integration, field, envVars);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });

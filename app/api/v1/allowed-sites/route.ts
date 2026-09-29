@@ -4,6 +4,7 @@ import {
   addAllowedSite,
   listAllowedSites,
 } from "@/lib/stores/allowed-sites";
+import { validateBody } from "@/lib/api/responses";
 
 // Allowed-sites list. Each row is a host the user has approved the agent
 // to use as them — granting both browser-RPC navigation and cookie
@@ -26,14 +27,9 @@ export function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: unknown;
-  try { body = await req.json(); }
-  catch { return NextResponse.json({ error: "invalid json" }, { status: 400 }); }
-  const parsed = AddInputSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
-  }
-  const result = addAllowedSite(parsed.data);
+  const parsed = await validateBody(req, AddInputSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const result = addAllowedSite(parsed);
   if ("error" in result) return NextResponse.json(result, { status: 400 });
   return NextResponse.json({ site: result }, { status: 201 });
 }

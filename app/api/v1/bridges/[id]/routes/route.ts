@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createRoute, getBridge, listRoutes, type BridgeRouteRow } from "@/lib/stores/bridges";
 import { getAgentConfig } from "@/lib/stores/agent-configs";
 import { errorMessage } from "@/lib/utils/error";
+import { validateBody } from "@/lib/api/responses";
 
 interface Params { params: Promise<{ id: string }> }
 
@@ -40,22 +41,20 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   if (!getBridge(id)) return NextResponse.json({ error: "not found" }, { status: 404 });
 
-  const parsed = CreateSchema.safeParse(await req.json().catch(() => ({})));
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid body" }, { status: 400 });
-  }
-  if (!getAgentConfig(parsed.data.agent_id)) {
-    return NextResponse.json({ error: `agent ${parsed.data.agent_id} not found` }, { status: 400 });
+  const parsed = await validateBody(req, CreateSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  if (!getAgentConfig(parsed.agent_id)) {
+    return NextResponse.json({ error: `agent ${parsed.agent_id} not found` }, { status: 400 });
   }
 
   try {
     const row = createRoute({
       bridge_id: id,
-      remote_jid: parsed.data.remote_jid,
-      agent_id: parsed.data.agent_id,
-      label: parsed.data.label ?? null,
-      silent_mode: parsed.data.silent_mode ?? false,
-      respond_to: parsed.data.respond_to,
+      remote_jid: parsed.remote_jid,
+      agent_id: parsed.agent_id,
+      label: parsed.label ?? null,
+      silent_mode: parsed.silent_mode ?? false,
+      respond_to: parsed.respond_to,
     });
     return NextResponse.json(toResponse(row), { status: 201 });
   } catch (err) {

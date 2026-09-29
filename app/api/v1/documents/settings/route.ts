@@ -5,6 +5,7 @@ import { getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { getProvider } from "@/lib/providers";
 import type { ProviderParams } from "@/lib/providers/types";
 import { errorMessage } from "@/lib/utils/error";
+import { validateBody } from "@/lib/api/responses";
 
 const PutSchema = z.object({
   embedding_model_config: z.string().min(1).nullable(),
@@ -76,17 +77,9 @@ export async function GET() {
 }
 
 export async function PUT(req: NextRequest) {
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid json" }, { status: 400 });
-  }
-  const parsed = PutSchema.safeParse(body);
-  if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid input" }, { status: 400 });
-  }
-  const name = parsed.data.embedding_model_config;
+  const parsed = await validateBody(req, PutSchema);
+  if (parsed instanceof NextResponse) return parsed;
+  const name = parsed.embedding_model_config;
   if (name && !getModelConfig(name)) {
     return NextResponse.json({ error: `unknown model config: ${name}` }, { status: 400 });
   }
