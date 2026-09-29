@@ -242,6 +242,22 @@ describe("pruneThreadMessages", () => {
       vi.useRealTimers();
     }
   });
+
+  it("preserveFromSeq never deletes scheduled_task/watcher/bridge rows — the warm summary that authorizes this prune never covers them (getRecentMessagesWindow's 'foreground' scope excludes those categories)", () => {
+    const t = createThread("agent-prune-automation");
+    addMessage(t.thread_id, "user", "chat before 1"); // foreground, before cursor — safe to prune
+    addMessage(t.thread_id, "user", "chat before 2"); // foreground, before cursor — safe to prune
+    addMessage(t.thread_id, "assistant", "scheduled task ran", null, "scheduled_task");
+    addMessage(t.thread_id, "assistant", "watcher fired", null, "watcher");
+    addMessage(t.thread_id, "assistant", "bridge inbound", null, "bridge");
+    const cursor = addMessage(t.thread_id, "user", "chat after"); // the compaction boundary row
+
+    const removed = pruneThreadMessages(t.thread_id, 1, cursor.seq);
+
+    expect(removed).toBe(2); // only the two foreground "chat before" rows
+    const remaining = getMessages(t.thread_id).map((r) => r.content);
+    expect(remaining).toEqual(["scheduled task ran", "watcher fired", "bridge inbound", "chat after"]);
+  });
 });
 
 describe("pagination cursors are seq-based, not timestamp-based", () => {

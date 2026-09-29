@@ -206,7 +206,7 @@ export async function compactThreadWarmContext(
   const topicBoundary = options.alignTopicBoundary ? await findTopicBoundary(threadId, requestedBoundary) : null;
   const boundary = topicBoundary?.created_at ?? requestedBoundary;
   const boundarySeq = topicBoundary?.seq ?? options.requestedBoundarySeq ?? null;
-  const built = await buildSummaryBefore(threadId, boundary);
+  const built = await buildSummaryBefore(threadId, boundary, boundarySeq);
   if (!built || (!built.summary && !options.allowEmptySummary)) return null;
 
   const committed = commitThreadWarmContext(threadId, {
@@ -230,8 +230,19 @@ export async function compactThreadWarmContext(
  * Summarise every foreground message older than `boundary`. Returns null
  * when the thread/agent/model can't be resolved or the provider produced
  * nothing — callers treat that as "don't touch the stored summary".
+ *
+ * `boundarySeq`, when supplied, cuts on the exact row instead of the
+ * `created_at` string: a same-millisecond tie at the boundary (possible
+ * since ADR-0088 removed addMessage's collision-bump) would otherwise fail
+ * `created_at < boundary` for every tied row, excluding a row from the
+ * summary that pruneThreadMessages's seq-exact cutoff still deletes —
+ * summarized-vs-deleted must agree on the same row, or that row is lost.
+ * Only covers the *current* cut; `canExtendPrior`'s older
+ * `warm_summary_before` boundary below has no stored seq companion and
+ * still compares by string — a narrower, lower-severity residual of the
+ * same class, since that boundary is never used to delete anything.
  */
-async function buildSummaryBefore(threadId: string, boundary: string): Promise<BuiltSummary | null> {
+async function buildSummaryBefore(threadId: string, boundary: string, boundarySeq?: number | null): Promise<BuiltSummary | null> {
   const thread = getThread(threadId);
   if (!thread) return null;
 
@@ -252,7 +263,10 @@ async function buildSummaryBefore(threadId: string, boundary: string): Promise<B
   const canExtendPrior = prior?.scope === "foreground"
     && !!thread.warm_summary_before
     && thread.warm_summary_before < boundary;
-  const warmRows = rows.filter((m) => m.created_at < boundary && (!canExtendPrior || m.created_at >= thread.warm_summary_before!));
+  const warmRows = rows.filter((m) => {
+    const belowBoundary = typeof boundarySeq === "number" ? m.seq < boundarySeq : m.created_at < boundary;
+    return belowBoundary && (!canExtendPrior || m.created_at >= thread.warm_summary_before!);
+  });
   const newChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
   const sourceMessages = canExtendPrior
     ? (thread.warm_summary_source_messages ?? 0) + warmRows.length
