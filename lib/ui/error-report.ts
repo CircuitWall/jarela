@@ -207,9 +207,3 @@ export async function buildReport(
   const report = formatReport(input, env);
   return { ...report, url: buildIssueUrl(report) };
 }
-
-// Test seam: reset the version cache.
-export function _resetVersionCacheForTests(): void {
-  cachedVersion = null;
-  inFlight = null;
-}

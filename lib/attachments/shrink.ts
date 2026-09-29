@@ -144,14 +144,5 @@ export async function shrinkImage(
   }
 }
 
-/** Convenience for callers holding a full ContentPart. */
-export async function shrinkImagePart(
-  part: { type: "image"; media_type: string; data: string },
-  opts?: ShrinkOpts,
-): Promise<{ buf: Buffer; media_type: string; width: number; height: number; passthrough: boolean }>
-{
-  return shrinkImage(Buffer.from(part.data, "base64"), part.media_type, opts);
-}
-
 // Re-export type so callers don't need two imports.
 export type { ContentPart };

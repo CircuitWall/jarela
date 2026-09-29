@@ -25,8 +25,6 @@
 
 export const STORAGE_KEY = "jarelaBrowserApprovals";
 
-export const APPROVAL_STATES = Object.freeze(["always", "denied"]);
-
 function isValidState(s) { return s === "always" || s === "denied"; }
 
 export function normalizeHost(host) {
