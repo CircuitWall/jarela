@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { ContentPart } from "@/api/types";
 import { useSSE } from "@/hooks/useSSE";
+import { useMessageFilters } from "@/hooks/useMessageFilters";
 import { useAppContext } from "@/contexts/AppContext";
 import { useTrackLoading, useActivityWhile } from "@/lib/ui/loading";
 import { ApprovalsBanner } from "@/components/proposals/ApprovalsBanner";
@@ -33,6 +34,11 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
   const [steeredSegments, setSteeredSegments] = useState<Array<{ id: string; content: string }>>([]);
   const { userProfile, profileLoading, agentConfig, agentConfigLoading } =
     useUserProfileAndAgent(agentId);
+  // Lifted here (not called again inside MessageList) so the channel chips'
+  // toggle state and the channel set the next run submits with can never
+  // drift out of sync — two separate hook instances would each hold their
+  // own copy, synced only eventually via refetch. See ADR-0044.
+  const messageFilters = useMessageFilters(agentConfig?.id ?? null);
 
   // attach() comes from useSSE which we call later. Bridge via a ref so
   // useThreadData's effect can call it after both hooks render.
@@ -113,12 +119,18 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
       ...p,
       { id: optId, role: "user", content: optimisticContent, created_at: new Date().toISOString(), status: 'pending' },
     ]);
+    // ADR-0044 — the toolbar's automation-channel chips double as this
+    // turn's channel set: whichever of scheduled_task/watcher/bridge are
+    // currently shown also get included in the model's context.
+    const activeChannels = (["scheduled_task", "watcher", "bridge"] as const)
+      .filter((key) => messageFilters.filters[key]);
     const { accepted } = await sse.start(
       threadId,
       text,
       { filters: { include_tools: true, include_thinking: true }, ui_experience_mode: state.experienceMode },
       atts.length ? atts : undefined,
       thread.hotSince ?? undefined,
+      activeChannels,
     );
     if (!accepted) {
       // Server rejected because another run was in flight (second tab,
@@ -134,7 +146,7 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
     // reconciliation can't promote this bubble in place and would duplicate it.
     thread.setMessages((p) => p.map((m) => (m.id === optId ? { ...m, status: 'sent' } : m)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, sse, state.experienceMode]);
+  }, [threadId, sse, state.experienceMode, messageFilters.filters]);
 
   // Hand a mid-run message to the agent that is already streaming (ADR-0080).
   // Mirrors launchRun's optimistic bubble so the composer doesn't silently
@@ -249,6 +261,9 @@ export function ChatView({ threadId, agentId, sessionLoading, sessionError, onMe
         streaming={sse.streaming}
         contextWindowTokens={thread.contextWindowTokens}
         onRetryMessage={handleRetryMessage}
+        filters={messageFilters.filters}
+        onToggleFilter={messageFilters.toggle}
+        onResetFilters={messageFilters.reset}
       />
 
       <ApprovalsBanner agentId={agentId} />

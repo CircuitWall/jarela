@@ -41,6 +41,16 @@ export interface ThreadRunRequest {
   history_bridge_key?: string | null;
 
   /**
+   * ADR-0044 — active channel set for this turn: "chat" plus zero or more
+   * automation channels (scheduled_task/watcher/bridge). Omitted leaves
+   * today's behaviour (whatever `context_profile.history_scope` already
+   * resolves to). User-initiated HTTP runs set this from the chat panel's
+   * filter toolbar (always unioned with "chat"); `runTriggerAgent` and the
+   * bridge dispatcher set it to exactly the one channel they're running on.
+   */
+  channels?: string[];
+
+  /**
    * Delivery provenance for non-user callers. When set, the system prompt
    * tells the agent which external channel the message arrived on (e.g.
    * a specific WhatsApp bridge) so it can answer accordingly instead of

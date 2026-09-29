@@ -22,6 +22,9 @@ const {
   listThreads,
   getRecentMessagesWindow,
   FOREGROUND_EXCLUDED_CATEGORIES,
+  getMessagesByAutomationCategory,
+  getThreadChannelSummary,
+  commitThreadChannelSummary,
 } = await import("./threads");
 
 afterAll(() => {
@@ -350,6 +353,90 @@ describe("getRecentMessagesWindow (ADR-0069)", () => {
     expect(getMessages(t.thread_id)).toHaveLength(4);
     const window = getRecentMessagesWindow(t.thread_id, 100);
     expect(window.map((m) => m.content)).toEqual(["hi", "hi back", "again"]);
+  });
+});
+
+describe("scope='channels' (ADR-0044)", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("with only 'chat' active, returns exactly what 'foreground' scope excluded categories would — category IS NULL rows", () => {
+    const t = createThread("agent-channels-1");
+    addMessage(t.thread_id, "user", "chat row");
+    addMessage(t.thread_id, "assistant", "scheduled task ran", null, "scheduled_task");
+    const window = getRecentMessagesWindow(t.thread_id, 0, undefined, "channels", undefined, ["chat"]);
+    expect(window.map((m) => m.content)).toEqual(["chat row"]);
+  });
+
+  it("with chat + one automation channel active, returns rows from both and excludes the third", () => {
+    const t = createThread("agent-channels-2");
+    addMessage(t.thread_id, "user", "chat row");
+    addMessage(t.thread_id, "assistant", "scheduled task ran", null, "scheduled_task");
+    addMessage(t.thread_id, "assistant", "watcher fired", null, "watcher");
+    const window = getRecentMessagesWindow(t.thread_id, 0, undefined, "channels", undefined, ["chat", "scheduled_task"]);
+    expect(window.map((m) => m.content)).toEqual(["chat row", "scheduled task ran"]);
+  });
+
+  it("with an empty or omitted channel list, returns nothing rather than falling back to 'all'", () => {
+    const t = createThread("agent-channels-3");
+    addMessage(t.thread_id, "user", "chat row");
+    expect(getRecentMessagesWindow(t.thread_id, 0, undefined, "channels", undefined, [])).toEqual([]);
+    expect(getRecentMessagesWindow(t.thread_id, 0, undefined, "channels")).toEqual([]);
+  });
+});
+
+describe("getMessagesByAutomationCategory (ADR-0044)", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("returns only rows in that exact category, chronological order", () => {
+    const t = createThread("agent-automation-cat");
+    addMessage(t.thread_id, "user", "chat row");
+    addMessage(t.thread_id, "assistant", "watcher one", null, "watcher");
+    addMessage(t.thread_id, "assistant", "bridge row", null, "bridge");
+    addMessage(t.thread_id, "assistant", "watcher two", null, "watcher");
+    expect(getMessagesByAutomationCategory(t.thread_id, "watcher").map((m) => m.content))
+      .toEqual(["watcher one", "watcher two"]);
+  });
+
+  it("rejects a category outside FOREGROUND_EXCLUDED_CATEGORIES", () => {
+    const t = createThread("agent-automation-cat-2");
+    expect(() => getMessagesByAutomationCategory(t.thread_id, "chat")).toThrow();
+    expect(() => getMessagesByAutomationCategory(t.thread_id, "synthetic")).toThrow();
+  });
+});
+
+describe("thread channel summaries (ADR-0044)", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("returns null before any commit, then the committed row after", () => {
+    const t = createThread("agent-chsum-1");
+    expect(getThreadChannelSummary(t.thread_id, "watcher")).toBeNull();
+
+    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "recap", summaryBefore: "2026-01-01T00:00:00.000Z" });
+    const row = getThreadChannelSummary(t.thread_id, "watcher");
+    expect(row?.summary).toBe("recap");
+    expect(row?.summary_before).toBe("2026-01-01T00:00:00.000Z");
+    expect(row?.computed_at).toBeTruthy();
+  });
+
+  it("upserts in place — a second commit for the same channel replaces, not duplicates", () => {
+    const t = createThread("agent-chsum-2");
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "first", summaryBefore: "2026-01-01T00:00:00.000Z" });
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "second", summaryBefore: "2026-01-02T00:00:00.000Z" });
+    expect(getThreadChannelSummary(t.thread_id, "bridge")?.summary).toBe("second");
+  });
+
+  it("keeps separate rows per channel on the same thread", () => {
+    const t = createThread("agent-chsum-3");
+    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "watcher recap", summaryBefore: null });
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "bridge recap", summaryBefore: null });
+    expect(getThreadChannelSummary(t.thread_id, "watcher")?.summary).toBe("watcher recap");
+    expect(getThreadChannelSummary(t.thread_id, "bridge")?.summary).toBe("bridge recap");
   });
 });
 

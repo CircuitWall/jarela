@@ -8,7 +8,7 @@
 //
 // See ADR-0039 for the decomposition rationale.
 
-import { getRecentMessagesWindow, getThread } from "@/lib/stores/threads";
+import { getRecentMessagesWindow, getThread, getThreadChannelSummary } from "@/lib/stores/threads";
 import type { AgentConfigRow } from "@/lib/stores/agent-configs";
 import type { ProviderParams } from "@/lib/providers/types";
 import { getConfig } from "@/lib/env/config";
@@ -52,6 +52,16 @@ export interface ResolvedHistoryWindow {
 
 const WARM_SCOPE_RE = /^<!-- jarela:warm-scope=(foreground|bridge|all|none) -->\n/;
 
+// ADR-0044 — the automation channels with their own thread_channel_summaries
+// row, in the fixed order they're displayed/summarised. "chat" (category IS
+// NULL) is not listed here — it's always first and uses the pre-existing
+// threads.warm_summary* columns, never this table.
+export const AUTOMATION_CHANNEL_ORDER = ["scheduled_task", "watcher", "bridge"] as const;
+
+function formatHHMM(iso: string): string {
+  return iso.slice(11, 16);
+}
+
 export function wrapWarmSummary(summary: string, scope: "foreground" | "bridge" | "all" | "none"): string {
   return `<!-- jarela:warm-scope=${scope} -->\n${summary}`;
 }
@@ -94,6 +104,16 @@ export async function buildHistoryWindow(
     bridgeKey?: string;
     /** Drop the `history_window_hours` bound for this turn. */
     ignoreTimeWindow?: boolean;
+    /**
+     * ADR-0044 — active channel set for this turn. "chat" plus zero or more
+     * of AUTOMATION_CHANNEL_ORDER. Omitted, or exactly ["chat"], is
+     * byte-identical to today's behaviour (uses `scope` above for the hot
+     * fetch, no channel labels). Any additional channel switches the hot
+     * fetch to scope="channels" and adds a "## Context — source: <ch>"
+     * header per active channel plus a "[<channel> @ hh:mm]" prefix on each
+     * hot message.
+     */
+    channels?: string[];
   } = {},
 ): Promise<ResolvedHistoryWindow> {
   const hotTurnLimit = agentCfg.hot_turn_limit ?? DEFAULT_HOT_TURN_LIMIT;
@@ -111,13 +131,13 @@ export async function buildHistoryWindow(
       ? new Date(Date.now() - windowHours * 3600_000).toISOString()
       : undefined;
   const scope = options.scope ?? "all";
-  const allWindowMessages = getRecentMessagesWindow(
-    thread_id,
-    limit,
-    sinceISO,
-    scope,
-    options.bridgeKey,
-  );
+  // Deterministic display/summarisation order — fixed regardless of the
+  // order channels appear in options.channels.
+  const orderedAutomationChannels = AUTOMATION_CHANNEL_ORDER.filter((c) => options.channels?.includes(c));
+  const multiChannel = orderedAutomationChannels.length > 0;
+  const allWindowMessages = multiChannel
+    ? getRecentMessagesWindow(thread_id, limit, sinceISO, "channels", options.bridgeKey, options.channels)
+    : getRecentMessagesWindow(thread_id, limit, sinceISO, scope, options.bridgeKey);
 
   // Reuse the persisted warm summary when the boundary it covers still
   // matches the boundary we'd compute for this turn. The cache is keyed on a
@@ -198,14 +218,25 @@ export async function buildHistoryWindow(
         // Boundary-stable turn: don't pay the summariser tax again.
         warmSummaryCtx = cachedWarm.content;
       } else {
+        // In multi-channel mode allWindowMessages is channel-mixed (that's
+        // the whole point — automation rows enter the HOT tier when their
+        // chip is on). The chat channel's own ephemeral fallback must stay
+        // scoped to chat-only rows below the boundary, or a stale-cache turn
+        // would fold automation content into an unlabeled chat summary —
+        // exactly the leak ADR-0044 exists to close. Pass hotCount=0 since
+        // the boundary filter has already excluded the hot portion.
+        const chatSourceMessages = multiChannel
+          ? allWindowMessages.filter((m) => m.category == null && (boundaryKey === null || m.created_at < boundaryKey))
+          : allWindowMessages;
+        const chatHotCount = multiChannel ? 0 : hotForSlice.length;
         // Race the summariser against a wall-clock budget so a slow or hung
         // provider call cannot permanently stall the chat session. On
         // timeout we fall back to no warm summary — the hot-message truncate
         // path below kicks in so older context isn't silently dropped.
         warmSummaryCtx = await raceWithBudget(
           buildWarmSummary(
-            allWindowMessages,
-            hotForSlice.length,
+            chatSourceMessages,
+            chatHotCount,
             modelInfo.providerName,
             modelInfo.modelId,
             providerParams,
@@ -217,6 +248,26 @@ export async function buildHistoryWindow(
         // This per-turn fallback is intentionally ephemeral. Persisting it
         // here would create a warm summary without atomically moving the hot
         // boundary. The background compaction coordinator owns persistence.
+      }
+      if (multiChannel) {
+        // ADR-0044 — one "## Context — source: <ch>" block per active
+        // channel with non-empty content, chat first then the fixed
+        // automation order. Automation blocks are read-only here: they're
+        // kept fresh by the background boundary-move compactor
+        // (commitBoundaryCompaction), not computed inline — a channel
+        // toggled on before any boundary move simply has no block yet.
+        const chatBlock = warmSummaryCtx
+          ? { channel: "chat", content: warmSummaryCtx, computedAt: cached?.warm_summary_computed_at ?? null }
+          : null;
+        const automationBlocks: Array<{ channel: string; content: string; computedAt: string | null }> = [];
+        for (const channel of orderedAutomationChannels) {
+          const row = getThreadChannelSummary(thread_id, channel);
+          if (!row || !row.summary || boundaryKey === null || row.summary_before !== boundaryKey) continue;
+          automationBlocks.push({ channel, content: row.summary, computedAt: row.computed_at });
+        }
+        warmSummaryCtx = [...(chatBlock ? [chatBlock] : []), ...automationBlocks]
+          .map((b) => `## Context — source: ${b.channel}${b.computedAt ? `  (summary as of ${b.computedAt})` : ""}\n${b.content}`)
+          .join("\n\n");
       }
       const used = estimateTokens(warmSummaryCtx);
       ({ spill } = applyTierSpill(budget.tierBudgets.warm, spill, used));
@@ -243,7 +294,7 @@ export async function buildHistoryWindow(
 
   const history = hotMessagesForPrompt.map((m) => ({
     role: m.role as "user" | "assistant",
-    content: parseContent(m.content),
+    content: multiChannel ? prefixChannelLabel(parseContent(m.content), m) : parseContent(m.content),
   }));
 
   // Should be unreachable: the budget floors at 1 token and
@@ -315,6 +366,17 @@ function resolveFallbackContextWindow(
 ): number | undefined {
   if (!modelInfo.providerName || !modelInfo.modelId) return undefined;
   return getKnownContextLength(modelInfo.providerName, modelInfo.modelId) ?? undefined;
+}
+
+// ADR-0044 — label each hot message with its source channel once more than
+// one channel is active, so the model can tell an automation row from an
+// interactive one instead of blending them. Only prefixes plain-text
+// content; ContentPart[] (attachments) pass through unlabeled — automation
+// rows are system-generated text and don't carry attachments in practice.
+function prefixChannelLabel(content: string | ContentPart[], m: MessageRow): string | ContentPart[] {
+  if (typeof content !== "string") return content;
+  const channel = m.category ?? "chat";
+  return `[${channel} @ ${formatHHMM(m.created_at)}] ${content}`;
 }
 
 // Recover ContentPart[] from messages that were stored as JSON-encoded

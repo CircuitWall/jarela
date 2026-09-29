@@ -224,3 +224,38 @@ makes the dual meaning explicit: "show + include in next turn".
   threads through the same call site as `hot_since`).
 * Follow-up (not in this ADR): once the new table is fully populated,
   drop `threads.warm_summary*` columns in a separate migration ADR.
+
+## Implementation note (added on build-out)
+
+The table existed for a while with no code reading or writing it before this
+was implemented end-to-end. Three deliberate deviations from the text above,
+made during implementation:
+
+* **"chat" never gets a `thread_channel_summaries` row.** The pre-existing
+  `threads.warm_summary*` columns ARE the chat channel's summary, used
+  as-is (unchanged `buildSummaryBefore`/`compactThreadWarmContext` in
+  `warm-summary-background.ts`). The "kept for one release as a read-only
+  fallback" language above undersells this — chat's summary lives there
+  permanently under this implementation, not just during a migration
+  window. Automation channels (`scheduled_task`/`watcher`/`bridge`) are the
+  only channels that get a `thread_channel_summaries` row.
+* **Automation-channel summaries refresh eagerly on every boundary move,
+  not lazily on the next turn that asks for a newly-toggled channel.**
+  `commitBoundaryCompaction` refreshes all three automation channels
+  alongside chat every time the shared hot/warm boundary moves, instead of
+  computing on-demand when a chip is toggled on. This trades the ADR's
+  stated "at most one extra summarisation per toggle" for a simpler,
+  architecturally cleaner split: `buildHistoryWindow` (prompt assembly)
+  only ever *reads* cached channel summaries — it never calls into
+  `warm-summary-background.ts`, which would otherwise create a circular
+  import (that module already imports `wrapWarmSummary`/`unwrapWarmSummary`
+  from `history-window.ts`). The cost is three cheap automation-channel
+  LLM calls per boundary move regardless of toggle state; each is a no-op
+  return (no LLM call) when that channel has no activity yet.
+* **The bridge dispatcher (`lib/bridges/dispatcher.ts`) does not set
+  `channels`.** Its existing `history_bridge_key`-scoped fetch restricts a
+  turn to one specific bridge conversation, which is *tighter* than
+  `channels: ["bridge"]` would be (that would pull every bridge
+  conversation on the thread). The per-channel "bridge" summary is still
+  computed and shown to chat — just never fed back into a live bridge
+  reply's own hot window.

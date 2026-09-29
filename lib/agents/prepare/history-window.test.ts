@@ -24,7 +24,7 @@ vi.mock("@/lib/embeddings", () => ({
   recall: (query: string, k: number) => recallSpy(query, k),
   embed: vi.fn(async () => null),
   embedOne: vi.fn(async () => null),
-  embedBestEffort: vi.fn(async () => ({ vectors: [], error: null, failed: 0 })),
+  embedBestEffort: vi.fn(async () => ({ vectors: [], error: null, failed: 0, terminal: [] })),
   cosine: () => 0,
   upsertMemoryEmbedCache: () => {},
   evictMemoryEmbedCache: () => {},
@@ -32,7 +32,7 @@ vi.mock("@/lib/embeddings", () => ({
   resetMessageEmbedCache: () => {},
 }));
 
-const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary } =
+const { addMessage, createThread, deleteThread, getThread, listThreads, setThreadContextPin, setThreadWarmSummary, commitThreadChannelSummary } =
   await import("@/lib/stores/threads");
 const { buildHistoryWindow } = await import("./history-window");
 const { refreshWarmSummary } = await import("../warm-summary-background");
@@ -444,5 +444,82 @@ describe("buildHistoryWindow warm-summary cache", () => {
     expect(result.factsCtx).toBe("");
     // 100ms recall + 100ms warm summary budgets, with margin.
     expect(elapsed).toBeLessThan(2000);
+  });
+});
+
+describe("buildHistoryWindow multi-channel context (ADR-0044)", () => {
+  beforeEach(() => {
+    chatSpy.mockReset();
+    recallSpy.mockReset();
+    recallSpy.mockImplementation(async () => []);
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+  });
+
+  it("is byte-identical to omitting channels when channels is exactly ['chat'] — automation rows stay excluded either way", async () => {
+    const t = createThread("test-agent", "multi-1");
+    addMessage(t.thread_id, "user", "hello");
+    addMessage(t.thread_id, "assistant", "hi there");
+    addMessage(t.thread_id, "assistant", "AUTOMATION_ROW", null, "watcher");
+    chatReturns("RECAP");
+
+    const withoutChannels = await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "q", modelInfo, undefined, { scope: "foreground" });
+    const withChatOnly = await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "q", modelInfo, undefined, { scope: "foreground", channels: ["chat"] });
+
+    expect(withChatOnly.history).toEqual(withoutChannels.history);
+    expect(withChatOnly.warmSummaryCtx).toBe(withoutChannels.warmSummaryCtx);
+    expect(JSON.stringify(withChatOnly.history)).not.toContain("AUTOMATION_ROW");
+  });
+
+  it("includes an automation channel's hot rows and labels every hot message by channel once more than one is active", async () => {
+    const t = createThread("test-agent", "multi-2");
+    addMessage(t.thread_id, "user", "chat question");
+    addMessage(t.thread_id, "assistant", "watcher fired", null, "watcher");
+    chatReturns("RECAP");
+
+    const result = await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "q", modelInfo, undefined, {
+      scope: "foreground",
+      channels: ["chat", "watcher"],
+    });
+
+    const contents = result.history.map((m) => String(m.content));
+    expect(contents.some((c) => /^\[chat @ \d\d:\d\d\] chat question$/.test(c))).toBe(true);
+    expect(contents.some((c) => /^\[watcher @ \d\d:\d\d\] watcher fired$/.test(c))).toBe(true);
+  });
+
+  it("surfaces a fresh automation-channel summary block but skips a stale one", async () => {
+    const t = createThread("test-agent", "multi-3");
+    addMessage(t.thread_id, "user", "hot chat row");
+    const boundary = "2099-01-01T00:00:00.000Z";
+    setThreadContextPin(t.thread_id, boundary);
+    commitThreadChannelSummary(t.thread_id, "watcher", { summary: "watcher recap content", summaryBefore: boundary });
+    commitThreadChannelSummary(t.thread_id, "bridge", { summary: "stale bridge recap", summaryBefore: "2020-01-01T00:00:00.000Z" });
+    chatReturns("CHAT-RECAP");
+
+    const result = await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "q", modelInfo, boundary, {
+      scope: "foreground",
+      channels: ["chat", "watcher", "bridge"],
+    });
+
+    expect(result.warmSummaryCtx).toContain("## Context — source: watcher");
+    expect(result.warmSummaryCtx).toContain("watcher recap content");
+    expect(result.warmSummaryCtx).not.toContain("stale bridge recap");
+  });
+
+  it("keeps the chat channel's ephemeral warm fallback chat-only even when automation rows share the hot window", async () => {
+    const t = createThread("test-agent", "multi-4");
+    // Enough chat volume to overflow hot and force the ephemeral warm path.
+    const long = "x ".repeat(2000);
+    for (let i = 0; i < 8; i++) addMessage(t.thread_id, i % 2 === 0 ? "user" : "assistant", `chat msg ${i} ${long}`);
+    addMessage(t.thread_id, "assistant", "WATCHER_SECRET_CONTENT", null, "watcher");
+    chatReturns("RECAP");
+
+    await buildHistoryWindow(t.thread_id, agentCfg(), providerParams, "q", modelInfo, undefined, {
+      scope: "foreground",
+      channels: ["chat", "watcher"],
+    });
+
+    expect(chatSpy).toHaveBeenCalled();
+    const summaryRequest = JSON.stringify(chatSpy.mock.calls.at(-1));
+    expect(summaryRequest).not.toContain("WATCHER_SECRET_CONTENT");
   });
 });

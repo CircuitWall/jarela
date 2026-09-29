@@ -1318,14 +1318,17 @@ export async function submitRun(
   stream_options?: StreamOptions,
   attachments?: ContentPart[],
   hot_since?: string | null,
+  channels?: string[],
 ): Promise<SubmitResult> {
   const payload: {
     message: string;
     stream_options?: StreamOptions;
     attachments?: ContentPart[];
     hot_since?: string | null;
+    channels?: string[];
   } = { message, stream_options, attachments };
   if (hot_since !== undefined) payload.hot_since = hot_since;
+  if (channels !== undefined) payload.channels = channels;
   const runPayload = await externalizeRunAttachmentsIfNeeded(payload, signal);
 
   const res = await fetch(`${BASE}/threads/${thread_id}/run`, {

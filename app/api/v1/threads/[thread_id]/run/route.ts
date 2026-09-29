@@ -95,6 +95,11 @@ const RunBody = z.object({
   // null to clear the pin, omitted to leave whatever's already persisted
   // on the thread.
   hot_since: z.string().nullable().optional(),
+  // ADR-0044 — automation channels the chat panel's filter toolbar has
+  // toggled on for this turn (scheduled_task/watcher/bridge). "chat" is
+  // unioned in server-side regardless of what the client sends, so callers
+  // don't have to remember to include it. Omitted = today's chat-only scope.
+  channels: z.array(z.string()).optional(),
 });
 
 // POST is the *command* half of the run lifecycle (ADR-0008). It accepts the
@@ -116,6 +121,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const attachments = parsed.attachments as ContentPart[] | undefined;
   const stream_options = parsed.stream_options as StreamOptions | undefined;
   const hot_since = parsed.hot_since;
+  const channels = parsed.channels ? Array.from(new Set(["chat", ...parsed.channels])) : undefined;
 
   // Per-thread priority queue (lib/agents/run-queue.ts). Every entry point
   // that drives an agent on a thread goes through this — HTTP POST,
@@ -155,6 +161,7 @@ export async function POST(req: NextRequest, { params }: Params) {
           attachments,
           signal: active.abort.signal,
           hot_since,
+          channels,
           context_profile: resolveTurnProfile("user"),
           _pinned_model_config_name: pinnedModelConfigName,
         });

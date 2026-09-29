@@ -704,6 +704,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
       includeWarm: req.context_profile?.include_warm,
       bridgeKey: req.history_bridge_key ?? undefined,
       ignoreTimeWindow: compactionPending,
+      channels: req.channels,
     },
   );
 

@@ -1,13 +1,16 @@
 import { getProvider } from "@/lib/providers";
 import { summarizeTranscript, transcriptText, extractTopicSegments, type SummaryTopicSegment } from "@/lib/agents/conversation-summary";
-import { unwrapWarmSummary, wrapWarmSummary } from "@/lib/agents/prepare/history-window";
+import { unwrapWarmSummary, wrapWarmSummary, AUTOMATION_CHANNEL_ORDER } from "@/lib/agents/prepare/history-window";
 import { getAgentConfig, getAgentTierProportions } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig, getModelConfig, getModelParams } from "@/lib/stores/model-config";
 import { putMemory } from "@/lib/stores/memory";
 import {
   commitThreadWarmContext,
+  commitThreadChannelSummary,
+  getMessagesByAutomationCategory,
   getRecentMessagesWindow,
   getThread,
+  getThreadChannelSummary,
 } from "@/lib/stores/threads";
 
 const MAX_TOPIC_BOUNDARY_EXPANSION_TURNS = 4;
@@ -118,6 +121,22 @@ async function commitBoundaryCompaction(
   if (!committed) return;
   console.info(
     `[context-boundary:auto] thread=${threadId} committed boundary=${committed.boundary} warm_msgs=${committed.sourceMessages}`,
+  );
+  // ADR-0044 — keep every automation channel's summary in step with the
+  // same resolved boundary the chat channel just committed (topic-boundary
+  // alignment may have shifted it away from the raw `boundary` argument, so
+  // every channel must cut at committed.boundary, not `boundary`, or their
+  // summaries would silently disagree on where "hot" starts). Deliberately
+  // eager rather than the ADR's stated "lazy on next toggle" — refreshing
+  // all three fixed, low-volume channels here avoids a second import
+  // direction between this module and history-window.ts (which already
+  // imports FROM here) and keeps the eventual read side (buildHistoryWindow)
+  // a plain cache read, no inline LLM call, no new circular dependency.
+  await Promise.all(
+    AUTOMATION_CHANNEL_ORDER.map((channel) =>
+      compactAutomationChannelWarmContext(threadId, channel, committed.boundary, committed.boundarySeq ?? undefined)
+        .catch((err) => console.warn(`[context-boundary:auto] channel=${channel} thread=${threadId} refresh failed: ${String(err)}`)),
+    ),
   );
 }
 
@@ -399,4 +418,111 @@ function slugifyForMemoryKey(subject: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+}
+
+export interface BuiltChannelSummary {
+  /** "" when there was too little automation activity to summarise. */
+  summary: string;
+  sourceMessages: number;
+  sourceChars: number;
+}
+
+// ADR-0044 — the automation-channel counterpart to buildSummaryBefore. Chat
+// keeps using buildSummaryBefore/compactThreadWarmContext unchanged (the
+// legacy threads.warm_summary* columns ARE the "chat" channel's summary,
+// per the ADR's fallback design); this covers scheduled_task/watcher/bridge,
+// each cached in its own thread_channel_summaries row.
+//
+// Deliberately simpler than buildSummaryBefore: no extend-prior-summary
+// optimisation (thread_channel_summaries has no source_messages/source_chars
+// columns to carry a running count across calls) and no topic-fact uplift —
+// automation activity logs are far lower volume than interactive chat and
+// far less likely to carry durable personal facts worth extracting. Every
+// call re-summarises the full channel history below the boundary from
+// scratch; acceptable given the expected message counts.
+async function buildAutomationChannelSummaryBefore(
+  threadId: string,
+  channel: string,
+  boundary: string,
+  boundarySeq?: number | null,
+): Promise<BuiltChannelSummary | null> {
+  const thread = getThread(threadId);
+  if (!thread) return null;
+
+  const agent = getAgentConfig(thread.agent_id);
+  if (!agent) return null;
+
+  const modelName = agent.model_config_name ?? getDefaultModelConfig()?.name ?? null;
+  const modelCfg = modelName ? getModelConfig(modelName) : null;
+  if (!modelCfg?.provider || !modelCfg.model_id) return null;
+
+  const baseParams = getModelParams(modelCfg);
+  const tier = getAgentTierProportions(agent);
+  const providerParams = tier ? { ...baseParams, context_tier_proportions: tier } : baseParams;
+
+  const rows = getMessagesByAutomationCategory(threadId, channel);
+  const warmRows = rows.filter((m) =>
+    typeof boundarySeq === "number" ? m.seq < boundarySeq : m.created_at < boundary,
+  );
+  const sourceChars = warmRows.reduce((acc, row) => acc + transcriptText(row.content).length, 0);
+
+  if (sourceChars < 24 || warmRows.length < 2) {
+    return { summary: "", sourceMessages: warmRows.length, sourceChars };
+  }
+
+  const contextTokens = typeof providerParams.context_window_tokens === "number"
+    ? providerParams.context_window_tokens
+    : 32768;
+  const summaryInputChars = Math.max(4000, Math.min(120000, Math.round(contextTokens * 3)));
+
+  const transcript = warmRows
+    .map((m) => `[${m.created_at}] ${m.role === "user" ? "User" : "Assistant"}: ${transcriptText(m.content)}`)
+    .join("\n\n")
+    .trim()
+    .slice(-summaryInputChars);
+  if (!transcript) return null;
+
+  const provider = getProvider(modelCfg.provider);
+  const summaryParams = providerParams.max_tokens
+    ? providerParams
+    : { ...providerParams, max_tokens: 1024 };
+
+  const raw = (await summarizeTranscript(provider, modelCfg.model_id, summaryParams, transcript)).trim();
+  if (!raw) return null;
+  const { body: summary } = extractTopicSegments(raw);
+  if (!summary) return null;
+
+  return {
+    summary: [
+      `--- ${channel} activity summary ---`,
+      "Compressed recap of automation activity outside the hot window:",
+      summary,
+    ].join("\n"),
+    sourceMessages: warmRows.length,
+    sourceChars,
+  };
+}
+
+// Refresh (if stale/missing) and return the cached summary for one
+// automation channel, cut at the same shared hot/warm boundary the chat
+// channel uses. Returns null only when the thread/agent/model can't be
+// resolved or the provider produced nothing — callers treat that as "don't
+// touch the stored summary", matching compactThreadWarmContext.
+export async function compactAutomationChannelWarmContext(
+  threadId: string,
+  channel: string,
+  boundary: string,
+  boundarySeq?: number | null,
+): Promise<BuiltChannelSummary | null> {
+  const built = await buildAutomationChannelSummaryBefore(threadId, channel, boundary, boundarySeq);
+  if (!built) return null;
+  commitThreadChannelSummary(threadId, channel, { summary: built.summary, summaryBefore: boundary });
+  return built;
+}
+
+// Fresh iff the cached row's summary_before matches the current boundary —
+// mirrors ADR-0042's freshness check for the chat channel's warm_summary.
+export function isChannelSummaryFresh(threadId: string, channel: string, boundary: string): boolean {
+  const cached = getThreadChannelSummary(threadId, channel);
+  return !!cached && cached.summary_before === boundary;
 }

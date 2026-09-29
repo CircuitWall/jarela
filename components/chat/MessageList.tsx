@@ -5,7 +5,7 @@ import type { AgentConfig, ContentPart, Message, SummaryTopicSegment, UserProfil
 import { ToolList, type ToolEvent } from "./ToolList";
 import { MessageBubble } from "./MessageBubble";
 import { ContextBoundaryDivider, WarmSummaryCard } from "./ContextBoundary";
-import { useMessageFilters, MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
+import { MESSAGE_FILTER_KEYS, type MessageFilterKey } from "@/hooks/useMessageFilters";
 import { CollapseChevron } from "@/components/ui/CollapseChevron";
 import { MetaRow } from "@/components/ui/MetaRow";
 import { StatusDot } from "@/components/ui/StatusDot";
@@ -66,9 +66,21 @@ interface Props {
   // Resend a previously-sent user prompt as a new turn. Forwarded to each
   // user-role MessageBubble; absent => retry button is hidden.
   onRetryMessage?: (text: string, attachments: ContentPart[]) => void;
+  // Lifted to ChatView (see ADR-0044) so the toolbar's toggle state and the
+  // channel set the next run submits with share one source of truth.
+  // Optional (defaulting to all-shown, no-op toggle) so callers that don't
+  // care about filter behavior — most existing tests — don't need to wire
+  // a hook instance just to render the list.
+  filters?: Record<MessageFilterKey, boolean>;
+  onToggleFilter?: (key: MessageFilterKey) => void;
+  onResetFilters?: () => void;
 }
 
-export function MessageList({ threadId, messages, steeredSegments, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage }: Props) {
+const ALL_FILTERS_SHOWN: Record<MessageFilterKey, boolean> = Object.fromEntries(
+  MESSAGE_FILTER_KEYS.map((k) => [k, true]),
+) as Record<MessageFilterKey, boolean>;
+
+export function MessageList({ threadId, messages, steeredSegments, notices, agentConfig, userProfile, streamingContent, thinkingContent, toolEvents, hasMore, loadingMore, onLoadMore, queuedMessages, onRemoveQueued, hotSince, warmSummary, warmSummaryBefore, warmSummaryComputedAt, warmSummarySourceMessages, warmSummarySourceChars, warmSummaryTopics, warmSummaryPending = false, compactionPending = false, onSetContextPin, streaming, contextWindowTokens, onRetryMessage, filters = ALL_FILTERS_SHOWN, onToggleFilter: toggle = () => {}, onResetFilters: reset = () => {} }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const maskRegionRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -87,7 +99,6 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
   const dragGuideStatsRef = useRef<HTMLSpanElement>(null);
   const dragMaskRef = useRef<HTMLDivElement>(null);
   const previewHotSinceRef = useRef<string | null>(null);
-  const { filters, toggle, reset } = useMessageFilters(agentConfig?.id ?? null);
   const autoRecoveredRef = useRef<string | null>(null);
   const [isDraggingFocus, setIsDraggingFocus] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -744,7 +755,16 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
                           ? "border-border/70 bg-surface-2/70 text-fg-muted hover:text-fg"
                           : "border-border/35 bg-transparent text-fg-faint line-through decoration-fg-faint/60 hover:text-fg-muted",
                       ].join(" ")}
-                      title={on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`}
+                      title={
+                        // ADR-0044 — for the three channels the model's own
+                        // context is scoped by, the chip's meaning is dual:
+                        // it doesn't just show/hide rows here, it also
+                        // decides whether that channel's history is folded
+                        // into the next turn the agent sees.
+                        CHANNEL_SCOPED_FILTER_KEYS.has(key)
+                          ? (on ? `Hide + exclude ${CHIP_LABELS[key]} from the next turn` : `Show + include ${CHIP_LABELS[key]} in the next turn`)
+                          : (on ? `Hide ${CHIP_LABELS[key]} messages` : `Show ${CHIP_LABELS[key]} messages`)
+                      }
                       aria-pressed={on}
                     >
                       <Icon size={10} />
@@ -1060,6 +1080,12 @@ export function MessageList({ threadId, messages, steeredSegments, notices, agen
     </div>
   );
 }
+
+// ADR-0044 — the subset of MESSAGE_FILTER_KEYS that also map to a
+// messages.category the model's context is scoped by (see ChatView's
+// activeChannels + lib/agents/prepare/history-window.ts). The rest
+// (extension, page_capture, synthetic, tool_use, thinking) are display-only.
+const CHANNEL_SCOPED_FILTER_KEYS = new Set<MessageFilterKey>(["scheduled_task", "watcher", "bridge"]);
 
 const CHIP_LABELS: Record<MessageFilterKey, string> = {
   scheduled_task: "scheduled",
