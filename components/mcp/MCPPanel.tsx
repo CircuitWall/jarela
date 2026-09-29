@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api/client";
 import type { McpRegistryEntry, McpServer } from "@/api/types";
 import { useDeepLinkScroll } from "@/hooks/useDeepLinkScroll";
+import { useListState } from "@/hooks/useListState";
 import { pushErrorToast } from "@/lib/ui/error-report";
 import { pushToast } from "@/lib/ui/toasts";
 import { errorMessage } from "@/lib/utils/error";
@@ -16,19 +17,12 @@ type EditState =
   | { mode: "form"; existing: McpServer | null; registryEntry?: McpRegistryEntry };
 
 export function MCPPanel() {
-  const [servers, setServers] = useState<McpServer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { items: servers, loading, refresh } = useListState<McpServer>({
+    loader: () => api.mcp.list(),
+  });
   const [editing, setEditing] = useState<EditState>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("mcp", "mcp", containerRef);
-
-  async function load() {
-    setLoading(true);
-    try { setServers(await api.mcp.list()); } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }
-
-  useEffect(() => { void load(); }, []);
 
   async function toggle(s: McpServer) {
     try {
@@ -46,7 +40,7 @@ export function MCPPanel() {
     } catch (e) {
       pushErrorToast({ title: "Couldn't toggle MCP server", error: e, context: { panel: "mcp", action: "toggle", name: s.name } });
     } finally {
-      void load();
+      void refresh();
     }
   }
 
@@ -67,7 +61,7 @@ export function MCPPanel() {
     } catch (e) {
       pushErrorToast({ title: "Couldn't remove MCP server", error: e, context: { panel: "mcp", action: "delete", name } });
     } finally {
-      void load();
+      void refresh();
     }
   }
 
@@ -122,7 +116,7 @@ export function MCPPanel() {
           server={editing.existing}
           registryEntry={editing.registryEntry}
           onBack={editing.existing ? undefined : () => setEditing({ mode: "picker" })}
-          onClose={() => { setEditing(null); void load(); }}
+          onClose={() => { setEditing(null); void refresh(); }}
         />
       )}
     </div>
