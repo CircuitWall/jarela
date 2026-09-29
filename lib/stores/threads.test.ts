@@ -21,6 +21,7 @@ const {
   deleteThread,
   listThreads,
   getRecentMessagesWindow,
+  FOREGROUND_EXCLUDED_CATEGORIES,
 } = await import("./threads");
 
 afterAll(() => {
@@ -257,6 +258,31 @@ describe("pruneThreadMessages", () => {
     expect(removed).toBe(2); // only the two foreground "chat before" rows
     const remaining = getMessages(t.thread_id).map((r) => r.content);
     expect(remaining).toEqual(["scheduled task ran", "watcher fired", "bridge inbound", "chat after"]);
+  });
+
+  it("drift guard: every category getRecentMessagesWindow's foreground scope excludes is also guarded by pruneThreadMessages, for the full FOREGROUND_EXCLUDED_CATEGORIES list", () => {
+    // Both call sites build their SQL from the same exported constant
+    // (see threads.ts) — this test exercises every entry in that list, not
+    // just the three hand-picked in the test above, so adding a category to
+    // the constant without wiring it into both places would fail here.
+    expect(FOREGROUND_EXCLUDED_CATEGORIES.length).toBeGreaterThan(0);
+    for (const category of FOREGROUND_EXCLUDED_CATEGORIES) {
+      const t = createThread(`agent-drift-${category}`);
+      addMessage(t.thread_id, "user", "foreground row 1");
+      addMessage(t.thread_id, "user", "foreground row 2");
+      addMessage(t.thread_id, "assistant", `${category} row`, null, category);
+      const cursor = addMessage(t.thread_id, "user", "chat after");
+
+      const foreground = getRecentMessagesWindow(t.thread_id, 0, undefined, "foreground");
+      expect(foreground.map((r) => r.content)).not.toContain(`${category} row`);
+
+      // preserveFromSeq deletes every guarded row before the cursor, keepLast
+      // is irrelevant on this branch (see the test above) — with the guard
+      // correctly excluding the category row, that's both "foreground row"s.
+      const removed = pruneThreadMessages(t.thread_id, 1, cursor.seq);
+      expect(removed).toBe(2); // both foreground rows — the category row must survive
+      expect(getMessages(t.thread_id).map((r) => r.content)).toContain(`${category} row`);
+    }
   });
 });
 

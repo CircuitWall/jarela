@@ -13,6 +13,24 @@ const now = () => new Date().toISOString();
 // the same millisecond on a fast burst (see addMessage below).
 const MSG_COLS_SQL = "SELECT rowid AS seq, msg_id, thread_id, role, content, created_at, tool_events, category, metadata FROM messages";
 
+// Categories carrying only automation/background activity — never part of
+// the "foreground" conversation view and never folded into the warm summary
+// that authorizes pruneThreadMessages's destructive delete. This list is the
+// single source of truth for both: getRecentMessagesWindow's "foreground"
+// scope and pruneThreadMessages's categoryGuard build their SQL from it, so
+// they can't silently diverge (a category excluded from one but not the
+// other would mean a row gets pruned before ever being summarized, or vice
+// versa). Exported so tests can assert both call sites stay in lockstep.
+export const FOREGROUND_EXCLUDED_CATEGORIES = ["scheduled_task", "watcher", "bridge"] as const;
+
+// `category IS NULL OR category NOT IN (...)`, built from
+// FOREGROUND_EXCLUDED_CATEGORIES with `?` placeholders so callers append the
+// values to their own params array in the same position the clause lands.
+function foregroundCategoryGuardSql(): string {
+  const placeholders = FOREGROUND_EXCLUDED_CATEGORIES.map(() => "?").join(",");
+  return `(category IS NULL OR category NOT IN (${placeholders}))`;
+}
+
 export interface ThreadRow {
   thread_id: string; agent_id: string; title: string | null;
   created_at: string; updated_at: string; message_count: number;
@@ -130,7 +148,8 @@ export function getRecentMessagesWindow(
     + " AND (category IS NULL OR category != 'run_error')"
     + ` AND (metadata IS NULL OR instr(metadata, '"automation_activity"') = 0)`;
   if (scope === "foreground") {
-    sql += " AND (category IS NULL OR category NOT IN ('scheduled_task','watcher','bridge'))";
+    sql += " AND " + foregroundCategoryGuardSql();
+    params.push(...FOREGROUND_EXCLUDED_CATEGORIES);
   } else if (scope === "bridge") {
     if (!bridgeKey) return [];
     sql += " AND category='bridge' AND json_extract(metadata, '$.bridge_conversation.key')=?";
@@ -266,13 +285,13 @@ export function getOrCreateAgentThread(agentId: string): ThreadRow {
 export function pruneThreadMessages(threadId: string, keepLast: number, preserveFromSeq?: number): number {
   if (!Number.isFinite(keepLast) || keepLast <= 0) return 0;
   const db = getDb();
-  const categoryGuard = " AND (category IS NULL OR category NOT IN ('scheduled_task','watcher','bridge'))";
+  const categoryGuard = " AND " + foregroundCategoryGuardSql();
   const totalQuery = preserveFromSeq !== undefined
     ? "SELECT COUNT(*) AS n FROM messages WHERE thread_id=? AND rowid < ?" + categoryGuard
     : "SELECT COUNT(*) AS n FROM messages WHERE thread_id=?";
   const total = (db
     .prepare(totalQuery)
-    .get(...(preserveFromSeq !== undefined ? [threadId, preserveFromSeq] : [threadId])) as { n: number } | undefined)?.n ?? 0;
+    .get(...(preserveFromSeq !== undefined ? [threadId, preserveFromSeq, ...FOREGROUND_EXCLUDED_CATEGORIES] : [threadId])) as { n: number } | undefined)?.n ?? 0;
   if (total <= keepLast) return 0;
   const removeCount = preserveFromSeq !== undefined ? total : total - keepLast;
   const deleteSql = preserveFromSeq !== undefined
@@ -284,7 +303,9 @@ export function pruneThreadMessages(threadId: string, keepLast: number, preserve
       ")";
   const r = db
     .prepare(deleteSql)
-    .run(...(preserveFromSeq !== undefined ? [threadId, preserveFromSeq, removeCount] : [threadId, removeCount]));
+    .run(...(preserveFromSeq !== undefined
+      ? [threadId, preserveFromSeq, ...FOREGROUND_EXCLUDED_CATEGORIES, removeCount]
+      : [threadId, removeCount]));
   const removed = Number(r.changes);
   db.prepare("UPDATE threads SET message_count=?, updated_at=? WHERE thread_id=?")
     .run(Math.max(0, total - removed), new Date().toISOString(), threadId);
