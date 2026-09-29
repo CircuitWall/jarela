@@ -22,7 +22,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listAgentConfigs } from "@/lib/stores/agent-configs";
 import { getDefaultModelConfig } from "@/lib/stores/model-config";
-import { commitThreadWarmContext, listThreadsByAgent, getMessages } from "@/lib/stores/threads";
+import { commitThreadWarmContext, listThreadsByAgent, getRecentMessagesWindow } from "@/lib/stores/threads";
 import { summarizeTranscript, transcriptText } from "@/lib/agents/conversation-summary";
 import { wrapWarmSummary } from "@/lib/agents/prepare/history-window";
 import { getProvider } from "@/lib/providers";
@@ -68,7 +68,14 @@ export async function POST(req: NextRequest, { params }: Params) {
   for (const agent of agents) {
     const threads = listThreadsByAgent(agent.id, 200);
     for (const t of threads) {
-      const msgs = getMessages(t.thread_id);
+      // "foreground" only — matches every other compaction path
+      // (buildSummaryBefore in warm-summary-background.ts). Raw getMessages
+      // would also pull in run_error marker rows (UI-only artefacts of a
+      // failed turn, ADR-0069) and scheduled_task/watcher/bridge activity,
+      // baking them into a cached summary this route then wraps as
+      // "foreground" regardless — poisoning it with content nothing else in
+      // the system considers part of the conversation.
+      const msgs = getRecentMessagesWindow(t.thread_id, 0, undefined, "foreground");
       if (msgs.length <= keep_last) { skipped += 1; continue; }
       const warmMsgs = msgs.slice(0, msgs.length - keep_last);
       const hotStart = msgs[msgs.length - keep_last]!;
