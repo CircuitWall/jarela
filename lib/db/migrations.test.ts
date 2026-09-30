@@ -391,3 +391,24 @@ describe("router column migration", () => {
     expect(after.some((c) => c.name === "router_enabled")).toBe(true);
   });
 });
+
+describe("document_chunks terminal-failure columns migration", () => {
+  it("adds embed_failed_at and embed_error on an existing database", async () => {
+    const db = getDb();
+
+    db.exec("ALTER TABLE document_chunks DROP COLUMN embed_failed_at");
+    db.exec("ALTER TABLE document_chunks DROP COLUMN embed_error");
+
+    const before = db.prepare("PRAGMA table_info(document_chunks)").all() as Array<{ name: string }>;
+    expect(before.some((c) => c.name === "embed_failed_at")).toBe(false);
+    expect(before.some((c) => c.name === "embed_error")).toBe(false);
+
+    const { runMigrations } = await import("@/lib/db/migrations");
+    runMigrations(db);
+    runMigrations(db); // idempotent — must not throw on a second pass.
+
+    const after = db.prepare("PRAGMA table_info(document_chunks)").all() as Array<{ name: string }>;
+    expect(after.some((c) => c.name === "embed_failed_at")).toBe(true);
+    expect(after.some((c) => c.name === "embed_error")).toBe(true);
+  });
+});

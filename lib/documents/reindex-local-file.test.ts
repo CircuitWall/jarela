@@ -23,6 +23,7 @@ vi.mock("@/lib/embeddings", () => ({
     vectors: texts.map(() => null),
     error: null,
     failed: texts.length,
+    terminal: texts.map(() => false),
   })),
   upsertMemoryEmbedCache: () => {},
   evictMemoryEmbedCache: () => {},

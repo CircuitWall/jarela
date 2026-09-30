@@ -422,6 +422,7 @@ export function runMigrations(db: DatabaseSync): void {
   migrateIntegrationsToCredentials(db);
   migrateICloudPackageIds(db);
   ensureAgentRouterColumns(db);
+  ensureDocumentChunkFailureColumns(db);
   spillLegacyImageAttachments(db);
   cleanOrphanModelAssignments(db);
 }
@@ -1634,5 +1635,21 @@ function ensureAgentRouterColumns(db: DatabaseSync): void {
   }
   if (!routerCols.some((c) => c.name === "router_enabled")) {
     db.exec("ALTER TABLE agent_configs ADD COLUMN router_enabled INTEGER");
+  }
+}
+
+function ensureDocumentChunkFailureColumns(db: DatabaseSync): void {
+  // Marks a chunk whose embedding failed with a non-retryable (terminal)
+  // provider error, e.g. a 4xx on content the provider will never accept.
+  // NULL = never permanently failed (still eligible for backfill retry on
+  // the next scheduler tick). Set = indexSource()/backfillDocumentEmbeddings
+  // stop retrying it; a content change re-inserts the chunk row and clears
+  // this naturally.
+  const cols = db.prepare("PRAGMA table_info(document_chunks)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "embed_failed_at")) {
+    db.exec("ALTER TABLE document_chunks ADD COLUMN embed_failed_at TEXT");
+  }
+  if (!cols.some((c) => c.name === "embed_error")) {
+    db.exec("ALTER TABLE document_chunks ADD COLUMN embed_error TEXT");
   }
 }
