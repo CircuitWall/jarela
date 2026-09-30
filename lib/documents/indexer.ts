@@ -157,7 +157,7 @@ function listUnembeddedChunks(documentId: string): UnembeddedChunkRow[] {
     .prepare(
       `SELECT id, text
        FROM document_chunks
-       WHERE document_id=? AND embedding IS NULL
+       WHERE document_id=? AND embedding IS NULL AND embed_failed_at IS NULL
        ORDER BY chunk_index ASC`,
     )
     .all(documentId) as unknown as UnembeddedChunkRow[];
@@ -167,16 +167,37 @@ async function backfillDocumentEmbeddings(documentId: string): Promise<{ missing
   const rows = listUnembeddedChunks(documentId);
   if (rows.length === 0) return { missing: 0, embedded: 0, embedError: null };
 
-  const { vectors, error } = await embedBestEffort(rows.map((r) => r.text));
-  const updateEmb = getDb().prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
-  let embedded = 0;
-  for (let i = 0; i < rows.length; i++) {
-    const v = vectors[i];
-    if (v == null) continue;
-    updateEmb.run(JSON.stringify(v), rows[i].id);
-    embedded++;
-  }
+  const { vectors, error, terminal } = await embedBestEffort(rows.map((r) => r.text));
+  const embedded = persistEmbedResults(rows.map((r) => r.id), vectors, terminal, error);
   return { missing: rows.length, embedded, embedError: error };
+}
+
+/**
+ * Persists whichever vectors came back and marks terminal failures so
+ * `listUnembeddedChunks` stops resubmitting them on every future tick.
+ * Returns the count of chunks that got a vector.
+ */
+function persistEmbedResults(
+  chunkIds: string[],
+  vectors: (number[] | null)[],
+  terminal: boolean[],
+  error: string | null,
+): number {
+  const db = getDb();
+  const updateEmb = db.prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
+  const markFailed = db.prepare("UPDATE document_chunks SET embed_failed_at=?, embed_error=? WHERE id=?");
+  const now = new Date().toISOString();
+  let embedded = 0;
+  for (let i = 0; i < chunkIds.length; i++) {
+    const v = vectors[i];
+    if (v != null) {
+      updateEmb.run(JSON.stringify(v), chunkIds[i]);
+      embedded++;
+    } else if (terminal[i]) {
+      markFailed.run(now, error, chunkIds[i]);
+    }
+  }
+  return embedded;
 }
 
 export async function readTextFile(abs: string): Promise<string | null> {
@@ -405,15 +426,8 @@ export async function chunkAndEmbedDocument(
 
   // embedBestEffort handles retry + halving fallback internally so a
   // single bad input or transient 429 doesn't drop the whole document.
-  const { vectors, error } = await embedBestEffort(chunks.map((c) => c.text));
-  const updateEmb = db.prepare("UPDATE document_chunks SET embedding=? WHERE id=?");
-  let embedded = 0;
-  for (let i = 0; i < vectors.length; i++) {
-    if (vectors[i] != null) {
-      updateEmb.run(JSON.stringify(vectors[i]), chunkIds[i]);
-      embedded++;
-    }
-  }
+  const { vectors, error, terminal } = await embedBestEffort(chunks.map((c) => c.text));
+  const embedded = persistEmbedResults(chunkIds, vectors, terminal, error);
   return { chunks: chunks.length, embedded, embedError: error };
 }
 

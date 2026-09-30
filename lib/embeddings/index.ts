@@ -182,6 +182,14 @@ export interface EmbedBestEffortResult {
   error: string | null;
   /** Count of inputs that didn't get a vector. */
   failed: number;
+  /**
+   * Parallel to `vectors`. True at index i means the failure at that index is
+   * non-retryable (a 4xx other than 429 on that specific input) — the caller
+   * should stop retrying it rather than resubmitting on every future pass.
+   * False for successes and for failures worth retrying later (transient
+   * errors, short-response padding, or no provider configured).
+   */
+  terminal: boolean[];
 }
 
 /**
@@ -195,13 +203,16 @@ export interface EmbedBestEffortResult {
  * row instead of swallowing the error.
  */
 export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortResult> {
-  if (texts.length === 0) return { vectors: [], error: null, failed: 0 };
+  if (texts.length === 0) return { vectors: [], error: null, failed: 0, terminal: [] };
   const client = await resolveEmbeddingClient();
   if (!client) {
+    // Missing config, not bad content — fixing the config should let these
+    // retry, so this is never a terminal per-item failure.
     return {
       vectors: texts.map(() => null),
       error: "no embedding provider configured",
       failed: texts.length,
+      terminal: texts.map(() => false),
     };
   }
   return embedBestEffortInternal(client, texts);
@@ -213,20 +224,25 @@ async function embedBestEffortInternal(
 ): Promise<EmbedBestEffortResult> {
   try {
     const vectors = await callEmbedWithRetry(client, texts);
-    if (vectors.length === texts.length) return { vectors, error: null, failed: 0 };
+    if (vectors.length === texts.length) {
+      return { vectors, error: null, failed: 0, terminal: texts.map(() => false) };
+    }
     // Provider returned a short array — pad with nulls so indices line up.
+    // Which input the provider dropped is not knowable here, so treat this
+    // as retryable rather than guessing which slot to mark terminal.
     const padded: (number[] | null)[] = texts.map((_, i) => vectors[i] ?? null);
     const failed = padded.filter((v) => v === null).length;
     return {
       vectors: padded,
       error: `embedding provider returned ${vectors.length}/${texts.length} vectors`,
       failed,
+      terminal: padded.map(() => false),
     };
   } catch (err) {
     const msg = errorMessage(err);
     if (texts.length === 1) {
       console.warn("[embeddings] failed:", msg);
-      return { vectors: [null], error: msg, failed: 1 };
+      return { vectors: [null], error: msg, failed: 1, terminal: [!isTransient(err)] };
     }
     // Halve and recurse: a single oversized input shouldn't poison its
     // batchmates. The two halves run sequentially because the typical
@@ -238,6 +254,7 @@ async function embedBestEffortInternal(
       vectors: [...left.vectors, ...right.vectors],
       error: left.error ?? right.error,
       failed: left.failed + right.failed,
+      terminal: [...left.terminal, ...right.terminal],
     };
   }
 }

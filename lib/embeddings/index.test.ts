@@ -55,6 +55,7 @@ describe("embedBestEffort", () => {
     expect(r.vectors).toEqual([[0.1], [0.2], [0.3]]);
     expect(r.error).toBeNull();
     expect(r.failed).toBe(0);
+    expect(r.terminal).toEqual([false, false, false]);
     expect(embedSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -69,15 +70,17 @@ describe("embedBestEffort", () => {
     const r = await p;
     expect(r.vectors).toEqual([[1], [2]]);
     expect(r.failed).toBe(0);
+    expect(r.terminal).toEqual([false, false]);
     expect(embedSpy).toHaveBeenCalledTimes(3);
   });
 
-  it("does not retry on non-transient errors", async () => {
+  it("does not retry on non-transient errors, and marks the failure terminal", async () => {
     embedSpy.mockRejectedValue(new Error("HTTP 401 Unauthorized"));
     const r = await embedBestEffort(["only one"]);
     expect(r.vectors).toEqual([null]);
     expect(r.failed).toBe(1);
     expect(r.error).toContain("401");
+    expect(r.terminal).toEqual([true]);
     expect(embedSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -98,22 +101,28 @@ describe("embedBestEffort", () => {
     expect(r.vectors).toEqual([[10], null, [30], [40]]);
     expect(r.failed).toBe(1);
     expect(r.error).toContain("400");
+    // Only the singleton that hit a genuinely bad-input error is terminal;
+    // the 400s on the larger batches were "some input in here is bad" and
+    // got resolved by bisection, not attributable to a specific index.
+    expect(r.terminal).toEqual([false, true, false, false]);
   });
 
-  it("pads short responses with nulls to keep indices aligned", async () => {
+  it("pads short responses with nulls to keep indices aligned, without marking terminal", async () => {
     embedSpy.mockResolvedValueOnce([[1]]); // only 1 of 2 vectors returned
     const r = await embedBestEffort(["a", "b"]);
     expect(r.vectors).toEqual([[1], null]);
     expect(r.failed).toBe(1);
     expect(r.error).toContain("1/2");
+    expect(r.terminal).toEqual([false, false]);
   });
 
-  it("returns no-provider error when client cannot be resolved", async () => {
+  it("returns no-provider error when client cannot be resolved, without marking terminal", async () => {
     resolveEmbedClient = false;
     const r = await embedBestEffort(["a", "b"]);
     expect(r.vectors).toEqual([null, null]);
     expect(r.failed).toBe(2);
     expect(r.error).toBe("no embedding provider configured");
+    expect(r.terminal).toEqual([false, false]);
     expect(embedSpy).not.toHaveBeenCalled();
   });
 });
