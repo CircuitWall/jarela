@@ -195,7 +195,8 @@ sequenceDiagram
     API->>AG: startRun + invoke(threadId, msg, hot_since)
     AG->>DB: load checkpoint + thread.hot_since
     AG->>AG: buildHistoryWindow honours hot_since
-    AG->>ATT: materialize refs when provider needs bytes
+    AG->>ATT: materialize refs for the newest turn only (ADR-0090)
+    Note over AG: Older image_ref/file_ref in the window become a<br/>placeholder; model calls view_attachment to re-read one
     opt warm_summary_before ≠ hot_since
         AG->>LLM: summarise older messages
         LLM-->>AG: summary

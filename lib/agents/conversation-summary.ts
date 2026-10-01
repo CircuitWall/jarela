@@ -10,9 +10,12 @@ export function transcriptText(raw: string): string {
       .map((p) => {
         if (p.type === "text") return p.text;
         if (p.type === "image") return `[image attachment: ${p.media_type}]`;
-        if (p.type === "image_ref") return `[image attachment: ${p.media_type}]`;
+        // Keep the ref `name` in the summary text (not just media_type) so a
+        // conversation that's aged into the warm tier can still be pointed
+        // at `view_attachment` for the file case — see ADR-0090.
+        if (p.type === "image_ref") return `[image attachment: ${p.name} (${p.media_type})]`;
         if (p.type === "file") return `[file attachment: ${p.name} (${p.media_type})]`;
-        if (p.type === "file_ref") return `[file attachment: ${p.filename} (${p.media_type})]`;
+        if (p.type === "file_ref") return `[file attachment: ${p.filename} (${p.name}, ${p.media_type})]`;
         return "";
       })
       .filter(Boolean)

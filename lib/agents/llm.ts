@@ -15,7 +15,7 @@ import { JarelaChatModel } from "@/lib/providers/jarela-chat-model";
 import { SqliteMemoryStore } from "@/lib/stores/langgraph-store";
 import { getCheckpointer } from "@/lib/agents/checkpointer";
 import { drainSteering } from "@/lib/agents/run-registry";
-import { readImageRef } from "@/lib/attachments/spill";
+import { readImageRef, readFileRef } from "@/lib/attachments/spill";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { StreamChunk, StreamOptions } from "./base";
 import type { ProviderParams } from "@/lib/providers/types";
@@ -27,6 +27,28 @@ import { wrapToolsForCredentialRouting } from "@/lib/tools/security/wrap-credent
 import { errorMessage } from "@/lib/utils/error";
 import { modelCapabilities } from "@/lib/providers/capabilities";
 
+function clipText(text: string, max: number): { value: string; truncated: boolean } {
+  if (text.length <= max) return { value: text, truncated: false };
+  return { value: text.slice(0, max), truncated: true };
+}
+
+// ADR-0090: an `image_ref`/`file_ref` only gets its bytes read back off disk
+// for the newest message in the window — every earlier occurrence of the
+// same ref (still fully intact on disk and in `messages.content`) collapses
+// to this placeholder instead of being re-sent to the provider on every
+// subsequent turn. `view_attachment` lets the model pull a `file_ref`'s text
+// back on demand; images can only be re-surfaced as a URL (no provider tool
+// result in this codebase carries a vision block — see docs/adr/0090).
+function olderImagePlaceholder(name: string, media_type: string): string {
+  return `[image attachment: ${name} (${media_type}) — attached earlier in this conversation and no longer shown here. `
+    + `Call view_attachment({name: "${name}", media_type: "${media_type}"}) to get its URL again; you will not regain visual access to its pixels.]`;
+}
+
+function olderFilePlaceholder(name: string, filename: string, media_type: string): string {
+  return `[file attachment: ${filename} (${name}, ${media_type}) — attached earlier in this conversation and no longer inlined here. `
+    + `Call view_attachment({name: "${name}", media_type: "${media_type}"}) to read its contents again.]`;
+}
+
 export async function toBaseMessages(
   messages: Array<{ role: "user" | "assistant"; content: string | ContentPart[] }>,
   systemPrompt?: string,
@@ -34,7 +56,10 @@ export async function toBaseMessages(
 ): Promise<BaseMessage[]> {
   const base: BaseMessage[] = systemPrompt ? [new SystemMessage(systemPrompt)] : [];
   const out: BaseMessage[] = [...base];
-  for (const m of messages) {
+  const lastIndex = messages.length - 1;
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const isLatest = i === lastIndex;
     // Plain text path — fast & most common.
     if (typeof m.content === "string") {
       out.push(m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content));
@@ -71,6 +96,10 @@ export async function toBaseMessages(
           blocks.push({ type: "text", text: `[image attachment omitted: ${part.media_type}]` });
           continue;
         }
+        if (!isLatest) {
+          blocks.push({ type: "text", text: olderImagePlaceholder(part.name, part.media_type) });
+          continue;
+        }
         // Read the disk-resident blob and re-encode as base64 only for
         // the outbound provider request. The base64 lives on the wire
         // and inside the model's HTTP body — never in DB or checkpoints.
@@ -94,7 +123,26 @@ export async function toBaseMessages(
           blocks.push({ type: "text", text: `[Attached file: ${part.name} (${part.media_type})]` });
         }
       } else if (part.type === "file_ref") {
-        blocks.push({ type: "text", text: `[Attached file: ${part.filename} (${part.media_type})]` });
+        if (!isLatest) {
+          blocks.push({ type: "text", text: olderFilePlaceholder(part.name, part.filename, part.media_type) });
+          continue;
+        }
+        const isTexty = part.media_type.startsWith("text/") || part.media_type === "application/json";
+        if (!isTexty) {
+          blocks.push({ type: "text", text: `[Attached file: ${part.filename} (${part.media_type})]` });
+          continue;
+        }
+        try {
+          const buf = await readFileRef({ name: part.name });
+          const clipped = clipText(buf.toString("utf8"), getConfig().filesMaxReadBytes);
+          blocks.push({
+            type: "text",
+            text: `[Attached file: ${part.filename}]\n${clipped.value}${clipped.truncated ? "\n[... truncated]" : ""}`,
+          });
+        } catch (err) {
+          console.warn(`[llm] file_ref ${part.name} unreadable, substituting text:`, errorMessage(err));
+          blocks.push({ type: "text", text: `[Attached file: ${part.filename} (${part.media_type}), unavailable]` });
+        }
       }
     }
     // Cast through unknown — LangChain's strict block-union type rejects our

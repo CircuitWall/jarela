@@ -5,7 +5,7 @@ import { getConfig } from "@/lib/env/config";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
-import { spillImageAttachments } from "@/lib/attachments/spill";
+import { spillAttachments } from "@/lib/attachments/spill";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
@@ -471,12 +471,13 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   // user-role row that the LLM mistakes for real user input on every future
   // turn.
   //
-  // Spill inline `image` parts to disk before persist so `messages.content`
-  // stores only lightweight refs — see ADR-0065 and lib/attachments/spill.ts.
-  // Any provider that receives the message reads the ref back to base64 only
-  // at HTTP invocation time.
+  // Spill inline `image`/`file` parts to disk before persist so
+  // `messages.content` stores only lightweight refs — see ADR-0065,
+  // ADR-0090, and lib/attachments/spill.ts. `toBaseMessages` reads a ref
+  // back only for the newest turn or an explicit `view_attachment` call;
+  // every older occurrence of the same ref collapses to a text placeholder.
   const spilledAttachments = req.attachments?.length
-    ? await spillImageAttachments(req.attachments)
+    ? await spillAttachments(req.attachments)
     : undefined;
   const content: string | ContentPart[] =
     spilledAttachments?.length ? [{ type: "text", text: trimmed }, ...spilledAttachments] : trimmed;
