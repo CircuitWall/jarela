@@ -3,8 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+// Wrap the real embedOne (not a bare mock) so these tests exercise the
+// actual no-op-when-unconfigured path while still letting us assert what
+// text addMessage handed it — see the ContentPart[] extraction tests below.
+vi.mock("@/lib/embeddings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/embeddings")>();
+  return { ...actual, embedOne: vi.fn(actual.embedOne) };
+});
+
 const tmpRoot = mkdtempSync(join(tmpdir(), "jarela-test-threads-"));
 process.env.JARELA_DB_DIR = tmpRoot;
+
+const { embedOne } = await import("@/lib/embeddings");
 
 const {
   addMessage,
@@ -131,6 +141,44 @@ describe("thread context pin (ADR-0042)", () => {
     });
     expect(staleSummary).toBeNull();
     expect(getThread(t.thread_id)?.warm_summary).toBe("newer recap");
+  });
+});
+
+describe("addMessage embedding input (issue: image attachments break embedding)", () => {
+  beforeEach(() => {
+    for (const t of listThreads(1000, 0)) deleteThread(t.thread_id);
+    vi.mocked(embedOne).mockClear();
+  });
+
+  it("embeds only the text part of a ContentPart[] attachment payload, not the serialized blob", () => {
+    const t = createThread("agent-embed");
+    const stored = JSON.stringify([
+      { type: "text", text: "what is in this screenshot of the dashboard" },
+      { type: "image_ref", media_type: "image/png", name: "abc.png" },
+    ]);
+    addMessage(t.thread_id, "user", stored);
+    expect(embedOne).toHaveBeenCalledTimes(1);
+    expect(embedOne).toHaveBeenCalledWith("what is in this screenshot of the dashboard");
+    // The persisted row keeps the full multimodal payload — only the
+    // embedding call gets the extracted text.
+    const [row] = getMessages(t.thread_id);
+    expect(row.content).toBe(stored);
+  });
+
+  it("skips embedding entirely when the attachment payload has no text part worth embedding", () => {
+    const t = createThread("agent-embed");
+    const stored = JSON.stringify([
+      { type: "text", text: "" },
+      { type: "image_ref", media_type: "image/png", name: "abc.png" },
+    ]);
+    addMessage(t.thread_id, "user", stored);
+    expect(embedOne).not.toHaveBeenCalled();
+  });
+
+  it("still embeds plain-string content unchanged (no attachments)", () => {
+    const t = createThread("agent-embed");
+    addMessage(t.thread_id, "user", "a perfectly ordinary text-only message");
+    expect(embedOne).toHaveBeenCalledWith("a perfectly ordinary text-only message");
   });
 });
 
