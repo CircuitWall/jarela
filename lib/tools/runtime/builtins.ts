@@ -11,6 +11,7 @@ import "../general/documents";
 import "../general/exec";
 import "../filesystem/files";
 import "../filesystem/files-search";
+import "../filesystem/view-attachment";
 import "../filesystem/workspace";
 import "../web/search";
 import "../web/fetch";

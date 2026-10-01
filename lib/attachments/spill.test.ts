@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 const TMP_ROOT = mkdtempSync(join(tmpdir(), "jarela-spill-"));
 process.env.JARELA_DB_DIR = TMP_ROOT;
 
-const { spillFileBuffer, spillImageAttachments, spillImagePart, readImageRef } = await import("./spill");
+const { spillFileBuffer, spillAttachments, spillImagePart, readImageRef, readFileRef } = await import("./spill");
 const { FILES_DIR } = await import("@/lib/files");
 
 const PNG_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
@@ -43,19 +43,37 @@ describe("spillImagePart", () => {
   });
 });
 
-describe("spillImageAttachments", () => {
-  it("replaces image parts and leaves text/file/image_ref untouched", async () => {
+describe("spillAttachments", () => {
+  it("replaces image and file parts, leaves text/image_ref/file_ref untouched", async () => {
     const parts = [
       { type: "text", text: "hello" },
       { type: "image", media_type: "image/png", data: PNG_B64 },
       { type: "file", name: "notes.txt", media_type: "text/plain", data: "abc" },
       { type: "image_ref", media_type: "image/png", name: `${PNG_SHA}.png`, sha256: PNG_SHA },
+      { type: "file_ref", media_type: "application/pdf", name: "deadbeef.pdf", filename: "r.pdf", sha256: "deadbeef" },
     ] as const;
-    const out = await spillImageAttachments([...parts]);
+    const out = await spillAttachments([...parts]);
     expect(out[0]).toEqual(parts[0]);
     expect(out[1]).toMatchObject({ type: "image_ref", media_type: "image/png", name: `${PNG_SHA}.png` });
-    expect(out[2]).toEqual(parts[2]);
+    expect(out[2]).toMatchObject({ type: "file_ref", media_type: "text/plain", filename: "notes.txt" });
     expect(out[3]).toEqual(parts[3]);
+    expect(out[4]).toEqual(parts[4]);
+  });
+
+  it("spills a text file part so its content can be read back via readFileRef", async () => {
+    const [ref] = await spillAttachments([
+      { type: "file", name: "notes.txt", media_type: "text/plain", data: "line one\nline two" },
+    ]) as [Extract<import("@/lib/tools/runtime/types").ContentPart, { type: "file_ref" }>];
+    const buf = await readFileRef({ name: ref.name });
+    expect(buf.toString("utf8")).toBe("line one\nline two");
+  });
+
+  it("decodes base64 data for a non-text file part before spilling", async () => {
+    const buf = Buffer.from("%PDF-fake-binary");
+    const [ref] = await spillAttachments([
+      { type: "file", name: "r.pdf", media_type: "application/pdf", data: buf.toString("base64") },
+    ]) as [Extract<import("@/lib/tools/runtime/types").ContentPart, { type: "file_ref" }>];
+    expect(await readFileRef({ name: ref.name })).toEqual(buf);
   });
 });
 
@@ -86,5 +104,17 @@ describe("readImageRef", () => {
 
   it("refuses unsafe file names", async () => {
     await expect(readImageRef({ media_type: "image/png", name: "../etc/passwd" })).rejects.toThrow(/unsafe/);
+  });
+});
+
+describe("readFileRef", () => {
+  it("reads the persisted bytes back for a valid ref", async () => {
+    const buf = Buffer.from("hello file");
+    const ref = await spillFileBuffer(buf, "text/plain", "hello.txt");
+    expect(await readFileRef({ name: ref.name })).toEqual(buf);
+  });
+
+  it("refuses unsafe file names", async () => {
+    await expect(readFileRef({ name: "../etc/passwd" })).rejects.toThrow(/unsafe/);
   });
 });

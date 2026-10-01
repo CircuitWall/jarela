@@ -1,10 +1,11 @@
 // Attachment spill store.
 //
-// Turns inline `image` ContentParts (base64 blob in the message row) into
-// `image_ref` parts that point at a file under `<dataDir>/files/`. The
-// message row shrinks from ~400 KB per image to ~200 B; the LLM adapter
-// reads the file back and re-encodes to base64 only at invocation time,
-// so the bytes never enter the checkpoint store or the warm summariser.
+// Turns inline `image`/`file` ContentParts (base64 or text blob in the
+// message row) into `image_ref`/`file_ref` parts that point at a file under
+// `<dataDir>/files/`. The message row shrinks from ~400 KB per image to
+// ~200 B; `toBaseMessages` in lib/agents/llm.ts reads the file back only
+// when it needs to (see ADR-0090), so the bytes never enter the checkpoint
+// store or the warm summariser.
 //
 // Content-addressed: the on-disk file name is `<sha256>.<ext>` so an image
 // forwarded / retried / re-ingested twice collapses to one file. This is
@@ -36,6 +37,10 @@ const MIME_EXT: Record<string, string> = {
 
 function extForMime(media_type: string): string {
   return MIME_EXT[media_type.toLowerCase()] ?? "bin";
+}
+
+function isTextMediaType(media_type: string): boolean {
+  return media_type.startsWith("text/") || media_type === "application/json";
 }
 
 function safeDisplayName(name: string): string {
@@ -124,19 +129,27 @@ export async function spillFileBuffer(
 }
 
 /**
- * Walk a ContentPart[] and replace every inline `image` part with an
- * `image_ref`. Leaves other part types untouched. Safe to call on
- * already-refactored parts — the `image_ref` variant is passed through.
+ * Walk a ContentPart[] and replace every inline `image`/`file` part with an
+ * `image_ref`/`file_ref`. Leaves other part types untouched. Safe to call on
+ * already-refactored parts — the ref variants are passed through.
  * Returns a new array (does not mutate the input).
+ *
+ * `file.data` is plain UTF-8 text for text/json attachments (the InputBar
+ * client reads text/code files with `readAsText`, never base64) and base64
+ * otherwise, mirroring the decode convention already used to render `file`
+ * parts in lib/agents/llm.ts and the provider adapters.
  */
-export async function spillImageAttachments(
+export async function spillAttachments(
   parts: ContentPart[],
   opts?: { shrink?: ShrinkOpts },
 ): Promise<ContentPart[]> {
   const out: ContentPart[] = [];
   for (const p of parts) {
     if (p.type === "image") out.push(await spillImagePart(p, opts));
-    else out.push(p);
+    else if (p.type === "file") {
+      const buf = isTextMediaType(p.media_type) ? Buffer.from(p.data, "utf8") : Buffer.from(p.data, "base64");
+      out.push(await spillFileBuffer(buf, p.media_type, p.name));
+    } else out.push(p);
   }
   return out;
 }
@@ -154,6 +167,19 @@ export async function readImageRef(ref: {
 }): Promise<Buffer> {
   if (!isSafeFileName(ref.name)) {
     throw new Error(`readImageRef: unsafe file name ${ref.name}`);
+  }
+  const abs = join(FILES_DIR, ref.name);
+  return fsp.readFile(abs);
+}
+
+/**
+ * Read a `file_ref` back off disk as raw bytes. Same shape as
+ * `readImageRef` — used both for the newest turn's full readout and for
+ * the `view_attachment` tool's on-demand re-read (ADR-0090).
+ */
+export async function readFileRef(ref: { name: string }): Promise<Buffer> {
+  if (!isSafeFileName(ref.name)) {
+    throw new Error(`readFileRef: unsafe file name ${ref.name}`);
   }
   const abs = join(FILES_DIR, ref.name);
   return fsp.readFile(abs);
