@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.1] - 2026-10-01
+
+### Fixed
+
+- **Patch release metadata is synchronized with the package version.** The
+  project version and changelog now match for the 1.42.1 release train.
+
 ## [1.42.0] - 2026-09-23
 
 ### Added
