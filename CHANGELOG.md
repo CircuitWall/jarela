@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.3] - 2026-10-01
+
+### Fixed
+
+- **Release dependency installs use a pinned npm version** to avoid the npm
+  11.14 workspace lockfile regression that blocked the 1.42.2 security gate.
+- **OAuth proxy dependencies use patched fast-uri**, closing the remaining high
+  severity advisory found by the tagged release gate.
+
 ## [1.42.2] - 2026-10-01
 
 ### Fixed
