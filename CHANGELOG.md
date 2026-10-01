@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.2] - 2026-10-01
+
+### Fixed
+
+- **Attachment context no longer re-inlines prior-turn image and file references.**
+- **Thread embedding excludes serialized attachment blobs and embeds text only.**
+
+### Security
+
+- **Workspace package builds no longer use the vulnerable tsup/esbuild toolchain.**
+
 ## [1.42.1] - 2026-10-01
 
 ### Fixed
