@@ -145,7 +145,7 @@
     "autoprefixer": "^10.6.1",
     "cron-parser": "^5.10.1",
     "cross-spawn": "^7.0.6",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.16",
     "highlight.js": "^11.12.0",
     "lucide-react": "^1.47.0",
     "mermaid": "^11.17.2",
@@ -176,9 +176,17 @@
     "@serwist/build": {
       "source-map": "^0.7.6"
     },
-    "browserslist": "^4.28.8"
+    "browserslist": "^4.28.8",
+    "dompurify": "^3.4.16",
+    "fast-uri": "^3.1.8",
+    "hono": "^4.13.7",
+    "ip-address": "^10.7.2",
+    "jsdom": {
+      "undici": "^7.29.1"
+    }
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "@playwright/test": "^1.63.0",
     "@serwist/next": "^9.5.12",
     "@testing-library/dom": "^10.4.2",
