@@ -12,5 +12,8 @@
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^5.0.5"
+  },
+  "overrides": {
+    "fast-uri": "^3.1.8"
   }
 }
