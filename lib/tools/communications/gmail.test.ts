@@ -1,8 +1,37 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { googleFetch } from "@/lib/integrations/gmail-oauth";
 
 const { buildRawMessage, gmailCreateDraftTool, gmailModifyMessageTool, gmailSendEmailTool } = await import("./gmail");
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("gmail tools", () => {
+  it("returns a structured error for a successful non-JSON Google API response", async () => {
+    const baseUrl = "https://gmail.googleapis.com/gmail/v1/users/me";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response("[binary data]", {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await googleFetch(
+      { client_id: "test-client", client_secret: "test-secret", refresh_token: "unique-test-refresh-token" },
+      "Gmail",
+      baseUrl,
+      "/messages",
+    );
+
+    expect(result).toMatchObject({
+      error: expect.stringContaining("expected a JSON object"),
+      url: `${baseUrl}/messages`,
+    });
+    expect(JSON.stringify(result)).not.toContain("[binary data]");
+  });
+
   it("rejects oversized draft bodies before calling Gmail", async () => {
     await expect(gmailCreateDraftTool.invoke({
       to: ["user@example.test"],
