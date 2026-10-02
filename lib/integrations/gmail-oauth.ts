@@ -284,7 +284,7 @@ export async function googleFetch(
   baseUrl: string,
   path: string,
   init?: RequestInit,
-): Promise<unknown> {
+): Promise<Record<string, unknown>> {
   const token = await getGoogleAccessToken(auth);
   if (typeof token !== "string") return token;
   const url = path.startsWith("http") ? path : `${baseUrl}${path}`;
@@ -304,7 +304,16 @@ export async function googleFetch(
     if (!res.ok) {
       return { error: `${service} ${res.status}: ${text.slice(0, 500)}`, url };
     }
-    try { return JSON.parse(text); } catch { return text; }
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      // Google REST endpoints used here return JSON objects. Do not pass raw
+      // text or binary payloads to callers that expect an object response.
+    }
+    return { error: `${service} ${res.status}: expected a JSON object response`, url };
   } catch (err) {
     return { error: `${service} fetch threw: ${errorMessage(err)}` };
   }
