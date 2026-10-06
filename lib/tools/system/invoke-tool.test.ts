@@ -30,6 +30,17 @@ function parse(value: unknown): InvokeResult {
 }
 
 describe("invoke_tool", () => {
+  it("cannot proxy a restart denied by the read-only completion overlay", async () => {
+    upsertAgentConfig({ id: "completion-proxy", name: "Completion Proxy", identity: "test", instructions: "", tools: ["restart_server"] });
+    const thread = createThread("completion-proxy");
+    const out = parse(await invokeToolTool.invoke(
+      { name: "restart_server", args: { reason: "old restart request" } },
+      { configurable: { thread_id: thread.thread_id, signal_continuation: true,
+        tool_permission_map: [{ name: "restart_server", permission: "disabled", permission_reason: "signal_continuation_read_only" }] } },
+    ));
+    expect(out).toMatchObject({ ok: false, status: "rejected", error_code: "tool_not_allowed", permission_reason: "signal_continuation_read_only" });
+  });
+
   it("warns the model not to recursively wrap invoke_tool", () => {
     expect(invokeToolTool.description).toContain("Never use invoke_tool to call invoke_tool itself");
     expect(invokeToolTool.description).toContain("call already-loaded tools directly");

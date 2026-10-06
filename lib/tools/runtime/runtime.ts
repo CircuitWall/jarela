@@ -187,6 +187,9 @@ export async function executeTool(
   args: Record<string, unknown>,
   context: ToolContext = {},
 ): Promise<unknown> {
+  if (context.signal_continuation && registeredCapability(name) !== "read" && name !== "invoke_tool") {
+    throw new Error(`Tool "${name}" is blocked in a read-only completion turn`);
+  }
   let t = allBuiltins().find((x) => x.name === name);
   if (t) {
     const cat = registeredCategory(name);
@@ -221,9 +224,13 @@ export async function executeTool(
     t = wrapToolForCredentialRouting(t, context.tool_credentials);
   }
 
-  const config: RunnableConfig = context.thread_id
-    ? { configurable: { thread_id: context.thread_id } }
-    : {};
+  const config: RunnableConfig = {
+    signal: context.signal,
+    configurable: { thread_id: context.thread_id, signal_continuation: context.signal_continuation,
+      tool_result_max_bytes: context.tool_result_max_bytes,
+      tool_permission_map: context.tool_permission_map, tool_credentials: context.tool_credentials,
+      delegation_depth: context.delegation_depth, delegation_ancestors: context.delegation_ancestors },
+  };
 
   const result = await t.invoke(args, config);
 

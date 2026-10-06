@@ -492,7 +492,7 @@ const delegateSchema = z.object({
   ),
   fresh: z.boolean().optional().describe("Start a new session for this project/feature even if one exists."),
   background: z.boolean().optional().describe(
-    "Spawn in the background and return a job_id immediately instead of waiting. Poll with claude_delegate_status.",
+    "Spawn in the background and return a job_id immediately instead of waiting. Agent-owned jobs also return result_key and notify the owning agent on terminal completion. Retrieve output with tool_result_get; claude_delegate_status provides bounded status metadata.",
   ),
   timeout_seconds: z.number().optional().describe(`Max wall-clock time. Defaults to ${DEFAULT_TIMEOUT_S}.`),
   sync_memory: z.union([z.enum(["in", "out", "both"]), z.literal(false)]).optional().describe(
@@ -583,7 +583,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
 
     if (resolvedBackground) {
       const jobId = crypto.randomUUID();
-      const job = jobs.createJob(jobId, { provider: "claude", projectKey: key, sessionId, parentMessage: task, resumed: resume, launch });
+      const job = jobs.createJob(jobId, { provider: "claude", projectKey: key, sessionId, parentMessage: task, resumed: resume, launch }, config);
       const child = spawnClaude({
         args: spawnArgs, cwd, env, timeoutMs,
         onStep: (s) => { jobs.appendStep(jobId, s); reportToolProgress(config, "claude_delegate", s); },
@@ -609,6 +609,7 @@ export const claudeDelegateTool = withStreamDefault(tool(
 
       return JSON.stringify({
         job_id: jobId,
+        result_key: job.resultKey,
         status: "running",
         project_key: key,
         session_id: sessionId,
@@ -648,15 +649,20 @@ export const claudeDelegateTool = withStreamDefault(tool(
 // ── claude_delegate_status ─────────────────────────────────────────────────
 
 export const claudeDelegateStatusTool = tool(
-  ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }) => {
+  ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }, config) => {
+    const threadId = config?.configurable?.thread_id;
+    const job = jobs.getJobForTool(job_id, "claude", typeof threadId === "string" ? threadId : undefined);
+    if (!job) throw new Error(action === "cancel" ? `No running job with id ${job_id}` : `No job found with id ${job_id}`);
     if (action === "cancel") {
       const cancelled = jobs.cancelJob(job_id, "claude");
       if (!cancelled) throw new Error(`No running job with id ${job_id}`);
       return JSON.stringify({ job_id, status: "cancelled" });
     }
 
-    const job = jobs.getJob(job_id, "claude");
-    if (!job) throw new Error(`No job found with id ${job_id}`);
+    if (job.resultKey) return JSON.stringify({ job_id, status: job.status, result_key: job.resultKey,
+      elapsed_ms: (job.finishedAt ?? Date.now()) - job.startedAt, step_count: job.steps.length,
+      next_step_index: job.steps.length, steps: [], new_steps: [],
+      hint: "Owned delegate output is encrypted. Retrieve terminal output with tool_result_get and result_key; status does not prove business-level success." });
 
     const idx = Math.max(0, Math.floor(last_step_index ?? 0) || 0);
     const newSteps = job.steps.slice(idx);
@@ -681,7 +687,7 @@ export const claudeDelegateStatusTool = tool(
   {
     name: "claude_delegate_status",
     description:
-      "Poll or cancel a background claude_delegate job. Returns the current status, all steps so far, and the slice of new steps since last_step_index — relay new_steps to the user on each poll to show real-time progress. When status is 'done', result contains the same shape as a synchronous claude_delegate call. Use action: 'cancel' to kill a running job.",
+      "Poll or cancel a background claude_delegate job. Agent-owned jobs return bounded status/step counts and result_key; use tool_result_get for encrypted terminal output. Legacy unowned jobs return steps/new_steps and the synchronous result shape. Use action: 'cancel' to terminate a running job; external effects may already have occurred.",
     schema: z.object({
       job_id: z.string().describe("Job ID returned by claude_delegate when called with background: true."),
       last_step_index: z.number().optional().describe("Index of the last step already seen. Pass next_step_index from the previous call. Defaults to 0."),

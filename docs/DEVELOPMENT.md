@@ -104,6 +104,108 @@ another large flat directory to form.
 - Event-driven hooks are eventually consistent; prefer deterministic asserts
   (`waitFor`) over synchronous assumptions.
 
+## LLM provider rate limiting
+
+`getProvider()` applies a process-wide `p-queue` limiter to chat, structured
+invocations, streaming invocations, and embeddings. All agents, model configs,
+and credentials for a provider share its budget. Requests are evenly paced;
+concurrency slots remain held until active requests or streams actually settle,
+including when cancellation is requested.
+Catalog discovery is not counted as model inference. Unknown providers and the
+mock provider are unlimited unless overridden. LangChain's `ChatCohere` uses
+the Cohere budget.
+
+| Provider | Requests/minute | Concurrent requests | Default basis |
+| --- | --- | --- | --- |
+| Anthropic | 1,000 | Unlimited | Published standard Start tier; Evaluation tier can be lower |
+| OpenAI | 60 | Unlimited | Conservative application preset; limits vary by model/project/tier |
+| Gemini | 5 | Unlimited | Conservative application preset; active limits are in AI Studio |
+| GitHub Copilot | 10 | Unlimited | Conservative application preset; GitHub publishes no fixed RPM |
+| Cohere | 20 | Unlimited | Published trial Chat API limit |
+| DeepSeek | Unlimited | 500 | Published account concurrency limit for DeepSeek V4 Pro |
+| Unknown | Unlimited | Unlimited | No assumed vendor quota |
+
+Sources: [Anthropic](https://platform.claude.com/docs/en/api/rate-limits),
+[OpenAI](https://developers.openai.com/api/docs/guides/rate-limits),
+[Gemini](https://ai.google.dev/gemini-api/docs/rate-limits),
+[GitHub Copilot](https://docs.github.com/en/copilot/concepts/rate-limits),
+[Cohere](https://docs.cohere.com/docs/rate-limits), and
+[DeepSeek](https://api-docs.deepseek.com/quick_start/rate_limit).
+
+Set `JARELA_PROVIDER_RATE_LIMITS` in the Environment panel to a JSON object:
+
+```json
+{"github-copilot":{"requestsPerMinute":10,"maxConcurrent":2},"custom-provider":{"requestsPerMinute":30}}
+```
+
+Omitted fields retain the preset. A JSON `null` means unlimited. Finite values
+must be positive integers up to 60,000. Invalid overrides are rejected when the
+provider factory initializes its limiter. This setting is not agent-writable;
+apply changes with a user-controlled restart when no active runs need preserving.
+Queue state is in memory and resets on restart; there is no additional daemon
+or persisted rate-limit state.
+
+These are local admission limits, not guarantees against all HTTP 429 errors.
+They do not meter tokens, daily/monthly quotas, billing caps, SDK-internal
+retries, or traffic from other Jarela processes/apps. Set overrides to match
+your actual account limits; existing provider error and retry handling still
+applies.
+
+## Durable agent system signals
+
+See [ADR-0091](adr/0091-durable-agent-system-signals.md). Producers publish
+targeted lifecycle facts through the operation/event/delivery stores, never by
+parsing logs. Same-database outcome changes and outbox publication are atomic.
+External effects can still have unknown outcomes after a timeout or crash.
+
+The existing `async_run` tool wrapper records intent before starting work and
+emits completion, failure, or timeout signals with the async tracking key.
+After restart, unfinished calls are marked interrupted; they are not replayed.
+Completed result envelopes are encrypted in SQLite and retained for seven
+days. The process-local map remains a fast cache; `tool_result_get` and
+`tool_result_list` fall back to durable storage and enforce thread ownership.
+References include an expiry; legacy process-local references are not offered
+after restart. Owned success and error text use encrypted virtual references,
+not plaintext spills. UTF-8-safe pages fit the inline transport budget including
+JSON encoding; final-page consume removes durable storage and cached access.
+The durable envelope budget is 2 MiB. Larger output produces an explicit
+failure receipt. Legacy unowned references retain their existing behavior.
+
+Context delivery defaults: at most 20 events and 8,000 journal characters per
+batch, 30-minute renewable leases, five attempts, exponential retry backoff
+with jitter capped at roughly one minute, and seven-day acknowledged-record
+retention. Admission counts accepted operations plus ready/leased deliveries,
+with a 1,000-record per-thread limit. Dead letters are retained for diagnosis;
+they are not silently discarded or automatically replayed. No new daemon,
+cloud service, additional daemon loop, or arbitrary tool execution API is added.
+
+Restart receipts and authorized background-tool outcomes schedule a bounded
+continuation through the existing scheduler and thread queues. At most two
+threads wake concurrently; busy threads wait, failed preparation backs off,
+and completion turns have a read-only tool permission overlay enforced for
+bound and proxied tools. Restart additionally rejects completion-originated
+calls and correlates foreground attempts with the persisted direct user
+message ID, preventing retries from scheduling another exit. Config,
+approval, watcher, and task events remain passive context. The continuation
+retrieves output and reports only; further writes require a new user turn.
+Completion reads are synchronous even if a model supplies `async_run=true`.
+Queue, run-registry/waiter, result-cache, and config state are process-wide so
+separate Next route bundles agree on ownership, active runs, and invalidation.
+Reassigned signal targets are quarantined instead of waking another agent;
+cached output respects durable deletion and expiry.
+
+Owned result/outbox settlement is atomic. Transient settlement failure keeps
+the observed outcome for up to five attempts on the existing result sweeper;
+it does not rerun the tool. If storage remains unavailable or the process dies
+before persistence, external effects may be unknown and require verification.
+Native Claude/Codex jobs join on actual terminal callbacks, not launch
+acknowledgment. Their owned status tools expose bounded metadata and result
+keys rather than duplicating private output into generic spills.
+
+Inspect delivery counts through `read_agent_config` and the Logs panel for
+dead-letter notices. The store exposes `systemSignalDiagnostics` for local
+inspection. The initial version does not expose a UI dead-letter replay button.
+
 ## Dependency upgrade workflow
 
 - Upgrade in batches with one clear failure domain: framework/tooling,

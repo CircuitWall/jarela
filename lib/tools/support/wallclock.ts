@@ -26,12 +26,13 @@
 import { z } from "zod";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
 import {
-  startAsyncCall,
+  startOwnedAsyncCall,
   completeAsyncCall,
   failAsyncCall,
 } from "./async-results";
 import { getStreamDefault } from "./tool-metadata";
-import { postProcessToolResult } from "./result-refs";
+import { postProcessToolResult, serializeToolResult } from "./result-refs";
+import { requestSystemSignalDispatch } from "@/lib/lifecycle/system-signals";
 
 const DEFAULT_DEADLINE_MS = 120_000;
 
@@ -172,7 +173,8 @@ export function wrapWithWallclock<T extends StructuredToolInterface>(t: T): T {
         `Use async_run: true for work that genuinely needs more, or raise JARELA_TOOL_MAX_DEADLINE_MS.`,
       );
     }
-    const asyncRun = readAsyncRun(args);
+    const completionRead = (config as { configurable?: { signal_continuation?: boolean } } | undefined)?.configurable?.signal_continuation === true;
+    const asyncRun = readAsyncRun(args) && !completionRead;
     const streamOn = readStream(args) ?? getStreamDefault(t);
     const innerArgs = stripWrapperFields(args);
 
@@ -274,8 +276,12 @@ function runAsync<T extends StructuredToolInterface>(
   deadlineMs: number,
   streamOn: boolean,
 ): string {
-  const key = startAsyncCall(t.name);
   const startedAt = Date.now();
+  const context = (config as { configurable?: { thread_id?: unknown; signal_continuation?: boolean } } | undefined)?.configurable;
+  const threadId = context?.thread_id;
+  const tracked = startOwnedAsyncCall(t.name, threadId, context?.signal_continuation === true);
+  const key = tracked.key;
+  const operationId = tracked.owned ? key : null;
 
   let settled = false;
   let timer!: ReturnType<typeof setTimeout>;
@@ -288,7 +294,9 @@ function runAsync<T extends StructuredToolInterface>(
         key,
         `Tool "${t.name}" exceeded its background wall-clock budget of ${deadlineMs}ms. ` +
           "The underlying operation may still be running but its result is discarded.",
+          "background_tool.timed_out",
       );
+          if (operationId) requestSystemSignalDispatch();
     }, deadlineMs);
     (timer as unknown as { unref?: () => void }).unref?.();
   };
@@ -303,14 +311,19 @@ function runAsync<T extends StructuredToolInterface>(
         .invoke(innerArgs, configForInner);
       const result = await work;
       if (settled) return;
+      const processed = operationId ? serializeToolResult(result) : await postProcessToolResult(t.name, result);
+      if (settled) return;
+      completeAsyncCall(key, processed);
       settled = true;
       clearTimeout(timer);
-      completeAsyncCall(key, await postProcessToolResult(t.name, result));
+      if (operationId) requestSystemSignalDispatch();
     } catch (err) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      failAsyncCall(key, err);
+      try { failAsyncCall(key, err); }
+      catch (error) { console.error("[system-signals] durable background error persistence failed", error); }
+      if (operationId) requestSystemSignalDispatch();
     }
   })();
 

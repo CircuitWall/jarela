@@ -12,9 +12,10 @@ import {
   listAsyncResults,
   type AsyncResultRecord,
 } from "./async-results";
-import { parseToolResultReferenceEnvelope, readToolResultRef } from "./result-refs";
+import { parseToolResultReferenceEnvelope, readToolResultRef, getToolResultMaxBytes } from "./result-refs";
+import { BACKGROUND_RESULT_REF_PREFIX, backgroundResultReference, readBackgroundResultReference } from "@/lib/stores/background-results";
 
-function serialize(rec: AsyncResultRecord, includeResult: boolean): Record<string, unknown> {
+function serialize(rec: AsyncResultRecord, includeResult: boolean, maxEncodedBytes = getToolResultMaxBytes()): Record<string, unknown> {
   const out: Record<string, unknown> = {
     key: rec.key,
     tool: rec.tool,
@@ -23,31 +24,51 @@ function serialize(rec: AsyncResultRecord, includeResult: boolean): Record<strin
     finished_at: rec.finished_at,
     elapsed_ms: (rec.finished_at ?? Date.now()) - rec.started_at,
   };
+  const terminalContents = rec.status === "done" ? rec.result : rec.status === "error" ? rec.error : null;
   if (includeResult && rec.status === "done") {
-    const refEnvelope = parseToolResultReferenceEnvelope(rec.result);
+    const refEnvelope = rec.owner_thread_id ? null : parseToolResultReferenceEnvelope(rec.result);
     if (refEnvelope) Object.assign(out, refEnvelope);
     else out.result = rec.result;
   }
   if (includeResult && rec.status === "error") out.error = rec.error;
+  if (includeResult && rec.owner_thread_id && terminalContents !== null
+    && Buffer.byteLength(JSON.stringify({ ok: true, ...out })) > maxEncodedBytes) {
+    delete out.result;
+    delete out.error;
+    const name = backgroundResultReference(rec.key);
+    Object.assign(out, { truncated: true, bytes: Buffer.byteLength(terminalContents),
+      result_ref: { name, uri: name, mimeType: "text/plain", size: Buffer.byteLength(terminalContents) },
+      hint: "Read encrypted output with result_ref.name. Consume on the final page to remove it." });
+  }
   return out;
 }
 
-async function waitForFinish(key: string, waitMs: number): Promise<AsyncResultRecord | null> {
+async function waitForFinish(key: string, waitMs: number, threadId?: string): Promise<AsyncResultRecord | null> {
   const deadline = Date.now() + Math.max(0, waitMs);
   // 50ms poll — cheap on a Map.get, and bounded by waitMs.
   while (Date.now() < deadline) {
-    const rec = getAsyncResult(key);
+    const rec = getAsyncResult(key, threadId);
     if (!rec) return null;
     if (rec.status !== "pending") return rec;
     await new Promise((r) => setTimeout(r, 50));
   }
-  return getAsyncResult(key);
+  return getAsyncResult(key, threadId);
 }
 
 export const toolResultGetTool = tool(
-  async ({ key, result_ref, name, offset, limit, wait_ms, consume }) => {
+  async ({ key, result_ref, name, offset, limit, wait_ms, consume }, config) => {
+    const owner = config?.configurable?.thread_id;
+    const threadId = typeof owner === "string" ? owner : undefined;
+    const configuredBudget = config?.configurable?.tool_result_max_bytes;
+    const maxEncodedBytes = typeof configuredBudget === "number" && Number.isFinite(configuredBudget)
+      ? Math.max(1, Math.min(getToolResultMaxBytes(), Math.floor(configuredBudget))) : getToolResultMaxBytes();
     const refName = result_ref?.name ?? name;
     if (refName) {
+      if (refName.startsWith(BACKGROUND_RESULT_REF_PREFIX)) {
+        const page = readBackgroundResultReference(refName, threadId, offset, limit, consume, maxEncodedBytes);
+        if (consume && page.ok === true && page.done === true) consumeAsyncResult(refName.slice(BACKGROUND_RESULT_REF_PREFIX.length), threadId);
+        return JSON.stringify(page);
+      }
       if (!result_ref?.name) {
         console.warn(
           `[tool_result_get] deprecated flat "name" argument used instead of "result_ref: { name }"; ` +
@@ -59,7 +80,7 @@ export const toolResultGetTool = tool(
     if (!key) {
       return JSON.stringify({ ok: false, status: "unknown", error: "pass either key or result_ref.name" });
     }
-    let rec: AsyncResultRecord | null = getAsyncResult(key);
+    let rec: AsyncResultRecord | null = getAsyncResult(key, threadId);
     if (!rec) {
       return JSON.stringify({
         ok: false,
@@ -69,24 +90,25 @@ export const toolResultGetTool = tool(
       });
     }
     if (rec.status === "pending" && typeof wait_ms === "number" && wait_ms > 0) {
-      rec = (await waitForFinish(key, wait_ms)) ?? rec;
+      rec = (await waitForFinish(key, wait_ms, threadId)) ?? rec;
     }
     if (!rec) {
       return JSON.stringify({ ok: false, status: "unknown", key });
     }
     const finished = rec.status !== "pending";
-    if (consume && finished) {
-      consumeAsyncResult(key);
+    const response = { ok: true, ...serialize(rec, /* includeResult */ true, maxEncodedBytes) };
+    if (consume && finished && !(rec.owner_thread_id && "result_ref" in response)) {
+      consumeAsyncResult(key, threadId);
     }
-    return JSON.stringify({ ok: true, ...serialize(rec, /* includeResult */ true) });
+    return JSON.stringify(response);
   },
   {
     name: "tool_result_get",
     description:
       "Retrieve the result of a previously async-fired tool call by its key. " +
-      "Also reads spilled result_ref payloads by result_ref.name with offset/limit. " +
+      "Also reads result_ref payloads by result_ref.name with offset/limit. Owned background output stays encrypted and thread-scoped; protected pages are bounded by the inline output budget. " +
       "Pass `wait_ms` to short-poll up to that long for a pending call to finish. " +
-      "Pass `consume: true` to delete the entry after reading a finished result. " +
+      "Pass `consume: true` to delete a finished inline result, or on the final protected page to delete a paged result. " +
       "Status will be 'pending' (still running), 'done' (success — `result` populated), " +
       "'error' (failed — `error` populated), or 'unknown' (no such key).",
     schema: z.object({
@@ -116,8 +138,9 @@ export const toolResultGetTool = tool(
 );
 
 export const toolResultListTool = tool(
-  async ({ status }) => {
-    let recs = listAsyncResults();
+  async ({ status }, config) => {
+    const owner = config?.configurable?.thread_id;
+    let recs = listAsyncResults(typeof owner === "string" ? owner : undefined);
     if (status) recs = recs.filter((r) => r.status === status);
     return JSON.stringify({
       ok: true,

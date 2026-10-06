@@ -12,6 +12,7 @@ import {
   upsertAgentConfig,
 } from "@/lib/stores/agent-configs";
 import { applyInstructionEdits } from "@/lib/agents/instruction-edits";
+import { systemSignalDiagnostics } from "@/lib/stores/system-signals";
 
 function agentIdFromConfig(config?: RunnableConfig): string | null {
   const threadId = config?.configurable?.thread_id as string | undefined;
@@ -71,6 +72,7 @@ export const readAgentConfigTool = tool(
       agent_id: cfg.id,
       name: cfg.name,
       identity: cfg.identity,
+      system_signals: systemSignalDiagnostics(cfg.id, config?.configurable?.thread_id as string),
       instruction_line_count: cfg.instructions ? cfg.instructions.split(/\r?\n/).length : 0,
       instruction_char_count: cfg.instructions.length,
       tools: getAgentTools(cfg),

@@ -16,6 +16,7 @@ const KEYS = [
   "JARELA_VOICE_TIMEOUT_MS",
   "JARELA_IMAGE_TIMEOUT_MS",
   "JARELA_PROVIDER_TOOL_LIMIT",
+  "JARELA_PROVIDER_RATE_LIMITS",
   "JARELA_MODEL_ROUTER_MODE",
   "JARELA_MODEL_ROUTER_POLICY",
   "NEXT_PUBLIC_APP_NAME",
@@ -50,6 +51,7 @@ describe("getConfig", () => {
     expect(c.voiceTimeoutMs).toBe(60_000);
     expect(c.imageTimeoutMs).toBe(60_000);
     expect(c.providerToolLimit).toBe(512);
+    expect(c.providerRateLimits).toBe("");
     expect(c.modelRouterMode).toBe("off");
     expect(c.modelRouterPolicy).toBe("balanced");
     expect(c.dataDir).toBe("/tmp/jarela-test-data");
@@ -114,6 +116,16 @@ describe("getConfig", () => {
     expect(a).toBe(b);
   });
 
+  it("invalidates every route-bundle snapshot when one module resets config", async () => {
+    expect(getConfig().providerToolLimit).toBe(512);
+    vi.resetModules();
+    const other = await import("./config");
+    process.env.JARELA_PROVIDER_TOOL_LIMIT = "64";
+    other.resetConfigCache();
+    expect(getConfig().providerToolLimit).toBe(64);
+    expect(other.getConfig()).toBe(getConfig());
+  });
+
   it("parses model router settings", () => {
     process.env.JARELA_MODEL_ROUTER_MODE = "heuristic";
     process.env.JARELA_MODEL_ROUTER_POLICY = "cheap";
@@ -127,5 +139,11 @@ describe("getConfig", () => {
     process.env.JARELA_PROVIDER_TOOL_LIMIT = "768";
     resetConfigCache();
     expect(getConfig().providerToolLimit).toBe(768);
+  });
+
+  it("honours JARELA_PROVIDER_RATE_LIMITS", () => {
+    process.env.JARELA_PROVIDER_RATE_LIMITS = ' {"gemini":{"requestsPerMinute":10}} ';
+    resetConfigCache();
+    expect(getConfig().providerRateLimits).toBe('{"gemini":{"requestsPerMinute":10}}');
   });
 });

@@ -129,6 +129,7 @@ flowchart LR
     A[API Route /api/v1/*] --> G0[Origin Guard<br/>lib/auth]
     G0 --> B[Agent Factory<br/>lib/agents]
     B --> C[Provider Adapter<br/>lib/providers]
+    C --> RL[Shared request pacing and concurrency<br/>lib/providers/rate-limit]
     B --> D[Tool Registry<br/>lib/tools<br/>category × capability]
     B --> E[MCP Client<br/>lib/mcp]
     C --> F[(LLM Provider)]
@@ -148,6 +149,11 @@ flowchart LR
     B --> HR[Harness Resolver<br/>lib/agents/harness]
     HR --> K
     B --> PR[Prepare<br/>lib/agents/prepare<br/>system prompt + history window]
+    SG[System signal outbox and delivery leases<br/>lib/stores/system-signals] --> PR
+    G --> SG
+    SC --> SG
+    SG --> J
+    B -.transcript plus acknowledgment transaction.-> SG
     PR --> B
     B --> OV[Output Validator<br/>lib/agents/output-validator]
     OV -.post-turn check.-> B
@@ -164,6 +170,39 @@ flowchart LR
 ```
 
 ## Key Flow — User sends a chat turn
+
+### Durable lifecycle signals
+
+The result cache/settlement retry state, per-thread queue, active-run registry,
+cold-attach waiters, and config snapshot are process-wide, not route-module
+locals. Separate Next bundles therefore serialize the same thread and can
+attach to its active run. Owner changes quarantine stale deliveries; durable
+deletion/expiry also revokes cached result access.
+
+System signals use the existing SQLite database and agent queues. Operations,
+immutable outbox events, and delivery leases are separate records (ADR-0091).
+The dynamic prompt suffix receives only the owning agent/thread's eligible
+events, in journal sequence order, with bounded count and size. Redelivery can
+occur after failures; no exactly-once external tool effects are claimed.
+
+Restart requests persist acceptance before exiting. At the end of bootstrap,
+after protected state is unlocked, the new runtime completes accepted restart
+operations from a different instance and marks unfinished background tools as
+outcome unknown. No interrupted tool is automatically replayed.
+
+Successful assistant transcript insertion and matching lease acknowledgment
+share one SQLite transaction. Silent turns persist an internal receipt.
+Failed/aborted deliveries use delayed retries; exhausted attempts remain in
+dead-letter records. The existing `read_agent_config` tool reports delivery
+counts and oldest-event times, and dead-letter transitions appear in Logs.
+
+Restart and authorized background-tool completion events wake the owning
+agent through the existing scheduler/thread queues, with a two-thread cap,
+backoff, and recursive-wake suppression. Config and approval/job events are
+consumed on the next eligible turn. Results are encrypted in SQLite and
+retrieved through the existing result tools with owner-thread checks; legacy
+process-local references are suppressed after restart. Signals describe only
+their named outcome, not permission to perform new actions.
 
 ```mermaid
 sequenceDiagram

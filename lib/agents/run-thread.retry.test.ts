@@ -36,6 +36,25 @@ function chunks(...items: StreamChunk[]): AsyncIterable<StreamChunk> {
 }
 
 describe("prepareThreadRun transient retry", () => {
+  it("blocks state-changing tools on a completion turn even when the old user request asked for a restart", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({ id: "completion-read-only", name: "Completion", identity: "helper", instructions: "Be helpful.", tools: ["restart_server", "local_exec"], model_config_name: null });
+    const thread = createThread("completion-read-only");
+    streamWithConfigMock.mockReturnValue(chunks({ type: "done", data: {} }));
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id, message: "Restart requested earlier.", _system_signal_continuation: true,
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    await collectStream(prepared.stream);
+    const options = streamWithConfigMock.mock.calls[0][2] as { agent_run_config: { allowed_tools: string[]; tool_permission_map: Array<{ name: string; permission: string; permission_reason: string }> } };
+    expect(options.agent_run_config.allowed_tools).not.toContain("restart_server");
+    expect(options.agent_run_config.allowed_tools).not.toContain("local_exec");
+    expect(options.agent_run_config.tool_permission_map.find((entry) => entry.name === "restart_server"))
+      .toMatchObject({ permission: "disabled", permission_reason: "signal_continuation_read_only" });
+    expect(options.agent_run_config.tool_permission_map.find((entry) => entry.name === "invoke_tool")?.permission_reason)
+      .not.toBe("signal_continuation_read_only");
+  });
+
   beforeEach(() => {
     streamWithConfigMock.mockReset();
     process.env.JARELA_MODEL_ROUTER_MODE = "off";

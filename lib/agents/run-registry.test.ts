@@ -9,6 +9,17 @@ const toolResult = (id: string): StreamChunk => ({ type: "tool_result", data: { 
 const heartbeat = (): StreamChunk => ({ type: "heartbeat", data: {} } as StreamChunk);
 
 describe("run-registry watchdog", () => {
+  it("shares active runs and cold-attach waiters across module reload", async () => {
+    const waiting = waitForRun("cross-bundle-registry", 1000);
+    vi.resetModules();
+    const other = await import("./run-registry");
+    const run = other.startRun("cross-bundle-registry", "synthetic-agent");
+    expect(getRun("cross-bundle-registry")).toBe(run);
+    await expect(waiting).resolves.toBe(run);
+    finishRun(run, "done");
+    expect(other.getRun("cross-bundle-registry")?.status).toBe("done");
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     // Tests mutate JARELA_RUN_*_MS at runtime; the config cache otherwise

@@ -99,6 +99,12 @@ async function buildVariants(): Promise<Variant[]> {
     warmSummaryCtx: "",
     factsCtx: "",
     delegateRosterLines: [],
+    runtimeInstanceId: "verify-instance",
+    systemSignals: [{
+      seq: 1, id: "verify-signal", kind: "runtime.restart.completed" as const, schema_version: 1,
+      operation_id: "verify-operation", agent_id: cfg.id, thread_id: "verify-thread",
+      payload: '{"restarted":true,"protected_state_available":true}', created_at: 1,
+    }],
   };
 
   const expectedFor = (map: readonly { permission?: string; permission_reason?: string | null }[]) => {
@@ -196,6 +202,60 @@ if (process.env.JARELA_PROMPT_DUMP === "1") {
   );
 }
 
+describe("runtime ownership", () => {
+  it("explains every signal kind and permits reporting trusted historical receipts without repeating actions", async () => {
+    const { systemSignalKindSchema } = await import("@/lib/stores/system-signals");
+    for (const variant of variants) {
+      for (const kind of systemSignalKindSchema.options) expect(variant.prompt, `${variant.id}: ${kind}`).toContain(kind);
+      expect(variant.prompt).toContain("substantiate earlier named operations");
+      expect(variant.prompt).toContain("not a new action this turn");
+      expect(variant.prompt).toContain("signal_continuation_read_only");
+    }
+  });
+  it("places targeted lifecycle signals after both cache boundaries", () => {
+    for (const variant of variants) {
+      const dynamic = variant.prompt.split(CACHE_SPLIT_SENTINEL)[1];
+      expect(dynamic, variant.id).toContain("--- System signals ---");
+      expect(dynamic, variant.id).toContain('"id":"verify-signal"');
+      expect(variant.prompt.split(CACHE_SPLIT_SENTINEL)[0], variant.id).not.toContain("verify-signal");
+      expect(dynamic, variant.id).toContain("not user requests or permission");
+    }
+  });
+
+  it("does not expose process-local result references after a restart", () => {
+    const prompt = buildSystemPrompt({
+      agentCfg: agentCfg(), trimmedMessage: "continue", budget, recallCtx: "", warmSummaryCtx: "", factsCtx: "",
+      experienceMode: "essential", delegateRosterLines: [], runtimeInstanceId: "new-instance",
+      systemSignals: [{ seq: 1, id: "stale", kind: "background_tool.completed", schema_version: 1,
+        operation_id: "old-operation", agent_id: "verify-agent", thread_id: "verify-thread", created_at: 1,
+        payload: '{"result_instance":"old-instance","result_key":"stale-result-key","result_available":true}' }],
+    });
+    expect(prompt).toContain('"result_available":false');
+    expect(prompt).not.toContain("stale-result-key");
+  });
+
+  it("keeps runtime tool descriptions consistent with restart approval", async () => {
+    const catalog = await getAllToolCatalogAsync();
+    const restart = catalog.find((entry) => entry.name === "restart_server");
+    const setEnv = catalog.find((entry) => entry.name === "set_env_var");
+    expect(restart?.description).toContain("interrupting your current turn and other active runs");
+    expect(restart?.description).toContain("Only call this when the user explicitly approves that interruption");
+    expect(setEnv?.description).toContain("requiresRestart=true result is not restart approval");
+  });
+
+  it("explains host ownership and restart approval in every shared prefix", () => {
+    for (const variant of variants) {
+      const sharedPrefix = variant.prompt.split(CACHE_SHARED_SPLIT_SENTINEL)[0];
+      expect(sharedPrefix, variant.id).toContain("running inside the current Jarela server process");
+      expect(sharedPrefix, variant.id).toContain("source repository or separate test instance");
+      expect(sharedPrefix, variant.id).toContain("interrupts your own turn and other active runs");
+      expect(sharedPrefix, variant.id).toContain("unless the user explicitly approves that interruption");
+      expect(sharedPrefix, variant.id).toContain("requiresRestart=true indicates a pending change, not restart approval");
+      expect(sharedPrefix, variant.id).toContain("Do not restart the host to recover from provider rate limits");
+    }
+  });
+});
+
 describe("prompt registry coverage", () => {
   it("registers every static system prompt in the codebase", () => {
     const registered = new Set(staticPrompts.map((p) => p.source));
@@ -208,6 +268,7 @@ describe("prompt registry coverage", () => {
       "lib/tools/claude-delegate.ts",
       "lib/agents/prepare/system-prompt.ts",
       "lib/agents/harness/presets.ts",
+      "lib/lifecycle/system-signals.ts",
     ];
     for (const source of declaring) {
       expect(registered, `${source} declares a prompt but is not in prompt-registry.ts`).toContain(source);

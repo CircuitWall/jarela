@@ -1,6 +1,7 @@
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import type { StreamOptions } from "@/lib/agents/base";
 import type { TurnContextProfile } from "@/lib/agents/turn-profile";
+import type { SystemSignalBatch } from "@/lib/stores/system-signals";
 
 /**
  * Provenance of the inbound turn. When a non-user runner (bridge,
@@ -24,6 +25,8 @@ export interface DeliveryChannel {
  * tool. See ADR-0039.
  */
 export interface ThreadRunRequest {
+  _system_signal_continuation?: boolean;
+  _system_signal_batch?: SystemSignalBatch;
   thread_id: string;
   message: string;
   options?: StreamOptions;

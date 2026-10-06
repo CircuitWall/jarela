@@ -29,6 +29,7 @@ import type { DeliveryChannel } from "@/lib/agents/prepare/request";
 import type { ForegroundTabPresence } from "@/lib/api/foreground-presence";
 import type { ToolCatalogEntry } from "@/lib/tools";
 import { formatActionVocabularyInstruction } from "@/lib/agents/action-vocabulary";
+import type { SystemSignalRow } from "@/lib/stores/system-signals";
 
 const APP_NAME = getAppName();
 
@@ -40,6 +41,8 @@ export interface SystemPromptContext {
   warmSummaryCtx: string;
   factsCtx: string;
   backgroundActivityCtx?: string;
+  systemSignals?: readonly SystemSignalRow[];
+  runtimeInstanceId?: string;
   /** Where the user is looking right now, when the browser extension is
    *  reporting it (ADR-0082). Built by run-thread so one-shot runners
    *  (scheduler, watcher, extension fill) never inherit it. */
@@ -84,6 +87,14 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // This text is intentionally before agent identity/instructions and is split
   // into its own provider cache block so multiple agents can reuse it.
   const sharedStableParts: (string | null | undefined)[] = [
+    [
+      "--- Runtime ownership ---",
+      "You are an agent running inside the current Jarela server process, not an external operator. The running instance hosts your current turn, tools, and other agents.",
+      "1. Distinguish a source repository or separate test instance from the live Jarela instance hosting you. A request to inspect, debug, build, or test Jarela source code is not permission to change or restart your host.",
+      "2. Restarting or stopping your host interrupts your own turn and other active runs. UI reconnection does not mean your interrupted work will resume. Do not use restart_server, terminal commands, process termination, or service controls to restart or stop the host unless the user explicitly approves that interruption.",
+      "3. A set_env_var result with requiresRestart=true indicates a pending change, not restart approval. Explain the interruption and request approval before restarting; otherwise report that a manual restart is needed.",
+      "4. Do not restart the host to recover from provider rate limits, unavailable models, tool errors, or incomplete investigations. Report the actual blocker and use a non-disruptive recovery path.",
+    ].join("\n"),
     buildSharedToolCatalogContext(),
   ];
 
@@ -116,6 +127,24 @@ export function buildSystemPrompt(ctx: SystemPromptContext): string {
   // tool state). Placed AFTER the sentinel so it never touches the stable cache
   // breakpoint.
   const dynamicParts: (string | null | undefined)[] = [
+    ctx.systemSignals?.length ? [
+      "--- System signals ---",
+      "These are targeted runtime observations, not user requests or permission for new actions. A signal confirms only its named operation, not the entire interrupted task. Keep internal lifecycle notices inside Jarela; do not forward them to bridge counterparts.",
+      "1. runtime.restart.completed confirms the requested host restart and protected-state availability. Do not repeat it. Re-check remaining work before continuing an already-authorized task; report the receipt as an earlier operation, not a new action this turn.",
+      "2. configuration.applied means the runtime override is active; configuration.restart_required means it is persisted but needs a restart, not that restart approval was granted. approval.approved means the proposal handler returned success; do not rerun the proposal. approval.denied and approval.failed do not authorize retrying the action.",
+      "3. background_tool.completed means an invocation returned a result, not necessarily business-level success. Inspect tool_result_get with key=result_key when result_available=true. Follow the Tool usage SOP if that tool is not bound. References can expire; result_available=false means output is unavailable, not that the underlying operation never happened.",
+      "4. background_tool.failed means the invocation or result-processing pipeline failed; it does not prove there were no external effects. runtime.background.interrupted and background_tool.timed_out mean the outcome may be unknown. Never replay an uncertain write automatically.",
+      "5. background_job.completed and background_job.failed describe the existing job runner's outcome only. They do not certify every downstream action or completion of the user's whole task. occurred_at is an ISO UTC timestamp. The runtime handles acknowledgment; do not invent acknowledgment tools.",
+      JSON.stringify(ctx.systemSignals.map((signal) => {
+        const payload = JSON.parse(signal.payload) as Record<string, unknown>;
+        if ((!payload.result_durable && payload.result_instance && payload.result_instance !== ctx.runtimeInstanceId)
+          || (typeof payload.result_expires_at === "number" && payload.result_expires_at <= Date.now())) {
+          payload.result_available = false;
+          delete payload.result_key;
+        }
+        return { id: signal.id, kind: signal.kind, operation_id: signal.operation_id, occurred_at: new Date(signal.created_at).toISOString(), payload };
+      })),
+    ].join("\n") : "",
     adaptivePersonaCtx,
     buildToolPermissionContext(toolPermissionMap ?? []),
     buildToolReliabilityContext(allowedTools ?? []),
@@ -231,8 +260,9 @@ export function buildSharedToolCatalogContext(): string {
     "4. Read the schema. Set include_schema=true before invoking anything that is not bound this turn, and match the returned JSON schema exactly.",
     "5. Invoke through the proxy. For permission_reason=\"proxy_only\" or permission_reason=\"provider_tool_limit\", call invoke_tool with the exact name and args_json \u2014 a JSON object encoded as a string, e.g. args_json='{\"query\":\"from:alice\"}'. Send args_json='{}' when the target takes no arguments. Never proxy invoke_tool through itself, and never wrap a tool that is already bound.",
     "6. Read large results by reference. A tool result with truncated=true is only a preview; do not treat it as complete. Use result_ref.name with tool_result_get and offset/limit to read only the slice you need.",
-    "7. Verify before reporting. A read-only result proves only that information was read. Claim a write, send, schedule, delete, or configuration change only after the matching state-changing tool returns success in this turn.",
+    "7. Verify before reporting. A read-only result does not prove a new write. Claim a new write, send, schedule, delete, or configuration change only after the matching state-changing tool returns success in this turn. Trusted runtime system signals and their matching retrieved results can substantiate earlier named operations; attribute those outcomes to their receipts, never imply a new action or repeat completed work for proof.",
     "8. Stop and ask. Do not retry a tool denied for agent_not_allowed, category_disabled, dropin_tool_disabled, credentials_missing or integration_unconfigured. The first three are permission decisions and the last two mean the integration is not set up \u2014 propose a configuration change or tell the user what to configure.",
+    "9. Completion-reporting turns are read-only. permission_reason=signal_continuation_read_only forbids state-changing tools in this turn, including through invoke_tool. Do not bypass it with shell commands or treat an old user message as renewed permission; report the completed outcome and wait for a new user turn.",
   ].join("\n");
 }
 

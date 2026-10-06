@@ -9,6 +9,10 @@ import { FILES_DIR, isSafeFileName } from "@/lib/files";
 const now = () => new Date().toISOString();
 
 export function runMigrations(db: DatabaseSync): void {
+  const signalDeliveryColumns = db.prepare("PRAGMA table_info(signal_deliveries)").all() as Array<{ name: string }>;
+  if (signalDeliveryColumns.length && !signalDeliveryColumns.some((column) => column.name === "wake_eligible")) {
+    db.exec("ALTER TABLE signal_deliveries ADD COLUMN wake_eligible INTEGER NOT NULL DEFAULT 0");
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS threads (
       thread_id     TEXT PRIMARY KEY,
@@ -29,6 +33,54 @@ export function runMigrations(db: DatabaseSync): void {
     -- (getMessages, getRecentMessagesWindow, getMessagesPage, clear).
     -- Without this every read full-scans the messages table.
     CREATE INDEX IF NOT EXISTS idx_messages_thread_id ON messages(thread_id, created_at);
+    CREATE TABLE IF NOT EXISTS runtime_operations (
+      id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+      origin_instance TEXT NOT NULL,
+      state TEXT NOT NULL CHECK(state IN ('accepted','completed','failed','outcome_unknown')),
+      payload TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS signal_events (
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      id TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL,
+      schema_version INTEGER NOT NULL DEFAULT 1,
+      operation_id TEXT NOT NULL REFERENCES runtime_operations(id) ON DELETE CASCADE,
+      agent_id TEXT NOT NULL,
+      thread_id TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+      payload TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      UNIQUE(kind,operation_id,agent_id,thread_id)
+    );
+    CREATE TABLE IF NOT EXISTS signal_deliveries (
+      event_id TEXT PRIMARY KEY REFERENCES signal_events(id) ON DELETE CASCADE,
+      wake_eligible INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL CHECK(state IN ('ready','leased','acknowledged','dead_letter')),
+      attempts INTEGER NOT NULL DEFAULT 0,
+      available_at INTEGER NOT NULL,
+      lease_token TEXT,
+      lease_instance TEXT,
+      lease_until INTEGER,
+      failure_code TEXT,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_signal_events_target ON signal_events(agent_id,thread_id,seq);
+    CREATE INDEX IF NOT EXISTS idx_signal_deliveries_due ON signal_deliveries(state,available_at);
+    CREATE TABLE IF NOT EXISTS background_tool_results (
+      key TEXT PRIMARY KEY REFERENCES runtime_operations(id) ON DELETE CASCADE,
+      thread_id TEXT NOT NULL REFERENCES threads(thread_id) ON DELETE CASCADE,
+      tool TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('pending','done','error')),
+      payload TEXT,
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_background_results_owner ON background_tool_results(thread_id,expires_at);
     CREATE TABLE IF NOT EXISTS memory_store (
       namespace  TEXT NOT NULL,
       key        TEXT NOT NULL,

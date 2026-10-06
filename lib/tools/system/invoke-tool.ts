@@ -1,4 +1,5 @@
 import { tool } from "@langchain/core/tools";
+import { getToolResultMaxBytes } from "../support/result-refs";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
@@ -200,7 +201,13 @@ export const invokeToolTool = tool(
     try {
       const result = await executeTool(toolName, resolvedArgs, {
         thread_id: getThreadId(config),
+        tool_result_max_bytes: Math.max(1, getToolResultMaxBytes() - Buffer.byteLength(JSON.stringify({ ok: true, tool: toolName, status: "done", result: null })) + 4),
         tool_credentials: toolCredentialsFromConfig(config),
+        signal_continuation: config?.configurable?.signal_continuation === true,
+        tool_permission_map: Array.isArray(config?.configurable?.tool_permission_map) ? config.configurable.tool_permission_map : undefined,
+        delegation_depth: typeof config?.configurable?.delegation_depth === "number" ? config.configurable.delegation_depth : undefined,
+        delegation_ancestors: Array.isArray(config?.configurable?.delegation_ancestors) ? config.configurable.delegation_ancestors : undefined,
+        signal: config?.signal,
       });
       return JSON.stringify({
         ok: true,

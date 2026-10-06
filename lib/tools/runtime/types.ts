@@ -62,6 +62,12 @@ export type ToolParamSchema = {
 export interface ToolContext {
   thread_id?: string;
   tool_credentials?: Readonly<Record<string, string>>;
+  signal_continuation?: boolean;
+  tool_result_max_bytes?: number;
+  tool_permission_map?: readonly Record<string, unknown>[];
+  delegation_depth?: number;
+  delegation_ancestors?: readonly string[];
+  signal?: AbortSignal;
 }
 
 // OpenAI function calling wire format
