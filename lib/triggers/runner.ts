@@ -16,6 +16,8 @@ import type {
 } from "./types";
 import { errorMessage } from "@/lib/utils/error";
 import { publish as publishNotification } from "@/lib/notifications/bus";
+import { randomUUID } from "node:crypto";
+import { recordThreadSignal } from "@/lib/lifecycle/system-signals";
 
 /**
  * Invoke an agent for one prompt firing. Extracted from the original
@@ -226,6 +228,12 @@ export async function runTriggerScript(firing: ScriptFiring): Promise<TriggerOut
  * call.
  */
 export async function runTriggerFiring(firing: TriggerFiring): Promise<TriggerOutcome> {
-  if (firing.mode === "script") return runTriggerScript(firing);
-  return runTriggerAgent(firing);
+  const outcome = firing.mode === "script" ? await runTriggerScript(firing) : await runTriggerAgent(firing);
+  if (outcome.threadId && (outcome.status === "done" || outcome.status === "error")) {
+    try {
+      recordThreadSignal(outcome.threadId, outcome.status === "done" ? "background_job.completed" : "background_job.failed",
+        randomUUID(), { job_id: firing.id, job_kind: firing.kind, status: outcome.status });
+    } catch (error) { console.error("[system-signals] job outcome publication failed", error); }
+  }
+  return outcome;
 }

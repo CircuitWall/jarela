@@ -16,11 +16,16 @@
 // than silently reading or killing someone else's job.
 
 import type { ChildProcess } from "node:child_process";
+import type { ToolConfig } from "../filesystem/workspace-context";
+import { startOwnedAsyncCall, completeAsyncCall, failAsyncCall, consumeAsyncResult } from "../support/async-results";
+import { requestSystemSignalDispatch } from "@/lib/lifecycle/system-signals";
 
 export type JobStatus = "running" | "done" | "error" | "cancelled";
 export type JobProvider = "claude" | "codex";
 
 export interface DelegateJob {
+  resultKey?: string;
+  ownerThreadId?: string;
   provider: JobProvider;
   status: JobStatus;
   startedAt: number;
@@ -47,8 +52,14 @@ function registry(): Map<string, DelegateJob> {
   return g[JOBS_SYM];
 }
 
-export function createJob(jobId: string, opts: { provider: JobProvider; projectKey: string; sessionId: string; parentMessage: string; resumed: boolean; launch?: unknown }): DelegateJob {
+export function createJob(jobId: string, opts: { provider: JobProvider; projectKey: string; sessionId: string; parentMessage: string; resumed: boolean; launch?: unknown }, config?: ToolConfig): DelegateJob {
+  const threadId = config?.configurable?.thread_id;
+  const tracked = typeof threadId === "string" ? startOwnedAsyncCall(`${opts.provider}_delegate`, threadId,
+    config?.configurable?.signal_continuation === true, { delegate_job_id: jobId }) : null;
+  if (tracked && !tracked.owned) consumeAsyncResult(tracked.key);
   const job: DelegateJob = {
+    ...(typeof threadId === "string" ? { ownerThreadId: threadId } : {}),
+    ...(tracked?.owned ? { resultKey: tracked.key, ownerThreadId: threadId } : {}),
     provider: opts.provider,
     status: "running",
     startedAt: Date.now(),
@@ -74,6 +85,11 @@ export function getJob(jobId: string, provider: JobProvider): DelegateJob | null
   return job && job.provider === provider ? job : null;
 }
 
+export function getJobForTool(jobId: string, provider: JobProvider, threadId?: string): DelegateJob | null {
+  const job = getJob(jobId, provider);
+  return job && (!job.ownerThreadId || job.ownerThreadId === threadId) ? job : null;
+}
+
 export function appendStep(jobId: string, step: string): void {
   const job = registry().get(jobId);
   if (job && job.status === "running") job.steps.push(step);
@@ -91,6 +107,10 @@ export function setJobSession(jobId: string, sessionId: string): void {
 export function completeJob(jobId: string, result: unknown): void {
   const job = registry().get(jobId);
   if (!job || job.status !== "running") return;
+  if (job.resultKey) {
+    completeAsyncCall(job.resultKey, JSON.stringify(result));
+    requestSystemSignalDispatch();
+  }
   job.status = "done";
   job.finishedAt = Date.now();
   job.result = result;
@@ -100,6 +120,10 @@ export function completeJob(jobId: string, result: unknown): void {
 export function failJob(jobId: string, errorMessage: string): void {
   const job = registry().get(jobId);
   if (!job || job.status !== "running") return;
+  if (job.resultKey) {
+    failAsyncCall(job.resultKey, errorMessage);
+    requestSystemSignalDispatch();
+  }
   job.status = "error";
   job.finishedAt = Date.now();
   job.error = errorMessage;
@@ -111,10 +135,14 @@ export function failJob(jobId: string, errorMessage: string): void {
 export function cancelJob(jobId: string, provider: JobProvider): boolean {
   const job = registry().get(jobId);
   if (!job || job.provider !== provider || job.status !== "running") return false;
+  job.status = "cancelled";
   if (job._child) {
     try { job._child.kill("SIGTERM"); } catch { /* already dead */ }
   }
-  job.status = "cancelled";
+  if (job.resultKey) {
+    failAsyncCall(job.resultKey, "Delegate cancelled. Any external effects may already have happened; verify before retrying.");
+    requestSystemSignalDispatch();
+  }
   job.finishedAt = Date.now();
   job._child = null;
   return true;

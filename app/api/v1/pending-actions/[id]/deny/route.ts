@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPendingAction, setActionStatus } from "@/lib/stores/pending-actions";
+import { getSystemOperation } from "@/lib/stores/system-signals";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -9,6 +10,9 @@ export async function POST(_req: NextRequest, { params }: Params) {
   if (!action) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (action.status !== "pending") {
     return NextResponse.json({ error: `already ${action.status}` }, { status: 409 });
+  }
+  if (getSystemOperation(`approval:${id}`)?.state === "accepted") {
+    return NextResponse.json({ error: "approval application is already in progress; verify its outcome" }, { status: 409 });
   }
   const final = setActionStatus(id, "denied", "user denied");
   return NextResponse.json(final);

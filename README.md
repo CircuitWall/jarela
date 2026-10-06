@@ -8,6 +8,7 @@ Jarela is a local-first desktop UI for orchestrating LangGraph agents on your ow
 - Multi-provider LLM support: Anthropic, OpenAI, Google GenAI, Cohere, DeepSeek, GitHub Copilot
 - Per-agent tool policy, identity, memory, and harness configuration
 - SQLite-backed checkpoints, memory, schedules, proposals, and local integrations
+- Durable, agent-targeted lifecycle signals for restarts, approvals, configuration changes, and background work
 - PWA / desktop-friendly workflow with browser extension support
 - MCP, integration manifests, and built-in tool extension points
 
@@ -43,6 +44,7 @@ The app is built around a single Next.js process with clear layers:
 - tools + MCP registry
 - SQLite persistence and memory stores
 - integrations, bridges, scheduler, and browser extension surfaces
+- SQLite outbox and leased signal delivery, consumed by the existing agent run queues (no additional broker)
 
 ## Extension surfaces
 

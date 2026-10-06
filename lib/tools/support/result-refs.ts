@@ -126,7 +126,7 @@ export async function readToolResultRef(args: {
   }
 }
 
-function serializeToolResult(result: unknown): string {
+export function serializeToolResult(result: unknown): string {
   if (typeof result === "string") return result;
   return JSON.stringify(result) ?? String(result);
 }

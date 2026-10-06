@@ -112,6 +112,7 @@ async function runDelegatedTurn(
         prepared.source_manifest ?? null,
         routeDecision,
         prepared.memory_recall ? { memory_recall: prepared.memory_recall } : null,
+        collected.aborted ? undefined : prepared.signal_delivery,
       );
     }
     return collected;

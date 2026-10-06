@@ -65,6 +65,9 @@ export async function bootNode(): Promise<void> {
   const { startScheduler } = await import("@/lib/scheduler");
   startScheduler();
 
+  const { startSystemSignalLifecycle } = await import("@/lib/lifecycle/system-signals");
+  startSystemSignalLifecycle();
+
   warnIfExposedBind();
 }
 

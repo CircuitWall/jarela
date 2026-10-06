@@ -44,7 +44,7 @@ interface ThreadMessageAdded {
   type: "thread_message_added";
   thread_id: string;
   agent_id: string;
-  source: "page_capture";
+  source: "page_capture" | "extension" | "system_signal";
   ts: number;
 }
 

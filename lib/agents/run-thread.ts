@@ -2,6 +2,8 @@ import { isWriteToolNameSegment, STALL_NOW_ACTION_VERBS, STALL_TAIL_PHRASES } fr
 import { streamWithConfig } from "@/lib/agents/llm";
 import { DEFAULT_HOT_TURN_LIMIT } from "@/api/types";
 import { getConfig } from "@/lib/env/config";
+import { claimSystemSignals, renewSystemSignalLease, releaseSystemSignals, commitSystemSignalTranscript, type SystemSignalBatch } from "@/lib/stores/system-signals";
+import { runtimeInstanceId } from "@/lib/lifecycle/system-signals";
 import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
@@ -312,6 +314,7 @@ function raceWithBudget<T>(promise: Promise<T>, ms: number, fallback: T): Promis
 }
 
 export interface PreparedThreadRun {
+  signal_delivery?: SystemSignalBatch;
   stream: AsyncIterable<StreamChunk>;
   thread_id: string;
   // Snapshot of how the per-turn context window was allocated and consumed.
@@ -677,6 +680,13 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     requestedAllowedTools,
   );
   allowedTools = limitedTools.allowedToolNames;
+  if (req._system_signal_continuation) {
+    toolPermissionMap = toolPermissionMap.map((entry) => entry.capability === "read" || entry.name === "invoke_tool"
+      ? entry
+      : { ...entry, permission: "disabled" as const, permission_reason: "signal_continuation_read_only" });
+    const allowedReadTools = new Set(toolPermissionMap.filter((entry) => entry.permission === "enabled").map((entry) => entry.name));
+    allowedTools = allowedTools.filter((name) => allowedReadTools.has(name));
+  }
   const baseProviderParams = getModelParams(modelCfg);
 
   // ADR-0043 — per-agent override of context_tier_proportions. The agent's
@@ -786,6 +796,13 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const sourceManifest: SourceManifestEntry[] = [];
   void strictness; // strictness is read again at persist-time
 
+  const ownsSignalDelivery = !req._system_signal_batch;
+  const canDeliverSignals = !req.history_bridge_key && !req.delivery_channel
+    && req.user_category !== "bridge" && req.context_profile?.history_scope !== "none";
+  const signalDelivery = req._system_signal_batch ?? (canDeliverSignals
+    ? claimSystemSignals(agentCfg.id, req.thread_id, runtimeInstanceId())
+    : { agentId: agentCfg.id, threadId: req.thread_id, leaseToken: "", signals: [] });
+  req = { ...req, _system_signal_batch: signalDelivery };
   const systemPrompt = buildSystemPrompt({
     agentCfg,
     trimmedMessage: trimmed,
@@ -794,6 +811,8 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     warmSummaryCtx: effectiveWarmSummary,
     factsCtx: effectiveFacts,
     backgroundActivityCtx: historyWindow.backgroundActivityCtx,
+    systemSignals: signalDelivery.signals,
+    runtimeInstanceId: runtimeInstanceId(),
     surroundingsCtx,
     experienceMode: resolveExperienceMode(req.options),
     delegateRosterLines,
@@ -809,6 +828,7 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const streamOpts: StreamOptions = {
     ...req.options,
     agent_run_config: {
+      signal_continuation: req._system_signal_continuation,
       system_prompt: systemPrompt,
       allowed_tools: allowedTools,
       tool_permission_map: toolPermissionMap.map((entry) => ({
@@ -870,7 +890,23 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
     ? transientWrapped
     : stallRetryStream(transientWrapped, req, allowedTools, retriesLeft, attemptAbort);
   return {
-    stream,
+    signal_delivery: signalDelivery,
+    stream: ownsSignalDelivery ? (async function* () {
+      let succeeded = false;
+      let renewedAt = Date.now();
+      try {
+        for await (const chunk of stream) {
+          if (Date.now() - renewedAt > 10_000) {
+            renewSystemSignalLease(signalDelivery);
+            renewedAt = Date.now();
+          }
+          if (chunk.type === "done" && !chunk.data.aborted && !req.signal?.aborted) succeeded = true;
+          yield chunk;
+        }
+      } finally {
+        if (!succeeded) releaseSystemSignals(signalDelivery);
+      }
+    })() : stream,
     thread_id: req.thread_id,
     context_snapshot: {
       context_window_tokens: historyWindow.budget.contextWindowTokens,
@@ -1364,6 +1400,7 @@ export function persistAssistantMessage(
   sourceManifest?: readonly SourceManifestEntry[] | null,
   routeDecision?: RouteDecisionMetadata | null,
   messageMetadata?: Record<string, unknown> | null,
+  signalDelivery?: SystemSignalBatch,
 ): void {
   const trimmed = content.trim();
   let final = trimmed;
@@ -1414,8 +1451,15 @@ export function persistAssistantMessage(
   // we merge it into the manifest below. The body stored in
   // messages.content is the clean prose without the fence.
   const { body: persisted, refs: declaredRefs } = extractDeclaredReferences(withoutAutoplay);
+  if (!persisted && !sanitizedEvents?.length && signalDelivery?.signals.length && !wasInterrupted) {
+    commitSystemSignalTranscript(signalDelivery, () => {
+      addMessage(thread_id, "assistant", "System signals processed.", null, "system_signal", {
+        system_signal_receipt: signalDelivery.signals.map((signal) => signal.id),
+      });
+    });
+  }
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
-    const row = addMessage(
+    const persistRow = () => addMessage(
       thread_id,
       "assistant",
       persisted,
@@ -1423,6 +1467,9 @@ export function persistAssistantMessage(
       category,
       messageMetadata,
     );
+    const row = signalDelivery && !wasInterrupted
+      ? commitSystemSignalTranscript(signalDelivery, persistRow)
+      : persistRow();
     if (sanitizedEvents && sanitizedEvents.length > 0) {
       recordToolUsage(sanitizedEvents, persisted, {
         workflowName: category ?? "assistant_turn",

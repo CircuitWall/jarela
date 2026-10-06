@@ -11,6 +11,7 @@ export interface ToolPolicy {
 }
 
 export interface AgentRunConfig {
+  signal_continuation?: boolean;
   system_prompt: string;
   allowed_tools: string[];   // empty = all tools
   tool_permission_map?: Array<{

@@ -15,6 +15,7 @@ import { SYSTEM_PROMPT as PRICING_EXTRACT_PROMPT } from "@/lib/pricing/llm-extra
 import { DESIGN_QA_PROMPT } from "@/lib/tools/delegation/claude-delegate";
 import { buildSharedToolCatalogContext } from "@/lib/agents/prepare/system-prompt";
 import { BUILTIN_HARNESSES } from "@/lib/agents/harness/presets";
+import { SYSTEM_SIGNAL_WAKE_PROMPT } from "@/lib/lifecycle/system-signals";
 
 export interface StaticPrompt {
   id: string;
@@ -32,6 +33,12 @@ export interface StaticPrompt {
  */
 export function listStaticPrompts(): StaticPrompt[] {
   const prompts: StaticPrompt[] = [
+    {
+      id: "agent.system-signal-wakeup",
+      source: "lib/lifecycle/system-signals.ts",
+      purpose: "Bounded continuation of already-authorized work after targeted runtime completion signals.",
+      text: SYSTEM_SIGNAL_WAKE_PROMPT,
+    },
     {
       id: "agent.tool-usage-sop",
       source: "lib/agents/prepare/system-prompt.ts",

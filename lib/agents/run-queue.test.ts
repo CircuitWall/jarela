@@ -13,6 +13,20 @@ afterEach(() => {
 });
 
 describe("enqueueThreadRun", () => {
+  it("serializes a foreground run and a completion run across module reload", async () => {
+    const release = Promise.withResolvers<number>();
+    const order: string[] = [];
+    const first = enqueueThreadRun("cross-bundle", "user", async () => { order.push("foreground"); return release.promise; });
+    vi.resetModules();
+    const other = await import("./run-queue");
+    expect(other.getQueueDepth("cross-bundle")).toBe(1);
+    const second = other.enqueueThreadRun("cross-bundle", "trigger", async () => { order.push("completion"); return 2; });
+    expect(order).toEqual(["foreground"]);
+    release.resolve(1);
+    await Promise.all([first.result, second.result]);
+    expect(order).toEqual(["foreground", "completion"]);
+  });
+
   it("runs a single job immediately and resolves its result", async () => {
     const { result, position } = enqueueThreadRun("t1", "user", async () => 42);
     expect(position).toBe(0);

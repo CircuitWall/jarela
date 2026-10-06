@@ -8,6 +8,12 @@ import { langchainProvider } from "./langchain";
 import { mockProvider } from "./mock";
 import { loadExternalProviders } from "./external";
 import { getConfig } from "@/lib/env/config";
+import { parseRateLimitOverrides, ProviderRateLimiter, withProviderRateLimits } from "./rate-limit";
+
+const limitedProviders = new WeakMap<ModelProvider, ModelProvider>();
+const providerGlobals = globalThis as typeof globalThis & {
+  __jarelaProviderRateLimiter?: ProviderRateLimiter;
+};
 
 const BUILTINS: Record<string, ModelProvider> = {
   openai: openaiProvider,
@@ -46,7 +52,15 @@ export function getProvider(name: string): ModelProvider {
   const all = getProviders();
   const p = all[name];
   if (!p) throw new Error(`Unknown provider: "${name}". Available: ${Object.keys(all).join(", ")}`);
-  return p;
+  let limited = limitedProviders.get(p);
+  if (!limited) {
+    providerGlobals.__jarelaProviderRateLimiter ??= new ProviderRateLimiter(
+      parseRateLimitOverrides(getConfig().providerRateLimits),
+    );
+    limited = withProviderRateLimits(p, providerGlobals.__jarelaProviderRateLimiter);
+    limitedProviders.set(p, limited);
+  }
+  return limited;
 }
 
 export { type ModelProvider };

@@ -7,6 +7,8 @@
 // In-memory + single-process. Multi-instance deployment would need a shared
 // lock (Redis, Postgres advisory locks) — explicitly out of scope.
 
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
+
 type Source = "user" | "scheduler" | "watcher" | "trigger" | "bridge" | "extension" | "delegate";
 
 export type QueueLane = "interactive" | "background";
@@ -24,7 +26,7 @@ interface ThreadQueue {
   background: QueuedJob[];
 }
 
-const queues = new Map<string, ThreadQueue>();
+const queues = getOrCreateGlobal("__jarela_thread_run_queues", () => new Map<string, ThreadQueue>());
 
 const DEFAULT_MAX_DEPTH = 16;
 

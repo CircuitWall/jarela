@@ -4,6 +4,16 @@ import { tool } from "@langchain/core/tools";
 import { wrapWithWallclock, __DEFAULT_DEADLINE_MS } from "./wallclock";
 import { withStreamDefault } from "./tool-metadata";
 
+const signalMocks = vi.hoisted(() => ({ begin: vi.fn((threadId: unknown, _kind: unknown, key: string) => typeof threadId === "string" ? key : null), finish: vi.fn() }));
+vi.mock("@/lib/lifecycle/system-signals", () => ({ beginThreadOperation: signalMocks.begin, runtimeInstanceId: () => "test-instance", requestSystemSignalDispatch: vi.fn() }));
+vi.mock("@/lib/stores/system-signals", () => ({ finishBackgroundOperation: signalMocks.finish, withSystemSignalTransaction: (work: () => unknown) => work() }));
+vi.mock("@/lib/stores/background-results", () => ({
+  BACKGROUND_RESULT_RETENTION_MS: 7 * 24 * 60 * 60_000,
+  BACKGROUND_RESULT_MAX_BYTES: 2 * 1024 * 1024,
+  createBackgroundResult: vi.fn(), finishBackgroundResult: vi.fn(), getBackgroundResult: () => null, listBackgroundResults: () => [],
+  backgroundResultExists: () => true,
+}));
+
 interface JsonSchema {
   type?: string;
   properties?: Record<string, unknown>;
@@ -51,6 +61,22 @@ function makeSlowTool(name: string, delayMs: number) {
 }
 
 describe("wrapWithWallclock", () => {
+  it("publishes a correlated durable completion for a background invocation", async () => {
+    signalMocks.finish.mockClear();
+    const wrapped = wrapWithWallclock(makeSlowTool("background-signal", 5));
+    const result = JSON.parse(await wrapped.invoke({ value: "safe", async_run: true, deadline_ms: 500 }, { configurable: { thread_id: "test-thread" } }) as string);
+    await vi.waitFor(() => expect(signalMocks.finish).toHaveBeenCalledWith(result.key, "done", expect.any(String), null, "background_tool.completed"));
+  });
+
+  it("publishes unknown outcome on timeout and does not overwrite it after late completion", async () => {
+    signalMocks.finish.mockClear();
+    const wrapped = wrapWithWallclock(makeSlowTool("background-timeout", 60));
+    const result = JSON.parse(await wrapped.invoke({ value: "safe", async_run: true, deadline_ms: 10 }, { configurable: { thread_id: "test-thread" } }) as string);
+    await vi.waitFor(() => expect(signalMocks.finish).toHaveBeenCalledWith(result.key, "error", null, expect.any(String), "background_tool.timed_out"));
+    await new Promise((resolve) => setTimeout(resolve, 70));
+    expect(signalMocks.finish).toHaveBeenCalledTimes(1);
+  });
+
   it("passes through when the tool finishes inside the budget", async () => {
     const inner = makeSlowTool("fast", 5);
     const wrapped = wrapWithWallclock(inner);

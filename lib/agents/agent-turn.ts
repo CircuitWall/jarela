@@ -29,6 +29,7 @@ export type AgentTurnQueueSource =
   | "delegate";
 
 export interface RunAgentTurnRequest {
+  system_signal_continuation?: boolean;
   thread_id: string;
   queue_source: AgentTurnQueueSource;
   message: string;
@@ -138,6 +139,7 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
     let terminal: "done" | "error" = "error";
     try {
       const prepared = await prepareThreadRun({
+        _system_signal_continuation: req.system_signal_continuation,
         thread_id: req.thread_id,
         message: req.message,
         attachments: req.attachments,
@@ -202,7 +204,11 @@ export async function runAgentTurn(req: RunAgentTurnRequest): Promise<RunAgentTu
           prepared.memory_recall
             ? { ...req.assistant_message_metadata, memory_recall: prepared.memory_recall }
             : req.assistant_message_metadata ?? null,
+          prepared.signal_delivery,
         );
+      } else if (prepared.signal_delivery?.signals.length) {
+        persistAssistantMessage(req.thread_id, "", undefined, undefined, "system_signal",
+          undefined, undefined, undefined, undefined, undefined, prepared.signal_delivery);
       }
 
       terminal = collected.terminal === "error" ? "error" : "done";

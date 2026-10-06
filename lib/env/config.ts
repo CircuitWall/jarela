@@ -15,6 +15,7 @@
 import { getDataDir } from "@/lib/db/data-dir";
 import { getAppName, getAppDescription, getAppIssueUrl } from "./app-config";
 import { ENV_DEFAULTS } from "./schema";
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -82,6 +83,7 @@ export interface JarelaConfig {
 
   // providers
   readonly enableMockProvider: boolean;
+  readonly providerRateLimits: string;
 
   // anti-hallucination detector
   readonly hallucinationDetectorMode: "off" | "regex" | "model";
@@ -163,17 +165,17 @@ function parseLogLevel(value: string | undefined, fallback: "debug" | "info" | "
   return fallback;
 }
 
-let cached: JarelaConfig | null = null;
+const configState = getOrCreateGlobal("__jarela_runtime_config_snapshot", () => ({ value: null as JarelaConfig | null }));
 
 function expandHome(p: string): string {
   return p.startsWith("~") ? p.replace(/^~/, homedir()) : p;
 }
 
 export function getConfig(): JarelaConfig {
-  if (cached) return cached;
+  if (configState.value) return configState.value;
   const env = process.env;
   const dataDir = getDataDir();
-  cached = {
+  configState.value = {
     // network
     port: parsePort(env.JARELA_PORT ?? env.PORT, ENV_DEFAULTS.port),
     hostname: (env.JARELA_HOSTNAME ?? env.HOSTNAME ?? ENV_DEFAULTS.hostname).trim() || ENV_DEFAULTS.hostname,
@@ -237,6 +239,7 @@ export function getConfig(): JarelaConfig {
 
     // providers
     enableMockProvider: parseBool(env.JARELA_ENABLE_MOCK_PROVIDER, ENV_DEFAULTS.enableMockProvider),
+    providerRateLimits: (env.JARELA_PROVIDER_RATE_LIMITS ?? ENV_DEFAULTS.providerRateLimits).trim(),
 
     // anti-hallucination classifier
     hallucinationDetectorMode: parseHallucinationMode(
@@ -262,10 +265,10 @@ export function getConfig(): JarelaConfig {
     appDescription: getAppDescription(),
     issueUrl: getAppIssueUrl(),
   };
-  return cached;
+  return configState.value;
 }
 
 /** Drop the memoised config so the next read picks up env edits. Used by tests + the env-override PATCH endpoint. */
 export function resetConfigCache(): void {
-  cached = null;
+  configState.value = null;
 }

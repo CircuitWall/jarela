@@ -16,6 +16,7 @@ import {
   type ScheduledTaskRow,
 } from "@/lib/stores/scheduled-tasks";
 import { errorMessage } from "@/lib/utils/error";
+import { dispatchSystemSignalWakeups } from "@/lib/lifecycle/system-signals";
 
 // Env-tunable so e2e tests can ride a tighter loop without waiting 30 s
 // per fs-watch firing. Production / dev use the 30 s default; tests
@@ -128,6 +129,7 @@ async function tick(): Promise<void> {
   state.lastDeferredCount = 0;
   state.running = true;
   try {
+    await dispatchSystemSignalWakeups();
     await runTriggerTick();
 
     // Document-RAG reindex sweep (ADR-0024). Polled here until PR-D wires

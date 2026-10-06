@@ -350,6 +350,7 @@ async function* streamWithConfigImpl(
         streamMode: ["messages", "updates", "custom"],
         configurable: {
           thread_id: threadId,
+          signal_continuation: runCfg?.signal_continuation === true,
           delegation_depth: runCfg?.delegation?.depth ?? 0,
           delegation_ancestors: runCfg?.delegation?.ancestors ?? [],
           tool_permission_map: runCfg?.tool_permission_map,

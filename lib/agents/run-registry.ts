@@ -1,5 +1,6 @@
 import type { StreamChunk } from "./base";
 import { getConfig } from "@/lib/env/config";
+import { getOrCreateGlobal } from "@/lib/utils/global-state";
 
 // In-memory registry of in-flight agent runs, keyed by thread_id. When the user
 // switches agents mid-stream, the run keeps going server-side; if they return
@@ -65,14 +66,18 @@ export interface ActiveRun {
   steering: string[];
 }
 
-const runs = new Map<string, ActiveRun>();
+const registryState = getOrCreateGlobal("__jarela_active_run_registry", () => ({
+  runs: new Map<string, ActiveRun>(),
+  waiters: new Map<string, Set<(run: ActiveRun) => void>>(),
+}));
+const runs = registryState.runs;
 
 // Cold-attach waiters: subscribers that opened a GET /run before the
 // server-side run actually called startRun (typical for triggers /
 // scheduler / watcher, which submit through `after()` + the per-thread
 // queue, so there's a real delay between the user clicking "Run now"
 // and the registry entry appearing). Resolved by `startRun` below.
-const waiters = new Map<string, Set<(run: ActiveRun) => void>>();
+const waiters = registryState.waiters;
 
 /** Wait up to `timeoutMs` for a run to be registered on `thread_id`.
  *  Resolves immediately with the current run if one is already active,

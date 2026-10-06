@@ -116,6 +116,7 @@ export const ENV_DEFAULTS = {
   pricingExtractorModel: "",
   // providers
   enableMockProvider: false,
+  providerRateLimits: "",
   // tool safety / policy (already in lib/env/allowlist; kept for schema completeness)
   toolSafety: "mostly_safe" as const,
   // anti-hallucination classifier
@@ -415,6 +416,16 @@ export const ENV_SCHEMA: readonly EnvVarDef[] = [
     agentWritable: true,
     min: 1,
     max: 2048,
+  },
+  {
+    name: "JARELA_PROVIDER_RATE_LIMITS",
+    type: "string",
+    default: ENV_DEFAULTS.providerRateLimits,
+    description: 'Provider-wide rate limit overrides as JSON, e.g. {"github-copilot":{"requestsPerMinute":10,"maxConcurrent":2}}. Known providers have built-in limits; unknown providers are unlimited. Use null for an unlimited dimension. Limits are shared across agents, models, and credentials; restart manually to apply changes.',
+    category: "providers",
+    tier: "B",
+    requiresRestart: true,
+    agentWritable: false,
   },
   {
     name: "JARELA_FETCH_TOOL_MAX_BYTES",

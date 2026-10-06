@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
-import { getPendingAction, setActionStatus } from "@/lib/stores/pending-actions";
+import { getPendingAction, setActionStatus, reservePendingApproval } from "@/lib/stores/pending-actions";
 import { applyAction } from "@/lib/agents/proposals";
 import { publish as publishNotification } from "@/lib/notifications/bus";
 
@@ -31,7 +31,14 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
   }
 
-  const result = await applyAction(action.kind, JSON.parse(action.payload), extras);
+  const reserved = reservePendingApproval(id);
+  if (!reserved) return NextResponse.json({ error: "approval already accepted or handled; do not repeat the action" }, { status: 409 });
+  let result: Awaited<ReturnType<typeof applyAction>>;
+  try { result = await applyAction(action.kind, JSON.parse(action.payload), extras); }
+  catch {
+    const final = setActionStatus(id, "failed", { error: "Approval application interrupted; verify external effects before retrying.", outcome: "unknown" });
+    return NextResponse.json({ ok: false, action: final, error: "Approval outcome may be unknown" }, { status: 500 });
+  }
   const final = setActionStatus(id, result.ok ? "approved" : "failed", result.detail);
 
   // The user's banner already disappears the moment the response lands;

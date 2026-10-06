@@ -217,10 +217,16 @@ export const codexDelegateTool = withStreamDefault(tool(
     const priorSession = fresh ? null : getSession(key);
     const args = buildCodexArgs(task, resolvedModel, resolvedProfile, resolvedAddDirs, priorSession ?? undefined);
     const launch = resolveCodexLaunch(codex.bin, args);
+    const backgroundJobId = background ? crypto.randomUUID() : null;
+    const backgroundJob = backgroundJobId ? jobs.createJob(backgroundJobId, {
+      provider: "codex", projectKey: key, sessionId: priorSession ?? "", parentMessage: task,
+      resumed: !!priorSession, launch: { model: resolvedModel ?? null, profile: resolvedProfile ?? null, sandbox: "workspace-write", background: true },
+    }, config) : null;
     let child: ChildProcess;
     try {
       child = spawn(launch.command, launch.args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
     } catch (error) {
+      if (backgroundJobId) jobs.failJob(backgroundJobId, `failed to spawn codex: ${(error as Error).message}`);
       throw new Error(`failed to spawn codex: ${(error as Error).message}`);
     }
     const finish = async (completed: { result: string; threadId?: string; steps: string[] }, isBackground: boolean, jobId?: string) => {
@@ -237,16 +243,9 @@ export const codexDelegateTool = withStreamDefault(tool(
       };
     };
 
-    if (background) {
-      const jobId = crypto.randomUUID();
-      const job = jobs.createJob(jobId, {
-        provider: "codex",
-        projectKey: key,
-        sessionId: priorSession ?? "",
-        parentMessage: task,
-        resumed: !!priorSession,
-        launch: { model: resolvedModel ?? null, profile: resolvedProfile ?? null, sandbox: "workspace-write", background: true },
-      });
+    if (background && backgroundJobId && backgroundJob) {
+      const jobId = backgroundJobId;
+      const job = backgroundJob;
       job._child = child;
       void collectCodexOutput(child, (timeout_seconds ?? codex.timeoutSeconds) * 1000, (step) => {
         jobs.appendStep(jobId, step);
@@ -257,6 +256,7 @@ export const codexDelegateTool = withStreamDefault(tool(
         .catch((error) => jobs.failJob(jobId, (error as Error).message));
       return JSON.stringify({
         job_id: jobId,
+        result_key: job.resultKey,
         status: "running",
         project_key: key,
         session_id: priorSession,
@@ -280,25 +280,34 @@ export const codexDelegateTool = withStreamDefault(tool(
       profile: z.string().optional().describe("Optional pre-existing Codex configuration profile."),
       add_dirs: z.array(z.string()).optional().describe("Additional directories Codex may write alongside the workspace."),
       fresh: z.boolean().optional().describe("Start a new Codex session instead of resuming this workspace/feature session."),
-      background: z.boolean().optional().describe("Run in the background and return a job id for codex_delegate_status polling."),
+      background: z.boolean().optional().describe("Run in the background and return a job id. Agent-owned jobs also return result_key and notify their owner on completion; retrieve encrypted output through tool_result_get."),
       timeout_seconds: z.number().positive().optional().describe("Idle timeout in seconds."),
     }),
   },
 ), true);
 
 export const codexDelegateStatusTool = tool(
-  ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }) => {
+  ({ job_id, last_step_index, action }: { job_id: string; last_step_index?: number; action?: "poll" | "cancel" }, config) => {
+    const threadId = config?.configurable?.thread_id;
+    if (!jobs.getJobForTool(job_id, "codex", typeof threadId === "string" ? threadId : undefined)) {
+      throw new Error(action === "cancel" ? `No running job with id ${job_id}` : `No job found with id ${job_id}`);
+    }
     if (action === "cancel") {
       if (!jobs.cancelJob(job_id, "codex")) throw new Error(`No running job with id ${job_id}`);
       return JSON.stringify({ job_id, status: "cancelled" });
     }
+    const ownedJob = jobs.getJobForTool(job_id, "codex", typeof threadId === "string" ? threadId : undefined);
+    if (ownedJob?.resultKey) return JSON.stringify({ job_id, status: ownedJob.status, result_key: ownedJob.resultKey,
+      elapsed_ms: (ownedJob.finishedAt ?? Date.now()) - ownedJob.startedAt, step_count: ownedJob.steps.length,
+      next_step_index: ownedJob.steps.length, steps: [], new_steps: [],
+      hint: "Owned delegate output is encrypted. Retrieve terminal output with tool_result_get and result_key; status does not prove business-level success." });
     const status = getCodexDelegateJobStatus(job_id, last_step_index);
     if (!status) throw new Error(`No job found with id ${job_id}`);
     return JSON.stringify(status);
   },
   {
     name: "codex_delegate_status",
-    description: "Poll or cancel a background codex_delegate job. Relay new_steps while it runs; when done, inspect the returned changes before reporting success.",
+    description: "Poll or cancel a background codex_delegate job. Agent-owned jobs return bounded status/step counts and result_key; retrieve encrypted output with tool_result_get. Legacy unowned jobs return steps and results. Inspect changes before reporting business-level success; cancellation does not undo external effects.",
     schema: z.object({
       job_id: z.string().describe("Job id returned by a background codex_delegate call."),
       last_step_index: z.number().optional().describe("Previous next_step_index; defaults to zero."),
