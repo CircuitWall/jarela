@@ -33,6 +33,7 @@ export type ContentPart =
       media_type: string;
       /** Safe file-name segment served under /api/v1/files/[name]. */
       name: string;
+      filename?: string;
       sha256?: string;
       width?: number;
       height?: number;

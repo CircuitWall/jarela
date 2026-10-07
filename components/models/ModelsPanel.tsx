@@ -23,6 +23,7 @@ const PROVIDER_COLORS: Record<string, string> = {
 
 type RouterMode = "off" | "heuristic";
 type RouterPolicy = "cheap" | "fast" | "balanced" | "quality";
+type GlobalStrategy = "cost_saving" | "fast" | "balanced" | "high_reasoning";
 
 interface EnvEntry {
   name: string;
@@ -43,6 +44,19 @@ export function ModelsPanel() {
   const [routerError, setRouterError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useDeepLinkScroll("models", "model", containerRef);
+  const globalStrategy: GlobalStrategy = usageStrategy === "cost_saving"
+    ? "cost_saving"
+    : usageStrategy === "fast"
+      ? "fast"
+      : usageStrategy === "high_reasoning"
+      ? "high_reasoning"
+      : routerPolicy === "fast"
+        ? "fast"
+        : routerPolicy === "cheap"
+          ? "cost_saving"
+          : routerPolicy === "quality"
+            ? "high_reasoning"
+            : "balanced";
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +74,7 @@ export function ModelsPanel() {
             policy === "cheap" || policy === "fast" || policy === "quality" ? policy : "balanced",
           );
           setUsageStrategy(
-            strategy === "cost_saving" || strategy === "high_reasoning" ? strategy : "balanced",
+            strategy === "cost_saving" || strategy === "fast" || strategy === "high_reasoning" ? strategy : "balanced",
           );
           setRouterError(null);
         }
@@ -124,23 +138,25 @@ export function ModelsPanel() {
     }
   }
 
-  async function handleRouterPolicyChange(next: RouterPolicy) {
-    const prev = routerPolicy;
-    setRouterPolicy(next);
+  async function handleGlobalStrategyChange(next: GlobalStrategy) {
+    const previousUsageStrategy = usageStrategy;
+    const previousRouterPolicy = routerPolicy;
+    const nextUsageStrategy: UsageStrategy = next === "cost_saving" || next === "fast" || next === "high_reasoning"
+      ? next
+      : "balanced";
+    const nextRouterPolicy: RouterPolicy = next === "cost_saving"
+      ? "cheap"
+      : next === "high_reasoning"
+        ? "quality"
+        : next;
+    setUsageStrategy(nextUsageStrategy);
+    setRouterPolicy(nextRouterPolicy);
     try {
-      await persistRouterSetting("JARELA_MODEL_ROUTER_POLICY", next, "policy");
+      await persistRouterSetting("JARELA_USAGE_STRATEGY", nextUsageStrategy, "strategy");
+      await persistRouterSetting("JARELA_MODEL_ROUTER_POLICY", nextRouterPolicy, "policy");
     } catch {
-      setRouterPolicy(prev);
-    }
-  }
-
-  async function handleUsageStrategyChange(next: UsageStrategy) {
-    const prev = usageStrategy;
-    setUsageStrategy(next);
-    try {
-      await persistRouterSetting("JARELA_USAGE_STRATEGY", next, "strategy");
-    } catch {
-      setUsageStrategy(prev);
+      setUsageStrategy(previousUsageStrategy);
+      setRouterPolicy(previousRouterPolicy);
     }
   }
 
@@ -164,19 +180,20 @@ export function ModelsPanel() {
               </p>
             </div>
             <label className="block space-y-1">
-              <span className="text-[11px] text-fg-faint">Global usage strategy</span>
+              <span className="text-[11px] text-fg-faint">Global model strategy</span>
               <Select
-                value={usageStrategy}
+                value={globalStrategy}
                 disabled={routerLoading || routerSaving !== null}
-                onChange={(e) => { void handleUsageStrategyChange(e.target.value as UsageStrategy); }}
+                onChange={(e) => { void handleGlobalStrategyChange(e.target.value as GlobalStrategy); }}
               >
                 <option value="cost_saving">Cost saving</option>
+                <option value="fast">Fast</option>
                 <option value="balanced">Balanced</option>
                 <option value="high_reasoning">High reasoning</option>
               </Select>
             </label>
             <p className="text-[11px] text-fg-faint">
-              Cost saving favors cheaper routes, smaller context/output budgets, and concise replies. Per-agent strategy and router overrides take precedence.
+              Each strategy sets both model routing and usage behavior. Cost saving favors cheaper routes, smaller context/output budgets, and concise replies. Per-agent overrides take precedence.
             </p>
             <div className="border-t border-border/60 pt-2">
               <p className="text-[11px] text-fg-subtle font-medium mb-1">
@@ -203,8 +220,8 @@ export function ModelsPanel() {
                 </ul>
               )}
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="space-y-1">
+            <div>
+              <label className="block space-y-1">
                 <span className="text-[11px] text-fg-faint">Router mode</span>
                 <Select
                   value={routerMode}
@@ -213,19 +230,6 @@ export function ModelsPanel() {
                 >
                   <option value="off">Off</option>
                   <option value="heuristic">Automatic routing</option>
-                </Select>
-              </label>
-              <label className="space-y-1">
-                <span className="text-[11px] text-fg-faint">Routing policy</span>
-                <Select
-                  value={routerPolicy}
-                  disabled={routerLoading || routerSaving !== null}
-                  onChange={(e) => { void handleRouterPolicyChange(e.target.value as RouterPolicy); }}
-                >
-                  <option value="cheap">Cheap</option>
-                  <option value="fast">Fast</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="quality">Quality</option>
                 </Select>
               </label>
             </div>

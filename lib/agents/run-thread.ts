@@ -8,6 +8,7 @@ import type { StreamChunk, StreamOptions } from "@/lib/agents/base";
 import type { ContentPart } from "@/lib/tools/runtime/types";
 import { registeredCapability } from "@/lib/tools/runtime/registry";
 import { spillAttachments } from "@/lib/attachments/spill";
+import { fileReferenceFromContentPart, isFileReferenceMetadata, type AttachmentHandlingMetadata, type FileReferenceMetadata } from "@/lib/attachments/reference";
 import { autoCompactionKeepLast, compactAgentThread } from "@/lib/agents/thread-compaction";
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 import { moveThreadContextBoundary } from "@/lib/agents/context-boundary";
@@ -705,12 +706,15 @@ export async function prepareThreadRun(req: ThreadRunRequest): Promise<PreparedT
   const tierProviderParams = agentTierProportions
     ? { ...baseProviderParams, context_tier_proportions: agentTierProportions }
     : baseProviderParams;
-  const contextWindowCap = usageProfile.contextWindowCapTokens;
   const outputTokenCap = usageProfile.outputTokenCap;
   const configuredContextWindow = typeof tierProviderParams.context_window_tokens === "number"
     && tierProviderParams.context_window_tokens > 0
     ? tierProviderParams.context_window_tokens
     : DEFAULT_CONTEXT_WINDOW_TOKENS;
+  // Attachment turns can consume substantial context, so use the model's configured window.
+  const contextWindowCap = req.attachments?.length
+    ? null
+    : usageProfile.contextWindowCapTokens;
   const providerParams = {
     ...tierProviderParams,
     ...(contextWindowCap !== null
@@ -1501,6 +1505,7 @@ export function persistAssistantMessage(
   // we merge it into the manifest below. The body stored in
   // messages.content is the clean prose without the fence.
   const { body: persisted, refs: declaredRefs } = extractDeclaredReferences(withoutAutoplay);
+  const attachmentReferences = collectTurnFileReferences(thread_id, toolEvents);
   if (!persisted && !sanitizedEvents?.length && signalDelivery?.signals.length && !wasInterrupted) {
     commitSystemSignalTranscript(signalDelivery, () => {
       addMessage(thread_id, "assistant", "System signals processed.", null, "system_signal", {
@@ -1509,14 +1514,26 @@ export function persistAssistantMessage(
     });
   }
   if (persisted || (sanitizedEvents && sanitizedEvents.length > 0)) {
-    const persistRow = () => addMessage(
-      thread_id,
-      "assistant",
-      persisted,
-      sanitizedEvents,
-      category,
-      messageMetadata,
-    );
+    const persistRow = () => {
+      const row = addMessage(
+        thread_id,
+        "assistant",
+        persisted,
+        sanitizedEvents,
+        category,
+        messageMetadata,
+      );
+      if (attachmentReferences.length > 0) {
+        mergeMessageMetadata(row.msg_id, {
+          attachment_handling: {
+            version: 1,
+            interpretation_message_id: row.msg_id,
+            references: attachmentReferences,
+          } satisfies AttachmentHandlingMetadata,
+        });
+      }
+      return row;
+    };
     const row = signalDelivery && !wasInterrupted
       ? commitSystemSignalTranscript(signalDelivery, persistRow)
       : persistRow();
@@ -1673,6 +1690,57 @@ export function persistAssistantMessage(
       }
     }
   }
+}
+
+function collectTurnFileReferences(
+  thread_id: string,
+  toolEvents?: readonly PersistedToolEvent[],
+): FileReferenceMetadata[] {
+  const references = new Map<string, FileReferenceMetadata>();
+  const recentMessages = getMessagesPage(thread_id, 50).messages;
+  const latestMessage = recentMessages[recentMessages.length - 1];
+  const latestUser = latestMessage?.role === "user" ? latestMessage : null;
+  if (latestUser?.content.startsWith("[")) {
+    try {
+      const parts = JSON.parse(latestUser.content) as ContentPart[];
+      for (const part of parts) {
+        const reference = fileReferenceFromContentPart(part);
+        if (reference) references.set(`${reference.storage}:${reference.ref}`, reference);
+      }
+    } catch {
+      // Legacy/plain message content has no structured attachment refs.
+    }
+  }
+
+  const calls = new Map<string, string>();
+  for (const event of toolEvents ?? []) {
+    if (event.phase === "call") {
+      const args = asRecord(event.payload);
+      calls.set(event.id, unwrapInvokedToolName(event.name, args));
+      continue;
+    }
+    const calledTool = calls.get(event.id) ?? event.name;
+    if (calledTool !== "file_read") continue;
+    let payload = parseToolEventPayload(event.payload);
+    if (event.name === "invoke_tool" && payload && typeof payload === "object") {
+      payload = parseToolEventPayload((payload as { result?: unknown }).result);
+    }
+    if (!payload || typeof payload !== "object") continue;
+    const reference = (payload as { attachment_reference?: unknown }).attachment_reference;
+    if (!isFileReferenceMetadata(reference)) continue;
+    references.set(`${reference.storage}:${reference.ref}`, reference);
+  }
+  return [...references.values()];
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function parseToolEventPayload(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value) as unknown; } catch { return value; }
 }
 
 /**

@@ -1,22 +1,13 @@
-// Bridge attachment spill store.
-//
-// Inbound bridge messages (WhatsApp, future Telegram/Slack, etc.) can
-// carry files that are too large or too opaque to inline straight into
-// the LLM context: PDFs, spreadsheets, archives, multi-minute audio,
-// short videos. We persist those bytes under the user's Jarela data
-// dir and hand the agent a text pointer (`saved locally at <abs>`) so
-// it can decide what to do — typically calling `file_read` on the path.
-//
-// Small media (e.g. ≤ 1 MB images) keep going inline so vision-capable
-// models can still describe them in one round-trip without bouncing
-// through disk.
-//
-// Layout: <dataDir>/bridge-attachments/<bridge_id>/<YYYY-MM-DD>/<id>-<safe-name>
+// Legacy bridge attachment paths remain readable for older messages. New
+// inbound media uses the canonical content-addressed store below.
+// Legacy layout: <dataDir>/bridge-attachments/<bridge_id>/<YYYY-MM-DD>/<id>-<safe-name>
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { getDataDir } from "@/lib/db/data-dir";
+import { spillFileBuffer, spillImageBuffer } from "@/lib/attachments/spill";
+import type { ContentPart } from "@/lib/tools/runtime/types";
 
 export const BRIDGE_ATTACHMENTS_DIRNAME = "bridge-attachments";
 
@@ -50,6 +41,18 @@ export interface SavedAttachment {
 export function shouldInline(media_type: string, size: number, limit = DEFAULT_INLINE_LIMIT_BYTES): boolean {
   if (size > limit) return false;
   return INLINE_MIME_PREFIXES.some((p) => media_type.startsWith(p));
+}
+
+export async function storeCanonicalBridgeAttachment(input: {
+  filename: string | null;
+  media_type: string;
+  buffer: Buffer;
+}): Promise<ContentPart> {
+  const filename = safeFilename(input.filename, "attachment");
+  if (input.media_type.startsWith("image/")) {
+    return spillImageBuffer(input.buffer, input.media_type, { filename });
+  }
+  return spillFileBuffer(input.buffer, input.media_type, filename);
 }
 
 function baseDir(): string {

@@ -23,6 +23,19 @@ describe("usage strategy profiles", () => {
     });
   });
 
+  it("uses one fast profile for routing, response style, budgets, and retries", () => {
+    expect(parseUsageStrategy("fast")).toBe("fast");
+    expect(getUsageStrategyProfile("fast")).toMatchObject({
+      routerPolicy: "fast",
+      enableRouter: true,
+      contextWindowCapTokens: 32_768,
+      outputTokenCap: 2_048,
+      stallRetries: 0,
+      providerFailureRetries: 1,
+      promptInstruction: expect.stringContaining("low-latency response"),
+    });
+  });
+
   it("keeps balanced behavior unchanged and routes high reasoning toward quality", () => {
     expect(getUsageStrategyProfile("balanced").promptInstruction).toBe("");
     expect(getUsageStrategyProfile("balanced").providerFailureRetries).toBeNull();

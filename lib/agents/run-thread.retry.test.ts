@@ -17,11 +17,12 @@ vi.mock("@/lib/scheduler", () => ({
   startScheduler: () => {},
 }));
 
-const { prepareThreadRun } = await import("./run-thread");
+const { prepareThreadRun, persistAssistantMessage } = await import("./run-thread");
 const { collectStream } = await import("./stream-collector");
 const { deleteModelConfig, upsertModelConfig } = await import("@/lib/stores/model-config");
 const { upsertAgentConfig } = await import("@/lib/stores/agent-configs");
-const { createThread } = await import("@/lib/stores/threads");
+const { createThread, getMessagesPage } = await import("@/lib/stores/threads");
+const { spillFileBuffer } = await import("@/lib/attachments/spill");
 
 afterAll(() => {
   try { rmSync(tmpRoot, { recursive: true, force: true }); } catch {}
@@ -107,6 +108,82 @@ describe("prepareThreadRun transient retry", () => {
     const secondMessages = streamWithConfigMock.mock.calls[1][1] as Array<{ role: string; content: string | unknown[] }>;
     const pingCount = secondMessages.filter((m) => m.role === "user" && m.content === "Ping").length;
     expect(pingCount).toBe(1);
+  });
+
+  it("keeps attachment refs and their first-turn interpretation in later history", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", { api_key: "sk-test" }, true);
+    upsertAgentConfig({
+      id: "agent-attachment-history",
+      name: "Attachment History Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+    });
+    const thread = createThread("agent-attachment-history");
+    const importedRef = await spillFileBuffer(Buffer.from("external attachment"), "text/plain", "external.txt");
+    const interpretation = "The attachment describes a two-step deployment process.";
+    const outsidePath = join(tmpdir(), "outside-jarela.txt");
+    const filesystemReference = {
+      type: "file_reference",
+      storage: "filesystem",
+      ref: outsidePath,
+      filename: "outside-jarela.txt",
+      media_type: "text/plain",
+      size: 24,
+      sha256: "b".repeat(64),
+    };
+    streamWithConfigMock
+      .mockReturnValueOnce(chunks(
+        { type: "tool_call", data: { id: "file-read-1", name: "invoke_tool", arguments: { name: "file_read", args: { path: outsidePath } } } },
+        { type: "tool_result", data: { id: "file-read-1", name: "invoke_tool", result: JSON.stringify({ ok: true, tool: "file_read", status: "done", result: JSON.stringify({ ok: true, attachment_reference: filesystemReference }) }) } },
+        { type: "text_delta", data: { delta: interpretation } },
+        { type: "done", data: {} },
+      ))
+      .mockReturnValueOnce(chunks({ type: "done", data: {} }));
+
+    const firstTurn = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Review these attachments.",
+      attachments: [
+        { type: "file", name: "inline.txt", media_type: "text/plain", data: "inline attachment" },
+        importedRef,
+      ],
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const firstTurnResult = await collectStream(firstTurn.stream);
+    persistAssistantMessage(thread.thread_id, firstTurnResult.assistantContent, firstTurnResult.usedTools, firstTurnResult.toolEvents);
+
+    const firstTurnMessages = getMessagesPage(thread.thread_id, 10).messages;
+    const storedUserContent = firstTurnMessages.find((message) => message.role === "user")?.content;
+    expect(storedUserContent).toBeDefined();
+    const storedParts = JSON.parse(storedUserContent!) as Array<{ type: string; name?: string; filename?: string; data?: string }>;
+    const storedRefs = storedParts.filter((part) => part.type === "file_ref");
+    expect(storedRefs.map((part) => part.filename)).toEqual(["inline.txt", "external.txt"]);
+    expect(JSON.stringify(storedParts)).not.toContain("inline attachment");
+    const assistantMessage = firstTurnMessages.find((message) => message.role === "assistant");
+    expect(assistantMessage?.content).toBe(interpretation);
+    const assistantMetadata = JSON.parse(assistantMessage?.metadata ?? "{}") as {
+      attachment_handling?: { interpretation_message_id: string; references: Array<{ storage: string; ref: string }> };
+    };
+    expect(assistantMetadata.attachment_handling?.interpretation_message_id).toBe(assistantMessage?.msg_id);
+    expect(assistantMetadata.attachment_handling?.references).toEqual(expect.arrayContaining([
+      expect.objectContaining({ storage: "filesystem", ref: outsidePath }),
+      expect.objectContaining({ storage: "jarela", ref: importedRef.name }),
+    ]));
+
+    const secondTurn = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "What did those files say?",
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    const secondTurnHistory = streamWithConfigMock.mock.calls[1][1] as Array<{ role: string; content: string | unknown[] }>;
+    const assistantHistory = secondTurnHistory.find((message) => message.role === "assistant")?.content;
+    expect(JSON.stringify(secondTurnHistory)).toContain(storedRefs[0].name);
+    expect(JSON.stringify(secondTurnHistory)).toContain(importedRef.name);
+    expect(assistantHistory).toContain(interpretation);
+    expect(assistantHistory).toContain(outsidePath);
+    await collectStream(secondTurn.stream);
   });
 
   it("retries a provider-neutral pre-output stream failure", async () => {
@@ -301,6 +378,51 @@ describe("prepareThreadRun transient retry", () => {
     expect(firstOptions.agent_run_config.max_output_tokens).toBe(2_048);
     expect(firstOptions.agent_run_config.output_reserve_tokens).toBe(2_048);
     expect(firstOptions.agent_run_config.system_prompt).toContain("Cost-saving response style");
+  });
+
+  it("lifts the cost-saving context cap for attachment turns without changing other strategy settings", async () => {
+    upsertModelConfig("default", "openai", "gpt-4o-mini", {
+      api_key: "sk-test",
+      context_window_tokens: 131_072,
+      max_tokens: 8_192,
+    }, true);
+    upsertAgentConfig({
+      id: "agent-cost-saving-attachment",
+      name: "Cost Saving Attachment Agent",
+      identity: "helper",
+      instructions: "Be helpful.",
+      tools: [],
+      model_config_name: null,
+      usage_strategy: "cost_saving",
+    });
+    const thread = createThread("agent-cost-saving-attachment");
+    streamWithConfigMock.mockReturnValue(chunks({ type: "done", data: {} }));
+
+    const prepared = await prepareThreadRun({
+      thread_id: thread.thread_id,
+      message: "Summarize the attached file",
+      attachments: [{
+        type: "file_ref",
+        name: "attachment.txt",
+        filename: "attachment.txt",
+        media_type: "text/plain",
+        size: 4_000,
+      }],
+      context_profile: { include_hot: true, include_warm: false, include_facts: false, include_recall: false },
+    });
+    await collectStream(prepared.stream);
+
+    expect(prepared.context_snapshot.context_window_tokens).toBe(128_000);
+    const options = streamWithConfigMock.mock.calls[0][2] as {
+      agent_run_config: {
+        route_decision: { policy?: string };
+        max_output_tokens?: number;
+        system_prompt: string;
+      };
+    };
+    expect(options.agent_run_config.route_decision.policy).toBe("cheap");
+    expect(options.agent_run_config.max_output_tokens).toBe(2_048);
+    expect(options.agent_run_config.system_prompt).toContain("Cost-saving response style");
   });
 
   it("flags a local stall without starting a quality retry under cost-saving", async () => {

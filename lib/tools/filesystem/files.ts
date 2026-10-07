@@ -1,6 +1,7 @@
 import { promises as fs, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { registerLangChainPackage } from "../packages/langchain-package";
@@ -245,7 +246,8 @@ export const fileReadTool = tool(
     try {
       abs = pathResolverFor(config).resolve(filePath);
       assertSafePath(abs, "read");
-      const raw = await withFsDeadline("file_read", abs, () => fs.readFile(abs, "utf8"));
+      const rawBytes = await withFsDeadline("file_read", abs, () => fs.readFile(abs));
+      const raw = rawBytes.toString("utf8");
       let content = raw;
       let lineRange: { start: number; end: number } | null = null;
       if (start_line || end_line) {
@@ -270,6 +272,15 @@ export const fileReadTool = tool(
       return JSON.stringify({
         ok: true,
         path: abs,
+        attachment_reference: {
+          type: "file_reference",
+          storage: "filesystem",
+          ref: abs,
+          filename: path.basename(abs),
+          media_type: fileReadMediaType(abs),
+          size: rawBytes.length,
+          sha256: createHash("sha256").update(rawBytes).digest("hex"),
+        },
         content: clipped.value,
         truncated: clipped.truncated,
         line_range: lineRange,
@@ -288,6 +299,26 @@ export const fileReadTool = tool(
     schema: readSchema,
   },
 );
+
+function fileReadMediaType(filePath: string): string {
+  const byExtension: Record<string, string> = {
+    ".c": "text/x-c",
+    ".css": "text/css",
+    ".csv": "text/csv",
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".json": "application/json",
+    ".md": "text/markdown",
+    ".py": "text/x-python",
+    ".ts": "text/typescript",
+    ".tsx": "text/tsx",
+    ".txt": "text/plain",
+    ".xml": "application/xml",
+    ".yaml": "text/yaml",
+    ".yml": "text/yaml",
+  };
+  return byExtension[path.extname(filePath).toLowerCase()] ?? "text/plain";
+}
 
 // --- write --------------------------------------------------------------
 

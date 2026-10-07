@@ -73,6 +73,9 @@ export function collectFileRefNames(value: unknown, out: Set<string> = new Set()
 
   const obj = value as Record<string, unknown>;
   const type = obj.type;
+  if (type === "file_reference" && obj.storage === "jarela" && typeof obj.ref === "string" && isSafeFileName(obj.ref)) {
+    out.add(obj.ref);
+  }
   if ((type === "image_ref" || type === "file_ref") && typeof obj.name === "string" && isSafeFileName(obj.name)) {
     out.add(obj.name);
   }
@@ -102,11 +105,12 @@ function collectFileLinks(value: string, out: Set<string>): void {
 function collectReferencedFileNamesFromMessages(): Set<string> {
   const out = new Set<string>();
   const rows = getDb()
-    .prepare("SELECT content, tool_events FROM messages")
-    .all() as Array<{ content?: string | null; tool_events?: string | null }>;
+    .prepare("SELECT content, tool_events, metadata FROM messages")
+    .all() as Array<{ content?: string | null; tool_events?: string | null; metadata?: string | null }>;
   for (const row of rows) {
     collectFileRefNames(row.content, out);
     collectFileRefNames(row.tool_events, out);
+    collectFileRefNames(row.metadata, out);
   }
   return out;
 }

@@ -35,7 +35,7 @@ import {
 } from "@/lib/stores/bridges";
 import type { BridgeAdapter, ChatInfo, InboundEvent, InboundHandler, StatusHandler, InboundMessage, StatusUpdate } from "./types";
 import type { ContentPart } from "@/lib/tools/runtime/types";
-import { saveBridgeAttachment, shouldInline } from "./attachment-store";
+import { storeCanonicalBridgeAttachment } from "./attachment-store";
 import { errorMessage } from "@/lib/utils/error";
 
 // Baileys + qrcode are dev-time-installed peer libs. We never import their
@@ -840,8 +840,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
   /**
    * Extract a routable text body + ContentPart attachments from one inbound
    * WhatsApp message. Handles every common payload type:
-   *   - imageMessage          → image ContentPart (vision input)
-   *   - stickerMessage        → image ContentPart (webp; vision input)
+    *   - imageMessage          → canonical image_ref (vision input)
+    *   - stickerMessage        → canonical image_ref (webp; vision input)
    *   - audioMessage / PTT    → file ContentPart with audio/* mime
    *   - videoMessage          → file ContentPart with video/* mime
    *   - documentMessage       → file ContentPart (utf-8 text for text/*+json,
@@ -901,10 +901,8 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       }
     };
 
-    // Spill helper: persist any buffer we can't (or shouldn't) inline,
-    // and append a text pointer the agent can act on with file_read.
-    // Returns true if the buffer was spilled so callers can decide
-    // whether to also push an inline ContentPart.
+    // Persist bridge media into the canonical attachment store and pass
+    // its reference through the shared agent-run path.
     const messageId = (rawMessage as { key?: { id?: string } })?.key?.id ?? null;
     const spill = async (
       buf: Buffer,
@@ -913,17 +911,15 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       label: string,
     ): Promise<void> => {
       try {
-        const saved = await saveBridgeAttachment({
-          bridge_id: this.bridge_id,
+        const ref = await storeCanonicalBridgeAttachment({
           filename,
           media_type: mime,
-          message_id: messageId,
           buffer: buf,
         });
-        const sizeKb = Math.max(1, Math.round(saved.size / 1024));
+        attachments.push(ref);
+        const sizeKb = Math.max(1, Math.round(buf.length / 1024));
         text = (text ? text + "\n" : "")
-          + `[Attached ${label}: ${filename} (${mime}, ${sizeKb} KB) saved locally at ${saved.abs_path}. `
-          + `Use file_read on that path to inspect the contents.]`;
+          + `[Attached ${label}: ${filename} (${mime}, ${sizeKb} KB); retained as a Jarela file reference.]`;
       } catch (err) {
         const m = errorMessage(err);
         console.warn(`[bridge ${this.bridge_id}] failed to spill ${label} from ${remote_jid}: ${m}`);
@@ -934,11 +930,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
       const buf = await download("image");
       if (buf) {
         const mime = sanitizeMediaType(inner.imageMessage.mimetype, "image", "image/jpeg");
-        if (shouldInline(mime, buf.length)) {
-          attachments.push({ type: "image", media_type: mime, data: buf.toString("base64") });
-        } else {
-          await spill(buf, `image-${messageId ?? Date.now()}.${mime.split("/")[1] ?? "bin"}`, mime, "image");
-        }
+        await spill(buf, `image-${messageId ?? Date.now()}.${mime.split("/")[1] ?? "bin"}`, mime, "image");
       }
     }
 
@@ -950,11 +942,7 @@ export class WhatsAppBridgeAdapter implements BridgeAdapter {
         // their raw webp; providers that can't decode animated webp will
         // typically render the first frame.
         const mime = sanitizeMediaType(inner.stickerMessage.mimetype, "image", "image/webp");
-        if (shouldInline(mime, buf.length)) {
-          attachments.push({ type: "image", media_type: mime, data: buf.toString("base64") });
-        } else {
-          await spill(buf, `sticker-${messageId ?? Date.now()}.webp`, mime, "sticker");
-        }
+        await spill(buf, `sticker-${messageId ?? Date.now()}.webp`, mime, "sticker");
       }
     }
 
