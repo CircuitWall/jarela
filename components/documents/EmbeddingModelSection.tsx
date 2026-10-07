@@ -27,7 +27,7 @@ export function EmbeddingModelSection(props: Props) {
       {!readiness.documentsReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
           <p>
-            Jarela Local is bundled for on-device English semantic search. Choose it below to avoid sending document text to an embedding provider.
+            Jarela Local uses a bundled multilingual model for on-device semantic search. Choose it to keep document text off embedding providers.
           </p>
           <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
             You can also choose a configured OpenAI, Gemini, or GitHub Copilot-backed embedding model in place of Jarela Local.
@@ -51,13 +51,13 @@ export function EmbeddingModelSection(props: Props) {
           className="px-2 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-fg disabled:opacity-60"
         >
           <option value="__auto__">Auto (best available)</option>
-          <option value={LOCAL_EMBEDDING_CONFIG_NAME}>Jarela Local (English, on-device)</option>
+          <option value={LOCAL_EMBEDDING_CONFIG_NAME}>Jarela Local (multilingual, on-device)</option>
           {models.map((m) => (
             <option key={m.name} value={m.name}>{m.name} ({m.provider})</option>
           ))}
         </select>
         <span className="text-[11px] text-fg-faint">
-          Changing models does not re-embed automatically. Use Reindex on each local folder to rebuild its vectors.
+          Changing models does not re-embed automatically. Use Reindex on each source to rebuild its vectors.
         </span>
       </div>
       {savingEmbeddingModel && (

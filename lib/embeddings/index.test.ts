@@ -24,7 +24,7 @@ vi.mock("@/lib/providers", () => ({
 }));
 
 vi.mock("./local", () => ({
-  embedLocally: (texts: string[]) => localEmbedSpy(texts),
+  embedLocally: (texts: string[], task: string) => localEmbedSpy(texts, task),
 }));
 
 vi.mock("@/lib/stores/model-config", () => ({
@@ -42,13 +42,14 @@ vi.mock("@/lib/stores/model-config", () => ({
   getModelParams: () => ({}),
 }));
 
-const { embed, embedDocument, embedBestEffort, embedOne } = await import("./index");
+const { _resetEmbeddingCache, embed, embedDocument, embedBestEffort, embedOne } = await import("./index");
 const { setDocumentLocalEmbeddings } = await import("@/lib/stores/app-settings");
 const originalEmbeddingModelConfig = process.env.EMBEDDING_MODEL_CONFIG;
 
 beforeEach(() => {
   embedSpy.mockReset();
   localEmbedSpy.mockReset();
+  _resetEmbeddingCache();
   resolveEmbedClient = true;
   delete process.env.EMBEDDING_MODEL_CONFIG;
   setDocumentLocalEmbeddings(false);
@@ -153,8 +154,23 @@ describe("embedBestEffort", () => {
     expect(query).toEqual([[0.25, 0.75]]);
     expect(memory).toEqual([[0.9, 0.1]]);
     expect(message).toEqual([0.9, 0.1]);
-    expect(localEmbedSpy).toHaveBeenNthCalledWith(1, ["local document chunk"]);
-    expect(localEmbedSpy).toHaveBeenNthCalledWith(2, ["local search query"]);
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(1, ["local document chunk"], "passage");
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(2, ["local search query"], "query");
     expect(embedSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not reuse cached passage vectors for queries", async () => {
+    setDocumentLocalEmbeddings(true);
+    localEmbedSpy
+      .mockResolvedValueOnce([[0.25, 0.75]])
+      .mockResolvedValueOnce([[0.75, 0.25]]);
+
+    const passage = await embedBestEffort(["shared text"]);
+    const query = await embedDocument(["shared text"]);
+
+    expect(passage.vectors).toEqual([[0.25, 0.75]]);
+    expect(query).toEqual([[0.75, 0.25]]);
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(1, ["shared text"], "passage");
+    expect(localEmbedSpy).toHaveBeenNthCalledWith(2, ["shared text"], "query");
   });
 });

@@ -33,7 +33,7 @@ async function probeEmbeddingModelConfig(name: string | null) {
   if (!name) return null;
   if (name === LOCAL_EMBEDDING_CONFIG_NAME) {
     try {
-      const [vector] = await embedLocally(["Jarela local embedding capability probe"]);
+      const [vector] = await embedLocally(["Jarela local embedding capability probe"], "query");
       return {
         ok: true,
         provider: LOCAL_EMBEDDING_PROVIDER_NAME,

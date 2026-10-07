@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { LOCAL_EMBEDDING_DIMENSIONS, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
-const MAX_CONTENT_TOKENS = 254;
+const MAX_CONTENT_TOKENS = 500;
 const TOKEN_WINDOW_OVERLAP = 32;
 const INFERENCE_BATCH_SIZE = 16;
+
+export type LocalEmbeddingTask = "query" | "passage";
 
 interface TensorLike {
   tolist(): number[][];
@@ -99,7 +101,7 @@ function normalize(vector: number[]): number[] {
   return vector.map((value) => value / norm);
 }
 
-export async function embedLocally(texts: string[]): Promise<number[][]> {
+export async function embedLocally(texts: string[], task: LocalEmbeddingTask): Promise<number[][]> {
   if (texts.length === 0) return [];
   const extractor = await getFeatureExtractor();
   const sums = texts.map(() => new Array<number>(LOCAL_EMBEDDING_DIMENSIONS).fill(0));
@@ -112,7 +114,7 @@ export async function embedLocally(texts: string[]): Promise<number[][]> {
     const tokenWindows = splitIntoTokenWindows(tokenIds);
     for (let windowIndex = 0; windowIndex < tokenWindows.length; windowIndex++) {
       const tokenWindow = tokenWindows[windowIndex];
-      windows.push(extractor.tokenizer.decode(tokenWindow, { skip_special_tokens: true }));
+      windows.push(`${task}: ${extractor.tokenizer.decode(tokenWindow, { skip_special_tokens: true })}`);
       const tokenCount = tokenWindow.length - (windowIndex > 0 ? TOKEN_WINDOW_OVERLAP : 0);
       windowRefs.push({ textIndex, tokenCount });
     }
