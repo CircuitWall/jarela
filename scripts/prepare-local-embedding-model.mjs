@@ -3,19 +3,22 @@ import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const REPOSITORY = "Xenova/all-MiniLM-L6-v2";
-const REVISION = "751bff37182d3f1213fa05d7196b954e230abad9";
+const REPOSITORY = "Xenova/multilingual-e5-small";
+const REVISION = "761b726dd34fb83930e26aab4e9ac3899aa1fa78";
 const FILES = [
-  { path: "README.md", size: 1_767, gitBlobOid: "980ba38150c4c24f9858f3b585a1113ab01f47a2" },
-  { path: "config.json", size: 650, gitBlobOid: "72147e4ff4426ebedbfa2146c4a0999def51a313" },
-  { path: "special_tokens_map.json", size: 125, gitBlobOid: "a8b3208c2884c4efb86e49300fdd3dc877220cdf" },
-  { path: "tokenizer.json", size: 711_661, gitBlobOid: "c17ed520ed8438736732a54957a69306b8822215" },
-  { path: "tokenizer_config.json", size: 366, gitBlobOid: "37fca74771bc76a8e01178ce3a6055a0995f8093" },
-  { path: "vocab.txt", size: 231_508, gitBlobOid: "fb140275c155a9c7c5a3b3e0e77a9e839594a938" },
+  { path: "README.md", size: 1_077, gitBlobOid: "53e76ac0e07cb45ebbf3870244998e0f08632d4f" },
+  { path: "config.json", size: 658, gitBlobOid: "4104f38273cc595fd9500fd243124e9f6cf383dc" },
+  { path: "special_tokens_map.json", size: 167, gitBlobOid: "e0b1d18ecd0ae4ff1d47bd297d910c0cf83e504b" },
+  {
+    path: "tokenizer.json",
+    size: 17_082_730,
+    sha256: "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+  },
+  { path: "tokenizer_config.json", size: 443, gitBlobOid: "059214673d9d6d2ee319411e2ffec8c024b816d5" },
   {
     path: "onnx/model_quantized.onnx",
-    size: 22_972_370,
-    sha256: "afdb6f1a0e45b715d0bb9b11772f032c399babd23bfc31fed1c170afc848bdb1",
+    size: 118_308_185,
+    sha256: "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193",
   },
 ];
 
@@ -26,12 +29,13 @@ const stageRoot = join(root, ".jarela-assets", `.staging-${process.pid}`);
 const stageAssetsRoot = join(stageRoot, "local-embedding");
 const stageModelDir = join(stageAssetsRoot, REPOSITORY);
 const notice = [
-  "Bundled embedding model: Xenova/all-MiniLM-L6-v2",
+  "Bundled embedding model: Xenova/multilingual-e5-small",
   `Revision: ${REVISION}`,
-  "License: Apache-2.0 (see the Jarela distribution LICENSE file).",
-  "The model is an English sentence embedder that produces 384-dimensional vectors.",
-  "Source: https://huggingface.co/Xenova/all-MiniLM-L6-v2",
-  "Base model: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2",
+  "License: MIT (see the upstream model card).",
+  "The model supports about 100 languages and produces 384-dimensional vectors.",
+  "Queries use the `query: ` prefix; indexed passages use the `passage: ` prefix.",
+  "Source: https://huggingface.co/Xenova/multilingual-e5-small",
+  "Base model: https://huggingface.co/intfloat/multilingual-e5-small",
   "",
 ].join("\n");
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDocumentSource } from "@/lib/stores/document-sources";
-import { indexSource } from "@/lib/documents/indexer";
+import { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource } from "@/lib/documents/indexer";
 import { isRemoteKind, runRemoteSource } from "@/lib/documents/remote";
 import { errorMessage } from "@/lib/utils/error";
 
@@ -16,9 +16,16 @@ export async function POST(_req: NextRequest, { params }: Params) {
   const source = getDocumentSource(id);
   if (!source) return NextResponse.json({ error: "not found" }, { status: 404 });
   try {
-    const stats = isRemoteKind(source.kind)
-      ? await runRemoteSource(source)
-      : await indexSource(source, { maxFiles: Number.MAX_SAFE_INTEGER, forceReembed: true });
+    let stats;
+    if (isRemoteKind(source.kind)) {
+      clearSourceEmbeddings(source.id);
+      stats = await runRemoteSource(source);
+      const backfill = await backfillSourceEmbeddings(source.id);
+      stats.embedFailed = (stats.embedFailed ?? 0) + backfill.failed;
+      stats.embedError ??= backfill.error;
+    } else {
+      stats = await indexSource(source, { maxFiles: Number.MAX_SAFE_INTEGER, forceReembed: true });
+    }
     return NextResponse.json({ source_id: id, stats });
   } catch (err) {
     return NextResponse.json(

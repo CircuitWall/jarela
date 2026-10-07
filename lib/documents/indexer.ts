@@ -172,6 +172,34 @@ async function backfillDocumentEmbeddings(documentId: string): Promise<{ missing
   return { missing: rows.length, embedded, embedError: error };
 }
 
+export function clearSourceEmbeddings(sourceId: string): number {
+  return Number(getDb().prepare(
+    `UPDATE document_chunks
+     SET embedding=NULL, embed_failed_at=NULL, embed_error=NULL
+     WHERE document_id IN (SELECT id FROM documents WHERE source_id=?)`,
+  ).run(sourceId).changes);
+}
+
+export async function backfillSourceEmbeddings(sourceId: string): Promise<{
+  chunks: number;
+  embedded: number;
+  failed: number;
+  error: string | null;
+}> {
+  const docs = getDb().prepare("SELECT id FROM documents WHERE source_id=? ORDER BY id")
+    .all(sourceId) as Array<{ id: string }>;
+  let chunks = 0;
+  let embedded = 0;
+  let error: string | null = null;
+  for (const doc of docs) {
+    const result = await backfillDocumentEmbeddings(doc.id);
+    chunks += result.missing;
+    embedded += result.embedded;
+    error ??= result.embedError;
+  }
+  return { chunks, embedded, failed: chunks - embedded, error };
+}
+
 /**
  * Persists whichever vectors came back and marks terminal failures so
  * `listUnembeddedChunks` stops resubmitting them on every future tick.

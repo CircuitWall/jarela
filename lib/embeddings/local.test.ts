@@ -34,14 +34,13 @@ beforeEach(() => {
 describe("local embedding model", () => {
   it("splits long token sequences into overlapping bounded windows", () => {
     const windows = splitIntoTokenWindows(Array.from({ length: 600 }, (_, index) => index));
-    expect(windows.map((window) => window.length)).toEqual([254, 254, 156]);
+    expect(windows.map((window) => window.length)).toEqual([500, 132]);
     expect(windows[0].slice(-32)).toEqual(windows[1].slice(0, 32));
-    expect(windows[1].slice(-32)).toEqual(windows[2].slice(0, 32));
     expect(windows.flat().length).toBeGreaterThan(600);
   });
 
   it("loads local-only q8 inference and aggregates all windows to one normalized vector per input", async () => {
-    const vectors = await embedLocally(["long text", "another long text"]);
+    const vectors = await embedLocally(["long text", "another long text"], "passage");
 
     expect(mocks.pipeline).toHaveBeenCalledWith("feature-extraction", LOCAL_EMBEDDING_MODEL_ID, { dtype: "q8" });
     expect(mocks.env.allowRemoteModels).toBe(false);
@@ -49,8 +48,23 @@ describe("local embedding model", () => {
     expect(mocks.env.localModelPath).toBe(`${modelPath}${sep}`);
     expect(mocks.tokenizer).toHaveBeenCalledTimes(2);
     expect(mocks.extractor).toHaveBeenCalledTimes(1);
+    expect(mocks.extractor.mock.calls[0][0]).toEqual([
+      "passage: window-500",
+      "passage: window-132",
+      "passage: window-500",
+      "passage: window-132",
+    ]);
     expect(vectors).toHaveLength(2);
     expect(vectors[0]).toHaveLength(LOCAL_EMBEDDING_DIMENSIONS);
     expect(Math.sqrt(vectors[0].reduce((sum, value) => sum + value * value, 0))).toBeCloseTo(1, 6);
+  });
+
+  it("uses the query prefix for retrieval text", async () => {
+    await embedLocally(["recherche documentaire"], "query");
+
+    expect(mocks.extractor.mock.calls[0][0]).toEqual([
+      "query: window-500",
+      "query: window-132",
+    ]);
   });
 });

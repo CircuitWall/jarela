@@ -29,7 +29,7 @@ vi.mock("@/lib/embeddings", () => ({
   resetMessageEmbedCache: () => {},
 }));
 
-const { indexSource } = await import("./indexer");
+const { backfillSourceEmbeddings, clearSourceEmbeddings, indexSource } = await import("./indexer");
 const { getDb } = await import("@/lib/db");
 const { createDocumentSource } = await import("@/lib/stores/document-sources");
 
@@ -154,5 +154,25 @@ describe("indexSource — terminal vs transient embedding failures (issue #597)"
     expect(embedBestEffortSpy).toHaveBeenCalledTimes(1);
     expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.9]);
     expect(stats.updated).toBe(1);
+  });
+
+  it("clears and backfills existing source vectors when an embedding model changes", async () => {
+    const abs = join(sourceRoot, "remote-like.txt");
+    writeFileSync(abs, "document content with an existing vector");
+    await indexSource(sourceRow);
+    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.1]);
+
+    expect(clearSourceEmbeddings(sourceId)).toBe(1);
+    expect(chunkRows()[0].embedding).toBeNull();
+    embedImpl = (texts) => ({
+      vectors: texts.map(() => [0.75]),
+      error: null,
+      failed: 0,
+      terminal: texts.map(() => false),
+    });
+
+    const result = await backfillSourceEmbeddings(sourceId);
+    expect(result).toEqual({ chunks: 1, embedded: 1, failed: 0, error: null });
+    expect(JSON.parse(chunkRows()[0].embedding!)).toEqual([0.75]);
   });
 });

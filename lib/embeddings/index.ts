@@ -11,7 +11,7 @@ import { memoryRecallText } from "@/lib/memory/record";
 import { getMemoryPolicy, type MemoryPolicy } from "@/lib/stores/app-settings";
 import { isStructuredMemoryEligible, parseStructuredMemory } from "@/lib/memory/record";
 import { LOCAL_EMBEDDING_CONFIG_NAME, LOCAL_EMBEDDING_MODEL_ID } from "./constants";
-import { embedLocally } from "./local";
+import { embedLocally, type LocalEmbeddingTask } from "./local";
 
 // Sensitive namespaces (ADR-0005) are never surfaced via recall: their
 // values are encrypted at rest, and credentials should not reach agent
@@ -21,6 +21,7 @@ const EXCLUDED_NS_PLACEHOLDERS = EXCLUDED_NS.map(() => "?").join(",");
 
 interface EmbeddingClient {
   modelId: string;
+  cacheScope?: string;
   embed: (texts: string[]) => Promise<number[][]>;
 }
 
@@ -78,9 +79,13 @@ async function resolveEmbeddingClient(): Promise<EmbeddingClient | null> {
   return null;
 }
 
-async function resolveDocumentEmbeddingClient(): Promise<EmbeddingClient | null> {
+async function resolveDocumentEmbeddingClient(task: LocalEmbeddingTask = "query"): Promise<EmbeddingClient | null> {
   if (isDocumentLocalEmbeddingsEnabled()) {
-    return { modelId: LOCAL_EMBEDDING_MODEL_ID, embed: embedLocally };
+    return {
+      modelId: LOCAL_EMBEDDING_MODEL_ID,
+      cacheScope: `${LOCAL_EMBEDDING_MODEL_ID}:${task}`,
+      embed: (texts) => embedLocally(texts, task),
+    };
   }
   return resolveEmbeddingClient();
 }
@@ -112,7 +117,7 @@ async function embedWithClient(
   if (texts.length === 0) return [];
   if (!client) return null;
 
-  const keys = texts.map((t) => embeddingCacheKey(client.modelId, t));
+  const keys = texts.map((t) => embeddingCacheKey(client.cacheScope ?? client.modelId, t));
   const results = new Array<number[] | undefined>(texts.length);
   const missIndexes: number[] = [];
   for (let i = 0; i < texts.length; i++) {
@@ -154,7 +159,7 @@ export async function embed(texts: string[]): Promise<number[][] | null> {
 }
 
 export async function embedDocument(texts: string[]): Promise<number[][] | null> {
-  return embedWithClient(texts, await resolveDocumentEmbeddingClient());
+  return embedWithClient(texts, await resolveDocumentEmbeddingClient("query"));
 }
 
 export async function embedDocumentOne(text: string): Promise<number[] | null> {
@@ -225,7 +230,7 @@ export interface EmbedBestEffortResult {
  */
 export async function embedBestEffort(texts: string[]): Promise<EmbedBestEffortResult> {
   if (texts.length === 0) return { vectors: [], error: null, failed: 0, terminal: [] };
-  const client = await resolveDocumentEmbeddingClient();
+  const client = await resolveDocumentEmbeddingClient("passage");
   if (!client) {
     // Missing config, not bad content — fixing the config should let these
     // retry, so this is never a terminal per-item failure.

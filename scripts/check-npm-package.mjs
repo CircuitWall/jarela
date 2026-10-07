@@ -90,7 +90,7 @@ try {
   if (!listing.some((entry) => entry.startsWith("package/.next/standalone/.next/static/"))) {
     throw new Error("npm tarball is missing hydrated .next/static assets inside the standalone bundle");
   }
-  if (!listing.includes("package/.next/standalone/.jarela-assets/local-embedding/Xenova/all-MiniLM-L6-v2/onnx/model_quantized.onnx")) {
+  if (!listing.includes("package/.next/standalone/.jarela-assets/local-embedding/Xenova/multilingual-e5-small/onnx/model_quantized.onnx")) {
     throw new Error("npm tarball is missing the bundled local embedding model");
   }
 
