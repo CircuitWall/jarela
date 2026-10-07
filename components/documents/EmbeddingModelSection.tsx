@@ -2,6 +2,7 @@
 import type { ModelConfig } from "@/api/types";
 import type { EmbeddingProbe } from "./useDocumentsPanel";
 import type { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
+import { LOCAL_EMBEDDING_CONFIG_NAME } from "@/lib/embeddings/constants";
 
 interface Props {
   models: ModelConfig[];
@@ -26,10 +27,10 @@ export function EmbeddingModelSection(props: Props) {
       {!readiness.documentsReady && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
           <p>
-            Documents need an embeddings-capable model that this installation can already use. Add one in Models if semantic recall is important.
+            Jarela Local is bundled for on-device English semantic search. Choose it below to avoid sending document text to an embedding provider.
           </p>
           <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-            Compatible setup: OpenAI, Gemini, and GitHub Copilot-backed setups are the main built-in paths here. If none is available, Documents falls back to substring search only.
+            You can also choose a configured OpenAI, Gemini, or GitHub Copilot-backed embedding model in place of Jarela Local.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button
@@ -50,12 +51,13 @@ export function EmbeddingModelSection(props: Props) {
           className="px-2 py-1.5 rounded-md bg-surface-2 border border-border text-xs text-fg disabled:opacity-60"
         >
           <option value="__auto__">Auto (best available)</option>
+          <option value={LOCAL_EMBEDDING_CONFIG_NAME}>Jarela Local (English, on-device)</option>
           {models.map((m) => (
             <option key={m.name} value={m.name}>{m.name} ({m.provider})</option>
           ))}
         </select>
         <span className="text-[11px] text-fg-faint">
-          Used for document chunk embeddings. Rescan applies this to all eligible chunks.
+          Changing models does not re-embed automatically. Use Reindex on each local folder to rebuild its vectors.
         </span>
       </div>
       {savingEmbeddingModel && (
@@ -69,10 +71,10 @@ export function EmbeddingModelSection(props: Props) {
             : `Not usable: ${embeddingProbe.error ?? "embedding probe failed"}`}
         </p>
       )}
-      {!savingEmbeddingModel && models.length > 0 && !hasWorkingEmbeddingModel && (
+      {!savingEmbeddingModel && !hasWorkingEmbeddingModel && embeddingModel !== LOCAL_EMBEDDING_CONFIG_NAME && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200 leading-snug">
           <p>
-            Current model setup does not appear ready for semantic document search yet. Add or switch to a model/provider with embeddings support in Models, then rescan your sources.
+            Semantic embeddings are not active yet. Choose Jarela Local above or configure an embeddings-capable provider in Models.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button

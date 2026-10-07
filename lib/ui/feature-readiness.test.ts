@@ -81,6 +81,12 @@ describe("computeFeatureReadiness", () => {
     expect(r.documentsReady).toBe(false);
   });
 
+  it("marks documents ready when the bundled local embedding model is available", () => {
+    const r = computeFeatureReadiness({ models: [], hasLocalEmbeddingModel: true });
+    expect(r.hasEmbeddingsModel).toBe(true);
+    expect(r.documentsReady).toBe(true);
+  });
+
   it("detects embeddings via selected provider when no models registered", () => {
     const r = computeFeatureReadiness({
       models: [],

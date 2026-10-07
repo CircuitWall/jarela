@@ -224,7 +224,7 @@ interface IndexStats {
 
 export async function indexSource(
   source: DocumentSourceRow,
-  opts?: { maxFiles?: number },
+  opts?: { maxFiles?: number; forceReembed?: boolean },
 ): Promise<IndexStats> {
   const stats: IndexStats = { scanned: 0, added: 0, updated: 0, removed: 0, unchanged: 0, errors: 0 };
   const db = getDb();
@@ -254,6 +254,21 @@ export async function indexSource(
     if (processed >= maxThisRun) break;
     const existing = indexed.get(f.abs);
     if (existing && existing.mtime_ms === f.mtime_ms && existing.size_bytes === f.size) {
+      if (opts?.forceReembed) {
+        try {
+          const text = await readTextFile(f.abs);
+          if (text === null) continue;
+          const r = await upsertLocalDocument(source.id, f, text, hashContent(text), existing.id);
+          embedFailed += r.chunks - r.embedded;
+          if (r.embedError && !embedError) embedError = r.embedError;
+          processed++;
+          stats.updated++;
+        } catch (err) {
+          lastError = errorMessage(err);
+          stats.errors++;
+        }
+        continue;
+      }
       // Root-cause fix: if a file was indexed while embeddings were
       // unavailable, unchanged files used to be skipped forever and never
       // backfilled. Try to embed any still-null chunks on unchanged docs.
@@ -281,6 +296,19 @@ export async function indexSource(
 
     const hash = hashContent(text);
     if (existing && existing.content_hash === hash) {
+      if (opts?.forceReembed) {
+        try {
+          const r = await upsertLocalDocument(source.id, f, text, hash, existing.id);
+          embedFailed += r.chunks - r.embedded;
+          if (r.embedError && !embedError) embedError = r.embedError;
+          processed++;
+          stats.updated++;
+        } catch (err) {
+          lastError = errorMessage(err);
+          stats.errors++;
+        }
+        continue;
+      }
       // Mtime/size changed but content didn't — just touch the row.
       db.prepare("UPDATE documents SET mtime_ms=?, size_bytes=?, last_indexed_at=? WHERE id=?")
         .run(f.mtime_ms, f.size, new Date().toISOString(), existing.id);

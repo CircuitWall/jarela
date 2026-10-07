@@ -9,7 +9,7 @@
 // eventually repaired (see queueDocumentReindex).
 
 import { getDb } from "@/lib/db";
-import { embedOne, cosine } from "@/lib/embeddings";
+import { embedDocumentOne, cosine } from "@/lib/embeddings";
 
 // Track documents we've already queued for reindexing this session to avoid
 // repeated work. This is session-scoped; the Set resets on app restart.
@@ -75,7 +75,7 @@ export async function searchDocuments(
 
   if (rows.length === 0) return [];
 
-  const qVec = await embedOne(trimmed);
+  const qVec = await embedDocumentOne(trimmed);
   const scored: DocumentHit[] = [];
   const lowered = trimmed.toLowerCase();
   const mismatched = new Set<string>();

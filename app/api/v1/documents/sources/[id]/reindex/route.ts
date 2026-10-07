@@ -18,7 +18,7 @@ export async function POST(_req: NextRequest, { params }: Params) {
   try {
     const stats = isRemoteKind(source.kind)
       ? await runRemoteSource(source)
-      : await indexSource(source, { maxFiles: Number.MAX_SAFE_INTEGER });
+      : await indexSource(source, { maxFiles: Number.MAX_SAFE_INTEGER, forceReembed: true });
     return NextResponse.json({ source_id: id, stats });
   } catch (err) {
     return NextResponse.json(

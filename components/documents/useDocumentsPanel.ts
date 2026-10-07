@@ -6,6 +6,7 @@ import { computeFeatureReadiness } from "@/lib/ui/feature-readiness";
 import { isMailKind, summarizeRemote } from "./helpers";
 import { errorMessage } from "@/lib/utils/error";
 import { pushToast } from "@/lib/ui/toasts";
+import { LOCAL_EMBEDDING_CONFIG_NAME } from "@/lib/embeddings/constants";
 
 export interface EmbeddingProbe {
   ok: boolean;
@@ -170,7 +171,12 @@ export function useDocumentsPanel(): UseDocumentsPanelResult {
     }
   }
 
-  const readiness = computeFeatureReadiness({ models, selectedProvider: undefined, selectedModelId: undefined });
+  const readiness = computeFeatureReadiness({
+    models,
+    selectedProvider: embeddingModel === LOCAL_EMBEDDING_CONFIG_NAME ? "jarela-local" : undefined,
+    selectedModelId: embeddingModel === LOCAL_EMBEDDING_CONFIG_NAME ? "Xenova/all-MiniLM-L6-v2" : undefined,
+    hasLocalEmbeddingModel: true,
+  });
   const hasWorkingEmbeddingModel = embeddingProbe?.ok ?? false;
 
   return {
