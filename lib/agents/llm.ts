@@ -129,7 +129,11 @@ export async function toBaseMessages(
         }
         const isTexty = part.media_type.startsWith("text/") || part.media_type === "application/json";
         if (!isTexty) {
-          blocks.push({ type: "text", text: `[Attached file: ${part.filename} (${part.media_type})]` });
+          blocks.push({
+            type: "text",
+            text: `[Attached file: ${part.filename} (${part.media_type}); retained ref ${part.name}. `
+              + `Call view_attachment({name: "${part.name}", media_type: "${part.media_type}"}) to retrieve it.]`,
+          });
           continue;
         }
         try {

@@ -79,8 +79,11 @@ describe("toBaseMessages", () => {
       { role: "user", content: [{ type: "text", text: "a pdf" }, ref] },
     ]);
 
-    const content = JSON.stringify((messages[0] as HumanMessage).content);
+    const content = ((messages[0] as HumanMessage).content as Array<{ type: string; text?: string }>)
+      .map((block) => block.text ?? "")
+      .join("\n");
     expect(content).toContain("report.pdf");
+    expect(content).toContain(`view_attachment({name: "${ref.name}", media_type: "application/pdf"})`);
     expect(content).not.toContain("%PDF-fake");
   });
 
