@@ -55,8 +55,9 @@ const PATTERNS: Record<string, RegExp[]> = {
     /^claude-[45](?:-|$)/i,
     /^gemini-(1\.5|2|3)/i,
   ],
-  // DeepSeek / Cohere — current public chat SKUs are text-only.
-  deepseek: [],
+  // DeepSeek V4.1 Flash is multimodal (`deepseek-v4-flash` is a legacy alias for it);
+  // V4 Pro and Cohere chat SKUs are text-only.
+  deepseek: [/^deepseek-(?:v4-)?flash/i],
   cohere: [],
   // LangChain pass-through could be anything; treat as unknown (handled
   // separately below) rather than yes/no.
@@ -127,6 +128,38 @@ const WEB_SEARCH_PATTERNS: Record<string, RegExp[]> = {
 };
 
 const JSON_MODE_PROVIDERS = new Set(["openai", "gemini", "deepseek", "mock"]);
+
+// Models whose reasoning tokens are spent from the same max_tokens budget as the
+// visible answer, so a tight output cap truncates them before they reply.
+const THINKS_BY_DEFAULT: Record<string, RegExp[]> = {
+  openai: [/^gpt-5/i, /^o[134](?:-|$)/i],
+  gemini: [/^gemini-(2\.5|3)/i],
+  "github-copilot": [/^gpt-5/i, /^o[134](?:-|$)/i, /^gemini-(2\.5|3)/i],
+  deepseek: [/^deepseek-(?:v4|flash|reasoner)/i],
+};
+
+export function modelThinksByDefault(provider: string, modelId: string): boolean {
+  return (THINKS_BY_DEFAULT[provider.toLowerCase()] ?? []).some((re) => re.test(modelId));
+}
+
+/**
+ * Request params that turn a default-thinking model's reasoning down. `off` is
+ * true only when the provider can disable it outright; OpenAI reasoning models
+ * can only be lowered, so they still reason a little. Null when the model has
+ * no known control, so nothing is sent.
+ */
+export function thinkingReductionParams(
+  provider: string,
+  modelId: string,
+): { params: Record<string, unknown>; off: boolean } | null {
+  const p = provider.toLowerCase();
+  if (p === "deepseek" && /^deepseek-(?:v4|flash)/i.test(modelId)) {
+    return { params: { thinking: { type: "disabled" } }, off: true };
+  }
+  // "low" is accepted by every OpenAI reasoning model; "minimal" is not on newer gpt-5 releases.
+  if (p === "openai" && /^(gpt-5|o[134](?:-|$))/i.test(modelId)) return { params: { reasoning_effort: "low" }, off: false };
+  return null;
+}
 
 function matchesAny(map: Record<string, RegExp[]>, provider: string, modelId: string): boolean {
   const pats = map[provider.toLowerCase()] ?? [];

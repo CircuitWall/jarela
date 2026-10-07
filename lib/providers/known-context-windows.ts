@@ -60,11 +60,13 @@ const OPENAI: Record<string, KnownModelLimits> = {
   "o1": { context_length: 200_000, max_output_tokens: 100_000 },
 };
 
+// https://api-docs.deepseek.com/quick_start/pricing — V4 family: 1M context, 384K max output.
+// `deepseek-chat` / `deepseek-reasoner` were discontinued 2026-07-24; `deepseek-v4-flash`
+// is a legacy alias DeepSeek routes to V4.1 Flash.
 const DEEPSEEK: Record<string, KnownModelLimits> = {
-  "deepseek-v4-flash": { context_length: 65_536, max_output_tokens: 8192 },
-  "deepseek-v4-pro": { context_length: 65_536, max_output_tokens: 8192 },
-  "deepseek-chat": { context_length: 65_536, max_output_tokens: 8192 },
-  "deepseek-reasoner": { context_length: 65_536, max_output_tokens: 8192 },
+  "deepseek-flash": { context_length: 1_000_000, max_output_tokens: 384_000 },
+  "deepseek-v4-flash": { context_length: 1_000_000, max_output_tokens: 384_000 },
+  "deepseek-v4-pro": { context_length: 1_000_000, max_output_tokens: 384_000 },
 };
 
 // GitHub Copilot proxies vendor models — sometimes under a transformed id

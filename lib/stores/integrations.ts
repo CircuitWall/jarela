@@ -156,7 +156,7 @@ export const INTEGRATIONS = {
     label: "DeepSeek",
     category: "llm" as IntegrationCategory,
     description:
-      "Used by deepseek-chat and deepseek-reasoner. Get a key at platform.deepseek.com → " +
+      "Used by deepseek-flash and deepseek-v4-pro. Get a key at platform.deepseek.com → " +
       "API keys.",
     fields: [
       { key: "api_key", label: "API key", placeholder: "sk-…", secret: true, required: true },

@@ -69,7 +69,10 @@ const KNOWN_MODEL_RATES: Record<string, KnownRate> = {
   "gemini-1.5-pro": { inputPer1M: 1.25, outputPer1M: 5 },
   "gemini-1.5-flash": { inputPer1M: 0.075, outputPer1M: 0.3 },
 
-  // DeepSeek
+  // DeepSeek — V4 rates are peak-hour cache-miss prices (off-peak is half).
+  "deepseek-flash": { inputPer1M: 0.3, outputPer1M: 1.2 },
+  "deepseek-v4-flash": { inputPer1M: 0.3, outputPer1M: 1.2 },
+  "deepseek-v4-pro": { inputPer1M: 1.32, outputPer1M: 3.96 },
   "deepseek-chat": { inputPer1M: 0.27, outputPer1M: 1.10 },
   "deepseek-reasoner": { inputPer1M: 0.55, outputPer1M: 2.19 },
   "deepseek-coder": { inputPer1M: 0.27, outputPer1M: 1.10 },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getUsageStrategyProfile, parseUsageStrategy, resolveUsageStrategy } from "./usage-strategy";
+import { getUsageStrategyProfile, parseUsageStrategy, resolveOutputTokenCap, resolveUsageStrategy } from "./usage-strategy";
 
 describe("usage strategy profiles", () => {
   it("defaults invalid and missing values to balanced", () => {
@@ -16,8 +16,9 @@ describe("usage strategy profiles", () => {
     expect(getUsageStrategyProfile("cost_saving")).toMatchObject({
       routerPolicy: "cheap",
       enableRouter: true,
-      contextWindowCapTokens: 32_768,
-      outputTokenCap: 2_048,
+      contextWindowCapTokens: 65_536,
+      outputTokenCap: 4_096,
+      reduceThinking: true,
       stallRetries: 0,
       providerFailureRetries: 1,
     });
@@ -40,5 +41,11 @@ describe("usage strategy profiles", () => {
     expect(getUsageStrategyProfile("balanced").promptInstruction).toBe("");
     expect(getUsageStrategyProfile("balanced").providerFailureRetries).toBeNull();
     expect(getUsageStrategyProfile("high_reasoning")).toMatchObject({ routerPolicy: "quality", enableRouter: true });
+  });
+
+  it("raises a tight output cap only for thinking models", () => {
+    expect(resolveOutputTokenCap(2_048, false)).toBe(2_048);
+    expect(resolveOutputTokenCap(2_048, true)).toBe(32_768);
+    expect(resolveOutputTokenCap(null, true)).toBeNull();
   });
 });

@@ -30,6 +30,8 @@ export interface AgentRunConfig {
   output_reserve_tokens?: number;
   /** Hard per-run output cap imposed by the resolved usage strategy. */
   max_output_tokens?: number;
+  /** Provider params that lower reasoning for this run (usage strategy); never overrides explicit model config. */
+  thinking_params?: Record<string, unknown>;
   /**
    * Per-tool credential overrides (`{ toolName: credentialId }`). Forwarded
    * to the tool wrapper so the integrations store can pick the right
