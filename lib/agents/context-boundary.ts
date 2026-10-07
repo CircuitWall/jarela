@@ -2,12 +2,13 @@ import { getThread, setThreadContextPin, setAutoBoundaryLock } from "@/lib/store
 import { kickBoundaryCompaction } from "@/lib/agents/warm-summary-background";
 
 // Every caller of moveThreadContextBoundary represents a user-initiated
-// boundary change (drag the line, or the manual /compact command) — the
+// boundary change (drag the line, the manual /compact command, or the agent's
+// compact_context tool acting on the user's say-so) — the
 // auto-detector's own commit (lib/agents/warm-summary-background.ts
 // commitBoundaryCompaction) calls setThreadContextPin directly instead, so
-// it never re-arms this lock. Suppresses maybeAutoContextBoundary in
+// it never re-arms this lock. Suppresses the hot-turn-limit compaction in
 // lib/agents/run-thread.ts for the next N eligible turns so a manual
-// choice doesn't get silently re-moved on the very next idle+shift turn.
+// choice doesn't get silently re-moved on the very next turn.
 // Counted in messages (~2 per turn: one user + one assistant row) since
 // that's what's already on the thread row — no extra query or per-turn
 // write needed to check it.

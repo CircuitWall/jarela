@@ -103,8 +103,6 @@ export async function buildHistoryWindow(
     scope?: "foreground" | "bridge" | "all" | "none";
     includeWarm?: boolean;
     bridgeKey?: string;
-    /** Drop the `history_window_hours` bound for this turn. */
-    ignoreTimeWindow?: boolean;
     /**
      * ADR-0044 — active channel set for this turn. "chat" plus zero or more
      * of AUTOMATION_CHANNEL_ORDER. Omitted, or exactly ["chat"], is
@@ -128,7 +126,7 @@ export async function buildHistoryWindow(
   // as they did before this ADR landed.
   const sinceISO = hotSince
     ? hotSince
-    : windowHours > 0 && !options.ignoreTimeWindow
+    : windowHours > 0
       ? new Date(Date.now() - windowHours * 3600_000).toISOString()
       : undefined;
   const scope = options.scope ?? "all";
